@@ -1,10 +1,5 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import {
-	type EndpointGroup,
-	type EndpointSort,
-	groupEndpoints,
-	leafLabel,
-} from "../../../components/services/endpoint-grouping"
+import { type EndpointGroup, type EndpointSort, groupEndpoints, leafLabel } from "./endpoint-grouping"
 import {
 	countLabel,
 	formatBytes,
@@ -63,7 +58,6 @@ export type RowContext = Readonly<{
 	isOneMethod: boolean
 }>
 
-/** `methodTone`: only the mutating verbs are tinted. */
 const methodTone = (method: string): string =>
 	method === "POST" || method === "PUT" || method === "PATCH"
 		? "text-severity-warn"
@@ -317,15 +311,13 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-11 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected
-				? "bg-surface-strong"
-				: "hover:bg-surface-sunken active:bg-surface-sunken",
+			isSelected ? "bg-surface-strong" : "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
 }
 
-/** `GroupHeaderRow`: the group's totals; p95/p99 are the worst in the group. */
+/** The group's totals; p95/p99 are the worst in the group. */
 const groupHeaderRow = (
 	h: H,
 	options: Readonly<{
@@ -408,7 +400,7 @@ const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VA
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
 	Arr.some(endpoints, (other) => other !== endpoint && other.route === endpoint.route)
 
-/** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
+/** A collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
 	h: H,
 	group: EndpointGroup<Endpoint>,

@@ -1,9 +1,9 @@
 import type { RequestMode } from "@maple/views/data/keyed"
 
 /**
- * `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is
- * re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
- * Every other URL change (a tile, a tab, a filter outside the window) requests in `Load`.
+ * A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only
+ * Reload revalidates unchanged keys. Every other URL change (a tile, a tab, a filter outside the
+ * window) requests in `Load`.
  */
 
 /** The search fields that decide a page's window. */

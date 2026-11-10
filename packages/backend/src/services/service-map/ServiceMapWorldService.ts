@@ -15,7 +15,7 @@ import {
 	type WorldOp,
 	WorldPersistenceError,
 } from "@maple/domain/http"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import type { MapleDb } from "@maple/db/client"
 import {
 	Array as Arr,

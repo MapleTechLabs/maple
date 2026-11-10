@@ -18,18 +18,15 @@ import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
+import { metricKeysOf } from "../../kit/query-builder/where-values"
 import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The widget editor's query side: the source toggle, one `QueryPanel` per query,
-// `FormulaPanel`s, and the toolbar.
-
 type H = HtmlBuilder<Message>
 
-/** One `QueryPanel`, from the shared query builder. */
 const queryPanel = (
 	h: H,
 	model: Model,
@@ -51,16 +48,12 @@ const queryPanel = (
 			hasVisibilityToggle: true,
 			metricOptions: model.metricOptions?.options ?? [],
 			metricSearch: model.metricSearch,
-			metricBreakdownKeys:
-				query.dataSource === "metrics"
-					? model.metricKeys[`${query.metricName}::${query.metricType}`]
-					: undefined,
+			metricBreakdownKeys: metricKeysOf(model.metricKeys, query),
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})
 
-/** `FormulaPanel`. */
 const formulaPanel = (h: H, formula: FormulaDraft): Html =>
 	h.div(
 		[h.Class("border border-dashed border-l-2 border-l-chart-3 p-3 space-y-2")],
@@ -123,7 +116,7 @@ const sourceToggle = (h: H, model: Model): Html =>
 
 const MARKDOWN_PLACEHOLDER = "## Runbook\n\n- Check the error rate panel first\n- Escalate to #oncall"
 
-/** `MarkdownEditorPanel`: the note's body; the preview follows as you type. */
+/** The note's body; the preview follows as you type. */
 const markdownEditor = (h: H, content: string): Html =>
 	h.div(
 		[h.Class("space-y-2")],

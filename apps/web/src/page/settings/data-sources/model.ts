@@ -88,7 +88,6 @@ export const Model = Schema.Struct({
 	entryDraft: Schema.NullOr(EntryDraft),
 	/** Why the editor's last save failed; the draft stays open to retry. */
 	entryError: Schema.NullOr(LoadFailure),
-	/** Entries with a curation write in flight. */
 	/** Curation writes in flight, keyed by source and entry (`savingKey`): two sources can share an entry name. */
 	savingEntries: Schema.Array(Schema.String),
 	deleteDialog: Dialog.Model,

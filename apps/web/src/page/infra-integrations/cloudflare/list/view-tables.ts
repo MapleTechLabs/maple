@@ -7,7 +7,7 @@ import {
 	type WorkerListRow,
 	workerRowKey,
 	WORKER_HEALTH_TONE,
-} from "../../../../components/infra/cloudflare/list-model"
+} from "../list-model"
 import { ERROR_RATE_WARN, errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
@@ -33,7 +33,7 @@ import {
 	skeletonRows,
 	ROW_LINK_CLASS,
 	NUMERIC_CELL,
-} from "../../../infra/kit/data-table"
+} from "../../../kit/data-table"
 import { metaLine } from "../../../infra/kit/meta-line"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
@@ -44,8 +44,6 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 
-// `CloudflareZoneTable`, `CloudflareWorkerTable`, `CloudflareQueueTable`.
-
 type H = HtmlBuilder<Message>
 
 // The server caps the list at 500 rows, so the row area scrolls rather than growing the page.
@@ -53,8 +51,6 @@ type H = HtmlBuilder<Message>
 const NAME = "w-0 flex-1 min-w-52 max-w-90"
 
 export type SparkContext = Readonly<{ theme: ThemeColors | null; isChartReady: boolean }>
-
-// ZONES
 
 const zoneHead = (
 	h: H,
@@ -275,7 +271,11 @@ const zoneRow = (
 			h.div(
 				[
 					h.Class(
-						cn("w-20", NUMERIC_CELL, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
+						cn(
+							"w-20",
+							NUMERIC_CELL,
+							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
+						),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],
@@ -339,8 +339,6 @@ export const zoneTable = (
 				),
 	)
 }
-
-// WORKERS
 
 const workerMeta = (h: H, row: WorkerListRow) => [
 	row.nameInOtherAccounts ? "name shared with another account" : "",
@@ -483,8 +481,6 @@ export const workerTable = (
 			: Arr.map(options.rows, (row) => workerRow(h, row, options.accounts)),
 	)
 
-// QUEUES
-
 const QUEUE_ROW = hstackClass({
 	gap: "4",
 	className: stripClass("hoverRow"),
@@ -515,7 +511,6 @@ const queueHead = (
 		sort: { onSort: Message.ClickedQueueSort({ key }), isActive: sort.key === key, dir: sort.dir },
 	})
 
-/** Queue backlog and consumer gauges, one row per queue. */
 export const queueTable = (
 	h: H,
 	options: Readonly<{ queues: ReadonlyArray<QueueRow>; sort: Sort<QueueSortKey>; isWaiting: boolean }>,

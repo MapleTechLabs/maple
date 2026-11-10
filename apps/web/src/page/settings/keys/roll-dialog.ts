@@ -3,7 +3,7 @@ import { V2ApiKey } from "@maple/domain/http/v2"
 import { Effect, Result, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import { button } from "@maple/views/ui/button"
@@ -12,8 +12,6 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { secretReveal } from "./secret-reveal"
 import { typography } from "@maple/views/ui/typography"
-
-// `RollApiKeyDialog`.
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
@@ -59,11 +57,7 @@ const RollApiKey = Command.define("RollApiKey", {
 			const client = yield* MapleApiV2Client
 			const rolled = yield* client.apiKeys.roll({ params: { id } })
 			return rolled.secret
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedRoll({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedRoll({ result }))),
 })
 
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
@@ -71,7 +65,11 @@ const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
-const reset = (model: Model): Model => ({ ...init(model.dialog.id), apiKey: model.apiKey, dialog: model.dialog })
+const reset = (model: Model): Model => ({
+	...init(model.dialog.id),
+	apiKey: model.apiKey,
+	dialog: model.dialog,
+})
 
 export const open = (model: Model, apiKey: V2ApiKey): Return =>
 	liftDialog({ ...reset(model), apiKey }, Dialog.open(model.dialog))
@@ -84,7 +82,8 @@ export const update = (model: Model, message: Message): Return =>
 			const step = Dialog.update(model.dialog, child)
 			return liftDialog(step.outMessage?._tag === "Closed" ? reset(model) : model, step)
 		},
-		ClickedCancel: () => (model.isRolling ? { model } : liftDialog(reset(model), Dialog.close(model.dialog))),
+		ClickedCancel: () =>
+			model.isRolling ? { model } : liftDialog(reset(model), Dialog.close(model.dialog)),
 		ClickedRoll: () =>
 			model.isRolling || model.apiKey === null
 				? { model }
@@ -105,7 +104,9 @@ export const update = (model: Model, message: Message): Return =>
 			const step = CopyButton.update(model.secretCopy, child)
 			return {
 				model: { ...model, secretCopy: step.model },
-				commands: Command.mapMessages(step.commands, (inner) => Message.GotSecretCopyMessage({ message: inner })),
+				commands: Command.mapMessages(step.commands, (inner) =>
+					Message.GotSecretCopyMessage({ message: inner }),
+				),
 			}
 		},
 		ToggledSecretVisible: () => ({ model: { ...model, isSecretVisible: !model.isSecretVisible } }),
@@ -128,19 +129,29 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								DialogView.dialogDescription(h, "dialog", model.dialog.id, [
 									"A new secret will be issued for",
 									" ",
-									typography(h, { tone: "foreground", weight: "medium" }, [model.apiKey?.name ?? ""]),
+									typography(h, { tone: "foreground", weight: "medium" }, [
+										model.apiKey?.name ?? "",
+									]),
 									" and the current key will be revoked immediately. Any integrations using the old key will stop working until you update them with the new one.",
 								]),
 							]),
 							DialogView.dialogFooter(h, "dialog", [
 								button(
 									h,
-									{ variant: "outline", isDisabled: model.isRolling, attributes: [h.OnClick(Message.ClickedCancel())] },
+									{
+										variant: "outline",
+										isDisabled: model.isRolling,
+										attributes: [h.OnClick(Message.ClickedCancel())],
+									},
 									["Cancel"],
 								),
 								button(
 									h,
-									{ variant: "destructive", isLoading: model.isRolling, attributes: [h.OnClick(Message.ClickedRoll())] },
+									{
+										variant: "destructive",
+										isLoading: model.isRolling,
+										attributes: [h.OnClick(Message.ClickedRoll())],
+									},
 									["Roll key"],
 								),
 							]),
@@ -166,7 +177,11 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ slotId: strin
 								}),
 							]),
 							DialogView.dialogFooter(h, "dialog", [
-								button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, ["Done"]),
+								button(
+									h,
+									{ variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] },
+									["Done"],
+								),
 							]),
 						],
 		},

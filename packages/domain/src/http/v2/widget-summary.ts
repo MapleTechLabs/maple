@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ErrorPersistenceError, IssueSeverity } from "../errors"
-import { OrgId, ServiceName } from "../../primitives"
+import { OrgId, ServiceName } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"

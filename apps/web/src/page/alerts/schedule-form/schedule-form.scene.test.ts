@@ -14,7 +14,7 @@ import {
 	schedulePublicId,
 	scheduleUuid,
 } from "../shared/oncall-test-fixtures"
-import { ORG } from "../shared/test-rows"
+import { ORG } from "../../kit/alert-test-rows"
 import { formFromSchedule, localInputMs, localInputOf, payloadOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"

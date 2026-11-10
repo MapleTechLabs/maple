@@ -19,7 +19,7 @@ import {
 	populatedChains,
 } from "../page/alerts/shared/escalation-test-fixtures"
 import { memberId, oncallMembers, populatedSchedules } from "../page/alerts/shared/oncall-test-fixtures"
-import { ORG, ruleId, ruleRow } from "../page/alerts/shared/test-rows"
+import { ORG, ruleId, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"

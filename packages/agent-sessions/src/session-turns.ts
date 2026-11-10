@@ -187,8 +187,8 @@ interface TurnAnchor {
  * 1. `gen_ai.conversation.id` — the only turn key the convention has, and the
  *    one eve stamps with its turn id. One id, one turn. `findAnchors` requires
  *    more than one distinct id, and ignores vendors that derive the session id
- *    from it. The ids may INTERLEAVE in time: Maple's investigation fan-out
- *    stamps one per hypothesis lane and launches the lanes together.
+ *    from it. The ids may INTERLEAVE in time: a planner/lanes fan-out
+ *    stamps one per lane and launches the lanes together.
  * 2. Agent invocations with no agent above them — a session with no usable
  *    conversation id still opens each turn by invoking the agent.
  * 3. One turn per trace — the floor. Wrong for a trace holding several turns,
@@ -588,9 +588,9 @@ const MAX_LABEL_LENGTH = 80
  * made for; the ones before it are the chat history. Message capture is opt-in
  * and off by default, so returning `undefined` is the ordinary case, not a
  * failure.
+ *
+ * Exported so a loader that trims histories keeps exactly the message this reads.
  */
-/** The newest user message with readable text in a captured history — exported
- *  so a loader that trims histories keeps exactly the message this reads. */
 export function lastUserMessageText(value: unknown): string | undefined {
 	if (!Arr.isArray(value)) return undefined
 	for (let i = value.length - 1; i >= 0; i--) {

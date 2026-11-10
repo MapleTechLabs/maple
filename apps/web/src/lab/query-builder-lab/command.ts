@@ -1,10 +1,11 @@
+import { reloadSpin } from "@maple/views/data/timing"
 import { createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow, TimeWindow } from "../../data/time-range"
 import { AutocompleteLookup, autocompleteLookup } from "../../page/kit/autocomplete-lookups"
 import { MapleAuthApi, readSessionToken } from "../../platform/auth-api"
@@ -41,34 +42,29 @@ export const ResolveWindow = Command.define("ResolveQueryBuilderLabWindow", {
 		),
 })
 
-/** One `AutocompleteValuesProvider` lookup over the page's window. */
+/** One autocomplete values lookup over the page's window. */
 export const FetchAutocomplete = Command.define("FetchQueryBuilderLabAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
+			settleTo((result) => Message.CompletedFetchAutocomplete({ key, lookup, result })),
 		),
 })
 
-/** `listMetricsResultAtom({ data: { limit: 300 } })`. */
+/** Up to 300 metrics, for the metric select. */
 export const FetchMetrics = Command.define("FetchQueryBuilderLabMetrics", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 300 } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (row) => ({
-						metricName: row.metricName,
-						metricType: row.metricType,
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (row) => ({
+					metricName: row.metricName,
+					metricType: row.metricType,
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
 })
 
@@ -85,25 +81,15 @@ export const FetchTimeseries = Command.define("FetchQueryBuilderLabTimeseries", 
 				formulas: Arr.map(input.formulas, (formula) => ({ ...formula })),
 			},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					points: toRunPoints(response.data),
-					warnings: debugWarnings(response.diagnostics),
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTimeseries({ key, result })),
+			Effect.map((response) => ({
+				points: toRunPoints(response.data),
+				warnings: debugWarnings(response.diagnostics),
+			})),
+			settleTo((result) => Message.CompletedFetchTimeseries({ key, result })),
 		),
 })
 
-/** `PageRefreshProvider`'s Reload spin. */
-export const CompleteReloadSpin = Command.define("CompleteQueryBuilderLabReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteQueryBuilderLabReloadSpin", Message.CompletedReloadSpin)
 
 /** `createQueryDraft` draws a random id, so it runs here. */
 export const CreateQuery = Command.define("CreateQueryBuilderLabQuery", {
@@ -119,7 +105,7 @@ export const CreateFormula = Command.define("CreateQueryBuilderLabFormula", {
 		Effect.sync(() => Message.CreatedFormula({ formula: createFormulaDraft(index, [...queryNames]) })),
 })
 
-/** `cloneQuery`'s fresh UUID. */
+/** A fresh UUID for a cloned query. */
 export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 	args: { queryId: Schema.String },
 	messages: [Message.CreatedCloneId],
@@ -129,7 +115,7 @@ export const CreateCloneId = Command.define("CreateQueryBuilderLabCloneId", {
 		),
 })
 
-/** `setLastRunAt(new Date().toLocaleTimeString())`. */
+/** The time of the last run, in the browser's locale. */
 export const StampRun = Command.define("StampQueryBuilderLabRun", {
 	messages: [Message.StampedRun],
 	execute: Effect.map(Clock.currentTimeMillis, (nowMs) =>

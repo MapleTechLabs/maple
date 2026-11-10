@@ -16,7 +16,7 @@ import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { alertStatusBadge, severityBadge } from "../shared/badges"
-import { alertsHref, createHref, ruleHref } from "../shared/links"
+import { alertsHref, createHref, ruleHref } from "../../kit/alert-links"
 import { RULE_CHART_TOKENS } from "../shared/rule-chart"
 import { DEFAULT_PRESET, ruleIncidentsOf, ruleOf } from "./derive"
 import { Message } from "./message"
@@ -28,12 +28,10 @@ import { hstack } from "@maple/views/ui/stack"
 import { Option, Array as Arr } from "effect"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
-import * as Policy from "@maple/domain/policy"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import * as SilenceDialogView from "../silence-dialog/view"
-
-// The rule detail page through `ResultPage` and `DetailHeader`.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -92,8 +90,6 @@ const ruleSilence = (
 	)
 }
 
-/** `DetailHeader` (kind eyebrow, title, meta row) with the time controls and Edit rule. */
-
 const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) => {
 	const openIncidents = Arr.filter(ruleIncidentsOf(model), (i) => i.status === "open")
 	const isFiring = openIncidents.length > 0
@@ -148,9 +144,7 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 						},
 					}),
 			}),
-			...(Policy.has(model.grants, "alerts:manage")
-				? [silenceButton(h, Message.ClickedSilence())]
-				: []),
+			...(canManageAlerts(model) ? [silenceButton(h, Message.ClickedSilence())] : []),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",
@@ -166,7 +160,7 @@ const tabStrip = (h: H, model: Model): Html => {
 		"Rule sections",
 		Arr.map(TABS, (tab) => ({
 			key: tab,
-			// `search={(prev) => ({ ...prev, tab })}`: the time range rides along.
+			// The time range rides along.
 			href: ruleHref(model.ruleId, { ...model.search, tab }),
 			label: tab === "overview" ? "Overview" : "History",
 			isCurrent: tab === active,

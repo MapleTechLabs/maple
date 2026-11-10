@@ -19,8 +19,6 @@ const base: ProductEventsPathsOpts = {
 	windowSeconds: 86_400,
 }
 
-// productEventsPathsQuery
-//
 // Per person: the sorted events, cut at the anchor, bounded by the window,
 // compacted and truncated to `depth` hops; then one row per hop with the top
 // `branches` nodes per column named and the rest folded into `$other`.

@@ -69,5 +69,4 @@ export const RuleCard = Schema.Literals(["watch", "condition", "notify", "name"]
 export type RuleCard = typeof RuleCard.Type
 
 /** The warning tier's destinations, or the critical tier's. */
-export const Tier = Schema.Literals(["warning", "critical"])
-export type Tier = typeof Tier.Type
+export { AlertSeverity as Tier } from "@maple/domain/http"

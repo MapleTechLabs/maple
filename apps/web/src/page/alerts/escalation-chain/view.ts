@@ -32,7 +32,7 @@ import { managersOnlyPage } from "../../kit/form-section"
 import { type PickedChip, pickChips } from "../../kit/pick-chips"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { CHAIN_NOT_FOUND_CODE, chainSummary, routingTabHref } from "../shared/escalation-chains"
-import { ruleHref } from "../shared/links"
+import { ruleHref } from "../../kit/alert-links"
 import { memberName, memberOf } from "../shared/org-members"
 import { providerLogo } from "../shared/providers"
 import {
@@ -50,7 +50,8 @@ import {
 	waitError,
 } from "./form"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
 import {
 	backHref,
 	DELETE_DIALOG_ID,
@@ -113,9 +114,7 @@ const stateOf = (value: string, isInvalid: boolean): FieldState => ({
 })
 
 /** Nothing can be typed: a save is in flight, or the viewer may only read the chain. */
-const isLocked = (model: Model): boolean => model.isSaving || !canManage(model)
-
-// STEP CARDS
+const isLocked = (model: Model): boolean => model.isSaving || !canManageAlerts(model)
 
 /** A destination's own mark (Slack, PagerDuty, email); a bell once the destination is gone. */
 const destinationMedia = (h: H, model: Model, id: AlertDestinationId): Html =>
@@ -336,11 +335,11 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 					addLabel: "Add destination, person or schedule",
 					addAriaLabel: `Add destination, person or schedule to step ${index + 1}`,
 					isDisabled: model.isSaving,
-					isReadOnly: !canManage(model),
+					isReadOnly: !canManageAlerts(model),
 					emptyText: "nobody",
 				}),
 			]),
-			...(canManage(model)
+			...(canManageAlerts(model)
 				? [
 						rowActionsMenu(h, {
 							slotId: actionsMenuId,
@@ -383,7 +382,7 @@ const connector = (h: H, model: Model, index: number): Html => {
 	return chainConnector(h, {
 		attributes: [h.Key(`connector-${index}`)],
 		insert:
-			canManage(model) && !model.isSaving && canAddStep(model.form)
+			canManageAlerts(model) && !model.isSaving && canAddStep(model.form)
 				? {
 						id: insertButtonId(index),
 						label:
@@ -453,7 +452,7 @@ const chainColumn = (h: H, model: Model): Html =>
 		connector(h, model, model.form.steps.length),
 		endCard(h, model),
 		...errorText(h, shown(model, stepsError(model.form.steps))),
-		...(canManage(model) && !canAddStep(model.form)
+		...(canManageAlerts(model) && !canAddStep(model.form)
 			? [
 					typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-2" }, [
 						`A chain has at most ${MAX_ESCALATION_STEPS} steps`,
@@ -461,8 +460,6 @@ const chainColumn = (h: H, model: Model): Html =>
 				]
 			: []),
 	])
-
-// ASIDE
 
 const destinationName =
 	(model: Model) =>
@@ -596,7 +593,7 @@ const usedBy = (h: H, model: Model): ReadonlyArray<Html> =>
 const meta = (h: H, model: Model): ReadonlyArray<Html> => {
 	const rows = [
 		...usedBy(h, model),
-		...(model.editingId !== null && canManage(model)
+		...(model.editingId !== null && canManageAlerts(model)
 			? [
 					button(
 						h,
@@ -663,10 +660,8 @@ const leaveDialog = (h: H, model: Model): Html =>
 		onConfirm: Message.ClickedDiscard(),
 	})
 
-// PAGE
-
 const actions = (h: H, model: Model): Html =>
-	canManage(model)
+	canManageAlerts(model)
 		? hstack(h, { gap: "2" }, [
 				button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, [
 					"Cancel",
@@ -678,7 +673,7 @@ const actions = (h: H, model: Model): Html =>
 		: linkButton(h, { variant: "outline", href: backHref() }, ["Back to routing"])
 
 const notices = (h: H, model: Model): ReadonlyArray<Html> => [
-	...(canManage(model)
+	...(canManageAlerts(model)
 		? []
 		: [
 				alert(h, { variant: "info", size: "sm" }, [
@@ -728,7 +723,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (model.isBadId) return dashboardPage(h, header, [notFound(h)])
 	if (!model.isSessionLoaded) return loading
 	// Nothing to read on a new chain: a viewer who cannot create one is told who can.
-	if (!isEdit && !canManage(model))
+	if (!isEdit && !canManageAlerts(model))
 		return managersOnlyPage(h, {
 			header,
 			title: "Only org admins and engineers can create escalation chains",

@@ -41,7 +41,6 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// `ServiceDependenciesTab` + `DependencyTable` + `DependencyTypeBadge` (components/services/).
 // TODO(sampled-tooltip): an estimated rate's "Estimated ×N" tooltip is not ported (trigger only).
 
 type H = HtmlBuilder<Message>
@@ -66,7 +65,7 @@ const typeBadge = (h: H, kind: DependencyKind): Html => {
 	)
 }
 
-/** `SampledValue`: "~" when estimated; an estimate carries its tooltip trigger. */
+/** "~" when estimated; an estimate carries its tooltip trigger. */
 const sampledRate = (h: H, row: DependencyRow): Html =>
 	h.span(
 		[h.Class(cn(row.hasSampling && "cursor-help", "tabular-nums font-mono text-xs text-foreground"))],

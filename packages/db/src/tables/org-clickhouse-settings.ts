@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 export const OrgClickHouseSettings = PG.table("org_clickhouse_settings", {
 	columns: {
@@ -32,4 +32,3 @@ export const OrgClickHouseSettings = PG.table("org_clickhouse_settings", {
 })
 
 export type OrgClickHouseSettingsRow = PG.SelectRowOf<typeof OrgClickHouseSettings>
-export type OrgClickHouseSettingsInsert = PG.InsertRowOf<typeof OrgClickHouseSettings>

@@ -19,7 +19,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { NOW, ORG, hubAt, ruleRow } from "../shared/test-rows"
+import { hubAt, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { silenceSuggestionsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"

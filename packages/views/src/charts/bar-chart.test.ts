@@ -1,4 +1,4 @@
-import { MAX_BAR_SERIES, OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
+import { MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, test } from "vitest"
 import { bucketBarSeries } from "./bar-chart"

@@ -20,8 +20,6 @@ import { tokenStep } from "./view-token"
 import { trail } from "./view-trail"
 import { hstack } from "@maple/views/ui/stack"
 
-// `NewSourcePage`.
-
 type H = HtmlBuilder<Message>
 
 const titleOf = (model: Model): string =>

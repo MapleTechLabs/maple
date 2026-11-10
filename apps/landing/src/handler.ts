@@ -1,7 +1,6 @@
 import { API_ORIGIN } from "./lib/agent-resources"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-/** The Workers Assets binding, as this handler needs it. */
 export interface AssetsBinding {
 	readonly fetch: (request: Request) => Promise<Response>
 }
@@ -48,9 +47,9 @@ export const isApiPath = (pathname: string): boolean => API_PATH.test(pathname)
 
 /**
  * Mirrors `v2RouteNotFoundBody` from `@maple/domain/http/v2` (see
- * `worker.test.ts`, which asserts the two agree). Hand-written here because the
+ * `handler.test.ts`, which asserts the two agree). Hand-written here because the
  * domain module drags Effect Schema into a worker whose entire job is header
- * negotiation — the API worker documents what that costs at startup.
+ * negotiation; the API worker documents what that costs at startup.
  */
 export const apiNotFoundBody = (method: string, pathname: string, origin: string) => ({
 	error: {

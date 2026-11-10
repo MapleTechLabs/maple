@@ -22,13 +22,11 @@ import type { ClickHouseMigration } from "./migrations"
 export interface ApplyStep {
 	/** Stable, unique step name — the Workflow's durable step key + UI label. */
 	readonly name: string
-	/** Executable SQL for this step. */
 	readonly sql: string
 	/** True for backfill chunks (long-running); false for structural DDL. */
 	readonly backfill: boolean
 }
 
-/** Run a query, returning the raw text response. */
 export type ExecFn = (sql: string) => Promise<string>
 
 /** Smallest backfill chunk window. One day comfortably fits the Worker cap. */
@@ -50,7 +48,6 @@ const chunkWindowSeconds = (spanSeconds: number): number => {
 
 const ident = (db: string, name: string): string => `\`${db}\`.\`${name}\``
 
-/** Format unix seconds as a UTC ClickHouse datetime literal. */
 const toChDateTime = (unixSeconds: number): string => {
 	const d = new Date(unixSeconds * 1000)
 	const p = (n: number): string => Str.padStart(2, "0")(String(n))

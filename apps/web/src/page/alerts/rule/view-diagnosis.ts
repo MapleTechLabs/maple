@@ -21,15 +21,13 @@ import { card } from "@maple/views/ui/card"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
-
-// `RuleDiagnosisPanel`: the rule's diagnosis.
 
 type H = HtmlBuilder<Message>
 

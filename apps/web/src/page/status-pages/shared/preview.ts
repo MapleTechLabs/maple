@@ -15,7 +15,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isoMs } from "../../alerts/shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to select it.
@@ -135,7 +135,7 @@ export const simulatePreview = (
 	}
 }
 
-const msOrNull = (value: string | null): number | null => (value === null ? null : isoMs(value))
+const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
 /** Whether visitors see the incident now, by the publisher's own rule. */
 export const isListedIncident = (incident: V2StatusPageIncident, nowMs: number): boolean =>
@@ -156,7 +156,7 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	title: incident.title,
 	impact: incident.impact,
 	status: incident.status,
-	startedAt: isoMs(incident.started_at),
+	startedAt: toEpochMs(incident.started_at),
 	resolvedAt: msOrNull(incident.resolved_at),
 	scheduledStart: msOrNull(incident.scheduled_start),
 	scheduledEnd: msOrNull(incident.scheduled_end),
@@ -166,13 +166,11 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 		id: update.id,
 		status: update.status,
 		body: update.body,
-		at: isoMs(update.created_at),
+		at: toEpochMs(update.created_at),
 		source: update.source,
 		overlayEntryId: null,
 	})).sort((a, b) => b.at - a.at),
 })
-
-// SELECTION
 
 /** What a click in the preview selects. */
 export const PreviewSelection = Schema.Struct({

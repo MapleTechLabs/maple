@@ -6,7 +6,7 @@ import {
 	ListSecurityAuditRunsOutput,
 	ListSecurityFindingsOutput,
 } from "@maple/domain/mcp-outputs"
-import { RoleName } from "@maple/domain/primitives"
+import { RoleName } from "@maple/primitives"
 import type { McpToolResult } from "../types"
 import { type FixtureRule, installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"

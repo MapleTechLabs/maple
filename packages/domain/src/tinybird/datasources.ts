@@ -23,6 +23,12 @@ export const utcDateTime64 = (precision: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) 
 export const TRACE_BUCKET_FN = "toStartOfFiveMinutes"
 export const TRACE_BUCKET_EXPR = `${TRACE_BUCKET_FN}(Timestamp)`
 
+/** How long `traces` and `trace_index` keep a row; trace-id lookups scan no further back. */
+export const TRACES_TTL_DAYS = 30
+
+/** How long `ci_runs` and `ci_jobs` keep a run. */
+export const CI_TTL_DAYS = 365
+
 /**
  * OpenTelemetry logs datasource
  * Matches the official OpenTelemetry Collector Tinybird exporter format
@@ -134,20 +140,9 @@ export type LogsRow = InferRow<typeof logs>
  *   2. W3C TraceState `th:<hex>` threshold sampling
  *   3. Default 1.0 (unsampled)
  *
- * Used in two places:
- *   - As the `SampleRate` column DEFAULT expression on the `traces` datasource
- *     (computes for future inserts that don't supply the field)
- *   - In the `traces` FORWARD_QUERY (backfills existing rows when the column
- *     is added)
- *
- * Both must produce identical values per row, so the expression is hoisted
- * here. If you change one, change the other.
- *
  * The query engine sums this column directly (`sum(SampleRate)`) to compute
  * sampling-aware throughput, so the SQL math here is load-bearing for the
- * dashboard's "Estimated" series. See
- * apps/api/src/services/QueryEngineService.sampling.test.ts for the parity
- * tests that pin down expected weights.
+ * dashboard's "Estimated" series.
  */
 const SAMPLE_RATE_EXPR =
 	"multiIf(" +
@@ -229,9 +224,6 @@ export const traces = defineDatasource("traces", {
 		 * Sampling weight per span. >= 1.0 means "this stored row represents
 		 * SampleRate population spans". Used by `quantilesTDigestWeighted`,
 		 * `sumIf(SampleRate, ...)` etc. for sample-aware aggregations.
-		 *
-		 * Expression hoisted to SAMPLE_RATE_EXPR — same value populated on
-		 * existing rows via FORWARD_QUERY.
 		 */
 		SampleRate: t.float64().defaultExpr(SAMPLE_RATE_EXPR),
 		/**
@@ -300,16 +292,12 @@ export const traces = defineDatasource("traces", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "ServiceName", TRACE_BUCKET_EXPR, "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
 export type TracesRow = InferRow<typeof traces>
 
-/**
- * Service usage aggregation datasource
- * Populated via materialized views, no JSON ingestion
- */
 export const serviceUsage = defineDatasource("service_usage", {
 	tenantColumn: "OrgId",
 	description:
@@ -988,8 +976,8 @@ export type ServiceOverviewMinutelyRow = InferRow<typeof serviceOverviewMinutely
  * Pre-materialized error events for the errors-as-issues triage system.
  * Populated from traces where StatusCode='Error'. Unwraps the first OTel
  * `exception` event (if any) to surface exception.type / message / stacktrace,
- * normalizes the top stack frame, and hashes (OrgId, ServiceName, ExceptionType,
- * TopFrame) with cityHash64 to produce a stable per-issue FingerprintHash.
+ * and hashes the fingerprint inputs (`fingerprint.ts`, `error_events_mv`) with
+ * cityHash64 to produce a stable per-issue FingerprintHash.
  * Sorted by (OrgId, FingerprintHash, Timestamp) so queries grouping by issue
  * and scanning recent activity stay on the sort-key prefix.
  */
@@ -1273,7 +1261,7 @@ export const traceIndex = defineDatasource("trace_index", {
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Bucket)",
 		sortingKey: ["OrgId", "TraceId", "ServiceName", "Bucket"],
-		ttl: "toDate(Bucket) + INTERVAL 30 DAY",
+		ttl: `toDate(Bucket) + INTERVAL ${TRACES_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1282,8 +1270,7 @@ export type TraceIndexRow = InferRow<typeof traceIndex>
 /**
  * Filtered projection of GenAI agent spans — every span the ingest gateway
  * stamped with `maple_ai.vendor.id` — for the Agent Sessions read path
- * (`aiSessionPageQuery`, `aiSessionListQuery`'s index levels, and
- * `aiSessionFacetsQuery`).
+ * (`aiSessionPageQuery`, `aiSessionDetailsQuery` and `aiSessionFacetsQuery`).
  *
  * Why it exists: detecting agent traces by `mapContains(SpanAttributes, …)` on
  * raw `traces` cannot be indexed at this shape. GenAI spans are ~0.01% of rows
@@ -1304,7 +1291,7 @@ export type TraceIndexRow = InferRow<typeof traceIndex>
  * and the page can filter, sort and page on it without the fan-out. What the
  * index cannot carry is the trace's non-agent spans: the row's `spanCount`,
  * its all-span `errorSpanCount` and its true extent still come per-trace off
- * `trace_detail_spans`, over the page's bounds rather than the caller's window.
+ * `traces` (through `trace_index`), over the page's bounds rather than the caller's window.
  *
  * `Model`/`AgentName`/`ToolName` are `''` on the rows that carry no such fact
  * — a chat span has no tool, a tool span no model — and the facets drop the
@@ -1352,7 +1339,7 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		// raw spans: the vendor's version beside its id, and the five disjoint
 		// buckets `Tokens` is the sum of (the gateway's `maple_ai.usage.*`), so
 		// a row renders from one index query instead of a fan-out over
-		// `trace_detail_spans`. '' / 0 on rows materialized before it.
+		// the raw spans. '' / 0 on rows materialized before it.
 		VendorVersion: t.string().lowCardinality(),
 		InputTokens: t.float64(),
 		CacheReadTokens: t.float64(),
@@ -1579,7 +1566,7 @@ export const ciRuns = defineDatasource("ci_runs", {
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${CI_TTL_DAYS} DAY`,
 	}),
 })
 
@@ -1617,15 +1604,12 @@ export const ciJobs = defineDatasource("ci_jobs", {
 	engine: engine.mergeTree({
 		partitionKey: "toYYYYMM(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "toDate(Timestamp) + INTERVAL 365 DAY",
+		ttl: `toDate(Timestamp) + INTERVAL ${CI_TTL_DAYS} DAY`,
 	}),
 })
 
 export type CiJobsRow = InferRow<typeof ciJobs>
 
-/**
- * OpenTelemetry sum/counter metrics datasource
- */
 export const metricsSum = defineDatasource("metrics_sum", {
 	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
@@ -1693,9 +1677,6 @@ export const metricsSum = defineDatasource("metrics_sum", {
 
 export type MetricsSumRow = InferRow<typeof metricsSum>
 
-/**
- * OpenTelemetry gauge metrics datasource
- */
 export const metricsGauge = defineDatasource("metrics_gauge", {
 	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
@@ -1759,9 +1740,6 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 
 export type MetricsGaugeRow = InferRow<typeof metricsGauge>
 
-/**
- * OpenTelemetry histogram metrics datasource
- */
 export const metricsHistogram = defineDatasource("metrics_histogram", {
 	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
@@ -1837,9 +1815,6 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 
 export type MetricsHistogramRow = InferRow<typeof metricsHistogram>
 
-/**
- * OpenTelemetry exponential histogram metrics datasource
- */
 export const metricsExponentialHistogram = defineDatasource("metrics_exponential_histogram", {
 	tenantColumn: "OrgId",
 	description: "This is a table that contains the metrics from the OpenTelemetry Collector.",
@@ -2011,7 +1986,6 @@ export const attributeValuesHourly = defineDatasource("attribute_values_hourly",
 export type AttributeValuesHourlyRow = InferRow<typeof attributeValuesHourly>
 
 /**
- * Alert check history datasource.
  * One row per alert rule evaluation (approximately one per rule per group per minute).
  * Durable audit trail of every check — the underlying signal that incidents are derived from.
  *

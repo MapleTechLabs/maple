@@ -1,6 +1,6 @@
 import * as Orm from "@maple-dev/effect-orm/database"
 import type { MapleDb } from "@maple/db/client"
-import type { OrgId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
+import type { OrgId, StatusPageId, UptimeMonitorId } from "@maple/primitives"
 import { Effect, Array as Arr } from "effect"
 
 // The status-page outbox: a write a visitor could see bumps `status_pages.revision` in its own

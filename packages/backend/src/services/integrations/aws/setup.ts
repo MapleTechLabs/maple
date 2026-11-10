@@ -4,7 +4,7 @@ import {
 	type AwsMetricStream,
 	type AwsSetupPlan,
 } from "@maple/domain/aws"
-import type { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
+import type { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { forPaste } from "../paste-script"
 

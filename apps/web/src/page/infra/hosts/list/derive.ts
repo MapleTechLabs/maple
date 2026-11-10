@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../kit/format"
 import type { HostScope } from "./message"
 import type { HostRow } from "./model"
 import { Array as Arr, String as Str } from "effect"
@@ -21,7 +21,7 @@ export const countHostScopes = (hosts: ReadonlyArray<HostRow>, reference: string
 	return { total: hosts.length, saturated, elevated, stale }
 }
 
-/** `HostList`'s filter: scope, then a case-insensitive name match. */
+/** The list's filter: scope, then a case-insensitive name match. */
 export const filterHosts = (
 	hosts: ReadonlyArray<HostRow>,
 	scope: HostScope | undefined,

@@ -4,7 +4,7 @@ import { expect as expectView, given, Mount, role, scene, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../../contract"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

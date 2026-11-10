@@ -11,7 +11,7 @@
  * still opened, never written: `SecretResealService` rewrites what is left of it.
  */
 import { createHmac } from "node:crypto"
-import { Array as Arr, Effect, Option, Redacted, String as Str } from "effect"
+import { Array as Arr, Effect, Option, Result, String as Str } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, type EncryptedValue } from "./Crypto"
 
 const ENVELOPE_PREFIX = "v2"
@@ -81,61 +81,59 @@ export const DECRYPTION_KEYS_ENV = "MAPLE_INGEST_KEY_DECRYPTION_KEYS"
  * Builds the keyring from the raw settings: one primary key, plus an optional comma-separated
  * list of keys kept only for opening values sealed before a rotation.
  */
+export const secretKeyringFrom = (raw: {
+	readonly primary: string
+	readonly decryptOnly: Option.Option<string>
+}): Result.Result<SecretKeyring, string> => {
+	if (Str.trim(raw.primary).length === 0) return Result.fail(`${PRIMARY_KEY_ENV} is required`)
+	const primary = parseKey(raw.primary)
+	if (Option.isNone(primary)) {
+		return Result.fail(`${PRIMARY_KEY_ENV} must be base64 for exactly 32 bytes`)
+	}
+	const extraRaw = Arr.filter(
+		Arr.map(
+			Str.split(
+				Option.getOrElse(raw.decryptOnly, () => ""),
+				",",
+			),
+			Str.trim,
+		),
+		Str.isNonEmpty,
+	)
+	const extra = Arr.map(extraRaw, parseKey)
+	if (Arr.some(extra, Option.isNone)) {
+		return Result.fail(`${DECRYPTION_KEYS_ENV} must be comma-separated base64 keys of exactly 32 bytes`)
+	}
+	const primaryKey = makeSecretKey(primary.value)
+	const extraKeys = Arr.filter(
+		Arr.dedupeWith(
+			Arr.map(Arr.getSomes(extra), makeSecretKey),
+			(a: SecretKey, b: SecretKey) => a.id === b.id,
+		),
+		(key) => key.id !== primaryKey.id,
+	)
+	return Result.succeed({ primary: primaryKey, keys: [primaryKey, ...extraKeys] })
+}
+
+const keyringOrFail = <E>(
+	keyring: Result.Result<SecretKeyring, string>,
+	onError: (message: string) => E,
+): Effect.Effect<SecretKeyring, E> =>
+	Result.match(keyring, {
+		onSuccess: Effect.succeed,
+		onFailure: (message) => Effect.fail(onError(message)),
+	})
+
 export const parseSecretKeyring = <E>(
 	raw: { readonly primary: string; readonly decryptOnly: Option.Option<string> },
 	onError: (message: string) => E,
-): Effect.Effect<SecretKeyring, E> =>
-	Effect.suspend((): Effect.Effect<SecretKeyring, E> => {
-		if (Str.trim(raw.primary).length === 0) {
-			return Effect.fail(onError(`${PRIMARY_KEY_ENV} is required`))
-		}
-		const primary = parseKey(raw.primary)
-		if (Option.isNone(primary)) {
-			return Effect.fail(onError(`${PRIMARY_KEY_ENV} must be base64 for exactly 32 bytes`))
-		}
-		const extraRaw = Arr.filter(
-			Arr.map(
-				Str.split(
-					Option.getOrElse(raw.decryptOnly, () => ""),
-					",",
-				),
-				Str.trim,
-			),
-			Str.isNonEmpty,
-		)
-		const extra = Arr.map(extraRaw, parseKey)
-		if (Arr.some(extra, Option.isNone)) {
-			return Effect.fail(
-				onError(`${DECRYPTION_KEYS_ENV} must be comma-separated base64 keys of exactly 32 bytes`),
-			)
-		}
-		const primaryKey = makeSecretKey(primary.value)
-		const extraKeys = Arr.filter(
-			Arr.dedupeWith(
-				Arr.map(Arr.getSomes(extra), makeSecretKey),
-				(a: SecretKey, b: SecretKey) => a.id === b.id,
-			),
-			(key) => key.id !== primaryKey.id,
-		)
-		return Effect.succeed({ primary: primaryKey, keys: [primaryKey, ...extraKeys] })
-	})
+): Effect.Effect<SecretKeyring, E> => Effect.suspend(() => keyringOrFail(secretKeyringFrom(raw), onError))
 
-export interface SecretKeyringEnv {
-	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
-	readonly MAPLE_INGEST_KEY_DECRYPTION_KEYS: Option.Option<Redacted.Redacted>
-}
-
+/** The keyring `Env` parsed once at startup; `onError` names a bad key in the caller's terms. */
 export const secretKeyringFromEnv = <E>(
-	env: SecretKeyringEnv,
+	env: { readonly secretKeyring: Result.Result<SecretKeyring, string> },
 	onError: (message: string) => E,
-): Effect.Effect<SecretKeyring, E> =>
-	parseSecretKeyring(
-		{
-			primary: Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			decryptOnly: Option.map(env.MAPLE_INGEST_KEY_DECRYPTION_KEYS, Redacted.value),
-		},
-		onError,
-	)
+): Effect.Effect<SecretKeyring, E> => keyringOrFail(env.secretKeyring, onError)
 
 type Envelope =
 	| { readonly _tag: "legacy" }

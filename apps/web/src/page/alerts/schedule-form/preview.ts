@@ -14,7 +14,7 @@ import {
 } from "../shared/coverage-preview"
 import { memberName, type OrgMember } from "../shared/org-members"
 import { draftCoverage, layerOnCallAt, previewLayerOf, previewRange } from "../shared/schedule-coverage"
-import { isoMs } from "../shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { layerStartMs, type LayerDraft } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -69,9 +69,9 @@ export const engineOverrides = (overrides: ReadonlyArray<V2OnCallOverride>): Rea
 		decodeOverride({
 			id: override.id,
 			userId: override.user_id,
-			startsAt: isoMs(override.starts_at),
-			endsAt: isoMs(override.ends_at),
-			createdAt: isoMs(override.created_at),
+			startsAt: toEpochMs(override.starts_at),
+			endsAt: toEpochMs(override.ends_at),
+			createdAt: toEpochMs(override.created_at),
 		}),
 	)
 

@@ -4,7 +4,7 @@ import * as Shell from "../../shell"
 import { liveQueryStream } from "../../data/live-query"
 import { dashboardsOf } from "../../page/dashboards/kit/store"
 import type { Resources } from "../../platform/resources"
-import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
+import { ViewerFlags, viewerFlags } from "../viewer-flags"
 import { LabShellFlags, labShellFlags } from "../app-shell"
 import { defineLabWithFlags } from "../define"
 import { Message, Model } from "../widget-lab/model"
@@ -17,11 +17,17 @@ const toShell = (message: Shell.Message) => Message.GotShellMessage({ message })
 const subscriptions = Subscription.make<Model, Message, Resources>()((entry) => ({
 	shellViewport: entry(
 		{},
-		{ modelToDependencies: () => ({}), dependenciesToStream: () => Stream.map(Shell.viewportChanges, toShell) },
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => Stream.map(Shell.viewportChanges, toShell),
+		},
 	),
 	shellSidebarShortcut: entry(
 		{},
-		{ modelToDependencies: () => ({}), dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toShell) },
+		{
+			modelToDependencies: () => ({}),
+			dependenciesToStream: () => Stream.map(Shell.sidebarShortcut, toShell),
+		},
 	),
 	// The org's dashboards sync starts with the widgets; the rows are not read here.
 	dashboards: entry(
@@ -46,7 +52,10 @@ const subscriptions = Subscription.make<Model, Message, Resources>()((entry) => 
 export const lab = defineLabWithFlags("Widgets", {
 	Model,
 	Flags: Schema.Struct({ ...ViewerFlags.fields, ...LabShellFlags.fields }),
-	flags: Effect.map(Effect.all([viewerFlags, labShellFlags]), ([viewer, shell]) => ({ ...viewer, ...shell })),
+	flags: Effect.map(Effect.all([viewerFlags, labShellFlags]), ([viewer, shell]) => ({
+		...viewer,
+		...shell,
+	})),
 	init,
 	update,
 	view,

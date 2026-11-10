@@ -1,5 +1,5 @@
 import { Array as Arr, DateTime, Effect, pipe, String as Str, Option } from "effect"
-import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import type { ErrorDetailTracesRow, ErrorsTimeseriesRow, ListLogsRow } from "../ch/pipe-rows"
 import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -44,7 +44,7 @@ export interface ErrorDetailTrace {
 	readonly logs: ReadonlyArray<{ timestamp: string; severityText: string; body: string }>
 }
 
-const errorSpanOf = (t: ErrorDetailTracesOutput): ErrorDetailSpan | undefined => {
+const errorSpanOf = (t: ErrorDetailTracesRow): ErrorDetailSpan | undefined => {
 	if (!t.errorSpanId) return undefined
 	const attributes: Record<string, string> = {}
 	const attr = (key: string, value: string | undefined) => {
@@ -123,7 +123,7 @@ interface SummaryIdentity {
 
 /** Newest sampled occurrence first, then the error_events summary for whatever it lacks. */
 const identityOf = (
-	head: ErrorDetailTracesOutput | undefined,
+	head: ErrorDetailTracesRow | undefined,
 	summary: SummaryIdentity | undefined,
 ): ErrorDetailIdentity | undefined => {
 	if (head === undefined && summary === undefined) return undefined
@@ -228,7 +228,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		"maple.error_detail.anchored": anchoredRange !== undefined,
 	})
 
-	const tracesResult = yield* executor.query<ErrorDetailTracesOutput>(
+	const tracesResult = yield* executor.query<ErrorDetailTracesRow>(
 		"error_detail_traces",
 		{
 			fingerprint_hash: input.fingerprintHash,
@@ -248,7 +248,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		Arr.take(3),
 		Effect.forEach(
 			(t) =>
-				executor.query<ListLogsOutput>(
+				executor.query<ListLogsRow>(
 					"list_logs",
 					{
 						trace_id: t.traceId,
@@ -269,7 +269,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 
 	const timeseries = input.includeTimeseries
 		? yield* executor
-				.query<ErrorsTimeseriesOutput>(
+				.query<ErrorsTimeseriesRow>(
 					"errors_timeseries",
 					{
 						fingerprint_hash: input.fingerprintHash,
@@ -344,7 +344,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 /** Fingerprints that fired inside the sampled traces too, read over just those traces' span. */
 const relatedFingerprints = Effect.fn("Observability.relatedFingerprints")(function* (
 	fingerprintHash: string,
-	traces: ReadonlyArray<ErrorDetailTracesOutput>,
+	traces: ReadonlyArray<ErrorDetailTracesRow>,
 ) {
 	if (traces.length === 0) return []
 	const starts = Arr.filter(

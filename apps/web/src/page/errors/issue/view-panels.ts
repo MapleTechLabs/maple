@@ -1,5 +1,5 @@
 import type { ErrorIssueDocument, ErrorIssuePullRequestDocument } from "@maple/domain/http"
-import { AlertRuleId } from "@maple/domain/primitives"
+import { AlertRuleId } from "@maple/primitives"
 import { Option, Schema, Array as Arr } from "effect"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -19,13 +19,11 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `IssuePullRequestsPanel`, the attach nudge, `LinkedInvestigationPanel`, `IssueIncidentsTable`.
-
 type H = HtmlBuilder<Message>
 
 const IN_FLIGHT_SOFT = "bg-severity-debug-a2 text-severity-debug"
 
-/** `PULL_REQUEST_STATE_TONE`: open is work under way; merged is done. */
+/** Open is work under way; merged is done. */
 const PULL_REQUEST_STATE_TONE = {
 	open: IN_FLIGHT_SOFT,
 	merged: TONE_SOFT.done,
@@ -138,7 +136,6 @@ export const attachNudge = (h: H): Html =>
 		),
 	])
 
-/** `BodySection` over `SectionHeading`: a titled block of the page body. */
 export const bodySection = (
 	h: H,
 	options: Readonly<{ id: string; title: string; count?: string | undefined }>,
@@ -159,7 +156,6 @@ export const bodySection = (
 
 const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
 
-/** `AlertSourceCard`: an alert-backed issue links back to the rule that feeds it. */
 export const alertSourceCard = (h: H, issue: ErrorIssueDocument): Html => {
 	const sourceRef = issue.sourceRef
 	const ruleId = Option.getOrNull(decodeRuleId(sourceRef?.ruleId))

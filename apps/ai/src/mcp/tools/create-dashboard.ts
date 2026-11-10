@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { quoteWhereValue } from "@maple/domain/where-clause"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardTemplateParameterKey,
@@ -37,8 +37,6 @@ const TOOL = "create_dashboard"
 
 const decodePortableDashboard = Schema.decodeUnknownEffect(PortableDashboardDocument)
 const decodeParamKey = Schema.decodeUnknownSync(DashboardTemplateParameterKey)
-
-// Simplified widget specs path — MCP-only.
 
 /** The kinds `simpleSpecToWidget` actually knows how to build. */
 const SIMPLE_SPEC_VISUALIZATIONS = ["chart", "stat", "table", "list"] as const
@@ -325,8 +323,6 @@ const invalid = (message: string, parameter?: string, example?: string) =>
 const SIMPLE_WIDGETS_EXAMPLE =
 	'widgets=\'[{"title":"HTTP Duration","visualization":"chart","source":"metrics","metric":"avg","metric_name":"http.server.duration","metric_type":"histogram"}]\''
 
-// Tool registration
-
 export function registerCreateDashboardTool(server: McpToolRegistrar) {
 	const groupByDoc = (source: keyof typeof VALID_GROUP_BY) =>
 		Arr.join(
@@ -384,7 +380,6 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			validate: P.optionalFlag("Pass false to skip the post-create inspection"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: CreateDashboardOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating a dashboard"],
 		handler: Effect.fn("McpTool.createDashboard")(function* (params) {

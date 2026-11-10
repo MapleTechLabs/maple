@@ -4,8 +4,6 @@ import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 
-// `SetupAuditSection`: the audit report.
-
 export const AuditData = AsyncData.Schema(V2SetupAudit, LoadFailure)
 
 export const Model = Schema.Struct({

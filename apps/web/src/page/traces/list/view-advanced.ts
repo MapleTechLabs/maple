@@ -1,8 +1,5 @@
-import { parseWhereClause } from "../../../lib/traces/advanced-filter-sync"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { parseWhereClause } from "../advanced-filter-sync"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "../../kit/query-builder/where-clause-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "@maple/views/ui/display"
@@ -20,13 +17,11 @@ import type { Model } from "./model"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// The advanced filter dialog around `WhereClauseEditor`.
-
 type H = HtmlBuilder<Message>
 
 const TEXTAREA_CLASS = ADVANCED_TEXTAREA_CLASS
 
-/** The suggestions, a page-level portal (`createPortal(listbox, document.body)`). */
+/** The suggestions, portaled to `<body>`. */
 export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (!isSuggesting(model)) return []
 	const { suggestions } = autocompleteOf(model)
@@ -79,7 +74,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-/** `WhereClauseEditor`: the textarea, its highlight overlay and the suggestions. */
+/** The where editor: the textarea, its highlight overlay and the suggestions. */
 const editor = (h: H, model: Model): Html => {
 	const draft = model.advanced.draft
 	const isHighlighting = draft.length > 0

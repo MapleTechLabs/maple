@@ -26,9 +26,8 @@ import {
 	startsAtMs,
 } from "../shared/silences"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
-
-// The Silences tab: what is silenced now, what is scheduled, and what ended recently.
+import { type Model } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -117,7 +116,7 @@ const silenceRow = (
 							],
 						),
 					]
-				: status !== "ended" && canManage(model)
+				: status !== "ended" && canManageAlerts(model)
 					? [
 							button(
 								h,

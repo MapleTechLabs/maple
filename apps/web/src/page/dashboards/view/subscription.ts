@@ -1,9 +1,9 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
-import { documentStream, orgTagsStream } from "../kit/document-stream"
+import { documentStream, orgTagsStream } from "../../../data/collections/document-stream"
 import { loadTimeout } from "../kit/live-sync"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -17,7 +17,6 @@ type PointerMessage = typeof PointerMessage.Type
 const EDGE_PX = 50
 const EDGE_STEP_PX = 12
 
-/** `nearestScroller`: the first scrolling ancestor, else the document. */
 const nearestScroller = (element: HTMLElement): HTMLElement => {
 	const scrolling = (node: HTMLElement | null): HTMLElement | null => {
 		if (node === null) return null
@@ -34,7 +33,7 @@ const nearestScroller = (element: HTMLElement): HTMLElement => {
 	)
 }
 
-/** `autoScroll`: one step if the pointer is near the scroller's edge; whether it moved. */
+/** One step if the pointer is near the scroller's edge; whether it moved. */
 const autoScroll = (scroller: HTMLElement, clientY: number): boolean => {
 	const isDocument = scroller === document.scrollingElement || scroller === document.documentElement
 	const top = isDocument ? 0 : scroller.getBoundingClientRect().top
@@ -128,7 +127,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					),
 			},
 		),
-		/** `useCollectionLoadFailed`: a live board still loading after the bounded wait has failed. */
+		/** A live board still loading after the bounded wait has failed. */
 		loadWatchdog: entry(
 			{ orgId: Schema.NullOr(Schema.String) },
 			{
@@ -153,7 +152,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 						: orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
 			},
 		),
-		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */
+		/** The window listeners, attached for the life of a pointer gesture. */
 		gesturePointer: entry(
 			{ widgetId: Schema.NullOr(Schema.String) },
 			{
@@ -177,7 +176,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							}),
 			},
 		),
-		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */
+		/** Paused in edit mode and in a preview; paused while hidden or offline. */
 		autoRefresh: entry(
 			{ seconds: Schema.Number },
 			{

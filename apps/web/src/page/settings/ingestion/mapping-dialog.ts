@@ -4,7 +4,7 @@ import { getResourceAttributeKeys, getSpanAttributeKeys } from "@maple/web-data/
 import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -12,8 +12,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 
-// The add / edit dialog of `AttributeMappingsSection`, with `AttributeKeyAutocomplete`'s two key lists (read
-// once, when the dialog first opens).
+// The add / edit dialog of attribute mappings, with its two key lists (read once, when the dialog
+// first opens).
 
 export const KeysData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
 
@@ -79,12 +79,8 @@ const FetchAttributeKeys = Command.define("FetchMappingAttributeKeys", {
 	messages: [Message.CompletedFetchKeys],
 	execute: ({ scope }) =>
 		(scope === "span" ? getSpanAttributeKeys({ data: {} }) : getResourceAttributeKeys({ data: {} })).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data, (row) => row.attributeKey),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchKeys({ scope, result })),
+			Effect.map((response) => Arr.map(response.data, (row) => row.attributeKey)),
+			settleTo((result) => Message.CompletedFetchKeys({ scope, result })),
 		),
 })
 
@@ -104,14 +100,8 @@ const SaveMapping = Command.define("SaveAttributeMapping", {
 			const client = yield* MapleApiV2Client
 			if (editingId === null) yield* client.attributeMappings.create({ payload })
 			else yield* client.attributeMappings.update({ params: { id: editingId }, payload })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedSave({ isCreate: editingId === null, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedSave({ isCreate: editingId === null, result }))),
 })
-
-// DERIVED
 
 export const sourceContextOf = (model: Model): IngestMappingSourceContext =>
 	model.sourceContext.value === "resource" ? "resource" : "span"
@@ -123,8 +113,6 @@ export const isFormValid = (model: Model): boolean =>
 	Str.trim(model.sourceKey.inputValue).length > 0 &&
 	Str.trim(model.targetKey.inputValue).length > 0
 
-// UPDATE
-
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
@@ -135,7 +123,7 @@ const withKey = (current: Combobox.Model, value: string): Combobox.Model => ({
 	inputValue: value,
 })
 
-/** `openAddDialog` / `openEditDialog`: the form filled from the mapping, or empty. */
+/** The form filled from the mapping, or empty. */
 export const open = (model: Model, editing: V2AttributeMapping | null): Return => {
 	const fresh = init(model.dialog.id)
 	const filled: Model = {
@@ -150,7 +138,6 @@ export const open = (model: Model, editing: V2AttributeMapping | null): Return =
 		targetKey: withKey(fresh.targetKey, editing?.target_key ?? ""),
 		operation: { ...fresh.operation, value: editing?.operation ?? "copy" },
 	}
-	// Both key lists are subscribed on mount, as `AttributeKeyAutocomplete` does.
 	const isFirstOpen = AsyncData.isIdle(model.spanKeys)
 	const opened = liftDialog(
 		isFirstOpen

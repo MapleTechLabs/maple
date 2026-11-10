@@ -43,7 +43,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	type ClickHouseExecConfig,
 	decodeSkippedEntries,
@@ -70,7 +70,6 @@ const CONFIG: ClickHouseExecConfig = {
 
 const mockResponse = (body: string, status: number): Response => new Response(body, { status })
 
-/** Build a stub `fetch` that runs `impl` and counts calls. */
 const makeFetch = (impl: () => Promise<Response>) => {
 	const state = { calls: 0 }
 	const fetchImpl = (() => {
@@ -80,7 +79,6 @@ const makeFetch = (impl: () => Promise<Response>) => {
 	return { state, fetchImpl }
 }
 
-/** Run execClickHouse with the stub fetch injected. */
 const run = (sql: string, fetchImpl: typeof globalThis.fetch) =>
 	execClickHouse(CONFIG, sql).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
 
@@ -189,7 +187,6 @@ describe("decodeSkippedEntries", () => {
 
 describe("isRetryableUpstream", () => {
 	it("retries transient gateway/proxy codes and network failures, nothing else", () => {
-		// Transient → retry.
 		expect(isRetryableUpstream(unavailable(null))).toBe(true) // connection reset/refused
 		expect(isRetryableUpstream(unavailable(502))).toBe(true)
 		expect(isRetryableUpstream(unavailable(503))).toBe(true)
@@ -198,7 +195,6 @@ describe("isRetryableUpstream", () => {
 		expect(isRetryableUpstream(unavailable(524))).toBe(true) // Cloudflare edge timeout
 		expect(isRetryableUpstream(unavailable(529))).toBe(true)
 
-		// Not transient → do not retry.
 		expect(isRetryableUpstream(unavailable(408))).toBe(false) // our own timeout
 		expect(isRetryableUpstream(unavailable(500))).toBe(false) // ClickHouse SQL error
 		expect(isRetryableUpstream(unavailable(501))).toBe(false)
@@ -600,11 +596,9 @@ describe("resolveRuntimeConfig caching", () => {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 
-			// Populate the cache.
 			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isSome(before)).toBe(true)
 
-			// Delete through the service — this invalidates the cached entry.
 			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
 
 			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
@@ -613,10 +607,8 @@ describe("resolveRuntimeConfig caching", () => {
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 
-	// --- shared edge-cache tier ---------------------------------------------
-	//
-	// The tier between the memo and Postgres. What makes these tests meaningful
-	// is `invalidateOrgRuntimeConfigMemo`, which drops ONLY the memo — so it
+	// The shared edge-cache tier sits between the memo and Postgres. What makes these
+	// tests meaningful is `invalidateOrgRuntimeConfigMemo`, which drops ONLY the memo, so it
 	// simulates the case the tier exists for: a second, cold isolate resolving
 	// the same org while the shared entry is already warm.
 	//

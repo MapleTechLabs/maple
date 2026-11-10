@@ -23,15 +23,8 @@ import {
 	type ColumnDefs,
 } from "@maple-dev/effect-orm/clickhouse"
 import { table } from "@maple-dev/effect-orm/clickhouse"
-import {
-	MetricsSum,
-	MetricsGauge,
-	MetricsHistogram,
-	MetricCatalog,
-	SpanMetricsCallsHourly,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { resolveMetricTable, metricsSelectExprs, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition } from "../../traces-shared"
@@ -56,8 +49,6 @@ function datapointFilterConditions(
 ): ReadonlyArray<CH.Condition> {
 	return Arr.map(filters ?? [], (af) => buildAttrFilterCondition(af, "Attributes"))
 }
-
-// Shared options & output types
 
 /** Time aggregations the value tables take; `rate`/`increase` go through `metricsTimeseriesRateQuery`. */
 export type MetricsValueAggregation = Exclude<MetricsMetric, "rate" | "increase">
@@ -109,7 +100,7 @@ const metricsTimeseriesColumns = {
 	seriesCount: T.uint64,
 }
 
-type MetricsRow = ColumnAccessor<typeof MetricsSum.columns>
+type MetricsRow = ColumnAccessor<typeof Datasources.metricsSum.columns>
 
 const keysOf = (many: readonly string[] | undefined, one: string | undefined): readonly string[] =>
 	many !== undefined && many.length > 0 ? many : one ? [one] : []
@@ -191,7 +182,8 @@ export function spaceAggregationExpr<Q>(value: CH.Expr<number, Q>, aggregation: 
 }
 
 type MetricsWhereColumns = Pick<
-	ColumnAccessor<typeof MetricsSum.columns> | ColumnAccessor<typeof MetricsHistogram.columns>,
+	| ColumnAccessor<typeof Datasources.metricsSum.columns>
+	| ColumnAccessor<typeof Datasources.metricsHistogram.columns>,
 	"MetricName" | "OrgId" | "TimeUnix" | "ServiceName" | "Attributes" | "ResourceAttributes"
 >
 
@@ -211,8 +203,6 @@ function metricsWhere($: MetricsWhereColumns, opts: MetricsTimeseriesOpts) {
 	]
 }
 
-// Timeseries query: two stages for sum/gauge, bucket merge for histograms
-
 /**
  * Sum and gauge rows reduce in two stages, the model every metrics backend
  * uses: each series is reduced within the bucket (`metric`), then the series of
@@ -228,7 +218,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 
 	if (isHistogram) {
-		const inner = from(tbl as typeof MetricsHistogram)
+		const inner = from(tbl as typeof Datasources.metricsHistogram)
 			.select(($) => ({
 				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 				groupName: metricsGroupNameExpr($, opts),
@@ -242,7 +232,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 	}
 
-	const perSeries = from(tbl as typeof MetricsSum)
+	const perSeries = from(tbl as typeof Datasources.metricsSum)
 		.select(($) => ({
 			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
 			groupName: metricsGroupNameExpr($, opts),
@@ -271,7 +261,7 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 }
 
 function histogramValueExpr(
-	$: ColumnAccessor<typeof MetricsHistogram.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsHistogram.columns>,
 	metric: MetricsValueAggregation,
 ): CH.Expr<number> {
 	switch (metric) {
@@ -395,7 +385,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		param.int("bucketSeconds"),
 	)
 
-	const hourlyQuery = from(SpanMetricsCallsHourly)
+	const hourlyQuery = from(Datasources.spanMetricsCallsHourly)
 		.select(($) => ({
 			Hour: $.Hour,
 			ServiceName: $.ServiceName,
@@ -549,14 +539,14 @@ export function metricsTimeseriesRateQuery(
 	// non-monotonic), so the source table follows `metricType` and IsMonotonic
 	// is not a filter: the reset-aware delta below is what makes it a counter.
 	const isGauge = opts.metricType === "gauge"
-	const tbl = isGauge ? MetricsGauge : MetricsSum
+	const tbl = isGauge ? Datasources.metricsGauge : Datasources.metricsSum
 
 	// One partition per emitting series: datapoint labels plus the resource
 	// (pod, instance, environment). The Maps are folded into `cityHash64`
 	// fingerprints because sorting by raw Maps dominated the query cost.
 	// StartTimeUnix is deliberately NOT in the key: a restart must stay in the
 	// same partition so `metricDeltaExpr` can see it and count the new value.
-	const cteQuery = from(tbl as typeof MetricsSum)
+	const cteQuery = from(tbl as typeof Datasources.metricsSum)
 		.select(($) => {
 			const onePrecedingFrame = CH.windowSpec({
 				partitionBy: [
@@ -661,8 +651,6 @@ export function metricsTimeseriesRateQuery(
 	return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 }
 
-// Sparklines query — batched preview series for the metrics browse grid
-
 export interface MetricsSparklinesOpts {
 	metricType: MetricType
 	/** Matched with `MetricName IN (...)` — one query covers a whole grid page. */
@@ -680,7 +668,7 @@ export interface MetricsSparklinesOutput {
 export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 
-	return from(tbl as typeof MetricsSum)
+	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => {
 			const exprs = metricsSelectExprs($, isHistogram)
 			return {
@@ -701,8 +689,6 @@ export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
 		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }
-
-// Breakdown query
 
 export interface MetricsBreakdownOpts {
 	metricType: MetricType
@@ -742,7 +728,7 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 	const groupKey = opts.groupByAttributeKey
 	const resourceGroupKey = opts.groupByResourceAttributeKey
 
-	return from(tbl as typeof MetricsSum)
+	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => {
 			const exprs = metricsSelectExprs($, isHistogram)
 			return {
@@ -781,8 +767,6 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 		.format("JSON")
 }
 
-// List metrics — reads the hourly `metric_catalog` rollup
-
 export interface ListMetricsOpts {
 	serviceName?: string
 	metricType?: string
@@ -804,7 +788,7 @@ export interface ListMetricsOutput {
 }
 
 export function listMetricsQuery(opts: ListMetricsOpts) {
-	return from(MetricCatalog)
+	return from(Datasources.metricCatalog)
 		.select(($) => ({
 			metricName: $.MetricName,
 			metricType: $.MetricType,
@@ -833,8 +817,6 @@ export function listMetricsQuery(opts: ListMetricsOpts) {
 		.format("JSON")
 }
 
-// Metrics summary — reads the hourly `metric_catalog` rollup
-
 export interface MetricsSummaryOutput {
 	readonly metricType: string
 	readonly metricCount: number
@@ -846,7 +828,7 @@ export interface MetricsSummaryOpts {
 }
 
 export function metricsSummaryQuery(opts?: MetricsSummaryOpts) {
-	return from(MetricCatalog)
+	return from(Datasources.metricCatalog)
 		.select(($) => ({
 			metricType: $.MetricType,
 			metricCount: CH.uniq($.MetricName),

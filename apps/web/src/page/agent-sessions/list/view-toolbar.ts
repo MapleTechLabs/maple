@@ -11,13 +11,11 @@ import type { Model } from "./model"
 import { searchInput } from "@maple/views/ui/search-input"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 
-// The agent sessions toolbar, its search over `SearchInput`.
-
 type H = HtmlBuilder<Message>
 
 const ERRORS_LABEL_ID = "agent-sessions-errors-label"
 
-/** `ToolbarSearch` (debounced 300 ms), toolbar size. */
+/** Debounced 300 ms. */
 const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "agent-sessions-search",
@@ -73,7 +71,8 @@ export const toolbar = (
 									[
 										h.Class("hidden sm:block"),
 										// Only a partial count has more to load.
-										...(options.totalCount !== undefined && options.totalCount > options.sessionCount
+										...(options.totalCount !== undefined &&
+										options.totalCount > options.sessionCount
 											? triggerAttributes(
 													h,
 													"agent-sessions-count",

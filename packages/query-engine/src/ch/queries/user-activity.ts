@@ -9,15 +9,8 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../datetime"
-import {
-	ErrorEvents,
-	ErrorEventsByTime,
-	Logs,
-	Traces,
-	UserActivityHourly,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 
 /** The page's namespace scope: the org-global pin, else the rail's picks. Empty means all. */
@@ -29,9 +22,9 @@ export interface UserScopeOpts extends UserNamespaceScope {
 	readonly userId: string
 }
 
-type ActivityColumns = ColumnAccessor<typeof UserActivityHourly.columns>
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
-type LogColumns = ColumnAccessor<typeof Logs.columns>
+type ActivityColumns = ColumnAccessor<typeof Datasources.userActivityHourly.columns>
+type TraceColumns = ColumnAccessor<typeof Datasources.traces.columns>
+type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
 
 const NEVER = CH.rawCond("1 = 0")
 
@@ -53,8 +46,6 @@ const requestQuantileMs = (index: 1 | 2) =>
 		`if(sum(RequestCount) > 0, arrayElement(quantilesTDigestIfMerge(0.5, 0.95)(RequestDurationQuantiles), ${index}) / 1000000, 0)`,
 		T.float64,
 	)
-
-// A. Slices: per service, the hours a user's requests and logs span
 
 /** `minIf`/`maxIf` over the `Hour` column, typed as the hour (the DSL's take numbers only). */
 const hourIf = (fn: "minIf" | "maxIf", hour: ActivityColumns["Hour"], condition: CH.Condition) =>
@@ -95,7 +86,7 @@ export const userActivitySliceRowSchema = Schema.Struct({
  * row per service, uncapped, so a long window cannot drop a service's older hours.
  */
 export function userActivitySlicesQuery(opts: UserActivitySlicesOpts) {
-	return from(UserActivityHourly)
+	return from(Datasources.userActivityHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			serviceNamespace: $.ServiceNamespace,
@@ -113,8 +104,6 @@ export function userActivitySlicesQuery(opts: UserActivitySlicesOpts) {
 		.orderBy(["serviceName", "asc"])
 		.format("JSON")
 }
-
-// B. One user's totals, and the services they touched
 
 export interface UserActivitySummaryOutput {
 	readonly spanCount: number
@@ -165,7 +154,7 @@ const TOP_ROUTES_SQL = "arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(TopRou
 
 /** Always one row: no GROUP BY, so a user with nothing in the window reads as zeros. */
 export function userActivitySummaryQuery(opts: UserScopeOpts) {
-	return from(UserActivityHourly)
+	return from(Datasources.userActivityHourly)
 		.select(($) => ({
 			spanCount: CH.sum($.SpanCount),
 			errorSpanCount: CH.sum($.ErrorSpanCount),
@@ -223,7 +212,7 @@ export const userActivityServiceRowSchema = Schema.Struct({
 
 /** The services (with namespace) a user's signals reached, busiest first. */
 export function userActivityServicesQuery(opts: UserScopeOpts & { readonly limit?: number }) {
-	return from(UserActivityHourly)
+	return from(Datasources.userActivityHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			serviceNamespace: $.ServiceNamespace,
@@ -239,8 +228,6 @@ export function userActivityServicesQuery(opts: UserScopeOpts & { readonly limit
 		.limit(opts.limit ?? 200)
 		.format("JSON")
 }
-
-// C. Totals for a page of users (the directory's requests and errors columns)
 
 export interface UserActivityTotalsOpts extends UserNamespaceScope {
 	readonly userIds: readonly string[]
@@ -277,7 +264,7 @@ export const userActivityTotalsRowSchema = Schema.Struct({
 })
 
 export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
-	return from(UserActivityHourly)
+	return from(Datasources.userActivityHourly)
 		.select(($) => ({
 			userId: $.UserId,
 			requestCount: CH.sum($.RequestCount),
@@ -305,8 +292,6 @@ export function userActivityTotalsQuery(opts: UserActivityTotalsOpts) {
 		.limit(opts.userIds.length)
 		.format("JSON")
 }
-
-// D. Raw reads, pruned by the slices
 
 export interface UserRawReadOpts extends UserScopeOpts {
 	/** The services `userActivitySlicesQuery` returned; `startTime`/`endTime` span its hours. */
@@ -362,7 +347,7 @@ export interface UserTracesOpts extends UserRawReadOpts {
 
 /** The user's entry-point spans (Server/Consumer or root), newest first. One per request, not per trace. */
 export function userTracesQuery(opts: UserTracesOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -414,7 +399,7 @@ export const userLogRowSchema = Schema.Struct({
 
 /** The user's log lines, newest first. `minSeverity` is an OTel SeverityNumber (13 = WARN). */
 export function userLogsQuery(opts: UserRawReadOpts & { readonly minSeverity?: number }) {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			serviceName: $.ServiceName,
@@ -441,7 +426,7 @@ export function userLogsQuery(opts: UserRawReadOpts & { readonly minSeverity?: n
 		.format("JSON")
 }
 
-// E. Issues: `error_events.UserId` (migration 0057), set on occurrences ingested since
+// Issues read `error_events.UserId` (migration 0057), which only occurrences ingested since carry.
 
 /** Only decimal UInt64 hashes live in the warehouse; alert/integration keys would abort `toUInt64`. */
 const fingerprintHashesCondition = (column: CH.Expr<number>, hashes: readonly string[]) => {
@@ -486,7 +471,10 @@ export interface UserIssueScope {
 	readonly serviceNames?: readonly string[]
 }
 
-const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts: UserIssueScope) => [
+const userErrorRows = (
+	$: ColumnAccessor<typeof Datasources.errorEventsByTime.columns>,
+	opts: UserIssueScope,
+) => [
 	$.OrgId.eq(orgIdParam),
 	$.Timestamp.gte(utcSecondsParam("startTime")),
 	$.Timestamp.lte(utcSecondsParam("endTime")),
@@ -496,7 +484,7 @@ const userErrorRows = ($: ColumnAccessor<typeof ErrorEventsByTime.columns>, opts
 
 /** The issues (by FingerprintHash, as the errors queries key them) one user hit, most hits first. */
 export function userIssuesQuery(opts: UserIssueScope & { readonly limit?: number }) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			serviceName: CH.argMax($.ServiceName, $.Timestamp),
@@ -524,7 +512,7 @@ export const userIssueTotalsRowSchema = Schema.Struct({ hits: CHNumber, errorGro
 
 /** All of the user's error occurrences and distinct fingerprints, uncapped, for the profile totals. */
 export function userIssueTotalsQuery(opts: UserIssueScope) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({ hits: CH.count(), errorGroups: CH.uniqExact($.FingerprintHash) }))
 		.where(($) => userErrorRows($, opts))
 		.format("JSON")
@@ -550,7 +538,7 @@ export const issueAffectedUserRowSchema = Schema.Struct({
 
 /** The users an issue hit most, on `error_events`' (OrgId, FingerprintHash) prefix. */
 export function issueAffectedUsersQuery(opts: IssueAffectedUsersOpts) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			userId: $.UserId,
 			hits: CH.count(),
@@ -583,7 +571,7 @@ export const issueAffectedUserCountRowSchema = Schema.Struct({
 
 /** Distinct users an issue hit, and how many of its hits named a user at all (coverage). */
 export function issueAffectedUserCountQuery(opts: Pick<IssueAffectedUsersOpts, "fingerprintHashes">) {
-	return from(ErrorEvents)
+	return from(Datasources.errorEvents)
 		.select(($) => ({
 			affectedUsers: CH.uniqIf($.UserId, $.UserId.neq("")),
 			hitsWithUser: CH.countIf($.UserId.neq("")),

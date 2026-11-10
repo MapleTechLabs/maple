@@ -39,7 +39,7 @@ const send = (
 	}
 }
 
-/** `finish`: a changed layout is one write of the tiles that moved; the grid keeps drawing it. */
+/** A changed layout is one write of the tiles that moved; the grid keeps drawing it. */
 export const commitLayout = (
 	model: Model,
 	context: PageContext,

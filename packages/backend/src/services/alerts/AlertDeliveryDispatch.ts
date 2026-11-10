@@ -40,10 +40,6 @@ import {
 	type TemplateContext,
 } from "./alert-templating/renderer"
 
-/* -------------------------------------------------------------------------- */
-/*  Alert deep-link helper                                                    */
-/* -------------------------------------------------------------------------- */
-
 /**
  * The alert rule's page: the webhook's `chatUrl` and the template's `links.chat`. A `test`
  * notification's rule id is made up, so it opens the alerts list instead.
@@ -139,10 +135,6 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
 	},
 ]
 
-/* -------------------------------------------------------------------------- */
-/*  Telegram                                                                  */
-/* -------------------------------------------------------------------------- */
-
 /**
  * Telegram's `parse_mode: "HTML"` accepts only a small tag set (`b`, `i`,
  * `code`, `pre`, `a`, `s`, `u`, `tg-spoiler`) and rejects the whole message
@@ -221,10 +213,6 @@ export const buildTelegramTextFromTemplate = (
 		"",
 		telegramFooter(context),
 	])
-
-/* -------------------------------------------------------------------------- */
-/*  Templated notifications                                                   */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The subset of {@link DispatchContext} the templating layer reads. Narrowed so

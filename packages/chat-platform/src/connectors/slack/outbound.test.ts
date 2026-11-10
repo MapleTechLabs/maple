@@ -47,7 +47,6 @@ const stub = (attempts: ReadonlyArray<Attempt>, credentials: string | null = CRE
 
 const target = { workspaceId: "T1", channelId: "C1", threadId: "1700000000.000100" }
 
-/** The JSON body a request carried. */
 const sentBody = (request: HttpClientRequest.HttpClientRequest): Record<string, unknown> => {
 	const body = request.body
 	if (body._tag !== "Uint8Array") throw new Error("the request carried no JSON body")

@@ -1,11 +1,11 @@
-import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteSuggestion } from "./query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
-// `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
+// The where editor's suggestion list and key handling, generic over the owner's Message.
 
 /** The suggestion list, fixed under (or over) the textarea. */
 export const suggestionListbox = <M>(

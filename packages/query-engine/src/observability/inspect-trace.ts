@@ -11,10 +11,11 @@ import {
 	String as Str,
 } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
-import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import type { SpanHierarchyRow, ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor, type WarehouseExecutorApi } from "./WarehouseExecutor"
 import type { InspectTraceOutput, SpanNode, TimeRange } from "./types"
 import { toLogEntry } from "./row-mappers"
+import { parseProjectedAttributes } from "../row-text"
 import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime } from "../datetime"
@@ -36,31 +37,10 @@ const SKIP_ATTR_KEYS = HashSet.fromIterable([
 export const isRedundantTreeAttribute = (key: string): boolean =>
 	HashSet.has(SKIP_ATTR_KEYS, key) || Arr.some(SKIP_ATTR_PREFIXES, (p) => Str.startsWith(p)(key))
 
-const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
-
-const extractKeyAttributes = (raw: string, keepAll: boolean): Effect.Effect<Record<string, string>> =>
-	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
-		Effect.map((parsed) =>
-			pipe(
-				Rec.toEntries(parsed),
-				Arr.filter(([k, v]) => v !== "" && (keepAll || !isRedundantTreeAttribute(k))),
-				Rec.fromEntries,
-			),
-		),
-		Effect.orElseSucceed(() => ({})),
-	)
-
-const parseJsonAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
-	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
-		Effect.map((parsed) =>
-			pipe(
-				Rec.toEntries(parsed),
-				Arr.filter(([, v]) => v !== ""),
-				Rec.fromEntries,
-			),
-		),
-		Effect.orElseSucceed(() => ({})),
-	)
+const treeAttributes = (raw: string | undefined, keepAll: boolean): Record<string, string> => {
+	const parsed = parseProjectedAttributes(raw)
+	return keepAll ? parsed : Rec.filter(parsed, (_, key) => !isRedundantTreeAttribute(key))
+}
 
 type MutableSpanNode = SpanNode & { children: MutableSpanNode[] }
 
@@ -109,12 +89,12 @@ const queryRangeToScan = (range: QueryRange) => ({ startTime: range.start_time, 
 const readTrace = (executor: WarehouseExecutorApi, traceId: string, range: QueryRange) =>
 	Effect.all(
 		[
-			executor.query<SpanHierarchyOutput>(
+			executor.query<SpanHierarchyRow>(
 				"span_hierarchy",
 				{ trace_id: traceId, ...range },
 				{ profile: "list" },
 			),
-			executor.query<ListLogsOutput>(
+			executor.query<ListLogsRow>(
 				"list_logs",
 				{ trace_id: traceId, limit: 50, ...range },
 				{ profile: "list" },
@@ -193,11 +173,8 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	const spans = spansResult.data
 
 	const toSpanNode = Effect.fnUntraced(function* (span: (typeof spans)[number]) {
-		const attributes = yield* extractKeyAttributes(
-			span.spanAttributes ?? "{}",
-			options?.includeAttributes === true,
-		)
-		const resourceAttributes = yield* parseJsonAttributes(span.resourceAttributes ?? "{}")
+		const attributes = treeAttributes(span.spanAttributes, options?.includeAttributes === true)
+		const resourceAttributes = parseProjectedAttributes(span.resourceAttributes)
 		const node: MutableSpanNode = {
 			// oxlint-disable-next-line effecttsgo/schema-sync-in-effect -- read back from the warehouse, which only stores valid span ids
 			spanId: Schema.decodeSync(SpanId)(span.spanId),

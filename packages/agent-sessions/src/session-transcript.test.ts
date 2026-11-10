@@ -1961,9 +1961,9 @@ describe("buildTranscript — parallel turns", () => {
  * spans into its own chapter, and the chapter marker then announces that the
  * chapters ran at once.
  *
- * Shaped like Maple's investigation fan-out — a planner pass, three hypothesis
- * lanes launched together with their own `gen_ai.conversation.id`, a validator
- * pass. Each lane ends on a final chat and an `execute_tool submit_candidate`
+ * Shaped like a planner/lanes/validator fan-out (Maple's investigations once
+ * emitted it): a planner pass, three hypothesis lanes launched together with their
+ * own `gen_ai.conversation.id`, a validator pass. Each lane ends on a final chat and an `execute_tool submit_candidate`
  * long after the last lane anchored: the spans a time-ordered partition used to
  * dump into whichever lane started last, where they rendered at depth 0 under a
  * chapter that never ran them.

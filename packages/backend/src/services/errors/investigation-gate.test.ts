@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorMatch, IncidentTriageVerdict } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/primitives"
 import { Schema } from "effect"
 import {
 	NOISE_CONFIDENCE_FLOOR,

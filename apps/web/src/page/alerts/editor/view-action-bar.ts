@@ -8,7 +8,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { describeRuleCondition, isProtectedDefault, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
@@ -19,14 +19,10 @@ import { RULE_FORM_MAX_WIDTH } from "./view-step"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `RuleActionBar`: the sticky bar with the rule in one
-// sentence, what is still missing, and Cancel / Save.
-
 type H = HtmlBuilder<Message>
 
 const MAX_VISIBLE_ISSUES = 3
 
-/** What the bar reads off the Model. */
 type BarView = Pick<Model, "issuesTooltip" | "isSaving" | "editingRuleId" | "savedForm">
 
 /** The "details" trigger and its tooltip: every issue, one per line. */
@@ -78,8 +74,8 @@ const issueLink = (h: H, issue: string): Html =>
 	)
 
 /**
- * `ValidationSummary`: one state at a time. Nothing to save says so; a valid edit is ready; a
- * blocked one lists what to fix, each item a jump to its field.
+ * One state at a time. Nothing to save says so; a valid edit is ready; a blocked one lists what
+ * to fix, each item a jump to its field.
  */
 const validationSummary = (h: H, model: BarView, issues: ReadonlyArray<string>, isClean: boolean): Html => {
 	if (issues.length > 0) {
@@ -195,6 +191,6 @@ const viewOf = stableSlice((model: Model) =>
 	Struct.pick(model, ["issuesTooltip", "isSaving", "editingRuleId", "savedForm"]),
 )
 
-/** `RuleActionBar`. */
+/** The sticky bar: the rule in one sentence, what is still missing, and Cancel / Save. */
 export const actionBar = (h: H, model: Model, form: RuleForm): Html =>
 	slot(bar, [h, viewOf(model), form, draftTimingOf(model, form)])

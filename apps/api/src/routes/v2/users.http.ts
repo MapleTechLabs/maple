@@ -25,8 +25,13 @@ import {
 	type V2UserIssue,
 	type V2UserProfile,
 } from "@maple/domain/http/v2"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { formatRangeSeconds, MAX_QUERY_RANGE_SECONDS, timeWindowViolation } from "@maple/query-engine/runtime"
+import {
+	formatRangeSeconds,
+	formatWarehouseDateTime,
+	MAX_QUERY_RANGE_SECONDS,
+	parseWarehouseDateTime,
+	timeWindowViolation,
+} from "@maple/query-engine"
 import { Array as Arr, Effect, Record as Rec, Schema, String as Str } from "effect"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"

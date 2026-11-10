@@ -1,15 +1,12 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { WorkloadDetailSummaryResponse } from "@maple/domain/http"
 import { Schema } from "effect"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesWorkloadParams, InfraKubernetesWorkloadSearch } from "../../../../route/search"
-import * as Frame from "../../kit/frame"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import * as Frame from "../../../kit/time-frame"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
-
-// `/infra/kubernetes/workloads/$kind/$workloadName`.
 
 export const WorkloadSummary = WorkloadDetailSummaryResponse.fields.data
 export type WorkloadSummary = WorkloadDetailSummaryResponse["data"]
@@ -26,16 +23,16 @@ export const Model = Schema.Struct({
 	search: InfraKubernetesWorkloadSearch,
 	frame: Frame.Model,
 	metric: WorkloadMetric,
-	/** The "Per-pod breakdown" checkbox (`useState(true)`). */
+	/** The "Per-pod breakdown" checkbox, on at first. */
 	groupByPod: Schema.Boolean,
 	summary: KeyedSchema(WorkloadSummary, LoadFailure),
 	pods: KeyedSchema(PodsPage, LoadFailure),
 	/** Series by `metric:groupByPod`. */
 	series: SeriesSlots,
 	charts: ChartModels,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 
-export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string => `${model.metric}:${model.groupByPod}`
+export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string =>
+	`${model.metric}:${model.groupByPod}`

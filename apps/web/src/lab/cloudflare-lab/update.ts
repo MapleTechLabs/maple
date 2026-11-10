@@ -79,7 +79,7 @@ const followNavigation = (list: List.Model, url: string): List.Model =>
 		},
 	})
 
-/** The list's view tabs drive the lab pivot (`onViewChange`), or the demo page's own view. */
+/** The list's view tabs drive the lab pivot, or the demo page's own view. */
 const listStep = (model: Model, message: List.Message): Return => {
 	const next = ListUpdate.update(model.list, message, LAB_CONTEXT)
 	const out = next.outMessage

@@ -71,7 +71,7 @@ Fix: `maple-onboarding-style` plus the per-language style skill (use the framewo
 
 ## REN: Deprecated / non-conforming attribute keys
 
-<!-- This table mirrors ATTRIBUTE_RENAMES in packages/domain/src/recommendations.ts (the engine
+<!-- This table mirrors the span renames in SEMCONV_RENAMES, packages/domain/src/semconv.ts (the engine
      behind Maple's in-product Recommendation Issues). When the Maple MCP is connected, the
      get_instrumentation_recommendations tool is AUTHORITATIVE: it reconciles against live span
      data. This static table only powers the code-side audit. -->

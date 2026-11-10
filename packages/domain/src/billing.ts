@@ -3,8 +3,8 @@ import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str }
 /**
  * Shared billing gate — the single source of truth for "is this an actively
  * selected paid plan?", used by both the web redirect gate
- * (apps/web/src/lib/billing/plan-gating.ts) and the API customer-cache TTL
- * (apps/api/src/routes/autumn.http.ts) so the two can't drift. Structurally
+ * (apps/web/src/page/kit/billing/plan-gating.ts) and the API customer-cache TTL
+ * (packages/backend/src/services/billing/autumn-client.ts) so the two can't drift. Structurally
  * typed so `autumn-js` stays out of `@maple/domain`; Autumn's `Subscription`
  * shape satisfies it.
  */

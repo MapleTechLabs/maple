@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
-import { ListDataSourcesOutput } from "@maple/domain/mcp-outputs"
 import type { ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import * as P from "../lib/params"
@@ -42,7 +41,6 @@ export function registerListDataSourcesTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			offset: P.offset({ max: 10_000 }),
 		}),
-		output: ListDataSourcesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing data sources", "Checking connected data sources"],
 		handler: Effect.fn("McpTool.listDataSources")(function* ({ offset }) {

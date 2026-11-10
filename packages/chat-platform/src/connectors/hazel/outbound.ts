@@ -37,6 +37,7 @@ import {
 	type ChatTarget,
 	type ChatThreadRequest,
 	type ChatWritePhase,
+	withRateLimitRetry,
 } from "../../outbound"
 import type { ChatBlock, ChatPageBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
@@ -66,9 +67,6 @@ const MAX_MESSAGE_CHARS = MAX_CONTENT_CHARS - 400
  * when its embeds change, and once at the end. So the driver writes as often as a reader can tell.
  */
 const MIN_EDIT_INTERVAL = Duration.millis(250)
-
-/** How many times a 429 is waited out before the turn gives up on the message. */
-const MAX_RATE_LIMIT_ATTEMPTS = 3
 
 /** The longest a 429 may park a turn: a remote number reaching `Effect.sleep` is bounded here. */
 const MAX_RETRY_AFTER = Duration.seconds(10)
@@ -254,25 +252,14 @@ export const hazelOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
 		): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
-			Effect.flatMap(token, (bearer) => {
-				const tryOnce = (
-					count: number,
-				): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
-					attempt(bearer, operation, route, request).pipe(
-						Effect.catchTag("@maple/chat-platform/connectors/hazel/RateLimited", (limited) =>
-							// History is CONTEXT read before the turn starts: waiting out a rate limit
-							// there delays the answer for background the model can do without.
-							count >= MAX_RATE_LIMIT_ATTEMPTS || operation === "history"
-								? Effect.fail(
-										failed(operation, "Hazel kept rate limiting this message", {
-											status: 429,
-										}),
-									)
-								: Effect.andThen(Effect.sleep(limited.wait), tryOnce(count + 1)),
-						),
-					)
-				return tryOnce(1)
-			})
+			Effect.flatMap(token, (bearer) =>
+				withRateLimitRetry(attempt(bearer, operation, route, request), {
+					operation,
+					rateLimited: HazelRateLimited,
+					pause: (limited) => Effect.sleep(limited.wait),
+					gaveUp: (extra) => failed(operation, "Hazel kept rate limiting this message", extra),
+				}),
+			)
 
 		/** The reply's JSON in `schema`, failing the operation (without the body) when it is not. */
 		const read = <A>(

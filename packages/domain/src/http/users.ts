@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema, SchemaGetter } from "effect"
 import { McpClientKind, McpSessionSource } from "./mcp"
-import { ErrorIssueId, ServiceNamespace } from "../primitives"
+import { ErrorIssueId, ServiceNamespace } from "@maple/primitives"
 import { ErrorPersistenceError, WorkflowState } from "./errors"
 import { TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
@@ -175,10 +175,6 @@ export class UsersFacetsResponse extends Schema.Class<UsersFacetsResponse>("User
 	/** Visitors in the window that never carried a user id. */
 	anonymousVisitors: Schema.Number,
 }) {}
-
-// ---------------------------------------------------------------------------
-// /users/:userId
-// ---------------------------------------------------------------------------
 
 export class UserDetailRequest extends Schema.Class<UserDetailRequest>("UserDetailRequest")({
 	...windowFields,

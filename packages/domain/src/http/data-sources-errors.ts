@@ -18,7 +18,6 @@ export class DataSourcesDisabledError extends HttpTaggedError<DataSourcesDisable
 	},
 ) {}
 
-/** No data source with that id in this organization. */
 export class DataSourceNotFoundHttpError extends HttpTaggedError<DataSourceNotFoundHttpError>()(
 	"@maple/http/data-sources/DataSourceNotFoundError",
 	{ message: Schema.String, rawRef: Schema.String },
@@ -33,7 +32,6 @@ export class DataSourceNotFoundHttpError extends HttpTaggedError<DataSourceNotFo
 	},
 ) {}
 
-/** A catalog entry by that name does not exist on the source. */
 export class DataSourceCatalogEntryNotFoundError extends HttpTaggedError<DataSourceCatalogEntryNotFoundError>()(
 	"@maple/http/data-sources/CatalogEntryNotFoundError",
 	{ message: Schema.String },

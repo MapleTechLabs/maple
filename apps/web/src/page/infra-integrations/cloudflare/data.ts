@@ -20,10 +20,8 @@ import {
 import { getReleases } from "@maple/web-data/warehouse/releases"
 import { Effect, Schema, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
-
-// Row schemas and loaders shared by the Cloudflare pages: `@maple/web-data/warehouse/cloudflare-infra`.
 
 export const Status = CloudflareIntegrationStatus
 export type Status = CloudflareIntegrationStatus
@@ -118,50 +116,39 @@ export const TimeseriesInput = Schema.Struct({
 })
 export type TimeseriesInput = typeof TimeseriesInput.Type
 
-/** `retainedInternalQuery("integrations", "cloudflareStatus")`, shared with the sidebar. */
 export const loadStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.cloudflare({ refresh })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
-/** `retainedInternalQuery("integrations", "cloudflareUsage")`. */
 export const loadUsage = Effect.gen(function* () {
 	const client = yield* MapleInternalApiClient
 	return yield* client.integrations.cloudflareUsage()
-}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+}).pipe(settled)
 
 export const loadZones = (data: WindowInput) =>
 	getCloudflareZones({ data }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<ZoneRow> => response.zones,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
+		settled,
 	)
 
 export const loadZoneTimeseries = (data: TimeseriesInput) =>
 	getCloudflareZoneTimeseries({ data }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<ZoneBucket> => response.buckets,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<ZoneBucket> => response.buckets),
+		settled,
 	)
 
 export const loadWorkers = (data: WindowInput) =>
 	getCloudflareWorkers({ data }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<WorkerRow> => response.workers,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<WorkerRow> => response.workers),
+		settled,
 	)
 
 export const loadPlatform = (data: WindowInput) =>
 	getCloudflarePlatformResources({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (response): PlatformResources => response, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response): PlatformResources => response),
+		settled,
 	)
 
 export const WorkerDetail = Schema.Struct({
@@ -194,11 +181,10 @@ export const WorkerDetailInput = Schema.Struct({
 })
 export type WorkerDetailInput = typeof WorkerDetailInput.Type
 
-/** `cloudflareWorkerDetailResultAtom`. */
 export const loadWorkerDetail = (data: WorkerDetailInput) =>
 	getCloudflareWorkerDetail({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (detail): WorkerDetail => detail, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((detail): WorkerDetail => detail),
+		settled,
 	)
 
 /** The parts of a release the Worker page reads. */
@@ -218,21 +204,18 @@ export const ReleasesInput = Schema.Struct({
 })
 export type ReleasesInput = typeof ReleasesInput.Type
 
-/** `getReleasesResultAtom`. */
 export const loadReleases = (input: ReleasesInput) =>
 	getReleases({ data: { ...input, services: [...input.services] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (result): ReadonlyArray<Release> =>
-				Arr.map(result.releases, (release) => ({
-					serviceName: release.serviceName,
-					commitSha: release.commitSha,
-					firstSeen: release.firstSeen,
-					spanCount: release.spanCount,
-					errorCount: release.errorCount,
-				})),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((result): ReadonlyArray<Release> =>
+			Arr.map(result.releases, (release) => ({
+				serviceName: release.serviceName,
+				commitSha: release.commitSha,
+				firstSeen: release.firstSeen,
+				spanCount: release.spanCount,
+				errorCount: release.errorCount,
+			})),
+		),
+		settled,
 	)
 
 /** The zone filters every zone read carries (`CloudflareFilters`, URL-shaped). */
@@ -379,59 +362,46 @@ export const TopTraffic = Schema.Struct({
 })
 export type TopTraffic = typeof TopTraffic.Type
 
-/** `cloudflareZoneDetailResultAtom`. */
 export const loadZoneDetail = (data: ZoneDetailInput) =>
 	getCloudflareZoneDetail({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (detail): ZoneDetail => detail, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((detail): ZoneDetail => detail),
+		settled,
 	)
 
-/** `cloudflareZoneDnsResultAtom`. */
 export const loadZoneDns = (data: ZoneDetailInput) =>
 	getCloudflareZoneDns({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (dns): ZoneDns => dns, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((dns): ZoneDns => dns),
+		settled,
 	)
 
-/** `cloudflareZoneSecurityResultAtom`. */
 export const loadZoneSecurity = (data: ZoneDetailInput) =>
 	getCloudflareZoneSecurity({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (security): ZoneSecurity => security, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((security): ZoneSecurity => security),
+		settled,
 	)
 
-/** `cloudflareZoneFacetsResultAtom`. */
-export const loadZoneFacets = (data: ZoneFacetsInput) =>
-	getCloudflareZoneFacets({ data }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+export const loadZoneFacets = (data: ZoneFacetsInput) => getCloudflareZoneFacets({ data }).pipe(settled)
 
-/** `cloudflareZonesResultAtom` with the zone page's filters. */
 export const loadFilteredZones = (data: ZonesInput) =>
 	getCloudflareZones({ data }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<ZoneRow> => response.zones,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<ZoneRow> => response.zones),
+		settled,
 	)
 
-/** `cloudflareZoneBreakdownResultAtom`. */
 export const loadZoneBreakdown = (data: BreakdownInput) =>
 	getCloudflareZoneBreakdown({ data }).pipe(
-		Effect.mapBoth({
-			onSuccess: (breakdown): ZoneBreakdown => ({
-				totals: breakdown.totals,
-				coverage: breakdown.coverage,
-				coverageStart: breakdown.coverageStart,
-				ignoredFilters: breakdown.ignoredFilters,
-			}),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((breakdown): ZoneBreakdown => ({
+			totals: breakdown.totals,
+			coverage: breakdown.coverage,
+			coverageStart: breakdown.coverageStart,
+			ignoredFilters: breakdown.ignoredFilters,
+		})),
+		settled,
 	)
 
-/** `cloudflareTopTrafficResultAtom`: the live long-tail lookup. */
+/** The live long-tail lookup. */
 export const loadTopTraffic = (data: TopTrafficInput) =>
 	getCloudflareTopTraffic({ data }).pipe(
-		Effect.mapBoth({ onSuccess: (traffic): TopTraffic => traffic, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((traffic): TopTraffic => traffic),
+		settled,
 	)

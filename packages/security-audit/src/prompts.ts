@@ -4,7 +4,7 @@
  */
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import reportSchema from "../skill/report-schema.json" with { type: "json" }
-import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "./schema"
+import type { CoverageUnit, EstimatedSeverity, Finding, Profile, Severity, Verdict } from "./schema"
 import {
 	COMPANION_FILES,
 	COMPANION_REQUIRED_SECTIONS,
@@ -66,8 +66,6 @@ const encodeData = (value: unknown): string =>
 					",\n",
 				)}\n]`
 		: encodeJson(value)
-
-type Verdict = "confirmed" | "needs_validation" | "rejected"
 
 const schemaBranch = (verdict: Verdict): string => {
 	const branch = Option.getOrUndefined(
@@ -188,7 +186,7 @@ const companionCatalog = (): string =>
 
 export interface SynthesisInput {
 	readonly target: string
-	readonly profile: "quick" | "standard" | "deep"
+	readonly profile: Profile
 	readonly scopePaths: ReadonlyArray<string>
 	readonly reconResults: ReadonlyArray<{ readonly agent: string; readonly facts: string }>
 	/** Coverage consequences of prior runs, or a statement that none exist. */

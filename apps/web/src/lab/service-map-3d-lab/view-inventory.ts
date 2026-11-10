@@ -1,6 +1,6 @@
 import { formatErrorRate } from "@maple/ui/lib/format"
-import { health, HEALTH_COLOR } from "../../components/service-map/three/spatial-layout"
-import type { Node3D } from "../../components/service-map/three/types"
+import { health, HEALTH_COLOR } from "../../page/service-map/three/spatial-layout"
+import type { Node3D } from "../../page/service-map/three/types"
 import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
@@ -8,7 +8,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message, type Model } from "./update"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// `ServiceInventory` with nothing selected: the searchable list sorted by error rate.
+// The service inventory with nothing selected: the searchable list sorted by error rate.
 
 export const topology = SERVICE_MAP_3D_TOPOLOGY
 type H = HtmlBuilder<Message>

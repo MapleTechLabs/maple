@@ -31,6 +31,7 @@
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/cache": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"

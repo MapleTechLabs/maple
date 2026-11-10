@@ -53,7 +53,6 @@ export const nextScrapeDelayMs = ({
 	return Math.min(Duration.toMillis(MAX_BACKOFF), Math.max(exponential, retryAfterMs))
 }
 
-/** The log line for a backing-off scrape, one per reason. */
 export const backoffLogMessage = (reason: ScrapeFailureReason): string => {
 	switch (reason) {
 		case "rate_limited":

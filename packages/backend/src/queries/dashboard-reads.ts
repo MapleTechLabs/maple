@@ -7,6 +7,7 @@ import type {
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
 	ServiceOperationsRequest,
+	TenantContext,
 } from "@maple/domain/http"
 import {
 	CH,
@@ -17,7 +18,6 @@ import {
 import { makeDirectRouteCachePolicy, type QueryEngineDirectError } from "@maple/query-engine/runtime"
 import { Queries, type QueryDefinition } from "@maple/query-engine/registry"
 import { Cause, Clock, DateTime, type Duration, Effect, Option, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { partitionWindowAround } from "@maple/backend/queries/query-helpers"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import {

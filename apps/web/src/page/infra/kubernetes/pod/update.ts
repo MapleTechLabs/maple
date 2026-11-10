@@ -1,14 +1,14 @@
-import { bucketSecondsForRange } from "../../../../components/infra/constants"
-import { Command } from "foldkit"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { bucketSecondsForRange } from "../../kit/constants"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
-import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
-import { applySteps, keyed, seriesSteps } from "../../kit/requests"
+import * as Frame from "../../../kit/time-frame"
+import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
+import { applySteps, keyed, seriesSteps } from "../../../kit/keyed-step"
 import { FetchRestarts, FetchSeries, FetchSummary } from "./message"
 import type { PodSeriesInput } from "../pod-data"
 import { Message } from "./message"
@@ -35,7 +35,7 @@ const summaryInputOf = (model: Model, window: { startTime: string; endTime: stri
 })
 
 /** The summary and the selected metric's series; other tabs load when picked. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const summaryInput = summaryInputOf(model, window)
@@ -105,14 +105,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveFrame(model.frame, scopeOf(model, context), toFrame, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -120,10 +113,13 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 	const href = (search: Search) => hrefOf(AppRoute.InfraKubernetesPod({ podName: model.podName, search }))
 	if (href(model.search) === href(route.search)) return { model }
 	const next = { ...model, search: route.search }
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return => requestAll(model, context, "Load")
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	requestAll(model, context, "Load")
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -134,7 +130,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const slot = model.series[metric]
 			return slot === undefined
 				? { model }
-				: { model: { ...model, series: { ...model.series, [metric]: Keyed.accept(slot, key, result) } } }
+				: {
+						model: {
+							...model,
+							series: { ...model.series, [metric]: Keyed.accept(slot, key, result) },
+						},
+					}
 		},
 		ClickedMetric: ({ metric }) =>
 			metric === model.metric ? { model } : requestAll({ ...model, metric }, context, "Load"),
@@ -155,12 +156,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRestarts: ({ key, result }) => ({
 			model: { ...model, restarts: Keyed.accept(model.restarts, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ metric, message: inner }) => {
 			const chart = model.charts[metric] ?? Chart.init()
-			return { model: { ...model, charts: { ...model.charts, [metric]: Chart.update(chart, inner).model } } }
+			return {
+				model: { ...model, charts: { ...model.charts, [metric]: Chart.update(chart, inner).model } },
+			}
 		},
 		GotFrameMessage: ({ message: inner }) =>
 			liftFrame(model, inner, scopeOf(model, context), toFrame, {

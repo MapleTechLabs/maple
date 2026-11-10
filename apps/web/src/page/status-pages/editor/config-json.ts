@@ -26,7 +26,6 @@ export type DraftResult = Result.Result<
 	DraftProblem
 >
 
-// JSON SYNTAX
 // Engines word (and locate) parse errors differently, so a small scanner finds the first one.
 
 const WHITESPACE = /[ \t\n\r]*/y
@@ -118,8 +117,6 @@ const syntaxProblem = (text: string): DraftProblem => {
 	const message = scanned.ok ? "Unexpected text after the document" : scanned.message
 	return { _tag: "Syntax", message, ...locate(text, Math.min(end, text.length)) }
 }
-
-// SCHEMA
 
 const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1()
 

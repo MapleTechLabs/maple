@@ -3,15 +3,14 @@ import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
 import * as AttributesPanel from "../attributes/attributes-panel"
-import { writeClipboardApi } from "../copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "../copy-button"
 import { buildLogJsonPayload } from "./log-row-expanded"
 import { LogRowView } from "./log-row-view"
 import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
 import { CopyLogLink, CopyText, ScrollStreamToIndex, ScrollStreamToTop } from "./virtualize"
 
 export { Message } from "./logs-stream-message"
-
-// MODEL
 
 export const ChipRef = Schema.Struct({ index: Schema.Number, key: Schema.String })
 export type ChipRef = typeof ChipRef.Type
@@ -76,8 +75,6 @@ const syncPanels = (model: Model): Model => {
 	return isSame ? model : modifyFields(model, { panels: () => panels })
 }
 
-// OUT MESSAGE
-
 export const OutMessage = defineMessageUnion({
 	/** A row was clicked or opened from the keyboard. */
 	OpenedLog: { index: Schema.Number },
@@ -93,8 +90,6 @@ export const OutMessage = defineMessageUnion({
 })
 export type OutMessage = typeof OutMessage.Type
 
-// COMMAND
-
 /** Rest-to-reveal, so sweeping the cursor along a row of chips opens nothing. */
 export const CHIP_OPEN_DELAY = Duration.millis(300)
 /** Grace period for crossing the gap between a chip and its card. */
@@ -107,26 +102,20 @@ export const WaitChipDelay = Command.define("WaitChipDelay", {
 		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation }))),
 })
 
-const COPY_TIMEOUT = Duration.millis(2000)
-
 export const WriteLogJson = Command.define("WriteLogJson", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
 	execute: ({ text, generation }) =>
-		writeClipboardApi(text).pipe(
-			Effect.as(Message.SucceededCopyJson({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
+		Effect.map(writeClipboard(text), (isOk) =>
+			isOk ? Message.SucceededCopyJson({ generation }) : Message.FailedCopyJson({ generation }),
 		),
 })
 
 export const WaitLogJsonStatus = Command.define("WaitLogJsonStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyJsonStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyJsonStatus({ generation })),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -401,8 +390,6 @@ const copyLink = (model: Model, logHref: Option.Option<string>): UpdateReturn =>
 		onSome: (href) => ({ model, commands: [CopyLogLink({ href })] }),
 	})
 
-// PARENT ENTRY POINTS
-
 /** The same logs, derived again (a pinned column or the search changed). */
 export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn => ({
 	model: modifyFields(model, { rows: () => rows }),
@@ -425,8 +412,6 @@ export const jumpToLatest = (model: Model): UpdateReturn =>
 		commands: [ScrollStreamToTop({ streamId: model.id })],
 	})
 
-// SUBSCRIPTION
-
 const isTyping = (target: EventTarget | null) =>
 	target instanceof HTMLElement &&
 	(target.isContentEditable || target.closest("input, textarea, select, [contenteditable='true']") !== null)
@@ -448,7 +433,7 @@ const KEYS = new Map<string, NavigationKey>([
 	["Enter", "Open"],
 ])
 
-/** `useListNavigation` (j/k/↑/↓, Enter, Escape) plus the stream's →/← expand hotkeys. */
+/** List navigation (j/k/↑/↓, Enter, Escape) plus the stream's →/← expand hotkeys. */
 export const navigationKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
 	target: () => document,
 	type: "keydown",

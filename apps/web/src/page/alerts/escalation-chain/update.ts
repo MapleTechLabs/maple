@@ -39,7 +39,8 @@ import {
 	targetOfKey,
 } from "./form"
 import { Message, type MenuKind } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { acceptGrants, canManageAlerts } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 export type ChainRoute = Extract<
@@ -120,15 +121,13 @@ const refetch = (model: Model, context: PageContext): Return => {
 	})
 }
 
-// LEAVING
-
 /** The form holds edits a save has not sent. */
 export const isDirty = (model: Pick<Model, "form" | "baseline">): boolean =>
 	!isSameChain(model.form, model.baseline)
 
 /** Leaving with unsaved edits asks first; a save or delete in flight is on its way out already. */
 export const isBlockingNavigation = (model: Model): boolean =>
-	!model.isSaving && !model.isDeleting && canManage(model) && isDirty(model)
+	!model.isSaving && !model.isDeleting && canManageAlerts(model) && isDirty(model)
 
 const navigate = (model: Model, url: string): Return => ({
 	model,
@@ -160,10 +159,8 @@ export const askToLeave = (model: Model, url: string): Return => {
 const leave = (model: Model, url: string): Return =>
 	isBlockingNavigation(model) ? askToLeave(model, url) : navigate(model, url)
 
-// STEP EDITS
-
 /** A form edit is dropped while a save is in flight, and for a viewer who may not change chains. */
-const canEdit = (model: Model): boolean => !model.isSaving && canManage(model)
+const canEdit = (model: Model): boolean => !model.isSaving && canManageAlerts(model)
 
 const withForm = (model: Model, edit: (form: Form) => Form): Return =>
 	canEdit(model) ? { model: { ...model, form: edit(model.form) } } : { model }
@@ -332,8 +329,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: (schedules) => ({ model: { ...model, schedules, isSchedulesFailed: false } }),
 				onFailure: () => ({ model: { ...model, isSchedulesFailed: true } }),
 			}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		ChangedName: ({ value }) => withForm(model, (form) => ({ ...form, name: value })),
 		ChangedDescription: ({ value }) => withForm(model, (form) => ({ ...form, description: value })),
 		ChangedRepeatCount: ({ value }) => withForm(model, (form) => ({ ...form, repeatCount: value })),
@@ -359,11 +357,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotDeleteDialogMessage: ({ message: child }) =>
 			model.isDeleting ? { model } : liftDelete(model, Dialog.update(model.deleteDialog, child)),
 		ClickedDelete: () =>
-			model.editingId === null || !canManage(model)
+			model.editingId === null || !canManageAlerts(model)
 				? { model }
 				: liftDelete({ ...model, deleteError: null }, Dialog.open(model.deleteDialog)),
 		ClickedConfirmDelete: () =>
-			model.editingId === null || model.isDeleting || !canManage(model)
+			model.editingId === null || model.isDeleting || !canManageAlerts(model)
 				? { model }
 				: {
 						model: { ...model, isDeleting: true, deleteError: null },

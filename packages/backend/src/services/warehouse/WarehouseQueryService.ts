@@ -1,7 +1,7 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
 import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
-import { WarehouseConfigError, WarehouseUpstreamError } from "@maple/domain/http"
+import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
 import {
 	BackendDialect,
 	makeWarehouseExecutor,
@@ -24,7 +24,6 @@ import {
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "@maple/backend/platform/Env"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 
@@ -42,7 +41,6 @@ import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/Ti
 // ClickHouse code/type, and a `reason` saying whether the database answered at
 // all. Response limits keep their own identity so they never enter the retry loop.
 
-// Re-export the executor types so existing import sites stay stable.
 export type { WarehouseQueryServiceApi, SqlQueryOptions }
 
 // `rowBytes` is the native client's per-row ceiling (16 MiB unless a caller
@@ -144,8 +142,8 @@ const createClickHouseSqlClient = (
 					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
 					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
 					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-					// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
-					// must never be reached — fail loudly instead of silently 500'ing.
+					// All ingest goes to Tinybird's Events API (the `ingest` route in
+					// `resolveRoute`), so this must never be reached: fail loudly instead of silently 500'ing.
 					Effect.fail(
 						new WarehouseDriverError({
 							reason: "config",
@@ -343,7 +341,11 @@ const createClient = (
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
 	config.kind === "tinybird" ? createTinybirdSqlClient(config) : createClickHouseSqlClient(config)
 
-let sqlClientFactory: typeof createClient = createClient
+/** Builds the SQL client for a resolved route. Tests and evals provide a fake driver here. */
+export class WarehouseSqlClientFactory extends Context.Reference<typeof createClient>(
+	"@maple/backend/services/warehouse/WarehouseSqlClientFactory",
+	{ defaultValue: () => createClient },
+) {}
 
 export class WarehouseQueryService extends Context.Service<WarehouseQueryService, WarehouseQueryServiceApi>()(
 	"@maple/backend/lib/WarehouseQueryService",
@@ -356,6 +358,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 			const orgTokens = yield* TinybirdOrgTokenService
+			const sqlClientFactory = yield* WarehouseSqlClientFactory
 
 			// The managed (env-level) READ upstream: the Tinybird CH-gateway or vanilla
 			// ClickHouse when CLICKHOUSE_URL is set, otherwise the managed Tinybird SDK.
@@ -598,12 +601,6 @@ export const provideWarehouseExecutorFromTenant = (tenant: TenantContext) =>
 	)
 
 export const __testables = {
-	setClientFactory: (factory: typeof createClient) => {
-		sqlClientFactory = factory
-	},
-	reset: () => {
-		sqlClientFactory = createClient
-	},
 	createClickHouseSqlClient,
 	createTinybirdSqlClient,
 	clickHouseSessionSettings,

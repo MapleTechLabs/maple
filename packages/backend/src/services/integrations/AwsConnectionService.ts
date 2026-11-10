@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { leaseClaimable } from "./lease"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
 	AWS_MODULE_SPECS,
@@ -29,21 +30,23 @@ import {
 	type AwsModule,
 	type OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
+} from "@maple/primitives"
+import { Cause, Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { awsStreamSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import {
 	createIntegrationSource,
 	deleteSourcesOf,
 	integrationSourceName,
 	type PollOutcome,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
@@ -249,7 +252,7 @@ interface CheckResult {
 }
 
 /** What one check means for the row and its source. */
-export const interpretCheck = (
+const interpretCheck = (
 	row: AwsConnectionRow,
 	result:
 		| {
@@ -345,11 +348,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 			const keyring = yield* secretKeyringFromEnv(env, persistence)
 			// The ingest gateway hashes a delivery's access key with this and looks the row up by it.
-			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-				persistence,
-			)
-			const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+			const lookupHmacKey = yield* ingestKeyLookupHmacKey(env, persistence)
+			const ingestBase = ingestBaseUrl(env)
 
 			/** A new stream secret as the four columns that hold it. */
 			const mintStreamSecret = (ref: { readonly orgId: OrgId; readonly id: AwsConnectionId }) =>
@@ -575,7 +575,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						? null
 						: {
 								...row.metricStream,
-								endpoint: `${ingestBaseUrl}/v1/firehose/aws/${row.id}`,
+								endpoint: `${ingestBase}/v1/firehose/aws/${row.id}`,
 								accessKey: yield* streamAccessKey(row),
 							}
 				return yield* renderAwsSetup(row.id, row.accountId, plan, stream)
@@ -660,7 +660,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							.select(($) => ({ id: $.id, lastCheckedAt: $.lastCheckedAt }))
 							.where(($) => [
 								PG.or($.lastCheckedAt.isNull(), $.lastCheckedAt.lt(now - CHECK_INTERVAL_MS)),
-								PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+								leaseClaimable($.checkLeaseUntil, now),
 								PG.or(
 									$.s.pausedAt.isNull(),
 									PG.and($.s.pausedUntil.isNotNull(), $.s.pausedUntil.lte(now)),
@@ -688,7 +688,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 												$.id,
 												Arr.map(due, (row) => row.id),
 											),
-											PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+											leaseClaimable($.checkLeaseUntil, now),
 										])
 										.returning(),
 								),

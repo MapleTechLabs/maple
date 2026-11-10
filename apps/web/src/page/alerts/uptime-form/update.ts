@@ -1,13 +1,13 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { AlertDestinationId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { pickedDestination } from "../../kit/destination-picker"
-import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
+import { monitorHref, monitorIdFromUrl } from "../../kit/uptime/commands"
 import {
 	FetchExistingMonitor,
 	FetchFormServices,
@@ -16,12 +16,24 @@ import {
 	SaveDraft,
 	TestDraft,
 } from "./command"
-import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
-import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
+import {
+	defaultName,
+	formFromMonitor,
+	formIssues,
+	wireConfig,
+	wirePayload,
+} from "../../kit/uptime/form-derive"
+import {
+	ASSERTION_OPS,
+	type AssertionDraft,
+	emptyForm,
+	type Form,
+	MonitorKind,
+	type TextField,
+} from "../../kit/uptime/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeNew" }>
@@ -160,8 +172,9 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }

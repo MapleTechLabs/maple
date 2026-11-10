@@ -1,4 +1,4 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Duration, Option, Schema, Stream } from "effect"
 import { Dom, Subscription } from "foldkit"
@@ -37,7 +37,7 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 			dependenciesToStream: ({ isOpen }) => (isOpen ? Stream.empty : advancedFilterKey),
 		},
 	),
-	/** `useListNavigation` and the →/← expand hotkeys, while the stream has rows. */
+	/** List navigation and the →/← expand hotkeys, while the stream has rows. */
 	navigationKeys: entry(
 		{ hasRows: Schema.Boolean },
 		{
@@ -51,8 +51,8 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 		},
 	),
 	/**
-	 * `PageRefreshProvider`'s `useIntervalRefresh`: the `?refresh=` cadence, held while the reader
-	 * inspects, paused while hidden or offline and off for a custom range (a fixed window has nothing new to tail).
+	 * The `?refresh=` cadence, held while the reader inspects, paused while hidden or offline and off
+	 * for a custom range (a fixed window has nothing new to tail).
 	 */
 	autoRefresh: entry(
 		{ intervalSeconds: Schema.Number },

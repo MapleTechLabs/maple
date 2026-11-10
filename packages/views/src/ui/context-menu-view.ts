@@ -8,7 +8,7 @@ import {
 	contextMenuSubTriggerIconStyles,
 	contextMenuSubTriggerStyles,
 	contextMenuTriggerStyles,
-} from "@maple/ui/styles/ui/context-menu"
+} from "./context-menu.styles"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
@@ -52,7 +52,7 @@ export type Entry =
 
 export type ViewInputs = Readonly<{
 	entries: ReadonlyArray<Entry>
-	/** Classes for the trigger area (`ContextMenuTrigger className`). */
+	/** Classes for the trigger area. */
 	triggerClassName?: string
 	triggerContent: ReadonlyArray<Html | string>
 	/** Trigger content with handlers of its own (a row link): built by the parent, scoped to it. */

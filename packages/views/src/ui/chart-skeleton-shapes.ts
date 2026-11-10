@@ -1,8 +1,8 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`
-// (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), markup and numbers as there.
+// The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`,
+// markup and numbers as there.
 
 const STROKE = "var(--muted-foreground)"
 const HEATMAP_COLS = 8

@@ -226,7 +226,7 @@ const openCard = <M>(
 }
 
 /**
- * `SentenceCard`: one clause of a sentence-card form, on its rail. Open, it shows its lead and
+ * One clause of a sentence-card form, on its rail. Open, it shows its lead and
  * controls (`body`, called only then); closed (complete and not being edited), a one-line summary
  * that opens it on click. A missing card is always open; Done or Escape closes a complete one.
  */
@@ -252,7 +252,7 @@ export const sentenceCard = <M>(
 	)
 }
 
-/** `SentenceChain`: the sentence cards top to bottom, their rails joined into one line. */
+/** The sentence cards top to bottom, their rails joined into one line. */
 export const sentenceChain = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ label: string; className?: string }>,
@@ -260,7 +260,7 @@ export const sentenceChain = <M>(
 ): Html => h.ol([h.AriaLabel(options.label), h.Class(cn("flex flex-col", options.className))], cards)
 
 /**
- * `SentenceRow`: one line of a sentence form, its words and inline controls wrapping together
+ * One line of a sentence form, its words and inline controls wrapping together
  * ("Fire after [3] breaches [in a row]."). Controls sit at 32px, 36px on a phone.
  */
 export const sentenceRow = <M>(
@@ -277,15 +277,15 @@ export const sentenceRow = <M>(
 		children,
 	)
 
-/** `SentencePhrase`: words and their control kept together, so a wrap never strands the control. */
+/** Words and their control kept together, so a wrap never strands the control. */
 export const sentencePhrase = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html | string>): Html =>
 	h.span([h.Class("inline-flex min-w-0 items-center gap-2")], children)
 
-/** `SentenceClause`: a sentence row with the notes that belong to it (a hint, what it was) under it. */
+/** A sentence row with the notes that belong to it (a hint, what it was) under it. */
 export const sentenceClause = <M>(h: HtmlBuilder<M>, row: Html, notes: ReadonlyArray<Html> = []): Html =>
 	notes.length === 0 ? row : h.div([h.Class("flex min-w-0 flex-col gap-1.5")], [row, ...notes])
 
-/** `SentenceSection`: a titled group of sentence rows inside a card, ruled off from the one above. */
+/** A titled group of sentence rows inside a card, ruled off from the one above. */
 export const sentenceSection = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title: string; className?: string }>,

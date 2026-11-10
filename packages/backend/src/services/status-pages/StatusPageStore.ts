@@ -1,4 +1,4 @@
-import { StatusPageId } from "@maple/domain/primitives"
+import { StatusPageId } from "@maple/primitives"
 import {
 	decodeStatusPageOverlayEntryJson,
 	StatusPageKeys,

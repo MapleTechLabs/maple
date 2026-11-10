@@ -31,9 +31,6 @@ import { ReadEditorClock } from "./command"
 import { planMetrics } from "./plan"
 import { editForm, type Return, switchKindStep } from "./steps"
 
-// The child Submodels the form is built from: selects, chip pickers, the query panel, the chart,
-// and the preview's own lookback picker.
-
 const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 const decodeReducer = Schema.decodeUnknownOption(QueryEngineAlertReducer)
 const decodeSignal = Schema.decodeUnknownOption(AlertSignalType)

@@ -6,19 +6,19 @@ import { widgetTimeRangeLabel } from "./time-range-label"
 
 type Widget = TileWidget
 
-/** `displayTitle`: the stored title (or the fallback) with dashboard variables filled in. */
+/** The stored title (or the fallback) with dashboard variables filled in. */
 export const titleOf = <M>(ctx: TileContext<M>, title: string | undefined, fallback: string): string => {
 	const text = title !== undefined && title !== "" ? title : fallback
 	return ctx.variables === undefined ? text : interpolateDisplayText(text, ctx.variables)
 }
 
-/** `useWidgetTimeRangeOverride`: a tile pinned to its own window labels it in the header. */
+/** A tile pinned to its own window labels it in the header. */
 export const timeRangeLabelOf = <M>(ctx: TileContext<M>, widget: Widget): string | undefined =>
 	widget.timeRange === undefined
 		? undefined
 		: widgetTimeRangeLabel(widget.timeRange, ctx.timeZone, ctx.nowMs ?? 0)
 
-/** The `WidgetFrame` props every tile passes: title, mode, menu, data state and the error CTAs. */
+/** The frame options every tile passes: title, mode, menu, data state and the error CTAs. */
 export const frame = <M>(
 	ctx: TileContext<M>,
 	widget: Widget,

@@ -17,10 +17,11 @@ import {
 	PrReviewSeverity,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { PushSourcePlatform } from "@maple/domain/primitives"
+import { PushSourcePlatform } from "@maple/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { VARIABLE_PARAM_PREFIX } from "../lib/dashboard-controls/search-params"
-import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../lib/errors/hub-params"
+import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
+import { VARIABLE_PARAM_PREFIX } from "./dashboard-controls"
+import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
 /**
  * A string as a link wrote it. The search format reads an unquoted `404`, `true` or `null` as
@@ -53,7 +54,6 @@ export const OptionalStringArrayParam = Schema.optional(
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
 const NumberParam = Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam]))
 
-// Time range
 export const TimeRangeSearchFields = {
 	startTime: StringParam,
 	endTime: StringParam,
@@ -78,10 +78,6 @@ export const dashboardViewParamsSchema = {
 	to: Schema.optional(Schema.Unknown),
 }
 
-// Agent tool analytics and search
-const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
-const TOOL_PERCENTILES = ["p50", "p90", "p95"] as const
-
 const ToolAnalyticsSearchFields = {
 	metric: Schema.optional(Schema.Literals(TOOL_METRICS)),
 	percentile: Schema.optional(Schema.Literals(TOOL_PERCENTILES)),
@@ -96,7 +92,6 @@ const ToolAnalyticsSearchFields = {
 	variant: StringParam,
 }
 
-// apps/web/src/components/analytics/filters.ts
 const analyticsFilterSearchFields = {
 	host: StringParam,
 	pagePath: StringParam,
@@ -114,7 +109,6 @@ const analyticsFilterSearchFields = {
 	eventName: StringParam,
 }
 
-// Code review
 const CodeReviewSearchFields = {
 	repo: Schema.optional(VcsRepositoryId),
 	author: StringParam,
@@ -169,7 +163,7 @@ const CodeReviewCiSearchFields = {
 	result: Schema.optional(CiRunResult),
 }
 
-// apps/web/src/components/infra/cloudflare/filters.ts + list-model.ts
+// The Cloudflare pages' search: `page/infra-integrations/cloudflare/filters.ts` reads the filters.
 const cloudflareFilterSearchFields = {
 	hosts: OptionalStringArrayParam,
 	cacheStatuses: OptionalStringArrayParam,
@@ -182,12 +176,11 @@ const cloudflareFilterSearchFields = {
 	deviceTypes: OptionalStringArrayParam,
 }
 
-const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
-const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
-const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
-const ZONE_TABS = ["traffic", "dns", "security"] as const
+export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
+export const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
+export const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
+export const ZONE_TABS = ["traffic", "dns", "security"] as const
 
-// PlanetScale filters
 const planetscaleFilterSearchFields = {
 	branches: OptionalStringArrayParam,
 	branchStates: OptionalStringArrayParam,
@@ -233,8 +226,8 @@ export const legacySettingsTabValues = [
 	"developer",
 ] as const
 
-const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
-const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
+export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
+export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
 const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
@@ -245,8 +238,6 @@ export const ErrorIssuesSearch = Schema.Struct({
 	workflowState: Schema.optional(Schema.Unknown),
 	severity: Schema.optional(Schema.Unknown),
 })
-
-// Top-level routes
 
 export const HomeSearch = Schema.Struct({
 	environment: StringParam,
@@ -310,7 +301,6 @@ export const ServiceMapSearch = Schema.Struct({
 export const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	checkout: Schema.optional(Schema.Literal("complete")),
-	// audit-log-filters.ts `AuditLogSearchFields`
 	range: StringParam,
 	since: StringParam,
 	until: StringParam,
@@ -340,8 +330,6 @@ export const SignUpSearch = Schema.Struct({
 export const UnsubscribeSearch = Schema.Struct({
 	token: StringParam,
 })
-
-// Detail routes
 
 export const AgentSessionSearch = Schema.Struct({
 	t: StringParam,
@@ -496,8 +484,6 @@ export const TraceSearch = Schema.Struct({
 	t: StringParam,
 	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
-
-// List routes
 
 export const AgentSessionsSearch = Schema.Struct({
 	vendors: OptionalStringArrayParam,
@@ -751,8 +737,6 @@ export const TracesSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Nested detail routes
-
 export const AgentSessionToolSearch = Schema.Struct({
 	...ToolAnalyticsSearchFields,
 	...TimeRangeSearchFields,
@@ -794,8 +778,6 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 export const InfraSupabaseProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
-
-// Nested list routes
 
 /** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
@@ -871,7 +853,6 @@ export const InfraHostsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Redirects to /infra/kubernetes/pods carrying search.
 export const InfraKubernetesSearch = Schema.Struct(TimeRangeSearchFields)
 
 export const InfraPlanetscaleSearch = Schema.Struct({
@@ -886,8 +867,6 @@ export const InfraRailwaySearch = Schema.Struct({
 export const InfraSupabaseSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
-
-// Deeper routes
 
 export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboardViewParamsSchema), [
 	variableSearchRest,
@@ -993,7 +972,6 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	workloadName: Schema.String,
 })
 
-// Security Center
 export const SecurityFindingsSearch = Schema.Struct({
 	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
 	/** A severity, or the unscored leads: the tiles' one filter. */

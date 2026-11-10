@@ -15,7 +15,7 @@ import {
 	anomalyWire,
 	defaultAnomalyRuleRow,
 } from "../shared/anomaly-test-fixtures"
-import { NOW, ORG, ruleId } from "../shared/test-rows"
+import { NOW, ORG, ruleId } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

@@ -34,7 +34,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { planetScaleWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
@@ -50,7 +50,7 @@ import {
 	deleteSourcesOf,
 	createIntegrationSource,
 	integrationSourceName,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 /**
  * First-class PlanetScale integration: one OAuth-backed connection per org.
@@ -63,7 +63,7 @@ import {
  * `managedBy = "planetscale:{connectionId}"` and torn down on disconnect.
  */
 
-export const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
+const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
 
 const PROBE_TIMEOUT = Duration.seconds(10)
 
@@ -150,10 +150,10 @@ export interface PlanetScaleConnectionServiceApi {
 	>
 }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale connection persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale connection persistence failed",
+)
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))

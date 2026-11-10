@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ScrapeAuthType, ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "../../primitives"
+import { ScrapeAuthType, ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "@maple/primitives"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -326,7 +326,6 @@ export const V2ScrapeTargetCheck = Schema.Struct({
 })
 export type V2ScrapeTargetCheck = Schema.Schema.Type<typeof V2ScrapeTargetCheck>
 
-/** Checks query: standard pagination plus an optional time window. */
 export const V2ScrapeTargetChecksQuery = Schema.Struct({
 	...ListQuery.fields,
 	since: Schema.optional(

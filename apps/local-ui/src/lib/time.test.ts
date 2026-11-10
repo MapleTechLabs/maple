@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import {
-	boundsForRange,
-	chartWindow,
-	formatLocalTimestamp,
-	formatUtcTitle,
-	parseClickHouseDateTime,
-	snapToMinute,
-} from "./time"
-import { String as Str } from "effect"
+import { boundsForRange, chartWindow, formatUtcTitle, parseClickHouseDateTime, snapToMinute } from "./time"
 
 describe("boundsForRange", () => {
 	afterEach(() => vi.useRealTimers())
@@ -43,19 +35,8 @@ describe("warehouse timestamps", () => {
 		expect(parseClickHouseDateTime("")).toBeNull()
 	})
 
-	it("renders local wall-clock time with millis, and the date only on other days", () => {
+	it("marks the stored value as UTC for titles", () => {
 		const raw = "2026-07-30 23:06:01.940085000"
-		const local = new Date(Date.parse("2026-07-30T23:06:01.940Z"))
-		const pad = (n: number, w = 2) => Str.padStart(w, "0")(String(n))
-		const clock = `${pad(local.getHours())}:${pad(local.getMinutes())}:${pad(local.getSeconds())}.940`
-
-		expect(formatLocalTimestamp(raw, { nowMs: local.getTime() + 1000 })).toBe(clock)
-		const otherDay = formatLocalTimestamp(raw, { nowMs: local.getTime() + 3 * 24 * 60 * 60 * 1000 })
-		expect(Str.endsWith(` ${clock}`)(otherDay)).toBe(true)
-		expect(otherDay.length).toBeGreaterThan(clock.length + 1)
-		expect(formatLocalTimestamp(raw, { precision: "s", nowMs: local.getTime() })).toBe(
-			Str.slice(0, 8)(clock),
-		)
 		expect(formatUtcTitle(raw)).toBe(`${raw} UTC`)
 	})
 })

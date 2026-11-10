@@ -44,7 +44,11 @@ export const OsvVulnResponse = Schema.Struct({
 					ranges: Schema.optionalKey(
 						Schema.NullOr(
 							Schema.Array(
-								Schema.Struct({ type: Schema.String, events: Schema.Array(OsvEvent) }),
+								// Optional: the runtime catalog's query answers are read with this schema too.
+								Schema.Struct({
+									type: Schema.optionalKey(Schema.String),
+									events: Schema.Array(OsvEvent),
+								}),
 							),
 						),
 					),

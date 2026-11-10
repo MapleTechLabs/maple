@@ -1,37 +1,22 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { Density, readLogsViewPreferences, saveLogsViewPreferences } from "@maple/views/ui/logs/viewer"
 import { AttributeFilter } from "@maple/domain"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { settleTo } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { LogsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { listInput, PAGE_SIZE, toVolumeBuckets, volumeInput } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import type { LogRowSchema, LogsPage } from "./model"
 
-/** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
-export const ResolveWindow = Command.define("ResolveLogsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+/** Snapped on entry, re-resolved against the real clock on Reload. */
+export const ResolveWindow = resolveWindowCommand("ResolveLogsWindow", Message.CompletedResolveWindow)
 
 const ListArgs = {
 	key: Schema.String,
@@ -42,39 +27,30 @@ const ListArgs = {
 
 const page = (logs: ReadonlyArray<LogRowSchema>, cursor: string | null): LogsPage => ({ logs, cursor })
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
-/** `listLogsResultAtom`: the first page. */
 export const FetchFirstPage = Command.define("FetchLogsFirstPage", {
 	args: ListArgs,
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, search, window, pinnedNamespace }) =>
 		listLogs({ data: listInput(search, window, pinnedNamespace) }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => page(response.data, response.meta.cursor),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
+			Effect.map((response) => page(response.data, response.meta.cursor)),
+			settleTo((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
 })
 
-/** `fetchNextPage`: the page after `cursor`, for the first page it was started under. */
+/** The page after `cursor`, for the first page it was started under. */
 export const FetchNextPage = Command.define("FetchLogsNextPage", {
 	args: { ...ListArgs, generation: Schema.Number, cursor: Schema.String },
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, search, window, pinnedNamespace, generation, cursor }) =>
 		listLogs({ data: { ...listInput(search, window, pinnedNamespace), cursor, limit: PAGE_SIZE } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => page(response.data, response.meta.cursor),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchNextPage({ key, generation, result })),
+			Effect.map((response) => page(response.data, response.meta.cursor)),
+			settleTo((result) => Message.CompletedFetchNextPage({ key, generation, result })),
 		),
 })
 
-/** `getLogsFacetsResultAtom`: counts within the attribute-filtered set, so they agree with the list. */
+/** Counts within the attribute-filtered set, so they agree with the list. */
 export const FetchFacets = Command.define("FetchLogsFacets", {
 	args: {
 		key: Schema.String,
@@ -94,40 +70,31 @@ export const FetchFacets = Command.define("FetchLogsFacets", {
 				resourceAttributeFilters,
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
-/** `getCustomChartTimeSeriesResultAtom` for the stacked severity histogram. */
 export const FetchVolume = Command.define("FetchLogsVolume", {
 	args: { ...ListArgs, bucketSeconds: Schema.Number },
 	messages: [Message.CompletedFetchVolume],
 	execute: ({ key, search, window, pinnedNamespace, bucketSeconds }) =>
 		getCustomChartTimeSeries({ data: volumeInput(search, window, bucketSeconds, pinnedNamespace) }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => toVolumeBuckets(response.data),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
+			Effect.map((response) => toVolumeBuckets(response.data)),
+			settleTo((result) => Message.CompletedFetchVolume({ key, result })),
 		),
 })
 
-/** `getLogAttributeKeysResultAtom`: what the Columns picker offers. */
+/** What the Columns picker offers. */
 export const FetchAttributeKeys = Command.define("FetchLogAttributeKeys", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchAttributeKeys],
 	execute: ({ key, window }) =>
 		getLogAttributeKeys({ data: window }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (row) => ({ name: row.attributeKey, count: row.usageCount })),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAttributeKeys({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (row) => ({ name: row.attributeKey, count: row.usageCount })),
+			),
+			settleTo((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),
 })
 
@@ -137,13 +104,9 @@ export const FetchResourceKeys = Command.define("FetchLogsResourceKeys", {
 	messages: [Message.CompletedFetchResourceKeys],
 	execute: ({ key, window }) =>
 		autocompleteLookup("resourceAttributeKeys", window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchResourceKeys({ key, result })),
+			settleTo((result) => Message.CompletedFetchResourceKeys({ key, result })),
 		),
 })
-
-// PREFERENCES
 
 /** The view preferences and the number locale, read on entry. */
 export const ReadPreferences = Command.define("ReadLogsPreferences", {
@@ -160,20 +123,13 @@ export const SavePreferences = Command.define("SaveLogsPreferences", {
 		Effect.as(saveLogsViewPreferences(preferences), Message.CompletedSavePreference()),
 })
 
-/** `PageRefreshProvider` keeps Reload busy this long. */
-export const CompleteReloadSpin = Command.define("CompleteLogsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteLogsReloadSpin", Message.CompletedReloadSpin)
 
-/** `useDebouncedCallback(..., 300)` on the search box. */
 export const WaitSearchDebounce = Command.define("WaitLogsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 /** The filter rail is in the DOM (its facets read as it renders, so no paint wait). */
@@ -182,7 +138,7 @@ export const MountFilterRail = Mount.define("MountLogsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** `useSignalPresence`, sent when the empty state mounts (never with the data). */
+/** Sent when the empty state mounts (never with the data). */
 export const LoadSignalPresence = Command.define("LoadLogsSignalPresence", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],

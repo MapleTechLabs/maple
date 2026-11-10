@@ -1,6 +1,5 @@
 import { Schema, Array as Arr, Record as Rec } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
 
 /** Stable identifiers used across eval prompts + fixtures. */
 export const FIXTURES = {

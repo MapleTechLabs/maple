@@ -2,14 +2,14 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "../../lib/query-builder/where-clause-autocomplete"
+} from "./query-builder/where-clause-autocomplete"
 import type { QueryBuilderDataSource } from "@maple/query-model"
 import { Effect, Option, Schema, Stream, String as Str } from "effect"
 import { Dom } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
 // The where clause autocomplete and its suggestion list, shared by every where editor
-// (see lib/query-builder/where-clause-autocomplete.ts).
+// (see query-builder/where-clause-autocomplete.ts).
 
 /** The textarea's box when the caret last moved: the fixed listbox is anchored to it. */
 export const AnchorRect = Schema.Struct({
@@ -91,7 +91,7 @@ export const caretEvents = (element: Element): Stream.Stream<CaretMessage> => {
 	return Stream.mergeAll(streams, { concurrency: "unbounded" })
 }
 
-/** `onMouseDown={(e) => e.preventDefault()}` on the list: picking a suggestion keeps the focus. */
+/** Mousedown on the list is prevented: picking a suggestion keeps the focus. */
 export const keepFocusEvents = <M>(element: Element): Stream.Stream<M> =>
 	Dom.streamFromEventFilterMap({
 		target: element,
@@ -103,8 +103,8 @@ export const keepFocusEvents = <M>(element: Element): Stream.Stream<M> =>
 	})
 
 /**
- * The open list's re-anchoring (`measure` in `WhereClauseEditor`): the textarea's box again on
- * window resize and on any scroll (capture, so scrolling ancestors count too).
+ * The open list's re-anchoring: the textarea's box again on window resize and on any scroll
+ * (capture, so scrolling ancestors count too).
  */
 const anchorEvents = (textareaId: string): Stream.Stream<CaretMessage> => {
 	const measured = (): Option.Option<CaretMessage> => {
@@ -137,8 +137,8 @@ export const listboxEvents = (element: Element, textareaId: string): Stream.Stre
 	Stream.merge(keepFocusEvents<CaretMessage>(element), anchorEvents(textareaId))
 
 /**
- * `handleApplySuggestion`: the applied text in the textarea and the caret after the insert, before
- * the key's keyup reads the caret back (the value lands in the same task).
+ * The applied text in the textarea and the caret after the insert, before the key's keyup reads
+ * the caret back (the value lands in the same task).
  */
 export const placeCaret = (id: string, value: string, cursor: number) =>
 	Effect.sync(() => {
@@ -156,7 +156,7 @@ export const WhereCaret = Schema.Struct({
 	isDismissed: Schema.Boolean,
 	activeIndex: Schema.Number,
 	anchor: Schema.NullOr(AnchorRect),
-	/** `onActiveAttributeKey` / `onActiveResourceAttributeKey`: the key whose value the caret is in. */
+	/** The key whose value the caret is in. */
 	activeAttributeKey: Schema.NullOr(Schema.String),
 	activeResourceAttributeKey: Schema.NullOr(Schema.String),
 })
@@ -177,7 +177,7 @@ export const isOpenOf = (
 	autocomplete: WhereClauseAutocompleteResult,
 ): boolean => caret.isFocused && !caret.isDismissed && autocomplete.suggestions.length > 0
 
-/** `notifyActiveKeys`: the `attr.*` and `resource.*` keys the caret is in a value of. */
+/** The `attr.*` and `resource.*` keys the caret is in a value of. */
 export const activeKeysAt = (expression: string, cursor: number, dataSource: QueryBuilderDataSource) => {
 	const at = getWhereClauseAutocomplete({ expression, cursor, dataSource })
 	const key = at.context === "value" ? at.key : null
@@ -221,7 +221,7 @@ const LISTBOX_MAX_HEIGHT = 208
 const LISTBOX_GAP = 4
 const LISTBOX_MIN_SPACE_BELOW = 160
 
-/** `computeListboxPosition`: below the textarea, or above when there is more room there. */
+/** Below the textarea, or above when there is more room there. */
 export const listboxStyle = (anchor: AnchorRect): Readonly<Record<string, string>> => {
 	const spaceBelow = anchor.viewportHeight - anchor.bottom - LISTBOX_GAP
 	const spaceAbove = anchor.top - LISTBOX_GAP

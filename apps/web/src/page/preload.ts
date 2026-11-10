@@ -40,9 +40,7 @@ export const keyOfCommand = (command: PageCommand): Option.Option<string> =>
 const without = <A>(record: Readonly<Record<string, A>>, key: string): Record<string, A> =>
 	Rec.fromEntries(Arr.filter(Rec.toEntries(record), ([entryKey]) => entryKey !== key))
 
-// INTENT
-
-/** `enqueuePreload`: one timer per link; a second hover or focus of the same link waits on it. */
+/** One timer per link; a second hover or focus of the same link waits on it. */
 export const intended = (model: Model, href: string): Option.Option<{ model: Model; version: number }> =>
 	model.intents[href] !== undefined
 		? Option.none()
@@ -55,15 +53,13 @@ export const intended = (model: Model, href: string): Option.Option<{ model: Mod
 				version: model.version + 1,
 			})
 
-/** `cancelPreload` on mouse leave or blur. */
+/** Cancels the timer on mouse leave or blur. */
 export const ended = (model: Model, href: string): Model =>
 	model.intents[href] === undefined ? model : { ...model, intents: without(model.intents, href) }
 
 /** The delay elapsed: `Some` when the link is still intended (the timer was not cancelled). */
 export const elapsed = (model: Model, href: string, version: number): Option.Option<Model> =>
 	model.intents[href] === version ? Option.some(ended(model, href)) : Option.none()
-
-// HOLDING
 
 /** The keys a page step's Commands request (S6: `args.key`). */
 export const keysOf = (commands: ReadonlyArray<PageCommand>): ReadonlyArray<string> =>
@@ -126,8 +122,6 @@ export const held = (
 /** The hold elapsed: the preloaded keys the open page does not hold are released. */
 export const expired = (model: Model, keys: ReadonlyArray<string>): ReadonlyArray<string> =>
 	Arr.filter(keys, (key) => !model.heldKeys.includes(key))
-
-// LINK INTENT
 
 export type LinkIntent =
 	| { readonly _tag: "Intended"; readonly href: string; readonly isImmediate: boolean }

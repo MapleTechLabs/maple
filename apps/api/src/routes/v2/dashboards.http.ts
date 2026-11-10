@@ -34,12 +34,12 @@ import type {
 	V2DashboardWidgetDataOutcome,
 } from "@maple/domain/http/v2"
 import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
-import { DashboardId } from "@maple/domain/primitives"
+import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import { dataSourceRawSql } from "@maple/widgets/dashboard"
-import { getTemplateById, listTemplateMetadata } from "@maple/backend/dashboard-templates"
+import { getTemplate, listTemplateMetadata } from "@maple/backend/dashboard-templates"
 import type { TemplateParameterValues } from "@maple/backend/dashboard-templates"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -729,7 +729,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				// them in, and showing the dashboard you would get is the whole point.
 				.handle("previewTemplate", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const template = getTemplateById(params.template_id)
+						const template = getTemplate(params.template_id)
 						if (!template)
 							return yield* new DashboardTemplateNotFoundError({
 								templateId: params.template_id,
@@ -756,7 +756,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				)
 				.handle("instantiateTemplate", ({ params, payload }) =>
 					Effect.gen(function* () {
-						const template = getTemplateById(params.template_id)
+						const template = getTemplate(params.template_id)
 						if (!template)
 							return yield* new DashboardTemplateNotFoundError({
 								templateId: params.template_id,

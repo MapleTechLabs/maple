@@ -77,7 +77,7 @@ export const detailHeader = (
 		]),
 	])
 
-/** `StatCard`: `valueClassName` comes after `danger`, so the latency ramp wins. */
+/** `valueClassName` comes after `danger`, so the latency ramp wins. */
 const statCard = (
 	h: HtmlBuilder<Message>,
 	label: string,

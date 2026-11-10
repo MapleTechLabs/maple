@@ -10,7 +10,7 @@ import {
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetInvestigationOutput } from "@maple/domain/mcp-outputs"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 

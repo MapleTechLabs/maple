@@ -5,7 +5,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { Array as Arr, Result } from "effect"
 import { PageOutMessage } from "../../contract"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import { sentenceCardHeadingId } from "../../kit/sentence-card"
 import { FocusRuleCard, RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { isProtectedDefault, previewIdentityKey, saveIssues } from "./derive"
@@ -15,12 +15,10 @@ import type { Model } from "./model"
 import type { Return } from "./steps"
 import { cardOfIssue, issueFieldId } from "./summary"
 
-// The writes: Dry run and Send test (`runTest`), and Create / Save changes (`handleSave`).
-
 const errorToast = (title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type: "error", title, description })
 
-/** `runTest`: a form that cannot be previewed yet says so instead of asking. */
+/** A form that cannot be previewed yet says so instead of asking. */
 export const runTest = (model: Model, isSending: boolean): Return => {
 	const form = model.form
 	if (form === null || model.isDryRunning || model.isSendingTest) return { model }
@@ -61,7 +59,7 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 	})
 }
 
-/** `handleSave`: the ready form as create (or update) params; success lands on `/alerts`. */
+/** The ready form as create (or update) params; success lands on `/alerts`. */
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }

@@ -2,11 +2,17 @@ import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, DateTime, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
-import { ErrorIssueId, OrgId, UserDetailRequest, UserId, WarehouseSchemaDriftError } from "@maple/domain/http"
+import {
+	ErrorIssueId,
+	OrgId,
+	UserDetailRequest,
+	UserId,
+	WarehouseSchemaDriftError,
+	type TenantContext,
+} from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { affectedUsersResponse } from "@maple/backend/services/errors/ErrorIssueReadModelsService"

@@ -16,7 +16,7 @@ import { Message } from "./message"
 import type { Model, SessionDetail } from "./model"
 import { statTile, statusBadge } from "./view-bits"
 
-// The hero and stat tiles of `SessionDetailView`.
+// The session detail page's hero and stat tiles.
 
 export const SESSION_ID_COPY = "session-id"
 

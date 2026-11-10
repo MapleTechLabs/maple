@@ -1,6 +1,6 @@
 import { Clock, DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -106,7 +106,6 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),
-		output: ListSecurityFindingsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {

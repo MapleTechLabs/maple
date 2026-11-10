@@ -1,14 +1,12 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
-import type { InvestigationSummary, SignalState } from "../../../lib/models/error-signal"
+import type { InvestigationSummary, SignalState } from "./error-signal"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
-import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
-
-// The signal state and investigation chips.
 
 const INVESTIGATION_LABEL = {
 	investigating: "Investigating",

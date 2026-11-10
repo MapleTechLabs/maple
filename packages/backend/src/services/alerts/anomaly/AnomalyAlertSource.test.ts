@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Effect, Layer, Order, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AnomalyAlertSource } from "./AnomalyAlertSource"
 import {
 	DEFAULT_ANOMALY_RULE_FALLBACK_NAME,

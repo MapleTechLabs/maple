@@ -59,7 +59,6 @@ const clientLayer = (autumn: Record<string, string> = { AUTUMN_SECRET_KEY: KEY, 
 const provideFetch = <A, E>(effect: Effect.Effect<A, E>, fetch: typeof globalThis.fetch) =>
 	Effect.provideService(effect, FetchHttpClient.Fetch, fetch)
 
-/** Resolve the service from its layer, then run the call with the stub ambient. */
 const runWithClient = <A, E>(
 	fetch: typeof globalThis.fetch,
 	run: (client: AutumnClientApi) => Effect.Effect<A, E>,

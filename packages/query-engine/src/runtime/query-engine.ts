@@ -8,6 +8,7 @@
 // ("QueryEngineService.*") so existing traces and dashboards keep matching.
 
 import * as CH from "../ch"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import {
 	QueryEngineExecuteResponse,
 	type QueryEngineAlertObservation,
@@ -44,6 +45,7 @@ import {
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
+import { parseProjectedAttributes } from "../row-text"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
 import {
 	alertWindowBucketSeconds,
@@ -67,6 +69,7 @@ import { rawBreakdownSpanVerdict, spanBudgetApplies } from "./breakdown-span-bud
 import {
 	attributeIndexMode,
 	hasWarehouseTable,
+	isMissingWarehouseTable,
 	logBodySearchMode,
 	type WarehouseCapabilities,
 } from "../capabilities"
@@ -86,38 +89,6 @@ import {
 } from "../registry/product-events"
 import { runQueryDefinition } from "./query-definition-runner"
 import { resolveDirectRouteCachePolicy, type DirectRouteCachePolicyInput } from "./cache-policy"
-
-export {
-	makeDirectRouteCachePolicy,
-	makeTimeRangeCachePolicy,
-	resolveDirectRouteCachePolicy,
-	timeRangeCache,
-	type DirectRouteCachePolicy,
-	type DirectRouteCachePolicyInput,
-	type TimeRangeCachePayload,
-} from "./cache-policy"
-
-// Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
-// `computeBucketSeconds` from here; the implementation now lives in the pure
-// `../datetime` module so the web app and the engine share one definition.
-export { alertWindowBucketSeconds, computeBucketSeconds } from "../datetime"
-
-// Same arrangement for the range ceilings: they now live in the pure `../limits`
-// module so the MCP tools, the v2 API, and the web widget layer all bound
-// ranges against one definition instead of their own copies.
-export {
-	MAX_BREAKDOWN_RANGE_SECONDS,
-	MAX_LIST_RANGE_SECONDS,
-	MAX_QUERY_RANGE_SECONDS,
-	MAX_TIMESERIES_POINTS,
-	MAX_TIMESERIES_RANGE_SECONDS,
-	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
-	formatRangeSeconds,
-	maxRangeSecondsForKind,
-	timeWindowViolation,
-	validateRelativeRange,
-} from "../limits"
-export { relativeRangeSeconds, resolveRelativeRange, resolveRelativeRangeToWarehouse } from "../datetime"
 
 /** Minimal tenant surface the lowering needs — only the org scope. */
 export interface QueryTenant {
@@ -245,20 +216,9 @@ export const withTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 		}),
 	)
 
-export const toEpochMs = (value: string): number => new Date(Str.replace(" ", "T")(value) + "Z").getTime()
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
-export const msToTinybirdDateTime = (ms: number): string => {
-	const iso = new Date(ms).toISOString()
-	return `${Str.slice(0, 10)(iso)} ${Str.slice(11, 19)(iso)}`
-}
-
 const CACHE_SNAP_S = 15
-
-// Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
-// the definition is in the driver-free `../group-key` because the query-set merge
-// needs it too and runs in the browser.
-export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 
 /**
  * The time span of the rows already selected for this page. The services lookup
@@ -276,26 +236,6 @@ function pageTimeWindow(
 		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
 		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
-}
-
-/**
- * `traceListQuery` ships its projected root-attribute map as a JSON string
- * (`toJSONString` — Map columns can't survive an `argMin`). Decode defensively:
- * a malformed value degrades to an empty map, never a thrown defect.
- */
-const decodeProjectedAttributes = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-)
-
-function parseProjectedAttributes(raw: unknown): Record<string, string> {
-	if (typeof raw !== "string" || raw.length === 0) return {}
-	const parsed = decodeProjectedAttributes(raw)
-	if (Option.isNone(parsed)) return {}
-	const out: Record<string, string> = {}
-	for (const [key, value] of Rec.toEntries(parsed.value)) {
-		if (typeof value === "string" && value.length > 0) out[key] = value
-	}
-	return out
 }
 
 function servicesForTraceRow(
@@ -499,8 +439,8 @@ const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(func
 	},
 	maxRangeSeconds: number = MAX_QUERY_RANGE_SECONDS,
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
-	const startMs = toEpochMs(request.startTime)
-	const endMs = toEpochMs(request.endTime)
+	const startMs = parseWarehouseDateTime(request.startTime)
+	const endMs = parseWarehouseDateTime(request.endTime)
 
 	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
 		return yield* new QueryEngineValidationError({
@@ -1012,7 +952,10 @@ const wholeRangeCounterLookbackSeconds = (range: {
 	readonly bucketSeconds: number
 }): number =>
 	2 *
-	Math.max(range.bucketSeconds, Math.ceil((toEpochMs(range.endTime) - toEpochMs(range.startTime)) / 1000))
+	Math.max(
+		range.bucketSeconds,
+		Math.ceil((parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime)) / 1000),
+	)
 
 type MetricsTimeseriesSpec = Extract<QuerySpec, { readonly source: "metrics"; readonly kind: "timeseries" }>
 
@@ -1358,36 +1301,6 @@ export interface QueryEngineExecuteOptions {
 }
 
 /**
- * A ClickHouse cluster that has not applied migration 0015 answers any read of
- * `service_overview_minutely` with `UNKNOWN_TABLE`, and the table name is always
- * in the message. Matching the name rather than the error tag keeps this working
- * across every layer the warehouse error is re-wrapped by on its way here.
- */
-const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null) return false
-	const candidate = error as { readonly clickhouseType?: unknown; readonly message?: unknown }
-	if (typeof candidate.message === "string" && /service_overview_minutely/i.test(candidate.message)) {
-		return true
-	}
-	return candidate.clickhouseType === "UNKNOWN_TABLE"
-}
-
-/**
- * The missing-table config error naming the rollup. A timeout or memory error
- * on the rollup read also names it, and must surface rather than retry against
- * the heavier raw table.
- */
-const isMissingTraceFacetsRollup = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null) return false
-	const candidate = error as { readonly _tag?: unknown; readonly message?: unknown }
-	return (
-		candidate._tag === "@maple/http/errors/WarehouseConfigError" &&
-		typeof candidate.message === "string" &&
-		/trace_facets_hourly/i.test(candidate.message)
-	)
-}
-
-/**
  * `trace_facets_hourly` ships in a `requiredForIngest: false` migration (0034),
  * so a BYO cluster may not have it yet; the sidebar then reads `trace_list_mv`.
  * The capability probe skips it up front; this retry covers an unprobed cluster.
@@ -1399,7 +1312,7 @@ const withTraceFacetsFallback = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
 	usesRollup
 		? run(false).pipe(
-				Effect.catchIf(isMissingTraceFacetsRollup, () =>
+				Effect.catchIf(isMissingWarehouseTable(Datasources.traceFacetsHourly), () =>
 					Effect.gen(function* () {
 						yield* Effect.logWarning(
 							"trace_facets_hourly is absent on this cluster; reading trace_list_mv. Apply ClickHouse schema to restore the fast path.",
@@ -1502,7 +1415,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
 					Effect.catchIf(
 						(error) =>
-							options?.overviewTiers !== "hour" && isMissingServiceOverviewMinutely(error),
+							options?.overviewTiers !== "hour" &&
+							isMissingWarehouseTable(Datasources.serviceOverviewMinutely)(error),
 						() =>
 							Effect.gen(function* () {
 								yield* Effect.logWarning(
@@ -2102,7 +2016,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 									...opts,
 									facet,
 									rawOnly:
-										rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+										rawOnly ||
+										!hasWarehouseTable(capabilities, Datasources.traceFacetsHourly),
 								}),
 							baseParams,
 							facet ? `tracesFacets:${facet}` : "tracesFacets",
@@ -2237,7 +2152,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						(capabilities) =>
 							CH.tracesDurationStatsQuery({
 								...opts,
-								rawOnly: rawOnly || !hasWarehouseTable(capabilities, "trace_facets_hourly"),
+								rawOnly:
+									rawOnly ||
+									!hasWarehouseTable(capabilities, Datasources.traceFacetsHourly),
 							}),
 						{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 						"tracesDurationStats",
@@ -2724,8 +2641,8 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 
 	yield* validateEvaluate(request)
 
-	const startMs = toEpochMs(request.startTime)
-	const endMs = toEpochMs(request.endTime)
+	const startMs = parseWarehouseDateTime(request.startTime)
+	const endMs = parseWarehouseDateTime(request.endTime)
 
 	if (request.source.kind === "raw_sql") {
 		// One evaluation window is one bucket; a query using `$__timeGroup` lines

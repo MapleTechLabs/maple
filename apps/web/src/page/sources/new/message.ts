@@ -1,5 +1,5 @@
 import { V2Source, V2SourceWithSecret } from "@maple/domain/http/v2"
-import { PushSourcePlatform } from "@maple/domain/primitives"
+import { PushSourcePlatform } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -8,8 +8,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { DataIntegration } from "../../integrations/embed"
-import { Message as IntegrationMessage } from "../../integrations/message"
+import { DataIntegration, Message as IntegrationMessage } from "../../integrations/embed"
 
 export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },

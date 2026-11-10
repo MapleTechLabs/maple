@@ -1,8 +1,5 @@
 import { Schema } from "effect"
-import { UptimeMonitorKind, UptimeMonitorStatus } from "../primitives"
-
-// ---------------------------------------------------------------------------------------------
-// list_uptime_monitors / create_uptime_monitor / update_uptime_monitor / delete_uptime_monitor
+import { UptimeMonitorKind, UptimeMonitorStatus } from "@maple/primitives"
 
 export const UptimeMonitorLastCheckRow = Schema.Struct({
 	at: Schema.String,

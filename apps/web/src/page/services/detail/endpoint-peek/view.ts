@@ -9,7 +9,7 @@ import {
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type * as Chart from "@maple/views/charts/chart"
 import type { Html, HtmlBuilder } from "foldkit/html"

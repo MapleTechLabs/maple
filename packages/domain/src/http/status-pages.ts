@@ -13,7 +13,7 @@ import {
 	StatusPageUpdateSource,
 	UptimeMonitorId,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { StatusPageTheme } from "../status-page"
 import { HttpTaggedError } from "./error-policy"
 

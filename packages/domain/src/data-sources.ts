@@ -44,8 +44,6 @@ export const DataSourceDescription = Schema.String.check(Schema.isMaxLength(500)
 export const DataSourceTag = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40))
 export const DataSourceTags = Schema.Array(DataSourceTag).check(Schema.isMaxLength(10))
 
-// ── Stored, non-secret connection config (per kind) ─────────────────────────
-
 export const ClickHouseDataSourceConfig = Schema.TaggedStruct("clickhouse", {
 	url: Schema.String.check(Schema.isMaxLength(2048)),
 	user: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
@@ -72,8 +70,6 @@ export const secretDestination = (config: DataSourceConfig): string => {
 	return url === null ? config.url : `${url.protocol}//${url.host}`
 }
 
-// ── Connection input (config + secret, as a form or an API call sends it) ───
-
 export const ClickHouseConnectionInput = Schema.TaggedStruct("clickhouse", {
 	url: Schema.String.check(Schema.isMaxLength(2048)),
 	user: Schema.String.check(Schema.isMaxLength(256)),
@@ -87,8 +83,6 @@ export const ClerkConnectionInput = Schema.TaggedStruct("clerk", {
 })
 export const DataSourceConnectionInput = Schema.Union([ClickHouseConnectionInput, ClerkConnectionInput])
 export type DataSourceConnectionInput = Schema.Schema.Type<typeof DataSourceConnectionInput>
-
-// ── Queries ────────────────────────────────────────────────────────────────
 
 export const SqlExternalQuery = Schema.TaggedStruct("sql", {
 	sql: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_RAW_SQL_LENGTH)),
@@ -163,8 +157,6 @@ export const ExternalQuery = Schema.Union([SqlExternalQuery, ResourceExternalQue
 })
 export type ExternalQuery = Schema.Schema.Type<typeof ExternalQuery>
 
-// ── Catalog ────────────────────────────────────────────────────────────────
-
 export const CatalogFieldType = Schema.Literals([
 	"string",
 	"number",
@@ -225,8 +217,6 @@ export interface SourceCatalog {
 	readonly truncated: boolean
 }
 
-// ── Plans and results ──────────────────────────────────────────────────────
-
 /** What a query will cost, known before anything runs. */
 export const QueryPlanSummary = Schema.Union([
 	Schema.TaggedStruct("sql", {
@@ -275,8 +265,6 @@ export const DataSourceTestResult = Schema.Struct({
 	error: Schema.optionalKey(Schema.String),
 })
 export type DataSourceTestResult = Schema.Schema.Type<typeof DataSourceTestResult>
-
-// ── Errors ─────────────────────────────────────────────────────────────────
 
 /** No source by that id or name in this org (or it is hidden from agents). */
 export class DataSourceNotFoundError extends Schema.TaggedError<DataSourceNotFoundError>()(
@@ -360,8 +348,6 @@ export type DataSourceDriverError =
 	| DataSourceLimitError
 	| DataSourceRateLimitedError
 
-// ── Documents and inputs ───────────────────────────────────────────────────
-
 /** A source as every API and tool shows it. Secrets never appear; `secretHint` is the last 4 characters. */
 export const ExternalDataSourceDocument = Schema.Struct({
 	id: ExternalDataSourceId,
@@ -414,8 +400,10 @@ export const UpdateExternalDataSourceInput = Schema.Struct({
 })
 export type UpdateExternalDataSourceInput = Schema.Schema.Type<typeof UpdateExternalDataSourceInput>
 
-/** Admin curation of one catalog entry; survives catalog refreshes. */
-/** Admin curation. `null` goes back to what the source reported; `""` means none at all. */
+/**
+ * Admin curation of one catalog entry; survives catalog refreshes. `null` goes back to what the
+ * source reported; `""` means none at all.
+ */
 export const UpdateCatalogEntryInput = Schema.Struct({
 	exposed: Schema.optionalKey(Schema.Boolean),
 	note: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isMaxLength(500)))),

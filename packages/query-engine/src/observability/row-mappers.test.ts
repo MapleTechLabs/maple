@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
-import type { ListTracesOutput } from "@maple/domain/tinybird"
+import type { ListTracesRow } from "../ch/pipe-rows"
 import { toSpanResult } from "./row-mappers"
 
-const row = (overrides: Partial<ListTracesOutput> = {}): ListTracesOutput => ({
+const row = (overrides: Partial<ListTracesRow> = {}): ListTracesRow => ({
 	traceId: "0af7651916cd43dd8448eb211c80319c",
 	startTime: "2026-04-03 12:00:00.123456789",
 	endTime: "2026-04-03 12:00:00.123456789",

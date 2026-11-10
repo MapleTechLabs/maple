@@ -1,8 +1,3 @@
-/**
- * Output schemas for the error-issue MCP tools. Where a tool already sent a `__maple_ui` payload,
- * its schema matches the `*Data` interface in `mcp-structured-types.ts` field for field; extra
- * fields carry what the rendered text needs.
- */
 import { Schema } from "effect"
 
 export const IssueActorSummary = Schema.Struct({
@@ -66,7 +61,6 @@ export const ListErrorIssuesOutput = Schema.Struct({
 	totalMatching: Schema.optionalKey(Schema.Number),
 	/** Pass back as `cursor` for the next page; absent on the last page. */
 	nextCursor: Schema.optionalKey(Schema.String),
-	/** The filters that applied. */
 	filters: Schema.Struct({
 		workflowState: Schema.optionalKey(Schema.String),
 		severity: Schema.optionalKey(Schema.String),

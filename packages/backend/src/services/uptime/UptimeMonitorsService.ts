@@ -28,7 +28,7 @@ import {
 	UptimeMonitorStatus,
 	OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
@@ -72,7 +72,9 @@ import { Env } from "@maple/backend/platform/Env"
 import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { ensureWithinLimit, UptimeMonitorAllowance } from "./UptimeMonitorAllowance"
 import { openConfigHeaders, sealConfigHeaders, type StoredUptimeHeaders } from "./uptime-headers"
-import { countCheck, countOne, upsertDailyCounts, type UptimeDailyCount } from "./uptime-daily"
+import { countCheck, upsertDailyCounts, type UptimeDailyCount } from "./uptime-daily"
+import { heartbeatCheckState, recordHeartbeatCheck, toUptimePersistenceError } from "./uptime-state"
+import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
 import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
 import { deleteRuleRows } from "@maple/backend/services/alerts/AlertRulesService"
@@ -223,12 +225,6 @@ const TEST_BODY_READ_BYTES = 64 * 1024
 const TEST_BODY_PREFIX_CHARS = 2048
 const HOST_PATTERN = /^[A-Za-z0-9.:-]+$/u
 const IPV4_PATTERN = /^\d{1,3}(\.\d{1,3}){3}$/u
-
-const toPersistenceError = (error: unknown) =>
-	new UptimeMonitorPersistenceError({
-		message: error instanceof Error ? error.message : "Uptime monitor persistence failed",
-		cause: error,
-	})
 
 const invalid = (message: string) => new UptimeMonitorValidationError({ message })
 
@@ -517,7 +513,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "UptimeMonitorsService", toPersistenceError)
+			const dbExecute = makeDbExecute(database, "UptimeMonitorsService", toUptimePersistenceError)
 			const env = yield* Env
 			const allowance = yield* UptimeMonitorAllowance
 			// Scoped per hop, so an unread body is cancelled on exit. A cross-origin redirect drops
@@ -672,8 +668,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 			 * The per-org lock monitor creates (and alert rule writes) take inside their transaction,
 			 * so two concurrent creates cannot both pass a full plan.
 			 */
-			const lockOrgMonitors = (db: MapleDb, orgId: OrgId) =>
-				db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+			const lockOrgMonitors = lockOrgAlertRules
 
 			/**
 			 * Monitors counted against the plan `orgId` bills to: the billing org's and every member's,
@@ -1216,32 +1211,19 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 					return yield* new UptimeHeartbeatNotFound({ message: "No such heartbeat" })
 				}
 				const now = yield* Clock.currentTimeMillis
-				const status: UptimeMonitorStatus = ok ? "up" : "down"
 				const written = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							const updated = yield* db.run(
 								PG.update(UptimeMonitorStates)
 									.set({
-										status,
-										consecutiveFailures: ok ? 0 : row.consecutiveFailures + 1,
-										consecutiveSuccesses: ok ? row.consecutiveSuccesses + 1 : 0,
-										statusChangedAt: status === row.status ? row.statusChangedAt : now,
-										lastCheckJson: {
-											at: now,
+										...heartbeatCheckState(
+											row,
+											now,
 											ok,
-											durationMs: null,
-											statusCode: null,
-											error: ok ? null : "The job reported a failure",
-											traceId: null,
-										},
-										recentJson: appendRecentCheck(row.recentJson, {
-											at: now,
-											ok,
-											durationMs: null,
-										}),
+											ok ? null : "The job reported a failure",
+										),
 										lastPingAt: now,
-										updatedAt: now,
 									})
 									// Fenced on the state read: a ping or pause in between changes the counters or
 									// `updated_at`, and this ping is read and applied again instead of overwriting it.
@@ -1256,14 +1238,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									.returning("monitorId"),
 							)
 							if (updated.length === 0) return updated
-							yield* upsertDailyCounts(db, [
-								{
-									monitorId: row.id,
-									orgId: row.orgId,
-									count: countOne({ at: now, ok, down: status === "down" }),
-								},
-							])
-							if (status !== row.status) yield* bumpPagesForMonitors(db, row.orgId, [row.id])
+							yield* recordHeartbeatCheck(db, row.orgId, row.id, row.status, { at: now, ok })
 							return updated
 						}),
 					),

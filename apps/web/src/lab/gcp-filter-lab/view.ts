@@ -1,9 +1,9 @@
 import { Schema, Array as Arr } from "effect"
-import { gcpLogFilterChoice } from "../../components/integrations/gcp-connector-state"
+import { gcpLogFilterChoice } from "../../page/infra-integrations/gcp/connector-state"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message as IntegrationsMessage } from "../../page/integrations/message"
-import { filterField } from "../../page/integrations/view-gcp-configure-filter"
+import { filterField } from "../../page/infra-integrations/gcp/integration/view-gcp-configure-filter"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { Message, type Model, type Scenario, SCENARIOS, type ScenarioState } from "./model"
 
@@ -11,7 +11,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type H = HtmlBuilder<Message>
 
-/** The card around `GcpLogFilterField`, labelled, with ids of its own. */
+/** The card around the log filter field, labelled, with ids of its own. */
 const cardView = Submodel.defineView<
 	ScenarioState,
 	IntegrationsMessage,

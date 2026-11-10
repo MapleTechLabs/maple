@@ -1,14 +1,13 @@
 import { cn } from "@maple/ui/lib/utils"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { eyebrowVariants } from "@maple/views/ui/eyebrow.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 
 /**
- * `PinnedNamespaceNotice`: replaces a
- * rail's Namespace section while the org-global pin is on. `onClear` should end in the page's
- * `PageOutMessage.RequestedNamespacePin({ maybeNamespace: Option.none() })`.
+ * Replaces a rail's Namespace section while the org-global pin is on. `onClear` should end in the
+ * page's `PageOutMessage.RequestedNamespacePin({ maybeNamespace: Option.none() })`.
  */
 export const pinnedNamespaceNotice = <M>(h: HtmlBuilder<M>, namespace: string, onClear?: M): Html =>
 	h.div(

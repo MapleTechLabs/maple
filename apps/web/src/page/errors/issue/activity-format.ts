@@ -1,11 +1,10 @@
 import type { ErrorIssueEventDocument } from "@maple/domain/http"
 import { countLabel, formatRatePerHour } from "@maple/ui/lib/format"
 import { AGENT_ACCENT, TONE_FILL } from "@maple/ui/lib/tone"
-import { DateTime, Option, Schema, Array as Arr } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const encodeJsonOption = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
-
-// The issue timeline's vocabulary: labels, dots, payload text.
 
 export type EventType = ErrorIssueEventDocument["type"]
 
@@ -94,7 +93,6 @@ export const MESSAGE_VERB = {
 	unmerge: null,
 } satisfies Record<EventType, string | null>
 
-/** `payloadString`: a scalar as text; anything else as JSON. */
 export const payloadString = (value: unknown): string | null => {
 	if (value === null || value === undefined) return null
 	if (typeof value === "string") return value
@@ -110,9 +108,6 @@ export const formatSpokenDuration = (ms: number): string => {
 	if (hours < 48) return countLabel(hours, "hour")
 	return countLabel(Math.round(hours / 24), "day")
 }
-
-export const isoMs = (iso: string): number =>
-	Option.getOrElse(Option.map(DateTime.make(iso), DateTime.toEpochMillis), () => Number.NaN)
 
 type Payload = Readonly<Record<string, unknown>>
 
@@ -183,7 +178,6 @@ const unmergeText = (p: Payload): string | null => {
 	return label ? `Split out ${label}.` : null
 }
 
-/** `renderPayload`: the row's body text, or none. */
 export const renderPayload = (event: ErrorIssueEventDocument): string | null => {
 	const p = event.payload
 	switch (event.type) {
@@ -242,5 +236,5 @@ export const isContinuation = (
 	if (previous === null || !MESSAGE_TYPES.has(previous.type) || previous.type !== event.type) return false
 	const previousActor = previous.actor?.id ?? null
 	if (previousActor === null || previousActor !== (event.actor?.id ?? null)) return false
-	return isoMs(event.createdAt) - isoMs(previous.createdAt) < CONTINUATION_WINDOW_MS
+	return toEpochMs(event.createdAt) - toEpochMs(previous.createdAt) < CONTINUATION_WINDOW_MS
 }

@@ -19,7 +19,7 @@ import {
 	populatedSchedules,
 	scheduleUuid,
 } from "../shared/oncall-test-fixtures"
-import { incidentRow, ORG, ruleRow, hubAt } from "../shared/test-rows"
+import { hubAt, incidentRow, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, scheduleMenuId, update } from "./update"

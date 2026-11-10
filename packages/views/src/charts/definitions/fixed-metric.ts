@@ -1,8 +1,8 @@
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { findFirstPartialIndex, splitAtFirstPartial } from "../plot/partial-buckets"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -15,8 +15,8 @@ import {
 	throughputPlot,
 	TRACED_KEY,
 } from "../fixed-metric-series"
-import { pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { pinnedTimeXAxis } from "../plot/bucket-axis"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
@@ -30,13 +30,12 @@ import {
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
-// Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
-// (packages/ui/src/components/charts/{area,line}), definition half. Code copied, constants unchanged.
+// The definitions of the throughput, error rate and latency charts.
 
 type FixedMetricSpec = Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 type Point = ChartPoint<TimeseriesRow, ChartValue, number>
 
-/** `PlotTooltipSeries`: one tooltip row reader. */
+/** One tooltip row reader. */
 interface TooltipSeries {
 	readonly label: string
 	readonly color: string
@@ -77,7 +76,7 @@ const chromeOf = (spec: FixedMetricSpec) => ({
 	background: colorOf(spec, "background"),
 })
 
-/** `PlotTooltipBody` reduced to data: rows off `points[0].datum`, nulls skipped. */
+/** The tooltip body as data: rows off `points[0].datum`, nulls skipped. */
 const bucketTooltip =
 	(
 		model: FixedMetricModel,
@@ -86,7 +85,7 @@ const bucketTooltip =
 	) =>
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
-			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
+			// The series nearest the cursor is emphasised.
 			const highlighted = focus.highlight(
 				Arr.map(series, (entry) => [entry.label, entry.value(datum)] as const),
 			)
@@ -415,7 +414,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}
 }
 
-/** `ApdexAreaChart`: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
+/** The apdex chart: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
 const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()

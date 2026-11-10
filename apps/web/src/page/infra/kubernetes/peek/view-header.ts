@@ -6,8 +6,7 @@ import { hostStatusBadge } from "../../kit/status"
 import type { PodRow } from "../pod-data"
 import { typographyClass } from "@maple/views/ui/typography"
 
-// The peek's `SheetDetailHeader`: the "Pod" eyebrow, the mono title with its status, and the
-// workload chips.
+// The peek's sheet header: the "Pod" eyebrow, the mono title with its status, and the workload chips.
 
 export type HeaderInputs = Readonly<{
 	dialogId: string

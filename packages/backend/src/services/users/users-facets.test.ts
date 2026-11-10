@@ -1,8 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
-import { OrgId, UserId, UsersFacetsRequest, WarehouseConfigError } from "@maple/domain/http"
+import {
+	OrgId,
+	UserId,
+	UsersFacetsRequest,
+	WarehouseConfigError,
+	type TenantContext,
+} from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { readUsersFacets } from "./users-reads"

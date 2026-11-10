@@ -7,6 +7,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
+import { LiveRows } from "../../kit/load-schemas"
 import { OrgMember } from "../shared/org-members"
 import { Form } from "./form"
 
@@ -22,8 +23,8 @@ export const Model = Schema.Struct({
 	form: Form,
 	/** The form as it was opened or last saved: `form` differing from it is an unsaved edit. */
 	baseline: Form,
-	destinations: Schema.NullOr(Schema.Array(AlertDestinationRowSchema)),
-	rules: Schema.NullOr(Schema.Array(AlertRuleRowSchema)),
+	destinations: LiveRows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
 	/** `null` until the members load, and after a failed read (`isMembersFailed`). */
 	members: Schema.NullOr(Schema.Array(OrgMember)),
 	isMembersFailed: Schema.Boolean,
@@ -48,6 +49,3 @@ export const Model = Schema.Struct({
 	isSessionLoaded: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-/** The viewer may change chains (`alerts:manage`); the API refuses anyone else. */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

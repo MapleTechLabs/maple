@@ -1,4 +1,4 @@
-import type { CloudflareFilters } from "../../../../components/infra/cloudflare/filters"
+import type { CloudflareFilters } from "../filters"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -8,8 +8,8 @@ import { CHART_EMPTY_MESSAGE } from "@maple/views/charts/infra-metric-chart"
 import * as PlotBoxChart from "@maple/views/charts/plot-box-chart"
 import { stackedBreakdown } from "@maple/views/charts/stacked-breakdown-chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
-import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../../kit/chart-card"
+import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { seriesLegend } from "../../../kit/series-legend"
 import type { LongRow } from "@maple/views/charts/infra-metric-series"
 import type { ZoneDns, ZoneSecurity } from "../data"
@@ -19,8 +19,6 @@ import { hstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// `CloudflareZoneDnsSection`, `CloudflareZoneSecuritySection` and their `StackedBreakdownChart`.
 
 type H = HtmlBuilder<Message>
 
@@ -117,7 +115,7 @@ const RESPONSE_CODE_COLORS = {
 
 const RESPONSE_CODE_ORDER = ["NOERROR", "NXDOMAIN", "SERVFAIL", "REFUSED", "unknown"]
 
-/** `CloudflareZoneDnsSection`: nothing when the zone has no DNS analytics. */
+/** Nothing when the zone has no DNS analytics. */
 export const dnsSection = (
 	h: H,
 	model: Model,
@@ -228,7 +226,7 @@ const ACTION_ORDER = [
 	"unknown",
 ]
 
-/** `CloudflareZoneSecuritySection`: nothing when the window has no security events. */
+/** Nothing when the window has no security events. */
 export const securitySection = (
 	h: H,
 	model: Model,

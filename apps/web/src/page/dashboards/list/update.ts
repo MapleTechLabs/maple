@@ -65,7 +65,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 	commands: [ReadClock(), LoadPreferences()],
 })
 
-/** `ToolbarSearch`'s resync: an outside change to `q` replaces the input, its own echo does not. */
+/** An outside change to `q` replaces the search input, its own echo does not. */
 export const routeChanged = (model: Model, route: Route): Return => {
 	const query = queryOf(route.search)
 	return {
@@ -78,7 +78,6 @@ export const routeChanged = (model: Model, route: Route): Return => {
 	}
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, [key]: value }), replace: true })`. */
 const navigateSearch = (model: Model, patch: Partial<Search>, isReplace = true): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -104,17 +103,16 @@ const dashboardHref = (id: string, mode?: "edit") =>
 export const listedOf = (model: Model): ReadonlyArray<ListDashboard> | null =>
 	model.dashboards ?? (model.fallback._tag === "Ready" ? model.fallback.dashboards : null)
 
-/** `degraded`: reading the snapshot, so writes are off. */
+/** Reading the snapshot, so writes are off. */
 export const isDegraded = (model: Model): boolean =>
 	model.dashboards === null && model.fallback._tag === "Ready"
 
-/** `isError`: neither the live list nor the snapshot could be read. */
+/** Neither the live list nor the snapshot could be read. */
 export const isLoadFailed = (model: Model): boolean =>
 	model.dashboards === null && model.fallback._tag === "Failed"
 
 export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
 
-/** `navigate(...)` then a success toast. */
 const navigateWithToast = (model: Model, url: string, title: string): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -124,7 +122,6 @@ const navigateWithToast = (model: Model, url: string, title: string): Return => 
 	}),
 })
 
-/** `toastManager.add({ title: errorMessage(error), type: "error" })`. */
 const toastFailure = (model: Model, message: string): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedToast({
@@ -272,7 +269,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// A live update is a healthy sync: writes come back on.
 		UpdatedDashboards: ({ orgId, dashboards }) =>
 			orgId !== context.orgId ? { model } : { model: { ...model, dashboards, persistenceError: null } },
-		// `handleCollectionStuck` recreates the collections while the snapshot loads.
+		// The collections are recreated while the snapshot loads.
 		TimedOutLiveDashboards: ({ orgId }) =>
 			orgId !== context.orgId || model.dashboards !== null || model.fallback._tag !== "Idle"
 				? { model }
@@ -293,7 +290,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}),
 						},
 					},
-		// `retryOrgCollections`: writes come back on, and a failed snapshot may be read again after the reconnect.
+		// Writes come back on, and a failed snapshot may be read again after the reconnect.
 		ClickedRetrySync: () => ({
 			model: {
 				...model,

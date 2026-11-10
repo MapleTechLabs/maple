@@ -2,7 +2,7 @@ import { EscalationChainId } from "@maple/domain/http"
 import { V2EscalationChainCreateParams } from "@maple/domain/http/v2"
 import { Effect, Schema } from "effect"
 import { Command, Dom } from "foldkit"
-import { readGrants } from "../../../data/session-tenant"
+import { fetchSessionGrants } from "../../kit/session-grants"
 import {
 	deleteEscalationChain,
 	retrieveEscalationChain,
@@ -38,12 +38,10 @@ export const FetchChainEditorSchedules = Command.define("FetchEscalationChainEdi
 	),
 })
 
-export const FetchChainEditorSession = Command.define("FetchEscalationChainEditorSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchChainEditorSession = fetchSessionGrants(
+	"FetchEscalationChainEditorSession",
+	Message.CompletedFetchSession,
+)
 
 export const SaveChain = Command.define("SaveEscalationChainFromEditor", {
 	args: { editingId: Schema.NullOr(EscalationChainId), payload: V2EscalationChainCreateParams },

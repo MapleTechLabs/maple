@@ -20,10 +20,10 @@ import {
 } from "@maple/domain/http"
 import { encodePublicId } from "@maple/domain/http/v2"
 import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 
@@ -145,7 +145,7 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		}),
-		Layer.mock(AlertsService)({
+		Layer.mock(AlertDestinationsService)({
 			listDestinations: () =>
 				Effect.succeed(
 					Schema.decodeSync(AlertDestinationsListResponse)({

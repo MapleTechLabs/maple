@@ -7,8 +7,8 @@ import { metricView, titledHeader } from "@maple/views/charts/infra-metric-chart
 import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { hostSeriesSummary } from "../../page/infra/hosts/detail/view-panels"
-import { k8sChart } from "../../page/infra/kit/k8s-chart"
-import type { SeriesSlot } from "../../page/infra/kit/series"
+import { k8sChart } from "../../page/kit/k8s-chart"
+import type { SeriesSlot } from "../../page/kit/series"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { panel } from "@maple/views/ui/panel"
 import { isReady, Message, type Model, toChart } from "./chart-bench"
@@ -20,7 +20,7 @@ const BUCKET_COUNT = 145
 const BUCKET_MS = 60 * 1000
 const END_TIME_MS = Date.UTC(2026, 6, 17, 18, 30)
 
-/** `makeRows`: a phase-shifted sine per series, every bucket. */
+/** A phase-shifted sine per series, every bucket. */
 const makeRows = (seriesNames: ReadonlyArray<string>, scale: number, offset: number) =>
 	Arr.makeBy(BUCKET_COUNT, (index) => {
 		const bucket = new Date(END_TIME_MS - (BUCKET_COUNT - 1 - index) * BUCKET_MS).toISOString()
@@ -44,7 +44,7 @@ const POD_LIMIT = slotOf(makeRows(["value"], 1, 3.3), "percent")
 
 type H = HtmlBuilder<Message>
 
-/** `HostMetricChartView`: CPU stacks with the 80% rule, load is a line. */
+/** CPU stacks with the 80% rule, load is a line. */
 const hostChart = (h: H, model: Model, metric: "cpu" | "load15", label: string, title: string): Html => {
 	const theme = model.themeColors
 	if (theme === null || !isReady(model)) return chartLoading(h, { variant: "area" })

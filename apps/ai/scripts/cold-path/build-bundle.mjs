@@ -7,6 +7,7 @@ import { createRequire } from "node:module"
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { Schema } from "effect"
+import { WORKER_COMPATIBILITY_DATE } from "@maple/infra/worker-build"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const alchemy = realpathSync("node_modules/alchemy")
@@ -43,7 +44,7 @@ const build = await rolldown({
 	transform: { define: { "globalThis.__ALCHEMY_RUNTIME__": "true" } },
 	moduleTypes: { ".sql": "text", ".txt": "text", ".html": "text" },
 	plugins: [
-		cloudflareRolldown({ compatibilityDate: "2026-10-01" }),
+		cloudflareRolldown({ compatibilityDate: WORKER_COMPATIBILITY_DATE }),
 		bundleAnalyzerPlugin({ fileName: "analyze-data.json", format: "json" }),
 		{
 			// Static vs dynamic edges per module, which the analyzer report does not separate.

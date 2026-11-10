@@ -1,15 +1,10 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
-import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "../../../../components/infra/gcp/charts"
-import { gcpSqlEngine, gcpSqlSize } from "../../../../components/infra/gcp/cloud-sql-signals"
-import { gcpConsoleLinks, gcpExplorerWhere } from "../../../../components/infra/gcp/inventory"
-import {
-	gcpWorkloadLocation,
-	gcpWorkloadName,
-	gcpWorkloadNoun,
-	gcpWorkloadProject,
-} from "../../../../components/infra/gcp/tabs"
-import type { GcpTraceGap } from "../../../../components/infra/gcp/workload-signals"
+import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "../charts"
+import { gcpSqlEngine, gcpSqlSize } from "../cloud-sql-signals"
+import { gcpConsoleLinks, gcpExplorerWhere } from "../inventory"
+import { gcpWorkloadLocation, gcpWorkloadName, gcpWorkloadNoun, gcpWorkloadProject } from "../tabs"
+import type { GcpTraceGap } from "../workload-signals"
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -28,10 +23,10 @@ import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { CHART_HEIGHT } from "../../kit/chart-card"
+import { CHART_HEIGHT } from "../../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
@@ -47,8 +42,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
-
-// `GcpWorkloadPage`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -72,7 +65,6 @@ const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } as const satis
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
 
-/** `GcpWorkloadHeader`, with `GcpCloudSqlChips` as a Cloud SQL instance's meta. */
 const header = (h: H, model: Model, data: PageData) => {
 	const service = model.service
 	const keys = data.keys
@@ -151,7 +143,7 @@ const GAP_COPY = {
 	},
 } as const
 
-/** `GcpTraceGapCallout`: Google counted clearly more server errors than the spans did. */
+/** Google counted clearly more server errors than the spans did. */
 const traceGapCallout = (
 	h: H,
 	service: "cloudRun" | "cloudFunctions",
@@ -393,7 +385,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}),
 )
 
-/** `GcpWorkloadPage` over its derived data: the route reads it off its slots, the lab off fixtures. */
+/** The route reads its data off its slots, the lab off fixtures. */
 export const workloadPageView = (
 	h: H,
 	model: Model,

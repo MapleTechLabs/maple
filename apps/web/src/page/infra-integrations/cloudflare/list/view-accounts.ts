@@ -1,4 +1,4 @@
-import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
+import type { AccountTone, CloudflareAccount } from "../accounts"
 import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,8 +25,8 @@ const TONE_TEXT = {
 } as const satisfies Record<AccountTone, string>
 
 /**
- * `CloudflareAccountMenu`. TODO(menu): each account wants a health dot and a second line
- * (zones, health); the menu's radio entries are text, so both ride in the label.
+ * TODO(menu): each account wants a health dot and a second line (zones, health); the menu's radio
+ * entries are text, so both ride in the label.
  */
 export const accountMenu = (
 	h: H,
@@ -85,7 +85,7 @@ export const accountMenu = (
 	})
 }
 
-/** `CloudflareAccountsStrip`: one cell per account, a scope like the band's cells. */
+/** One cell per account, a scope like the band's cells. */
 export const accountsStrip = (
 	h: H,
 	accounts: ReadonlyArray<CloudflareAccount>,
@@ -138,7 +138,7 @@ export const accountsStrip = (
 		}),
 	)
 
-/** `CloudflareAccountHealthLine`: scoped to one account, and only when something is wrong. */
+/** Scoped to one account, and only when something is wrong. */
 export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null =>
 	account.health.tone === "ok"
 		? null

@@ -1,20 +1,18 @@
 import {
-	CLOUDFLARE_VIEWS,
 	type CloudflareView,
 	CPU_HEAVY_P99_MS,
 	MIN_RATED_REQUESTS,
 	sortWorkersByAttention,
-	WORKER_SCOPES,
 	type WorkerListRow,
 	type WorkerScope,
 	workerHealth,
 	workerInScope,
-	ZONE_SCOPES,
 	type ZoneScope,
 	zoneHealth,
 	zoneInScope,
-} from "../../../../components/infra/cloudflare/list-model"
-import type { CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
+} from "../list-model"
+import { CLOUDFLARE_VIEWS, WORKER_SCOPES, ZONE_SCOPES } from "../../../../route/search"
+import type { CloudflareAccount } from "../accounts"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -31,13 +29,12 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
-import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../kit/view-tabs"
 import { pageHero, pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import type { Status, ZoneRow } from "../data"
 import { ingestBanner, ingestEmpty, needsPermissions } from "../ingest"
-import { integrationConnectCta } from "../../kit/integration-empty"
-import { CLOUDFLARE_ACCENT } from "../../../integrations/catalog"
+import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import {
 	accountCounts,
@@ -57,8 +54,7 @@ import { DEFAULT_PRESET, viewHref } from "./update"
 import { accountHealthLine, accountMenu, accountsStrip } from "./view-accounts"
 import { type SparkContext, queueTable, workerTable, zoneTable, zoneTableLoading } from "./view-tables"
 import { Array as Arr, String as Str, Option } from "effect"
-
-// `CloudflarePage` and `CloudflareListPage`.
+import { providerBrand } from "../../../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -75,7 +71,7 @@ const count = <T>(rows: ReadonlyArray<T>, keep: (row: T) => boolean) => Arr.filt
 
 const scopeMessage = (scope: ZoneScope | WorkerScope | undefined) => Message.ClickedScope({ scope })
 
-/** `CloudflareZoneBand`: counts over the unfiltered fleet. */
+/** Counts over the unfiltered fleet. */
 const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | undefined): Html => {
 	const serving5xx = count(zones, (z) => zoneHealth(z) === "serving5xx")
 	const mostly4xx = count(zones, (z) => zoneHealth(z) === "mostly4xx")
@@ -123,7 +119,6 @@ const zoneBand = (h: H, zones: ReadonlyArray<ZoneRow>, activeScope: ZoneScope | 
 	})
 }
 
-/** `CloudflareWorkerBand`. */
 const workerBand = (h: H, rows: ReadonlyArray<WorkerListRow>, activeScope: WorkerScope | undefined): Html => {
 	const erroring = count(rows, (r) => workerHealth(r) === "erroring")
 	const slow = count(rows, (r) => workerHealth(r) === "slow")
@@ -312,7 +307,7 @@ const viewTabs = (h: H, model: Model, scope: ListScope, inPlace: boolean): Html 
 	)
 }
 
-/** `CloudflareListPage`'s props: what the route reads, or the lab's fixtures. */
+/** What the route reads, or the lab's fixtures. */
 export type ListFrame = Readonly<{
 	data: ListData
 	accounts: ReadonlyArray<CloudflareAccount>
@@ -338,7 +333,7 @@ const listPage = (h: H, model: Model, status: Status, data: ListData, spark: Spa
 	)
 }
 
-/** `CloudflareListPage`: header, banner, accounts strip and the current view. The route draws the header in its title row. */
+/** Banner, accounts strip and the current view; the route draws the header in its title row. */
 export const listBody = (
 	h: H,
 	model: Model,
@@ -439,7 +434,7 @@ const FEATURES = [
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const cloudflareConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "CloudflareBrandIcon", backerIcon: "CloudflareMonoIcon", accent: CLOUDFLARE_ACCENT },
+		brand: providerBrand("cloudflare"),
 		features: FEATURES,
 		hint: "Read-only. Your zones and Workers appear here within about 15 minutes of connecting.",
 		label: "Connect Cloudflare",

@@ -4,7 +4,8 @@ import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, formatNumber, formatPercent, formatPointsDelta } from "../lib/format"
 import * as P from "../lib/params"
@@ -51,7 +52,6 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 100, max: CH.RELEASES_LIST_CAP, noun: "service versions" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ServiceDeploymentsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking deployed versions", "Comparing releases"],
 		handler: Effect.fn("McpTool.serviceDeployments")(function* (params) {

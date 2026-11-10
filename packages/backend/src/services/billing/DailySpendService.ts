@@ -1,9 +1,8 @@
-import { DailySpendResponse, DailyVolume, WarehouseQueryError } from "@maple/domain/http"
+import { DailySpendResponse, DailyVolume, WarehouseQueryError, type TenantContext } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Context, DateTime, Effect, Layer, String as Str } from "effect"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingProductEvents } from "@maple/backend/services/warehouse/missing-table"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import * as Integrations from "@maple/query-engine-integrations"
 
 /**
@@ -23,8 +22,6 @@ import * as Integrations from "@maple/query-engine-integrations"
 const DAY_MS = 86_400_000
 const BYTES_PER_BILLED_GB = 1_000_000_000
 
-/** ClickHouse datetime literal (`YYYY-MM-DD HH:MM:SS`), which is what the DSL params want. */
-
 /** `YYYY-MM-DD` in UTC — the key the client renders and the series is indexed by. */
 export const toUtcDateKey = (epochMs: number) => Str.slice(0, 10)(new Date(epochMs).toISOString())
 
@@ -37,8 +34,8 @@ export interface DailySpendServiceApi {
 		tenant: TenantContext,
 		/**
 		 * The FULL billing cycle, including days that haven't happened. The series
-		 * spans all of it so the chart can show where the cycle is headed; only the
-		 * warehouse read is clamped to `nowMs`.
+		 * spans all of it so the chart can show where the cycle is headed; days past
+		 * `nowMs` have no warehouse rows and read as zero.
 		 */
 		cycle: { readonly startMs: number; readonly endMs: number; readonly nowMs: number },
 	) => Effect.Effect<DailySpendResponse, WarehouseQueryError>

@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 
@@ -59,4 +59,3 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 })
 
 export type PlanetScaleConnectionRow = PG.SelectRowOf<typeof PlanetscaleConnections>
-export type PlanetScaleConnectionInsert = PG.InsertRowOf<typeof PlanetscaleConnections>

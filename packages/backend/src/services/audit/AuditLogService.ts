@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto"
 import { HttpServerRequest } from "effect/http"
 import { AuditLogPersistenceError, CurrentTenant } from "@maple/domain/http"
 import type { AuditActorType, AuditChanges, AuditLogSource, AuditOutcome } from "@maple/domain/http"
-import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
-import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/domain/primitives"
+import type { ActorId, ApiKeyId, OrgId, UserId } from "@maple/primitives"
+import { AuditLogEntryId as AuditLogEntryIdSchema } from "@maple/primitives"
 import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { runAfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer } from "@maple/backend/platform/bindings"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AUDIT_ACCESS_ACTION_SUFFIXES, isAuditAccessAction } from "@maple/domain/audit-actions"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -33,9 +33,6 @@ class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
 	},
 ) {}
 
-/** Producer binding name; the paired `*_NAME` var drives consumer dispatch. */
-
-/** The warehouse datasource every audit entry lands in. */
 export const AUDIT_LOG_DATASOURCE = "audit_log"
 
 /**
@@ -122,7 +119,6 @@ export interface AuditLogServiceApi {
 	) => Effect.Effect<ReadonlyArray<AuditLogEntry>, AuditLogPersistenceError>
 }
 
-/** Build the queue event for one `record` call, stamping id and `occurredAt`. */
 const makeEvent = <A extends AuditAction>(input: AuditLogRecordInput<A>, nowMs: number) => {
 	const resource = auditResourceFields(input.action, input.resourceId)
 	return new AuditLogEvent({
@@ -257,7 +253,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
 					yield* warehouse.ingest(
-						systemTenant(event.orgId),
+						systemTenant(event.orgId, ALERTING_SYSTEM_USER_ID),
 						AUDIT_LOG_DATASOURCE,
 						[auditEventToRow(event, now)],
 						{ bestEffort: true, retryTransient: true },
@@ -322,7 +318,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 					const { opts, values } = listQueryInputs(orgId, filters)
 					const rows = yield* warehouse
 						.compiledQuery(
-							systemTenant(orgId),
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 							CH.compile(CH.auditLogEntriesQuery(opts), values),
 							{ profile: "list", context: "auditLogEntries" },
 						)

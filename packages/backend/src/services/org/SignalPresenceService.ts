@@ -18,8 +18,8 @@
 
 import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * How far back presence is evaluated.

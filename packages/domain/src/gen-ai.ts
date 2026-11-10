@@ -58,7 +58,7 @@ export const traceSessionTraceId = (sessionId: string): string | undefined => {
 
 // Maple's native convention — the one dialect an app opts into deliberately
 // rather than inheriting from a framework. These are ordinary span attributes
-// an emitter writes itself, and Maple's own agents (`apps/api` chat +
+// an emitter writes itself, and Maple's own agents (`apps/ai` chat +
 // investigations) are the first emitter.
 //
 // The whole AI surface sits under `maple_ai.`, these included. The session id
@@ -187,11 +187,9 @@ export interface AiFieldDef {
  * an alias is a statement about instrumentation, not about the convention.
  */
 export const AI_GENAI_FIELDS = {
-	// operation
 	operationName: { key: "gen_ai.operation.name", type: "string" },
 	providerName: { key: "gen_ai.provider.name", type: "string" },
 
-	// request
 	requestModel: { key: "gen_ai.request.model", type: "string" },
 	requestMaxTokens: { key: "gen_ai.request.max_tokens", type: "number" },
 	requestChoiceCount: { key: "gen_ai.request.choice.count", type: "number" },
@@ -208,7 +206,6 @@ export const AI_GENAI_FIELDS = {
 	requestPreviousResponseId: { key: "gen_ai.request.previous_response.id", type: "string" },
 	requestStreamCursor: { key: "gen_ai.request.stream_cursor", type: "string" },
 
-	// response
 	responseId: { key: "gen_ai.response.id", type: "string" },
 	responseModel: { key: "gen_ai.response.model", type: "string" },
 	responseFinishReasons: { key: "gen_ai.response.finish_reasons", type: "stringArray" },
@@ -233,17 +230,14 @@ export const AI_GENAI_FIELDS = {
 	mapleReasoningTokens: { key: MAPLE_AI_STAMP_ATTRS.reasoningTokens, type: "number" },
 	mapleCost: { key: MAPLE_AI_STAMP_ATTRS.cost, type: "number" },
 
-	// conversation
 	conversationId: { key: "gen_ai.conversation.id", type: "string" },
 	conversationCompacted: { key: "gen_ai.conversation.compacted", type: "boolean" },
 
-	// agent
 	agentId: { key: "gen_ai.agent.id", type: "string" },
 	agentName: { key: "gen_ai.agent.name", type: "string" },
 	agentDescription: { key: "gen_ai.agent.description", type: "string" },
 	agentVersion: { key: "gen_ai.agent.version", type: "string" },
 
-	// tool
 	toolName: { key: "gen_ai.tool.name", type: "string" },
 	toolCallId: { key: "gen_ai.tool.call.id", type: "string" },
 	toolDescription: { key: "gen_ai.tool.description", type: "string" },
@@ -252,38 +246,31 @@ export const AI_GENAI_FIELDS = {
 	toolCallResult: { key: "gen_ai.tool.call.result", type: "json" },
 	toolDefinitions: { key: "gen_ai.tool.definitions", type: "json" },
 
-	// content
 	systemInstructions: { key: "gen_ai.system_instructions", type: "json" },
 	inputMessages: { key: "gen_ai.input.messages", type: "json" },
 	outputMessages: { key: "gen_ai.output.messages", type: "json" },
 
-	// data source / retrieval
 	dataSourceId: { key: "gen_ai.data_source.id", type: "string" },
 	retrievalQueryText: { key: "gen_ai.retrieval.query.text", type: "string" },
 	retrievalTopK: { key: "gen_ai.retrieval.top_k", type: "number" },
 	retrievalDocuments: { key: "gen_ai.retrieval.documents", type: "json" },
 
-	// memory
 	memoryStoreId: { key: "gen_ai.memory.store.id", type: "string" },
 	memoryRecordId: { key: "gen_ai.memory.record.id", type: "string" },
 	memoryRecordCount: { key: "gen_ai.memory.record.count", type: "number" },
 	memoryQueryText: { key: "gen_ai.memory.query.text", type: "string" },
 	memoryRecords: { key: "gen_ai.memory.records", type: "json" },
 
-	// embeddings
 	embeddingsDimensionCount: { key: "gen_ai.embeddings.dimension.count", type: "number" },
 
-	// evaluation
 	evaluationName: { key: "gen_ai.evaluation.name", type: "string" },
 	evaluationScoreValue: { key: "gen_ai.evaluation.score.value", type: "number" },
 	evaluationScoreLabel: { key: "gen_ai.evaluation.score.label", type: "string" },
 	evaluationExplanation: { key: "gen_ai.evaluation.explanation", type: "string" },
 
-	// prompt
 	promptName: { key: "gen_ai.prompt.name", type: "string" },
 	promptVersion: { key: "gen_ai.prompt.version", type: "string" },
 
-	// workflow
 	workflowName: { key: "gen_ai.workflow.name", type: "string" },
 
 	// gateway routing — a gateway that tries several upstream providers for one
@@ -393,7 +380,7 @@ type AiGenAiFieldSchemas = {
 }
 
 // Generated from the catalog rather than written out, so the wire schema cannot
-// drift from the field list. `Object.fromEntries` erases the key/value
+// drift from the field list. `Rec.fromEntries` erases the key/value
 // correlation, hence the cast back to the mapped type above.
 const aiGenAiFieldSchemas = Rec.fromEntries(
 	Arr.map(Rec.toEntries(AI_GENAI_FIELDS), ([field, def]) => [

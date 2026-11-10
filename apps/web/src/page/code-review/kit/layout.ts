@@ -7,8 +7,6 @@ import type { WindowSearch } from "./frame"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Option } from "effect"
 
-// `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
-
 export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "team" | "issues" | "settings"
 
 export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: string }>
@@ -38,7 +36,7 @@ export const breadcrumbsOf = (tab: CodeReviewTab) => [
 	{ label: tabLabel(tab) },
 ]
 
-/** Defined keys only, in the order given: TanStack drops `undefined` search values. */
+/** Defined keys only, in the order given, so an `undefined` value leaves no search param. */
 const defined = (search: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> =>
 	Rec.fromEntries(
 		Arr.flatMap(Rec.toEntries(search), ([key, value]) =>

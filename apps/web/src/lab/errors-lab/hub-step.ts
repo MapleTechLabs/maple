@@ -1,5 +1,5 @@
 import { buildErrorsLabFixture } from "../errors-fixture"
-import type { ErrorSignal } from "../../lib/models/error-signal"
+import type { ErrorSignal } from "../../page/errors/kit/error-signal"
 import { OrgId } from "@maple/domain"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Command } from "foldkit"

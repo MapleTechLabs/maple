@@ -14,8 +14,6 @@ import { alignItemWithTrigger } from "./overlay/select-align"
  * move the highlight, Enter or a click selects, Escape and a press outside close it.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	...PopupState.fields,
 	value: Schema.String,
@@ -41,8 +39,6 @@ export const init = (
 	scrollArrows: { up: false, down: false },
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: { selectedIndex: Schema.NullOr(Schema.Number) },
 	PressedEscape: {},
@@ -61,8 +57,6 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({ ChangedValue: { value: Schema.String } })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 export const FocusSelectItem = Command.define("FocusSelectItem", {
 	args: { id: Schema.String },
@@ -139,8 +133,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 const htmlOrNull = (element: Element | null): HTMLElement | null =>
 	element instanceof HTMLElement ? element : null

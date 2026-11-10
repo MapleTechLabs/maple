@@ -1,17 +1,17 @@
 import { cn } from "@maple/ui/lib/utils"
-import { alertDialogMediaStyles } from "@maple/ui/styles/ui/alert-dialog"
+import { alertDialogMediaStyles } from "./alert-dialog.styles"
 import {
 	confirmDialogIconDestructiveStyles,
 	confirmDialogMediaDestructiveStyles,
-} from "@maple/ui/styles/ui/confirm-dialog"
+} from "./confirm-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
 import { icon } from "./icon"
 
-// Port of `ConfirmDialog` (packages/ui/src/components/ui/confirm-dialog.tsx) over the alert-dialog
-// Submodel. The parent owns the Model (`Dialog.init(id, "alert-dialog")`) and the pending state.
+// A confirm dialog over the alert-dialog Submodel. The parent owns the Model (`Dialog.init(id,
+// "alert-dialog")`) and the pending state.
 
 export type ConfirmDialogOptions<M> = Readonly<{
 	slotId: string
@@ -24,7 +24,7 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	/** Content between the header and the footer (`children`). */
 	children?: ReadonlyArray<Html | string>
 	confirmLabel: string
-	/** `icon={null}`: drops the warning media block. */
+	/** `false` drops the warning media block. */
 	hasIcon?: boolean
 	cancelLabel?: string
 	tone?: "destructive" | "default"
@@ -34,7 +34,7 @@ export type ConfirmDialogOptions<M> = Readonly<{
 	isPending?: boolean
 	isConfirmDisabled?: boolean
 	className?: string
-	/** `icon`: replaces the warning glyph in the media tile. */
+	/** Replaces the warning glyph in the media tile. */
 	icon?: Html
 	/** Opened from inside another dialog (Base UI nesting: no second backdrop). */
 	isNested?: boolean

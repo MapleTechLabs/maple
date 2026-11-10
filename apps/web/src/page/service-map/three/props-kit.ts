@@ -1,4 +1,4 @@
-import type { MachineFinish as LegacyMachineFinish } from "../../../components/service-map/three/palette"
+import type { MachineFinish as LegacyMachineFinish } from "./palette"
 import * as THREE from "three"
 import {
 	type Child,

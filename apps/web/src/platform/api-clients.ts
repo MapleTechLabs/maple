@@ -1,12 +1,9 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import {
-	isResignedOnUnauthorized,
-	transformMapleApiClient,
-} from "../lib/services/common/api-client-transform"
-import { apiBaseUrl } from "../lib/services/common/api-base-url"
-import { withRequestTimeout } from "../lib/services/common/http-client"
-import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
+import { isResignedOnUnauthorized, transformMapleApiClient } from "./api-client-transform"
+import { apiBaseUrl } from "./api-base-url"
+import { withRequestTimeout } from "./http-client"
+import { withUnauthorizedResign } from "./retry-policy"
 import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -71,7 +68,7 @@ export class MapleApiV2Client extends Context.Service<MapleApiV2Client, Effect.S
 	static readonly layer = Layer.effect(this, makeApiV2).pipe(Layer.provide(MapleHttpClientLive))
 }
 
-/** `MapleAiAtomClient`: chat and AI endpoints. */
+/** Chat and AI endpoints. */
 export class MapleAiClient extends Context.Service<MapleAiClient, Effect.Success<typeof makeAiApi>>()(
 	"@maple/web/MapleAiClient",
 ) {

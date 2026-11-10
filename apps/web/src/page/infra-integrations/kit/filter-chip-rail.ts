@@ -4,7 +4,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `FilterChipRail`: the active filters as removable chips, six until expanded.
+// The active filters as removable chips, six until expanded.
 
 const VISIBLE_LIMIT = 6
 

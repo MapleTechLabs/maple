@@ -10,7 +10,7 @@ import {
 	sheetViewportLeftStyles,
 	sheetViewportStyles,
 	type SheetSize,
-} from "@maple/ui/styles/ui/sheet"
+} from "./sheet.styles"
 import { Command } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
@@ -19,7 +19,7 @@ import * as DialogView from "./dialog-view"
 import { formDialogForm } from "./form-dialog"
 import { icon } from "./icon"
 
-// `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
+// A left-side sheet over Base UI Dialog.
 
 export type SheetOptions<Message> = Readonly<{
 	id: string

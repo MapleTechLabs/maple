@@ -15,8 +15,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// The transcript's tool cards and payload sections (`ToolBlock`, `PayloadSection`).
-
 type H = HtmlBuilder<Message>
 
 const missingResultNote = (tool: Extract<TranscriptRow, { kind: "tool" }>): string =>
@@ -119,7 +117,7 @@ export const toolBlock = (
 	])
 }
 
-/** `PayloadSection` (unbordered): a lane's task prompt or what a sub-agent returned. */
+/** Unbordered: a lane's task prompt or what a sub-agent returned. */
 export const payloadSection = (
 	h: H,
 	model: Model,

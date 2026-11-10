@@ -2,8 +2,8 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateSourceRequest, OrgId, UpdateSourceRequest, UserId } from "@maple/domain/http"
-import { SourceId } from "@maple/domain/primitives"
-import { hashIngestKey } from "@maple/db"
+import { SourceId } from "@maple/primitives"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -11,7 +11,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { SourcesService } from "./SourcesService"
 
 const trackedDbs: TestDb[] = []

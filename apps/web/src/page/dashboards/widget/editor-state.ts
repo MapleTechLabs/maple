@@ -18,11 +18,8 @@ import {
 import { Schema } from "effect"
 import { QueryDraft } from "../../kit/query-builder/draft"
 
-// The widget editor's state (`QueryBuilderWidgetState`).
-
 export { QueryDraft } from "../../kit/query-builder/draft"
 
-/** `QueryBuilderFormulaDraft`. */
 export const FormulaDraft = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -40,7 +37,6 @@ export type PointsMode = typeof PointsMode.Type
 
 export const Threshold = Schema.Struct({ value: Schema.Number, color: Schema.String })
 
-/** `ListColumnDraft` (list-widget-config.ts). */
 export const ListColumn = Schema.Struct({
 	field: Schema.String,
 	header: Schema.String,
@@ -71,7 +67,6 @@ export const FunnelAddOns = Schema.Struct({
 	breakdown: Schema.Boolean,
 })
 
-/** `FunnelWidgetDraft`. */
 export const FunnelDraft = Schema.Struct({
 	source: Schema.Literals(["product_events", "query_set"]),
 	steps: Schema.Array(StepDraft),
@@ -93,7 +88,6 @@ export const PathsAddOns = Schema.Struct({
 	exclude: Schema.Boolean,
 })
 
-/** `PathsWidgetDraft`. */
 export const PathsDraft = Schema.Struct({
 	anchor: StepDraft,
 	direction: PathsDirection,
@@ -152,7 +146,7 @@ export const EditorState = Schema.Struct({
 })
 export type EditorState = typeof EditorState.Type
 
-/** `chartPresentation.showPoints` and `PointsMode`: absent is Auto. */
+/** Absent `chartPresentation.showPoints` is Auto. */
 export const pointsModeFromShowPoints = (showPoints: boolean | undefined): PointsMode =>
 	showPoints === undefined ? "auto" : showPoints ? "always" : "never"
 export const showPointsFromPointsMode = (mode: PointsMode): boolean | undefined =>

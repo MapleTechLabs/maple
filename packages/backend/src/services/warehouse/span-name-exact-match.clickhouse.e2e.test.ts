@@ -13,7 +13,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_span_name_exact_e2e")
 const ORG_ID = OrgId.make("org_span_name_exact")

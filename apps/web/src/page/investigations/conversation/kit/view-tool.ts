@@ -1,4 +1,5 @@
-import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Clock, Effect, Option, Array as Arr, Record as Rec } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -26,9 +27,6 @@ import type { ToolPart } from "./ui-message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// `Tool`, `ToolRow` and `ToolGroup`: a tool call's row and a run of them grouped.
 /** What a tool row needs from its host: whether a panel is open, and the Message that toggles it. */
 export type PanelHost<M> = Readonly<{
 	isOpen: (id: string) => boolean
@@ -39,13 +37,13 @@ export type PanelHost<M> = Readonly<{
 	clockMount?: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 }>
 
-/** `useElapsedSeconds` + `formatElapsed`: `4s`, `1m 12s`; nothing under two seconds. */
+/** `4s`, `1m 12s`; nothing under two seconds. */
 export const formatElapsed = (seconds: number): string =>
 	seconds < 2 ? "" : seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
 
 export const CompletedMountClock = defineMessageUnion({ CompletedMountClock: {} }).CompletedMountClock
 
-/** `RunningClock`: its own one-second timer from when it appeared; hidden while it has nothing to say. */
+/** Its own one-second timer from when it appeared; hidden while it has nothing to say. */
 export const MountRunningClock = Mount.define("MountChatRunningClock", {
 	messages: [CompletedMountClock],
 	execute: ({ element }) =>

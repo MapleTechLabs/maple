@@ -38,10 +38,8 @@ function getHttpStatusColor(code: number): string | null {
 	const base = STATUS_CLASS_BASES[classDigit]
 	if (base === undefined) return null
 
-	// For class labels (2xx, 3xx) use the base color directly
 	if (code % 100 === 0 && code === classDigit * 100) return statusOklch(base, 0)
 
-	// Vary lightness and hue slightly per individual code within the class
 	const offset = code % 100
 	return statusOklch(base, offset)
 }
@@ -70,18 +68,14 @@ function detectColor(key: string): string | null {
 	if (lower in SPAN_STATUS_COLORS) return SPAN_STATUS_COLORS[lower] ?? null
 	if (lower in RUN_RESULT_COLORS) return RUN_RESULT_COLORS[lower] ?? null
 
-	// Log severities — the shared uppercase-keyed map from ./severity
 	const severity = SEVERITY_COLORS[Str.toUpperCase(lower)]
 	if (severity) return severity
 
-	// HTTP methods
 	const method = HTTP_METHOD_HEX[Str.toUpperCase(lower)]
 	if (method) return method
 
-	// Latency percentiles — these have dedicated chart tokens
 	if (lower in AGGREGATE_COLORS) return AGGREGATE_COLORS[lower] ?? null
 
-	// HTTP status code classes (e.g., "2xx", "5xx")
 	const classMatch = Str.match(STATUS_CLASS_PATTERN)(key)
 	if (Option.isSome(classMatch)) {
 		const classDigit = Number(classMatch.value[1])
@@ -89,7 +83,6 @@ function detectColor(key: string): string | null {
 		if (base !== undefined) return statusOklch(base, 0)
 	}
 
-	// Individual HTTP status codes (e.g., "200", "404", "500")
 	if (/^\d{3}$/.test(key)) {
 		return getHttpStatusColor(Number(key))
 	}

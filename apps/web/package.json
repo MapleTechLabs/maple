@@ -28,6 +28,7 @@
 		"@maple/infra": "workspace:*",
 		"@maple/ingest-rules": "workspace:*",
 		"@maple/lockfiles": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/status-page": "workspace:*",

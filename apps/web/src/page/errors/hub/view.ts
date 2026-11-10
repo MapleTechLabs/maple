@@ -16,15 +16,12 @@ import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
 import { Array as Arr } from "effect"
 
-// The errors page: sidebar, Reload, chips and the hub.
-
 type H = HtmlBuilder<Message>
 
 /** No count until there is one to state; a paged list says "50+" rather than a total. */
 const countReadout = (model: Model, shown: number): ReadonlyArray<string> | null => {
 	if (listStatusOf(model) !== "ready") return null
 	if (pagingOf(model) !== "end") return [`${shown}+ issues`]
-	// Split where the JSX interpolates, so the text runs match.
 	return [String(shown), " ", pluralize(shown, "issue")]
 }
 

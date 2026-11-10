@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import type { QuerySetExecutor } from "@maple/query-engine/query-set"
 import { decodeInput, executeQueryEngine, type BackendError, type WarehouseApiError } from "./effect-utils"
 import { WarehouseExecutor } from "./warehouse-services"

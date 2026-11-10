@@ -18,14 +18,14 @@ import {
 import { FetchHttpClient } from "effect/http"
 import { migrations } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
@@ -39,12 +39,23 @@ import {
 	clickhouseUrl,
 	clickhouseUser,
 	uniqueDatabase,
-} from "@maple/backend/services/warehouse/clickhouse-e2e-support"
+} from "@maple/backend/testing/clickhouse-e2e-support"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 import { ErrorsService } from "./ErrorsService"
 import { InvestigationService } from "./InvestigationService"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { ErrorIssuePullRequestInvalidError } from "@maple/domain/http"
+/** Fix-verification as far as the errors tick reaches it: nothing is linked, nothing is verifying. */
+const fixVerificationStub = Layer.mock(IssueFixVerificationService)({
+	linkPullRequest: (_orgId, _actorId, _issueId, url) =>
+		Effect.fail(
+			new ErrorIssuePullRequestInvalidError({ message: "Not linked in this suite", rawUrl: url }),
+		),
+	refuteOnPostMergeOccurrence: () => Effect.succeed(false),
+})
 
 const ORG = Schema.decodeSync(OrgId)("org_error_tick_fingerprint_e2e")
 const asIssueId = Schema.decodeSync(ErrorIssueId)
@@ -181,6 +192,8 @@ const makeTickLayer = (database: string) => {
 		Layer.provide(errorActorsLive),
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
+		Layer.provide(fixVerificationStub),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),

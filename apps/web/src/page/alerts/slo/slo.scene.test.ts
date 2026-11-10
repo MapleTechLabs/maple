@@ -26,7 +26,7 @@ import {
 	sloStatus,
 	type SloScenario,
 } from "../shared/slo-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

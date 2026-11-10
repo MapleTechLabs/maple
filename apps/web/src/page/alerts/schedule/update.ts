@@ -22,8 +22,11 @@ import {
 	ReadScheduleClock,
 } from "./command"
 import { Message } from "./message"
-import { canManage, type Model, type OverrideDraft } from "./model"
-import { isoMs, msIso } from "../shared/time"
+import { type Model, type OverrideDraft } from "./model"
+import { msIso } from "../../kit/alert-time"
+import { acceptGrants } from "../../kit/session-grants"
+import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
 type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
@@ -182,7 +185,7 @@ export const isScheduleStale = (model: Model, nowMs: number): boolean =>
 	!isScheduleRetryWaiting(model, nowMs) &&
 	Option.exists(scheduleOf(model), (schedule) =>
 		Option.match(Option.fromNullishOr(schedule.on_call_now), {
-			onSome: (now) => isoMs(now.ends_at) <= nowMs,
+			onSome: (now) => toEpochMs(now.ends_at) <= nowMs,
 			onNone: () => nowMs - (model.schedule.updatedAtMs ?? nowMs) >= SCHEDULE_MAX_AGE_MS,
 		}),
 	)
@@ -205,7 +208,6 @@ const clockRead = (model: Model, context: PageContext, nowMs: number): Return =>
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
 
-/** What is wrong with the override form, or none. */
 export const overrideIssue = (
 	draft: OverrideDraft,
 	timeZone: string,
@@ -302,7 +304,6 @@ const createOverride = (model: Model): Return => {
 	})
 }
 
-/** Runs the delete confirmation's update; `Closed` forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -343,8 +344,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				// A failed read keeps names neutral ("Member") rather than calling everyone a former member.
 				onFailure: () => ({ model: { ...model, isMembersFailed: true } }),
 			}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedRetry: () => refreshSchedule(model, context),
 		ClickedPreviousWeek: () => moveWeek(model, context, model.weekOffset - 1),
 		ClickedNextWeek: () => moveWeek(model, context, model.weekOffset + 1),
@@ -361,7 +361,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFocusGap: () => ({ model }),
 		// An ended shift has nothing left to cover; a running one is covered from now to its end.
 		ClickedShift: ({ startMs, endMs }) =>
-			canManage(model) && endMs > (model.nowMs ?? 0) ? openOverride(model, startMs, endMs) : { model },
+			canManageAlerts(model) && endMs > (model.nowMs ?? 0)
+				? openOverride(model, startMs, endMs)
+				: { model },
 		ClickedNewOverride: () => {
 			const now = model.nowMs ?? 0
 			const start = Math.ceil(now / HOUR_MS) * HOUR_MS
@@ -402,7 +404,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ClickedDeleteOverride: ({ overrideId }) =>
-			model.deletingOverrideId !== null || !canManage(model)
+			model.deletingOverrideId !== null || !canManageAlerts(model)
 				? { model }
 				: updateDeleteDialog(
 						{ ...model, confirmDeleteOverrideId: overrideId },

@@ -19,7 +19,7 @@ import {
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	ChatConnectorRegistry,
 	type RegisteredChatConnector,
@@ -27,10 +27,10 @@ import {
 import {
 	AlertEscalationRunId as AlertEscalationRunIdSchema,
 	ChatIdentityId as ChatIdentityIdSchema,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { OrgMembersService, type OrgMember } from "@maple/backend/services/org/OrgMembersService"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertIncidentPagesService } from "./AlertIncidentPagesService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { EscalationChainsService } from "./EscalationChainsService"
@@ -47,6 +47,7 @@ import {
 	stubEmailService,
 	stubOrgMembersService,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -380,7 +381,7 @@ const setup = (
 	} = {},
 ) =>
 	Effect.gen(function* () {
-		const alerts = yield* AlertsService
+		const alerts = yield* alertServices
 		const chains = yield* EscalationChainsService
 		const orgId = asOrgId(orgName)
 		const team = yield* alerts.createDestination(

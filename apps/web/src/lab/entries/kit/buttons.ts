@@ -58,8 +58,6 @@ const TOGGLES = ["wrap", "wrap-pressed", "follow", "follow-pressed", "xs", "sm",
 const FILTER_CHIPS = ["errors", "warnings", "ok"] as const
 const COPY_BUTTONS = ["trace-id", "ingest-key"] as const
 
-// MODEL
-
 const Model = Schema.Struct({
 	toggles: Schema.Record(Schema.String, Toggle.Model),
 	toggleGroups: Schema.Record(Schema.String, ToggleGroup.Model),
@@ -81,8 +79,6 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotToggleMessage: { id: Schema.String, message: Toggle.Message },
 	GotToggleGroupMessage: { id: Schema.String, message: ToggleGroup.Message },
@@ -91,8 +87,6 @@ const Message = defineMessageUnion({
 	ClickedRefresh: {},
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const foldToggle = Update.foldChildAt({
 	update: Toggle.update,
@@ -125,8 +119,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		}),
 		ClickedRefresh: () => ({ model }),
 	})
-
-// VIEW
 
 const buttonVariantRows = (h: HtmlBuilder<Message>): ReadonlyArray<Html> =>
 	Arr.map(VARIANTS, (variant) =>

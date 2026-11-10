@@ -9,8 +9,8 @@ import {
 	toEpochMs,
 } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
-import { getBrowserTimeZone, isValidIanaTimeZone } from "@maple/web-data/lib/timezone"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
+import { getBrowserTimeZone, isValidIanaTimeZone } from "@maple/ui/lib/timezone"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { typography } from "./typography"
 

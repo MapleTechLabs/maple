@@ -38,7 +38,7 @@ import {
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
+import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"

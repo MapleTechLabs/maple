@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,9 +9,9 @@ import { alert, alertDescription } from "@maple/views/ui/alert"
 import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type * as Select from "@maple/views/ui/select"
-import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
+import { entryLabel, environmentSwitcher } from "../kit/environment-switcher"
 import { timeControls } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
@@ -32,7 +32,7 @@ import type * as Scene3d from "./scene3d"
 import { scene3dView } from "./view-scene3d"
 import { servicePanel } from "@maple/views/service-map/panel/service-panel"
 import { infrastructureTab } from "./view-service-infra"
-import { pickTimeSearch } from "../infra/kit/view-tabs"
+import { pickTimeSearch } from "../kit/view-tabs"
 import { AppRoute, hrefOf } from "../../route"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -77,29 +77,16 @@ const headerActions = (h: H, model: Model): Html => {
 		value: model.search.view ?? "2d",
 		onChange: (view) => Message.ClickedView({ view }),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		// The value follows the URL and facets (`selectedEnvironment`), not the trigger's last pick.
-		model: { ...model.environmentSelect, value: selectedEnvironment(model) },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
-				_tag: "Item",
-				item,
-			})),
-			size: "sm",
-			// Sized to its value like the Overview select; full width only on its own narrow row.
-			className: "w-full min-w-0 @2xl/page:w-auto",
-			// `SelectValue` shows the raw value when it is not among the items (facets not loaded).
-			renderValue: (value) => [
-				Option.match(
-					Arr.findFirst(environmentItems(model), (item) => item.value === value),
-					{ onNone: () => value, onSome: (item) => item.label },
-				),
-			],
-			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
-		},
+	const entries = environmentItems(model)
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: selectedEnvironment(model),
+		entries,
+		toMessage: toSelect,
+		// Sized to its value like the Overview select; full width only on its own narrow row.
+		className: "w-full min-w-0 @2xl/page:w-auto",
+		renderValue: (value) => [entryLabel(entries, value)],
+		toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
 	})
 }
 
@@ -142,7 +129,7 @@ const serviceDetail = (
 	})
 }
 
-/** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
+/** A database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(
 		h: H,
@@ -186,7 +173,7 @@ const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
 				: [],
 	})
 
-/** `ResultView` over the bundle: the loading skeleton, the error, or the map. */
+/** The bundle's loading skeleton, its error, or the map. */
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.bundle.data, {
 		onEmpty: () => serviceMapLoading(h),

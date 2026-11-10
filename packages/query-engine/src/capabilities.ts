@@ -4,7 +4,8 @@
  * useful context, but an optimization is enabled only when the matching live
  * column/index is present.
  */
-import { Schema, Array as Arr, String as Str, Option } from "effect"
+import { Schema, Array as Arr, String as Str, Option, Predicate } from "effect"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 
 export type WarehouseSearchFeature =
 	| "logs.body.tokenbf"
@@ -215,16 +216,34 @@ export const deriveWarehouseCapabilities = (input: {
 	}
 }
 
+/** A warehouse table, named as its datasource names it. */
+export interface WarehouseTable {
+	readonly name: string
+}
+
 /** The BYO-optional rollup tables the capability probe checks for. */
 export const OPTIONAL_ROLLUP_TABLES = [
-	"trace_facets_hourly",
-	"service_operations_minutely",
-	"service_operations_hourly",
+	Datasources.traceFacetsHourly.name,
+	Datasources.serviceOperationsMinutely.name,
+	Datasources.serviceOperationsHourly.name,
 ] as const
 
 /** False only when the probe proved the table is absent; unknown stays optimistic. */
-export const hasWarehouseTable = (capabilities: WarehouseCapabilities, table: string): boolean =>
-	!capabilities.absentTables.has(table)
+export const hasWarehouseTable = (capabilities: WarehouseCapabilities, table: WarehouseTable): boolean =>
+	!capabilities.absentTables.has(table.name)
+
+/**
+ * The query-time twin of {@link hasWarehouseTable}: true for the missing-table
+ * config error whose message names one of `tables`. Any other missing table, or
+ * a timeout naming one of them, surfaces: a fallback would read the rest anyway.
+ */
+export const isMissingWarehouseTable =
+	(...tables: ReadonlyArray<WarehouseTable>) =>
+	(error: unknown): boolean => {
+		if (!Predicate.isTagged(error, "@maple/http/errors/WarehouseConfigError")) return false
+		const message = Predicate.hasProperty(error, "message") ? error.message : undefined
+		return Predicate.isString(message) && Arr.some(tables, (table) => Str.includes(table.name)(message))
+	}
 
 export const hasWarehouseFeature = (
 	capabilities: WarehouseCapabilities,

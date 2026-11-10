@@ -1,5 +1,5 @@
 import { decodePublicId, PublicIdPrefixes, type V2SetupAuditCheck } from "@maple/domain/http/v2"
-import { docsUrl } from "../../../lib/docs"
+import { docsUrl } from "../../kit/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { Array as Arr, Option, Order } from "effect"
 

@@ -30,8 +30,6 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { relativeTime } from "../../kit/relative-time"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `SourceOverview`.
-
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
 

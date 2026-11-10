@@ -12,10 +12,8 @@ import {
 	EmailUnsubscribeResponse,
 	OrgId,
 	UserId,
-	RoleName,
 } from "@maple/domain/http"
-import type { RoleName as RoleNameType } from "@maple/domain/http"
-import { createClerkClient } from "@clerk/backend"
+import type { ClerkClient } from "@clerk/backend"
 import {
 	Clock,
 	Array as Arr,
@@ -28,7 +26,6 @@ import {
 	Schema,
 	Context,
 	Stream,
-	Record as Rec,
 	String as Str,
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
@@ -49,26 +46,23 @@ import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { EdgeCacheService } from "@maple/cache"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
-import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
+import { lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
-import { unsubscribeLinks, verifyUnsubscribeToken } from "./unsubscribe-token"
+import { verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { runWeeklyDigestTick } from "./weekly-digest-tick"
+import { clerkClientFor } from "@maple/auth"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
-const ROOT_ROLE = RoleName.make("root")
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
 		message: error instanceof Error ? error.message : `Digest persistence error: ${String(error)}`,
 	})
 
-/** Row shapes matching query engine output (camelCase from CH DSL) */
 interface ServiceOverviewRow {
 	serviceName: string
 	/** `serviceOverviewQuery` groups by (serviceName, environment) — both are part
@@ -161,7 +155,6 @@ const DIGEST_SERVICE_LIMIT = 10
 /** Rows in each breakdown table. */
 const DIGEST_BREAKDOWN_LIMIT = 10
 
-/** Sum `estimatedSpanCount` per environment across a whole window's rows. */
 function requestsByEnvironment(rows: ReadonlyArray<ServiceOverviewRow>): Map<string, number> {
 	const totals = new Map<string, number>()
 	for (const row of rows) {
@@ -476,12 +469,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const previousStart = formatWarehouseDateTime(previousStartMs)
 			const previousEnd = formatWarehouseDateTime(currentStartMs - 1000)
 
-			const systemTenant = {
-				orgId,
-				userId: SYSTEM_DIGEST_USER,
-				roles: [ROOT_ROLE] as ReadonlyArray<RoleNameType>,
-				authMode: "self_hosted" as const,
-			}
+			const tenant = systemTenant(orgId, SYSTEM_DIGEST_USER)
 
 			// Filter lists are omitted rather than sent empty: an empty list would be
 			// a filter that matches nothing, not the absence of a filter.
@@ -490,11 +478,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const window = (startTime: string, endTime: string) => ({ orgId, startTime, endTime })
 			// A weekly background job over two 7-day windows: the aggregation budget.
 			const run = <T>(compiled: CH.CompiledQueryInput<T>, context: string) =>
-				warehouse.compiledQuery(systemTenant, compiled, { profile: "aggregation", context })
+				warehouse.compiledQuery(tenant, compiled, { profile: "aggregation", context })
 
 			// Warm the route once before the fan-out, so the org-config read isn't
 			// racing concurrent warehouse fetches for a connection slot.
-			yield* warehouse.warmRoute(systemTenant)
+			yield* warehouse.warmRoute(tenant)
 
 			const warehouseFailure = (error: unknown) =>
 				new DigestPersistenceError({
@@ -574,7 +562,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					{ concurrency: 6 },
 				).pipe(Effect.mapError(warehouseFailure))
 
-			// Split UNION ALL'd rows by period discriminator
 			const curOverviewData = Arr.filter(overviewRows, (r) => r.period === "current")
 			const prevOverviewData = Arr.filter(overviewRows, (r) => r.period === "previous")
 
@@ -653,7 +640,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const totalErrors = Math.round(cur.count * cur.errorRate)
 			const prevTotalErrors = Math.round(prev.count * prev.errorRate)
 
-			// Data volume — split UNION ALL'd rows by period discriminator
 			const curUsageData = Arr.filter(usageRows, (r) => r.period === "current")
 			const prevUsageData = Arr.filter(usageRows, (r) => r.period === "previous")
 			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
@@ -899,7 +885,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					Effect.mapBoth({
 						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
 						onSuccess: (page) => {
-							// Advance by the rows returned; stop on totalCount or an empty page.
 							const next = offset + page.data.length
 							const done = next >= page.totalCount || page.data.length === 0
 							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
@@ -909,7 +894,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			).pipe(Stream.runCollect)
 
 		const fetchAllClerkMemberships = Effect.fn("DigestService.fetchAllClerkMemberships")(function* (
-			clerk: ReturnType<typeof createClerkClient>,
+			clerk: ClerkClient,
 		) {
 			const orgs = yield* paginateClerk(
 				"Clerk.organizations.getOrganizationList",
@@ -1040,9 +1025,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const now = yield* Clock.currentTimeMillis
 			if (now % 86_400_000 >= SYNC_WINDOW_MS) return
 
-			const clerk = createClerkClient({
-				secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
-			})
+			const clerk = clerkClientFor(env)
+			if (clerk === undefined) return
 
 			const memberships = yield* fetchAllClerkMemberships(clerk)
 			yield* reconcileSubscriptions(memberships)
@@ -1067,208 +1051,71 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				),
 			)
 
-			const now = yield* Clock.currentTimeMillis
-			const resendCutoffMs = digestResendCutoffMs(now)
-
-			const subs = yield* dbExecute((db) =>
-				db.run(
-					PG.from(DigestSubscriptions)
-						.select()
-						.where(($) => [$.enabled.eq(true)]),
-				),
-			)
-
-			const dueSubs = Arr.filter(subs, (s) =>
-				isDigestDue(s, lastDigestActivity(s.lastSentAt, s.lastAttemptedAt), now),
-			)
-
-			if (dueSubs.length === 0) {
-				return { sentCount: 0, errorCount: 0, skipped: false }
-			}
-
-			// Grouped by (org, scope) rather than by org: subscribers who asked for
-			// the same slice still share one render and one set of warehouse
-			// queries, while a differently-scoped subscriber gets their own.
-			const byScope = Arr.groupBy(dueSubs, (s) =>
-				scopeKey(s.orgId, {
-					environments: parseScopeColumn(s.environmentsJson),
-					namespaces: parseScopeColumn(s.namespacesJson),
-				}),
-			)
-
-			const results = yield* Effect.forEach(
-				Rec.values(byScope),
-				(orgSubs) => {
-					// Every subscription in the group shares an org and a scope by
-					// construction, so the first row speaks for all of them.
-					const head = orgSubs[0]
-					const rawOrgId = head.orgId
-					const scope: DigestScope = {
-						environments: parseScopeColumn(head.environmentsJson),
-						namespaces: parseScopeColumn(head.namespacesJson),
-					}
-
-					return Effect.gen(function* () {
-						const orgId = OrgId.make(rawOrgId)
-						const orgSubIds = Arr.map(orgSubs, (s) => s.id)
-
-						// Orgs whose warehouse rejected queries with an auth/config-class
-						// error are parked (see warehouse-org-quarantine.ts). Checked before
-						// the claim so a parked org isn't marked attempted for the window.
-						if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) {
-							yield* Effect.logInfo("Skipping digest for org with quarantined warehouse").pipe(
-								Effect.annotateLogs({ orgId: rawOrgId }),
-							)
-							return []
-						}
-
-						const claim = yield* dbExecute((db) =>
-							db.run(
-								PG.update(DigestSubscriptions)
-									.set({ lastAttemptedAt: now })
-									.where(($) => [
-										PG.inList($.id, orgSubIds),
-										PG.or(
-											$.lastAttemptedAt.isNull(),
-											$.lastAttemptedAt.lte(resendCutoffMs),
-										),
-									])
-									.returning("id"),
-							),
-						)
-
-						if (claim.length === 0) {
-							yield* Effect.logInfo("Skipping digest org already attempted this window").pipe(
-								Effect.annotateLogs({
-									orgId: rawOrgId,
-									subscriptionCount: orgSubs.length,
-								}),
-							)
-							return []
-						}
-
-						const claimedIds = new Set(Arr.map(claim, (c) => c.id))
-						const claimedSubs = Arr.filter(orgSubs, (s) => claimedIds.has(s.id))
-
-						if (claimedSubs.length < orgSubs.length) {
-							yield* Effect.logInfo(
-								"Skipping digest subscriptions already attempted this window",
-							).pipe(
-								Effect.annotateLogs({
-									orgId: rawOrgId,
-									skippedCount: orgSubs.length - claimedSubs.length,
-									claimedCount: claimedSubs.length,
-								}),
-							)
-						}
-
-						const props = yield* generateDigestData(orgId, scope)
+			// Grouped by (org, scope) rather than by org: subscribers who asked for the same slice
+			// still share one render and one set of warehouse queries.
+			const tick = yield* runWeeklyDigestTick({
+				channel: {
+					kind: "digest",
+					selectEnabled: (db) =>
+						db.run(
+							PG.from(DigestSubscriptions)
+								.select()
+								.where(($) => [$.enabled.eq(true)]),
+						),
+					lastActivity: (s) => lastDigestActivity(s.lastSentAt, s.lastAttemptedAt),
+					claim: (db, ids, nowMs, cutoffMs) =>
+						db.run(
+							PG.update(DigestSubscriptions)
+								.set({ lastAttemptedAt: nowMs })
+								.where(($) => [
+									PG.inList($.id, ids),
+									PG.or($.lastAttemptedAt.isNull(), $.lastAttemptedAt.lte(cutoffMs)),
+								])
+								.returning("id"),
+						),
+					recordSent: (db, id, sentAtMs) =>
+						db.run(
+							PG.update(DigestSubscriptions)
+								.set({ lastSentAt: sentAtMs })
+								.where(($) => [$.id.eq(id)]),
+						),
+				},
+				execute: dbExecute,
+				email,
+				edgeCache,
+				linkConfig,
+				groupBy: (s) =>
+					scopeKey(s.orgId, {
+						environments: parseScopeColumn(s.environmentsJson),
+						namespaces: parseScopeColumn(s.namespacesJson),
+					}),
+				prepare: (head) =>
+					Effect.gen(function* () {
+						const props = yield* generateDigestData(OrgId.make(head.orgId), {
+							environments: parseScopeColumn(head.environmentsJson),
+							namespaces: parseScopeColumn(head.namespacesJson),
+						})
 						if (!hasDigestContent(props)) {
 							yield* Effect.logInfo("Skipping digest for org with no data").pipe(
-								Effect.annotateLogs({
-									orgId: rawOrgId,
-									subscriptionCount: orgSubs.length,
-								}),
+								Effect.annotateLogs({ orgId: head.orgId }),
 							)
-
-							return []
+							return undefined
 						}
-						const subject = deriveDigestStatus(props).subject
+						return {
+							subject: deriveDigestStatus(props).subject,
+							render: (unsubscribeUrl: string) =>
+								renderDigestHtml({ ...props, unsubscribeUrl }),
+						}
+					}),
+				failureMessage: "Digest failed for org",
+				skipMessage: "Skipping digest for org with quarantined warehouse",
+			})
 
-						const sendResults = yield* Effect.forEach(
-							claimedSubs,
-							(sub) =>
-								Effect.gen(function* () {
-									const links = unsubscribeLinks(linkConfig, "digest", sub.id)
-									const html = yield* renderDigestHtml({
-										...props,
-										unsubscribeUrl: links.pageUrl,
-									})
-									yield* email.send(sub.email, subject, html, { headers: links.headers })
-								}).pipe(
-									Effect.tap(() =>
-										Effect.gen(function* () {
-											const lastSentAt = yield* Clock.currentTimeMillis
-											yield* database.execute((db) =>
-												db.run(
-													PG.update(DigestSubscriptions)
-														.set({ lastSentAt })
-														.where(($) => [$.id.eq(sub.id)]),
-												),
-											)
-										}).pipe(
-											// The email is already sent — a failed bookkeeping write must
-											// not surface as a send failure (lastAttemptedAt still blocks
-											// same-day retries).
-											Effect.catchCause((cause) =>
-												Cause.hasInterruptsOnly(cause)
-													? Effect.interrupt
-													: Effect.logWarning(
-															"Failed to record digest lastSentAt",
-														).pipe(
-															Effect.annotateLogs({
-																subscriptionId: sub.id,
-																orgId: rawOrgId,
-																error: summarizeCause(cause),
-															}),
-														),
-											),
-										),
-									),
-									Effect.match({
-										onSuccess: () => ({ sent: true }),
-										onFailure: () => ({ sent: false }),
-									}),
-								),
-							{ concurrency: 1 },
-						)
+			yield* Effect.annotateCurrentSpan("maple.digest.sent_count", tick.sentCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.error_count", tick.errorCount)
+			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", tick.groupCount)
 
-						return sendResults
-					}).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.gen(function* () {
-										const quarantined = yield* quarantineOnConfigClassCause(
-											edgeCache,
-											rawOrgId,
-											cause,
-											now,
-										)
-										if (quarantined) {
-											yield* Effect.logInfo(
-												"Org warehouse rejected queries with a config-class error; quarantined",
-											).pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										} else {
-											yield* Effect.logError("Digest failed for org").pipe(
-												Effect.annotateLogs({
-													orgId: rawOrgId,
-													error: summarizeCause(cause),
-												}),
-											)
-										}
-										return Arr.map(orgSubs, () => ({ sent: false }))
-									}),
-						),
-					)
-				},
-				{ concurrency: 1 },
-			)
-
-			const allResults = results.flat()
-			const sentCount = Arr.filter(allResults, (r) => r.sent).length
-			const errorCount = Arr.filter(allResults, (r) => !r.sent).length
-
-			yield* Effect.annotateCurrentSpan("maple.digest.sent_count", sentCount)
-			yield* Effect.annotateCurrentSpan("maple.digest.error_count", errorCount)
-			yield* Effect.annotateCurrentSpan("maple.digest.scope_count", Rec.keys(byScope).length)
-
-			return { sentCount, errorCount, skipped: false }
+			return { sentCount: tick.sentCount, errorCount: tick.errorCount, skipped: false }
 		})
 
 		return {

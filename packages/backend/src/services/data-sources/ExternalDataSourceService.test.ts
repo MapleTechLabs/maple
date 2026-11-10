@@ -9,7 +9,7 @@ import {
 	type ClickHouseDataSourceConfig,
 	type SourceCatalog,
 } from "@maple/domain/data-sources"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { ExternalDataSources } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -27,7 +27,7 @@ import { FetchHttpClient } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DataSourceCallBudget, DataSourceDrivers } from "./DataSourceDrivers"
 import { ExternalDataSourceService, MAX_CATALOG_ENTRIES } from "./ExternalDataSourceService"
 
@@ -263,7 +263,6 @@ describe("ExternalDataSourceService", () => {
 			})
 			expect(result).toMatchObject({ rows: [{ n: 3 }], executed: true, language: "sql:clickhouse" })
 			expect(world.seenSecrets).toEqual([SECRET, SECRET])
-			// Another org cannot see it at all.
 			expect(yield* service.list(OTHER_ORG, { agent: false })).toEqual([])
 		}).pipe(Effect.provide(makeLayer(world)))
 	})

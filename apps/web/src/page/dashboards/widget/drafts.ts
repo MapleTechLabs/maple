@@ -14,14 +14,11 @@ import {
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 
-// Stored query sets read back into editor drafts, and the predicates over them
-// (`loadQueryDrafts`, `inferDefaultUnitForQueries`, `deriveDefaultWidgetTitle`, ...).
-
-/** `toQueryGroupByArray`: a stored draft with no group-by list groups by service. */
+/** A stored draft with no group-by list groups by service. */
 const groupByOf = (groupBy: ReadonlyArray<string> | undefined): Array<string> =>
 	groupBy === undefined ? ["service.name"] : Arr.filter(groupBy, (item) => Str.trim(item).length > 0)
 
-/** `normalizeLoadedQuery`: every field filled from the stored draft or the defaults. */
+/** Every field filled from the stored draft or the defaults. */
 const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number): QueryDraft => {
 	// The template only supplies defaults; its random id is always replaced or discarded.
 	const base = createQueryDraft(index)
@@ -68,7 +65,7 @@ const normalizeLoadedQuery = (raw: QueryBuilderQueryDraftPayload, index: number)
 	return { ...shared, dataSource: "traces" }
 }
 
-/** `loadQueryDrafts`: a stored draft without a where clause string is dropped. */
+/** A stored draft without a where clause string is dropped. */
 export const loadQueryDrafts = (set: {
 	readonly queries: ReadonlyArray<QueryBuilderQueryDraftPayload>
 	readonly formulas?: ReadonlyArray<QueryBuilderFormulaPayload> | undefined
@@ -93,7 +90,7 @@ export const hasActiveGroupBy = (query: QueryDraft): boolean =>
 	query.addOns.groupBy &&
 	Arr.some(query.groupBy, (g) => Str.trim(g) !== "" && Str.toLowerCase(Str.trim(g)) !== "none")
 
-/** `inferDisplayUnitForQuery`: from the source, aggregation and metric name alone. */
+/** From the source, aggregation and metric name alone. */
 export const inferDisplayUnitForQuery = (
 	query: Readonly<{ dataSource: string; aggregation: string; metricName?: string | undefined }>,
 ): string | undefined => {
@@ -115,7 +112,7 @@ export const inferDisplayUnitForQuery = (
 		: undefined
 }
 
-/** `inferDefaultUnitForQueries`: the unit every visible query agrees on, if any. */
+/** The unit every visible query agrees on, if any. */
 export const inferDefaultUnitForQueries = (queries: ReadonlyArray<QueryDraft>): string | undefined => {
 	const units = Arr.map(Arr.filter(queries, isVisibleQuery), inferDisplayUnitForQuery)
 	const [first] = units
@@ -140,7 +137,7 @@ const PRODUCT_EVENTS_AGGREGATION_TITLES = new Map([
 	["visitors", "Visitors with events"],
 ])
 
-/** `deriveDefaultWidgetTitle`: "Error rate by service.name" for a widget saved untitled. */
+/** "Error rate by service.name" for a widget saved untitled. */
 export const deriveDefaultWidgetTitle = (queries: ReadonlyArray<QueryDraft>): string => {
 	const query = Option.getOrElse(Arr.findFirst(queries, isVisibleQuery), () => queries[0])
 	if (query === undefined) return "Untitled"
@@ -177,7 +174,7 @@ const uniqueName = (taken: ReadonlyArray<string>, base: string): string => {
 	return `${base} (${suffix})`
 }
 
-/** `toSeriesFieldOptions`: the enabled, visible series a stat can reduce, named as the chart names them. */
+/** The enabled, visible series a stat can reduce, named as the chart names them. */
 export const toSeriesFieldOptions = (
 	state: Readonly<{ queries: ReadonlyArray<QueryDraft>; formulas: ReadonlyArray<FormulaDraft> }>,
 ): ReadonlyArray<string> =>
@@ -209,7 +206,7 @@ const LegacyParams = Schema.Struct({
 const decodeLegacyParams = Schema.decodeUnknownOption(LegacyParams)
 const NO_PARAMS: typeof LegacyParams.Type = {}
 
-/** `legacyQueryDraft`: query A read out of a route widget's params (`custom_timeseries` and friends). */
+/** Query A read out of a route widget's params (`custom_timeseries` and friends). */
 export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryDraft => {
 	const params = Option.getOrElse(decodeLegacyParams(raw), () => NO_PARAMS)
 	const fallback = createQueryDraft(0)
@@ -243,7 +240,7 @@ export const legacyQueryDraft = (raw: Readonly<Record<string, unknown>>): QueryD
 	return params.source === "logs" ? { ...base, dataSource: "logs" } : { ...base, dataSource: "traces" }
 }
 
-/** `toHiddenSeriesBaseNames`: hidden queries and formulas, by their legend or name. */
+/** Hidden queries and formulas, by their legend or name. */
 export const hiddenSeriesBaseNames = (
 	queries: ReadonlyArray<QueryDraft>,
 	formulas: ReadonlyArray<FormulaDraft>,

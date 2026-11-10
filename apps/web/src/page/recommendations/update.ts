@@ -149,7 +149,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			settle(model, context, result, { error: "Couldn't reopen recommendation", withMappings: false }),
 		GotCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.copy, inner)
-			// `useCopy`'s toast: on by default for `<CopyButton label="Mapping">`.
 			const isCurrent = "generation" in inner && inner.generation === model.copy.generation
 			const toast =
 				isCurrent && inner._tag === "SucceededCopy"

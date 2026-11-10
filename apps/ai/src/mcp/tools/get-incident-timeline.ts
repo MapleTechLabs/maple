@@ -1,11 +1,10 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import type { AlertSilenceId, OrgId } from "@maple/domain/primitives"
+import type { AlertSilenceId, OrgId } from "@maple/primitives"
 import {
 	ackLabel,
 	ALERT_INCIDENT_STATUSES,
@@ -16,6 +15,7 @@ import {
 import * as P from "../lib/params"
 import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc, type DocBlock } from "../lib/tool-doc"
+import { orFallback } from "../lib/fallback"
 
 const MAX_LIMIT = 200
 /** Severity and group key filter in memory, so a filtered call reads this many rows first. */
@@ -71,12 +71,7 @@ const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(f
 			silences.get(orgId, id).pipe(
 				Effect.map((silence) => [[silence.id, silence.reason] as const]),
 				// The line falls back to the bare id, but a failed lookup is still recorded.
-				Effect.tapError((error) =>
-					Effect.logWarning("Alert silence reason lookup failed").pipe(
-						Effect.annotateLogs({ silenceId: id, errorTag: error._tag }),
-					),
-				),
-				Effect.orElseSucceed(() => []),
+				orFallback(`alert silence ${id} reason`, () => []),
 			),
 		{ concurrency: 4 },
 	)
@@ -171,7 +166,6 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			group_key: P.optionalText("Only incidents with this exact group key"),
 			limit: P.limit({ default: 20, max: MAX_LIMIT, noun: "incidents" }),
 		}),
-		output: GetIncidentTimelineOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading the incident timeline", "Building the incident timeline"],
 		handler: Effect.fn("McpTool.getIncidentTimeline")(function* (params) {

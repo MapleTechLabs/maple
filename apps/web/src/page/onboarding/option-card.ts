@@ -6,12 +6,12 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `OptionCard` (row layout), `DrawnCheck` and the onboarding `PixelGlyph`. Each animation is drawn at
-// its end state.
+// The option card, its drawn check and the onboarding pixel glyph. Each animation is drawn at its
+// end state.
 
 export type PixelGlyphName = keyof typeof PIXEL_GLYPHS
 
-/** `rasterOrder`: segments top row first, left to right, so the reveal scans. */
+/** Segments top row first, left to right, so the reveal scans. */
 const rasterOrder = (segments: ReadonlyArray<string>): ReadonlyArray<string> => {
 	const origin = (d: string) => {
 		const [x, y = 0] = Arr.map(Str.split(/[\s,]+/)(Str.trim(Str.slice(1)(d))), Number)
@@ -33,7 +33,7 @@ const segmentPath = <M>(h: HtmlBuilder<M>, d: string, extra: ReadonlyArray<Attri
 		...extra,
 	])
 
-/** `DrawnCheck`: the tick at its drawn (`pathLength` 1) or undrawn end state. */
+/** The tick at its drawn (`pathLength` 1) or undrawn end state. */
 const drawnCheck = <M>(h: HtmlBuilder<M>, isChecked: boolean, className: string | false | undefined): Html =>
 	h.span(
 		[h.AriaHidden(true), h.Class(choiceCheckClass(isChecked, true, className))],
@@ -73,7 +73,7 @@ export type OptionCardOptions<M> = Readonly<{
 	footer?: Html
 }>
 
-/** `OptionCard`: a hidden native input behind a bordered card. */
+/** A hidden native input behind a bordered card. */
 export const optionCard = <M>(h: HtmlBuilder<M>, options: OptionCardOptions<M>): Html => {
 	const layout = options.layout ?? "row"
 	const check = drawnCheck(
@@ -141,7 +141,9 @@ export const pixelGlyph = <M>(h: HtmlBuilder<M>, name: PixelGlyphName, isSelecte
 			h.Class(
 				cn(
 					"flex size-10 shrink-0 items-center justify-center rounded-lg",
-					isSelected ? "bg-primary-a2" : "bg-surface-sunken group-hover:bg-surface-strong group-active:bg-surface-strong",
+					isSelected
+						? "bg-primary-a2"
+						: "bg-surface-sunken group-hover:bg-surface-strong group-active:bg-surface-strong",
 				),
 			),
 		],

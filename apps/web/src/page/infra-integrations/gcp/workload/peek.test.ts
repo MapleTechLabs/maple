@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { GcpStatement, GcpTracedStatement } from "../../../../components/infra/gcp/cloud-sql-signals"
+import type { GcpStatement, GcpTracedStatement } from "../cloud-sql-signals"
 import { resolveQueryPeek, statementSpansInput, statementTracesHref } from "./peek"
 
 const statement = (queryHash: string, querystring: string): GcpStatement => ({

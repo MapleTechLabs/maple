@@ -6,19 +6,16 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
+import { DATA_SOURCE_KIND_ENTRY } from "../../kit/providers"
 
 // Small pieces the list, the form and the detail share.
 
 export type Inputs = Readonly<{ canManage: boolean; nowMs: number; timeZone: string }>
 
-export const KIND_LABEL = { clickhouse: "ClickHouse", clerk: "Clerk" } as const satisfies Record<
-	DataSourceKind,
-	string
->
-export const KIND_ICON = { clickhouse: "ClickhouseIcon", clerk: "ClerkIcon" } as const satisfies Record<
-	DataSourceKind,
-	IconName
->
+/** The kind's name, from the provider registry. */
+export const kindLabel = (kind: DataSourceKind): string => DATA_SOURCE_KIND_ENTRY[kind].name
+
+export const kindIcon = (kind: DataSourceKind): IconName => DATA_SOURCE_KIND_ENTRY[kind].icon
 
 export const ENVIRONMENT_LABEL = {
 	production: "Production",
@@ -44,13 +41,13 @@ export const kindLogo = <M>(h: HtmlBuilder<M>, kind: DataSourceKind): Html =>
 			as: "span",
 			justify: "center",
 			className: "size-9 shrink-0 rounded-md border border-border-subtle bg-surface-sunken",
-			attributes: [h.Role("img"), h.AriaLabel(KIND_LABEL[kind])],
+			attributes: [h.Role("img"), h.AriaLabel(kindLabel(kind))],
 		},
-		[icon(h, KIND_ICON[kind], { size: 18 })],
+		[icon(h, kindIcon(kind), { size: 18 })],
 	)
 
 export const kindBadge = <M>(h: HtmlBuilder<M>, kind: DataSourceKind): Html =>
-	badge(h, { variant: "meta", size: "sm" }, [icon(h, KIND_ICON[kind]), KIND_LABEL[kind]])
+	badge(h, { variant: "meta", size: "sm" }, [icon(h, kindIcon(kind)), kindLabel(kind)])
 
 export const environmentBadge = <M>(h: HtmlBuilder<M>, environment: DataSourceEnvironment): Html =>
 	badge(h, { variant: environment === "production" ? "info" : "muted", size: "sm" }, [

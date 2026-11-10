@@ -1,17 +1,17 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { AuthorizationUnavailableError, OrgId, UserId } from "@maple/domain/http"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { connectorSessionId } from "@maple/domain/chat-session"
-import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatConversationKey } from "@maple/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
 
 const trackedDbs: TestDb[] = []
@@ -201,10 +201,8 @@ describe("ChatSessionsRouter", () => {
 		})
 	})
 
-	it.effect("starts a turn for an internal-service caller, as the autonomous pass", () => {
-		// This route authenticates Maple's own service token, and that caller on an investigation
-		// session IS the pass. Stamping `app` on it would hand it the attended ruleset and stop the
-		// runner closing the pass out.
+	it.effect("refuses Maple's internal service token, even naming the session's org", () => {
+		// The token is shared by every Maple Worker; accepting it here would open any org's chat.
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return withHandler(
@@ -215,9 +213,8 @@ describe("ChatSessionsRouter", () => {
 					authorization: `Bearer maple_svc_${INTERNAL_TOKEN}`,
 					"x-org-id": ORG,
 				})
-				assert.strictEqual(response.status, 202)
-				assert.strictEqual(turns.length, 1)
-				assert.deepStrictEqual(turns[0]?.origin, { kind: "autonomous" })
+				assert.strictEqual(response.status, 401)
+				assert.strictEqual(turns.length, 0)
 			}),
 		)
 	})
@@ -320,17 +317,31 @@ describe("ChatSessionsRouter", () => {
 	it.effect("hides another org's session as 404", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
-		return withHandler(
-			testDb,
-			turns,
-			Effect.fnUntraced(function* (handler) {
-				const response = yield* send(handler, {
-					authorization: `Bearer maple_svc_${INTERNAL_TOKEN}`,
-					"x-org-id": "org_other",
-				})
-				assert.strictEqual(response.status, 404)
-				assert.strictEqual(turns.length, 0)
-			}),
-		)
+		return Effect.gen(function* () {
+			const key = yield* mintSession(testDb)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					const response = yield* Effect.promise(() =>
+						handler(
+							new Request(
+								`http://api.localhost/api/chat/sessions/${encodeURIComponent("org_other:inv-1")}/messages`,
+								{
+									method: "POST",
+									headers: {
+										"content-type": "application/json",
+										authorization: `Bearer ${key}`,
+									},
+									body: JSON.stringify({ text: "hello" }),
+								},
+							),
+						),
+					)
+					assert.strictEqual(response.status, 404)
+					assert.strictEqual(turns.length, 0)
+				}),
+			)
+		})
 	})
 })

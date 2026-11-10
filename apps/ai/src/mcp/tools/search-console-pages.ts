@@ -4,7 +4,7 @@ import { SearchConsolePagesOutput, SearchConsoleToolSort } from "@maple/domain/m
 import type { McpToolRegistrar } from "./types"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import * as P from "../lib/params"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	historyCoverage,
 	historyNotice,
@@ -53,7 +53,6 @@ export function registerSearchConsolePagesTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "pages" }),
 		}),
-		output: SearchConsolePagesOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading Search Console pages", "Joining search pages with sessions"],
 		handler: Effect.fn("McpTool.searchConsolePages")(function* (params) {

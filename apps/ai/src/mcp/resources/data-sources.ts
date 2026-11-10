@@ -2,7 +2,7 @@ import { McpServer } from "effect/ai"
 import { Array as Arr, Effect, Layer } from "effect"
 import type { ExternalDataSourceDocument } from "@maple/domain/data-sources"
 import { McpToolExecutorLoader } from "../executor-loader"
-import { CurrentMcpRequestTenant } from "../lib/query-warehouse"
+import { CurrentMcpRequestTenant } from "../tenant"
 import { dataSourceLine } from "../lib/data-sources"
 
 /** More than this and the resource points at search instead of listing every source. */

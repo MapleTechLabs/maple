@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections, PlanetscaleDatabases } from "@maple/db/tables"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { ConfigProvider, Context, Effect, Layer, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
@@ -14,7 +14,7 @@ import {
 	createTestDb,
 	insertTestSource,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,

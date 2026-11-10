@@ -159,7 +159,7 @@ const header = <M>(h: HtmlBuilder<M>, onFit: M): Html =>
 		],
 	)
 
-/** `TraceFlowView` for a trace that fits the flow view. */
+/** The trace flow for a trace that fits the flow view. */
 export const view = <M>(
 	h: HtmlBuilder<M>,
 	graph: FlowGraph,

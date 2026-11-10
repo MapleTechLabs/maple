@@ -29,7 +29,7 @@ import {
 } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	analyzeTelemetry,
@@ -46,7 +46,6 @@ export const TELEMETRY_WINDOW_DAYS = 7
 /** How recently an issue must have occurred to count as open for the review. */
 const OPEN_ISSUE_WINDOW = Duration.days(14)
 
-/** A deployed version's first-seen time, decoded where the warehouse string enters. */
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const CATALOG_ISSUE_COLUMNS = [
@@ -108,7 +107,6 @@ export interface PrReviewTelemetryServiceApi {
 		start: DateTime.Utc,
 		end: DateTime.Utc,
 	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
-	/** Error issues first seen in these services since a moment. */
 	readonly issuesFirstSeenSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
@@ -168,7 +166,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const params = {
 				orgId,
 				...window(DateTime.subtractDuration(now, Duration.days(TELEMETRY_WINDOW_DAYS)), now),
@@ -360,7 +358,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				services.length === 0 ? [undefined] : services,
 				(serviceName) =>
 					warehouse.compiledQuery(
-						systemTenant(orgId),
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 						CH.compile(
 							CH.serviceDeploymentsQuery({ serviceName, minutePrecision: true, limit: 50 }),
 							{ orgId, ...window(DateTime.subtractDuration(since, Duration.hours(1)), now) },
@@ -398,7 +396,7 @@ export class PrReviewTelemetryService extends Context.Service<
 		) =>
 			warehouse
 				.compiledQuery(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					CH.compile(
 						CH.operationTrafficMinutelyQuery({ serviceNames: services, spanNames, limit: 200 }),
 						{ orgId, ...window(start, end) },
@@ -428,7 +426,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed(new Map())
 				: warehouse
 						.compiledQuery(
-							systemTenant(orgId),
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 							CH.compile(
 								CH.errorIssuesQuery({ fingerprintHashes, limit: fingerprintHashes.length }),
 								{ orgId, ...window(start, end) },
@@ -476,7 +474,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			Effect.all(
 				Arr.map(["span", "resource"] as const, (scope) =>
 					warehouse.compiledQuery(
-						systemTenant(orgId),
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 						CH.compile(CH.attributeKeysQuery({ scope, limit: 2_000 }), {
 							orgId,
 							...window(start, end),

@@ -1,17 +1,14 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as Select from "@maple/views/ui/select"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Catalog, SparklineSeries, SummaryRow } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const BrowseView = Schema.Literals(["grid", "table"])
 export type BrowseView = typeof BrowseView.Type
@@ -36,9 +33,7 @@ export const Message = defineMessageUnion({
 	ClickedMetricCard: { metricName: Schema.String, metricType: Schema.String },
 	ClickedClearFilters: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},

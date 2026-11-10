@@ -246,6 +246,14 @@ describe("ruleHeadroom", () => {
 		expect(meter.breached).toBe(false)
 		expect(meter.headroom).toBeCloseTo(0.5)
 	})
+
+	it("agrees with the evaluator that a range without an upper bound never breaches", () => {
+		const meter = ruleHeadroom(
+			makeRule({ comparator: "between", threshold: 0.05, thresholdUpper: null }),
+			0.05,
+		)
+		expect(meter.breached).toBe(false)
+	})
 })
 
 describe("fireLanes", () => {

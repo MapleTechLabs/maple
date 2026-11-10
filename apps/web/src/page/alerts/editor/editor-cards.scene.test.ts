@@ -25,7 +25,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../contract"
 import { scopedAnomalyRuleRow } from "../shared/anomaly-test-fixtures"
-import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { destinationRow, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import * as Select from "@maple/views/ui/select"
 import { FetchEditorPreview, FocusRuleCard } from "./command"
 import { BREACH_MODE_SELECT_ID } from "./form-steps"

@@ -1,14 +1,11 @@
 import { ApiKeyKind } from "@maple/domain/http"
 import { V2ApiKeyCreateParams, V2ApiKeyWithSecret, type V2Scope } from "@maple/domain/http/v2"
-import {
-	type ApiKeyCreateOptions,
-	buildApiKeyCreatePayload,
-} from "../../../components/settings/api-key-create-payload"
+import { type ApiKeyCreateOptions, buildApiKeyCreatePayload } from "../kit/api-key-create-payload"
 import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -16,7 +13,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 
-// `CreateApiKeyDialog`, as one Submodel shared by the Keys and MCP tabs.
+// The create-key dialog, one Submodel shared by the Keys and MCP tabs.
 
 export const EXPIRATION_OPTIONS = [
 	{ value: "never", label: "Never" },
@@ -127,11 +124,7 @@ export const CreateApiKey = Command.define("CreateApiKey", {
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			return yield* client.apiKeys.create({ payload })
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ kind, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ kind, result }))),
 })
 
 /** `api_key_created`: the key's kind and access (an MCP key is always full access). */
@@ -141,8 +134,6 @@ export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
 	execute: ({ kind, access }) =>
 		trackProduct("api_key_created", { kind, access }).pipe(Effect.as(Message.CompletedTrackKeyCreated())),
 })
-
-// DERIVED
 
 const levelOf = (model: Model, family: string): ScopeLevel => model.scopeLevels[family] ?? "none"
 
@@ -171,16 +162,14 @@ export const blockedReason = (model: Model): string | null =>
 			? "Give at least one resource family read or write access."
 			: null
 
-// UPDATE
-
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
 /**
- * `handleClose(false)`: the form resets as the dialog closes, but a create in flight stays in
- * flight, so its secret lands in `created` and no second create starts.
+ * The form resets as the dialog closes, but a create in flight stays in flight, so its secret
+ * lands in `created` and no second create starts.
  */
 const reset = (model: Model): Model => ({
 	...init(model.dialog.id),
@@ -191,7 +180,7 @@ const reset = (model: Model): Model => ({
 
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
-/** Opens empty for `kind` (`openCreate`); a key created while it was closed is shown. */
+/** Opens empty for `kind`; a key created while it was closed is shown. */
 export const open = (model: Model, kind: ApiKeyKind): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }

@@ -65,7 +65,7 @@ export const selectStep = (model: Model, id: string, message: Select.Message): R
 	return { model: edit === null ? lifted : updateQuery(lifted, queryId, edit), commands }
 }
 
-/** `GroupByAutocomplete`'s combobox for a query, seeded with its first group-by field. */
+/** The group-by combobox for a query, seeded with its first group-by field. */
 export const groupByModelOf = (model: Model, query: QueryDraft): Combobox.Model =>
 	model.groupBys[query.id] ??
 	Combobox.init(`group-by-${query.id}`, "single", { selected: query.groupBy.slice(0, 1) })

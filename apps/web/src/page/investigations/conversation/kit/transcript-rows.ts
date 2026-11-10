@@ -3,8 +3,6 @@ import { parseDiagnosisMarker } from "./diagnosis-marker"
 import { String as Str, Array as Arr, Option } from "effect"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 
-// Messages to rows, merging runs of tool-only turns.
-
 export type ToolStatus = "running" | "completed" | "error" | "stopped"
 
 export const deriveToolStatus = (state: string): ToolStatus =>

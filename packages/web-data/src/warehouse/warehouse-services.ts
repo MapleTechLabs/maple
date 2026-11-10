@@ -4,7 +4,7 @@ import type {
 	QueryEngineBatchFailure,
 	QueryEngineExecuteRequest,
 	QueryEngineExecuteResponse,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { Context, type Effect, Schema } from "effect"
 import type { HttpApiClient } from "effect/http-api"
 

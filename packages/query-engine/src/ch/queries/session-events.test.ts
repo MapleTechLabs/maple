@@ -10,8 +10,6 @@ const WINDOW = {
 	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
 }
 
-// sessionActivityQuery
-//
 // Active/idle time from gaps between distilled events: a lagInFrame window
 // measures each event's gap to its predecessor, then sumIf splits the gaps at
 // the idle threshold. One row per session.

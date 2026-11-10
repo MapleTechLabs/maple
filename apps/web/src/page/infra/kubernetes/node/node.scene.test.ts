@@ -6,7 +6,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { failureSentence } from "@maple/views/ui/error-state"
 import type { PageContext } from "../../../contract"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

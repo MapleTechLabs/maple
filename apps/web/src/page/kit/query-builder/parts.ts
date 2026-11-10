@@ -1,5 +1,5 @@
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
 import { chipsView } from "@maple/views/ui/combobox-view"
@@ -83,8 +83,7 @@ const UNSHOWABLE_NOTE = {
 const BESIDE_CONTROLS = "flow-root min-w-52"
 
 /**
- * `WhereClauseEditor`: condition rows when the clause reads as rows (the default), else the text
- * editor. The Builder/Text switch and `trailing` (the span select) float top right, level with
+ * Condition rows when the clause reads as rows (the default), else the text editor. The Builder/Text switch and `trailing` (the span select) float top right, level with
  * the first row; a narrow editor puts them on their own line. Both edit the same string.
  */
 export const whereClauseEditor = (
@@ -169,7 +168,7 @@ export const whereClauseEditor = (
 	)
 }
 
-/** A controlled `<Input>` that reports each keystroke. */
+/** A controlled text input that reports each keystroke. */
 export const textInput = <M>(
 	h: HtmlBuilder<M>,
 	id: string,
@@ -186,7 +185,6 @@ export const textInput = <M>(
 		attributes: [h.Value(value), h.Placeholder(placeholder), h.OnInput(toMessage)],
 	})
 
-/** `AddOnToggleBar`. */
 export const addOnToggles = (
 	h: H,
 	query: QueryDraft,
@@ -210,7 +208,7 @@ export const addOnToggles = (
 const sectionLabel = (h: H, text: string): Html =>
 	h.span([h.Class("text-2xs text-muted-foreground w-16 shrink-0")], [text])
 
-/** `GroupByMultiSelect`: the source's built-in dimensions as chips. TODO(widget-editor): `attr.*` keys. */
+/** The source's built-in dimensions as chips. TODO(widget-editor): `attr.*` keys. */
 const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	return h.submodel({
@@ -234,7 +232,7 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 const row = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex items-center gap-2")], [sectionLabel(h, label), ...children])
 
-/** `AddOnSections`: the inputs each enabled add-on reveals. */
+/** The inputs each enabled add-on reveals. */
 export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html> => {
 	if (!Arr.some(Rec.values(query.addOns), Boolean)) return []
 	const text = (field: "having" | "orderBy" | "limit" | "legend") => (value: string) =>

@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { Array as Arr } from "effect"
 
-// `<AuthLayout>`: the centred brand card of the signed-out and interstitial screens (CLI login, MCP consent,
+// The centred brand card of the signed-out and interstitial screens (CLI login, MCP consent,
 // unsubscribe, org required).
 
 const GRID_STYLE = {
@@ -49,14 +49,12 @@ export const authLayout = <M>(h: HtmlBuilder<M>, maxWidth: string, children: Rea
 		],
 	)
 
-/** `AuthLayout.Title`. */
 export const authTitle = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html | string>,
 	className?: string,
 ): Html => heading(h, { level: 1, variant: "title", className }, children)
 
-/** `AuthLayout.Description`. */
 export const authDescription = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html | string>,

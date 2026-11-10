@@ -34,8 +34,8 @@ import { formSelect } from "./view-select"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
-
-// `RuleConditionFields`: the thresholds and how they are checked, each as a sentence.
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
+import { everyMinutes } from "../../kit/alert-time"
 
 type H = HtmlBuilder<Message>
 
@@ -51,7 +51,6 @@ type ConditionView = Pick<Model, "mountedForm" | "savedForm" | "isBreachWindowOp
 		slowedMinutes: number | null
 	}>
 
-/** `COMPARATOR_ITEMS`, in `comparatorLabels` order. */
 const COMPARATOR_ITEMS = Arr.map([...COMPARATOR_WORDS], ([value, label]) => ({ value, label }))
 
 const SEVERITY_OPTIONS: ReadonlyArray<{
@@ -62,13 +61,13 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 }> = [
 	{
 		value: "warning",
-		label: "Warning",
+		label: ALERT_SEVERITY_LABEL.warning,
 		selected: "border-severity-warn/60 bg-severity-warn-a2 text-severity-warn",
 		dot: "bg-severity-warn",
 	},
 	{
 		value: "critical",
-		label: "Critical",
+		label: ALERT_SEVERITY_LABEL.critical,
 		selected: "border-severity-error-a4 bg-severity-error-a2 text-severity-error",
 		dot: "bg-severity-error",
 	},
@@ -78,7 +77,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 const SEVERITY_CHIP =
 	"inline-flex h-9 shrink-0 select-none items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium sm:h-8"
 
-/** `SeverityPicker`: the one tier's severity, as two chips. */
+/** The one tier's severity, as two chips. */
 const severityPicker = (h: H, value: AlertSeverity): Html => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: RadioGroup.init(value),
@@ -122,7 +121,7 @@ const severityPicker = (h: H, value: AlertSeverity): Html => {
 	)
 }
 
-/** `TierLabel`: the fixed severity of a row once a rule has two tiers, the same chip as the picker's. */
+/** The fixed severity of a row once a rule has two tiers, the same chip as the picker's. */
 const tierLabel = (h: H, severity: AlertSeverity): Html => {
 	const option = Option.getOrElse(
 		Arr.findFirst(SEVERITY_OPTIONS, (candidate) => candidate.value === severity),
@@ -338,7 +337,7 @@ const windowDescription = (form: RuleForm): string => {
 	const minutes = Number(Str.trim(form.windowMinutes))
 	if (!Number.isFinite(minutes) || minutes <= 0) return "Each check looks at this much data."
 	const every = formIntervalMinutes(form)
-	return `Each check looks at this much data, checked every ${every === 1 ? "minute" : `${every} min`}.`
+	return `Each check looks at this much data, checked every ${everyMinutes(every)}.`
 }
 
 /** An interval as the list shows it: why it will not work, and for raw SQL the time it allows. */

@@ -39,7 +39,7 @@ const WORKER_JOBS: Arr.NonEmptyReadonlyArray<string> = [
 
 // Demo data is written straight to the `traces` / `logs` datasources via
 // WarehouseQueryService.ingest (bypassing the billing-enforced ingest gateway),
-// so each row must match those datasources' ingestion JSON — the OpenTelemetry
+// so each row must match those datasources' ingestion JSON: the OpenTelemetry
 // Collector Tinybird exporter shape (snake_case keys, jsonPath-mapped). See
 // packages/domain/src/tinybird/datasources.ts.
 //
@@ -337,10 +337,9 @@ function generateWorkerTrace(rand: Rand, timestamp: Date, orgId: string): DemoTr
 	return { traceRows: [row], logRows: [] }
 }
 
-// Demo runtime metrics — Node.js process gauges/counters for demo-api and
-// demo-worker, one point per service per minute. These make the metric-based
-// dashboard templates (Node.js Runtime, Metric Overview) show real data
-// instead of rendering empty against demo orgs.
+// Node.js process gauges/counters for demo-api and demo-worker, one point per
+// service per minute, so the metric-based dashboard templates (Node.js Runtime,
+// Metric Overview) show data against demo orgs.
 
 const METRIC_SERVICES = ["demo-api", "demo-worker"] as const satisfies readonly DemoServiceName[]
 const METRIC_INTERVAL_MS = 60_000

@@ -15,7 +15,8 @@ import { from, fromUnion, param, unionAll, type ColumnAccessor } from "@maple-de
 import { SERVICE_OPERATIONS_HTTP_MEASURES as HTTP } from "@maple/domain/tinybird/http-endpoint-sql"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, Traces, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { tracesBaseWhereConditions } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 import {
@@ -36,7 +37,7 @@ export interface ServiceApiScopeOpts {
 	readonly tiers?: ServiceApiTiers
 }
 
-type RollupColumns = ColumnAccessor<typeof ServiceOperationsMinutely.columns>
+type RollupColumns = ColumnAccessor<typeof Datasources.serviceOperationsMinutely.columns>
 type RollupMeasureColumns = Pick<
 	RollupColumns,
 	| "SpanCount"
@@ -55,7 +56,7 @@ type RollupMeasureColumns = Pick<
 const httpMeasure = (sql: string) => CH.rawExpr(sql, T.uint64)
 
 /** Branch measures off raw spans: the view's own expressions. */
-const rawMeasures = ($: ColumnAccessor<typeof Traces.columns>) => ({
+const rawMeasures = ($: ColumnAccessor<typeof Datasources.traces.columns>) => ({
 	bSpanCount: CH.count(),
 	bEstimatedSpanCount: CH.sum($.SampleRate),
 	bErrorCount: CH.countIf($.StatusCode.eq("Error")),
@@ -98,7 +99,7 @@ const nameFilter = (name: CH.Expr<string>, spanNames: readonly string[] | undefi
 /** Per-endpoint branches, unioned. Outer queries merge them per endpoint or overall. */
 function endpointWindows(opts: ServiceApiScopeOpts) {
 	const spliced = (opts.tiers ?? "spliced") === "spliced"
-	const rawEdges = from(Traces)
+	const rawEdges = from(Datasources.traces)
 		.select(($) => ({ bSpanName: displaySpanName($), ...rawMeasures($) }))
 		.where(($) => [
 			...tracesBaseWhereConditions($, {
@@ -111,7 +112,7 @@ function endpointWindows(opts: ServiceApiScopeOpts) {
 		.groupBy("bSpanName")
 	if (!spliced) return fromUnion(unionAll(rawEdges), "endpoint_windows")
 
-	const minutelyEdges = from(ServiceOperationsMinutely)
+	const minutelyEdges = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({ bSpanName: $.SpanName, ...rollupMeasures($) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -123,7 +124,7 @@ function endpointWindows(opts: ServiceApiScopeOpts) {
 		])
 		.groupBy("bSpanName")
 
-	const hourlyInterior = from(ServiceOperationsHourly)
+	const hourlyInterior = from(Datasources.serviceOperationsHourly)
 		.select(($) => ({ bSpanName: $.SpanName, ...rollupMeasures($) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -156,8 +157,6 @@ const httpOutputs = <
 	requestBodyBytes: CH.sum($.bRequestBodyBytes),
 	requestBodyCount: CH.sum($.bRequestBodyCount),
 })
-
-// A. Per-endpoint rows
 
 export interface ServiceEndpointsWithHttpOpts extends ServiceApiScopeOpts {
 	readonly limit?: number
@@ -235,8 +234,6 @@ export function serviceEndpointsWithHttpQuery(opts: ServiceEndpointsWithHttpOpts
 		.format("JSON")
 }
 
-// B. One row across every HTTP endpoint of the service
-
 export interface ServiceApiTotalsOutput {
 	readonly spanCount: number
 	readonly estimatedSpanCount: number
@@ -278,8 +275,6 @@ export function serviceApiTotalsQuery(opts: ServiceApiScopeOpts) {
 		}))
 		.format("JSON")
 }
-
-// C. Timeseries, merged across endpoints or per named endpoint
 
 export interface ServiceApiTimeseriesOpts extends ServiceApiScopeOpts {
 	/** Build-time copy of the `bucketSeconds` param: an hour or more unlocks the hourly tier. */
@@ -324,7 +319,7 @@ export function serviceApiTimeseriesQuery(opts: ServiceApiTimeseriesOpts) {
 	const perEndpoint = opts.spanNames !== undefined && opts.spanNames.length > 0
 	const seriesName = (name: CH.Expr<string>) => (perEndpoint ? name : CH.lit(""))
 
-	const rawEdges = from(Traces)
+	const rawEdges = from(Datasources.traces)
 		.select(($) => ({
 			bBucket: CH.toStartOfInterval($.Timestamp, bucketParam()),
 			bSpanName: seriesName(displaySpanName($)),
@@ -343,7 +338,7 @@ export function serviceApiTimeseriesQuery(opts: ServiceApiTimeseriesOpts) {
 	// Same tier choice as `serviceOperationsTimeseriesQuery`: an hour bucket has no
 	// position inside a sub-hour one, so the hourly tier only joins at >= 3600s.
 	const withHourly = opts.bucketSeconds >= 3600
-	const minutely = from(ServiceOperationsMinutely)
+	const minutely = from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			bBucket: CH.toStartOfInterval($.Minute, bucketParam()),
 			bSpanName: seriesName($.SpanName),
@@ -359,7 +354,7 @@ export function serviceApiTimeseriesQuery(opts: ServiceApiTimeseriesOpts) {
 		])
 		.groupBy("bBucket", "bSpanName")
 
-	const hourlyInterior = from(ServiceOperationsHourly)
+	const hourlyInterior = from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			bBucket: CH.toStartOfInterval($.Hour, bucketParam()),
 			bSpanName: seriesName($.SpanName),

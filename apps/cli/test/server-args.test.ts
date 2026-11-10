@@ -21,13 +21,14 @@ import {
 	serverUrl,
 	validateHost,
 } from "../src/commands/server-args"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import {
-	isProcessAlive,
 	parseElapsedSeconds,
 	parseProcStartedAtMs,
 	startedBeforeWrite,
 } from "@maple/local-server/store-claim"
 import { Array as Arr } from "effect"
+import { defaultBindHost } from "@maple/local-server/local-address"
 
 describe("local server bind host", () => {
 	it("defaults to loopback and accepts a trimmed environment override", () => {
@@ -186,6 +187,12 @@ describe("isProcessAlive", () => {
 		// The parent shell/runner is the one live process whose PID we can know.
 		strictEqual(isProcessAlive(process.ppid), true)
 	})
+
+	it("reports a process owned by another user as alive", () => {
+		// PID 1 is init/launchd: unless we are it, signalling it fails with EPERM
+		// (or succeeds as root), and either way it exists.
+		strictEqual(isProcessAlive(1), process.pid !== 1)
+	})
 })
 
 describe("recovery hints keep the user's target", () => {
@@ -193,7 +200,7 @@ describe("recovery hints keep the user's target", () => {
 		const scope = commandScope({
 			dataDir: defaultDataDir(),
 			port: 4318,
-			host: process.env.MAPLE_LOCAL_BIND_HOST ?? "127.0.0.1",
+			host: defaultBindHost(),
 		})
 		strictEqual(mapleCommand("reset --yes", scope), "maple reset --yes")
 		strictEqual(mapleCommand("start --reset", scope), "maple start --reset")

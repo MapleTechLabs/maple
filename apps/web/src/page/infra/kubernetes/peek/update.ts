@@ -1,5 +1,6 @@
-import { bucketSecondsForRange } from "../../../../components/infra/constants"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { bucketSecondsForRange } from "../../kit/constants"
+import { podKey } from "../pod-restarts"
 import type { Result } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -11,8 +12,8 @@ import type { TimeWindow } from "../../../../data/time-range"
 import type { Resources } from "../../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../../contract"
-import { seriesSteps } from "../../kit/requests"
-import type { SeriesData } from "../../kit/series"
+import { seriesSteps } from "../../../kit/keyed-step"
+import type { SeriesData } from "../../../kit/series"
 import type { PodRow, PodSummary } from "../pod-data"
 import { FetchPeekSeries, FetchPeekSummary, Message, OutMessage } from "./message"
 import { type Model, PEEK_METRICS, seriesId } from "./model"
@@ -53,7 +54,7 @@ const summaryInputOf = (pod: PodRow, window: TimeWindow) => ({
 	endTime: window.endTime,
 })
 
-/** The summary and (unless `summaryOnly`) every chart of the pods (`PeekPrefetch`). */
+/** The summary and (unless `summaryOnly`) every chart of the pods. */
 const request = (
 	model: Model,
 	context: PageContext,
@@ -100,11 +101,7 @@ const request = (
 	}
 }
 
-const loadRuntime = Command.mapMessage(LoadChartRuntime(), (message) =>
-	message._tag === "CompletedLoadChartRuntime"
-		? Message.CompletedLoadChartRuntime()
-		: Message.FailedLoadChartRuntime({ reason: message.reason }),
-)
+const loadRuntime = LoadChartRuntime()
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>) => ({
 	model: { ...model, dialog: result.model },
@@ -156,16 +153,12 @@ export const update = (
 		}),
 		ClickedStep: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
 		PressedStepKey: ({ step }) => ({ model, outMessage: OutMessage.RequestedStep({ step }) }),
-		// `useAtomRefresh` on the summary atom alone: the charts are not re-read.
+		// Only the summary is refreshed: the charts are not re-read.
 		ClickedRetrySummary: () =>
 			peek === null || window === null
 				? { model }
 				: request(model, context, window, [peek.pod], "Refresh", true),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ id, message: inner }) => {
 			const chart = model.charts[id] ?? Chart.init()
 			return {

@@ -7,9 +7,6 @@ import { label } from "@maple/views/ui/label"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The typed matcher fields (services, environments, tags) the silence and maintenance window
-// dialogs share, and the text field both dialogs draw them with.
-
 export const MatcherField = Schema.Literals(["services", "tags", "environments"])
 export type MatcherField = typeof MatcherField.Type
 

@@ -31,7 +31,7 @@ const TAB_LABELS = {
 	infrastructure: { icon: "ServerIcon", text: " Infrastructure" },
 } as const satisfies Record<TabValue, { icon: IconName; text: string }>
 
-/** `logCountLabel`: the query stops at the limit, so a full page reads "100+". */
+/** The query stops at the limit, so a full page reads "100+". */
 const logCount = (model: Model): string | null =>
 	Option.match(AsyncData.getData(model.logs.data), {
 		onNone: () => null,
@@ -60,7 +60,7 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 		],
 	)
 
-/** `SpanLogs`: the logs carrying this span's context. A row click asks the page to open that log. */
+/** The logs carrying this span's context. A row click asks the page to open that log. */
 export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, docsHref?: string): Html =>
 	AsyncData.matchData(model.logs.data, {
 		onEmpty: () =>

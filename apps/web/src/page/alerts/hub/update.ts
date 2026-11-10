@@ -27,7 +27,7 @@ import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { alertsHref, createHref, ruleHref } from "../shared/links"
+import { alertsHref, createHref, ruleHref } from "../../kit/alert-links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT, chainHref } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
@@ -37,7 +37,7 @@ import {
 } from "../shared/oncall-schedules"
 import { WINDOW_LIST_LIMIT, windowIdOfParam } from "../shared/maintenance-windows"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
-import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
+import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import {
 	DeleteSchedule,
 	FetchHubMembers,
@@ -70,7 +70,8 @@ import { withAcknowledgement } from "../shared/commands"
 import { testSendFailureMessage } from "../shared/delivery-failure"
 import { resolveStatus } from "./derive"
 import { Message, type RuleBucket } from "./message"
-import { canManage, type Model } from "./model"
+import type { Model } from "./model"
+import { acceptGrants, canManageAlerts } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -92,7 +93,6 @@ export const NEW_RULE_MENU_ID = "alerts-new-rule-menu"
 export const WINDOW_DIALOG_ID = "alerts-maintenance-window"
 const DELETE_WINDOW_DIALOG_ID = "alerts-delete-window"
 
-/** Runs the delete dialog's update; `Closed` (Escape, Cancel, success) forgets the target. */
 const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -107,7 +107,6 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 const deliveriesKey = (context: PageContext) =>
 	requestKey(context.orgId, "alertDeliveries.list", { query: { limit: 100 } })
 
-/** One `Keyed.request` on the deliveries slot; `Refresh` is the `alertDeliveryEvents` invalidation. */
 const requestDeliveries = (model: Model, context: PageContext, mode: Keyed.RequestMode): Requested => {
 	const key = deliveriesKey(context)
 	return Option.match(Keyed.request(model.deliveries, key, mode), {
@@ -284,7 +283,6 @@ const clockRead = (model: Model, context: PageContext, nowMs: number): Return =>
 	return { model: step.model, commands: [...sheet.commands, ...step.commands] }
 }
 
-/** `reactivityKeys: ["alertDeliveryEvents"]`: both reads revalidate. */
 const refreshDeliveries = (model: Model, context: PageContext) => {
 	const overview = requestDeliveries(model, context, "Refresh")
 	const routing = requestRoutingDeliveries(overview.model, context, "Refresh")
@@ -431,7 +429,6 @@ const destinationById = (model: Model, id: AlertDestinationId) =>
 	)
 
 const toggleRule = (model: Model, ruleId: AlertRuleId, isEnabled: boolean): Return =>
-	// `Mutation.make` serializes the write on one permit: a second toggle waits for the first.
 	model.togglingRuleId !== null
 		? { model }
 		: { model: { ...model, togglingRuleId: ruleId }, commands: [ToggleRule({ ruleId, isEnabled })] }
@@ -471,8 +468,6 @@ const confirmDelete = (model: Model): Return => {
 			}
 }
 
-// DESTINATION DIALOG
-
 /** The dialog's outcome as the page reports it: toasts, and "Destination created" for a new one. */
 const liftDestinationDialog = (model: Model, step: ReturnType<typeof DestinationDialog.update>): Return => ({
 	model: { ...model, destinationDialog: step.model },
@@ -487,8 +482,6 @@ const liftDestinationDialog = (model: Model, step: ReturnType<typeof Destination
 					CreatedDestination: () => toast("success", "Destination created"),
 				}),
 })
-
-// ESCALATION CHAINS
 
 const chainsOf = (model: Model): ReadonlyArray<V2EscalationChain> =>
 	Option.getOrElse(AsyncData.getData(model.chains.data), () => [])
@@ -533,7 +526,6 @@ const inUseMessage = (model: Model, chainId: EscalationChainId): string => {
 	return `Still used by ${listed}. Remove it from ${tiers} first.`
 }
 
-/** Runs the chain delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteChainDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -619,9 +611,6 @@ const deletedChain = (
 	})
 }
 
-// ON-CALL SCHEDULES
-
-/** A write changed the schedules: read them again under a new generation. */
 const refreshSchedules = (model: Model, context: PageContext): Return => {
 	const step = requestSchedules(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -648,7 +637,6 @@ const scheduleInUseMessage = (model: Model, scheduleId: OnCallScheduleId): strin
 		: `Still paged by ${Array.join(names, ", ")}. Remove it from those chains first.`
 }
 
-/** Runs the schedule delete dialog's update; `Closed` forgets the target and its error. */
 const updateDeleteScheduleDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const isClosed = step.outMessage?._tag === "Closed"
 	return {
@@ -724,8 +712,6 @@ const deletedSchedule = (
 	})
 }
 
-// SILENCES
-
 /** `?sheet=silence`: the new-silence side panel. */
 export const SILENCE_SHEET = "silence"
 
@@ -754,7 +740,7 @@ const followSilenceSheet = (model: Model, context: PageContext): Requested => {
 		}
 	}
 	const isOpen = model.silenceDialog.dialog.isOpen
-	if (isInUrl && !isOpen && model.nowMs !== null && canManage(model)) {
+	if (isInUrl && !isOpen && model.nowMs !== null && canManageAlerts(model)) {
 		const step = SilenceDialog.openNew(model.silenceDialog, context.timeZone, model.nowMs)
 		return { model: { ...model, silenceDialog: step.model }, commands: silenceCommands(step) }
 	}
@@ -767,7 +753,7 @@ const followSilenceSheet = (model: Model, context: PageContext): Requested => {
 
 /** The grants are in: a viewer who can't silence loses a linked panel's `?sheet=`, replaced away. */
 const grantsLoaded = (model: Model, context: PageContext): Requested =>
-	model.search.sheet === SILENCE_SHEET && !canManage(model)
+	model.search.sheet === SILENCE_SHEET && !canManageAlerts(model)
 		? {
 				model: { ...model, search: { ...model.search, sheet: undefined } },
 				commands: [DismissHubSheet({ href: hubHref(model), id: SILENCE_SHEET })],
@@ -818,8 +804,6 @@ const endSilence = (model: Model, silenceId: AlertSilenceId): Return =>
 				commands: [EndHubSilence({ silenceId })],
 			}
 
-// MAINTENANCE WINDOWS
-
 const windowsOf = (model: Model): ReadonlyArray<V2AlertMaintenanceWindow> =>
 	Option.getOrElse(AsyncData.getData(model.windows.data), () => [])
 
@@ -859,7 +843,6 @@ const toggleWindow = (model: Model, windowId: AlertMaintenanceWindowId): Return 
 		},
 	)
 
-/** Runs the window delete dialog's update; `Closed` forgets the target. */
 const updateDeleteWindowDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -925,10 +908,7 @@ const deletedWindow = (
 	})
 }
 
-// ROW MENUS
-
 /**
-
  * Row menu ids carry what they act on: `rule:<id>@<tag group>` (a rule is listed under each of
  * its tags) or `destination:<id>`.
  */
@@ -949,7 +929,6 @@ const toggleMonitor = (model: Model, monitorId: UptimeMonitorId, enabled: boolea
 				commands: [ToggleMonitor({ monitorId, enabled })],
 			}
 
-/** Runs the monitor delete dialog's update; `Closed` forgets the target. */
 const updateDeleteMonitorDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -995,7 +974,6 @@ const confirmDeleteMonitor = (model: Model): Return => {
 		: { model: { ...model, deletingMonitorId: id }, commands: [DeleteMonitor({ monitorId: id })] }
 }
 
-/** A write changed the list: read it again under a new generation. */
 const refreshMonitors = (model: Model, context: PageContext): Return => {
 	const step = requestMonitors(model, context, "Supersede")
 	return { model: step.model, commands: step.commands }
@@ -1112,7 +1090,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && (model.rules === null || model.incidents === null)
 				? { model: { ...model, isLoadFailed: true } }
 				: { model },
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections.
+		// A stopped shape syncs again only on fresh collections.
 		ClickedRetryLoad: () => ({
 			model: { ...model, isLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
@@ -1125,8 +1103,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchRoutingDeliveries: ({ key, result }) => ({
 			model: { ...model, routingDeliveries: Keyed.accept(model.routingDeliveries, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? grantsLoaded({ ...model, grants }, context) : { model },
+		CompletedFetchSession: (answer) =>
+			answer.orgId === context.orgId
+				? grantsLoaded(acceptGrants(model, context.orgId, answer), context)
+				: { model },
 		ChangedRulesQuery: ({ value }) => ({ model: { ...model, rulesQuery: value } }),
 		ClickedStatusFilter: ({ bucket }) => statusToggled(model, bucket),
 		ClickedClearRuleFilters: () => ({
@@ -1216,7 +1196,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model,
 				testingDestinationIds: withoutId(model.testingDestinationIds, destinationId),
 			}
-			// The test lands in the delivery log: `reactivityKeys: ["alertDeliveryEvents"]`.
+			// The test lands in the delivery log.
 			const refreshed = refreshDeliveries(settled, context)
 			return {
 				model: refreshed.model,
@@ -1230,7 +1210,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedConfirmDeleteDestination: () => confirmDelete(model),
 		GotDeleteDialogMessage: ({ message: child }) =>
-			// `ConfirmDialog` ignores dismissal while the delete is pending.
 			model.confirmDeleteId !== null && model.deletingDestinationIds.includes(model.confirmDeleteId)
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteDialog, child)),

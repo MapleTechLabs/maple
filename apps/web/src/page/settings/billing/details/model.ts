@@ -6,8 +6,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Select from "@maple/views/ui/select"
 
-// `BillingDetailsDialog` and `BillingTaxIdsEditor` (apps/web/src/components/settings/): company
-// name and address saved together, tax IDs saved one by one as they are added or removed.
+// Company name and address are saved together, tax IDs one by one as they are added or removed.
 
 export const AddressField = Schema.Literals(["name", "line1", "line2", "city", "state", "postalCode"])
 export type AddressField = typeof AddressField.Type

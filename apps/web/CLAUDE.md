@@ -19,6 +19,12 @@ live in `packages/views` too. The design rules are in `docs/design-rules.md`; th
    Show before and after screenshots of the pages you touched.
 5. Run `bun run ui:index` after adding or renaming a kit export (CI checks it is current).
 
+## Integration providers
+
+Each provider with `/infra` pages lives in `src/page/infra-integrations/<provider>/`: its data and models at the root,
+one folder per `/infra` page, and `integration/` for its part of `/integrations` and `/sources/new`. Names, marks,
+accents and routes come from `src/page/kit/providers.ts`.
+
 ## Text and layout
 
 Type and flex layout go through the kit too: `typography` (ui/typography: `size`, `tone`,
@@ -42,7 +48,7 @@ Outside `packages/views/src/ui`, each app's `src/page/kit`, `src/lab` and tests:
   target for something that draws its own look; reach for it only when no styled control fits.
 - `maple/no-raw-heading`: no `h.h1` to `h.h4`; use `heading` (its variants are the heading ramp),
   `sectionHeading`, `pageTitle` or `detailTitle`.
-- `maple/no-kit-styles-in-pages`: no `@maple/ui/styles/ui/*` imports; call the wrapper.
+- `maple/no-kit-styles-in-pages`: no `*.styles` imports (the kit's `packages/views/src/ui/*.styles.ts`); call the wrapper.
 - `maple/no-raw-control` also covers `h.tr`/`h.td`/`h.th`/`h.thead`/`h.tbody`, `h.hr`, a `ul`/`ol`
   with `divide-*` (`dividedList`), a chip-styled `h.code` (`inlineCode`) and a `h-px bg-border` box
   (`separator`).

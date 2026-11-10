@@ -25,8 +25,6 @@ export type QuickPickItem = Readonly<{
 	keywords?: string
 }>
 
-// MODEL
-
 export const Model = Schema.Struct({
 	popover: Popover.Model,
 	query: Schema.String,
@@ -41,7 +39,6 @@ export const init = (id: string): Model => ({
 	highlighted: 0,
 })
 
-/** The rows the filter keeps: label and keywords contain the query. */
 export const visibleOf = <T extends Readonly<{ label: string; keywords?: string | undefined }>>(
 	items: ReadonlyArray<T>,
 	query: string,
@@ -51,8 +48,6 @@ export const visibleOf = <T extends Readonly<{ label: string; keywords?: string 
 		Str.includes(needle)(Str.toLowerCase(`${item.label} ${item.keywords ?? ""}`)),
 	)
 }
-
-// MESSAGE
 
 const ItemFacts = Schema.Struct({
 	value: Schema.String,
@@ -132,8 +127,6 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedItem: ({ value }) => picked(model, value),
 	})
 
-// VIEW
-
 const INPUT_KEYS = new Set([
 	"Escape",
 	"ArrowDown",
@@ -162,7 +155,7 @@ export type ViewOptions<M> = Readonly<{
 	/** The trigger button, given the Popover's trigger attributes. */
 	trigger: (attributes: Popover.RenderInfo["trigger"]) => Html
 	toView: (parts: ReadonlyArray<Html>) => Html
-	/** `fallbackAnchor`: the row, used while the trigger is hidden (narrow page). */
+	/** The row, used as the anchor while the trigger is hidden (narrow page). */
 	fallbackAnchorSelector?: string
 }>
 

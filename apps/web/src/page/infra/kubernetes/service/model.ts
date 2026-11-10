@@ -1,15 +1,14 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesServiceSearch } from "../../../../route/search"
-import * as Frame from "../../kit/frame"
-import { ChartModels, SeriesRow } from "../../kit/series"
+import * as Frame from "../../../kit/time-frame"
+import { ChartModels, SeriesRow } from "../../../kit/series"
 import * as Rail from "../lens/rail"
 import { PodsPage } from "../pod-data"
 
-// `/infra/kubernetes/services/$serviceName`: the service lens, latency and CPU-of-limit on one axis.
+// The service lens: latency and CPU-of-limit on one axis.
 
 /** The fields of a `getServiceDetailOverview` point the lens reads. */
 export const ServicePoint = Schema.Struct({
@@ -33,7 +32,6 @@ export const Model = Schema.Struct({
 	cpu: KeyedSchema(Schema.Array(SeriesRow), LoadFailure),
 	pods: KeyedSchema(PodsPage, LoadFailure),
 	charts: ChartModels,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type

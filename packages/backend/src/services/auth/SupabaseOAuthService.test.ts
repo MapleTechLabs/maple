@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { listOrganizations } from "@maple/backend/services/integrations/supabase/api"
 import {
 	FAKE_CLIENT_ID,

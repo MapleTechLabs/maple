@@ -15,7 +15,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 import { Array as Arr, Option, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_trace_facets_e2e")

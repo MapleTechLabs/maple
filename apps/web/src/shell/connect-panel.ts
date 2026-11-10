@@ -1,5 +1,5 @@
 import { retrieveIngestKeys } from "../data/ingest-keys"
-import { isOwnService } from "../lib/own-services"
+import { isOwnService } from "../page/kit/own-services"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
@@ -40,7 +40,7 @@ export const Model = Schema.Struct({
 	/** The org the keys and overview were read for; another org's late answer is dropped. */
 	orgId: Schema.NullOr(Schema.String),
 	keys: Keys,
-	/** `useIngestConnection`'s last-hour overview; empty until it lands, kept when a poll fails. */
+	/** The last-hour overview; empty until it lands, kept when a poll fails. */
 	services: Schema.Array(ServiceRow),
 	/** `useEffectiveTimeRange(.., "1h")`: resolved on open and again on each 15 s poll. */
 	window: Schema.NullOr(TimeWindow),
@@ -158,8 +158,6 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, request })),
 		),
 })
-
-// UPDATE
 
 /** The signed-in org and its namespace pin, which the overview read applies. */
 export type Context = Readonly<{ orgId: string | null; pinnedNamespace: string | null }>
@@ -282,8 +280,6 @@ export const close = (model: Model): UpdateReturn =>
 
 /** The 15 s poll runs while the panel is open on a resolved window. */
 export const isPolling = (model: Model): boolean => model.popover.isOpen && model.window !== null
-
-// DERIVED (`useIngestConnection`)
 
 /** The org's own services: seeded `demo-` ones and onboarding's test trace do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>

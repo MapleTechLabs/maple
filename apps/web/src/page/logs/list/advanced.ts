@@ -1,4 +1,4 @@
-import { applyLogsWhereClause } from "../../../lib/logs/advanced-filter-sync"
+import { applyLogsWhereClause } from "./advanced-filter-sync"
 import { Option, type Result } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -10,6 +10,7 @@ import type { PageContext, PageReturn } from "../../contract"
 import { lookupField, type LookupNames, names } from "../../kit/autocomplete-lookups"
 import { initWhereFields, type WhereFieldMessage } from "../../kit/where-field"
 import { isFieldOpen, updateWhereFields, type WhereFieldSpec } from "../../kit/where-field-update"
+import { keyedSlot } from "../../kit/keyed-step"
 import { ADVANCED_FIELD_ID, ADVANCED_TEXTAREA_ID, type AdvancedFilter } from "./advanced-model"
 import { FetchResourceKeys } from "./command"
 import { Message } from "./message"
@@ -74,13 +75,10 @@ const requestResourceKeys = (model: Model, context: PageContext) => {
 	const window = model.window
 	if (window === null) return { model, commands: [] }
 	const key = requestKey(context.orgId, "autocomplete:resourceAttributeKeys", window)
-	return Option.match(Keyed.request(model.advanced.resourceKeys, key, "Load"), {
-		onNone: () => ({ model, commands: [] }),
-		onSome: (resourceKeys) => ({
-			model: withAdvanced(model, { resourceKeys }),
-			commands: [FetchResourceKeys({ key, window })],
-		}),
-	})
+	const step = keyedSlot(model.advanced.resourceKeys, key, "Load", (slotKey) =>
+		FetchResourceKeys({ key: slotKey, window }),
+	)
+	return { model: withAdvanced(model, { resourceKeys: step.slot }), commands: step.commands }
 }
 
 /** The button or `F`: the dialog opens on the URL's clause. */

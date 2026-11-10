@@ -456,10 +456,6 @@ function buildBaseTurns(): readonly AiSessionSpan[] {
 	return spans
 }
 
-/* -------------------------------------------------------------------------- */
-/* Transcript turns                                                           */
-/* -------------------------------------------------------------------------- */
-
 // Three turns the Transcript view exists for, and which the fourteen above do
 // not produce: a fan-out into two lanes that genuinely overlap, a sub-agent
 // invoked through a `task` tool, reasoning parts in all their spellings, a

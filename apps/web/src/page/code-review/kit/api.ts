@@ -13,9 +13,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
-// The `codeReview` reads every tab sends (`retainedInternalQuery("codeReview", ...)`), as Effects
-// their Commands wrap; failures become the `displayError` body.
-
 /** The resolved window, epoch ms, as the code review queries take it. */
 export const epochWindow = (window: TimeWindow) => ({
 	startTime: toEpochMs(window.startTime),

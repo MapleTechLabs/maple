@@ -1,4 +1,5 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { compareAlertThreshold } from "@maple/alerting-core/tiers"
 import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
@@ -134,28 +135,6 @@ export type HeadroomTone = "neutral" | "warning" | "error"
 export const headroomTone = (reading: Pick<Headroom, "breached" | "isNear">): HeadroomTone =>
 	reading.breached ? "error" : reading.isNear ? "warning" : "neutral"
 
-const breaches = (rule: AlertRuleDocument, value: number): boolean => {
-	const upper = rule.thresholdUpper ?? rule.threshold
-	switch (rule.comparator) {
-		case "gt":
-			return value > rule.threshold
-		case "gte":
-			return value >= rule.threshold
-		case "lt":
-			return value < rule.threshold
-		case "lte":
-			return value <= rule.threshold
-		case "eq":
-			return value === rule.threshold
-		case "neq":
-			return value !== rule.threshold
-		case "between":
-			return value >= rule.threshold && value <= upper
-		case "not_between":
-			return value < rule.threshold || value > upper
-	}
-}
-
 /** Current value against the threshold on a shared 0..max scale. */
 export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 	const thresholds = [rule.threshold, ...(rule.thresholdUpper !== null ? [rule.thresholdUpper] : [])]
@@ -170,7 +149,7 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 				: below
 					? (value - rule.threshold) / rule.threshold
 					: null
-	const breached = breaches(rule, value)
+	const breached = compareAlertThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
 		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),

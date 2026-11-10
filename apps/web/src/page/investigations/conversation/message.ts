@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { ChatEvent } from "@maple/domain/chat-session"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { ParsedMarkdown } from "../../kit/markdown"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -50,9 +50,7 @@ export const Message = defineMessageUnion({
 	CompletedMountClock: {},
 	GotTaskSheetMessage: { toolCallId: Schema.String, message: Dialog.Message },
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotMinimapMessage: { message: MinimapMessage },
 	ClickedApprove: { toolCallId: Schema.String, tool: Schema.String },
 	ClickedDeny: { toolCallId: Schema.String },

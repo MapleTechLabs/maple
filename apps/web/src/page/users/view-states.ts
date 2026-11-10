@@ -16,7 +16,7 @@ import { Array as Arr } from "effect"
 import type * as CopyButton from "@maple/views/ui/copy-button"
 import { textLink } from "@maple/views/ui/text-link"
 import { highlightCode } from "@maple/views/lib/highlight"
-import { IDENTIFY_USERS_PROMPT } from "../../components/ingest/onboard-skill"
+import { IDENTIFY_USERS_PROMPT } from "../kit/onboard-skill"
 import { agentPromptButton } from "../kit/guided-setup"
 
 // The users pages' empty and loading states.

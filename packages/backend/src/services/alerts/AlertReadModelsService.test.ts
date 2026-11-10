@@ -2,7 +2,7 @@ import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { AlertDestinationId, AlertIncidentId, AlertRuleId, OrgId } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,

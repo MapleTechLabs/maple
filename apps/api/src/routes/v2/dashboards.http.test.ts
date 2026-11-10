@@ -13,10 +13,10 @@ import {
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { AlertRuleId } from "@maple/domain/primitives"
-import { alertChartId } from "@maple/db"
+import { AlertRuleId } from "@maple/primitives"
+import { alertChartId } from "@maple/backend/platform/signed-ids"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -25,7 +25,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -34,13 +34,15 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	WarehouseServiceStubLayer,
 } from "./v2-test-support"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { HttpV2DashboardsLive } from "./dashboards.http"
+import { HttpV2SharePublicLive } from "./share.http"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 
 const createdDbs: TestDb[] = []
 const encodeDashboardPublicId = Schema.encodeUnknownSync(DashboardPublicId)
@@ -68,6 +70,37 @@ type Harness = ReturnType<typeof makeHarness>
 
 /** How the next `DashboardPersistenceService.get` should fail, if at all. */
 type DashboardGetFailure = "missing" | "unavailable"
+
+/**
+ * The share group over a widget-data fake that echoes the variables it was handed, so a test can
+ * see which ones a share let through, and an empty organization directory: the self-hosted shape,
+ * whose preview card carries no byline.
+ */
+const SharePublicLive = HttpV2SharePublicLive.pipe(
+	Layer.provide(
+		Layer.succeed(DashboardWidgetDataService, {
+			variableOptions: () => Effect.succeed({}),
+			resolve: () => Effect.die("share widget data is not exercised by this harness"),
+			resolveBatch: (_orgId, document) =>
+				Effect.succeed({
+					results: [],
+					variables: Rec.fromEntries(
+						Arr.map(document.variables ?? [], (variable) => [variable.name, ""]),
+					),
+				}),
+		}),
+	),
+	Layer.provide(
+		Layer.succeed(OrganizationService, {
+			retrieve: (orgId) =>
+				Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
+			create: () => Effect.die("organization creation is not exercised by this harness"),
+			chooseRegion: () => Effect.die("organization regions are not exercised by this harness"),
+			delete: () => Effect.die("organization deletion is not exercised by this harness"),
+		}),
+	),
+	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),
+)
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
@@ -112,13 +145,20 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.dashboards, MapleApiV2.groups.sharePublic),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				// Real widget evaluation over the inert warehouse and query engine below.
+				HttpV2DashboardsLive.pipe(
+					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+				),
+				SharePublicLive,
+			),
+		),
+		Layer.provide(Layer.merge(WarehouseServiceStubLayer, TelemetryServiceStubsLayer)),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

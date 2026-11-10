@@ -17,7 +17,7 @@ import { hrefFor } from "../../route"
 import type { Model, SessionDetail, SessionTrace } from "./model"
 import { card } from "./view-bits"
 
-// The Client and Correlated traces cards of `SessionDetailView`.
+// The session detail page's Client and Correlated traces cards.
 
 const text = <M>(h: HtmlBuilder<M>, value: string, shown: string): Html =>
 	truncatedText(h, { text: value }, [shown])

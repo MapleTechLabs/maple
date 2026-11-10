@@ -46,11 +46,9 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 
-// The dashboard view page.
-
 type H = HtmlBuilder<Message>
 
-/** `InlineEditableTitle`: the heading, or its input while renaming. */
+/** The heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
 	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
@@ -96,7 +94,7 @@ const title = (h: H, model: Model, name: string): Html => {
 	)
 }
 
-/** `DashboardViewSkeleton`. TODO(skeleton): ghost tiles use the line ghost for every variant. */
+/** TODO(skeleton): ghost tiles use the line ghost for every variant. */
 const viewSkeleton = (h: H): Html => {
 	const ghost = (index: number, className: string) =>
 		h.div(
@@ -127,7 +125,6 @@ const viewSkeleton = (h: H): Html => {
 	)
 }
 
-/** `ResourceNotFound`: the id resolved to nothing. */
 const notFound = (h: H, dashboardId: string): Html =>
 	resourceNotFound(h, {
 		title: "Dashboard not found",
@@ -145,7 +142,6 @@ const GRID_PREVIEW = [
 	{ glyph: "TextWrapIcon", className: "h-16 w-10" },
 ] as const
 
-/** `BlankDashboardEmpty`: the board exists and holds nothing. */
 const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 	empty(
 		h,
@@ -261,7 +257,7 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 				},
 				snap,
 			)
-		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
+		// The snapshot through the sectioned canvas, read-only.
 		const snapshot = AsyncData.match(model.history.snapshot, {
 			onIdle: () => viewSkeleton(h),
 			onLoading: () => viewSkeleton(h),

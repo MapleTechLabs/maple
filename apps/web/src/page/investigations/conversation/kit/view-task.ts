@@ -17,8 +17,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `TaskCard`: one sub-agent run as a line that opens its
-// sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
+// One sub-agent run as a line that opens its sheet: the question in full, the answer, and
+// whatever of the child's own steps reached the parent.
 
 /** What a task row needs from its host: its sheet, and how the answer and steps are drawn. */
 export type TaskHost<M> = Readonly<{
@@ -110,7 +110,7 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 	])
 }
 
-/** `SheetDetailHeader` (not mono) over the `SheetPanel` of answer and steps. */
+/** The sheet's header (not mono) over the panel of answer and steps. */
 const sheetContent = <M>(
 	h: HtmlBuilder<M>,
 	host: TaskHost<M>,

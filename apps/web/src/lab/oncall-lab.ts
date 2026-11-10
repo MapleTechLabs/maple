@@ -40,10 +40,10 @@ import {
 	populatedSchedules,
 	schedulePublicId,
 } from "../page/alerts/shared/oncall-test-fixtures"
-import { incidentRow, INCIDENT_ID, ORG, ruleRow, hubAt } from "../page/alerts/shared/test-rows"
+import { hubAt, incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
-import { isoMs } from "../page/alerts/shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/oncall`: on-call schedules in the hub (the On-call tab and the inbox's "On call now"
 // strip), the schedule form, the calendar with overrides and a DST week, the chain dialog with
@@ -126,8 +126,6 @@ const failure = (message: string): LoadFailure => ({
 	recovery: "fix_request",
 })
 
-// HUB
-
 const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
 
@@ -184,8 +182,6 @@ const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
 		hubStep,
 	)
 }
-
-// FORM
 
 const formStep = (model: FormModel.Model, message: FormMessage.Message) =>
 	FormUpdate.update(model, message, CONTEXT)
@@ -301,8 +297,6 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 	return fold(start, [...base, ...extra], formStep)
 }
 
-// SCHEDULE PAGE
-
 const scheduleStep = (model: ScheduleModel.Model, message: ScheduleMessage.Message) =>
 	ScheduleUpdate.update(model, message, CONTEXT)
 
@@ -368,8 +362,6 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 			: withShifts
 }
 
-// INCIDENT
-
 const incidentStep = (model: IncidentModel.Model, message: IncidentMessage.Message) =>
 	IncidentUpdate.update(model, message, CONTEXT)
 
@@ -379,7 +371,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 	const synced = fold(
 		start,
 		[
-			IncidentMessage.Message.ReadClock({ nowMs: isoMs(row.first_triggered_at) + 20 * 60_000 }),
+			IncidentMessage.Message.ReadClock({ nowMs: toEpochMs(row.first_triggered_at) + 20 * 60_000 }),
 			IncidentMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [row] }),
 			IncidentMessage.Message.UpdatedRules({
 				orgId: ORG,
@@ -394,7 +386,7 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 		[
 			IncidentMessage.Message.CompletedFetchActivity({
 				key: synced.model.activity.key ?? "",
-				result: Result.succeed(pagedEvents(INCIDENT_ID, isoMs(row.first_triggered_at))),
+				result: Result.succeed(pagedEvents(INCIDENT_ID, toEpochMs(row.first_triggered_at))),
 			}),
 			IncidentMessage.Message.CompletedFetchEscalation({
 				key: synced.model.escalation.key ?? "",

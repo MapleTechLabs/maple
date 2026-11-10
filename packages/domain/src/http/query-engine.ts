@@ -19,7 +19,7 @@ import {
 	SupabaseProjectRef,
 	TraceId,
 	UptimeMonitorId,
-} from "../primitives"
+} from "@maple/primitives"
 import {
 	AttributeFilter,
 	QueryEngineExecuteBatchRequest,
@@ -80,9 +80,6 @@ const RowOffset = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqua
 	Schema.annotate({ identifier: "RowOffset", description: "Rows to skip: a whole number, 0 or more." }),
 )
 
-// Dedicated endpoint schemas
-
-/** Shared primitives for filtered list/facet endpoints. */
 const StringArray = Schema.Array(Schema.String)
 
 const FacetRow = Schema.Struct({
@@ -530,7 +527,6 @@ export class SupabaseInfraRowsResponse extends Schema.Class<SupabaseInfraRowsRes
 // Supabase insights: the polled Supabase logs (edge, postgres, auth...) and the org's own client
 // spans that call a project. Times are ISO-8601 UTC strings; durations are milliseconds.
 
-/** One project over a window. */
 export class SupabaseProjectWindowRequest extends Schema.Class<SupabaseProjectWindowRequest>(
 	"SupabaseProjectWindowRequest",
 )({
@@ -1880,8 +1876,6 @@ export class MetricsSummaryResponse extends Schema.Class<MetricsSummaryResponse>
 	),
 }) {}
 
-// Infrastructure (host-centric)
-
 export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
@@ -1983,8 +1977,6 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 	groupByAttributeKey: Schema.optional(Schema.String),
 	unit: Schema.Literals(["percent", "load", "bytes_per_second"]),
 }) {}
-
-// Kubernetes (pods / nodes / workloads)
 
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 
@@ -2539,13 +2531,13 @@ export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiC
 // Google Search Console: performance imported into the ingest-pinned `search_console_daily`.
 // Every read names one enabled property; the window is the page's own, floored to Google's days.
 
-/** A Google (Pacific) day, `YYYY-MM-DD`. */
 /** A real calendar day: `2026-02-31` round-trips through UTC to another date, so it is rejected. */
 const isCalendarDay = (value: string): boolean => {
 	const date = new Date(`${value}T00:00:00Z`)
 	return Number.isFinite(date.getTime()) && Str.startsWith(`${value}T`)(date.toISOString())
 }
 
+/** A Google (Pacific) day, `YYYY-MM-DD`. */
 export const SearchConsoleDay = Schema.String.check(
 	Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
 	Schema.makeFilter((value: string) => isCalendarDay(value) || "Expected a calendar date as YYYY-MM-DD"),
@@ -3384,8 +3376,6 @@ export {
 	TracesQueryDraftSchema,
 } from "@maple/query-model"
 
-// Raw SQL chart (Hyperdx-style — user-authored ClickHouse SQL with macros)
-
 // Defined in `@maple/widgets` alongside the panel-type table that maps onto it;
 // re-exported here so `@maple/domain/http` keeps its existing surface.
 export { RawSqlDisplayType }
@@ -3515,7 +3505,7 @@ export class QueryEngineResultMismatchError extends HttpTaggedError<QueryEngineR
 // constructing dozens of identical inline literals at module load (each one
 // drives Effect's HttpApi to build a Schema union internally). This is a perf
 // nicety, not a hard requirement: the script-startup CPU concern (Cloudflare
-// error 10021) is mitigated at the source by `apps/api/src/worker.ts` lazy-
+// error 10021) is mitigated at the source by `apps/api/src/worker/http.ts` lazy-
 // importing the route graph, so the Schema ASTs never build during upload
 // validation.
 const queryEngineEndpointErrors = [

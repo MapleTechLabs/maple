@@ -58,10 +58,9 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 }
 
 /**
- * Every rollout on, for the self-hosted build where there is no Clerk to read
- * metadata from. Mirrors how `settings-nav` treats `!isClerkAuthEnabled`: a flag
- * is a staged-rollout tool for the managed product, and leaving them all off
- * would permanently hide the features from anyone running Maple themselves.
+ * Every rollout on, for the self-hosted build where there is no Clerk to read metadata from, as
+ * the settings nav (`apps/web/src/page/settings/nav.ts`) does: a flag is a staged-rollout tool for
+ * the managed product, and leaving them all off would hide the features from self-hosters forever.
  */
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,

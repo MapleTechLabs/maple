@@ -1,4 +1,3 @@
-/** Output schemas for the dashboards MCP tools. */
 import { Schema } from "effect"
 import { DashboardWidgetSchema, TimeRangeSchema } from "../http/dashboards"
 

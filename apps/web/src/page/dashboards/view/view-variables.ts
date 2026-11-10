@@ -20,9 +20,6 @@ import { variableComboIdOf } from "./variable-update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// The variable selects: one chip per variable, and in
-// edit mode the `+` chip that opens the manager.
-
 type H = HtmlBuilder<Message>
 
 const chipLabel = (variable: DashboardVariable): string => variable.label ?? variable.name
@@ -230,7 +227,7 @@ const control = (h: H, model: Model, context: PageContext, variable: DashboardVa
 	})
 }
 
-/** `VariableSelects`: nothing on a board without variables outside edit mode. */
+/** Nothing on a board without variables outside edit mode. */
 export const variableSelects = (
 	h: H,
 	model: Model,

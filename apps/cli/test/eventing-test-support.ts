@@ -12,7 +12,7 @@ import {
 	type LocalEventingRuntimeApi,
 } from "@maple/local-server/eventing/runtime"
 
-/** Runs a synchronous store or runtime step, throwing its typed failure like the old API did. */
+/** Runs a synchronous store or runtime step, throwing its typed failure. */
 export const run = <A, E>(effect: Effect.Effect<A, E>): A => Effect.runSync(effect)
 
 export const runAsync = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect)

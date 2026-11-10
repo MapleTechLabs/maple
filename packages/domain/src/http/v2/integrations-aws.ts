@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AwsMetricStream } from "../../aws"
-import { AwsAccountId, AwsConnectionId, AwsModule } from "../../primitives"
+import { AwsAccountId, AwsConnectionId, AwsModule } from "@maple/primitives"
 import {
 	AwsAccountAlreadyConnectedError,
 	AwsIntegrationUnavailableError,

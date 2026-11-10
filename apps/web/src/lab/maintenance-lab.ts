@@ -15,7 +15,7 @@ import {
 	weeklyWindow,
 } from "../page/alerts/shared/maintenance-test-fixtures"
 import { windowPublicId } from "../page/alerts/shared/maintenance-windows"
-import { NOW, ORG, ruleRow, hubAt, type HubAt } from "../page/alerts/shared/test-rows"
+import { hubAt, type HubAt, NOW, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"

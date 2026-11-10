@@ -17,7 +17,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	AlertMemberDirectoryUnavailableError,
 	AlertSilenceId,
@@ -32,7 +32,7 @@ import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -58,15 +58,28 @@ import { OrgMembersService, type OrgMembersServiceApi } from "@maple/backend/ser
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
+	OrgMembersServiceStubLayer,
 } from "./v2-test-support"
+import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
+import { HttpV2AlertDeliveriesLive } from "./alert-deliveries.http"
+import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
+import { HttpV2AlertIncidentsLive } from "./alert-incidents.http"
+import { HttpV2EscalationChainsLive } from "./escalation-chains.http"
+import { HttpV2OnCallSchedulesLive } from "./oncall-schedules.http"
+import { HttpV2AlertSilencesLive } from "./alert-silences.http"
+import { HttpV2AlertMaintenanceWindowsLive } from "./alert-maintenance-windows.http"
+import { HttpV2AlertRulesLive } from "./alert-rules.http"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -168,6 +181,7 @@ const makeHarness = (
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
@@ -202,6 +216,7 @@ const makeHarness = (
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
 				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
 				),
 			),
@@ -218,12 +233,43 @@ const makeHarness = (
 		alertsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.alertDeliveries,
+			MapleApiV2.groups.alertRules,
+			MapleApiV2.groups.alertDestinations,
+			MapleApiV2.groups.alertIncidents,
+			MapleApiV2.groups.escalationChains,
+			MapleApiV2.groups.oncallSchedules,
+			MapleApiV2.groups.alertSilences,
+			MapleApiV2.groups.alertMaintenanceWindows,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2AlertDeliveriesLive,
+				HttpV2AlertRulesLive,
+				HttpV2AlertDestinationsLive,
+				// The empty member directory: API keys are named by their label, and every paged user is accepted.
+				HttpV2AlertIncidentsLive.pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
+						),
+					),
+				),
+				HttpV2EscalationChainsLive.pipe(
+					Layer.provide(Layer.effect(EscalationChainsService, EscalationChainsService.make)),
+				),
+				HttpV2OnCallSchedulesLive.pipe(
+					Layer.provide(Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make)),
+				),
+				HttpV2AlertSilencesLive.pipe(Layer.provide(AlertSilencesService.layer)),
+				HttpV2AlertMaintenanceWindowsLive.pipe(Layer.provide(AlertMaintenanceWindowsService.layer)),
+			).pipe(Layer.provide(OrgMembersServiceStubLayer)),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

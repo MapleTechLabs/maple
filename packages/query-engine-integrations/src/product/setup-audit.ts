@@ -19,23 +19,8 @@
 import * as CH from "@maple-dev/effect-orm/clickhouse"
 import { compile, from, fromQuery, param, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { Schema, Effect, Array as Arr } from "effect"
-import {
-	AttributeKeysHourly,
-	AttributeValuesHourly,
-	Logs,
-	LogsAggregatesHourly,
-	MetricsSum,
-	ServiceMapChildren,
-	ServiceMapDbEdgesHourly,
-	ServiceMapSpans,
-	ServiceOverviewHourly,
-	ServiceRuntimesHourly,
-	TraceListMv,
-	Traces,
-	TracesAggregatesHourly,
-	orgIdParam,
-	utcSecondsParam,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { utcHourFloor } from "@maple/query-engine/ch/query-helpers"
 import * as T from "@maple-dev/effect-orm/clickhouse"
@@ -53,8 +38,6 @@ const quoteList = (values: ReadonlyArray<string>) =>
 		Arr.map(values, (value) => `'${value}'`),
 		", ",
 	)
-
-// A2 — attribute key inventory (all scopes, one scan)
 
 export interface AuditAttributeKeyRow {
 	readonly scope: string
@@ -77,7 +60,7 @@ export const auditAttributeKeyInventoryRowSchema = Schema.Struct({
  * all of which are pure functions over this one result.
  */
 export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
-	return from(AttributeKeysHourly)
+	return from(Datasources.attributeKeysHourly)
 		.select(($) => ({
 			scope: $.AttributeScope,
 			attributeKey: $.AttributeKey,
@@ -94,8 +77,6 @@ export function auditAttributeKeyInventoryQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 2000)
 		.format("JSON")
 }
-
-// A3 — per-service span shape
 
 export interface AuditSpanProfileRow {
 	readonly serviceName: string
@@ -142,7 +123,7 @@ const TOP_ROOT_SPAN = `topKWeightedIf(1)((SpanName, SpanKind), toUInt64(Weighted
  * the span-name cardinality check detects) inflates this MV enough to exceed a 5s budget.
  */
 export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			weightedSpanCount: CH.sum($.WeightedCount),
@@ -177,8 +158,6 @@ export function auditSpanProfileByServiceQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// A3b — span-name templates
 
 export interface AuditSpanNameTemplateRow {
 	readonly serviceName: string
@@ -223,7 +202,7 @@ const INBOUND_ROUTE_SQL = `if(SpanAttributes['http.route'] != '', SpanAttributes
  * service's distinct names from `traces_aggregates_hourly`, then templates only those.
  */
 export function auditSpanNameTemplatesQuery() {
-	const names = from(TracesAggregatesHourly)
+	const names = from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({ serviceName: $.ServiceName, spanName: $.SpanName }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -256,8 +235,6 @@ export function auditSpanNameTemplatesQuery() {
 		.format("JSON")
 }
 
-// A4 — per-service sampling weight and commit tagging
-
 export interface AuditSamplingRow {
 	readonly serviceName: string
 	readonly spanCount: number
@@ -281,7 +258,7 @@ export const auditSamplingRowSchema = Schema.Struct({
  * tagging; the authoritative resource-key coverage comes from A2.
  */
 export function auditSamplingByServiceQuery(opts: { limit?: number } = {}) {
-	return from(ServiceOverviewHourly)
+	return from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanCount: CH.sum($.SpanCount),
@@ -298,8 +275,6 @@ export function auditSamplingByServiceQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// A5 — per-service log severity distribution
 
 export interface AuditLogSeverityRow {
 	readonly serviceName: string
@@ -318,7 +293,7 @@ export const auditLogSeverityRowSchema = Schema.Struct({
  * "this service logs errors" half of the heuristic that catches exceptions swallowed as `Unset`.
  */
 export function auditLogSeverityByServiceQuery(opts: { limit?: number } = {}) {
-	return from(LogsAggregatesHourly)
+	return from(Datasources.logsAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			severityText: $.SeverityText,
@@ -334,8 +309,6 @@ export function auditLogSeverityByServiceQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 2000)
 		.format("JSON")
 }
-
-// A6 — metric label cardinality
 
 export interface AuditMetricLabelRow {
 	readonly attributeKey: string
@@ -358,7 +331,7 @@ export const auditMetricLabelRowSchema = Schema.Struct({
  * only, so this covers counters, not gauges or histograms.
  */
 export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeKey: $.AttributeKey,
 			valueCardinality: CH.uniq($.AttributeValue),
@@ -375,8 +348,6 @@ export function auditMetricLabelCardinalityQuery(opts: { limit?: number } = {}) 
 		.limit(opts.limit ?? 200)
 		.format("JSON")
 }
-
-// A7 — peer / dependency identifier values
 
 /** Keys whose *values* name a dependency, where inconsistent spelling fragments a service-map node. */
 export const AUDIT_PEER_KEYS = [
@@ -407,7 +378,7 @@ export const auditPeerValueRowSchema = Schema.Struct({
  * bounded read of `attribute_values_hourly` rather than an attribute-value scan.
  */
 export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeKey: $.AttributeKey,
 			attributeValue: $.AttributeValue,
@@ -426,8 +397,6 @@ export function auditPeerValueInventoryQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// A8 — database edge identity
 
 export interface AuditDbEdgeRow {
 	readonly serviceName: string
@@ -450,7 +419,7 @@ export const auditDbEdgeRowSchema = Schema.Struct({
  * database is split across a named and an unnamed node.
  */
 export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
-	return from(ServiceMapDbEdgesHourly)
+	return from(Datasources.serviceMapDbEdgesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			dbSystem: $.DbSystem,
@@ -469,8 +438,6 @@ export function auditDbEdgeIdentityQuery(opts: { limit?: number } = {}) {
 		.format("JSON")
 }
 
-// A9 — service identity, for telling Maple-written and client services apart
-
 export interface AuditServiceIdentityRow {
 	readonly serviceName: string
 	readonly namespaces: ReadonlyArray<string>
@@ -485,7 +452,7 @@ export const auditServiceIdentityRowSchema = Schema.Struct({
 
 /** Non-empty `service.namespace`s and environments per traced service, from the overview rollup. */
 export function auditServiceIdentityQuery(opts: { limit?: number } = {}) {
-	return from(ServiceOverviewHourly)
+	return from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			namespaces: CH.groupUniqArrayIf(5)($.ServiceNamespace, $.ServiceNamespace.neq("")),
@@ -513,7 +480,7 @@ export const auditServiceSdkRowSchema = Schema.Struct({
 
 /** `telemetry.sdk.language` per traced service (`webjs`, `swift`, ...), from the runtimes rollup. */
 export function auditServiceSdkQuery(opts: { limit?: number } = {}) {
-	return from(ServiceRuntimesHourly)
+	return from(Datasources.serviceRuntimesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			sdkLanguages: CH.groupUniqArrayIf(5)($.SdkLanguage, $.SdkLanguage.neq("")),
@@ -527,8 +494,6 @@ export function auditServiceSdkQuery(opts: { limit?: number } = {}) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// A10 — resource values behind suspect keys
 
 export interface AuditResourceValueRow {
 	readonly attributeKey: string
@@ -544,7 +509,7 @@ export const auditResourceValueRowSchema = Schema.Struct({
 
 /** Sample values of a few resource keys, so a finding can judge what the key actually holds. */
 export function auditResourceValueSamplesQuery(keys: ReadonlyArray<string>, opts: { limit?: number } = {}) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeKey: $.AttributeKey,
 			attributeValue: $.AttributeValue,
@@ -563,8 +528,6 @@ export function auditResourceValueSamplesQuery(keys: ReadonlyArray<string>, opts
 		.format("JSON")
 }
 
-// A11 — which services emit a given key (bounded raw follow-ups)
-//
 // The key rollups carry no service, so naming the emitter takes a raw read. Both run only for the
 // handful of keys a check already flagged, read one map's keys and nothing else, and cap their rows.
 
@@ -613,7 +576,7 @@ export function auditResourceKeyServicesQuery(
 ) {
 	const pairs = opts.duplicatePairs ?? []
 	return (
-		from(Traces)
+		from(Datasources.traces)
 			.select(($) => ({
 				serviceName: $.ServiceName,
 				keyCounts: keyPresence($.ResourceAttributes, keys).counts,
@@ -674,7 +637,7 @@ export const auditSensitiveKeyEmitterRowSchema = Schema.Struct({
  * never selected, since it is the suspected secret.
  */
 export function auditSensitiveKeyEmittersQuery(keys: Arr.NonEmptyReadonlyArray<string>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,
@@ -726,7 +689,7 @@ export function auditMetricLabelByMetricQuery(
 	opts: { readonly collapseServicePrefixes?: ReadonlyArray<string> } = {},
 ) {
 	const prefixes = opts.collapseServicePrefixes ?? []
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			serviceName: Arr.isReadonlyArrayNonEmpty(prefixes)
 				? CH.multiIf(
@@ -755,8 +718,6 @@ export function auditMetricLabelByMetricQuery(
 		.limit(200)
 		.format("JSON")
 }
-
-// A12 — release keys per service (bounded raw read)
 
 /** Upper bound on the raw `traces` window for per-service resource keys. */
 export const AUDIT_SERVICE_RESOURCE_MAX_HOURS = 6
@@ -794,7 +755,7 @@ export function auditServiceResourceKeysQuery(
 	opts: { readonly traceSampleModulus?: number } = {},
 ) {
 	const modulus = normalizeModulus(opts.traceSampleModulus)
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanCount: CH.count(),
@@ -812,8 +773,6 @@ export function auditServiceResourceKeysQuery(
 		.limit(500)
 		.format("JSON")
 }
-
-// B1 — log ↔ trace correlation (bounded raw read)
 
 /** Upper bound on the raw `logs` window, applied in the builder — callers cannot widen it. */
 export const AUDIT_LOG_CORRELATION_MAX_HOURS = 6
@@ -860,7 +819,7 @@ const VALID_SEVERITY_NUMBER = "SeverityNumber BETWEEN 1 AND 24"
 export function auditLogCorrelationQuery(opts: { excludeServiceNames?: ReadonlyArray<string> } = {}) {
 	const isErrorSeverity = CH.rawCond("upper(SeverityText) IN ('ERROR', 'FATAL')")
 	const excluded = opts.excludeServiceNames ?? []
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			logCount: CH.count(),
@@ -909,7 +868,7 @@ export const auditUncorrelatedLogMessageRowSchema = Schema.Struct({
  * read of `Body`: seeks by service (the sort-key prefix) over a short window, uncorrelated lines only.
  */
 export function auditUncorrelatedLogMessagesQuery(serviceNames: Arr.NonEmptyReadonlyArray<string>) {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			topMessages: CH.rawExpr(
@@ -931,8 +890,6 @@ export function auditUncorrelatedLogMessagesQuery(serviceNames: Arr.NonEmptyRead
 		.format("JSON")
 }
 
-// B2 / B3 — trace completeness
-//
 // The orphan join mirrors the service-map edge join, which is the same join over the same two tables
 // and the same window size that `ServiceMapRollupService` already runs once per org per hour in
 // production. The rootless join reads raw `traces` over the same two hours, narrow columns only, so
@@ -997,7 +954,7 @@ export interface AuditTraceWindowParams {
 
 /** Trace ids with a root span in the window: `trace_list_mv` holds exactly the `ParentSpanId = ''` spans. */
 const rootIndex = (modulus: number) =>
-	from(TraceListMv)
+	from(Datasources.traceListMv)
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1031,7 +988,7 @@ export function auditOrphanSpansSQL(
 ): Effect.Effect<CompiledQuery<AuditOrphanSpanRow>, QueryBuilderError> {
 	const modulus = normalizeModulus(params.traceSampleModulus)
 
-	const children = from(ServiceMapChildren)
+	const children = from(Datasources.serviceMapChildren)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			ParentSpanId: $.ParentSpanId,
@@ -1046,7 +1003,7 @@ export function auditOrphanSpansSQL(
 			modulusFilter($.TraceId, modulus),
 		])
 
-	const parents = from(ServiceMapSpans)
+	const parents = from(Datasources.serviceMapSpans)
 		.select(($) => ({ TraceId: $.TraceId, SpanId: $.SpanId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1143,7 +1100,7 @@ export function auditRootlessTracesSQL(
 ): Effect.Effect<CompiledQuery<AuditRootlessTraceRow>, QueryBuilderError> {
 	const modulus = normalizeModulus(params.traceSampleModulus)
 
-	const traces = from(Traces)
+	const traces = from(Datasources.traces)
 		.select(($) => {
 			const kept = Arr.filter(
 				[
@@ -1239,7 +1196,7 @@ export function auditInboundRoutesQuery(
 	serviceNames: Arr.NonEmptyReadonlyArray<string>,
 	traceIds: Arr.NonEmptyReadonlyArray<string>,
 ) {
-	const firstInbound = from(Traces)
+	const firstInbound = from(Datasources.traces)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			serviceName: CH.argMin($.ServiceName, $.Timestamp),

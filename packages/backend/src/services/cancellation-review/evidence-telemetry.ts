@@ -19,13 +19,12 @@ import type {
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Cause, Context, DateTime, Effect, Layer, Option, Order, Array as Arr, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type CancellationEvidenceInput, daysBeforeCancel } from "./evidence-input"
 import { DAY_MS, WINDOW_DAYS } from "./snapshot"
 
 export const SERVICES_SHOWN = 15
-/** Values shown per resource attribute. */
 export const RESOURCE_VALUES_SHOWN = 5
 /** Rows read for resource attributes: every value of the five keys, in practice. */
 const RESOURCE_ROWS_READ = 500
@@ -289,7 +288,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 			input: CancellationEvidenceInput,
 		) {
 			const { orgId, ownOrgId, atMs } = input
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const window = {
 				orgId,
 				startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * 2 * DAY_MS),
@@ -392,7 +391,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 									"CancellationTelemetryEvidenceReader.readProductEvents",
 									warehouse
 										.compiledQuery(
-											systemTenant(ownOrgId),
+											systemTenant(ownOrgId, ALERTING_SYSTEM_USER_ID),
 											CH.compile(
 												CH.cancellationProductEventsQuery({
 													limit: PRODUCT_EVENT_ROWS_READ,

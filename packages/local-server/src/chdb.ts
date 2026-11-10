@@ -1,7 +1,7 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // Embedded chDB (in-process ClickHouse) via `bun:ffi` → `libchdb`.
 //
-// Replaces the Rust `apps/ingest/src/chdb.rs`. chDB allows exactly one
+// chDB allows exactly one
 // connection per process and is not safe to call concurrently, so the local
 // server holds a single `Chdb` and `bun:ffi` calls — which are synchronous and
 // block the calling thread — serialize naturally on the JS thread.
@@ -279,14 +279,6 @@ export const applyRawTelemetryRetentionFloor = (db: Pick<Chdb, "query" | "exec">
 	}
 }
 
-/** Build the embedded ClickHouse argv. Keep table metadata loading and restore
- * work serialized:
- * chDB v26.1.0 can otherwise fail nondeterministically while its loader resolves
- * Maple's materialized-view dependency graph (`recursive_mutex lock failed` /
- * `ASYNC_LOAD_WAIT_FAILED`). `async_load_databases=0` waits for loading, but it
- * does not make the loader pools single-threaded. RESTORE uses a separate
- * 16-thread pool by default and can trip the same invalid recursive-mutex state
- * while restoring that dependency graph. */
 /**
  * Parser limit for one statement, applied as a session setting at open.
  *
@@ -325,6 +317,14 @@ export const MERGE_TREE_CONFIG_XML = `  <merge_tree>
 export const writeIngestConfig = (path: string): void =>
 	writeFileSync(path, `<clickhouse>\n${MERGE_TREE_CONFIG_XML}\n</clickhouse>\n`, { mode: 0o600 })
 
+/** Build the embedded ClickHouse argv. Keep table metadata loading and restore
+ * work serialized:
+ * chDB v26.1.0 can otherwise fail nondeterministically while its loader resolves
+ * Maple's materialized-view dependency graph (`recursive_mutex lock failed` /
+ * `ASYNC_LOAD_WAIT_FAILED`). `async_load_databases=0` waits for loading, but it
+ * does not make the loader pools single-threaded. RESTORE uses a separate
+ * 16-thread pool by default and can trip the same invalid recursive-mutex state
+ * while restoring that dependency graph. */
 export const chdbArgv = (options: Pick<ChdbOptions, "dataDir" | "configFile">): string[] => [
 	"clickhouse",
 	"--async_load_databases=0",

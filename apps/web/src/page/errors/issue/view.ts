@@ -1,5 +1,5 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
-import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueDetailFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -42,14 +42,11 @@ import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/u
 import { button } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
 
-// `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
-
 type H = HtmlBuilder<Message>
 
 /** States where somebody has taken the issue on, so a missing pull request is worth pointing at. */
 const AWAITING_FIX_STATES = new Set(["in_progress", "in_review"])
 
-/** The latest few samples inline, with the way to all of them. */
 const latestOccurrences = (
 	h: H,
 	model: Model,
@@ -86,7 +83,6 @@ const latestOccurrences = (
 
 const LATEST_OCCURRENCES = 3
 
-/** Incidents as a panel; one quiet line while there are none. */
 const incidentsPanel = (
 	h: H,
 	detail: ErrorIssueDetailResponse,
@@ -227,7 +223,6 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	])
 }
 
-/** The Occurrences table, or the Activity timeline with its composer. */
 const otherTab = (
 	h: H,
 	model: Model,
@@ -251,7 +246,6 @@ const otherTab = (
 		)
 	const events = Option.getOrNull(AsyncData.getData(model.events.data))?.events ?? []
 	const { issue } = detail
-	// Everyone who has acted on the issue, newest first.
 	const participants = [
 		...(issue.leaseHolder ? [issue.leaseHolder] : []),
 		...(issue.assignedActor ? [issue.assignedActor] : []),
@@ -307,7 +301,6 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 	)
 }
 
-/** "Notify escalation destinations?" before a manual severity raise that routes. */
 const severityConfirmDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
 		slotId: "issue-severity-confirm",

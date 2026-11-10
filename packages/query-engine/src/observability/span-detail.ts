@@ -1,22 +1,10 @@
-import { Array as Arr, Clock, DateTime, Effect, Option, Schema, pipe, Record as Rec } from "effect"
+import { Clock, DateTime, Effect, Option } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import { TRACE_RETENTION_HOURS, locateTrace } from "./locate-trace"
 
 import { formatWarehouseDateTime, formatWarehouseDateTimeMs } from "../datetime"
-const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
-
-const parseAttributes = (raw: string): Effect.Effect<Record<string, string>> =>
-	Schema.decodeEffect(StringRecordFromJson)(raw).pipe(
-		Effect.map((parsed) =>
-			pipe(
-				Rec.toEntries(parsed),
-				Arr.filter(([, v]) => v !== ""),
-				Rec.fromEntries,
-			),
-		),
-		Effect.orElseSucceed(() => ({})),
-	)
+import { parseProjectedAttributes } from "../row-text"
 
 const DEFAULT_RANGE_HOURS = 1
 
@@ -142,8 +130,8 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 	}
 
 	const row = maybeRow.value
-	const spanAttributes = yield* parseAttributes(row.spanAttributes ?? "{}")
-	const resourceAttributes = yield* parseAttributes(row.resourceAttributes ?? "{}")
+	const spanAttributes = parseProjectedAttributes(row.spanAttributes)
+	const resourceAttributes = parseProjectedAttributes(row.resourceAttributes)
 	return {
 		found: true,
 		traceId: row.traceId,

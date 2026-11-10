@@ -5,14 +5,12 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { filteredEmpty, presenceLoading } from "@maple/views/ui/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { SEVERITY_LABEL } from "../kit/severity"
+import { SEVERITY_LABEL } from "../../kit/issue-severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
-
-// The hub's empty state: what an empty view says, and what it offers.
 
 type H = HtmlBuilder<Message>
 

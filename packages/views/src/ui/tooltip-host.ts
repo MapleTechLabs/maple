@@ -51,8 +51,6 @@ export const tooltipTrigger = <Message>(
 	...(options.isOverflowOnly === true ? [h.DataAttribute("tooltip-overflow", "")] : []),
 ]
 
-// MODEL
-
 /** A `timestampTrigger`'s instant, zone and the page clock its text read (else the hover's). */
 const Instant = Schema.Struct({ epochMs: Schema.Number, timeZone: Schema.String, nowMs: Schema.Number })
 
@@ -87,8 +85,6 @@ export const init = (id: string, options: Tooltip.InitOptions = {}): Model => ({
 	isEngaged: false,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String, shown: Shown },
 	FocusedTrigger: { triggerId: Schema.String, shown: Shown },
@@ -106,8 +102,6 @@ export const Message = defineMessageUnion({
 	GotTooltipMessage: { message: Tooltip.Message },
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 
@@ -212,8 +206,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 				Tooltip.update(model.tooltip, inner),
 			),
 	})
-
-// SUBSCRIPTION
 
 /** The trigger an event lands in, carrying its own text. */
 const closestTrigger = (target: EventTarget | null): Option.Option<HTMLElement> => {
@@ -395,8 +387,6 @@ export const whileEngaged: Stream.Stream<Message> = Stream.mergeAll([escapes, tr
 /** A tooltip is pending or open, so its trigger is worth watching. */
 export const isEngaged = (model: Model): boolean =>
 	model.isEngaged || model.tooltip.isOpen || model.tooltip.isPressingTrigger
-
-// VIEW
 
 /**
  * The portal, inside a wrapper that keeps its place in the parent: place it before any sibling

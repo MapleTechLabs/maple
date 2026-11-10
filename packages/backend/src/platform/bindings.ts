@@ -9,9 +9,7 @@
  */
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Context, type Effect, type Option, Schema } from "effect"
-
-// ── Queues ───────────────────────────────────────────────────────────────────
+import { Context, type Effect, Layer, Option, Schema } from "effect"
 
 export class QueueSendError extends Schema.TaggedError<QueueSendError>()(
 	"@maple/backend/platform/QueueSendError",
@@ -61,8 +59,6 @@ export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueuePr
 	"@maple/backend/platform/AuditEventsQueueProducer",
 ) {}
 
-// ── Rate limits ──────────────────────────────────────────────────────────────
-
 export class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingError>()(
 	"@maple/backend/platform/RateLimitBindingError",
 	{
@@ -103,8 +99,6 @@ export class DataSourceDevelopmentCallLimit extends Context.Service<
 	RateLimiter
 >()("@maple/backend/platform/DataSourceDevelopmentCallLimit") {}
 
-// ── Object store (R2) ────────────────────────────────────────────────────────
-
 export class ObjectStoreError extends Schema.TaggedError<ObjectStoreError>()(
 	"@maple/backend/platform/ObjectStoreError",
 	{
@@ -124,8 +118,6 @@ export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectSt
 	"@maple/backend/platform/ReplayBlobBucket",
 ) {}
 
-// ── Application database (Hyperdrive) ────────────────────────────────────────
-
 /** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */
 export interface DatabaseConnection {
 	readonly connectionString: string
@@ -138,8 +130,6 @@ export class MapleDbConnection extends Context.Service<
 	MapleDbConnection,
 	Option.Option<DatabaseConnection>
 >()("@maple/backend/platform/MapleDbConnection") {}
-
-// ── Workflows ────────────────────────────────────────────────────────────────
 
 export class WorkflowStartError extends Schema.TaggedError<WorkflowStartError>()(
 	"@maple/backend/platform/WorkflowStartError",
@@ -179,8 +169,6 @@ export class SecurityAuditWorkflowStarter extends Context.Service<
 	SecurityAuditWorkflowControl
 >()("@maple/backend/platform/SecurityAuditWorkflowStarter") {}
 
-// ── Email (send_email) ───────────────────────────────────────────────────────
-
 export class EmailSendError extends Schema.TaggedError<EmailSendError>()(
 	"@maple/backend/platform/EmailSendError",
 	{
@@ -205,26 +193,29 @@ export interface EmailSenderClient {
 /** The `send_email` binding, or `None` on a stage that does not bind it (everything but prd). */
 export class EmailSender extends Context.Service<EmailSender, Option.Option<EmailSenderClient>>()(
 	"@maple/backend/platform/EmailSender",
-) {}
-
-// ── Service bindings to other Maple Workers ─────────────────────────────────
+) {
+	/** A host without the binding: email is off. */
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** maple-ai, which serves `/mcp`, the chat surface and incident triage. `None` where the Worker does not bind it. */
 export class AiWorkerFetcher extends Context.Service<AiWorkerFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/AiWorkerFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The repository sandbox Worker. `None` on a deployment that did not provision one. */
 export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/SandboxFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The Worker Loader that runs the agents' `run_code` programs in Dynamic Workers. `None` where unbound. */
 export class CodeLoader extends Context.Service<CodeLoader, Option.Option<WorkerLoader>>()(
 	"@maple/backend/platform/CodeLoader",
 ) {}
-
-// ── Chat sessions (Durable Object) ───────────────────────────────────────────
 
 /** Addresses `ChatSession` Durable Objects, bound through alchemy (`chat-sessions.ts`). A host without the binding provides nothing. */
 export interface ChatSessionsApi {

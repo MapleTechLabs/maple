@@ -18,13 +18,10 @@ import type { Model } from "./model"
 import { sectionMenuIdOf } from "./section-update"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 
-// A dashboard section's header, `SectionTabBar` and
-// `InlineEditableText`: the chevron, the renamable title, the tabs, "+" and the options menu.
-
 type H = HtmlBuilder<Message>
 type Section = NonNullable<DashboardDocument["sections"]>[number]
 
-/** `InlineEditableText`: a span that renames on double-click, Enter or F2, else the input. */
+/** A span that renames on double-click, Enter or F2, else the input. */
 export const inlineEditableText = (
 	h: H,
 	model: Model,
@@ -84,7 +81,7 @@ export const inlineEditableText = (
 	)
 }
 
-/** `SectionTabBar`: the underline tabs of a group with two or more. */
+/** The underline tabs of a group with two or more. */
 const tabBar = (h: H, model: Model, section: Section, activeTabId: string, isEditable: boolean): Html =>
 	hstack(
 		h,
@@ -352,7 +349,7 @@ const sectionBody = (h: H, inputs: SectionViewInputs): Html => {
 
 const trash = (h: H) => icon(h, "TrashIcon", { className: "text-destructive" })
 
-/** `DeleteSectionDialog` and `DeleteTabDialog`: keep the widgets somewhere sensible, or delete them too. */
+/** Keep the widgets somewhere sensible, or delete them too. */
 export const sectionDialogs = (h: H, model: Model): ReadonlyArray<Html> => {
 	const sections = model.document?.sections ?? []
 	const widgets = model.document?.widgets ?? []

@@ -152,10 +152,6 @@ function severityRank(severity: FindingSeverity): number {
 	return severity === "failure" ? 0 : 1
 }
 
-/* -------------------------------------------------------------------------- */
-/* Detectors                                                                  */
-/* -------------------------------------------------------------------------- */
-
 function failureFindings(
 	events: ReturnType<typeof failureEvents>,
 	turns: readonly SessionTurn[],
@@ -384,10 +380,6 @@ function stallFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 	})
 	return findings
 }
-
-/* -------------------------------------------------------------------------- */
-/* Attribution                                                                */
-/* -------------------------------------------------------------------------- */
 
 /** `Turn 4 (final)`, `Turns 9, 11`, `Segments 1, 2`, `6 of 14 turns`. */
 function turnListText(indices: readonly number[], turns: readonly SessionTurn[], terminal: boolean): string {

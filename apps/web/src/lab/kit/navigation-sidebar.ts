@@ -23,7 +23,7 @@ import {
 } from "@maple/views/ui/sidebar"
 import { Array as Arr } from "effect"
 
-// `SidebarFrame`: a layout-contained frame holds the sidebar's
+// A layout-contained frame holds the sidebar's
 // fixed container, so an expanded and a collapsed sidebar sit side by side.
 
 /** The app sidebar's group label (`GROUP_LABEL` in shell/view-sidebar.ts): muted, not bold white. */

@@ -1,8 +1,7 @@
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The gauge widget's geometry: a 270 degree segmented
-// dial whose viewBox is fitted to what is drawn. The view is in ./tiles-gauge.ts.
+// A 270 degree segmented dial whose viewBox is fitted to what is drawn.
 
 const CX = 120
 const CY = 118
@@ -152,7 +151,7 @@ const scale = (min: number, max: number, span: number, options: GaugeOptions) =>
 	return { ticks, boundLabels, labels }
 }
 
-/** Everything the dial draws, as the component computes it per render. */
+/** Everything the dial draws. */
 export const gaugeGeometry = (rawValue: unknown, options: GaugeOptions) => {
 	const value = toNumber(rawValue)
 	const min = options.min ?? 0

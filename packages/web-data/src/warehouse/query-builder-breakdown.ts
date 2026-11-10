@@ -76,8 +76,3 @@ const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBre
 
 	return { data: [...outcome.rows] }
 })
-
-// The merge and the per-query execution moved to `@maple/query-engine/query-set`
-// and are tested there; what stays worth asserting here is that this module adds
-// no rescaling of its own on the way out.
-export const __testables = { onNoData }

@@ -8,9 +8,9 @@ import { Option, String as Str } from "effect"
  * while the transcript can leave it out of the bubble, which matters now that
  * user turns are durable and replay to everyone who opens the thread.
  *
- * Shared here because both ends have to agree: `apps/api` wraps the prompt that
- * seeds an investigation, `apps/web` wraps per-conversation context and strips
- * both at render time.
+ * Shared here because both ends have to agree: `@maple/backend` wraps the prompt
+ * that seeds an investigation or a review, `apps/chat-bot` wraps its relay
+ * context, and `apps/web` strips it at render time.
  */
 export const CHAT_CONTEXT_OPEN = "<!--maple:context-->"
 export const CHAT_CONTEXT_CLOSE = "<!--/maple:context-->"

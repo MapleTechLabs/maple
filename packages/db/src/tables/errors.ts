@@ -1,8 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { AlertDeliveryStatus, AlertSeverity } from "@maple/domain/alerts"
 import {
 	ActorType,
-	AlertDeliveryStatus,
-	AlertSeverity,
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
@@ -10,13 +9,15 @@ import {
 	IssueKind,
 	IssueSeverity,
 	IssueSeveritySource,
+	WorkflowState,
+} from "@maple/domain/error-issues"
+import {
 	PullRequestLinkSource,
 	PullRequestLinkState,
-	VcsProviderId,
 	VerificationStatus,
 	VerificationVerdict,
-	WorkflowState,
-} from "@maple/domain/http"
+} from "@maple/domain/fix-verification"
+import { VcsProviderId } from "@maple/domain/vcs"
 import {
 	ActorId,
 	AlertDestinationId,
@@ -28,7 +29,7 @@ import {
 	InvestigationId,
 	OrgId,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Schema } from "effect"
 
 const StringList = Schema.Array(Schema.String)
@@ -62,9 +63,9 @@ export const Actors = PG.table("actors", {
 
 /**
  * Persistent identity for an error group (one row per unique fingerprint).
- * Fingerprint = cityHash64(OrgId, ServiceName, ExceptionType, TopFrame),
- * computed in Tinybird error_events_mv and stored here as the decimal
- * UInt64 string (matches `toString(FingerprintHash)` in ClickHouse).
+ * The fingerprint is cityHash64 of the inputs in `@maple/domain` `fingerprint.ts`,
+ * computed in error_events_mv and stored here as the decimal UInt64 string
+ * (matches `toString(FingerprintHash)` in ClickHouse).
  */
 export const ErrorIssues = PG.table("error_issues", {
 	columns: {
@@ -157,13 +158,13 @@ export const ErrorIssues = PG.table("error_issues", {
 		PG.index("error_issues_org_live_seen_idx", ["orgId", "lastSeenAt", "id"], {
 			where: `"archived_at" is null`,
 		}),
+		// The errors tick counts the error issues an org opened in the last day to
+		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
+		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		// Retention sweeps for issues left behind by a fingerprint-algorithm bump.
 		// Once a sweep drains them the scan returns nothing, and it stays an index
 		// lookup rather than the heap check that `error_issues_org_archived_idx`
 		// below was added to prevent.
-		// The errors tick counts the error issues an org opened in the last day to
-		// spend its early-promotion budget (`EarlyPromotionsPerDay`).
-		PG.index("error_issues_org_kind_created_idx", ["orgId", "kind", "createdAt"]),
 		PG.index("error_issues_org_fp_version_idx", ["orgId", "fingerprintVersion"]),
 		PG.index("error_issues_org_assignee_idx", ["orgId", "assignedActorId"]),
 		PG.index("error_issues_lease_expiry_idx", ["leaseExpiresAt"]),
@@ -322,6 +323,20 @@ export const ErrorIncidents = PG.table("error_incidents", {
 	tenantColumn: "orgId",
 })
 
+/** Column defaults of `error_notification_policies`; an org with no row behaves as if it had these. */
+export const ERROR_NOTIFICATION_POLICY_DEFAULTS = {
+	enabled: true,
+	destinationIdsJson: [],
+	notifyOnFirstSeen: true,
+	notifyOnRegression: true,
+	notifyOnResolve: false,
+	notifyOnTransitionInReview: false,
+	notifyOnTransitionDone: false,
+	notifyOnClaim: false,
+	minOccurrenceCount: 1,
+	severity: "warning",
+} as const
+
 /**
  * Per-org policy controlling which alert destinations receive error
  * notifications and under what conditions. Referenced by the scheduled
@@ -330,19 +345,42 @@ export const ErrorIncidents = PG.table("error_incidents", {
 export const ErrorNotificationPolicies = PG.table("error_notification_policies", {
 	columns: {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
-		enabled: PG.column(PG.bool, { default: true }),
-		destinationIdsJson: PG.column(PG.jsonb(StringList), { name: "destination_ids_json", default: [] }),
-		notifyOnFirstSeen: PG.column(PG.bool, { name: "notify_on_first_seen", default: true }),
-		notifyOnRegression: PG.column(PG.bool, { name: "notify_on_regression", default: true }),
-		notifyOnResolve: PG.column(PG.bool, { name: "notify_on_resolve", default: false }),
+		enabled: PG.column(PG.bool, { default: ERROR_NOTIFICATION_POLICY_DEFAULTS.enabled }),
+		destinationIdsJson: PG.column(PG.jsonb(StringList), {
+			name: "destination_ids_json",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.destinationIdsJson,
+		}),
+		notifyOnFirstSeen: PG.column(PG.bool, {
+			name: "notify_on_first_seen",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnFirstSeen,
+		}),
+		notifyOnRegression: PG.column(PG.bool, {
+			name: "notify_on_regression",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnRegression,
+		}),
+		notifyOnResolve: PG.column(PG.bool, {
+			name: "notify_on_resolve",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnResolve,
+		}),
 		notifyOnTransitionInReview: PG.column(PG.bool, {
 			name: "notify_on_transition_in_review",
-			default: false,
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnTransitionInReview,
 		}),
-		notifyOnTransitionDone: PG.column(PG.bool, { name: "notify_on_transition_done", default: false }),
-		notifyOnClaim: PG.column(PG.bool, { name: "notify_on_claim", default: false }),
-		minOccurrenceCount: PG.column(PG.int4, { name: "min_occurrence_count", default: 1 }),
-		severity: PG.column(PG.brand(PG.text, AlertSeverity), { default: "warning" }),
+		notifyOnTransitionDone: PG.column(PG.bool, {
+			name: "notify_on_transition_done",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnTransitionDone,
+		}),
+		notifyOnClaim: PG.column(PG.bool, {
+			name: "notify_on_claim",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.notifyOnClaim,
+		}),
+		minOccurrenceCount: PG.column(PG.int4, {
+			name: "min_occurrence_count",
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.minOccurrenceCount,
+		}),
+		severity: PG.column(PG.brand(PG.text, AlertSeverity), {
+			default: ERROR_NOTIFICATION_POLICY_DEFAULTS.severity,
+		}),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		updatedBy: PG.column(PG.text, { name: "updated_by" }),
 	},
@@ -410,15 +448,12 @@ export const ErrorNotificationDeliveries = PG.table("error_notification_deliveri
  *
  * The repository is denormalized (`provider` + `repoFullName` + the provider's
  * own `externalRepoId`) rather than carried as a foreign key into
- * `vcs_repositories`. Three reasons, and the first is the load-bearing one:
+ * `vcs_repositories`:
  *   1. A PR can be attached to an issue for a repository Maple has never synced
  *      (an agent pastes a URL, or the org connected only some of its repos). A
  *      FK would reject exactly the link a user most wants to make.
  *   2. `external_repo_id` is null until a webhook or sync resolves it, so the
  *      merge lookup matches on it when present and on `repo_full_name` otherwise.
- *   3. It keeps this table out of the `vcs.ts` ownership rule (only
- *      `VcsRepository` may import those tables); this one is issue-owned and is
- *      written by the errors services.
  */
 export const ErrorIssuePullRequests = PG.table("error_issue_pull_requests", {
 	columns: {
@@ -542,16 +577,11 @@ export type ActorRow = PG.SelectRowOf<typeof Actors>
 export type ActorInsert = PG.InsertRowOf<typeof Actors>
 export type ErrorIssueRow = PG.SelectRowOf<typeof ErrorIssues>
 export type ErrorFingerprintCandidateRow = PG.SelectRowOf<typeof ErrorFingerprintCandidates>
-export type ErrorFingerprintCandidateInsert = PG.InsertRowOf<typeof ErrorFingerprintCandidates>
-export type ErrorIssueStateRow = PG.SelectRowOf<typeof ErrorIssueStates>
 export type ErrorIssueEventRow = PG.SelectRowOf<typeof ErrorIssueEvents>
 export type ErrorIssueEventInsert = PG.InsertRowOf<typeof ErrorIssueEvents>
 export type ErrorIncidentRow = PG.SelectRowOf<typeof ErrorIncidents>
 export type ErrorNotificationPolicyRow = PG.SelectRowOf<typeof ErrorNotificationPolicies>
-export type ErrorTickStateRow = PG.SelectRowOf<typeof ErrorTickStates>
 export type ErrorNotificationDeliveryRow = PG.SelectRowOf<typeof ErrorNotificationDeliveries>
 export type ErrorNotificationDeliveryStatus = ErrorNotificationDeliveryRow["status"]
 export type ErrorIssuePullRequestRow = PG.SelectRowOf<typeof ErrorIssuePullRequests>
-export type ErrorIssuePullRequestInsert = PG.InsertRowOf<typeof ErrorIssuePullRequests>
 export type ErrorIssueVerificationRow = PG.SelectRowOf<typeof ErrorIssueVerifications>
-export type ErrorIssueVerificationInsert = PG.InsertRowOf<typeof ErrorIssueVerifications>

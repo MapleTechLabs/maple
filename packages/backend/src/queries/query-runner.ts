@@ -11,10 +11,10 @@ import {
 } from "@maple/query-engine/runtime"
 import { Clock, Effect, Option, Schema } from "effect"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * Applies registry cache and error policy. Services are values so the returned

@@ -1,12 +1,9 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
+import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
-
-class McpTenantError extends Schema.TaggedError<McpTenantError>()("@maple/mcp/errors/McpTenantError", {
-	message: Schema.String,
-}) {}
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -77,12 +74,12 @@ export class McpQueryBudgetError extends Schema.TaggedError<McpQueryBudgetError>
 	{ message: Schema.String, pipeName: Schema.String, setting: Schema.String },
 ) {}
 
+/**
+ * What a tool handler may fail with. Credential and tenant failures (`McpAuthMissingError`,
+ * `McpAuthUnavailableError`, `McpInvalidTenantError`) happen at the transport, before any tool runs.
+ */
 export type McpToolError =
-	| McpTenantError
-	| McpAuthMissingError
 	| McpAuthInvalidError
-	| McpAuthUnavailableError
-	| McpInvalidTenantError
 	| McpQueryError
 	| McpInvalidInputError
 	| McpNotReadyError
@@ -114,11 +111,17 @@ export interface McpToolHints {
 }
 
 /**
+ * Maple's own feedback channel. It writes, yet stays open to read-only keys as on v2, and a
+ * failure of it never asks the caller to report that failure through it.
+ */
+export const FEEDBACK_TOOL = "send_maple_feedback"
+
+/**
  * Whether a read-only credential is refused this tool, and so never shown it: every tool that
- * changes data, except feedback, which stays open to read-only keys as on v2.
+ * changes data, except {@link FEEDBACK_TOOL}.
  */
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
-	!readOnly && name !== "send_maple_feedback"
+	!readOnly && name !== FEEDBACK_TOOL
 
 /**
  * Who a tool is for.
@@ -175,16 +178,15 @@ export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurfac
  */
 export interface McpToolSpec<
 	P extends Schema.Codec<unknown, unknown, never, unknown>,
-	O extends Schema.Codec<unknown, unknown>,
+	N extends McpToolName,
 	R extends McpToolRequirements,
 > {
-	readonly name: string
+	/** Also the key of the tool's output schema in `McpToolOutputs`, published as `outputSchema`. */
+	readonly name: N
 	/** Human-readable name, shown by clients in place of `name`. Title Case, no trailing period. */
 	readonly title: string
 	readonly description: string
 	readonly parameters: P
-	/** The result's schema: published as `outputSchema`, used to encode `structuredContent`. */
-	readonly output: O
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
@@ -206,17 +208,20 @@ export interface McpToolSpec<
 	 * documents that replace state, where a dropped typo would reset a field to its default.
 	 */
 	readonly rejectUnknownKeys?: true
-	readonly handler: (params: P["Type"]) => Effect.Effect<O["Type"], McpToolError, R>
+	readonly handler: (params: P["Type"]) => Effect.Effect<McpToolOutput<N>["Type"], McpToolError, R>
 	/** The model-facing text, derived from the output alone so the two cannot disagree. */
-	readonly render: (output: O["Type"]) => ToolDoc
+	readonly render: (output: McpToolOutput<N>["Type"]) => ToolDoc
 }
+
+/** A tool's output schema: the domain catalog's entry for its name. */
+export type McpToolOutput<N extends McpToolName> = (typeof McpToolOutputs)[N]
 
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
-		O extends Schema.Codec<unknown, unknown>,
+		N extends McpToolName,
 		R extends McpToolRequirements,
 	>(
-		spec: McpToolSpec<P, O, R>,
+		spec: McpToolSpec<P, N, R>,
 	): void
 }

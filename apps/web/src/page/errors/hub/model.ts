@@ -12,8 +12,6 @@ import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 
-// The errors list.
-
 /** `ErrorsSummary` (`@maple/query-engine` route-rows). */
 export const ErrorsSummary = Schema.Struct({
 	totalErrors: Schema.Number,
@@ -64,7 +62,7 @@ export const Model = Schema.Struct({
 	summary: KeyedSchema(Schema.NullOr(ErrorsSummary), LoadFailure),
 	serviceCounts: KeyedSchema(Schema.Array(V2ErrorIssueServiceCount), LoadFailure),
 	environments: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
-	/** `ErrorsFilterSidebar` has mounted: until then its counts and environments are not requested. */
+	/** The filter sidebar has mounted: until then its counts and environments are not requested. */
 	isFilterRailMounted: Schema.Boolean,
 	/** The volume sort's warehouse ranking (fingerprints by window volume). */
 	ranking: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
@@ -97,7 +95,7 @@ export const Model = Schema.Struct({
 			quickPick: QuickPick.Model,
 		}),
 	),
-	/** `ToolbarSearch`'s input and its debounce generation. */
+	/** The search box's input and its debounce generation. */
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,
 	tabs: Tabs.Model,

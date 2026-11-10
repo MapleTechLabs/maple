@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { parseMarkdownTexts } from "../../kit/markdown"
@@ -19,10 +20,7 @@ import { Message } from "./model"
 
 export const EVENTS_PAGE = SECURITY_AUDIT_EVENTS_DEFAULT_LIMIT
 
-export const ReadRunClock = Command.define("ReadSecurityRunClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadRunClock = readClock("ReadSecurityRunClock", Message.ReadClock)
 
 export const ReadRunGrants = Command.define("ReadSecurityRunGrants", {
 	messages: [Message.CompletedReadGrants],

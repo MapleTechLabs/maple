@@ -8,11 +8,8 @@ import { Array as Arr } from "effect"
  *
  * A v2 data source is `{ endpoint, params }` — an opaque bag naming a web-side
  * server function. A v3 one is a discriminated union whose query-carrying arms
- * are typed. Every accessor here reads BOTH, which is what lets the ~dozen
- * backend consumers (MCP tools, templates, the Perses importer, variable
- * interpolation) move off the raw shape one commit at a time, while v2 is still
- * the stored version. By the time the version flips there is nothing left
- * reaching into `params` by hand.
+ * are typed. Every accessor here reads BOTH, so consumers (MCP tools, templates,
+ * the Perses importer, variable interpolation) never reach into `params` by hand.
  *
  * Deliberately `unknown`-in: callers hold widgets typed by whichever schema
  * version their module imported, and a parameter typed to one of them would
@@ -24,10 +21,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isString = (value: unknown): value is string => typeof value === "string"
 
-// The endpoint tables moved to `legacy-endpoints.ts` — they are wire
-// vocabularies rather than schema, and they outlive this file, which is deleted
-// once v3 is the only stored shape. Re-exported here so the ~30 consumers that
-// import them from `access.ts` today keep working until then.
+// Re-exported for the `@maple/widgets/dashboard` barrel.
 export { QUERY_RESULT_ENDPOINTS, RAW_SQL_ENDPOINT } from "./legacy-endpoints"
 
 /**
@@ -67,8 +61,15 @@ export const dataSourceTransform = (
 	return isRecord(dataSource.transform) ? dataSource.transform : undefined
 }
 
-/** True when this data source carries a user-authored query set. */
 export const isQueryDataSource = (dataSource: unknown): boolean => dataSourceQuerySet(dataSource) !== null
+
+export interface WidgetQuerySet extends QuerySet {
+	readonly resultShape: QueryResultContract
+	/** Request shaping: see `QueryDataSourceInput` in `construct.ts`. */
+	readonly defaultLimit?: number
+	readonly limit?: number
+	readonly columns?: ReadonlyArray<string>
+}
 
 /**
  * The query set, whichever way it is stored.
@@ -79,14 +80,6 @@ export const isQueryDataSource = (dataSource: unknown): boolean => dataSourceQue
  * here: the MCP inspector and the template checker both want to report on what
  * is actually stored, not on what would survive a decode.
  */
-export interface WidgetQuerySet extends QuerySet {
-	readonly resultShape: QueryResultContract
-	/** Request shaping — see `QueryDataSourceInput` in `construct.ts`. */
-	readonly defaultLimit?: number
-	readonly limit?: number
-	readonly columns?: ReadonlyArray<string>
-}
-
 export const dataSourceQuerySet = (dataSource: unknown): WidgetQuerySet | null => {
 	if (!isRecord(dataSource)) return null
 

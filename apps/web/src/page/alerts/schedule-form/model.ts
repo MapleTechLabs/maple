@@ -11,8 +11,6 @@ import { OrgMember } from "../shared/org-members"
 import { RangeDays } from "../shared/coverage-preview"
 import { Form } from "./form"
 
-// `/alerts/schedules/new`: create an on-call schedule, or edit one (`?scheduleId=`).
-
 export const Model = Schema.Struct({
 	search: AlertsScheduleNewSearch,
 	/** The schedule being edited; `null` creates. */
@@ -50,6 +48,3 @@ export const zoneItems = (model: Pick<Model, "zones" | "form">): ReadonlyArray<s
 		Arr.dedupe(Arr.filter([...model.zones, "UTC", model.form.timeZone], Str.isNonEmpty)),
 		Order.String,
 	)
-
-/** The viewer may change schedules (`alerts:manage`); the API refuses anyone else. */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "alerts:manage")

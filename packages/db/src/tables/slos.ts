@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AlertRuleId, OrgId, SloId, SloWindowDays, UserId } from "@maple/domain/primitives"
+import { AlertRuleId, OrgId, SloId, SloWindowDays, UserId } from "@maple/primitives"
 import { SloSli } from "@maple/domain/slo"
 import { Schema } from "effect"
 
@@ -29,6 +29,3 @@ export const Slos = PG.table("slos", {
 	indexes: [PG.index("slos_org_idx", ["orgId"]), PG.uniqueIndex("slos_org_name_unq", ["orgId", "name"])],
 	tenantColumn: "orgId",
 })
-
-export type SloRow = PG.SelectRowOf<typeof Slos>
-export type SloInsert = PG.InsertRowOf<typeof Slos>

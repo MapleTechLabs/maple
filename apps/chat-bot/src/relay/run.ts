@@ -9,7 +9,7 @@
  */
 import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
-import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
+import type { ChatConnectorId, OrgId } from "@maple/primitives"
 import {
 	AlertIncidentAckSource,
 	AlertIncidentId,

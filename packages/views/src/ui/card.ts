@@ -7,10 +7,10 @@ import {
 	cardPanelStyles,
 	cardStyles,
 	cardTitleStyles,
-} from "@maple/ui/styles/ui/card"
+} from "./card.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// The Card surface (styles in packages/ui/src/components/ui/card.styles.ts): rounded-md, and its parts.
+// The Card surface (styles in ./card.styles.ts): rounded-md, and its parts.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -31,5 +31,5 @@ export const cardTitle = part(cn(cardTitleStyles, "font-display tracking-tight")
 export const cardDescription = part(cn(cardDescriptionStyles, "font-prose"), "card-description")
 export const cardPanel = part(cardPanelStyles, "card-panel")
 export const cardFooter = part(cardFooterStyles, "card-footer")
-/** `CardAction`: the header's trailing action slot (a menu, a button), top-right of the header grid. */
+/** The header's trailing action slot (a menu, a button), top-right of the header grid. */
 export const cardAction = part(cardActionStyles, "card-action")

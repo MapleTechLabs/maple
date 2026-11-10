@@ -15,9 +15,8 @@ import { Array as Arr, String as Str } from "effect"
  *
  *   - `missing`:    table doesn't exist on the cluster. Apply will create it.
  *
- *   - `drifted`:    table exists but at least one desired column is missing or
- *     has a type mismatch. Apply will SKIP these (auto-remediation is out of
- *     scope for v1).
+ *   - `drifted`:    table exists but a desired column is missing or has the wrong
+ *     type. Apply adds the missing columns and leaves type mismatches alone.
  *
  * For materialized views v1 only checks existence — comparing MV bodies would
  * require parsing CH's `system.tables.create_table_query` output and we don't
@@ -122,12 +121,8 @@ export const computeSchemaDiff = (
 		if (!actualTable) {
 			return { status: "missing", name: table.name, kind: table.kind }
 		}
-		// If the customer has an object of the same name but a different kind
-		// (e.g. a regular table where we expect a materialized view), the
-		// previous behavior was to fall through to the MV presence check and
-		// return `up_to_date`, leaving the MV uncreated and downstream
-		// aggregates unpopulated. Surface a `wrong_kind` drift instead so
-		// apply can skip with a clear error.
+		// A same-named object of the other kind (a table where an MV is expected) would
+		// otherwise pass the MV presence check and leave the MV uncreated.
 		if (actualTable.kind !== table.kind) {
 			return {
 				status: "wrong_kind",
@@ -136,7 +131,6 @@ export const computeSchemaDiff = (
 				actualKind: actualTable.kind,
 			}
 		}
-		// Materialized views: presence-only check in v1 (kind already matched above).
 		if (table.kind === "materialized_view") {
 			return { status: "up_to_date", name: table.name, kind: table.kind }
 		}

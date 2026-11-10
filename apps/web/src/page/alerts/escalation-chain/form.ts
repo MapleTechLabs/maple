@@ -213,8 +213,6 @@ export const previewOf = (form: Form): ChainOutline => ({
 	repeat_count: Option.isNone(repeatError(form.repeatCount)) ? Number(form.repeatCount) : 0,
 })
 
-// STEP EDITS
-
 export const Direction = Schema.Literals(["up", "down"])
 export type Direction = typeof Direction.Type
 

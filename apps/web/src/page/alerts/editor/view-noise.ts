@@ -11,8 +11,6 @@ import { invalidFieldsOf } from "./derive-rows"
 import { inlineNumber, wasLine } from "./view-fields"
 import { String as Str } from "effect"
 
-// `RuleNoiseSection`: how an open incident behaves, as sentences.
-
 type H = HtmlBuilder<Message>
 
 const NO_DATA_IDS = {

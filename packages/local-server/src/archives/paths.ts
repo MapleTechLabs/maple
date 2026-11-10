@@ -13,8 +13,7 @@ import { String as Str } from "effect"
 // the checkpoint module's path discipline. Symlinks are rejected at every level
 // a path is used as state, operation, manifest, shard, quarantine, or building
 // input, because a symlinked descendant can escape the configured root and
-// mutate unrelated filesystem content (a defect the Phase 1 review caught and
-// closed for checkpoints; the same hazard exists for archives).
+// mutate unrelated filesystem content.
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -45,9 +44,8 @@ export const validateRangeDate = (value: string): string => {
 
 /**
  * Compute the exclusive end of a UTC day as the next day's midnight in ISO form
- * (e.g. `2026-06-01` → `2026-06-02T00:00:00.000Z`). Used for the
- * `rangeEndExclusive` manifest field; the prior `23:59:59.999999999Z` was
- * inclusive, not exclusive.
+ * (e.g. `2026-06-01` -> `2026-06-02T00:00:00.000Z`), for the manifest's
+ * `rangeEndExclusive` field.
  */
 export const nextMidnightUtc = (rangeDate: string): string => {
 	const validated = validateRangeDate(rangeDate)
@@ -253,14 +251,10 @@ export const assertRealFile = async (path: string, label: string): Promise<void>
 export const ensurePrivateDirectory = async (path: string, root: string): Promise<void> => {
 	const absolute = resolve(path)
 	const absoluteRoot = resolve(root)
-	// The root must exist or be creatable as the first component. If the root
-	// itself does not exist yet (fresh archive root), create it with restrictive
-	// permissions before walking. A fresh root that fails ENOENT on lstat is
-	// expected here; the prior code treated a missing root as the walk start and
-	// then failed when lstat on the first child hit a non-existent parent.
+	// A fresh archive root does not exist yet: create it with restrictive
+	// permissions before walking, or lstat on its first child fails ENOENT.
 	const rel = relative(absoluteRoot, absolute)
 	if (rel === "") {
-		// path IS the root: ensure it exists as a real private directory.
 		try {
 			const info = await lstat(absoluteRoot)
 			if (info.isSymbolicLink()) throw new Error(`refusing symlink archive root: ${absoluteRoot}`)
@@ -273,7 +267,6 @@ export const ensurePrivateDirectory = async (path: string, root: string): Promis
 		}
 	}
 	if (Str.startsWith("..")(rel)) throw new Error(`archive path escapes root: ${path}`)
-	// Ensure the root exists first (handles fresh-root creation).
 	try {
 		const rootInfo = await lstat(absoluteRoot)
 		if (rootInfo.isSymbolicLink()) throw new Error(`refusing symlink archive root: ${absoluteRoot}`)
@@ -282,8 +275,6 @@ export const ensurePrivateDirectory = async (path: string, root: string): Promis
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 		await mkdir(absoluteRoot, { recursive: true, mode: 0o700 })
 	}
-	// Walk from the root down, checking each existing component is a real dir and
-	// creating missing ones. This refuses to cross a symlink at any depth.
 	let current = absoluteRoot
 	for (const part of Str.split(sep)(rel)) {
 		if (part === "") continue

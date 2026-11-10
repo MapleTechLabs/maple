@@ -38,6 +38,7 @@ import {
 	ProductEventsPathsRequest,
 	ServiceOverviewRequest,
 	ServiceUsageRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	DEFAULT_PATHS_BRANCHES,
@@ -73,7 +74,6 @@ import { validateFunnelDefinition, validatePathsDefinition } from "@maple/backen
 import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 export interface RouteEndpointContext {
 	readonly tenant: TenantContext
@@ -108,8 +108,8 @@ export const routeEndpointPlan = (endpoint: string): RouteEndpointPlan | undefin
 /**
  * What a plan hands the tile: the browser's server function's return value for
  * the same endpoint, `{ data, …extras }`. The client unwraps `data` through the
- * one `toReadyWidgetData` in `use-widget-data.ts` for both paths. (Renderers do
- * NOT unwrap it themselves — that assumption once left every chart on a shared
+ * one `toReadyData` in `apps/web/src/page/dashboards/kit/widget-data.ts` for both paths.
+ * (Renderers do NOT unwrap it themselves: that assumption once left every chart on a shared
  * board holding an object where an array belongs.)
  */
 export interface RouteEndpointResponse {

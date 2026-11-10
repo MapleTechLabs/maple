@@ -24,18 +24,16 @@ import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
 import { MeasureSplit } from "./split"
 import { spanSheetOf } from "./update"
 import type { TraceData } from "@maple/views/traces/trace-data"
-import * as Timeline from "./timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import { headerActions, titleContent } from "./view-header"
 import { errorCallout, productEvents, traceErrors } from "./view-findings"
 import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import { spanPanelSubmodel } from "./view-span-panel"
-import * as Waterfall from "./waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 
-// The trace detail page on `ResultPage`.
-
-/** `ResultPage`'s crumb: the short id once loaded or failed, else the state it is in. */
+/** The crumb: the short id once loaded or failed, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const crumb = Option.isNone(decodeTraceId(model.traceId))
 		? "Not found"

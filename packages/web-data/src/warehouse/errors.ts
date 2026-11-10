@@ -1,11 +1,11 @@
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import {
-	QueryEngineExecuteRequest,
 	coerceErrorsByTypeRows,
 	coerceErrorsSummary,
 	warehouseDateTimeToIso,
 	formatWarehouseDateTime,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	DeploymentEnvironment,
 	ErrorsByTypeRequest,
@@ -26,14 +26,14 @@ import {
 	runWarehouseQuery,
 } from "./effect-utils"
 
-const OptionalServiceArray = Schema.optional(Schema.mutable(Schema.Array(ServiceName)))
-const OptionalDeploymentEnvArray = Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment)))
-const OptionalFingerprintHashArray = Schema.optional(Schema.mutable(Schema.Array(FingerprintHash)))
+const OptionalServiceArray = Schema.optional(Schema.Array(ServiceName))
+const OptionalDeploymentEnvArray = Schema.optional(Schema.Array(DeploymentEnvironment))
+const OptionalFingerprintHashArray = Schema.optional(Schema.Array(FingerprintHash))
 // The error-events tables carry no ServiceNamespace column, so a namespaces
 // filter is lowered to service membership via `scopeServicesToNamespaces`.
-const OptionalNamespaceArray = Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace)))
+const OptionalNamespaceArray = Schema.optional(Schema.Array(ServiceNamespace))
 /** "Error Type" / "Version" sidebar facets — plain strings, not branded. */
-const OptionalStringArray = Schema.optional(Schema.mutable(Schema.Array(Schema.String)))
+const OptionalStringArray = Schema.optional(Schema.Array(Schema.String))
 
 export interface ErrorByType {
 	fingerprintHash: string
@@ -375,7 +375,7 @@ export interface ErrorsSparkSeries {
 }
 
 const GetErrorsSparkInputSchema = Schema.Struct({
-	fingerprintHashes: Schema.mutable(Schema.Array(FingerprintHash)),
+	fingerprintHashes: Schema.Array(FingerprintHash),
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
 	services: OptionalServiceArray,

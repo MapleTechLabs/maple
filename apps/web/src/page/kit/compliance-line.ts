@@ -8,7 +8,7 @@ import { textLink } from "@maple/views/ui/text-link"
 export const COMPLIANCE_LINE = "DPA available · SOC 2 Type II and ISO 27001 in progress"
 export const DPA_REQUEST_URL = "mailto:privacy@maple.dev?subject=DPA%20request"
 
-/** `ComplianceLine`: one quiet footnote under a plan picker (onboarding and billing compare). */
+/** One quiet footnote under a plan picker (onboarding and billing compare). */
 export const compliance = <M>(h: HtmlBuilder<M>): Html =>
 	hstack(h, { gap: "1.5", justify: "center", wrap: true, className: "text-xs text-muted-foreground" }, [
 		icon(h, "ShieldCheckIcon", { className: "size-3.5" }),

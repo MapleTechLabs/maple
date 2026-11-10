@@ -1,51 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
-import {
-	parseMapleRegion,
-	resolveAwsRegion,
-	resolveAwsResourceName,
-	resolveCollectorEndpoint,
-	resolveIngestCidrBlock,
-	resolveIngestNamespaceName,
-} from "./stage.ts"
+import { REGION_INFRA } from "../region.ts"
+import { resolveCollectorEndpoint, resolveIngestNamespaceName } from "./stage.ts"
 import { Array as Arr, String as Str } from "effect"
-
-describe("parseMapleRegion", () => {
-	it("defaults to us when unset", () => {
-		expect(parseMapleRegion(undefined)).toBe("us")
-		expect(parseMapleRegion("")).toBe("us")
-		expect(parseMapleRegion("  ")).toBe("us")
-	})
-
-	it("accepts either region, case-insensitively", () => {
-		expect(parseMapleRegion("EU")).toBe("eu")
-		expect(parseMapleRegion(" us ")).toBe("us")
-	})
-
-	it("rejects anything else rather than silently defaulting", () => {
-		expect(() => parseMapleRegion("apac")).toThrow(/Unsupported Maple region/)
-	})
-})
-
-describe("resolveAwsResourceName", () => {
-	it("leaves us unsuffixed so adding eu renames nothing", () => {
-		expect(resolveAwsResourceName("ingest", parseMapleStage("prd"), "us")).toBe("maple-ingest")
-		expect(resolveAwsResourceName("ingest", parseMapleStage("pr-12"), "us")).toBe("maple-ingest-pr-12")
-	})
-
-	it("defaults to us when no region is passed", () => {
-		expect(resolveAwsResourceName("ingest", parseMapleStage("prd"))).toBe("maple-ingest")
-	})
-
-	it("suffixes eu, keeping the two instances distinct at every stage", () => {
-		expect(resolveAwsResourceName("ingest", parseMapleStage("prd"), "eu")).toBe("maple-ingest-eu")
-		expect(resolveAwsResourceName("ingest", parseMapleStage("pr-12"), "eu")).toBe("maple-ingest-eu-pr-12")
-	})
-
-	it("rejects the removed stg stage rather than naming a dev stack after it", () => {
-		expect(() => parseMapleStage("stg")).toThrow(/"stg" stage was removed/)
-	})
-})
 
 /** The [first, last] IPv4 addresses a CIDR block covers, as integers. */
 const cidrRange = (cidr: string): readonly [number, number] => {
@@ -58,9 +15,9 @@ const cidrRange = (cidr: string): readonly [number, number] => {
 
 describe("region topology", () => {
 	it("maps each region to a distinct AWS region and a non-overlapping CIDR", () => {
-		expect(resolveAwsRegion("us")).not.toBe(resolveAwsRegion("eu"))
-		const [usFirst, usLast] = cidrRange(resolveIngestCidrBlock("us"))
-		const [euFirst, euLast] = cidrRange(resolveIngestCidrBlock("eu"))
+		expect(REGION_INFRA.us.awsRegion).not.toBe(REGION_INFRA.eu.awsRegion)
+		const [usFirst, usLast] = cidrRange(REGION_INFRA.us.ingestCidrBlock)
+		const [euFirst, euLast] = cidrRange(REGION_INFRA.eu.ingestCidrBlock)
 		expect(usLast < euFirst || euLast < usFirst).toBe(true)
 	})
 })

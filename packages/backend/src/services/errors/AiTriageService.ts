@@ -62,9 +62,6 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 				return yield* dbExecute((db) => selectInvestigationUsage(db, orgId, nowMs))
 			})
 
-			/** What a start spends: one agent, one pass. */
-			const probeCost = (_severity: IssueSeverity) => 1
-
 			/**
 			 * Pause state is asked of the same verdict the enqueue path uses, twice:
 			 * once as an ordinary incident and once as a critical. One probe cannot
@@ -81,7 +78,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					evaluateInvestigationQuota({
 						usage,
 						limits: row,
-						passCount: probeCost(severity),
+						// What a start spends: one agent, one pass.
+						passCount: 1,
 						nowMs,
 						severity,
 					})

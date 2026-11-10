@@ -5,7 +5,7 @@ import {
 	UptimeMonitorId,
 	UptimeMonitorKind,
 	UptimeMonitorStatus,
-} from "../../primitives"
+} from "@maple/primitives"
 import {
 	UptimeDnsRecordType,
 	UptimeHttpMethod,
@@ -33,7 +33,6 @@ export const UptimeMonitorPublicId = PublicId(PublicIdPrefixes.uptimeMonitor, Up
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())
 const Int = Schema.Number.check(Schema.isInt())
 
-/** Default timeout when a create omits `timeout_ms`. */
 export const UPTIME_DEFAULT_TIMEOUT_MS = 10_000
 
 const timeoutField = Schema.optionalKey(
@@ -43,8 +42,6 @@ const timeoutField = Schema.optionalKey(
 		examples: [10000],
 	}),
 )
-
-// --- Wire config (snake_case, discriminated by `type`) ---
 
 const jsonPathField = NonEmptyString.annotate({
 	description: "Dot path with `[n]` indexes, e.g. `checks[0].status`.",
@@ -314,8 +311,6 @@ export const uptimeConfigToWire = (config: UptimeMonitorConfig): V2UptimeMonitor
 			}
 	}
 }
-
-// --- Objects ---
 
 const kindField = UptimeMonitorKind.annotate({
 	description: "What the monitor checks: `http`, `tcp`, `dns`, or `heartbeat` (your job pings Maple).",

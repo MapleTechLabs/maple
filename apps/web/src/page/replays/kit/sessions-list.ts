@@ -1,6 +1,6 @@
 import { countLabel, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
+import { SESSION_TAG_DOTS, SESSION_TAG_LABELS } from "./session-tags"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
@@ -18,7 +18,6 @@ import { typography } from "@maple/views/ui/typography"
 // The sessions list. Rows render in flow: the virtualizer's
 // absolute rows stack to the same offsets once every row is in view.
 
-/** A disclosure chevron, direction right. */
 const disclosureChevron = <M>(h: HtmlBuilder<M>, isOpen: boolean, size: number): Html =>
 	icon(h, "ChevronRightIcon", {
 		size,
@@ -26,7 +25,7 @@ const disclosureChevron = <M>(h: HtmlBuilder<M>, isOpen: boolean, size: number):
 		className: cn("shrink-0 transition-transform", isOpen && "rotate-90"),
 	})
 
-/** `QuietRunRow`: stands in for a run of low-signal sessions. */
+/** Stands in for a run of low-signal sessions. */
 const quietRunRow = <M>(
 	h: HtmlBuilder<M>,
 	item: Extract<SessionListItem, { kind: "quiet" }>,
@@ -70,7 +69,7 @@ const quietRunRow = <M>(
 		],
 	)
 
-/** `getItemKey`. */
+/** The virtualizer's item key. */
 export const itemKey = (item: SessionListItem): string =>
 	item.kind === "quiet" ? `quiet:${item.key}` : item.session.sessionId
 
@@ -123,7 +122,7 @@ export const sessionsList = <M>(
 
 const SKELETON_NAME_WIDTHS = ["w-40", "w-28", "w-48", "w-32", "w-36", "w-24", "w-44", "w-32"]
 
-/** `SessionsListSkeleton`: same header, columns and row height. */
+/** The loading list: same header, columns and row height. */
 export const sessionsListSkeleton = <M>(h: HtmlBuilder<M>, rows = 8): Html =>
 	h.div(
 		[h.Class("@container"), h.AriaBusy(true)],

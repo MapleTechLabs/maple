@@ -7,7 +7,8 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { SearchConsoleDaily, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 
 export type SearchConsoleGrain = "site" | "page" | "query"
 
@@ -27,7 +28,7 @@ export interface SearchConsoleFilters {
 	readonly query?: string
 }
 
-type DailyAccessor = ColumnAccessor<typeof SearchConsoleDaily.columns>
+type DailyAccessor = ColumnAccessor<typeof Datasources.searchConsoleDaily.columns>
 
 /**
  * Base WHERE for one grain. Params: orgId, siteUrl, startDate, endDate (second-precision
@@ -55,7 +56,7 @@ function dailyWhere(
 
 /** Each day's newest import for the grain, unfiltered: an import replaces the whole day. */
 function newestImports(grain: SearchConsoleGrain, startParam: "startDate" | "previousStartDate") {
-	return from(SearchConsoleDaily)
+	return from(Datasources.searchConsoleDaily)
 		.select(($) => ({ date: $.Date, ingestedAt: CH.max_($.IngestedAt) }))
 		.where(($) => dailyWhere($, grain, {}, startParam))
 		.groupBy("date")
@@ -67,7 +68,7 @@ function latestRows(
 	filters: SearchConsoleFilters = {},
 	startParam: "startDate" | "previousStartDate" = "startDate",
 ) {
-	return from(SearchConsoleDaily)
+	return from(Datasources.searchConsoleDaily)
 		.innerJoinQuery(newestImports(grain, startParam), "newest", (row, newest) =>
 			row.Date.eq(newest.date).and(row.IngestedAt.eq(newest.ingestedAt)),
 		)
@@ -106,8 +107,6 @@ const metrics = (sums: Sums) => ({
 	ctr: ratio(sums.clicks, sums.impressions),
 	position: ratio(sums.positionSum, sums.impressions),
 })
-
-// Overview
 
 export interface SearchConsoleOverviewOutput {
 	readonly clicks: number
@@ -155,8 +154,6 @@ export function searchConsoleOverviewQuery() {
 		.route("ingest")
 }
 
-// Timeseries
-
 export interface SearchConsoleTimeseriesOutput {
 	/** Midnight UTC of Google's (Pacific) day. */
 	readonly date: DateTime.Utc
@@ -182,8 +179,6 @@ export function searchConsoleTimeseriesQuery() {
 		.format("JSON")
 		.route("ingest")
 }
-
-// Top queries and pages
 
 export interface SearchConsoleSortOpts {
 	readonly sortBy?: SearchConsoleSortKey

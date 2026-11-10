@@ -6,7 +6,7 @@
 
 import { Effect, Schema, Array as Arr } from "effect"
 import { TraceId } from "@maple/domain"
-import type { TracesMetric } from "@maple/query-engine"
+import type { TracesMetric } from "@maple/domain/query-engine"
 import type {
 	AttributeKeyResult,
 	AttributeValueResult,

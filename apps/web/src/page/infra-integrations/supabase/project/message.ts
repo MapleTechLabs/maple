@@ -1,3 +1,5 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	SupabaseApiTopPathsResponse,
 	SupabaseApiTrafficResponse,
@@ -8,15 +10,11 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { SupabaseProjectRow, SupabaseProjectTimeseriesRow, SupabaseStatus } from "../model"
 import { Section } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const completed = <A, AI>(schema: Schema.Codec<A, AI>) => ({
 	key: Schema.String,
@@ -33,9 +31,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchCallers: completed(SupabaseProjectCallersResponse),
 	CompletedFetchIssues: completed(SupabaseLogIssuesResponse),
 	CompletedFetchInsights: completed(SupabaseProjectInsights),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedRetry: { section: Section },
 	ClickedToggleTopPaths: {},
 	ClickedReload: {},

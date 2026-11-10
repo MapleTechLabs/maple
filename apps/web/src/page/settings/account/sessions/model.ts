@@ -2,8 +2,6 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "@maple/views/ui/dialog"
 
-// The Active sessions tab.
-
 export const SessionRow = Schema.Struct({
 	id: Schema.String,
 	device: Schema.String,

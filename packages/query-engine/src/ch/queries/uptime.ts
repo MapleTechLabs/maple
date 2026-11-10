@@ -3,9 +3,9 @@
 // An uptime monitor's checks are root CLIENT spans of the `maple-uptime` service, one per check,
 // keyed to the monitor by the `maple.uptime.monitor_id` resource attribute.
 
-import { type DateTime, Schema } from "effect"
+import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { from, param } from "@maple-dev/effect-orm/clickhouse"
 import {
 	UPTIME_MONITOR_ID_ATTRIBUTE,
 	UPTIME_SERVICE_NAME,
@@ -13,29 +13,22 @@ import {
 } from "@maple/domain/uptime"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { CHNumber } from "../schema"
-import { orgIdParam, Traces } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { avgWhere } from "./format"
-
-export interface UptimePhaseTimingsOutput {
-	readonly bucket: DateTime.Utc
-	/** Checks in the bucket that got a response and carry their phases. */
-	readonly timedChecks: number
-	readonly dnsMs: number
-	readonly connectMs: number
-	readonly tlsMs: number
-	readonly ttfbMs: number
-	readonly transferMs: number
-}
 
 export const uptimePhaseTimingsRowSchema = Schema.Struct({
 	bucket: DateTimeUtcFromWarehouse,
+	/** Checks in the bucket that got a response and carry their phases. */
 	timedChecks: CHNumber,
 	dnsMs: CHNumber,
 	connectMs: CHNumber,
 	tlsMs: CHNumber,
 	ttfbMs: CHNumber,
 	transferMs: CHNumber,
-}) satisfies CompiledQueryRowSchema<UptimePhaseTimingsOutput>
+})
+
+export type UptimePhaseTimingsOutput = typeof uptimePhaseTimingsRowSchema.Type
 
 /**
  * Per-bucket average of each phase over one monitor's checks that got a response. Averaging over
@@ -43,7 +36,7 @@ export const uptimePhaseTimingsRowSchema = Schema.Struct({
  * (TLS on http://, no body read). Checks from before phases were recorded never match.
  */
 export function uptimePhaseTimingsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const answered = $.SpanAttributes.get(UPTIME_TIMING_ATTRIBUTES.ttfbMs).neq("")
 			const phase = (key: string) => avgWhere(CH.toFloat64OrZero($.SpanAttributes.get(key)), answered)
@@ -75,40 +68,28 @@ export interface UptimeChecksOpts {
 	readonly limit: number
 }
 
-export interface UptimeChecksOutput {
-	readonly at: DateTime.Utc
-	readonly traceId: string
-	readonly durationMs: number
-	/** The span status: `Error` for a failed check. */
-	readonly status: string
-	/** `http.response.status_code`, 0 when the check got no response. */
-	readonly httpStatus: number
-	/** 1 when the check carries its phases (an HTTP check that got a response). */
-	readonly timed: number
-	readonly dnsMs: number
-	readonly connectMs: number
-	readonly tlsMs: number
-	readonly ttfbMs: number
-	readonly transferMs: number
-}
-
 export const uptimeChecksRowSchema = Schema.Struct({
 	at: DateTimeUtcFromWarehouse,
 	traceId: Schema.String,
 	durationMs: CHNumber,
+	/** The span status: `Error` for a failed check. */
 	status: Schema.String,
+	/** `http.response.status_code`, 0 when the check got no response. */
 	httpStatus: CHNumber,
+	/** 1 when the check carries its phases (an HTTP check that got a response). */
 	timed: CHNumber,
 	dnsMs: CHNumber,
 	connectMs: CHNumber,
 	tlsMs: CHNumber,
 	ttfbMs: CHNumber,
 	transferMs: CHNumber,
-}) satisfies CompiledQueryRowSchema<UptimeChecksOutput>
+})
+
+export type UptimeChecksOutput = typeof uptimeChecksRowSchema.Type
 
 /** One monitor's checks in the window, newest first, each with its outcome and phases (0 when absent). */
 export function uptimeChecksQuery(opts: UptimeChecksOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const phase = (key: string) => CH.toFloat64OrZero($.SpanAttributes.get(key))
 			return {

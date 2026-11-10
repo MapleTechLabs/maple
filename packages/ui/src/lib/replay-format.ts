@@ -1,7 +1,5 @@
-// Shared presentation helpers for the session-replay surfaces (list, detail,
-// player, timeline) — used by both the web app and the local-mode UI so the
-// two can't drift. Warehouse-coupled helpers (partition windows) stay in the
-// web app: this package doesn't depend on @maple/query-engine.
+// Shared presentation helpers for the session-replay surfaces (list, detail, player, timeline),
+// used by both the web app and the local-mode UI so the two can't drift.
 
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { String as Str } from "effect"
@@ -80,7 +78,3 @@ export function formatClock(ms: number): string {
 	if (hours === 0) return `${minutes}:${seconds}`
 	return `${hours}:${Str.padStart(2, "0")(minutes.toString())}:${seconds}`
 }
-
-// Relative-time formatting lives in `./time-format` — import `formatRelativeFrom`
-// for an epoch-ms instant. The `Intl.RelativeTimeFormat` version that used to
-// live here rendered "2 hours ago" while the rest of the app rendered "2h ago".

@@ -5,7 +5,8 @@ import { Result, Array as Arr, String as Str, Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
@@ -52,8 +53,6 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 	route._tag === "SecurityCode" ? "overview" : route._tag === "SecurityCodeFindings" ? "findings" : "runs"
 
-// SELECTS
-
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
@@ -61,8 +60,6 @@ const withSelectValues = (model: Model): Model => ({
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
-
-// READS
 
 const keyOf = (context: PageContext, operation: string, input: unknown = {}) =>
 	requestKey(context.orgId, `securityAudit.${operation}`, input)
@@ -102,7 +99,7 @@ const readGithubStatus = (model: Model, context: PageContext): Return =>
 		model,
 		model.githubStatus,
 		(githubStatus) => ({ githubStatus }),
-		requestKey(context.orgId, "integrations.githubStatus", {}),
+		integrationStatusKey(context.orgId, "github"),
 		"Load",
 		(key) => FetchGithubStatus({ key }),
 	)
@@ -199,12 +196,9 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 		),
 	])
 
-/** Each target once, in first-seen order. */
 const uniqueTargets = (runs: ReadonlyArray<SecurityAuditRun>): ReadonlyArray<SecurityAuditTargetId> => [
 	...new Set(Arr.map(runs, (run) => run.targetId)),
 ]
-
-// ENTRY
 
 const searchesOf = (route: SecurityTabsRoute, model?: Model) => ({
 	findingsSearch: route._tag === "SecurityCodeFindings" ? route.search : (model?.findingsSearch ?? {}),
@@ -277,8 +271,6 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 	}
 }
 
-// NAVIGATION
-
 const draftQuery = (draft: string): string | undefined => Str.trim(draft) || undefined
 
 const navigate = (model: Model, url: string, isReplace = false): Return => ({
@@ -326,8 +318,6 @@ const runsTargetChanged = (model: Model, value: string): Return => {
 	return navigate(model, hrefOf(AppRoute.SecurityCodeRuns({ search })))
 }
 
-// ADD TARGET
-
 const addTargetStep = (model: Model, message: AddTarget.Message, context: PageContext): Return => {
 	const step = AddTarget.update(model.addTarget, message, activeRepositoriesOf(model))
 	const next: Return = {
@@ -373,8 +363,6 @@ const addTargetStep = (model: Model, message: AddTarget.Message, context: PageCo
 	})
 }
 
-// SPEND & MODELS
-
 const spendSettingsStep = (model: Model, message: SpendSettings.Message, context: PageContext): Return => {
 	const step = SpendSettings.update(model.spendSettings, message)
 	const next: Return = {
@@ -393,8 +381,6 @@ const spendSettingsStep = (model: Model, message: SpendSettings.Message, context
 		),
 	}
 }
-
-// UPDATE
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {

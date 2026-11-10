@@ -9,19 +9,22 @@ import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { prReviewSessionId, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { CODE_MODE_TOOLS, RUN_CODE } from "./code-mode"
-import { makeReviewLedger } from "./review-ledger"
-import { AGENTS } from "./agents"
+import { makeChildFindings } from "./review/child-findings"
+import { makeReviewLedger } from "./review/ledger"
+import { AGENTS, sessionOf } from "./agents"
 import { mapleToolCatalog } from "../mcp/tools/registry"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
+import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { ChatTurnEvent } from "./events"
 import { runChatTurn, type SettledChild } from "./run"
-import { makeRunUsage } from "./tools"
+import { diagnosisCompletion } from "./investigation"
+import { reviewCompletion } from "./review/completion"
+import { makeRunUsage } from "./usage"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -105,7 +108,9 @@ const run = (input: {
 			origin: input.origin,
 			toolExecutor: input.executor,
 			model: input.model,
-			submitDiagnosis: () => Effect.void,
+			...(sessionOf(input.sessionId).row?.kind === "investigate"
+				? { completion: diagnosisCompletion(input.origin, () => Effect.void) }
+				: undefined),
 			...(input.withCode === false ? undefined : { codeExecutor: inProcessCodeExecutorLayer }),
 			text: "Investigate.",
 			history: [],
@@ -237,16 +242,19 @@ describe("run_code", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: recordingExecutor().executor,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
-				review: {
-					coverage: {
-						observe: (tool) => observed.push(tool),
-						unread: () => [],
-						wholeDiff: () => true,
+				completion: reviewCompletion(
+					{ kind: "autonomous" },
+					{
+						coverage: {
+							observe: (tool) => observed.push(tool),
+							unread: () => [],
+							wholeDiff: () => true,
+						},
+						ledger: makeReviewLedger(),
+						childFindings: makeChildFindings(),
 					},
-					ledger: makeReviewLedger(),
-				},
+					(request) => Effect.sync(() => filed.push(request)),
+				),
 				codeExecutor: inProcessCodeExecutorLayer,
 				text: "Review pull request #1.",
 				history: [],
@@ -298,7 +306,7 @@ describe("run_code", () => {
 				origin: { kind: "app" },
 				toolExecutor: executor,
 				model,
-				submitDiagnosis: () => Effect.void,
+				completion: diagnosisCompletion({ kind: "app" }, () => Effect.void),
 				agent: { ...AGENTS.investigate, budget: { ...AGENTS.investigate.budget, maxToolCalls: 3 } },
 				codeExecutor: inProcessCodeExecutorLayer,
 				text: "Investigate.",
@@ -344,12 +352,15 @@ describe("run_code", () => {
 					origin: { kind: "autonomous" },
 					toolExecutor: executor,
 					model,
-					submitDiagnosis: () => Effect.die("no investigation in a review session"),
-					submitReview: () => Effect.void,
-					review: {
-						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
-						ledger: makeReviewLedger(),
-					},
+					completion: reviewCompletion(
+						{ kind: "autonomous" },
+						{
+							coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+							ledger: makeReviewLedger(),
+							childFindings: makeChildFindings(),
+						},
+						() => Effect.void,
+					),
 					codeExecutor: inProcessCodeExecutorLayer,
 					codeOnly,
 					text: "Review pull request #1.",
@@ -394,7 +405,7 @@ describe("run_code", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: recordingExecutor().executor,
 				model,
-				submitDiagnosis: () => Effect.void,
+				completion: diagnosisCompletion({ kind: "autonomous" }, () => Effect.void),
 				codeExecutor: inProcessCodeExecutorLayer,
 				codeOnly: true,
 				text: "Investigate.",

@@ -1,7 +1,4 @@
-import {
-	getActiveInfraCorrelations,
-	type InfraCorrelation,
-} from "../../../components/infra/infra-correlations"
+import { getActiveInfraCorrelations, type InfraCorrelation } from "./correlations"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
@@ -30,7 +27,7 @@ export type ViewInputs = Readonly<{
 const LINK_CLASS =
 	"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-2xs text-muted-foreground hover:text-foreground active:text-foreground"
 
-/** `CorrelationLink`: the matching infra detail route, per kind. */
+/** The matching infra detail route, per kind. */
 const correlationHref = (correlation: InfraCorrelation): string => {
 	switch (correlation.kind) {
 		case "container":

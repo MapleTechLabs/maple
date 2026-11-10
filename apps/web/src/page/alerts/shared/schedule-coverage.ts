@@ -1,7 +1,7 @@
 import { onCallAt, renderOnCall, type OnCallShift } from "@maple/alerting-core/oncall"
 import { OnCallLayer, OnCallScheduleConfig, OnCallTimeZone } from "@maple/domain/http"
 import type { OnCallOverride } from "@maple/domain/http"
-import type { UserId } from "@maple/domain/primitives"
+import type { UserId } from "@maple/primitives"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Array as Arr, Option, Order, Result, Schema, String as Str } from "effect"

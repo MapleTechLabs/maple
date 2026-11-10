@@ -6,10 +6,10 @@ import {
 	messageGroupStyles,
 	messageHeaderStyles,
 	messageStyles,
-} from "@maple/ui/styles/ui/message"
+} from "./message.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/message.tsx: one chat message (avatar, header, bubbles).
+// One chat message (avatar, header, bubbles).
 
 type Children = ReadonlyArray<Html | string>
 
@@ -47,5 +47,5 @@ export const messageContent = <M>(h: HtmlBuilder<M>, children: Children, classNa
 export const messageFooter = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-footer", messageFooterStyles, children, className)
 
-export const messageHeader =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const messageHeader = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	slotDiv(h, "message-header", messageHeaderStyles, children, className)

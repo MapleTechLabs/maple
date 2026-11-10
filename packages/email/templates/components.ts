@@ -250,9 +250,7 @@ export const summaryGrid = (h: H): Html =>
 		]),
 	])
 
-// ---------------------------------------------------------------------------
-// Fragments: each renders standalone and is spliced into a page slot.
-// ---------------------------------------------------------------------------
+// Fragments below each render standalone and are spliced into a page slot.
 
 /** Week-over-week delta chip. Colours are decided at render time. */
 export const deltaPill = (h: H): Html =>

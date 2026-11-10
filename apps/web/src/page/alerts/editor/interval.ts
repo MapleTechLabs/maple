@@ -4,8 +4,6 @@ import { formEvaluationInterval } from "@maple/web-data/alerts/form-utils"
 import type { RuleForm } from "./form"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The check interval picker's pure half: its options, and what each one allows a raw SQL query.
-
 /** The interval select's value for "checks every fifth of the window". */
 export const AUTO_INTERVAL = "auto"
 

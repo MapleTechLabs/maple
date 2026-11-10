@@ -5,6 +5,8 @@ import type { TimeWindow } from "../../data/time-range"
 import { buildSourceGraph, type SourceGraph } from "@maple/views/service-map/map/graph"
 import type { Focus } from "@maple/views/service-map/map/state"
 import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
+import type { SelectEntry } from "@maple/views/ui/select-view"
+import { environmentEntries } from "../kit/environment-switcher"
 import type { Model } from "./model"
 
 // The pure halves of the service map page and its view.
@@ -12,7 +14,6 @@ import type { Model } from "./model"
 /** The "All environments" option, kept in the URL so the explicit choice sticks. */
 export const ALL_ENVIRONMENTS = "__all__"
 
-/** The map's default window. */
 export const DEFAULT_PRESET = "12h"
 
 export type Search = Model["search"]
@@ -33,10 +34,8 @@ export const deploymentEnvOf = (model: Model): string | undefined => {
 	return environment === ALL_ENVIRONMENTS ? undefined : environment
 }
 
-export const environmentItems = (model: Model): ReadonlyArray<{ value: string; label: string }> => [
-	{ value: ALL_ENVIRONMENTS, label: "All environments" },
-	...Arr.map(environmentsOf(model), (name) => ({ value: name, label: name })),
-]
+export const environmentItems = (model: Model): ReadonlyArray<SelectEntry> =>
+	environmentEntries(ALL_ENVIRONMENTS, environmentsOf(model))
 
 /** The URL's focus (`focusService`, `focusHops`, `focusMode`). */
 export const focusOf = (search: Search): Option.Option<Focus> =>
@@ -48,7 +47,7 @@ export const focusOf = (search: Search): Option.Option<Focus> =>
 				mode: search.focusMode ?? "dim",
 			})
 
-/** `handleFocusChange`: defaults stay out of the URL. */
+/** Defaults stay out of the URL. */
 export const withFocus = (search: Search, focus: Option.Option<Focus>): Search =>
 	Option.match(focus, {
 		onNone: () => ({ ...search, focusService: undefined, focusHops: undefined, focusMode: undefined }),

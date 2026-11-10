@@ -99,7 +99,6 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 			tables: P.optionalList(`Tables whose columns and notes to return (at most ${MAX_TABLES})`),
 		}),
 		aliases: { table: "tables" },
-		output: DescribeWarehouseTablesOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading table schemas", "Describing warehouse tables"],
 		handler: Effect.fn("McpTool.describeWarehouseTables")(function* ({ tables }) {

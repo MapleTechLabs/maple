@@ -2,33 +2,32 @@
 /**
  * Push dummy OTLP traces + logs to the local ingest gateway for UI development.
  *
- *   bun scripts/ingest-dummy.ts [options]
- *   bun run ingest:dummy -- [options]
+ *   bun scripts/ingest-dummy-traces.ts [options]
  *
  * This is a dev-only convenience: it hand-rolls OTLP/JSON and POSTs it straight at
  * the Rust ingest gateway (https://ingest.localhost → http://localhost:3474), the
  * same path real telemetry takes. The gateway stamps every span/log with your org
  * (MAPLE_ORG_ID_OVERRIDE in single-tenant mode), so the data shows up for the
- * test user at https://web.localhost. No metrics / dashboards — traces + logs only.
+ * test user at https://web.localhost. No metrics or dashboards: traces + logs only.
  *
  * The headline use case is the commit-SHA UI: each generated trace carries a
  * `vcs.ref.head.revision` *resource* attribute, which the `service_overview_spans`
  * materialized view extracts into the `CommitSha` column (per service, per deploy).
- * Pass real 40-char SHAs (`--shas`) — or let it pull recent ones from `git log` —
+ * Pass real 40-char SHAs (`--shas`), or let it pull recent ones from `git log`,
  * so the hover card can resolve them to actual commit messages via the GitHub app.
  *
  * Examples:
  *   # The "improve the commit-SHAs UI" scenario: 3 SHAs 10 min apart, each with a
  *   # varying number of traces, anchored at now.
- *   bun scripts/ingest-dummy.ts \
+ *   bun scripts/ingest-dummy-traces.ts \
  *     --shas ea0466fa99642d7633860b2079debf30562a58a0,a24daf481e65f0c333073b5bf8a39583a972910d,d9f88a8518437a85ac88d4a36bf55e72962e7365 \
  *     --sha-interval 10m --traces-per-sha 3-9 --service checkout-api
  *
  *   # No SHAs given → use the 3 most recent commits from `git log`:
- *   bun scripts/ingest-dummy.ts --num-shas 3 --sha-interval 10m
+ *   bun scripts/ingest-dummy-traces.ts --num-shas 3 --sha-interval 10m
  *
  *   # Inspect the payload without sending anything:
- *   bun scripts/ingest-dummy.ts --traces-per-sha 2 --dry-run
+ *   bun scripts/ingest-dummy-traces.ts --traces-per-sha 2 --dry-run
  *
  * Wire format (verified against opentelemetry-proto 0.31 `with-serde`, the crate
  * the gateway decodes JSON with): camelCase keys, trace/span ids are lowercase
@@ -45,12 +44,11 @@ const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 
 const FAILURE = 1
 
-// ── OTLP enums ──────────────────────────────────────────────────────────────
 const SPAN_KIND_INTERNAL = 1
 const SPAN_KIND_SERVER = 2
 const SPAN_KIND_CLIENT = 3
 // Successful spans are left UNSET (0), never OK: per the OTel spec, instrumentation
-// only ever sets Error, and Ok is reserved for an explicit application override — so
+// only ever sets Error, and Ok is reserved for an explicit application override, so
 // essentially no real Maple span arrives as Ok and fixture data must not either.
 const STATUS_UNSET = 0
 const STATUS_ERROR = 2
@@ -58,7 +56,6 @@ const SEVERITY_INFO = 9
 const SEVERITY_WARN = 13
 const SEVERITY_ERROR = 17
 
-// ── defaults ────────────────────────────────────────────────────────────────
 // Hit the raw gateway port over plain HTTP by default: portless terminates TLS at
 // https://ingest.localhost and proxies to :3474, but Bun's fetch would reject the
 // portless self-signed cert. :3474 sidesteps that. Override with --endpoint.
@@ -81,8 +78,8 @@ const fail = (message: string): never => {
 	process.exit(FAILURE)
 }
 
-// ── tiny seeded RNG (mulberry32) for reproducible *shape* (counts/latencies/etc).
-// Span & trace ids always use crypto randomness so they stay globally unique. ──
+// Seeded mulberry32 for a reproducible *shape* (counts, latencies). Span and trace ids
+// always use crypto randomness so they stay globally unique.
 let rngState = 0
 const seedRng = (seed: number): void => {
 	rngState = seed >>> 0
@@ -99,7 +96,6 @@ const randIn = (r: Range): number => randInt(r.min, r.max)
 const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)]
 const chance = (p: number): boolean => rng() < p
 
-// ── parsing helpers ─────────────────────────────────────────────────────────
 const parseRange = (raw: string, label: string): Range => {
 	const m = raw.match(/^(\d+)(?:-(\d+))?$/)
 	if (!m) fail(`${label}: expected N or MIN-MAX, got "${raw}"`)
@@ -125,7 +121,6 @@ const parseDurationMs = (raw: string, label: string): number => {
 	}
 }
 
-// ── encoding helpers ────────────────────────────────────────────────────────
 const traceId = (): string => randomBytes(16).toString("hex")
 const spanId = (): string => randomBytes(8).toString("hex")
 const nano = (ms: number): string => (BigInt(Math.round(ms)) * 1_000_000n).toString()
@@ -134,7 +129,6 @@ const attr = (key: string, value: string | number): Record<string, unknown> =>
 		? { key, value: { intValue: String(value) } }
 		: { key, value: { stringValue: value } }
 
-// ── realistic-ish content ───────────────────────────────────────────────────
 const ROUTES: ReadonlyArray<{ method: string; route: string }> = [
 	{ method: "GET", route: "/api/checkout" },
 	{ method: "POST", route: "/api/orders" },
@@ -234,7 +228,7 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 				: { code: STATUS_UNSET },
 		} satisfies Record<string, unknown>
 
-		// Child spans, all parented to the root (flat tree — plenty for the UI).
+		// Child spans, all parented to the root (flat tree, plenty for the UI).
 		const childCount = randIn(opts.children)
 		const childSpans: Record<string, unknown>[] = []
 		for (let c = 0; c < childCount; c++) {
@@ -313,7 +307,6 @@ const generateForSha = (sha: string, at: number, opts: Options): GeneratedSha =>
 
 		spans.push(root, ...childSpans)
 
-		// Correlated logs for this trace.
 		const logCount = randIn(opts.logsPerTrace)
 		for (let l = 0; l < logCount; l++) {
 			const errLog = isError && l === 0
@@ -469,7 +462,7 @@ const main = async (): Promise<void> => {
 	} else {
 		shas = recentGitShas(numShas)
 		if (shas.length === 0) {
-			// No git history reachable — fabricate SHAs (won't resolve to commit messages).
+			// No git history reachable: fabricate SHAs (won't resolve to commit messages).
 			shas = Array.from({ length: numShas }, () => randomBytes(20).toString("hex"))
 			console.warn("⚠ no git log available; using random SHAs (they won't resolve in the hover card)")
 		}

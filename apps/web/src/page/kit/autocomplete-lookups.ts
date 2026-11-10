@@ -11,8 +11,8 @@ import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/
 import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import type { TimeWindow } from "../../data/time-range"
 
-// The autocomplete lookups a
-// query builder fetches once it is first focused, each reduced to the names it suggests.
+// The autocomplete lookups a query builder fetches once it is first focused, each reduced to the
+// names it suggests.
 
 export const AutocompleteLookup = Schema.Literals([
 	"tracesFacets",
@@ -31,7 +31,7 @@ export const AUTOCOMPLETE_LOOKUPS: ReadonlyArray<AutocompleteLookup> = Autocompl
 export const LookupNames = Schema.Record(Schema.String, Schema.Array(Schema.String))
 export type LookupNames = typeof LookupNames.Type
 
-/** `toNames`: facet rows to the names they suggest, trimmed, non-empty, each once. */
+/** Facet rows to the names they suggest: trimmed, non-empty, each once. */
 export const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): Array<string> =>
 	Arr.dedupe(
 		Arr.filter(

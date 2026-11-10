@@ -3,8 +3,6 @@ import { buildProvenanceGraph, type ProvenanceGraph } from "@maple/web-data/inve
 import { modifyFields } from "foldkit/struct"
 import type { Model } from "./model"
 
-// The camera arithmetic of the provenance canvas.
-
 const MIN_FIT = 0.68
 const FIT_PADDING = 0.06
 /** Room above the graph for the column headings, which sit 20px over their column. */
@@ -30,6 +28,10 @@ export const placeGraph = (model: Model, timeZone: string): Model => {
 	const width = model.canvas.pane.width
 	const zoom = fitScale(width, graph)
 	const drawn = graph.width * zoom
-	const viewport = { x: drawn > width ? width * FIT_PADDING : (width - drawn) / 2, y: HEADING_GUTTER * zoom, zoom }
+	const viewport = {
+		x: drawn > width ? width * FIT_PADDING : (width - drawn) / 2,
+		y: HEADING_GUTTER * zoom,
+		zoom,
+	}
 	return modifyFields(model, { canvas: (canvas) => ({ ...canvas, viewport }) })
 }

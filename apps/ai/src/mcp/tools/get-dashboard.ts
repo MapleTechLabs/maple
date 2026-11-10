@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { GetDashboardOutput } from "@maple/domain/mcp-outputs"
 import { loadDashboard } from "../lib/dashboard-mutations"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
@@ -18,7 +17,6 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			dashboard_id: P.resourceId("dashboard", "Dashboard ID"),
 		}),
-		output: GetDashboardOutput,
 		hints: { readOnly: true },
 		phrases: ["Opening a dashboard", "Loading a dashboard"],
 		handler: Effect.fn("McpTool.getDashboard")(function* ({ dashboard_id }) {

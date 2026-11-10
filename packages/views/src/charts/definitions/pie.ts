@@ -1,5 +1,5 @@
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
-import { muteColor } from "@maple/ui/components/plot/color-scale"
+import { muteColor } from "../oklch"
 import { defineChart, type ChartFocusStrategy, type ChartPoint } from "@tanstack/charts"
 import {
 	focusGroupAngle,
@@ -17,8 +17,7 @@ import { ChartTooltip, type ChartSpec, type PieSliceRow } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, MUTED_COLOR_AMOUNT } from "./plot-constants"
 
-// Port of packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx (definition half),
-// plus the lab pie figure.
+// The pie chart definition, plus the lab pie figure.
 
 type PieSlice = PieDatum<PieSliceRow>
 type PieSpec = Extract<ChartSpec, { readonly _tag: "Pie" }>
@@ -106,7 +105,6 @@ const sliceTooltip = (
 		return ChartTooltip.PieSlice({ name, value, fraction, color, collapsedCount })
 	})
 
-/** `QueryBuilderPieChart`'s `definition` memo. */
 export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> => {
 	const { activeName, highlighted, donut, innerRadius, showLabels, showPercent, unit } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value })
@@ -181,7 +179,7 @@ export const buildPie = (spec: PieSpec): BuiltChart<PieSlice, number, number> =>
 	}
 }
 
-/** `PieFigure`'s `definition` memo. Rows carry the colour `colorFor` resolved. */
+/** The lab pie figure's definition. Rows carry their resolved colour. */
 export const buildPieSpike = (spec: PieSpikeSpec): BuiltChart<PieSlice, number, number> => {
 	const { donut, activeName } = spec
 	const slices = pie(spec.rows, { value: (row: PieSliceRow) => row.value, gapAngle: 0.012 })

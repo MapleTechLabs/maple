@@ -1,13 +1,12 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { SOURCE_LIMITS } from "@maple/domain/http"
 import { V2Source, type V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
+import { SourceAttributeMode, SourceSignal } from "@maple/primitives"
 import { Schema, Array as Arr, String as Str, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SIGNALS } from "./shared"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rules draft and its outcome.
 
@@ -58,7 +57,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** `useRulesDraft(existing)`. */
 export const init = (existing: V2Source | null): Model => ({
 	existing,
 	signals: existing?.allowed_signals ?? Arr.map(SIGNALS, (signal) => signal.value),
@@ -210,7 +208,7 @@ export interface RulesOutcome {
 	readonly payload: V2SourceUpdateParams
 }
 
-/** `rulesOutcome`: validation and the wire payload derived from the draft. */
+/** Validation and the wire payload derived from the draft. */
 export const rulesOutcome = (model: Model): RulesOutcome => {
 	const trimmedRate = Str.trim(model.rateLimitText)
 	const rateLimit = trimmedRate.length === 0 ? null : Number(trimmedRate)

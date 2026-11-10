@@ -12,7 +12,7 @@ import { shortId } from "@maple/ui/lib/ids"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -40,9 +40,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// The Overview's lower sections and the Evidence tab: `ImpactStrip`, `SignalsCard`, `InvestigationMeta`,
-// `FollowUpComposer`, `CauseRecap`, `EvidenceTab` and `EvidenceChips`.
 
 type H = HtmlBuilder<Message>
 
@@ -89,7 +86,7 @@ const incidentWindow = <M>(
 	return [at(startMs), " → ", at(endMs), ` · ${formatDuration(endMs - startMs)}`]
 }
 
-/** `ImpactStrip`: scope, services, window and blast radius in ruled lanes. */
+/** Scope, services, window and blast radius in ruled lanes. */
 export const impactStrip = (h: H, investigation: V2Investigation, timeZone: string): Html => {
 	const { report, snapshot } = investigation
 	const isSettled = investigation.status !== "investigating"
@@ -241,7 +238,7 @@ const logsRow = (h: H, points: ReadonlyArray<typeof LogBucket.Type>): Html => {
 	])
 }
 
-/** `SignalsCard`: what the one service did over the incident window, logs then traces. */
+/** What the one service did over the incident window, logs then traces. */
 export const signalsCard = (h: H, model: Model, investigation: V2Investigation): Html | null => {
 	const window = signalWindowOf(investigation)
 	const service = signalServiceOf(investigation)
@@ -377,7 +374,7 @@ const referenceLink = (h: H, label: string, url: string): Html =>
 		[label],
 	)
 
-/** `InvestigationMeta`: the audit trail under the finding. */
+/** The audit trail under the finding. */
 export const investigationMeta = (h: H, model: Model, investigation: V2Investigation): Html => {
 	const { snapshot, subject } = investigation
 	const issueId = subject.type === "incident" ? subject.issue_id : null
@@ -435,7 +432,7 @@ export const investigationMeta = (h: H, model: Model, investigation: V2Investiga
 	])
 }
 
-/** `FollowUpComposer`: hands the question to the Chat tab. */
+/** Hands the question to the Chat tab. */
 export const followUpComposer = (h: H): Html =>
 	pressable(
 		h,
@@ -469,7 +466,7 @@ type EvidenceItem = NonNullable<V2Investigation["report"]>["evidence"][number]
 /** The trace tooltip's trigger attributes, by trigger id. */
 export type TipTrigger = (id: string) => ReadonlyArray<ChildAttribute>
 
-/** `EvidenceChips`: the traces (full id on a tooltip) and log patterns behind a finding. */
+/** The traces (full id on a tooltip) and log patterns behind a finding. */
 export const evidenceChips = (h: H, item: EvidenceItem, place: ChipPlace, trigger: TipTrigger): Html | null =>
 	item.traceIds.length === 0 && item.logPatterns.length === 0
 		? null
@@ -503,7 +500,7 @@ export const evidenceChips = (h: H, item: EvidenceItem, place: ChipPlace, trigge
 				),
 			])
 
-/** `CauseRecap`: the suspected cause, one line above the evidence. */
+/** The suspected cause, one line above the evidence. */
 const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> => {
 	const found = Option.filter(
 		Option.map(Option.fromNullishOr(investigation.report?.suspectedCause), Str.trim),
@@ -531,7 +528,6 @@ const causeRecap = (h: H, investigation: V2Investigation): ReadonlyArray<Html> =
 const hasContent = (item: EvidenceItem) =>
 	item.note !== "" || item.traceIds.length > 0 || item.logPatterns.length > 0
 
-/** `EvidenceTab`. */
 export const evidenceTab = (h: H, investigation: V2Investigation, trigger: TipTrigger): Html => {
 	const evidence = Arr.filter(investigation.report?.evidence ?? [], hasContent)
 	if (evidence.length === 0)

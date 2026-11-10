@@ -1,5 +1,6 @@
-import { DateTime, Option, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import type { ReplayPartitionWindow } from "./replay-window"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 /**
  * Chunk-range planning for progressive replay playback.
@@ -7,7 +8,7 @@ import type { ReplayPartitionWindow } from "./replay-window"
  * A session's rrweb payload can run to hundreds of megabytes, so the player
  * fetches it a range at a time rather than all at once. These helpers decide
  * *which* ranges and, just as importantly, keep those ranges stable so the
- * atom cache can actually hit.
+ * request cache can actually hit.
  */
 
 /**
@@ -66,7 +67,7 @@ export interface ReplayRange {
  *    runs to several hundred KB or more, and real sessions carry 838 KB chunks.
  *    A fixed 16-chunk slot of those is ~13 MB, well past the budget, so
  *    the request comes back 413 and that stretch of the recording is unplayable.
- * 2. **Boundaries are stable**, because the atom family keys on the range. A
+ * 2. **Boundaries are stable**, because the request cache keys on the range. A
  *    range recomputed from the playhead would mint a new key every tick and
  *    nothing would ever be cached.
  *
@@ -107,13 +108,7 @@ export const planRanges = (
 /** Stable key for a range; must match `replayRangeInput`'s identity exactly. */
 export const rangeKey = (range: ReplayRange) => `${range.fromChunkSeq}:${range.toChunkSeq}`
 
-/**
- * Build the atom-family input for a range.
- *
- * `makeQueryAtomFamily` keys on `JSON.stringify(input)`, so key identity is
- * property-ORDER sensitive. Every call site goes through this one builder so an
- * innocently reordered object literal can't silently split the cache.
- */
+/** The request input for a range; every call site builds it here so a range maps to one cache key. */
 export const replayRangeInput = (
 	sessionId: string,
 	window: ReplayPartitionWindow | undefined,
@@ -142,8 +137,7 @@ export const replayRangeInput = (
  * replay until an out-of-band migration landed. Not worth sub-second precision
  * on a chunk picker.
  */
-export const chunkStartMs = (chunk: ReplayChunkMeta): number =>
-	Option.match(DateTime.make(chunk.timestamp), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
+export const chunkStartMs = (chunk: ReplayChunkMeta): number => toEpochMs(chunk.timestamp)
 
 /** Epoch-ms the recording starts at, or 0 for an empty manifest. */
 export const manifestStartMs = (chunks: ReadonlyArray<ReplayChunkMeta>): number => {

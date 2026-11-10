@@ -16,10 +16,10 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton, skeletonBlock, skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
+import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../kit/issue-severity"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
-import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type PolicyDraft } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -91,7 +91,6 @@ const severityRule = (
 									})),
 									size: "sm",
 									className: "w-24",
-									// `<SelectValue />` without a renderer prints the raw value.
 									renderValue: (value) => [value],
 									toView: (parts) => h.div([h.Class("contents")], parts),
 								},

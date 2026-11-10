@@ -19,8 +19,8 @@ import {
 import { typographyClass } from "../ui/typography"
 import { chartFrameClass, chartNoData } from "../ui/chart-frame"
 
-// Port of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx). The hovered node
-// id is the chart Model's `activeKey`; the measured box is its container size.
+// `PathsChart`. The hovered node id is the chart Model's `activeKey`; the measured box is its
+// container size.
 
 export interface PathsChartInputs {
 	readonly data: ReadonlyArray<Record<string, unknown>>

@@ -8,15 +8,15 @@ import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { facetChips } from "../../kit/facets"
+import { facetChips } from "../../../kit/facets"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
-import { hostsViewTabs } from "../../kit/view-tabs"
+import { hostsViewTabs } from "../../../kit/view-tabs"
 import { PAGE_SIZE } from "./command"
 import { type ContainerScope, type FilterParam, Message } from "./message"
 import type { ContainerCounts, ContainersPage, Model } from "./model"
@@ -24,8 +24,6 @@ import { DEFAULT_PRESET, filtersOf, pageIndexOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { containerTable, containerTableLoading } from "./view-table"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-
-// `ContainersPage`.
 
 type H = HtmlBuilder<Message>
 

@@ -17,9 +17,9 @@ import {
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { applyEscalationPlan, planEscalationWork, selectEscalationWork } from "./alert-escalation-runs"
 import { EscalationChainsService } from "./EscalationChainsService"
@@ -33,6 +33,7 @@ import {
 	makeWarehouseStub,
 	stubOrgMembersService,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 
@@ -135,7 +136,7 @@ const tier = (
 /** "#team" on the tier; the chain notifies slack, waits 10 minutes, then pages, waits 15. */
 const setup = (orgName: string, options: { readonly repeatCount?: number } = {}) =>
 	Effect.gen(function* () {
-		const alerts = yield* AlertsService
+		const alerts = yield* alertServices
 		const chains = yield* EscalationChainsService
 		const orgId = asOrgId(orgName)
 		const userId = asUserId(`user_${orgName}`)
@@ -408,7 +409,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const chains = yield* EscalationChainsService
 			const orgId = asOrgId("org_esc_deescalate")
 			const userId = asUserId("user_esc_deescalate")
@@ -449,7 +450,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const chains = yield* EscalationChainsService
 			const orgId = asOrgId("org_esc_dedupe")
 			const userId = asUserId("user_esc_dedupe")
@@ -532,7 +533,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const chains = yield* EscalationChainsService
 			const orgId = asOrgId("org_esc_silenced_dedupe")
 			const userId = asUserId("user_esc_silenced_dedupe")
@@ -569,7 +570,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const chains = yield* EscalationChainsService
 			const orgId = asOrgId("org_esc_silenced_renotify")
 			const userId = asUserId("user_esc_silenced_renotify")
@@ -610,7 +611,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const chains = yield* EscalationChainsService
 			const orgId = asOrgId("org_esc_supersede")
 			const userId = asUserId("user_esc_supersede")

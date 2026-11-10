@@ -7,7 +7,7 @@ import type { CustomerSlot } from "./plan-gate"
 export interface Inputs {
 	readonly session: "SignedOut" | "SignedIn"
 	readonly maybeOrgId: Option.Option<OrgId>
-	/** The time zone pages read (`useTimezonePreference`), for the connect drawer's flow. */
+	/** The time zone pages read, for the connect drawer's flow. */
 	readonly timeZone: string
 	/** Clerk mode: the active org, the user's orgs and the user (`None` / empty self-hosted). */
 	readonly maybeOrganization: Option.Option<ClerkOrganization>

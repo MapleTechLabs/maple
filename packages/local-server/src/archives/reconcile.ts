@@ -19,8 +19,6 @@ import {
 } from "./journal"
 import { encodeJson } from "../json"
 
-// Inspection result: the complete output of read-only validation.
-
 /**
  * The read-only validation outcome. `inspectReconciliationState` returns one of:
  * - `null` — no active operation;
@@ -47,8 +45,8 @@ export interface ValidSnapshotInspection {
  * A complete, read-only, validated snapshot of the active operation + topology.
  * Every field the pure decision function needs; nothing observed twice.
  *
- * The inspector (`inspectReconciliationState`, to be implemented in the wiring
- * commit) runs ALL read-only validation before producing this:
+ * The inspector (`inspectReconciliationState` in `generation.ts`) runs ALL
+ * read-only validation before producing this:
  * - guarded V2/V3 journal (no-symlink, real-file, directory/record binding);
  * - the lifted v3 record for v2 (preserving its EXACT phase/topology — a v2
  *   record can hold any create-eligible phase, not just "intent");
@@ -76,8 +74,6 @@ export interface ReconciliationSnapshot {
 	readonly remainingTargets: number
 	readonly affectedSignals: ReadonlyArray<string>
 }
-
-// Decision: the sole output of the pure transition table.
 
 export type ReconciliationDecision =
 	| { readonly kind: "NoOp" }
@@ -169,8 +165,7 @@ const decideCreate = (
 	const phase = intent.phase
 	const { operationId, journalDigest, migrationRequired } = snapshot
 
-	// Impossible-topology gates — every one is FailClosed (zero mutation):
-	// 1. building && finalGeneration both present.
+	// Impossible-topology gates: every one is FailClosed (zero mutation).
 	if (snapshot.buildingAndFinalBothPresent) {
 		return {
 			kind: "FailClosed",
@@ -178,11 +173,9 @@ const decideCreate = (
 			operationId,
 		}
 	}
-	// 2. promoted without a manifest at the final location.
 	if (phase !== "aborted" && snapshot.promoted && !snapshot.manifestAtFinal) {
 		return { kind: "FailClosed", reason: "published a generation without a manifest", operationId }
 	}
-	// 3. final generation exists before the manifest-written phase.
 	if (snapshot.promoted && !phaseAtLeast(phase, "manifest-written") && phase !== "aborted") {
 		return {
 			kind: "FailClosed",
@@ -190,11 +183,10 @@ const decideCreate = (
 			operationId,
 		}
 	}
-	// 4. phase >= promoted but no final generation (phase ahead of reality).
 	if (!snapshot.promoted && phaseAtLeast(phase, "promoted") && phase !== "aborted") {
 		return { kind: "FailClosed", reason: `phase ${phase} requires its final generation`, operationId }
 	}
-	// 5. A durably aborted operation still in the active directory. This is a
+	// A durably aborted operation still in the active directory. This is a
 	// LEGITIMATE crash state: the abort path writes "aborted" durably and then
 	// finishes cleanup + archival, so a crash anywhere in that tail leaves an
 	// aborted journal here. Resume the idempotent abort finish — but only when
@@ -218,12 +210,10 @@ const decideCreate = (
 		}
 	}
 
-	// Terminal verify-only: phase >= complete.
 	if (phaseAtLeast(phase, "complete")) {
 		return { kind: "CreateVerifyComplete", operationId, journalDigest, migrationRequired, intent }
 	}
 
-	// Pre-publication abort: not promoted.
 	if (!snapshot.promoted) {
 		return {
 			kind: "CreateAbortPrepublication",

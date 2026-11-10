@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
-import { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ActorId, ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import {
 	decodePublicId,
 	encodePublicId,

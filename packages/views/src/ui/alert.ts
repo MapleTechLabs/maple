@@ -1,19 +1,16 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	alertActionStyles,
-	alertDescriptionStyles,
-	alertTitleStyles,
-	alertVariants,
-} from "@maple/ui/styles/ui/alert"
+import { alertActionStyles, alertDescriptionStyles, alertTitleStyles, alertVariants } from "./alert.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/alert.tsx.
+// The Alert callout: a toned box with an icon, title, description and an action.
 
 // The shared `info` variant reuses the green severity hue of `ok`; info reads blue here. `done`
 // keeps its shared tinted variant; its glyph is what sets it apart from info.
 const variantOverride = (variant: AlertOptions["variant"]): string | undefined =>
-	variant === "info" ? "border-severity-debug-a3 bg-severity-debug-a1 [&>svg]:text-severity-debug" : undefined
+	variant === "info"
+		? "border-severity-debug-a3 bg-severity-debug-a1 [&>svg]:text-severity-debug"
+		: undefined
 
 type Children = ReadonlyArray<Html | string>
 

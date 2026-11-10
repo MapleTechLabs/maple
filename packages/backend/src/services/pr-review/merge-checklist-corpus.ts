@@ -115,7 +115,6 @@ export const checklistKeys = (input: {
 		mergeStepKey,
 	)
 
-/** A share: `part` of `whole`. */
 export interface Fraction {
 	readonly part: number
 	readonly whole: number

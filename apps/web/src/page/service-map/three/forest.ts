@@ -1,4 +1,4 @@
-import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
+import type { FactoryLink } from "./factory-routing"
 import {
 	drawBridge,
 	drawCampfire,
@@ -10,15 +10,9 @@ import {
 	drawPerch,
 	drawPlant,
 	drawSteppingStones,
-} from "../../../components/service-map/three/maple-scenery"
-import { lakeLoop } from "../../../components/service-map/three/maple-scenery-field"
-import {
-	drawDock,
-	drawHill,
-	drawLake,
-	drawMound,
-	drawPath,
-} from "../../../components/service-map/three/maple-scenery-land"
+} from "./maple-scenery"
+import { lakeLoop } from "./maple-scenery-field"
+import { drawDock, drawHill, drawLake, drawMound, drawPath } from "./maple-scenery-land"
 import {
 	forestPlan,
 	groundOf,
@@ -27,14 +21,10 @@ import {
 	landmarks,
 	openGround,
 	worldOf,
-} from "../../../components/service-map/three/maple-scenery-plan"
-import {
-	type Bounds,
-	prototypes,
-	type Sketch,
-} from "../../../components/service-map/three/maple-scenery-sketch"
-import type { InkPalette } from "../../../components/service-map/three/palette"
-import type { District, SpatialLayout } from "../../../components/service-map/three/spatial-layout"
+} from "./maple-scenery-plan"
+import { type Bounds, prototypes, type Sketch } from "./maple-scenery-sketch"
+import type { InkPalette } from "./palette"
+import type { District, SpatialLayout } from "./spatial-layout"
 import type * as THREE from "three"
 import { birds, blimp, campfire, deerHead, ducks } from "./critters"
 import { type Child, group, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"

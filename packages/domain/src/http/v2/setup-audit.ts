@@ -1,21 +1,18 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { SetupAuditUnavailableError } from "../../setup-audit"
+import {
+	AUDIT_AFFECTED_KINDS,
+	AUDIT_CATEGORIES,
+	AUDIT_SEVERITIES,
+	AUDIT_STATUSES,
+	SetupAuditUnavailableError,
+} from "../../setup-audit"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
 
 export const V2SetupAuditAffectedEntity = Schema.Struct({
-	kind: Schema.Literals([
-		"service",
-		"alert_rule",
-		"alert_destination",
-		"attribute_mapping",
-		"scrape_target",
-		"repository",
-		"integration",
-		"attribute_key",
-	]).annotate({
+	kind: Schema.Literals(AUDIT_AFFECTED_KINDS).annotate({
 		description: "What kind of object the finding points at.",
 		examples: ["alert_rule"],
 	}),
@@ -49,15 +46,7 @@ export const V2SetupAuditCheck = Schema.Struct({
 			"Stable check identifier. Safe to key alerting or suppression on — ids are never reused for a different check.",
 		examples: ["CFG-ALERT-03"],
 	}),
-	category: Schema.Literals([
-		"alerting",
-		"notifications",
-		"ingestion",
-		"attributes",
-		"traces",
-		"integrations",
-		"data_platform",
-	]).annotate({
+	category: Schema.Literals(AUDIT_CATEGORIES).annotate({
 		description: "Which part of the setup the check covers.",
 		examples: ["alerting"],
 	}),
@@ -65,12 +54,12 @@ export const V2SetupAuditCheck = Schema.Struct({
 		description: "What the check asserts, phrased as the healthy state.",
 		examples: ["Every enabled alert rule routes somewhere"],
 	}),
-	severity: Schema.Literals(["critical", "warn", "info"]).annotate({
+	severity: Schema.Literals(AUDIT_SEVERITIES).annotate({
 		description:
 			"How bad a failure is: `critical` breaks a feature outright, `warn` degrades it, `info` is advisory. Fixed per check; `TRC-02` is tiered by rate.",
 		examples: ["critical"],
 	}),
-	status: Schema.Literals(["pass", "fail", "skip"]).annotate({
+	status: Schema.Literals(AUDIT_STATUSES).annotate({
 		description:
 			"`pass` when the assertion holds, `fail` when it does not, `skip` when the check needs telemetry that was unavailable.",
 		examples: ["fail"],

@@ -15,22 +15,14 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ErrorEvents,
-	ErrorEventsByTime,
-	LogsAggregatesHourly,
-	TracesAggregatesHourly,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
 export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {
 	return [(currentHourOfDay + 23) % 24, currentHourOfDay, (currentHourOfDay + 1) % 24]
 }
-
-// Golden signals — per (service, env, hour) from traces_aggregates_hourly
 
 export interface AnomalyTraceSignalsOpts {
 	/** Hour-of-day values (0–23) to include; see `matchedHoursOfDay`. */
@@ -47,7 +39,7 @@ export interface AnomalyTraceSignalsOutput {
 }
 
 export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			deploymentEnv: $.DeploymentEnv,
@@ -73,8 +65,6 @@ export function anomalyTraceSignalsQuery(opts: AnomalyTraceSignalsOpts) {
 		.format("JSON")
 }
 
-// Log volume — per (service, env, hour) from logs_aggregates_hourly
-
 const ERROR_SEVERITIES = ["error", "fatal", "critical"] as const
 const WARN_SEVERITIES = ["warn", "warning"] as const
 
@@ -87,7 +77,7 @@ export interface AnomalyLogVolumeOutput {
 }
 
 export function anomalyLogVolumeQuery(opts: AnomalyTraceSignalsOpts) {
-	return from(LogsAggregatesHourly)
+	return from(Datasources.logsAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			deploymentEnv: $.DeploymentEnv,
@@ -106,8 +96,6 @@ export function anomalyLogVolumeQuery(opts: AnomalyTraceSignalsOpts) {
 		.format("JSON")
 }
 
-// Error fingerprint spikes — current 30-min window per (fingerprint, env)
-
 export interface AnomalyErrorSpikeCurrentOutput {
 	readonly fingerprintHash: string
 	readonly serviceName: string
@@ -119,7 +107,7 @@ export interface AnomalyErrorSpikeCurrentOutput {
 export function anomalyErrorSpikeCurrentQuery(opts: { limit?: number }) {
 	// Timestamp-leading sort key on error_events_by_time prunes the scan to the
 	// 30-minute window (same routing rationale as errorIssuesQuery).
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			serviceName: CH.any_($.ServiceName),
@@ -150,7 +138,7 @@ export interface AnomalyErrorSpikeBaselineOutput {
 }
 
 export function anomalyErrorSpikeBaselineQuery(opts: { limit?: number }) {
-	const hourly = from(ErrorEventsByTime)
+	const hourly = from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			deploymentEnv: $.DeploymentEnv,
@@ -192,7 +180,7 @@ export interface AnomalyTraceSignalTimeseriesOutput {
 
 /** Hourly golden-signal buckets for one (service, env) — covers error_rate, latency_p95, throughput. */
 export function anomalyTraceSignalTimeseriesQuery() {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			hour: $.Hour,
 			requestCount: CH.rawExpr("sum(WeightedCount)", T.float64),
@@ -224,7 +212,7 @@ export interface AnomalyLogVolumeTimeseriesOutput {
 
 /** Hourly error-log volume for one (service, env). */
 export function anomalyLogVolumeTimeseriesQuery() {
-	return from(LogsAggregatesHourly)
+	return from(Datasources.logsAggregatesHourly)
 		.select(($) => ({
 			hour: $.Hour,
 			errorLogCount: CH.sumIf($.Count, CH.lower_($.SeverityText).in_(...ERROR_SEVERITIES)),
@@ -255,7 +243,7 @@ export interface AnomalyErrorSpikeTimeseriesOutput {
 export function anomalyErrorSpikeTimeseriesQuery() {
 	return (
 		// One fingerprint over days: read the table sorted (OrgId, FingerprintHash, Timestamp).
-		from(ErrorEvents)
+		from(Datasources.errorEvents)
 			.select(($) => ({
 				bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 				count: CH.count(),

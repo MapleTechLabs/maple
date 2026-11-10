@@ -6,11 +6,11 @@ import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LiftedRail } from "./page-rails"
+import type { LiftedRail } from "@maple/views/ui/page-rails"
 
 // `PageLayout.FilterSidebar` and `RightSidebar` below `lg`: a sheet each, opened from the top bar.
 
-/** `<Button variant="outline" size="icon-sm" aria-label>` cloned with the sheet's `onClick`. */
+/** An outline icon-sm button that opens the sheet. */
 const railTrigger = (
 	h: HtmlBuilder<Message>,
 	options: Readonly<{

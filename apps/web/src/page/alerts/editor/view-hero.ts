@@ -24,7 +24,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { stableSlice } from "../../kit/stable-slice"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { alertStatusBadge } from "../shared/badges"
 import { previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
@@ -36,9 +36,6 @@ import type { DryRun, Model } from "./model"
 import { editImpact, type ImpactView } from "./view-impact"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// `RuleLiveChartHero`: the evaluator's replay of the
-// draft with the threshold, would-fire bands and the dry-run verdict.
 
 type H = HtmlBuilder<Message>
 
@@ -79,7 +76,6 @@ const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 	]
 }
 
-/** `PreviewBadge`: the dry run's value and verdict. */
 const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 	if (dryRun.status === "skipped")
 		return typography(h, { size: "xs", tone: "muted" }, ["Skipped · insufficient samples"])
@@ -271,7 +267,7 @@ export const liveChartHero = (
 	)
 }
 
-/** `SkippedWindowsWarning`: windows the evaluator would skip can never fire. */
+/** Windows the evaluator would skip can never fire. */
 const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyArray<Html> => {
 	const preview = previewStateOf(slot, true, null).preview
 	const skipped = countSkippedWindows(preview)

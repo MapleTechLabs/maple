@@ -454,8 +454,6 @@ const fetchKind = (kind: CollectorKind, options: ListKindOptions) =>
 		}
 	})
 
-// inspect_infra
-
 interface SeriesRow {
 	readonly bucket: DateTime.Utc
 	readonly attributeValue: string
@@ -530,8 +528,6 @@ export const bucketSecondsFor = (window: InfraWindow): number => {
 	const seconds = (parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime)) / 1000
 	return Math.max(60, Math.ceil(seconds / 60 / 60) * 60)
 }
-
-// diagnose_service
 
 const SERVICE_POD_LIMIT = 5
 

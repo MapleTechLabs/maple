@@ -9,6 +9,7 @@ import {
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
 	ServiceOperationsRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	CH,
@@ -17,7 +18,6 @@ import {
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import { LOGS_BODY_SEARCH_SETTINGS } from "@maple/query-engine/profiles"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { makeDashboardReads, operationsSparklineBucketSeconds } from "@maple/backend/queries/dashboard-reads"

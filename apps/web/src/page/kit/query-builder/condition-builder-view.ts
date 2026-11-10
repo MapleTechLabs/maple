@@ -1,4 +1,4 @@
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -28,7 +28,7 @@ import { Message, type Model } from "./panel-message"
 import { panelSelect } from "./panel-select"
 import { Array as Arr, Option, String as Str } from "effect"
 
-// `ConditionBuilder`: the where clause as `[field] [operator] [values]` rows, AND-ed, each
+// The where clause as `[field] [operator] [values]` rows, AND-ed, each
 // picked from the query's own vocabulary.
 
 type H = HtmlBuilder<Message>

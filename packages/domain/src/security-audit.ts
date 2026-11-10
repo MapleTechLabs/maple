@@ -2,9 +2,17 @@
  * Identifiers and states of the scheduled security audit: a target (one repository branch the org
  * audits), its runs, and the findings followed across runs.
  */
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 
 export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
+import {
+	Profile as SecurityAuditProfile,
+	Severity as SecurityAuditSeverity,
+	Verdict as SecurityAuditVerdict,
+} from "@maple/security-audit/schema"
+
+export { SecurityAuditProfile, SecurityAuditSeverity, SecurityAuditVerdict }
+export { isSafeScopePath } from "@maple/security-audit/scope-path"
 
 export const SecurityAuditTargetId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/SecurityAuditTargetId"),
@@ -19,20 +27,11 @@ export const SecurityAuditRunId = Schema.String.check(Schema.isNonEmpty()).pipe(
 )
 export type SecurityAuditRunId = Schema.Schema.Type<typeof SecurityAuditRunId>
 
-export const SecurityAuditProfile = Schema.Literals(["quick", "standard", "deep"])
-export type SecurityAuditProfile = typeof SecurityAuditProfile.Type
-
 export const SecurityAuditRunKind = Schema.Literals(["baseline", "slice", "revalidation", "manual"])
 export type SecurityAuditRunKind = typeof SecurityAuditRunKind.Type
 
 export const SecurityAuditRunStatus = Schema.Literals(["in_progress", "complete", "incomplete", "failed"])
 export type SecurityAuditRunStatus = typeof SecurityAuditRunStatus.Type
-
-export const SecurityAuditVerdict = Schema.Literals(["confirmed", "needs_validation", "rejected"])
-export type SecurityAuditVerdict = typeof SecurityAuditVerdict.Type
-
-export const SecurityAuditSeverity = Schema.Literals(["informational", "low", "medium", "high", "critical"])
-export type SecurityAuditSeverity = typeof SecurityAuditSeverity.Type
 
 /** A finding's lifecycle on its target; only `fixed` reopens when the fingerprint comes back. */
 export const SecurityAuditFindingStatus = Schema.Literals(["open", "fixed", "dismissed", "accepted_risk"])
@@ -63,6 +62,9 @@ export const ORG_NO_AI_CREDITS = "org_no_ai_credits"
 
 /** Why a run ends incomplete when the org reaches its monthly spend limit mid-run. */
 export const ORG_SPEND_LIMIT_REACHED = "org_spend_limit_reached"
+
+/** Why a run ends incomplete when the org's audit spend could not be read (billing unreachable). */
+export const ORG_BUDGET_UNAVAILABLE = "org_budget_unavailable"
 
 /** The UTC month containing `epochMs`: when an org's audit spend started counting, and when it resets. */
 export const securityAuditSpendWindow = (
@@ -126,29 +128,3 @@ export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.T
 /** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
 export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>
 	Option.getOrUndefined(Arr.findFirst(SECURITY_AUDIT_MODELS, (model) => model.id === id))
-
-const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
-const WINDOWS_RESERVED_COMPONENT =
-	/^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu
-
-/**
- * A repository-relative path the engine accepts as a scope path. Mirrors `isSafeRelativePath` in
- * `@maple/security-audit`, which domain cannot import (it pulls in `node:path`).
- */
-export const isSafeScopePath = (value: string): boolean =>
-	value.length > 0 &&
-	Str.trim(value) === value &&
-	!PATH_FORBIDDEN_CHARACTER.test(value) &&
-	!Str.includes("\\")(value) &&
-	!Str.includes(":")(value) &&
-	!Str.startsWith("/")(value) &&
-	!Str.startsWith("~")(value) &&
-	Arr.every(
-		Str.split("/")(value),
-		(segment) =>
-			segment !== "" &&
-			segment !== "." &&
-			segment !== ".." &&
-			!/[ .]$/u.test(segment) &&
-			!WINDOWS_RESERVED_COMPONENT.test(segment),
-	)

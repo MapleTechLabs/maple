@@ -5,7 +5,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Select from "@maple/views/ui/select"
 import { ALL_CATEGORIES, configFromState, FormState, Mode, sameState, stateFromConfig } from "./state"
 
-// `ReviewRulesForm` as a Submodel: the edited state,
+// The rules form as a Submodel: the edited state,
 // what was last saved, and the save in flight. The page performs the save (`OutMessage.Saved`)
 // and reports back with `completeSave`; a refetched config arrives through `syncConfig`.
 
@@ -36,7 +36,7 @@ export type SwitchField = typeof SwitchField.Type
 export const Model = Schema.Struct({
 	id: Schema.String,
 	mode: Mode,
-	/** The config the form was last built from (`seenConfig`). */
+	/** The config the form was last built from. */
 	config: PrReviewRepositoryConfig,
 	/** The organization's rules, named in a repository form's "Organization default" options. */
 	inherited: Schema.NullOr(PrReviewRepositoryConfig),
@@ -46,7 +46,7 @@ export const Model = Schema.Struct({
 	submitted: Schema.NullOr(FormState),
 	error: Schema.NullOr(Schema.String),
 	isSaving: Schema.Boolean,
-	/** Base UI field state the text controls mirror (`data-focused`, `data-touched`). */
+	/** Field state the text controls mirror (`data-focused`, `data-touched`). */
 	focused: Schema.NullOr(TextField),
 	touched: Schema.Array(TextField),
 	selects: Schema.Record(Schema.String, Select.Model),

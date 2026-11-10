@@ -80,8 +80,6 @@ export function robustSigma(
 	return Math.max(MAD_TO_SIGMA * mad(values, m), epsilonAbs, epsilonRel * m)
 }
 
-// Maintenance exclusion: baseline hours a maintenance window covered are dropped
-
 const HOUR_MS = 60 * 60 * 1000
 
 /** One maintenance window's hold on baselines, as plain data so this module stays I/O-free. */
@@ -198,8 +196,6 @@ const skipped = (
 	sampleCount: Math.round(sampleCount),
 	severity: "warning",
 })
-
-// Golden signals
 
 /** Minimum weighted request count in the current window before evaluating. */
 const GOLDEN_MIN_VOLUME = 50

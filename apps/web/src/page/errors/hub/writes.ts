@@ -13,10 +13,9 @@ import { Effect, Exit, Schema, Array as Arr } from "effect"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { PageOutMessage } from "../../contract"
-import { WORKFLOW_LABEL } from "../kit/workflow"
+import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
 
-// `useIssueMutations` (components/errors/use-issue-mutations.ts): one row's write, or the bulk bar's
-// over the selection, four at a time (`BULK_CONCURRENCY`), each issue's outcome kept.
+// One row's write, or the bulk bar's over the selection four at a time, each issue's outcome kept.
 
 export const HubWrite = Schema.Union([
 	Schema.TaggedStruct("Transition", { toState: WorkflowState }),
@@ -107,7 +106,7 @@ export const runHubWrite = <M>(
 const toast = (type: "success" | "error" | "warning", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** A single row's write: `toastExit` with the row's titles. */
+/** A single row's write, toasted with the row's titles. */
 const singleToast = (write: HubWrite, outcome: WriteOutcome) => {
 	const failure = outcome.firstFailure
 	switch (write._tag) {
@@ -176,7 +175,7 @@ const BULK_FAILED = {
 	Merge: "Merge failed",
 } satisfies Record<HubWrite["_tag"], string>
 
-/** `transitionMany` and friends: all, some (a warning), or none. */
+/** A bulk write's toast: all, some (a warning), or none. */
 export const outcomeToast = (write: HubWrite, outcome: WriteOutcome, isBulk: boolean) => {
 	if (!isBulk) return singleToast(write, outcome)
 	const total = outcome.succeeded + outcome.failed

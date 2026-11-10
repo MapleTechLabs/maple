@@ -12,7 +12,9 @@ import { FetchExistingSlo, FetchSloFormServices, FetchSloFormSession, SaveSloDra
 import { formFromSlo, formIssues, wirePayload } from "./derive"
 import { emptyForm, type Form, type Tier } from "./form"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsSloNew" }>
@@ -84,7 +86,7 @@ const updateDestinationMenu = (model: Model, tier: Tier, message: Menu.Message):
 }
 
 const save = (model: Model): Return =>
-	model.isSaving || !canManage(model) || formIssues(model.form).length > 0
+	model.isSaving || !canManageAlerts(model) || formIssues(model.form).length > 0
 		? { model }
 		: {
 				model: { ...model, isSaving: true, saveFailure: null },
@@ -107,8 +109,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedDestinations: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		ChangedText: ({ field, value }) => withForm(model, { [field]: value }),
 		PickedSliType: ({ sliType }) => withForm(model, { sliType }),
 		PickedThreshold: ({ thresholdMs }) => withForm(model, { thresholdMs }),

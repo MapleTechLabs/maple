@@ -6,6 +6,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./hysteresis": "./src/hysteresis.ts",
+		"./tiers": "./src/tiers.ts",
 		"./oncall": "./src/oncall.ts"
 	},
 	"scripts": {
@@ -15,6 +16,7 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

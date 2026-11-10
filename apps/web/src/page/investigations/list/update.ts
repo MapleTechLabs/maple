@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

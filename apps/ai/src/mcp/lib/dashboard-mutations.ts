@@ -31,7 +31,7 @@ import {
 } from "@maple/domain/http"
 import type { DashboardRow } from "@maple/domain/mcp-outputs"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { McpInvalidInputError, McpQueryError } from "../tools/types"
@@ -260,7 +260,6 @@ export const defaultSizeForPanelType = (panelType: PanelType): { w: number; h: n
 /**
  * Auto-layout is the shared `findNextPosition` from `@maple/widgets`, so a
  * widget an agent adds lands exactly where the "Add widget" button would put it.
- * This used to be a hand-maintained port of the web copy.
  */
 export { findNextPosition as findNextWidgetPosition }
 

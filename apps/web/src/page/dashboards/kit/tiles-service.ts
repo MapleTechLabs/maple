@@ -12,8 +12,8 @@ import type { LegendItem } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The fixed-metric registry entries inside a widget (`LatencyLineChart`, `ThroughputAreaChart`,
-// `ApdexAreaChart`, `ErrorRateAreaChart`): their own series, hoisted into the card header.
+// The fixed-metric charts inside a widget (latency, throughput, Apdex, error rate): their own
+// series, hoisted into the card header.
 
 type Kind = "Latency" | "Throughput" | "Apdex" | "ErrorRate"
 
@@ -78,7 +78,7 @@ const toRows = (data: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<Fix
 		),
 	)
 
-/** What a hidden legend hoists into the header (`usePlotLegendSlot`). */
+/** What a hidden legend hoists into the header. */
 export const serviceLegend = (
 	chartId: string,
 	data: ReadonlyArray<Record<string, unknown>>,

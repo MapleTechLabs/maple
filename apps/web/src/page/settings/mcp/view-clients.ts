@@ -1,13 +1,13 @@
 import * as Policy from "@maple/domain/policy"
 import type { V2McpConnection } from "@maple/domain/http/v2"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
-import { sectionNote, settingsSection } from "../kit/section"
+import { sectionNote, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
@@ -15,8 +15,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
-
-// `McpConnectedClientsSection`.
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ grants: ReadonlyArray<Policy.Permission>; nowMs: number; timeZone: string }>

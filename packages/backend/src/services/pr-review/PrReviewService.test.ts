@@ -30,12 +30,12 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindingEmbeddings, PrReviewFindings, PrReviewMergeSteps, PrReviews } from "@maple/db/tables"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	asOrgId,
 	testRepoLayer,
@@ -126,7 +126,6 @@ const layerFor = (
 		readonly searchHits?: ReadonlyArray<string>
 		/** One hit per query listed here, with these snippets; a query not listed finds nothing. */
 		readonly searchSnippets?: Readonly<Record<string, ReadonlyArray<string>>>
-		/** The pull request's changed files. */
 		readonly prFiles?: ReadonlyArray<PullRequestFile>
 		/** Present: replies posted to the pull request's conversation are recorded here. */
 		readonly replies?: Array<string>
@@ -292,17 +291,16 @@ const layerFor = (
 							sendBatch: () => Effect.void,
 						}),
 				options.embedder === undefined
-					? Layer.empty
-					: Layer.succeed(FindingEmbedder, options.embedder),
-				options.telemetry === undefined
-					? Layer.empty
-					: Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
+					? FindingEmbedder.none
+					: Layer.succeed(FindingEmbedder, Option.some(options.embedder)),
+				Layer.succeed(PrReviewTelemetryService, telemetryReaderFake(options.telemetry)),
 			),
 		),
 	)
 }
 
-const telemetryReaderFake = (telemetry: PrReviewTelemetry): PrReviewTelemetryServiceApi => ({
+/** Without `telemetry`, a warehouse with nothing to say: the review reads the diff alone. */
+const telemetryReaderFake = (telemetry: PrReviewTelemetry | undefined): PrReviewTelemetryServiceApi => ({
 	analyze: () => Effect.succeed(telemetry),
 	commitTimes: () => Effect.succeed(new Map()),
 	deploymentsSince: () => Effect.succeed([]),

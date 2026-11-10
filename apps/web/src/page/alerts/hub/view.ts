@@ -17,10 +17,10 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { AlertsTab } from "../../../route/search"
-import { alertsHref, createHref } from "../shared/links"
+import { alertsHref, createHref } from "../../kit/alert-links"
 import { newScheduleHref } from "../shared/oncall-schedules"
 import { newSloHref } from "../shared/slo-commands"
-import { newMonitorHref } from "../shared/uptime-commands"
+import { newMonitorHref } from "../../kit/uptime/commands"
 import {
 	anomalyOverviewOf,
 	destinationsOf,
@@ -32,7 +32,7 @@ import {
 	silenceSuggestionsOf,
 } from "./derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
 import { anomalyInbox, inboxFilters } from "./view-anomalies"
 import { inboxTab } from "./view-inbox"
@@ -50,8 +50,7 @@ import { slosTab } from "./view-slos"
 import { deleteScheduleDialog, hasSchedules, oncallTab, whoIsOnCallStrip } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-// `AlertsPage` and `AlertsHub`: `/alerts` and `/alerts/<section>`. The sidebar lists the sections.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -128,7 +127,7 @@ const newRuleButton = (h: H, model: Model): Html => {
 						"Route what Maple's anomaly detector finds for some services, environments or signals.",
 					),
 					// Uptime monitors are admin-only to create; the API refuses members too.
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								newRuleItem(
 									h,
@@ -205,10 +204,10 @@ const headerActions = (
 ): Html | undefined => {
 	if (tab === "inbox" || tab === "rules")
 		// The first-run empty state offers the templates and "Start from scratch" to who can create.
-		return canManage(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
+		return canManageAlerts(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
 			? undefined
 			: newRuleButton(h, model)
-	if (!canManage(model)) return undefined
+	if (!canManageAlerts(model)) return undefined
 	const serviceName = model.search.serviceName
 	switch (tab) {
 		case "uptime":
@@ -270,10 +269,10 @@ const hubBody = (
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {
-				canEdit: canManage(model),
+				canEdit: canManageAlerts(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: canManageAlerts(model) ? Message.ClickedNewDestination() : undefined,
 			})
 			const acknowledge = {
 				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>

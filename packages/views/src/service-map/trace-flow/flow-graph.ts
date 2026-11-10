@@ -3,8 +3,7 @@ import type { SpanNode } from "@maple/ui/lib/types"
 import { describeSpan } from "./span-category"
 import { Array as Arr, String as Str } from "effect"
 
-// copied: packages/ui/src/components/traces/flow-utils.ts. It reaches React icon components
-// through describeSpan; the node and edge types are local instead of React Flow's.
+// The trace flow graph: nodes and edges from a trace's spans, typed locally.
 
 interface Node<Data, Type extends string = string> {
 	id: string
@@ -337,28 +336,17 @@ export function getLayoutedElements(
 	return { nodes: layoutedNodes, edges }
 }
 
-/** Finds a span by regular or combined flow-node ID. */
-export function findSpanById(rootSpans: ReadonlyArray<SpanNode>, spanId: string): SpanNode | undefined {
-	let searchId = spanId
-	if (Str.startsWith("combined-")(spanId)) {
-		const parts = Str.split("-")(Str.slice("combined-".length)(spanId))
-		if (parts.length > 0) {
-			searchId = parts[0]
-		}
-	}
-
-	function traverse(node: SpanNode): SpanNode | undefined {
-		if (node.spanId === searchId) return node
-		for (const child of node.children) {
-			const found = traverse(child)
-			if (found) return found
-		}
-		return undefined
-	}
-
-	for (const root of rootSpans) {
-		const found = traverse(root)
-		if (found) return found
-	}
-	return undefined
+/** Finds a span by regular or combined flow-node ID (`combined-<spanId>-...` resolves to its first span). */
+export const findSpanById = <S extends { readonly spanId: string; readonly children: ReadonlyArray<S> }>(
+	rootSpans: ReadonlyArray<S>,
+	spanId: string,
+): S | undefined => {
+	const searchId = Str.startsWith("combined-")(spanId)
+		? Str.split("-")(Str.slice("combined-".length)(spanId))[0]
+		: spanId
+	const visit = (node: S): S | undefined =>
+		node.spanId === searchId
+			? node
+			: Arr.reduce<S, S | undefined>(node.children, undefined, (found, child) => found ?? visit(child))
+	return Arr.reduce<S, S | undefined>(rootSpans, undefined, (found, root) => found ?? visit(root))
 }

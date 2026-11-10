@@ -131,7 +131,6 @@ export type UserIssue = Readonly<{
 	hits: number
 	lastSeenMs: number
 	status: WorkflowState | null
-	/** The issue page. */
 	href: string | null
 }>
 

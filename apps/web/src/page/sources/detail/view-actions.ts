@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { vstack } from "@maple/views/ui/stack"
 
-// `SourceActions`, `IntegrationActions` and `PauseMenu`.
-
 type H = HtmlBuilder<Message>
 
 const inlineIcon = (h: H, name: "MediaPauseIcon" | "MediaPlayIcon" | "ArrowPathIcon" | "TrashIcon") =>

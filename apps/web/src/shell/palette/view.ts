@@ -30,7 +30,7 @@ import { Array as Arr } from "effect"
 const PALETTE_LIST_CLASS =
 	"contents [&_[data-slot=command-group-label]]:text-2xs [&_[data-slot=command-group-label]]:font-semibold [&_[data-slot=command-group-label]]:uppercase [&_[data-slot=command-group-label]]:tracking-overline [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
 
-// `CommandPalette`'s popup: the input, the grouped entries (or "No results"), the footer hints.
+// The command palette's popup: the input, the grouped entries (or "No results"), the footer hints.
 
 export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
 

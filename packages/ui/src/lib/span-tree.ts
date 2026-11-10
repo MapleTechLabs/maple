@@ -36,7 +36,6 @@ export function parseAttributes(value: string | null | undefined): Record<string
 	return Option.getOrElse(parsed, (): Record<string, string> => ({}))
 }
 
-/** Map a raw hierarchy row into a branded `Span`. */
 export function transformSpan(raw: SpanHierarchyRow): Span {
 	return {
 		traceId: toTraceId(raw.traceId),
@@ -288,9 +287,8 @@ export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "
 }
 
 /**
- * Convenience: turn raw span-hierarchy rows into everything `TraceViewTabs`
- * needs — the flat span list, the root tree, total duration, the unique
- * service list, and the earliest start time.
+ * Raw span-hierarchy rows into everything the trace views need: the flat span list,
+ * the root tree, total duration, the unique service list, and the earliest start time.
  */
 export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDetail {
 	const spans = dedupeBySpanId(Arr.map(rows, transformSpan))

@@ -1,9 +1,5 @@
-/** Output schemas for the CI and commit MCP tools. */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
-
-// ---------------------------------------------------------------------------------------------
-// ci_runs
 
 export const CiFailedJobRow = Schema.Struct({
 	job: Schema.String,
@@ -74,9 +70,6 @@ export const CiRunsOutput = Schema.Struct({
 	/** The failed-jobs read hit its cap, so some failed runs may list fewer jobs than failed. */
 	failedJobsCapped: Schema.optionalKey(Schema.Boolean),
 })
-
-// ---------------------------------------------------------------------------------------------
-// compare_commits
 
 export const CommitRow = Schema.Struct({
 	sha: Schema.String,

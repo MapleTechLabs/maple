@@ -1,7 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -18,10 +19,6 @@ import { LookupNames } from "../../kit/autocomplete-lookups"
 import { WhereFieldMessage } from "../../kit/where-field"
 import { Density } from "@maple/views/ui/logs/viewer"
 import { AttributeKey, LogsFacets, LogsPage, VolumeBucket } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The sidebar's facets, by their include param. */
 export const Facet = Schema.Literals(["severities", "deploymentEnvs", "namespaces", "services"])
@@ -41,10 +38,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchAttributeKeys: result(Schema.Array(AttributeKey)),
 	CompletedReadPreferences: { wrap: Schema.Boolean, density: Density, locale: Schema.String },
 	CompletedSavePreference: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
-	/** `LogsFilterSidebar` mounted (inline, or in the sheet below `lg`): its facets read goes out. */
+	...ChartEnvMessages,
+	/** The filter sidebar mounted (inline, or in the sheet below `lg`): its facets read goes out. */
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},

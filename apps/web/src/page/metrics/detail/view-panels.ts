@@ -19,7 +19,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { metricTypeBadge } from "../shared"
+import { metricTypeBadge } from "@maple/views/ui/metric-type"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -35,8 +35,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
-
-// `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
 
 type H = HtmlBuilder<Message>
 
@@ -88,7 +86,6 @@ const isCapped = (model: Model, draft: MetricsQueryDraft): boolean =>
 		),
 	).size >= GROUP_BY_SERIES_LIMIT
 
-/** `MetricChart` in its `ChartCard`. */
 export const metricChart = (
 	h: H,
 	model: Model,
@@ -146,8 +143,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 							backdropBar(h, {
 								value: row.value,
 								max,
-								className:
-									"inset-y-0.5 left-0 bg-primary-a2 group-hover:bg-primary-a3",
+								className: "inset-y-0.5 left-0 bg-primary-a2 group-hover:bg-primary-a3",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {
@@ -172,7 +168,7 @@ const attributeKeyNames = (model: Model): ReadonlyArray<string> =>
 		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
-/** `MetricBreakdown`: top values of one attribute; each bar narrows the where clause. */
+/** Top values of one attribute; each bar narrows the where clause. */
 export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): Html => {
 	const filterKey = breakdownGroupBy(breakdownKeyOf(model.search))
 	return panel(h, {}, [
@@ -235,7 +231,6 @@ const attributesList = (h: H, model: Model): Html =>
 					),
 	})
 
-/** `MetricMetadataPanel`. */
 export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html =>
 	panel(h, { className: "gap-4 p-3" }, [
 		h.div(

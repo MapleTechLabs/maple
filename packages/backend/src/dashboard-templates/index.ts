@@ -1,5 +1,5 @@
 import { chartFamilyForChartId, widgetTypeByVisualization } from "@maple/domain/http"
-import type { DashboardTemplateId, DashboardTemplatePreviewKind } from "@maple/domain/http"
+import type { DashboardTemplatePreviewKind } from "@maple/domain/http"
 import { memoize } from "effect/Function"
 import { blankTemplate } from "./application/blank"
 import { errorTrackingTemplate } from "./application/error-tracking"
@@ -29,7 +29,6 @@ import type { TemplateDefinition, TemplateMetadata, TemplatePreviewWidget } from
 import { Array as Arr } from "effect"
 
 export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
-	// Application
 	serviceHealthTemplate,
 	errorTrackingTemplate,
 	platformOverviewTemplate,
@@ -40,12 +39,10 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	nodejsRuntimeTemplate,
 	grpcServiceTemplate,
 	blankTemplate,
-	// Database
 	postgresTemplate,
 	mongodbTemplate,
 	redisTemplate,
 	mysqlTemplate,
-	// Infrastructure
 	cloudflareTemplate,
 	planetscaleTemplate,
 	gcpTemplate,
@@ -53,7 +50,6 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	kubernetesClusterTemplate,
 	kubernetesPodTemplate,
 	dockerContainersTemplate,
-	// Messaging
 	kafkaTemplate,
 	natsTemplate,
 	rabbitmqTemplate,
@@ -62,10 +58,6 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(Arr.map(DASHBOARD_TEMPLATES, (t) => [t.id, t]))
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
-	return TEMPLATE_BY_ID.get(id)
-}
-
-export function getTemplateById(id: DashboardTemplateId): TemplateDefinition | undefined {
 	return TEMPLATE_BY_ID.get(id)
 }
 

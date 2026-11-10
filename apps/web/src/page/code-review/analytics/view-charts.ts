@@ -1,5 +1,5 @@
 import type { CodeReviewAnalytics } from "@maple/domain/http"
-import { bucketIso } from "../../../components/code-review/code-review-format"
+import { bucketIso } from "../kit/code-review-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as BarChart from "@maple/views/charts/bar-chart"
 import type * as Chart from "@maple/views/charts/chart"
@@ -15,8 +15,6 @@ import { repositoryList } from "./view-lists"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Order } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `VolumeCard` and `IssuesCard`.
 
 type H = HtmlBuilder<Message>
 

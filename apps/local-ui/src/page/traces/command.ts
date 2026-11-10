@@ -1,8 +1,16 @@
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { readCached, recordCached } from "../../data/cached"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { facetsFromCached, facetsKey, facetsToCached, pagesFromCached, pagesToCached, tracesKey } from "./cache"
+import {
+	facetsFromCached,
+	facetsKey,
+	facetsToCached,
+	pagesFromCached,
+	pagesToCached,
+	tracesKey,
+} from "./cache"
 import { fetchTraceFacets } from "./fetch-facets"
 import { fetchTracePage, nextCursor, type TraceCursor } from "./fetch-traces"
 import { filtersOf } from "./filters"
@@ -19,15 +27,9 @@ const RequestArgs = {
 }
 
 /** The time window's initial anchor and the clock for relative times. */
-export const ReadClock = Command.define("ReadTracesClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadTracesClock", Message.CompletedReadClock)
 
-export const ReadRefreshClock = Command.define("ReadTracesRefreshClock", {
-	messages: [Message.CompletedReadRefreshClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
-})
+export const ReadRefreshClock = readClock("ReadTracesRefreshClock", Message.CompletedReadRefreshClock)
 
 /** A refetch goes page by page, each cursor from the page before. */
 const fetchPages = <R>(
@@ -39,7 +41,9 @@ const fetchPages = <R>(
 	Effect.flatMap(run(cursor), (page) => {
 		const pages = [...loaded, page]
 		const next = nextCursor(page)
-		return remaining <= 1 || next === undefined ? Effect.succeed(pages) : fetchPages(run, remaining - 1, next, pages)
+		return remaining <= 1 || next === undefined
+			? Effect.succeed(pages)
+			: fetchPages(run, remaining - 1, next, pages)
 	})
 
 /** `readsCache`: a key the page has no rows for yet opens on its cached result first. */
@@ -51,7 +55,8 @@ export const FetchTraces = Command.define("FetchLocalTraces", {
 		Effect.gen(function* () {
 			const cacheKey = tracesKey({ search, startTime, endTime })
 			const maybeCached = readsCache ? yield* readCached(cacheKey, pagesFromCached) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedTraces({ key, cached: maybeCached.value })
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedTraces({ key, cached: maybeCached.value })
 			const filters = filtersOf(new URLSearchParams(search))
 			const run = (cursor: TraceCursor | undefined) =>
 				fetchTracePage(filters, { startTime, endTime }, cursor, apiBase)
@@ -76,21 +81,37 @@ export const FetchNextPage = Command.define("FetchNextLocalTracesPage", {
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
 	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
-	execute: ({ key, generation, search, startTime, endTime, apiBase, cursorTimestamp, cursorTraceId, pages }) =>
+	execute: ({
+		key,
+		generation,
+		search,
+		startTime,
+		endTime,
+		apiBase,
+		cursorTimestamp,
+		cursorTraceId,
+		pages,
+	}) =>
 		fetchTracePage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
 			{ timestamp: cursorTimestamp, traceId: cursorTraceId },
 			apiBase,
 		).pipe(
-			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			// A next page updates the cached query too, so a reload opens on every page loaded.
 			Effect.tap((page) =>
 				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
-					recordCached(tracesKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
+					recordCached(
+						tracesKey({ search, startTime, endTime }),
+						pagesToCached({ pages: [...pages, page] }),
+						atMs,
+					),
 				),
 			),
 			Effect.map((page) => Message.SucceededFetchNextPage({ key, generation, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure }))),
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure })),
+			),
 		),
 })
 
@@ -104,22 +125,30 @@ export const FetchFacets = Command.define("FetchLocalTraceFacets", {
 	execute: ({ key, search, startTime, endTime, apiBase, readsCache }) =>
 		Effect.gen(function* () {
 			const cacheKey = facetsKey({ search, startTime, endTime })
-			const maybeCached = readsCache ? yield* readCached(cacheKey, facetsFromCached, FACETS_STALE_MS) : Option.none()
-			if (Option.isSome(maybeCached)) return Message.FoundCachedFacets({ key, cached: maybeCached.value })
-			const facets = yield* fetchTraceFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase)
+			const maybeCached = readsCache
+				? yield* readCached(cacheKey, facetsFromCached, FACETS_STALE_MS)
+				: Option.none()
+			if (Option.isSome(maybeCached))
+				return Message.FoundCachedFacets({ key, cached: maybeCached.value })
+			const facets = yield* fetchTraceFacets(
+				filtersOf(new URLSearchParams(search)),
+				{ startTime, endTime },
+				apiBase,
+			)
 			const fetchedAtMs = yield* Clock.currentTimeMillis
 			yield* recordCached(cacheKey, facetsToCached(facets), fetchedAtMs)
 			return Message.SucceededFetchFacets({ key, facets, fetchedAtMs })
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
-/** `ToolbarSearch`'s and `RangeFilterSection`'s 300 ms pause before a typed value commits. */
-export const DEBOUNCE = Duration.millis(300)
+/** The search's and the range filter's 300 ms pause before a typed value commits. */
+const DEBOUNCE = Duration.millis(300)
 
 export const WaitSearchDebounce = Command.define("WaitTracesSearchDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ version }) => Effect.as(Effect.sleep(DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
+	execute: ({ version }) =>
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
 export const WaitDurationDebounce = Command.define("WaitTracesDurationDebounce", {

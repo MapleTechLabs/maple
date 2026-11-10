@@ -15,16 +15,13 @@ import * as Select from "@maple/views/ui/select"
 import * as RulesForm from "../rules-form/form"
 import { RepoFilter, RepoListState } from "./repositories"
 
-// `/code-review/settings`: the review model, the default rules and the
-// repositories, each repository's own rules in a dialog.
-
 export const SavePurpose = Schema.Literals(["model", "defaults"])
 export type SavePurpose = typeof SavePurpose.Type
 
 export const Model = Schema.Struct({
 	settings: KeyedSchema(GithubPrReviewSettingsResponse, LoadFailure),
 	githubStatus: KeyedSchema(GithubIntegrationStatus, LoadFailure),
-	/** `useIsOrgAdmin`: always true self-hosted; the session's roles under Clerk. */
+	/** Whether the viewer is an org admin: always true self-hosted; the session's roles under Clerk. */
 	grants: Schema.Array(Policy.PermissionName),
 	modelSelect: Select.Model,
 	isSavingModel: Schema.Boolean,
@@ -40,8 +37,8 @@ export const Model = Schema.Struct({
 	defaultsForm: Schema.NullOr(RulesForm.Model),
 	repoList: RepoListState,
 	/**
-	 * `RepositoryRow`'s optimistic switch and the server value it was flipped from: a fresh server
-	 * value wins, an unchanged one keeps the switch where the user put it (`seenServer`).
+	 * A repository row's optimistic switch and the server value it was flipped from: a fresh server
+	 * value wins, an unchanged one keeps the switch where the user put it.
 	 */
 	optimistic: Schema.Record(
 		Schema.String,

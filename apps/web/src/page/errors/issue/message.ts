@@ -1,3 +1,5 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
@@ -13,7 +15,6 @@ import { V2AnomalyIncident, V2ErrorIssueDetail, V2Investigation } from "@maple/d
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -24,16 +25,12 @@ import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DestinationName } from "./model"
 
-/** `Load` on entry or a window change; `Refresh` from Reload (no snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
-
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
 })
 
-/** The issue workflow writes the rail sends (`useMutationAction` in the route). */
+/** The issue workflow writes the rail sends. */
 export const IssueWrite = Schema.Union([
 	/** `fromState` is the state the rail showed; the server refuses the move (409) once it moved on. */
 	Schema.TaggedStruct("Transition", { fromState: WorkflowState, toState: WorkflowState }),
@@ -70,9 +67,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchVcsPullRequests: result(VcsPullRequestsResponse),
 	UpdatedDestinations: { orgId: Schema.String, destinations: Schema.Array(DestinationName) },
 	TickedLeaseClock: { nowMs: Schema.Number },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: {},

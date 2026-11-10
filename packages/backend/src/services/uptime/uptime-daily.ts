@@ -1,6 +1,6 @@
 import * as Orm from "@maple-dev/effect-orm/database"
 import type { MapleDb } from "@maple/db/client"
-import type { OrgId, UptimeMonitorId } from "@maple/domain/primitives"
+import type { OrgId, UptimeMonitorId } from "@maple/primitives"
 import { utcDay } from "@maple/domain/status-page"
 import { Effect, Array as Arr } from "effect"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
@@ -21,7 +21,6 @@ interface CheckToCount {
 	readonly down: boolean
 }
 
-/** One check as its day's counts. */
 export const countOne = (check: CheckToCount): UptimeDailyCount => ({
 	day: utcDay(check.at),
 	checks: 1,
@@ -30,7 +29,6 @@ export const countOne = (check: CheckToCount): UptimeDailyCount => ({
 	lastCheckAt: check.at,
 })
 
-/** Adds one check to its day's counts. */
 export const countCheck = (
 	counts: ReadonlyArray<UptimeDailyCount>,
 	check: CheckToCount,

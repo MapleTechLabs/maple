@@ -4,16 +4,10 @@ import { listOrgScopedDatasourceNames } from "@maple/backend/services/warehouse/
 import { mintOrgReadJwt } from "@maple/backend/services/auth/tinybird-jwt"
 import { Env } from "@maple/backend/platform/Env"
 
-// TinybirdOrgTokenService — mints and caches per-org Tinybird read JWTs used to
-// scope the raw-SQL path to a single org's rows (row-level security enforced by
-// Tinybird server-side; see lib/tinybird-jwt.ts).
-//
-// A JWT is reused for its lifetime and re-minted on expiry. The cache entry
-// expires SKEW seconds before the token itself, so a served token always has
-// comfortably more life left than the executor's 30s client-cache TTL — a cached
-// Tinybird client never outlives the JWT it was built with.
+// Per-org Tinybird read JWTs scope the raw-SQL path to one org's rows (row-level security
+// enforced by Tinybird; see services/auth/tinybird-jwt.ts). A cache entry expires SKEW seconds
+// early, so a cached Tinybird client (30s executor cache) never outlives its JWT.
 
-/** Token lifetime. */
 const JWT_TTL_SECONDS = 600
 /** Re-mint this many seconds before true expiry (must exceed the executor's 30s client cache). */
 const JWT_REFRESH_SKEW_SECONDS = 60

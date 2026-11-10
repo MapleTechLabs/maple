@@ -7,10 +7,10 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import * as Frame from "../kit/frame"
+import * as Frame from "../../kit/time-frame"
 import * as InstallModal from "../kit/install-modal"
 import * as InstallModalView from "../kit/install-modal-view"
-import { pickTimeSearch } from "../kit/view-tabs"
+import { pickTimeSearch } from "../../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, SOURCE_IDS, type SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
@@ -21,8 +21,6 @@ import { sourcesTable } from "./view-sources"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `InfraOverviewPage`.
 
 type H = HtmlBuilder<Message>
 

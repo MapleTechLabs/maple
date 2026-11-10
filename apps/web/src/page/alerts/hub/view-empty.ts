@@ -7,13 +7,11 @@ import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { alertsHref, createHref } from "../shared/links"
+import { alertsHref, createHref } from "../../kit/alert-links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `AlertsEmptyState`: zero rules.
 
 const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string }>([
 	[
@@ -57,7 +55,7 @@ export type EmptyStateOptions<M> = Readonly<{
 	canEdit: boolean
 	hasDestinations: boolean
 	serviceName: string | undefined
-	/** `useOpenDestinationDialog()`: set on `/alerts` for admins; otherwise the button links to Routing. */
+	/** Set on `/alerts` for admins; otherwise the button links to Routing. */
 	onAddDestination: M | undefined
 }>
 
@@ -181,7 +179,7 @@ const templateTile = <M>(
 const svgAttrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
 	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, value))
 
-/** `QuietMonitor`: a steady signal below the dashed threshold a rule would place. */
+/** A steady signal below the dashed threshold a rule would place. */
 const quietMonitor = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 p-4")],

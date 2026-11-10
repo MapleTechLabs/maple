@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /** `LaneLink`: a link row that draws its own layout but carries `listRow`'s selection lane (left

@@ -3,10 +3,8 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 
-// `ChainConnector`: the short line that joins two cards of a vertical chain.
-
 /**
- * `ChainConnector`: the line between two cards of a vertical chain, with a + on it that adds a card
+ * The line between two cards of a vertical chain, with a + on it that adds a card
  * there. The + shows while the gap is hovered or holds focus, and always on a touch screen or
  * when `isPinned` (the last gap, so a mouse user can see that the chain takes another card).
  */

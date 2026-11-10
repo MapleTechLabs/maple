@@ -7,14 +7,12 @@ import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// The editor's field helpers: Base UI's field state, and the number that sits inside a sentence row.
-
 type H = HtmlBuilder<Message>
 
 export const NUMERIC_CONTROL_CLASS =
 	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
-/** Base UI's field state from the value and the value the field mounted with. */
+/** The field state from the value and the value the field mounted with. */
 export const fieldStateOf = (value: string, mounted: string | undefined): FieldState => ({
 	isInvalid: false,
 	isDirty: mounted !== undefined && value !== mounted,
@@ -40,7 +38,7 @@ export type InlineNumberOptions = Readonly<{
 	placeholder?: string
 	inputMode?: "decimal" | "numeric"
 	min?: string
-	/** The saved value when it differs (`previous`): the border warns. */
+	/** The saved value when it differs: the border warns. */
 	previous?: string | null
 	/** The field has an error the user has seen a reason for (left it, or tried to save). */
 	isInvalid?: boolean

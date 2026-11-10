@@ -14,17 +14,15 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
-import type { ToolPercentile } from "../agent-sessions/tools-kit/model"
+} from "../kit/tools/table"
+import type { ToolPercentile } from "../kit/tools/model"
 import type { McpCallRow, McpErrorGroup, McpToolDetail } from "./data"
 import {
 	attr,
 	clientIcon,
 	clientPlot,
 	durationMeterCell,
-	durationSeries,
 	errorTypeChip,
-	formatClock,
 	headingNote,
 	lastSeenCell,
 	type McpChartEnv,
@@ -40,6 +38,8 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { durationSeries } from "../kit/tools/series-chart"
+import { formatClock } from "../kit/timezone-zones"
 
 // `/mcp/:service/tools/:tool`: the agent tool detail page for one MCP tool. Four charts, the
 // failures grouped by `error.type` (and message, once the server records one), then the calls.
@@ -342,7 +342,7 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 	)
 }
 
-/** `McpToolBody`: everything under the tool page's header. */
+/** Everything under the tool page's header. */
 export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html =>
 	vstack(h, {}, [
 		options.toolbar,

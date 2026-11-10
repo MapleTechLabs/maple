@@ -1,5 +1,5 @@
 import { countLabel } from "@maple/ui/lib/format"
-import { collectTraceErrors, spanHttpStatus, type TraceErrors } from "../../../lib/traces/trace-errors"
+import { collectTraceErrors, spanHttpStatus, type TraceErrors } from "@maple/views/traces/trace-errors"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"

@@ -1,9 +1,9 @@
 import { Effect, Option, Array as Arr } from "effect"
 import * as CH from "@maple/query-engine/ch"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import type { TenantContext } from "@maple/domain/http"
 /**
  * "Is this signal quiet because it recovered, or because we stopped receiving
  * data?"
@@ -22,7 +22,7 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
  * is recoverable on the next tick; resolving a live incident is not.
  *
  * The verdict maths is pure and lives at the bottom of this file (mirroring the
- * split in services/alerts/incident-hysteresis.ts) so the interesting decisions are
+ * split in @maple/alerting-core/hysteresis) so the interesting decisions are
  * testable without standing up a warehouse.
  */
 
@@ -286,8 +286,6 @@ export const probeLiveness: (input: LivenessProbeInput) => Effect.Effect<Livenes
 
 	return result
 })
-
-// Pure verdict logic
 
 /**
  * Yesterday's window wins when it carried traffic; a service too young for a

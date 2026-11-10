@@ -1,8 +1,5 @@
 import { Schema } from "effect"
 
-// ---------------------------------------------------------------------------------------------
-// list_slos / inspect_slo / create_slo / update_slo / delete_slo
-
 export const SloSliKind = Schema.Literals(["availability", "latency"])
 export const SloBurnSeverity = Schema.Literals(["critical", "warning"])
 

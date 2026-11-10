@@ -9,15 +9,13 @@ import {
 	type V2MaintenanceSchedule,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages } from "../../../platform/read-all-pages"
-import { alertsHref } from "./links"
+import { alertsHref } from "../../kit/alert-links"
 import { formatSilenceTime } from "./silences"
-import { isoMs } from "./time"
-
-// Maintenance windows: the hub's reads and writes, and how a window's schedule reads in a row.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export const WINDOW_LIST_LIMIT = 100
 
@@ -134,7 +132,7 @@ export const formatWallClock = (startTime: string): string => {
 export const scheduleSummary = (schedule: V2MaintenanceSchedule, nowMs: number, timeZone: string): string =>
 	schedule.type === "weekly"
 		? `Weekly, ${formatDays(schedule.days)} at ${formatWallClock(schedule.start_time)} for ${formatDurationMinutes(schedule.duration_minutes)} (${schedule.time_zone})`
-		: `Once, ${formatSilenceTime(isoMs(schedule.starts_at), nowMs, timeZone)} to ${formatSilenceTime(isoMs(schedule.ends_at), nowMs, timeZone)}`
+		: `Once, ${formatSilenceTime(toEpochMs(schedule.starts_at), nowMs, timeZone)} to ${formatSilenceTime(toEpochMs(schedule.ends_at), nowMs, timeZone)}`
 
 /** The window's occurrence as the list reads it now. */
 export type OccurrenceState =
@@ -145,8 +143,8 @@ export type OccurrenceState =
 export const occurrenceStateAt = (window: V2AlertMaintenanceWindow, nowMs: number): OccurrenceState => {
 	const next = window.next_occurrence
 	if (next === null) return { _tag: "None" }
-	const startsAtMs = isoMs(next.starts_at)
-	const endsAtMs = isoMs(next.ends_at)
+	const startsAtMs = toEpochMs(next.starts_at)
+	const endsAtMs = toEpochMs(next.ends_at)
 	if (endsAtMs <= nowMs) return { _tag: "None" }
 	return startsAtMs <= nowMs ? { _tag: "Running", endsAtMs } : { _tag: "Next", startsAtMs, endsAtMs }
 }
@@ -167,7 +165,7 @@ export const occurrenceText = (window: V2AlertMaintenanceWindow, nowMs: number, 
 
 /** A one-off window whose end has passed: it can never run again. */
 export const isEndedOnce = (window: V2AlertMaintenanceWindow, nowMs: number): boolean =>
-	window.schedule.type === "once" && isoMs(window.schedule.ends_at) <= nowMs
+	window.schedule.type === "once" && toEpochMs(window.schedule.ends_at) <= nowMs
 
 /** Baseline exclusion only applies when the window names a service or an environment. */
 export const excludesBaselines = (window: V2AlertMaintenanceWindow): boolean =>

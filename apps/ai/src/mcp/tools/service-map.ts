@@ -1,11 +1,10 @@
 import type { McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, formatDurationFromMs, formatPercent } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { ServiceMapOutput } from "@maple/domain/mcp-outputs"
 import { serviceMap } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
@@ -28,7 +27,6 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ServiceMapOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading the service map", "Mapping service dependencies"],
 		handler: Effect.fn("McpTool.serviceMap")(function* (params) {

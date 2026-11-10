@@ -17,7 +17,7 @@ import {
 	InvestigationId,
 	McpConnectionId,
 	MobileDeviceId,
-} from "../../primitives"
+} from "@maple/primitives"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
 /** Canonical shared public-ID codecs for resources referenced across v2 groups. */

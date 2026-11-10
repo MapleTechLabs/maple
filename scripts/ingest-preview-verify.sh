@@ -102,7 +102,7 @@ echo "gateway exporter error lines: $gateway_exporter_errors"
 
 # Did anything land? The job carries the stage's Tinybird credentials, so ask
 # the warehouse directly for recent `ingest` self-telemetry. An ingest-scoped
-# token may lack read access — then this is informational, not a verdict.
+# token may lack read access; then this is informational, not a verdict.
 if [ -n "${TINYBIRD_HOST:-}" ] && [ -n "${TINYBIRD_TOKEN:-}" ]; then
 	echo "== Tinybird: ingest self-telemetry in the last 15 minutes"
 	query="SELECT ResourceAttributes['service.instance.id'] AS instance, count() AS spans FROM traces WHERE Timestamp >= now() - INTERVAL 15 MINUTE AND ServiceName = 'ingest' GROUP BY 1 FORMAT JSON"

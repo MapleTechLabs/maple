@@ -12,7 +12,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
 import {
@@ -22,7 +22,6 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Result,
 	Schema,
 	Array as Arr,
@@ -33,6 +32,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { McpOAuthRateLimit } from "@maple/backend/platform/bindings"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 
 const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -318,8 +318,8 @@ export class McpOAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(McpOAuthRateLimit)
-		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		const apiKeyHmacKey = yield* ingestKeyLookupHmacKey(
+			env,
 			(message) => new McpOAuthPersistenceError({ message }),
 		)
 
@@ -779,8 +779,8 @@ export class McpOAuthService extends Context.Service<
 				}
 				// The grant's absolute ceiling. Rotation resets `expires_at`, so this is
 				// the only thing that ever ends a grant nobody explicitly revoked.
-				// A pre-column row is anchored from the row in hand — at most one
-				// rotation window old — rather than being grandfathered in forever.
+				// A pre-column row is anchored from the row in hand (at most one
+				// rotation window old) rather than being grandfathered in forever.
 				const familyExpiresAtMs =
 					row.familyExpiresAt ?? row.createdAt + REFRESH_FAMILY_ABSOLUTE_TTL_MS
 				if (familyExpiresAtMs <= now) {
@@ -793,7 +793,7 @@ export class McpOAuthService extends Context.Service<
 				// The visible `api_keys` row is the only handle a member has on this
 				// grant in the UI, and revoking it used to be a no-op the next rotation
 				// undid. Treating it as the grant's kill switch is what makes that
-				// button — and the membership-removal sweep — actually bite.
+				// button (and the membership-removal sweep) actually bite.
 				const accessKeyRows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ApiKeys)

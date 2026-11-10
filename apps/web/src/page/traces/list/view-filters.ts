@@ -43,7 +43,7 @@ const facetSection = (
 		onExclude: (name) => Message.ClickedExcludeFacetOption({ facet, name }),
 	})
 
-/** `DurationRangeFilter`: p50 and p95 presets from the facet stats, then "> 1s". */
+/** p50 and p95 presets from the facet stats, then "> 1s". */
 const durationPresets = (stats: TracesFacets["durationStats"]): ReadonlyArray<RangePreset> => {
 	const p50 = Math.round(stats.p50DurationMs)
 	const p95 = Math.round(stats.p95DurationMs)
@@ -128,6 +128,11 @@ export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespa
 	AsyncData.matchData(model.facets.data, {
 		onEmpty: () => filterSidebarLoading(h, 5),
 		onFailure: (failure) =>
-			filterSidebarError(h, failure, undefined, Option.getOrUndefined(AsyncData.getError(model.firstPage.data))),
+			filterSidebarError(
+				h,
+				failure,
+				undefined,
+				Option.getOrUndefined(AsyncData.getError(model.firstPage.data)),
+			),
 		onData: (facets) => loadedRail(h, model, facets, pinnedNamespace),
 	})

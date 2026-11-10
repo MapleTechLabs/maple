@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
-import { destinationRows, ruleRows } from "../shared/collections"
+import { destinationRows, ruleRows } from "../../kit/alert-collections"
 import { Message } from "./message"
 import type { Model } from "./model"
 

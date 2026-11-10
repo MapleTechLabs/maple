@@ -1,4 +1,5 @@
-import { QueryEngineExecuteRequest, formatWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { ListMetricsRequest, MetricName, MetricsSummaryRequest, ServiceName } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"

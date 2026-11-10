@@ -12,7 +12,7 @@ import {
 	nextLogsWindow,
 	parseRowTimestamp,
 } from "./logs"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 
 const REF = Schema.decodeSync(SupabaseProjectRef)("abcdefghijklmnopqrst")
 const minute = 60_000

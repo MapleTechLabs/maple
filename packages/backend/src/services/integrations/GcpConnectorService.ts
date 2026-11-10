@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import {
@@ -20,13 +20,15 @@ import {
 	type GcpScopeType,
 	type OrgId,
 	type UserId,
-} from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
+} from "@maple/primitives"
+import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { gcpConnectorSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import { gcpSetupPlan } from "@maple/domain/gcp"
 import { renderGcpAlchemy } from "./gcp/alchemy"
 import { gcpLogFilter, renderGcpCleanupScript, renderGcpSetupScript } from "./gcp/setup-scripts"
@@ -36,7 +38,7 @@ import {
 	createIntegrationSource,
 	integrationSourceName,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 export interface GcpConnector {
 	readonly id: GcpConnectorId
@@ -193,11 +195,11 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			// The ingest gateway hashes a pushed secret with this key and looks the row up by it.
-			const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			const lookupHmacKey = yield* ingestKeyLookupHmacKey(
+				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
-			const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+			const ingestBase = ingestBaseUrl(env)
 			const mapleServiceAccountEmail = Option.getOrUndefined(env.MAPLE_GCP_SERVICE_ACCOUNT_EMAIL)
 			const mapleUrl = `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/integrations?integration=gcp`
 			const dbExecute = makeDbExecute(database, "GcpConnectorService", toPersistenceError)
@@ -258,7 +260,6 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
-				// No connectors, nothing to count.
 				const counts =
 					rows.length === 0
 						? new Map<GcpConnectorId, number>()
@@ -530,7 +531,7 @@ export class GcpConnectorService extends Context.Service<GcpConnectorService, Gc
 							message: "Failed to decrypt the Google Cloud connector secret",
 						}),
 				)
-				const pushEndpoint = `${ingestBaseUrl}/v1/logpush/gcp/${connectorId}`
+				const pushEndpoint = `${ingestBase}/v1/logpush/gcp/${connectorId}`
 				const target = {
 					connectorId,
 					scopeType: row.scopeType,

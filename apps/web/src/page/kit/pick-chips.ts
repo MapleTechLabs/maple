@@ -7,7 +7,7 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `PickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
+// `PickList` for a sentence, where the picks sit inline on the sentence's own line.
 
 /** One picked chip: its media (a logo, an avatar, an icon), its name and how to remove it. */
 export type PickedChip<M> = Readonly<{
@@ -66,7 +66,7 @@ const chip = <M>(h: HtmlBuilder<M>, entry: PickedChip<M>, canEdit: boolean, isDi
 	)
 
 /**
- * `PickChips`: what a form has picked as removable chips, then an "Add" chip that opens a menu of
+ * What a form has picked as removable chips, then an "Add" chip that opens a menu of
  * the rest; the chips and the button go inline on the caller's own wrapping line.
  */
 export const pickChips = <M>(

@@ -131,10 +131,14 @@ describe("keys tab", () => {
 	test("revoking asks first, then toasts and closes", () => {
 		const asked = update(
 			loaded(),
-			Message.GotRowMenuMessage({ menuId: `keys-row-${key.id}`, message: { _tag: "ClickedTrigger" } }),
-		).model
-		const opened = { ...asked, revoking: key }
-		const confirming = update(opened, Message.ClickedConfirmRevoke())
+			Message.GotRowMenuMessage({
+				menuId: `keys-row-${key.id}`,
+				message: { _tag: "ClickedItem", index: 0, item: { kind: "Item", value: "revoke" } },
+			}),
+		)
+		expect(names(asked.commands)).not.toContain("RevokeApiKey")
+		expect(asked.model.revoking?.id).toBe(key.id)
+		const confirming = update(asked.model, Message.ClickedConfirmRevoke())
 		expect(names(confirming.commands)).toEqual(["RevokeApiKey"])
 		const done = update(
 			confirming.model,

@@ -1,8 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { AlertSilenceMutationOutput } from "@maple/domain/mcp-outputs"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { silenceFields, endSilenceErrors, toAlertSilenceRow } from "../lib/alert-silences"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -16,7 +15,6 @@ export function registerEndAlertSilenceTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			silence_id: P.resourceId("alertSilence", "Silence to end"),
 		}),
-		output: AlertSilenceMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Ending an alert silence"],
 		handler: Effect.fn("McpTool.endAlertSilence")(function* (params) {

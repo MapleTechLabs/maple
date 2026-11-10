@@ -15,13 +15,13 @@ import { dashboardPage } from "../../page/kit/dashboard-page"
 import { fixtureRows } from "./fixture"
 import { CONTEXT } from "./update"
 
-// `GcpDashboardLab`: `DashboardPage` with the variable chips as its actions, the board as
-// `ReadOnlyDashboardView`, and the variables dialog.
+// The dashboard page with the variable chips as its actions, the read-only board, and the
+// variables dialog.
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
 
-/** `LabWidget`: the widget's visualization over the fixture series, no actions. */
+/** The widget's visualization over the fixture series, no actions. */
 const labTile = (h: H, model: Model, widget: Widget, values: VariableValues): Html =>
 	widgetTile(
 		h,
@@ -35,7 +35,7 @@ const labTile = (h: H, model: Model, widget: Widget, values: VariableValues): Ht
 		widget,
 	)
 
-/** `ReadOnlyDashboardView`: the sectioned board in the page's scroll area, with its gutter. */
+/** The sectioned board in the page's scroll area, with its gutter. */
 const board = (h: H, model: Model, document: DashboardDocument): Html => {
 	const values = variablesOf(model, CONTEXT).values
 	return dashboardSections(

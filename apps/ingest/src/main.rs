@@ -128,7 +128,7 @@ const SENTINEL_ORG_ID: &str = "sentinel";
 /// configured `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY` yields a value that operators
 /// can diff against the API's fingerprint to detect env-var drift between the
 /// two services. The sentinel must stay byte-identical with the API
-/// (`packages/db/src/ingest-key-hash.ts`); changing it on one side without the
+/// (`packages/backend/src/platform/credential-tokens.ts`); changing it on one side without the
 /// other defeats the comparison.
 const HMAC_FINGERPRINT_SENTINEL: &str = "MAPLE_HMAC_FINGERPRINT_V1";
 

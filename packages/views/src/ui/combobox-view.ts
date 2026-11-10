@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import * as C from "@maple/ui/styles/ui/combobox"
-import { inputControlChromeStyles, inputControlLayoutStyles } from "@maple/ui/styles/ui/input"
+import * as A from "./autocomplete.styles"
+import * as C from "./combobox.styles"
+import { inputControlChromeStyles, inputControlLayoutStyles } from "./input.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -145,7 +145,7 @@ export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		h.Value(model.mode === "multiple" ? "" : model.inputValue),
 	])
 
-/** combobox.tsx's item indicator: an inline round-capped check, not a pixel glyph. */
+/** The combobox item indicator: an inline round-capped check, not a pixel glyph. */
 export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
 	h.svg(
 		[
@@ -250,7 +250,7 @@ export type PopupOptions = Readonly<{
 		footer?: ReadonlyArray<Html>
 		sideOffset?: number
 	}>
-	/** `<ComboboxItem className>`. */
+	/** Classes per list item. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
 	/** A custom `filter` already applied: `items` are the matches, empty means "no match". */
@@ -543,7 +543,6 @@ export type SingleViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	startAddon?: Html
-	/** `<ComboboxInput size>`. */
 	size?: "sm" | "default"
 	/** `<ComboboxInput showTrigger={false}>` drops the chevron button. */
 	showTrigger?: boolean
@@ -560,7 +559,7 @@ export type SingleViewInputs = Readonly<{
 	 * toolbar combobox, whose Base UI positioner resolves no input group and falls back to the input.
 	 */
 	anchorsInput?: boolean
-	/** `<ComboboxInput className>`: lands on the input-control span. */
+	/** Lands on the input-control span. */
 	className?: string
 	/** Wraps the input group (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
@@ -670,7 +669,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 	}),
 )
 
-/** `ComboboxTrigger` with its chevron. */
+/** The trigger button with its chevron. */
 const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
 	h.button(
 		[

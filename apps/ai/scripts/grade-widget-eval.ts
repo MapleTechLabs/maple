@@ -12,7 +12,7 @@
  * plus the task's own expectation (did they pick the panel type and unit the
  * request called for), which is the part no validator can check.
  *
- *   bun run --cwd apps/ai scripts/grade-widget-eval.ts <submission.json>
+ *   bun run --cwd apps/ai eval:widgets <submission.json>
  */
 import { readFileSync } from "node:fs"
 import { Schema, Array as Arr, String as Str } from "effect"

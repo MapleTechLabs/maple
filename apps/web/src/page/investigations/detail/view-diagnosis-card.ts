@@ -20,9 +20,8 @@ import { evidenceChips, type TipTrigger } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `DiagnosisReportCard`: the report an investigation's
-// Chat and Transcript tabs lead with until the thread's own `submit_diagnosis` turn lands. Its
-// action rows open the action sheet from local state, not `?action=`.
+// The report an investigation's Chat and Transcript tabs lead with until the thread's own
+// `submit_diagnosis` turn lands. Its action rows open the action sheet from local state, not `?action=`.
 
 type H = HtmlBuilder<Message>
 type Report = NonNullable<V2Investigation["report"]>
@@ -83,7 +82,6 @@ const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): H
 	})
 }
 
-/** `DiagnosisReportCard`: cause, summary, scope, evidence and the recommended actions. */
 export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
 	const evidence = Arr.filter(
 		report.evidence,

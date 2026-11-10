@@ -1,11 +1,12 @@
+import { chartEnvHandlers, ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Option, Record, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { ToolPercentile } from "../page/agent-sessions/tools-kit/model"
-import { facetValue, initFacetSelect } from "../page/agent-sessions/tools-kit/toolbar"
+import { ToolPercentile } from "../page/kit/tools/model"
+import { facetValue, initFacetSelect } from "../page/kit/tools/toolbar"
 import * as TimeRangePicker from "../page/kit/time-range-picker"
 import type { McpFilters, McpWindow } from "../page/mcp/view-kit"
 import { McpClientIdentity, McpMetric } from "../page/mcp/view-server"
@@ -69,9 +70,7 @@ export const Message = defineMessageUnion({
 	ChangedSearchInput: { value: Schema.String },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	Ignored: {},
 })
 export type Message = typeof Message.Type
@@ -109,13 +108,7 @@ export const init = (flags: Flags): Return => ({
 		themeColors: null,
 		chartRuntime: { _tag: "Loading" },
 	},
-	commands: [
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [LoadChartRuntime()],
 })
 
 /** A toggle group keeps one value pressed: a press on the pressed item leaves it as it was. */
@@ -205,11 +198,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		Ignored: () => ({ model }),
 	})
 

@@ -1,16 +1,14 @@
 import type { ActorDocument } from "@maple/domain/http"
-import { formatCountdown } from "@maple/ui/lib/time-format"
+import { formatCountdown, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option, Array as Arr } from "effect"
+import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { actorChip } from "../kit/actor"
+import { actorChip } from "../../kit/issue-actor"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
-
-// The lease HUD: the countdown ring beside who holds the lease.
 
 const DANGER_MS = 60_000
 const RING_SIZE = 36
@@ -18,8 +16,10 @@ const RING_RADIUS = 14
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 const CENTER = String(RING_SIZE / 2)
 
-const isoMs = (iso: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
+const isoMs = (iso: string): number | null => {
+	const ms = toEpochMs(iso)
+	return Number.isNaN(ms) ? null : ms
+}
 
 const ringCircle = <M>(h: HtmlBuilder<M>, attributes: ReadonlyArray<readonly [string, string]>): Html =>
 	h.circle([

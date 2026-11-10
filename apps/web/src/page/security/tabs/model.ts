@@ -30,7 +30,7 @@ export const Model = Schema.Struct({
 	findingsSearch: SecurityFindingsSearch,
 	runsSearch: SecurityRunsSearch,
 	nowMs: Schema.Finite,
-	/** `useIsOrgAdmin`: hides writes a member would be refused. The server still decides. */
+	/** Hides writes a member would be refused. The server still decides. */
 	grants: Schema.Array(Policy.PermissionName),
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
 	runs: KeyedSchema(SecurityAuditRunsResponse, LoadFailure),

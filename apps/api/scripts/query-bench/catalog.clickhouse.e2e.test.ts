@@ -40,7 +40,7 @@ import {
 	syntheticRow,
 	uniqueDatabase,
 	type DescribedColumn,
-} from "@maple/backend/services/warehouse/clickhouse-e2e-support"
+} from "@maple/backend/testing/clickhouse-e2e-support"
 
 /**
  * 64-bit identity columns that predate the identity rule and are consumed as

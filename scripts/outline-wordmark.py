@@ -7,7 +7,7 @@
 
 Run manually, commit the output:  ./scripts/outline-wordmark.py
 
-This exists because a wordmark that ships as live `<text>` is not an asset —
+This exists because a wordmark that ships as live `<text>` is not an asset:
 it renders as a fallback face on any machine without Geist installed, which is
 every machine we are handing it to. Paper's SVG export does not outline type
 either (it emits a `foreignObject` with the HTML inlined, ~1.8 MB, and the text
@@ -24,7 +24,7 @@ Type is positioned by HarfBuzz rather than by summing advance widths, so the
 pair kerning Geist actually carries is the pair kerning that lands in the file.
 
 The mark keeps its own fill separate from the type's so the two can be recoloured
-independently downstream — the primary lockup is amber-on-ink, not one colour.
+independently downstream: the primary lockup is amber-on-ink, not one colour.
 Both fills are flat: the mark's eyes and trunk notch are evenodd knockouts, and a
 gradient shows through them at the wrong value.
 """
@@ -75,14 +75,14 @@ def main() -> None:
     glyphs = font.getGlyphSet()
     scale = TYPE_PX / upem
 
-    # Shape through HarfBuzz so the pair kerning is the font's own — GPOS pulls
+    # Shape through HarfBuzz so the pair kerning is the font's own: GPOS pulls
     # 25 units out of "Maple" that summing hmtx advances would leave in.
     #
     # Two things have to be right here, and both fail silently. The font handed
     # to HarfBuzz must be the *instanced* one, because advances vary along the
     # weight axis as much as outlines do. And `flavor` must be cleared before
     # saving, or fontTools re-compresses to woff2, HarfBuzz declines to parse it,
-    # and every lookup returns .notdef with a uniform upem/2 advance — which
+    # and every lookup returns .notdef with a uniform upem/2 advance, which
     # reads as a plausible monospaced result rather than as an error.
     font.flavor = None
     with tempfile.NamedTemporaryFile(suffix=".ttf") as tmp:
@@ -130,7 +130,7 @@ def main() -> None:
         pen_x += pos.x_advance + track
 
     # The trailing track is letter-spacing after the final glyph; CSS keeps it,
-    # a wordmark must not — it would bake a gap into the right sidebearing.
+    # a wordmark must not: it would bake a gap into the right sidebearing.
     type_w = (pen_x - track) * scale
     total_w = MARK_PX + GAP_PX + type_w
 

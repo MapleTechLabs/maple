@@ -56,7 +56,6 @@ export {
 
 export {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
-	CLOUDFLARE_BREAKDOWN_OTHER_KEY,
 	CLOUDFLARE_BREAKDOWN_SERIES_LIMIT,
 	cloudflareBreakdownMetrics,
 	cloudflareZoneBreakdownCoverageSQL,

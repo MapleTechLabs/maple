@@ -1,5 +1,5 @@
-import { severityLevel } from "../../../components/infra/format"
-import { BAR_FILL, BAR_VALUE_TONE } from "../../../components/infra/severity-tokens"
+import { severityLevel } from "../../infra/kit/format"
+import { BAR_FILL, BAR_VALUE_TONE } from "../../kit/severity-tokens"
 import {
 	countLabel,
 	EMPTY_VALUE,
@@ -21,7 +21,7 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
-import { pickTimeSearch } from "../../infra/kit/view-tabs"
+import { pickTimeSearch } from "../../kit/view-tabs"
 import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
 import { Message } from "./message"
@@ -31,8 +31,6 @@ import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
@@ -49,7 +47,7 @@ const USAGE_STATS: ReadonlyArray<{
 	{ key: "dataSize", label: "Stored", format: formatStorageBytes },
 ]
 
-/** `ServiceUsagePanel`: nothing while loading, on error or with no data. */
+/** Nothing while loading, on error or with no data. */
 export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html => {
 	const usage = AsyncData.getOrElse(model.usage.data, () => null)
 	if (usage === null) return null
@@ -268,7 +266,7 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 			)
 
-/** `ServiceDependencyStrip`: the busiest downstream targets as one row of chips; quiet while empty. */
+/** The busiest downstream targets as one row of chips; quiet while empty. */
 export const dependencyStrip = (h: H, model: Model): Html => {
 	const targets = AsyncData.getOrElse(AsyncData.map(model.dependencies.data, stripTargets), () => [])
 	if (targets.length === 0) return null

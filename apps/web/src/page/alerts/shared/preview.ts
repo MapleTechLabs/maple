@@ -9,14 +9,11 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { mapBuilderChartFailure } from "@maple/web-data/alerts/preview-failure"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-
-// The alert rule preview: the payload the preview is keyed by, the fetch, and the
-// `{ preview, previewLoading, previewError }` reading.
 
 /** A failed preview: the message to show, or `null` for "no data" (the friendly empty chart). */
 export const PreviewFailure = Schema.Struct({ message: Schema.NullOr(Schema.String) })
@@ -38,7 +35,7 @@ const isPreviewQueryReady = (form: RuleFormState): boolean => {
 	return deriveRuleQueryIssues(form).length === 0
 }
 
-/** `toPreviewForm`: every field the preview ignores pinned, so typing a name never re-queries. */
+/** Every field the preview ignores pinned, so typing a name never re-queries. */
 export const toPreviewForm = (form: RuleFormState): RuleFormState => ({
 	...form,
 	name: "Untitled rule",
@@ -58,7 +55,7 @@ export const toPreviewForm = (form: RuleFormState): RuleFormState => ({
 const toIso = (warehouseTime: string) =>
 	IsoDateTimeString.make(new Date(normalizeTimestampInput(warehouseTime)).toISOString())
 
-/** The request `useAlertRulePreview` sends for a form and window, `None` while it is not previewable. */
+/** The preview request for a form and window, `None` while it is not previewable. */
 export const previewPayload = (
 	form: RuleFormState,
 	range: Readonly<{ startTime: string; endTime: string }>,
@@ -100,7 +97,7 @@ const seriesFailureMessage = (preview: AlertRulePreviewResponse): string | null 
 			? "This SQL returns one value for the whole range, so it has no line to chart. Select $__timeGroup(Timestamp) AS bucket and group by it to chart each window."
 			: `The query ${preview.seriesFailure === "query_too_much_memory" ? "ran out of memory" : "ran past 25 s"} charting this range. Pick a shorter preview range.`
 
-/** The hook's result, read off the slot (`hasPayload` false is the no-payload branch). */
+/** The preview's state, read off the slot; `hasPayload` false means the form is not previewable. */
 export const previewStateOf = (slot: PreviewSlot, hasPayload: boolean, issue: string | null): PreviewState =>
 	!hasPayload
 		? { preview: null, isLoading: false, error: issue }

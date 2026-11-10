@@ -20,8 +20,6 @@ import type { HostSummary, Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
-
 type H = HtmlBuilder<Message>
 
 export const hostMetadataPanel = (
@@ -122,7 +120,6 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 	})
 }
 
-/** `MetricStrip`. */
 const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], timeZone: string): Html =>
 	h.section(
 		[
@@ -161,7 +158,7 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 		),
 	])
 
-/** `HostSeriesSummary`: the right-aligned last-value strip. */
+/** The right-aligned last-value strip. */
 export const hostSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo): Html =>
 	seriesLegend(h, {
 		className: "px-3 py-2",

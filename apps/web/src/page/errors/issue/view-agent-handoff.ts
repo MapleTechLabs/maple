@@ -1,8 +1,8 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
-import { docsUrl } from "../../../lib/docs"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
+import { docsUrl } from "../../kit/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -15,8 +15,6 @@ import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
 
 type H = HtmlBuilder<Message>
 
@@ -46,7 +44,6 @@ const agentGlyphs = (h: H): Html =>
 		),
 	)
 
-/** One way to a fix: its label and glyphs, what it does, then its actions. */
 const lane = (
 	h: H,
 	options: Readonly<{
@@ -187,7 +184,6 @@ const promptPreview = (h: H, prompt: string): Html =>
 		],
 	)
 
-/** `GetItFixed`: both ways to a fix side by side, the prompt preview under them. */
 export const getItFixedPanel = (
 	h: H,
 	model: Model,

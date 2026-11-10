@@ -1,15 +1,18 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { CHART_IDS } from "./charts"
 import {
@@ -26,7 +29,7 @@ import {
 	ResolveWindow,
 	type TimeseriesInput,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Section } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
 
@@ -148,7 +151,7 @@ const navigate = (model: Model, search: Search): Return => ({
 })
 
 export const init = (route: Route, context: PageContext): Return => {
-	const statusKey = requestKey(context.orgId, "integrations.supabaseStatus", {})
+	const statusKey = integrationStatusKey(context.orgId, "supabase")
 	const model: Model = {
 		projectRef: route.projectRef,
 		search: route.search,
@@ -181,11 +184,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			resolveCommand(model, context, "Load"),
 			...statusFetches,
 			...insights.commands,
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -234,11 +233,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchInsights: ({ key, result }) => ({
 			model: { ...model, insights: Keyed.accept(model.insights, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedRetry: ({ section }) =>
 			model.window === null
 				? { model }

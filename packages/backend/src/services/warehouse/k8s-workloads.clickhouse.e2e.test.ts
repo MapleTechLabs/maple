@@ -13,7 +13,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_k8s_workloads_e2e")
 const ORG = "org_k8s"

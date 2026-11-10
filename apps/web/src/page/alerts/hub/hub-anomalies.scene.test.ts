@@ -23,15 +23,15 @@ import {
 } from "../shared/anomaly-test-fixtures"
 import {
 	destinationRow,
+	hubAt,
+	type HubAt,
 	incidentRow,
 	NOW,
 	ORG,
 	ruleId,
 	ruleRow,
 	stateRow,
-	hubAt,
-	type HubAt,
-} from "../shared/test-rows"
+} from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, ruleMenuId, update } from "./update"

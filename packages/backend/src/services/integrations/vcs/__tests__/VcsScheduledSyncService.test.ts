@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type OrgId, type VcsSyncJob } from "@maple/domain/http"
 import { Effect, Exit, Layer, Schema, Array as Arr } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
@@ -32,7 +32,6 @@ const schedulerLayer = (testDb: TestDb, sent: Array<VcsSyncJob>, opts?: { readon
 	return Layer.mergeAll(service, data)
 }
 
-// Seed one installation for an org with a given external id; returns the entity.
 const seedInstallation = (repo: VcsRepo, orgId: OrgId, externalInstallationId: string) =>
 	Effect.gen(function* () {
 		yield* repo.upsertInstallation({

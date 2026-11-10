@@ -28,10 +28,9 @@ import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { HEADROOM_FILL } from "../shared/headroom-tone"
-import { ruleHref } from "../shared/links"
-import { isoMs } from "../shared/time"
+import { ruleHref } from "../../kit/alert-links"
 import { Message, type RuleBucket } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { ruleMenuId } from "./update"
 import { searchInput } from "@maple/views/ui/search-input"
 import { gridListRow } from "../../kit/grid-list-row"
@@ -40,8 +39,8 @@ import { stripClass, dividedList } from "@maple/views/ui/rule"
 import { hstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr, String as Str } from "effect"
-
-// `RulesTab`: the hub's Rules tab.
+import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RIBBON_DAYS = 7
@@ -99,7 +98,8 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	const firedByRuleId = new Map(
 		Arr.map(rules, (rule) => [
 			rule.id,
-			Arr.filter(incidentsByRule.get(rule.id) ?? [], (i) => isoMs(i.firstTriggeredAt) >= cutoff).length,
+			Arr.filter(incidentsByRule.get(rule.id) ?? [], (i) => toEpochMs(i.firstTriggeredAt) >= cutoff)
+				.length,
 		]),
 	)
 	const totalFired = Arr.reduce([...firedByRuleId.values()], 0, (sum, n) => sum + n)
@@ -284,7 +284,6 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 	)
 }
 
-/** `SearchInput size="sm"`, the toolbar size. */
 const rulesSearch = (h: H, value: string): Html =>
 	searchInput(h, {
 		id: "alerts-rules-search",
@@ -376,7 +375,7 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 		),
 		h.span(
 			[h.Class(ROW_LINK_LIFT)],
-			canManage(model)
+			canManageAlerts(model)
 				? [
 						rowActionsMenu(h, {
 							slotId: menuId,

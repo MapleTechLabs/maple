@@ -188,7 +188,6 @@ export const runsForTarget = (model: Model, targetId: string): ReadonlyArray<Sec
 		Arr.filter(runsOf(model), (run) => run.targetId === targetId),
 	])
 
-/** Every run either list holds. */
 export const allRuns = (model: Model): ReadonlyArray<SecurityAuditRun> =>
 	mergeRuns([runsOf(model), ...Arr.map(targetsOf(model), (target) => targetRunsOf(model, target.id) ?? [])])
 
@@ -251,8 +250,6 @@ export const spendThisMonth = (model: Model): Spend => {
 		}),
 	)
 }
-
-// FINDINGS LIST
 
 export type StatusTab = NonNullable<SecurityFindingsSearch["status"]>
 

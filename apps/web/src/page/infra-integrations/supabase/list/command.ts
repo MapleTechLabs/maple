@@ -1,32 +1,17 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { resolveWindow, TimeWindow } from "../../../../data/time-range"
+import { TimeWindow } from "../../../../data/time-range"
 import {
 	loadSupabaseFleetInsights,
 	loadSupabaseLogIssues,
 	loadSupabaseProjects,
 	loadSupabaseStatus,
 } from "../data"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveSupabaseWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveSupabaseWindow", Message.CompletedResolveWindow)
 
 /** Shared with the sidebar and the integration card through `IntegrationStatuses`. */
 export const LoadStatus = Command.define("LoadInfraSupabaseStatus", {
@@ -60,10 +45,4 @@ export const FetchInsights = Command.define("FetchSupabaseFleetInsights", {
 		),
 })
 
-const RELOAD_SPIN = Duration.millis(600)
-
-export const CompleteReloadSpin = Command.define("CompleteSupabaseReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteSupabaseReloadSpin", Message.CompletedReloadSpin)

@@ -15,14 +15,12 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
 
-/** `useId` of the grid's hidden rearranging instructions, which every grip describes itself by. */
+/** The grid's hidden rearranging instructions, which every grip describes itself by. */
 export const GRID_INSTRUCTIONS_ID = "dashboard-grid-instructions"
-
-// `WidgetShell`, `WidgetFrame` and `WidgetEmptyState`: a tile's card, header and empty state.
 
 export type ShellOptions = Readonly<{
 	widgetId: string
-	/** The drag grip (edit mode); the grid watches presses on it (`DashboardGrid`'s pointerdown). */
+	/** The drag grip (edit mode); the grid watches presses on it. */
 	hasGrip: boolean
 	title: string
 	isEdit: boolean
@@ -32,9 +30,9 @@ export type ShellOptions = Readonly<{
 	isMenuOpen: boolean
 	contentClassName: string | undefined
 	footer?: string | undefined
-	/** The series a chart with a hidden legend hoists into the header (`usePlotLegendSlot`). */
+	/** The series a chart with a hidden legend hoists into the header. */
 	legendItems?: ReadonlyArray<LegendItem> | undefined
-	/** `widgetTimeRangeLabel`: the tile follows its own window, not the board's. */
+	/** The tile follows its own window, not the board's. */
 	timeRangeLabel?: string | undefined
 }>
 
@@ -180,7 +178,7 @@ export const widgetShell = <M>(
 		"group/card @container/widget h-full flex flex-col",
 	)
 
-/** `WidgetEmptyState`: the query ran and returned nothing. */
+/** The query ran and returned nothing. */
 export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
 		typography(h, { weight: "medium" }, ["No data in this window"]),
@@ -305,7 +303,7 @@ export type FrameOptions<M> = ShellOptions &
 		errorDetails?: ((message: string) => Html) | null | undefined
 	}>
 
-/** `WidgetFrame`: loading, the three error shapes, or the tile's own content. */
+/** Loading, the three error shapes, or the tile's own content. */
 export const widgetFrame = <M>(
 	h: HtmlBuilder<M>,
 	options: FrameOptions<M>,

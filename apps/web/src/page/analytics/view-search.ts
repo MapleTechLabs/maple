@@ -48,7 +48,7 @@ import { Message } from "./message"
 import type { Model, SearchSort, SearchSortKey, SearchTable } from "./model"
 import { filtersOf, searchSiteOf, searchSortOf } from "./requests"
 import { searchTrendChart, type SearchTrendInputs } from "./view-search-chart"
-import { chartCard } from "../infra-integrations/kit/chart-card"
+import { chartCard } from "../kit/chart-card"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 
@@ -526,7 +526,6 @@ const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): 
 	]
 }
 
-/** `/analytics?tab=search`. */
 export const searchTab = (h: H, model: Model, isNarrow: boolean): Html =>
 	AsyncData.matchData(model.searchStatus.data, {
 		onEmpty: () => skeleton(h, "h-64 w-full"),

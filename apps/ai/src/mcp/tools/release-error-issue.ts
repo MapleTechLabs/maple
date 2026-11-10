@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { ReleaseErrorIssueOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -31,7 +30,6 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 			),
 			note: P.optionalText("Reasoning or context, stored on the release event"),
 		}),
-		output: ReleaseErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Releasing an issue"],
 		handler: Effect.fn("McpTool.releaseErrorIssue")(function* (params) {

@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
-/** `NoEdgesNotice`: services are on the map but none called another; say what draws an edge. */
+/** Services are on the map but none called another; say what draws an edge. */
 export const noEdgesNotice = <M>(h: HtmlBuilder<M>): Html => {
 	const strong = (text: string) => typography(h, { weight: "medium", tone: "foreground" }, [text])
 	return hstack(

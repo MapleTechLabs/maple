@@ -7,28 +7,28 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 ## packages/views/src/ui
 
 - `packages/views/src/ui/action-bar.ts` `actionBar`: `ActionBar`: the one sticky bar a form, editor or step flow pins to the bottom of its scroll area: a floating card, so it reads the same in a page, a capped settings column and...
-- `packages/views/src/ui/alert.ts` `alert`, `alertTitle`, `alertDescription`, `alertAction`: Port of packages/ui/src/components/ui/alert.tsx.
+- `packages/views/src/ui/alert.ts` `alert`, `alertTitle`, `alertDescription`, `alertAction`: The Alert callout: a toned box with an icon, title, description and an action.
 - `packages/views/src/ui/anchor.ts` `computePosition`, `measurePosition`: Base UI's anchor positioning (`internals/useAnchorPositioning.mjs` over Floating UI) for the cases the kit uses: offset, flip, shift with `limitShift`, size and the `transformOr...
-- `packages/views/src/ui/attributes/attribute-row.ts` `copyableValue`, `attributeFilterAction`, `attributeRow`: Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/ attributes-table.tsx) and `CollapsibleJsonValue` (json-value.tsx), against an...
+- `packages/views/src/ui/attributes/attribute-row.ts` `copyableValue`, `attributeFilterAction`, `attributeRow`: An attribute row: a copyable or selectable value and collapsible JSON, against an AttributesPanel Model.
 - `packages/views/src/ui/attributes/attributes-panel.ts` `isOpen`, `copyStatusOf` (stateful: Model, init, update): The log attributes panel's state: the attribute search, which collapsibles (namespace groups, JSON values, "Maple internal") are open, and the status of the last copy.
-- `packages/views/src/ui/attributes/attributes-view.ts` `attributesSection`, `tableView`, `view`: Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/ components/attributes/attributes-table.tsx) and the log attributes panel.
+- `packages/views/src/ui/attributes/attributes-view.ts` `attributesSection`, `tableView`, `view`: The attributes table, the attribute and resource-attribute sections, and the log attributes panel.
 - `packages/views/src/ui/auto-retry-budget.ts` `delayFor`, `resume`, `probed`, `postponed`, `isExhausted`: The error state's auto-retry backoff, outside any one Mount.
 - `packages/views/src/ui/autocomplete.ts` `autocompleteField`, `view`: Base UI `Autocomplete` (`@maple/ui/autocomplete`) on the Combobox Submodel in "autocomplete" mode: `AutocompleteInput` (input group, start addon, `Input` control) and its popup.
-- `packages/views/src/ui/avatar-image.ts` `trackAvatarImageLoads`: `AvatarImage` drops its `AvatarFallback` once loaded.
+- `packages/views/src/ui/avatar-image.ts` `trackAvatarImageLoads`: An avatar drops its initials fallback once its image loads.
 - `packages/views/src/ui/avatar-tone.ts` `warmAvatarTone`: Warm tiles for initials avatars, near the primary orange, so an org or a user without an image gets the same colour wherever their avatar is drawn.
 - `packages/views/src/ui/bare-input.ts` `bareInput`: `BareInput`: a text input with no box of its own, for a field whose box is drawn around it (a tag editor's draft beside its chips).
 - `packages/views/src/ui/bordered-box.ts` `borderedBoxClass`, `borderedBox`: The classes of a bordered box, for an element the kit doesn't render.
-- `packages/views/src/ui/breadcrumb.ts` `breadcrumb`, `breadcrumbList`, `breadcrumbItem`, `breadcrumbLink`, `breadcrumbPage`, `breadcrumbSeparator`, `breadcrumbEllipsis`: `<BreadcrumbLink render={<Link to />}>`.
-- `packages/views/src/ui/bubble.ts` `bubbleGroup`, `bubble`, `bubbleContent`: Port of packages/ui/src/components/ui/bubble.tsx (reactions not ported: no caller yet).
-- `packages/views/src/ui/button.ts` `button`, `linkButton`: `<Button>`: the same class composition, attributes and loading spinner as @maple/ui.
+- `packages/views/src/ui/breadcrumb.ts` `breadcrumb`, `breadcrumbList`, `breadcrumbItem`, `breadcrumbLink`, `breadcrumbPage`, `breadcrumbSeparator`, `breadcrumbEllipsis`: A breadcrumb trail: list, items, links, the current page, separators and an ellipsis.
+- `packages/views/src/ui/bubble.ts` `bubbleGroup`, `bubble`, `bubbleContent`: A chat bubble and its group.
+- `packages/views/src/ui/button.ts` `button`, `linkButton`: The Button: variant and size classes, attributes and a loading spinner.
 - `packages/views/src/ui/calendar-view.ts` `view`: react-day-picker's DOM for `<Calendar mode="single">` (en-US): rdp-* classes, Maple's `calendarClassNames`, the same ARIA labels.
-- `packages/views/src/ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Port of packages/ui/src/components/ui/calendar.tsx, single mode: react-day-picker's state as a Submodel.
+- `packages/views/src/ui/calendar.ts` `isoDay`, `gridWeeks`, `tabbableDay` (stateful: Model, init, update): Single mode: react-day-picker's state as a Submodel.
 - `packages/views/src/ui/card-button.ts` `cardButtonClass`, `cardButton`: `CardButton`: a whole card as one click target (template tiles, source and destination pickers, metric cards).
-- `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in packages/ui/src/components/ui/card.styles.ts): rounded-md, and its parts.
+- `packages/views/src/ui/card.ts` `card`, `cardHeader`, `cardTitle`, `cardDescription`, `cardPanel`, `cardFooter`, `cardAction`: The Card surface (styles in ./card.styles.ts): rounded-md, and its parts.
 - `packages/views/src/ui/chart-frame.ts` `chartFrameClass`, `chartNoData`: The classes of a chart's box: `fill` is the className a host gives a chart to fill its tile instead of keeping an aspect ratio, `plot` a chart's own root, `centered` its message...
-- `packages/views/src/ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), markup and numbers as t...
-- `packages/views/src/ui/chart-skeleton.ts` `chartSkeleton`: Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every ghost shape.
-- `packages/views/src/ui/chart-state.ts` `chartEmpty`, `chartError`, `chartLoading`, `chartPlotArea`: Port of `ChartLoading`, `ChartEmpty` and `ChartError` (packages/ui/src/components/charts/_shared/ chart-state.tsx), standalone (no `ChartPlotArea`): an explicit height, else the...
+- `packages/views/src/ui/chart-skeleton-shapes.ts` `heatmapGhost`, `hbarGhost`, `funnelGhost`, `pathsGhost`, `pieGhost`, `gaugeGhost`, `statGhost`, `dropoffGhost`: The heatmap, hbar, funnel, drop-off, paths, pie, gauge and stat ghosts of `ChartSkeleton`, markup and numbers as there.
+- `packages/views/src/ui/chart-skeleton.ts` `chartSkeleton`: The chart loading skeleton, in every ghost shape.
+- `packages/views/src/ui/chart-state.ts` `chartEmpty`, `chartError`, `chartLoading`, `chartPlotArea`: A chart's loading, empty and error states, standalone (no `chartPlotArea`): an explicit height, else the parent owns it.
 - `packages/views/src/ui/checkbox.ts` `labelId`, `view` (stateful: Model, init, update): Base UI `Checkbox`: the checked state is the Submodel; `indeterminate` stays a view input, as it is a controlled prop in @maple/ui (it overrides how the box reads, not what a cl...
 - `packages/views/src/ui/choice-card.ts` `choiceCheckClass`, `choiceCard`: `ChoiceCard`: a whole card that picks an option, over a visually hidden native radio or checkbox (the onboarding and connect pickers).
 - `packages/views/src/ui/choice.ts` `labelIdOf`, `toggleKey`, `hiddenInput`: Shared by checkbox, radio, switch, select and combobox: the parts Base UI renders the same way.
@@ -40,56 +40,56 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/combobox.ts` `inputId`, `listId`, `itemId`, `filterItems`, `queryOf`, `visibleItems`, `focusLeaves` (stateful: Model, init, update): Base UI `Combobox` (multiple, with chips) and `Autocomplete` (`@maple/ui/combobox`, `@maple/ui/autocomplete`): an input that filters a listbox.
 - `packages/views/src/ui/command.ts` `commandTitles`, `commandInput`, `commandList`, `commandGroup`, `commandFooter`, `commandHiddenInput`, `commandOption`, `commandListbox`, `commandEmpty`: `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first match highlighted) on the Combobox Model, inside a `command-dialog` Dialog.
 - `packages/views/src/ui/compact-search-input.ts` `compactSearchInput`: `CompactSearchInput`: a 24px mono filter field (magnifier, search input, clear button) for a panel toolbar.
-- `packages/views/src/ui/confirm-dialog.ts` `confirmDialog`: Port of `ConfirmDialog` (packages/ui/src/components/ui/confirm-dialog.tsx) over the alert-dialog Submodel.
+- `packages/views/src/ui/confirm-dialog.ts` `confirmDialog`: A confirm dialog over the alert-dialog Submodel.
 - `packages/views/src/ui/context-menu-view.ts` `idleTrigger`, `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
 - `packages/views/src/ui/context-menu.ts` `itemId`, `subItemId`, `subPopupId` (stateful: Model, init, update): Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at the pointer (fixed, side right, align start, offset 4); arrows move the highlight,...
 - `packages/views/src/ui/contribution-calendar.ts` `contributionLevel`, `contributionCalendar`: One cell per day, a column per week; levels on the amber heatmap ramp.
-- `packages/views/src/ui/copy-button.ts` `writeClipboardApi`, `writeClipboard`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): `useCopy` + `<CopyButton>`: copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
-- `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: Port of packages/ui/src/components/ui/copyable-field.tsx.
-- `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Port of packages/ui/src/components/ui/delta.tsx: change against a previous window.
-- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
+- `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
+- `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
+- `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
+- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
 - `packages/views/src/ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
 - `packages/views/src/ui/dialog.ts` `popupId`, `triggerId`, `titleId`, `descriptionId`, `open`, `close`, `isDismissedByOutsidePress` (stateful: Model, init, update): Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a Mount that portals the popup to `<body>`, marks the page outside it, locks scroll...
-- `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: `<Kbd>`.
+- `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
 - `packages/views/src/ui/dither-field.ts` `fieldAt`, `ditherLevel`, `startDitherField`: The onboarding backdrop: square pixels lit in the primary colour through an 8x8 ordered dither, spreading from the bottom-left corner.
 - `packages/views/src/ui/docs-link.ts` `docsLink`: A docs link under an empty state: muted text and an external-link glyph, opening in a new tab.
-- `packages/views/src/ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The Foldkit side of packages/ui/src/components/ui/dropdown-menu.tsx over Base UI's Menu DOM.
-- `packages/views/src/ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`, `emptyFrameClass`: Port of packages/ui/src/components/ui/empty.tsx.
+- `packages/views/src/ui/dropdown-menu.ts` `menuTriggerAttributes`, `positionerStyle`, `menuPopup`, `menuGroup`, `menuLabel`, `menuItem`, `menuSeparator`, `menuShortcut`, `menuCheckableItem`, `menuRadioGroup`, `menuSubTrigger`: The dropdown menu's popup, groups, items and triggers over Base UI's Menu DOM.
+- `packages/views/src/ui/empty.ts` `empty`, `emptyHeader`, `emptyTitle`, `emptyDescription`, `emptyContent`, `emptyMedia`, `emptyMessage`, `emptyFrameClass`: The Empty state: a centred media, title, description and content stack.
 - `packages/views/src/ui/error-count-pill.ts` `errorCountPill`: `ErrorCountPill`: a failure count as a toned pill, led by a dot or its kind's glyph.
-- `packages/views/src/ui/error-section.ts` `errorSectionView`: Port of `ErrorSection` (packages/ui/src/components/error-section.tsx): the error banner, its highlighted body that copies itself, the "Copy as prompt" control and the Show more...
-- `packages/views/src/ui/error-state.ts` `failureKind`, `failureSentence`, `autoRetryMessage`, `errorState`: The error state.
+- `packages/views/src/ui/error-section.ts` `errorSectionView`: `ErrorSection`: the error banner, its highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
+- `packages/views/src/ui/error-state.ts` `failureKind`, `failureSentence`, `autoRetryMessage`, `errorState`: The error state: a failure's glyph, sentence and retry.
 - `packages/views/src/ui/eyebrow.ts` `withHint`, `eyebrow`: Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label.
 - `packages/views/src/ui/field.ts` `stateOf`, `controlAttributes`, `field`, `fieldLabel`, `fieldGroupLabel`, `input`, `fieldDescription`, `fieldError`, `fieldErrorText` (stateful: Model, init, update): The value and focus handlers a field's control reports through.
 - `packages/views/src/ui/file-input.ts` `fileInput`: `FileInput`: a hidden `<input type="file">` that a visible button opens by id; it reports the picked files.
-- `packages/views/src/ui/filter-chip.ts` `filterChip`, `filterChipItem`: `<FilterChip>`: an on/off filter toggle with an optional tone dot and trailing count.
-- `packages/views/src/ui/filters/active-filter-chips.ts` `activeFilterChips`: Port of `ActiveFilterChips` (packages/ui/src/components/filters/active-filter-chips.tsx).
-- `packages/views/src/ui/filters/excluded-empty-hint.ts` `excludedEmptyHint`: Port of `ExcludedEmptyHint` (packages/ui/src/components/filters/excluded-empty-hint.tsx): why an empty list under an exclusion is empty, and the way out.
-- `packages/views/src/ui/filters/filter-section.ts` `filterDescriptionMark`, `filterSection`, `singleCheckboxFilter`: Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
-- `packages/views/src/ui/filters/filter-sections.ts` `sectionOf` (stateful: Model, init, update): The UI state of a filter rail's `FilterSection`s (packages/ui/src/components/filters/filter-section.tsx): open/closed (remembered across pages like `useSectionCollapse`), "Show...
-- `packages/views/src/ui/filters/filter-sidebar.ts` `filterSidebarFrame`, `filterSidebarHeader`, `filterSidebarGroupLabel`, `filterSidebarDivider`, `filterSidebarBody`, `filterSidebarLoading`, `filterSidebarEmpty`, `filterSidebarError`: Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
+- `packages/views/src/ui/filter-chip.ts` `filterChip`, `filterChipItem`: An on/off filter toggle with an optional tone dot and trailing count.
+- `packages/views/src/ui/filters/active-filter-chips.ts` `activeFilterChips`: The filters in effect as removable chips.
+- `packages/views/src/ui/filters/excluded-empty-hint.ts` `excludedEmptyHint`: `ExcludedEmptyHint`: why an empty list under an exclusion is empty, and the way out.
+- `packages/views/src/ui/filters/filter-section.ts` `filterDescriptionMark`, `filterSection`, `singleCheckboxFilter`: A filter rail section of checkbox values, searchable when long.
+- `packages/views/src/ui/filters/filter-sections.ts` `sectionOf` (stateful: Model, init, update): The UI state of a filter rail's `FilterSection`s: open/closed (remembered across pages like `useSectionCollapse`), "Show N more" and the search text.
+- `packages/views/src/ui/filters/filter-sidebar.ts` `filterSidebarFrame`, `filterSidebarHeader`, `filterSidebarGroupLabel`, `filterSidebarDivider`, `filterSidebarBody`, `filterSidebarLoading`, `filterSidebarEmpty`, `filterSidebarError`: The filter rail: its frame, header, groups, body, loading and error states.
 - `packages/views/src/ui/filters/range-distribution.ts` `toLogBuckets`, `percentilePresets`: One non-empty log bucket as the warehouse counts it: its floor, in the control's unit.
-- `packages/views/src/ui/filters/range-filter-section.ts` `rangeFilterSection`: Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
-- `packages/views/src/ui/filters/range-format.ts` `parseRange`, `formatCount`, `formatUsd`, `formatSeconds`, `formatValue`, `formatCompact`, `formatRange`: copied: the parsing and formatting half of packages/ui/src/components/filters/range-filter-section.tsx (the React module also holds the component).
-- `packages/views/src/ui/filters/range-histogram.ts` `rangeHistogram`: `RangeHistogram` (packages/ui/src/components/filters/range-filter-section.tsx): the distribution above a range's inputs.
-- `packages/views/src/ui/form-dialog.ts` `formDialogForm`, `formDialog`: Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel: a real `<form>`, so Enter in a field submits.
+- `packages/views/src/ui/filters/range-filter-section.ts` `rangeFilterSection`: A collapsible min/max range filter with presets.
+- `packages/views/src/ui/filters/range-format.ts` `parseRange`, `formatCount`, `formatUsd`, `formatSeconds`, `formatValue`, `formatCompact`, `formatRange`: Parsing and formatting of a range filter's bounds.
+- `packages/views/src/ui/filters/range-histogram.ts` `rangeHistogram`: `RangeHistogram`: the distribution above a range's inputs.
+- `packages/views/src/ui/form-dialog.ts` `formDialogForm`, `formDialog`: `FormDialog` over the dialog Submodel: a real `<form>`, so Enter in a field submits.
 - `packages/views/src/ui/grid.ts` `gridClass`, `grid`: `Grid`: a CSS grid of equal columns with its gap on the spacing scale, two columns side by side at every width or from a breakpoint up, instead of a hand-written `grid gap-4 lg:...
 - `packages/views/src/ui/heading.ts` `heading`: `Heading`: an `h1`-`h4` on the dashboard's heading ramp.
 - `packages/views/src/ui/hover-card.ts` `view` (stateful: Model, init, update): Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms)...
-- `packages/views/src/ui/http-span-label.ts` `httpSpanLabel`: Port of `HttpSpanLabel` (packages/ui/src/components/traces/http-span-label.tsx).
-- `packages/views/src/ui/icon-button.ts` `iconButton`: `<IconButton>`: an icon-only Button that always carries a name and, by default, a tooltip.
+- `packages/views/src/ui/http-span-label.ts` `httpSpanLabel`: An HTTP span's method and route as one label.
+- `packages/views/src/ui/icon-button.ts` `iconButton`: An icon-only Button that always carries a name and, by default, a tooltip.
 - `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `packages/views/src/ui/identity-label.ts` `identityLabel`: `IdentityLabel`: the name-over-detail text beside an avatar in an account or org trigger, a grid of truncating lines that fills the rest of the row.
 - `packages/views/src/ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
 - `packages/views/src/ui/inline-rename-input.ts` `inlineRenameInput`: `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box.
-- `packages/views/src/ui/input-group.ts` `inputGroup`, `inputGroupAddon`, `inputGroupText`, `inputGroupButton`, `inputGroupInput`: `<InputGroup>`: one bordered control holding addons and an unstyled input.
+- `packages/views/src/ui/input-group.ts` `inputGroup`, `inputGroupAddon`, `inputGroupText`, `inputGroupButton`, `inputGroupInput`: One bordered control holding addons and an unstyled input.
 - `packages/views/src/ui/input.ts` `fieldStateAttributes`, `inputControlClassName`, `input`: Base UI's field state, which it mirrors as data attributes on every field part.
-- `packages/views/src/ui/item.ts` `itemGroup`, `item`, `itemMedia`, `itemContent`, `itemTitle`, `itemActions`, `itemDescription`, `mediaCard`: Port of packages/ui/src/components/ui/item.tsx.
-- `packages/views/src/ui/key-value.ts` `keyValueList`, `keyValue`: Port of packages/ui/src/components/ui/key-value.tsx.
-- `packages/views/src/ui/label.ts` `label`: `<Label>` from @maple/ui.
+- `packages/views/src/ui/item.ts` `itemGroup`, `item`, `itemMedia`, `itemContent`, `itemTitle`, `itemActions`, `itemDescription`, `mediaCard`: The Item row (media, title, description, actions) and its group.
+- `packages/views/src/ui/key-value.ts` `keyValueList`, `keyValue`: A list of label and value pairs in one of four layouts.
+- `packages/views/src/ui/label.ts` `label`: A form label.
 - `packages/views/src/ui/lane-link.ts` `laneLink`: `LaneLink`: a link row that draws its own layout but carries `listRow`'s selection lane (left bar and tint), for bespoke rail and table rows that navigate.
-- `packages/views/src/ui/layer.ts` `layerClass`, `layer`: The classes of a layer, for an element the kit doesn't render.
-- `packages/views/src/ui/list-footer.ts` `listFooter`, `loadingMoreRow`: Port of `ListFooter`, `LoadMoreButton` and `LoadingMoreRow` (packages/ui/src/components/ui/list-footer.tsx).
-- `packages/views/src/ui/list-row.ts` `listRow`: Port of packages/ui/src/components/ui/list-row.tsx: icon + title + meta + trailing row.
+- `packages/views/src/ui/layer.ts` `layer`: A layer stretched over its positioned parent that lets the pointer through (a vignette, a backdrop canvas, a chart overlay); `clip` cuts what overflows it.
+- `packages/views/src/ui/list-footer.ts` `listFooter`, `loadingMoreRow`: A list's footer: the count, a load-more button and the loading-more row.
+- `packages/views/src/ui/list-row.ts` `listRow`: Icon + title + meta + trailing row.
 - `packages/views/src/ui/logs/chip-card.ts` `place`, `chipCard`: Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5.
 - `packages/views/src/ui/logs/highlight.ts` `splitOnMatches`, `highlightedText`: Occurrences of `query` in `text` as alternating plain/match segments: one case-insensitive substring, like the backend's `Body ILIKE`.
 - `packages/views/src/ui/logs/log-message.ts` `logMessageOf`, `truncationNote`, `cappedCode`, `logMessageView`: The log detail hero's message, shared by the dashboard and Maple Local.
@@ -99,18 +99,19 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/logs/logs-stream-toolbar.ts` `logsStreamToolbar`: The logs stream's toolbar: the Columns picker, wrap and density, under one `TooltipProvider delay={250}`.
 - `packages/views/src/ui/logs/logs-stream-view.ts` `pinnedColumnParts`, `view`: A pinned key split around its naming segment: the last one that is not generic, so `deployment.environment.name` names "environment".
 - `packages/views/src/ui/logs/logs-stream.ts` `setRows`, `replaceRows`, `jumpToLatest`, `navigationKeys` (stateful: Model, init, update): The same logs, derived again (a pinned column or the search changed).
-- `packages/views/src/ui/logs/severity-badge.ts` `severityBadge`: `SeverityBadge` (packages/ui/src/components/logs/severity-badge.tsx).
+- `packages/views/src/ui/logs/severity-badge.ts` `severityBadge`: A log severity as a toned badge.
 - `packages/views/src/ui/logs/styles.ts` `rowClass`: The class list as one `class` attribute.
-- `packages/views/src/ui/logs/viewer.ts` `viewerFlags`, `listFooterText`, `readLogsViewPreferences`, `saveLogsViewPreferences`: What a logs view reads from the browser before it renders: the display zone and number locale.
+- `packages/views/src/ui/logs/viewer.ts` `listFooterText`, `readLogsViewPreferences`, `saveLogsViewPreferences`: A logs view's footer line and its per-browser wrap and density preferences.
 - `packages/views/src/ui/manifest-glyph.ts` `manifestGlyph`: `chatConnectorIcon`: one `<svg>` from a manifest's path data; `monochrome` drops the brand fills.
-- `packages/views/src/ui/marker.ts` `marker`, `markerIcon`, `markerContent`: Port of packages/ui/src/components/ui/marker.tsx: an inline event marker in a timeline or thread.
-- `packages/views/src/ui/menu-view.ts` `itemRefs`, `view`: ENTRIES
+- `packages/views/src/ui/marker.ts` `marker`, `markerIcon`, `markerContent`: An inline event marker in a timeline or thread.
+- `packages/views/src/ui/menu-view.ts` `itemRefs`, `view`: A dropdown menu's entries and its popup: items, checkable items, groups, labels and submenus.
 - `packages/views/src/ui/menu.ts` `itemId`, `subItemId`, `subPopupId`, `subPortalId`, `itemTooltipId`, `itemTooltipTriggerId` (stateful: Model, init, update): Base UI `Menu` (`@maple/ui/dropdown-menu`): the trigger toggles it; arrows move the highlight, Enter or a click picks an item, a checkbox or radio item stays open, a submenu ope...
 - `packages/views/src/ui/message-scroller.ts` `messageScroller`, `messageScrollerViewport`, `messageScrollerContent`, `messageScrollerItem`, `messageScrollerButton`: `MessageScroller`: a chat thread's scroll frame (root, viewport, content, keyed items) and its "Scroll to end" button; the host's Mount owns the autoscroll and shows the button.
-- `packages/views/src/ui/message.ts` `messageGroup`, `message`, `messageAvatar`, `messageContent`, `messageFooter`, `messageHeader`: Port of packages/ui/src/components/ui/message.tsx: one chat message (avatar, header, bubbles).
-- `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`: Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
-- `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Port of packages/ui/src/components/ui/middle-truncate.tsx: keeps the last `tail` characters visible and ellipsizes the middle.
-- `packages/views/src/ui/mini-bars.ts` `miniBars`: Port of packages/ui/src/components/ui/mini-bars.tsx: a static bar sparkline in one <svg>.
+- `packages/views/src/ui/message.ts` `messageGroup`, `message`, `messageAvatar`, `messageContent`, `messageFooter`, `messageHeader`: One chat message (avatar, header, bubbles).
+- `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`: Meter, SegmentedBar and BackdropBar.
+- `packages/views/src/ui/metric-type.ts` `metricTypeLabel`, `metricTypeBadge`: A metric type's label, badge and colour, wherever a metric is listed.
+- `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Keeps the last `tail` characters visible and ellipsizes the middle.
+- `packages/views/src/ui/mini-bars.ts` `miniBars`: A static bar sparkline in one <svg>.
 - `packages/views/src/ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
 - `packages/views/src/ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (settings, security, alerts), with the app sidebar row's height, type, radius and flush 2px active lane.
 - `packages/views/src/ui/navigation-menu.ts` `triggerIdOf`, `viewportId`, `rootId`, `navigationMenuLink`, `view` (stateful: Model, init, update): Base UI `NavigationMenu` (`@maple/ui/navigation-menu`): a trigger opens its content in one shared popup below the list (offset 8, start-aligned) on click, or after the pointer r...
@@ -123,149 +124,220 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/overlay/roving.ts` `isRovingKey`, `nextIndex`: Base UI's list navigation for menus and listboxes: arrows move the highlight and wrap (`loop`), Home/End jump, disabled entries are skipped.
 - `packages/views/src/ui/overlay/select-align.ts` `alignItemWithTrigger`: Base UI Select's `alignItemWithTrigger` (select/popup/SelectPopup.mjs, @base-ui/react 1.8): the popup opens over the trigger so the selected item's text sits on the trigger's va...
 - `packages/views/src/ui/overlay/transition.ts` `isLeaving`, `isMounted`, `stateAttributes`, `focusGuard`: Base UI's transition status on a Foldkit Animation: `data-starting-style` on the first frame of an open, `data-ending-style` while it closes, and `data-open` / `data-closed` thr...
-- `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: Port of the header half of packages/ui/src/components/ui/page-layout.tsx (Root, Header, Title, Description, HeaderActions).
-- `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: Port of packages/ui/src/components/ui/panel.tsx: the flat bordered section frame.
+- `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: A page's root and header: title, description and header actions.
+- `packages/views/src/ui/page-rails.ts` `splitPageRails`: The filter and right sidebars below `lg`: each renders as a sheet, not an inline rail, and puts a trigger in the top bar while one is mounted.
+- `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: The flat bordered section frame.
 - `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
 - `packages/views/src/ui/popover.ts` `titleId`, `descriptionId`, `open`, `close`, `view`, `popoverTitle`, `popoverDescription` (stateful: Model, init, update): Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press outside close it, and it is placed under the trigger with `sideOffset` 4 and colli...
 - `packages/views/src/ui/pressable.ts` `pressable`: `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour swatch, a bespoke row).
 - `packages/views/src/ui/radio-group.ts` `radioGroup`, `labelId`, `radio` (stateful: Model, init, update): Base UI `RadioGroup`: the checked value.
-- `packages/views/src/ui/refresh-button.ts` `refreshButton`: `<RefreshButton>`: the icon spins while pending and the button disables.
+- `packages/views/src/ui/refresh-button.ts` `refreshButton`: A refresh button: the icon spins while pending and the button disables.
 - `packages/views/src/ui/removable-chip.ts` `removableChip`: `RemovableChip`: an active filter as a small mono chip, its label then an x that removes it (the infra filter rails).
 - `packages/views/src/ui/resizable.ts` `panelId`, `handleId`, `resize`, `view` (stateful: Model, init, update): `react-resizable-panels` 4 (`@maple/ui/resizable`): one panel group, sizes in percent.
 - `packages/views/src/ui/reveal-icon.ts` `revealIcon`: `revealIcon`: a muted trailing icon (an external-link or "go" arrow) hidden until its `group` row is hovered or keyboard-focused.
-- `packages/views/src/ui/row-actions-menu.ts` `rowActionsMenu`: Port of `RowActionsMenu` (packages/ui/src/components/ui/row-actions-menu.tsx).
+- `packages/views/src/ui/row-actions-menu.ts` `rowActionsMenu`: A row's overflow menu of actions.
 - `packages/views/src/ui/rule.ts` `stripClass`, `strip`, `dividedList`, `fillRule`: Hairline rules: a `strip` (a band inside a panel or list, ruled off from its neighbours), a `dividedList` (a bordered box with a rule between its items) and a `fillRule`.
 - `packages/views/src/ui/scroll-area.ts` `applyScrollOverflow`, `trackScrollbar`, `scrollArea`: Base UI hides the viewport's native scrollbar with this class and an injected rule (styles.css).
 - `packages/views/src/ui/scroll-region.ts` `scrollRegion`, `fillRegion`: `ScrollRegion`: the rest of a flex column's height as a plain native-scrollbar overflow region (`min-h-0 flex-1 overflow-y-auto`); `scrollArea` is the one with the custom scroll...
-- `packages/views/src/ui/search-input.ts` `searchInput`: Port of packages/ui/src/components/ui/search-input.tsx: magnifier, input and a clear button while there is a value.
-- `packages/views/src/ui/segmented-select.ts` `multiSegmentedSelect`, `segmentedSelect`: `MultiSegmentedSelect`: standalone outline toggles; a pressed one swaps its icon for a check.
-- `packages/views/src/ui/select-view.ts` `optionsOf`, `selectLabelId`, `selectedIndexOf`, `view`: `isDisabled`: `<SelectItem disabled>`, listed but not choosable.
+- `packages/views/src/ui/search-input.ts` `searchInput`: Magnifier, input and a clear button while there is a value.
+- `packages/views/src/ui/segmented-select.ts` `multiSegmentedSelect`, `segmentedSelect`: Segmented selects: outline toggles in a row, one value or several.
+- `packages/views/src/ui/select-view.ts` `optionsOf`, `selectLabelId`, `selectedIndexOf`, `view`: The Select's trigger and its popup list of options, groups and labels.
 - `packages/views/src/ui/select.ts` `listId`, `itemId` (stateful: Model, init, update): Base UI `Select` (`@maple/ui/select`): the popup opens over the trigger with the selected item on the trigger's value (`alignItemWithTrigger`), or below it when that does not fit.
 - `packages/views/src/ui/selectable-row.ts` `selectableRow`: `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection lane and tint; a clickable one is a `pressable` with `selectedLane`.
-- `packages/views/src/ui/setting-row.ts` `settingRow`: Port of packages/ui/src/components/ui/setting-row.tsx.
-- `packages/views/src/ui/sheet.ts` `leftSheet`, `sidePanelSheet`, `followUrl`, `isDismissed`, `mapSheetCommands`: `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
+- `packages/views/src/ui/setting-row.ts` `settingRow`: A settings row: label, description and a control.
+- `packages/views/src/ui/sheet.ts` `leftSheet`, `sidePanelSheet`, `followUrl`, `isDismissed`, `mapSheetCommands`: A left-side sheet over Base UI Dialog.
 - `packages/views/src/ui/shift-timeline.ts` `zonedDayStart`, `placeBar`, `timelineDays`, `barRoomPct`, `shiftTimeline`: `ShiftTimeline`: rows of time bars over a day-ruled axis in one time zone, with a now line (an on-call schedule's layers and its final row).
 - `packages/views/src/ui/side-panel.ts` `sidePanelFrame`: A detail side panel's frame (span, service, database): a full-height clipped column on the page background.
-- `packages/views/src/ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupToggle`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
-- `packages/views/src/ui/signal-empty-state.ts` `emptyActions`, `filteredEmpty`, `presenceLoading`, `signalEmptyState`: `SignalEmptyState` and `FilteredEmpty`.
-- `packages/views/src/ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`, `skeletonBlock`, `skeletonMeterClass`, `skeletonMeter`, `skeletonSwitchClass`, `skeletonSwitch`, `skeletonLine`: Port of packages/ui/src/components/ui/skeleton.tsx.
-- `packages/views/src/ui/spaced.ts` `spacedClass`, `spaced`: `Spaced`: a block whose children stack with `space-y-*` margins (not a flex column), usually a row's text column that fills the free width and lets its lines truncate.
-- `packages/views/src/ui/spinner.ts` `spinner`: Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
+- `packages/views/src/ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupToggle`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
+- `packages/views/src/ui/signal-empty-state.ts` `emptyActions`, `filteredEmpty`, `presenceLoading`, `signalEmptyState`: A signal page's empty states: no data yet, or nothing matching the filters.
+- `packages/views/src/ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`, `skeletonBlock`, `skeletonMeterClass`, `skeletonMeter`, `skeletonSwitchClass`, `skeletonSwitch`, `skeletonLine`: Loading placeholders: a pulse block, its list, meter and switch shapes, and the slow-load note.
+- `packages/views/src/ui/spaced.ts` `spaced`: `Spaced`: a block whose children stack with `space-y-*` margins (not a flex column), usually a row's text column that fills the free width and lets its lines truncate.
+- `packages/views/src/ui/spinner.ts` `spinner`: The loader glyph, spinning, as a status.
 - `packages/views/src/ui/split-button.ts` `splitButtonClass`: `SplitButton`'s two halves: the classes that join an action button and its chevron menu trigger into one control.
 - `packages/views/src/ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
 - `packages/views/src/ui/stack.ts` `hstackClass`, `vstackClass`, `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
-- `packages/views/src/ui/stat-figure.ts` `statFigure`: Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.
-- `packages/views/src/ui/status-dot.ts` `statusDot`: `<StatusDot>`: a static, decorative status dot.
-- `packages/views/src/ui/swatch.ts` `swatchClass`, `swatch`: The classes of a colour swatch, for an element the kit doesn't render.
+- `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
+- `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
+- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill.
 - `packages/views/src/ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
-- `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: Port of packages/ui/src/components/ui/table-skeleton.tsx: the loading placeholder for row tables.
-- `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: Port of packages/ui/src/components/ui/table.tsx.
+- `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: The loading placeholder for row tables.
+- `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: The Table and its parts.
 - `packages/views/src/ui/tabs-view.ts` `view`: Base UI's Tabs DOM: the same data attributes, roles, roving tabindex and `useId` ids.
-- `packages/views/src/ui/tabs.ts` `tabId`, `panelId` (stateful: Model, init, update): Port of packages/ui/src/components/ui/tabs.tsx (Base UI Tabs, horizontal, manual activation): arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Spa...
+- `packages/views/src/ui/tabs.ts` `tabId`, `panelId` (stateful: Model, init, update): Base UI Tabs, horizontal, manual activation: arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Space select it.
 - `packages/views/src/ui/text-link.ts` `textLinkClass`, `textLink`: `TextLink`: an inline action that reads as a link inside running text or a card footer, with no button box.
-- `packages/views/src/ui/textarea.ts` `textarea`: `<Textarea>` from @maple/ui: the `textarea-control` span around Base UI's field control.
+- `packages/views/src/ui/textarea.ts` `textarea`: The `textarea-control` span around Base UI's field control.
 - `packages/views/src/ui/timestamp.ts` `timestampZoneRows`, `timestampDistance`, `timestampCard`, `timestampTrigger`, `timestamp`: `Timestamp`: one instant as the page shows it (relative or absolute), with a hover card that gives the exact time in the page's zone, the viewer's local zone and UTC.
-- `packages/views/src/ui/toast-view.ts` `region`, `anchoredRegion`, `regions`: packages/ui/src/components/ui/toast.tsx `Toasts` and `AnchoredToasts`, position "bottom-right".
+- `packages/views/src/ui/toast-view.ts` `region`, `regions`: The toast regions, free and anchored, at the bottom right.
 - `packages/views/src/ui/toast.ts` `titleId`, `descriptionId`, `nextToastId`, `add`, `close`, `isExpanded` (stateful: Model, init, update): The toast manager of `@maple/ui/toast` (Base UI Toast) as a Submodel the app root owns: one list, newest first, with Base UI's limit, timeouts, measured heights and enter/exit t...
 - `packages/views/src/ui/toggle-group.ts` `view`, `controlledView` (stateful: Model, init, update): Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted index).
 - `packages/views/src/ui/toggle.ts` `togglePrimitive`, `toggle`, `segmentItemHeight` (stateful: Model, init, update): Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not.
 - `packages/views/src/ui/tone-box.ts` `toneBoxClass`: `toneBoxClass`: a box (badge, pill, chip) tinted in one tone: its `-a2` fill, `-a3` edge and the tone's text, for an element whose shape another kit piece draws.
 - `packages/views/src/ui/tooltip-host.ts` `tooltipTrigger`, `triggerEvents`, `whileEngaged`, `isEngaged`, `view` (stateful: Model, init, update): The app's one tooltip: any element carrying `tooltipTrigger` opens it, through events delegated on `document`, so stateless kit helpers get Base UI's tooltip without a Model of...
 - `packages/views/src/ui/tooltip.ts` `view` (stateful: Model, init, update): Base UI `Tooltip` (`@maple/ui/tooltip`): opens after the pointer rests on a trigger (600 ms), closes when it leaves (no close delay), on a press of the trigger and on Escape.
-- `packages/views/src/ui/trace-badges.ts` `traceStatusBadge`, `servicePills`, `traceIdBadge`: Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and `ServicePills` (packages/ui/src/components/service-pills.tsx).
-- `packages/views/src/ui/trace.ts` `trace`, `traceLine`, `traceIcon`, `traceTitle`, `traceCollapsible`, `traceDescription`: Port of packages/ui/src/components/ui/trace.tsx: a list of agent tool-call lines.
-- `packages/views/src/ui/truncated-id.ts` `truncatedId`: Port of packages/ui/src/components/ui/truncated-id.tsx: a shortened id in mono with the full value as the native tooltip.
-- `packages/views/src/ui/truncated-text.ts` `truncatedText`: Port of packages/ui/src/components/ui/truncated-text.tsx.
+- `packages/views/src/ui/trace-badges.ts` `traceStatusBadge`, `servicePills`, `traceIdBadge`: A trace's id badge, status badge and service pills.
+- `packages/views/src/ui/trace.ts` `trace`, `traceLine`, `traceIcon`, `traceTitle`, `traceCollapsible`, `traceDescription`: A list of agent tool-call lines.
+- `packages/views/src/ui/truncated-id.ts` `truncatedId`: A shortened id in mono with the full value as the native tooltip.
+- `packages/views/src/ui/truncated-text.ts` `truncatedText`: One line of text cut with an ellipsis, the full text as its tooltip.
 - `packages/views/src/ui/typography.ts` `typographyClass`, `typography`: `Typography`: a run of text on the type scale and the text tones, instead of a hand-written `text-xs text-muted-foreground` string.
-- `packages/views/src/ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components from packages/ui/src/components: LatencyValue, ErrorRateValue, ServiceDot.
+- `packages/views/src/ui/values.ts` `emptyValue`, `measure`, `latencyValue`, `errorRateValue`, `serviceDot`: Small value components: latency, error rate and the service dot.
 
 ## apps/web/src/page/kit
 
 - `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
+- `apps/web/src/page/kit/alert-collections.ts` `ruleRows`, `ruleStateRows`, `incidentRows`, `destinationRows`: The alert rules, incidents and destinations as live streams.
+- `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
+- `apps/web/src/page/kit/alert-test-rows.ts` `hubAt`, `ruleId`, `ruleRow`, `stateRow`, `incidentRow`, `destinationRow`: Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
+- `apps/web/src/page/kit/alert-time.ts` `msIso`, `formatSpan`, `everyMinutes`: How alert pages write times: ISO stamps, spans in their two largest units, check cadences.
+- `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
+- `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
-- `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: `ChainConnector`: the short line that joins two cards of a vertical chain.
-- `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
-- `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `commitDetailBody`: The commit SHA hover card: the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
+- `apps/web/src/page/kit/billing/checkout-return.ts` `buildCheckoutSuccessUrl`, `isCheckoutReturn`, `withoutCheckoutReturn`: The round trip through Stripe Checkout.
+- `apps/web/src/page/kit/billing/plan-gating.ts` `isLegacyPlan`, `isUsableCustomer`, `getActivePlan`, `hasSelectedPlan`, `getLapsedPlan`, `hasLapsedPlan`, `resolvePlanAccess`, `getTrialStatus`, `hasBringYourOwnCloudAddOn`, `getFeatureQuotas`, `getQuotaStatus`, `getPastDueSubscription`, `getLegacyPlanInfo`: A plan from the live `listPlans` catalog , the source of truth for which plans are currently offered and for per-feature overage rates.
+- `apps/web/src/page/kit/billing/plans.ts` `getPlanFeatures`, `getPlanDescription`, `sentenceCasePlanName`, `planDisplayName`: A catalog plan name in the UI's sentence case: "Bring Your Own Cloud" reads "Bring your own cloud".
+- `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
+- `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
+- `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
+- `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
+- `apps/web/src/page/kit/clipboard.ts` `copyToast`: The toast for a finished copy (no label: the generic titles).
+- `apps/web/src/page/kit/code-block.ts` `codeBlock`: A code block: language eyebrow, copy button, highlighted markup.
+- `apps/web/src/page/kit/collection-load.ts` `collectionLoadFailed`: Whether a collection a page is still waiting on failed to load.
+- `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `firstLine`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `initCommitCard`, `commitCardCommands`, `stepCommitCard`, `elapsedCommitArm`, `settleCommitDetail`, `commitAvatar`, `commitDetailBody`: The commit SHA hover card: its state machine (arm, lookup, settle), the body it renders once the lookup settles, and the lookup itself.
 - `apps/web/src/page/kit/compliance-line.ts` `compliance`: The compliance footnote under the plan pickers (DPA available, SOC 2 and ISO 27001 in progress).
 - `apps/web/src/page/kit/connect-flow.ts` `flowColumns`, `stepCard`, `choiceTiles`, `statusRow`, `foundChips`, `flowRail`, `savedBanner`, `liveChecklist`, `whereToFind`: The parts every source's connect flow is built from: the step card, its status row, the rail beside it and the Go live checklist.
 - `apps/web/src/page/kit/custom-range-view.ts` `view`: The custom range picker's DOM: a two-month range calendar (en-US, rdp-* classes, Maple's `calendarClassNames`), then the Start/End time fields and the actions.
 - `apps/web/src/page/kit/custom-range.ts` `readToday`, `parseTimeInput`, `addToRange`, `appliedRange` (stateful: Model, init, update): The custom range picker: a two-month range calendar and two time inputs in the selected zone's wall clock.
-- `apps/web/src/page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `pageScrollArea`, `dashboardPage`: The dashboard page below the shell's top bar: `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
+- `apps/web/src/page/kit/danger-zone.ts` `dangerZone`, `dangerRow`: The one "Danger zone" section: a destructive-edged panel of rows, each a title, what it does, and its action.
+- `apps/web/src/page/kit/dashboard-page.ts` `pageBody`, `filterRail`, `pageContent`, `pageHeader`, `pageScrollArea`, `dashboardPage`: The dashboard page below the shell's top bar: its filter rail, content column, sticky header and scroll area.
+- `apps/web/src/page/kit/data-table.ts` `headSort`, `columnHead`, `dataTable`, `dataTableEmpty`, `skeletonRows`: A sortable data table: its column heads, numeric cells, row links, and empty and skeleton rows.
 - `apps/web/src/page/kit/day-label.ts` `dayKey`, `dayLabel`: Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
-- `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: `DestinationPicker`: the alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
-- `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: `DetailHeader`'s title side and `DetailHeaderSkeleton`.
-- `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: `FormSection`: one row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone,...
-- `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: `GridListRow`: one `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
-- `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.
+- `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: The alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
+- `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: A detail page's title block and its loading skeleton.
+- `apps/web/src/page/kit/docs.ts` `docsUrl`: Every docs page the app links to from an empty state, as a path under maple.dev.
+- `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
+- `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.
+- `apps/web/src/page/kit/facets.ts` `toggledValue`, `onlyValue`, `excludedValue`, `editFacet`, `facetChipsOf`, `facetChips`: The include/exclude arithmetic of a tri-state facet filter, as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and excluded.
+- `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: One row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form besid...
+- `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
+- `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
+- `apps/web/src/page/kit/infinite-pages.ts` `laterPagesFields`, `freshLaterPages`, `fetchingNext`, `appendedPage`, `pagedRows`: An infinite list's pages after the first: owned by one first page (`generation`), one fetch in flight at a time, stopped by a failed page.
 - `apps/web/src/page/kit/infra-correlation/command.ts` `operationOf`: The four `*InfraTimeseries` reads the panel's charts make, through the read cache under the atom key (`requestKey(org, "<function>", { data })`), so a reopened panel reuses them.
+- `apps/web/src/page/kit/infra-correlation/correlations.ts` `getActiveInfraCorrelations`: Declarative trace/log -> infrastructure correlation config.
 - `apps/web/src/page/kit/infra-correlation/update.ts` `chartIdOf`, `requestsOf` (stateful: Model, init, update): A chart's slot and chart id, `<kind>-<metric>` (the linked-cursor id).
-- `apps/web/src/page/kit/infra-correlation/view-charts.ts` `correlationCharts`: `renderCharts`: each group's charts, drawn as the detail charts.
+- `apps/web/src/page/kit/infra-correlation/view-charts.ts` `correlationCharts`: Each correlation group's charts, drawn as the detail charts.
 - `apps/web/src/page/kit/infra-correlation/view.ts` `view`: The panel; keyed by the record, so another record remounts it and reads its own window.
-- `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: `infraCorrelationWindow` for a parseable anchor: 15 minutes either side, covering the span, on snapped to a 15 s grid before the request is sent.
-- `apps/web/src/page/kit/keyed-step.ts` `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
+- `apps/web/src/page/kit/infra-correlation/window.ts` `anchoredWindow`: The window for a parseable anchor: 15 minutes either side, covering the span, snapped to a 15 s grid before the request is sent.
+- `apps/web/src/page/kit/integration-empty.ts` `integrationIconPlate`, `integrationEmptyFeatures`, `integrationEmptyMedia`, `integrationEmptyCard`, `integrationEmptyHint`, `integrationEmptyFooter`, `integrationEmpty`, `integrationConnectCta`: An integration page's empty state: the brand plate, what the page will show, and the way to connect.
+- `apps/web/src/page/kit/integration-status-keys.ts` `integrationStatusKey`: One cache key per integration status read: `/integrations` and the provider pages share each read.
+- `apps/web/src/page/kit/issue-actor.ts` `resolveActorIdentity`, `identityAvatar`, `actorAvatar`, `noActor`, `actorChip`: Actor avatars and chips.
+- `apps/web/src/page/kit/issue-severity.ts` `isIssueSeverity`, `severityDot`, `severityBadge`, `severityIcon`: The severity badge's maps and marks.
+- `apps/web/src/page/kit/issue-workflow.ts` `workflowRingIcon`: The state as a ring that fills as the work progresses.
+- `apps/web/src/page/kit/k8s-chart.ts` `k8sChart`: The Kubernetes metric chart and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend, in a chart card.
+- `apps/web/src/page/kit/keyed-step.ts` `keyed`, `keyedSlot`, `applySteps`, `runSteps`, `seriesSteps`, `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
 - `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
-- `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
+- `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: A list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
-- `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown over Streamdown: laid out with Streamdown's element classes.
-- `apps/web/src/page/kit/nav-shell.ts` `navShell`: `NavShell`: a page's own nav rail of titled sections (settings, security, alerts).
-- `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: `PageLayout.FilterSidebar` / `RightSidebar` below `lg`: the page's rail in a side sheet (`<Sheet><SheetContent side>`) with an sr-only header.
+- `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
+- `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
+- `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
+- `apps/web/src/page/kit/onboard-skill.ts` `onboardSkillPrompt`, `agentSetupPrompt`: Installs the whole skills folder: maple-onboard reads its per-language companion skills.
+- `apps/web/src/page/kit/own-services.ts` `isOwnService`: The service onboarding's "Send test trace" reports as.
+- `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.
+- `apps/web/src/page/kit/page-time.ts` `stepTimePicker`, `pickerStep`, `withPreset`, `pageTime`: The header time cluster pages share, and the picker's update step.
 - `apps/web/src/page/kit/peek-keys.ts` `peekStepFor`: The list peeks' step keys: down/J forward, up/K back, except in a text field or with a modifier.
-- `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
-- `apps/web/src/page/kit/pick-list.ts` `pickList`: `PickList`: what a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
-- `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: `PinnedNamespaceNotice`: replaces a rail's Namespace section while the org-global pin is on.
-- `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft (its `onUpdate`, `onAggregationChange` and `onDataSourceChange` callbacks), as data the host applies.
-- `apps/web/src/page/kit/query-builder/condition-builder-view.ts` `conditionBuilder`: `ConditionBuilder`: the where clause as `[field] [operator] [values]` rows, AND-ed, each picked from the query's own vocabulary.
+- `apps/web/src/page/kit/pick-chips.ts` `pickChips`: `PickList` for a sentence, where the picks sit inline on the sentence's own line.
+- `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
+- `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
+- `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
+- `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft, as data the host applies.
+- `apps/web/src/page/kit/query-builder/condition-builder-view.ts` `conditionBuilder`: The where clause as `[field] [operator] [values]` rows, AND-ed, each picked from the query's own vocabulary.
 - `apps/web/src/page/kit/query-builder/condition-fields.ts` `groupLabelOf`, `fieldOf`, `canMatchAnyOf`, `isOwnedElsewhere`, `isPickable`, `fieldsOf`, `sharesLabel`, `fieldPickerItems`, `operatorsOf`, `valueSuggestionsOf`: The condition builder's vocabulary: which fields a query offers (grouped like a path picker), the operators a field takes, and the values it suggests, all read from the where ed...
 - `apps/web/src/page/kit/query-builder/condition-rows.ts` `isAnyOf`, `isNoneOf`, `isValueless`, `unshowableReasonOf`, `parseConditionRows`, `sameConditions`, `isUnspellable`, `isComplete`, `printConditionRows`, `printConditionRowsOver`, `nextRowId`: The condition builder's rows and their two-way mapping to the where-clause string (`@maple/domain/where-clause`): rows are AND-ed; a row's values are OR-ed for `=`/`contains` an...
 - `apps/web/src/page/kit/query-builder/conditions.ts` `conditionPickerId`, `operatorSelectId`, `isOperatorSelect`, `conditionRowsOf`, `withoutBuilderState`, `whereModeOf`, `typedInTextEditor`, `changedWhereMode`, `addedCondition`, `removedCondition`, `fieldStep`, `holdsManyValues`, `valuePickerOf`, `valuesStep`, `operatorStep`: The condition builder's steps: an edit that changes the conditions leaves as the query's where-clause edit, rewriting only the clauses it touched, so previews and saving see onl...
 - `apps/web/src/page/kit/query-builder/draft.ts` `groupBySelectionOf`: `QueryBuilderQueryDraft` (@maple/query-engine/query-builder) as a Schema: the query one `QueryPanel` edits, shared by the widget editor and the alert rule editor.
 - `apps/web/src/page/kit/query-builder/metric-options.ts` `metricValueOf`, `listMetricOptions`, `readMetricKeys`, `unaskedMetrics`, `pickedMetric`: The metric picker's reads, shared by every host of a metrics `QueryPanel`: one page of the org's metrics for what was searched, and each picked metric's own keys.
-- `apps/web/src/page/kit/query-builder/metrics-body.ts` `groupByChoicesOf`, `metricsBody`: `MetricsBody`: the metric picker, the where clause, and the two aggregation stages: each series reduced within the interval, then the series combined by any number of fields.
+- `apps/web/src/page/kit/query-builder/metrics-body.ts` `groupByChoicesOf`, `metricsBody`: A metrics query's body: the metric picker, the where clause, and the two aggregation stages: each series reduced within the interval, then the series combined by any number of f...
 - `apps/web/src/page/kit/query-builder/panel-select.ts` `panelSelect`: One of the panel's selects, kept by id; its value is always the draft's.
 - `apps/web/src/page/kit/query-builder/panel.ts` `metricPickerIdOf` (stateful: Model, init, update): Where-editor and condition-builder Messages need `inputs` (the drafts and autocomplete values); without them they are ignored.
 - `apps/web/src/page/kit/query-builder/parts.ts` `whereClauseEditor`, `textInput`, `addOnToggles`, `addOnSections`: The pieces of a `QueryPanel` body: the where clause, the add-on toggles and their sections.
-- `apps/web/src/page/kit/query-builder/view.ts` `panelWarningsOf`, `queryPanelView`: `QueryPanel` and `QueryPanelShell`: one query's builder panel and its frame.
+- `apps/web/src/page/kit/query-builder/sql-panel.ts` `sqlPanelHeader`: The raw SQL panel's pieces every SQL editor shares: its header bar and the macro chips.
+- `apps/web/src/page/kit/query-builder/view.ts` `panelWarningsOf`, `queryPanelView`: One query's builder panel and its frame.
+- `apps/web/src/page/kit/query-builder/where-clause-autocomplete.ts` `getWhereClauseAutocomplete`, `applyWhereClauseSuggestion`: Which vocabulary the editor completes.
+- `apps/web/src/page/kit/query-builder/where-clause-highlight.ts` `tokenizeWhereClause`: Tokenizer for where-clause syntax highlighting.
 - `apps/web/src/page/kit/query-builder/where-editor.ts` `whereEditor`, `highlightOverlay`: The suggestions of a field kept in the owner's `WhereFields` (`page/kit/where-field.ts`).
-- `apps/web/src/page/kit/query-builder/where.ts` `whereTextareaId`, `whereSpecOf`, `whereStep`: `WhereClauseEditor` inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
-- `apps/web/src/page/kit/query-builder-legend.ts` `queryBuilderLegend`: `QueryBuilderLegend` (packages/ui/src/components/charts/_shared/query-builder-legend.tsx), bottom layout, for hosts outside a chart.
+- `apps/web/src/page/kit/query-builder/where-values.ts` `autocompleteField`, `lookupTraceFacets`, `metricKeysOf`, `whereValuesOf`: `autocompleteValues[query.dataSource]` for every host of a `QueryPanel`: what the where editor suggests per source, from the lookups and metric keys the host has read.
+- `apps/web/src/page/kit/query-builder/where.ts` `whereTextareaId`, `whereSpecOf`, `whereStep`: The where editors inside a `QueryPanel`: one `WhereFields` field per query, keyed by query id.
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
-- `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: `RefreshControls`: Reload joined to the auto-refresh cadence menu.
-- `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
+- `apps/web/src/page/kit/recommendations.ts` `listRecommendations`, `listAttributeMappings`: Instrumentation recommendations, as the recommendation page and Settings > Ingestion both show them: the reads and the kind and status words.
+- `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: Reload joined to the auto-refresh cadence menu.
+- `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: A timestamp as relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
-- `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is re-resolved only when its own fields moved, and only Reload revalidates unchanged...
-- `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: `SectionHeading`: the `title` row and the `eyebrow` overline.
+- `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
+- `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
+- `apps/web/src/page/kit/sdk-snippets.ts` `sdkSnippets`, `register`, `fillSnippet`: The snippet's text with the endpoint and key filled in.
+- `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the uppercase eyebrow overline.
 - `apps/web/src/page/kit/sentence-card.ts` `sentenceCardHeadingId`, `sentenceCardSummaryId`, `sentenceCard`, `sentenceChain`, `sentenceRow`, `sentencePhrase`, `sentenceClause`, `sentenceSection`: Sentence cards: a form that reads top to bottom as one sentence ("When ...
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
+- `apps/web/src/page/kit/service-health-rollup.ts` `alertIncidentCauseLabel`, `anomalyDirection`, `deriveServiceHealthFromCauses`, `primaryServiceHealthCause`, `healthRank`, `baselineKey`, `buildBaselineMap`: Health rollup for a single service.
+- `apps/web/src/page/kit/service-health.ts` `anomaliesKey`, `fetchAnomaliesCommand`, `incidentsStream`, `incidentsLoadFailedStream`, `receivedIncidents`, `failedIncidents`, `serviceHealthCauses`: Service health inputs the overview and the services list share: the synced alert incidents, the open anomaly counts, and the causes each service row reads from them.
+- `apps/web/src/page/kit/service-metrics/grid.ts` `metricsGridOf`: The four golden-signal cards in a grid: a service's Overview tab and a release's service section feed it.
+- `apps/web/src/page/kit/service-metrics/marker-layout.ts` `estimateLabelWidth`, `buildCommitMarkers`, `shouldRenderLabels`, `layoutMarkerLabels`: Pure geometry + derivation for the chart's commit deploy markers.
+- `apps/web/src/page/kit/service-metrics/markers-view.ts` `markersOverlay`: Commit markers over a chart, idle.
+- `apps/web/src/page/kit/service-metrics/markers.ts` `commitMarkers`, `markerShas`, `markerLayout`: Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
-- `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: `SheetDetailHeader`: a detail sheet's eyebrow kind, title, screen-reader description and meta row.
+- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
+- `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: A settings tab's titled sections, the stack they sit in, and the admin-only note.
+- `apps/web/src/page/kit/severity-tokens.ts` `statusLabel`: Canonical severity/status → Tailwind class maps for the infrastructure UI.
+- `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: A detail sheet's eyebrow kind, title, screen-reader description and meta row.
 - `apps/web/src/page/kit/sheet-param.ts` `withSheetParam`, `sheetParamOf`, `dismissalOf`, `pushSheetUrl`, `dismissSheetUrl`: A side sheet held in the URL as `?sheet=<id>`.
-- `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for `SignalEmptyState`: where each signal comes from, and the setup page and guides it links.
-- `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence over `telemetrySignalsAtom`.
+- `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for a signal's empty state: where each signal comes from, and the setup page and guides it links.
+- `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence: which telemetry signals the org has sent.
 - `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
-- `apps/web/src/page/kit/stat-rail.ts` `statRail`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
-- `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `compareValues`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.
-- `apps/web/src/page/kit/time-controls.ts` `isPresetValue`, `presetLabel`, `presetSpanLabel`, `searchPreset`, `timeControls`, `timeRangeTriggerContent`: The time range header controls: the picker trigger, the reset for a custom range, and Reload.
-- `apps/web/src/page/kit/time-range-picker.ts` `searchPatchOf`, `dashboardTimeRangeOf`, `rejectedToast`, `unpicked`, `isActivePreset`, `isOpenKey`, `openOnHotkey`, `view` (stateful: Model, init, update): `TimeRangePicker`: the header popover with the preset rail and quick select.
+- `apps/web/src/page/kit/stat-rail.ts` `statRail`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
+- `apps/web/src/page/kit/switch-row.ts` `switchRow`: A settings row whose control is a switch: the row is the switch's field, so a checked switch marks the row, label and description filled.
+- `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `isNumericString`, `compareValues`, `urlSortPatch`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.
+- `apps/web/src/page/kit/time-controls.ts` `isPresetValue`, `searchPreset`, `timeControls`, `timeRangeTriggerContent`, `canWidenTimeRange`: The time range header controls: the picker trigger, the reset for a custom range, and Reload.
+- `apps/web/src/page/kit/time-frame-step.ts` `liftFrame`, `resolveFrame`, `routeFrame`: A page's `GotFrameMessage` handler: runs the frame's update, then lets the page act on a resolved window (request its data) or a new time search (navigate), keeping the frame's...
+- `apps/web/src/page/kit/time-frame.ts` `resolveWindowCommand`, `controls`, `resolve` (stateful: Model, init, update): A page's time scope (the infra pages embed it whole): the resolved window, Reload (re-resolves unsnapped and spins 600 ms) and the header's time controls.
+- `apps/web/src/page/kit/time-range-picker.ts` `searchPatchOf`, `dashboardTimeRangeOf`, `rejectedToast`, `unpicked`, `isActivePreset`, `isOpenKey`, `openOnHotkey`, `view` (stateful: Model, init, update): The header's time range popover: the preset rail and quick select.
 - `apps/web/src/page/kit/timezone-select-view.ts` `zoneListView`: The timezone select's list: the search input, "No timezone matches that." and the grouped zone list with clock and offset.
-- `apps/web/src/page/kit/timezone-zones.ts` `shortZoneName`, `formatUtcOffset`, `zoneLabel`, `matchesZoneQuery`, `zoneRows`, `readZoneRows`: The zone list logic of the timezone select.
-- `apps/web/src/page/kit/underline-tabs.ts` `underlineTabStrip`, `underlineTabClass`, `linkTabStrip`: `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
-- `apps/web/src/page/kit/where-autocomplete-view.ts` `suggestionListbox`, `whereKeyHandler`: `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
-- `apps/web/src/page/kit/where-autocomplete.ts` `caretEvents`, `keepFocusEvents`, `listboxEvents`, `placeCaret`, `initWhereCaret`, `isOpenOf`, `activeKeysAt`, `syncedCaret`, `applied`, `listboxStyle`: The where clause autocomplete and its suggestion list, shared by every where editor (see lib/query-builder/where-clause-autocomplete.ts).
+- `apps/web/src/page/kit/timezone-zones.ts` `shortZoneName`, `formatUtcOffset`, `formatClock`, `zoneLabel`, `matchesZoneQuery`, `zoneRows`, `readZoneRows`: The zone list logic of the timezone select.
+- `apps/web/src/page/kit/tools/error-parts.ts` `maskChip`, `errorTextHeading`, `errorTextLine`, `windowRangeLabel`, `failureStatusLine`: The pieces the Errors table (and the error modal) draw a failure with.
+- `apps/web/src/page/kit/tools/metric-strip.ts` `selectableTile`, `metricStrip`, `metricStripLoading`: The tool metric strip over selectable stat rail items.
+- `apps/web/src/page/kit/tools/model.ts` `toolWindowArgs`, `selectedMetric`, `selectedPercentile`, `toolSelection`, `toolDetailLinkSearch`: Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by `/agent-sessions/tools` and the tool detail page.
+- `apps/web/src/page/kit/tools/reads.ts` `toInput`, `fetchTotals`: The reads both tools pages make, as Effects returning the Model's shapes.
+- `apps/web/src/page/kit/tools/scope-row.ts` `scopeRow`: The tool scope row: what the page is about, one click out of each.
+- `apps/web/src/page/kit/tools/series-chart.ts` `durationSeries`, `toolPlotView`, `seriesChart`: A tool series chart in a bare chart card.
+- `apps/web/src/page/kit/tools/spark.ts` `toolSpark`, `volumeSparkCell`: The line spark the tool tables and panels draw per row.
+- `apps/web/src/page/kit/tools/table.ts` `toolTable`, `toolTableHead`, `th`, `toolTableBody`, `toolTableRow`, `toolTableFooter`, `errorTone`, `shareCell`: The table chrome the tools pages share: open, mono, uppercase heads and 38px rows, with client-side column sorting.
+- `apps/web/src/page/kit/tools/tool-error-display.ts` `unwrapToolErrorText`, `commonErrorPrefix`, `errorTextTokens`, `parseErrorPath`, `formatErrorPath`, `resolveErrorPath`, `whatsWrong`, `variantDifferences`, `payloadLines`, `payloadLinesBytes`, `parsePayload`, `failureStatus`, `errorTrendBucket`, `fillTrend`: How a tool failure reads on the page: the rules between an error group's raw text , and a failed call's arguments , and what the Errors table and its modal draw.
+- `apps/web/src/page/kit/tools/toolbar.ts` `initFacetSelect`, `facetValue`, `facetSelectStep`, `facetSelect`, `toolFilterToolbar`: The tool filter toolbar and its facet selects.
+- `apps/web/src/page/kit/underline-tabs.ts` `underlineTabStrip`, `underlineTabClass`, `linkTabStrip`: A row of tabs with an underlined active tab.
+- `apps/web/src/page/kit/uptime/commands.ts` `listMonitors`, `retrieveMonitor`, `setMonitorEnabled`, `deleteMonitor`, `testMonitorConfig`, `saveMonitor`, `monitorIdFromUrl`, `monitorHref`, `newMonitorHref`, `editMonitorHref`, `uptimeTabHref`, `uptimeTracesHref`, `traceHref`: The uptime monitor reads and writes, as Effects the pages' Commands wrap, and their links.
+- `apps/web/src/page/kit/uptime/derive.ts` `displayStatus`, `formatEvery`, `statusLabel`, `bareUrl`, `heartbeatScheduleLabel`, `targetLine`, `requestLine`, `uptimeShare`, `formatShare`, `latencyPercentiles`, `checkHealth`, `formatMs`, `matchesStatus`, `matchesQuery`, `summarize`: Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
+- `apps/web/src/page/kit/uptime/form-derive.ts` `nameFromUrl`, `defaultName`, `isPrivateHost`, `everySeconds`, `graceSeconds`, `formIssues`, `parseHeaders`, `wireConfig`, `wirePayload`, `formFromMonitor`: The form's checks, its wire payload, and the form an existing monitor opens as.
+- `apps/web/src/page/kit/uptime/form.ts` `emptyForm`: The uptime form's draft: every field as the inputs hold it, strings until the payload is built.
+- `apps/web/src/page/kit/uptime/test-monitors.ts` `monitorId`, `recentChecks`, `httpMonitor`, `downMonitor`, `pausedMonitor`, `heartbeatMonitor`: Uptime monitors as `uptimeMonitors.list` decodes them, for the scene tests.
+- `apps/web/src/page/kit/uptime/view.ts` `uptimeStatusChip`, `uptimeStatusSquare`, `recentChecksStrip`, `uptimePanelBody`: The uptime marks: the status chip, the status square and the recent-checks strip.
+- `apps/web/src/page/kit/view-tabs.ts` `viewTabStrip`, `pickTimeSearch`, `hostsViewTabs`, `kubernetesViewTabs`, `kubernetesBreadcrumbs`: The infra pages' view tabs (hosts, Kubernetes) on the kit's `linkTabStrip`, carrying the time window.
+- `apps/web/src/page/kit/where-autocomplete-view.ts` `suggestionListbox`, `whereKeyHandler`: The where editor's suggestion list and key handling, generic over the owner's Message.
+- `apps/web/src/page/kit/where-autocomplete.ts` `caretEvents`, `keepFocusEvents`, `listboxEvents`, `placeCaret`, `initWhereCaret`, `isOpenOf`, `activeKeysAt`, `syncedCaret`, `applied`, `listboxStyle`: The where clause autocomplete and its suggestion list, shared by every where editor (see query-builder/where-clause-autocomplete.ts).
+- `apps/web/src/page/kit/where-clause-filters.ts` `attributeFilterOperator`, `formatAttributeClause`, `toQueryAttributeFilter`, `parseFilterClauses`, `attributeChipText`: The signal-agnostic half of a where clause: operators, `attr.*` / `resource.*` predicates and `(a OR b)` groups.
 - `apps/web/src/page/kit/where-field-command.ts` `lookupWhereValues`: The where fields' Commands and Mounts: the active key's values, and each textarea's caret.
-- `apps/web/src/page/kit/where-field-update.ts` `caretOf`, `autocompleteOf`, `isFieldOpen`, `updateWhereFields`: `useWhereClauseAutocomplete` for any number of fields: the caret, the open list, the active key's values, and an applied suggestion handed back to the owner as the field's new t...
-- `apps/web/src/page/kit/where-field.ts` `initWhereFields`: Any number of where editors with suggestions (`WhereClauseEditor`), by field id: their carets, open lists and active keys' values.
+- `apps/web/src/page/kit/where-field-update.ts` `caretOf`, `autocompleteOf`, `isFieldOpen`, `updateWhereFields`: Where-clause autocomplete for any number of fields: the caret, the open list, the active key's values, and an applied suggestion handed back to the owner as the field's new text.
+- `apps/web/src/page/kit/where-field.ts` `initWhereFields`: Any number of where editors with suggestions, by field id: their carets, open lists and active keys' values.
+- `apps/web/src/page/kit/widget-shell.ts` `widgetShell`: A read-only widget shell (the overview and the golden-signal grid): title, hint, hoisted legend chips, headline value, content and footer.
 
 ## apps/local-ui/src/page/kit
 
 - `apps/local-ui/src/page/kit/connect-guide.ts` `otelEnvBlock`, `connectGuide`: The one "how to send telemetry here" block.
 - `apps/local-ui/src/page/kit/copies.ts` `copyOf`, `updateCopy`: Every copy button a view shows, by id: the owning Model keeps them in one record and folds `CopyButton.update` by id.
 - `apps/local-ui/src/page/kit/filter-rail.ts` `filterRailFrame`: `filterRailFrame`: a page's filter rail at Maple Local's fixed rail width and inset, over the shared `filterSidebarFrame` (which dims while `isWaiting`).
-- `apps/local-ui/src/page/kit/local-time.ts` `formatDateTime`, `formatTimestamp`: lib/time.ts `formatLocalDateTime` / `formatLocalTimestamp` over a locale and zone read once in Flags, so the views never read the browser's locale or zone themselves.
+- `apps/local-ui/src/page/kit/local-time.ts` `formatDateTime`, `formatTimestamp`: Local timestamps over a locale and zone read once in Flags, so the views never read the browser's locale or zone themselves.
 - `apps/local-ui/src/page/kit/log-sheet.ts` `openLocalLog`, `traceHash`, `sheetClock`: The shared log sheet as Maple Local opens it: no namespace pin, no page for one log, no Infrastructure tab.
 - `apps/local-ui/src/page/kit/page-body.ts` `loadingFill`: A page body's first load under its header or toolbar; the body itself is the kit's `scrollRegion`.
 - `apps/local-ui/src/page/kit/page-shell.ts` `pageShell`: The page shell: filter rail beside a toolbar over the scrolling content.
 - `apps/local-ui/src/page/kit/placeholders.ts` `emptyNotice`, `listSkeleton`: A page body's "nothing here" block from the kit's `empty` parts, filling its area.
 - `apps/local-ui/src/page/kit/row-link.ts` `linkRow`, `rowLink`: A row that navigates is a real link, its first cell's anchor stretched over the row (keyboard focus, cmd-click and "copy link" for free).
-- `apps/local-ui/src/page/kit/series-chart.ts` `seriesChart`: The series chart: the pivot, gap handling and the loading / not-enough-data states the detail pages share, over `QueryBuilderLineChart`.
+- `apps/local-ui/src/page/kit/series-chart.ts` `seriesChart`: The series chart: the pivot, gap handling and the loading / not-enough-data states the detail pages share, drawn as a line chart.
 - `apps/local-ui/src/page/kit/signal-empty-state.ts` `signalEmptyState`: The shared `SignalEmptyState` with Maple Local's on-ramp: this server's OTLP endpoint to copy.
-- `apps/local-ui/src/page/kit/toolbar.ts` `toolbar`, `toolbarStats`, `toolbarStat`, `refreshButton`, `timeRangeSelect`, `toolbarSearch`: packages/ui/src/components/toolbar.tsx.
+- `apps/local-ui/src/page/kit/toolbar.ts` `toolbar`, `toolbarStats`, `toolbarStat`, `refreshButton`, `timeRangeSelect`, `toolbarSearch`: The page toolbar: stats, refresh, time range and search.

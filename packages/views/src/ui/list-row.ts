@@ -7,10 +7,10 @@ import {
 	listRowTrailingStyles,
 	listRowVariants,
 	rowSelectedClass,
-} from "@maple/ui/styles/ui/list-row"
+} from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/list-row.tsx: icon + title + meta + trailing row.
+// Icon + title + meta + trailing row.
 
 type Child = Html | string
 

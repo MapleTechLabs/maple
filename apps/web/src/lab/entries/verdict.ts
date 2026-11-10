@@ -13,7 +13,7 @@ export const lab = defineShellLab("Verdict", {
 	Model,
 	Message: Schema.Never,
 	Flags: Model,
-	/** `useTickingNow`'s first reading. */
+	/** The clock's first reading. */
 	flags: Effect.map(Clock.currentTimeMillis, (nowMs) => ({ nowMs })),
 	init: (flags) => ({ model: flags }),
 	update: (model) => ({ model }),

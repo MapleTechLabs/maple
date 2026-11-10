@@ -8,8 +8,7 @@ import { sortWidgetsForLayout, widgetsInContainer } from "./layout"
 import type { DocumentFields } from "./store"
 import { Array as Arr, Option } from "effect"
 
-// The dashboard section edits as pure
-// document updaters; an edit that changes nothing hands the document back unchanged.
+// An edit that changes nothing hands the document back unchanged.
 
 type Section = NonNullable<DashboardDocument["sections"]>[number]
 type Widget = DashboardDocument["widgets"][number]
@@ -40,7 +39,7 @@ const mapSection = (
 	)
 }
 
-/** `addSection`: one tab, so it renders as a plain header until someone asks for tabs. */
+/** One tab, so it renders as a plain header until someone asks for tabs. */
 export const withAddedSection = (
 	document: DashboardDocument,
 	ids: Readonly<{ sectionId: string; tabId: string }>,
@@ -53,7 +52,7 @@ export const withAddedSection = (
 		nowIso,
 	)
 
-/** `renameSection`: with a single tab the header is the tab label, so both move together. */
+/** With a single tab the header is the tab label, so both move together. */
 export const withRenamedSection = (
 	document: DashboardDocument,
 	sectionId: string,
@@ -74,7 +73,7 @@ export const withSectionCollapsedDefault = (
 	nowIso: NowIso,
 ) => mapSection(document, sectionId, nowIso, (section) => ({ ...section, collapsed }))
 
-/** `setSectionCollapsible`: pinning a group open clears its collapsed default. */
+/** Pinning a group open clears its collapsed default. */
 export const withSectionCollapsible = (
 	document: DashboardDocument,
 	sectionId: string,
@@ -106,7 +105,7 @@ const rootBottom = (document: DashboardDocument): number => {
 	return root.length === 0 ? 0 : Math.max(...Arr.map(root, (widget) => widget.layout.y + widget.layout.h))
 }
 
-/** `ungroupSectionWidgets`: the group's tiles land on the root canvas below what is there. */
+/** The group's tiles land on the root canvas below what is there. */
 const ungroup = (document: DashboardDocument, sectionId: string): ReadonlyArray<Widget> => {
 	const offset = rootBottom(document)
 	return Arr.map(document.widgets, (widget) => {
@@ -116,7 +115,7 @@ const ungroup = (document: DashboardDocument, sectionId: string): ReadonlyArray<
 	})
 }
 
-/** `deleteSection`: keep the widgets (ungrouped) or remove them with the group. */
+/** Keep the widgets (ungrouped) or remove them with the group. */
 export const withoutSection = (
 	document: DashboardDocument,
 	sectionId: string,
@@ -150,7 +149,7 @@ export const withAddedTab = (
 		tabs: [...section.tabs, { id: tabId, title }],
 	}))
 
-/** `renameTab`: renaming the only tab renames the group with it. */
+/** Renaming the only tab renames the group with it. */
 export const withRenamedTab = (
 	document: DashboardDocument,
 	sectionId: string,
@@ -164,8 +163,8 @@ export const withRenamedTab = (
 	})
 
 /**
- * `deleteTab`: the tab's widgets move to the first remaining tab (below what it holds) or go with
- * it. A no-op on the last tab: that is deleting the group.
+ * The tab's widgets move to the first remaining tab (below what it holds) or go with it. A no-op on
+ * the last tab: that is deleting the group.
  */
 export const withoutTab = (
 	document: DashboardDocument,
@@ -216,7 +215,7 @@ export const withoutTab = (
 	}
 }
 
-/** `moveWidgetToSection`: rebased onto the destination's next free slot. */
+/** Rebased onto the destination's next free slot. */
 export const withMovedWidget = (
 	document: DashboardDocument,
 	widgetId: string,

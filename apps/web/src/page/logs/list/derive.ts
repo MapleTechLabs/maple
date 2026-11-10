@@ -1,7 +1,7 @@
 import { decodeLogAttributeFilter, logAttributeQueryFilters } from "@maple/views/lib/log-attribute-filters"
 import type { AttributeFilter } from "@maple/domain"
-import { attributeChipText, toQueryAttributeFilter } from "../../../lib/query-builder/where-clause-filters"
-import { clauseParams } from "../../../lib/logs/advanced-filter-sync"
+import { attributeChipText, toQueryAttributeFilter } from "../../kit/where-clause-filters"
+import { clauseParams } from "./advanced-filter-sync"
 import { SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import type { CustomChartTimeSeriesInput } from "@maple/web-data/warehouse/custom-charts"
 import type { ListLogsInput } from "@maple/web-data/warehouse/logs"
@@ -12,21 +12,22 @@ import type { LogsSearch } from "../../../route/search"
 import type { TimeWindow } from "../../../data/time-range"
 import type { LogRowSchema, LogsPage, Model, Pagination, VolumeBucket } from "./model"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { facetChipsOf } from "../../kit/facets"
+import { pagedRows } from "../../kit/infinite-pages"
 
 export type Search = typeof LogsSearch.Type
 
-/** `useInfiniteLogs`' page size, its reach-end threshold and the retention cap. */
 export const PAGE_SIZE = 100
 export const FETCH_THRESHOLD = 20
 export const MAX_RETAINED_LOGS = 2_000
 
-/** `LogsInspectState.inspecting`: the tail holds while the sheet is open, or while hovering/scrolled. */
+/** The tail holds while the sheet is open, or while hovering/scrolled. */
 export const isInspectingOf = (model: Model): boolean =>
 	model.isInspecting || (model.detail.dialog.isOpen && model.stream.rows.length > 0)
 
 /**
- * `handleMouseUp`: the dragged buckets as a window, the right edge widened by one bucket so the last
- * bar is in. `undefined` for a click without a drag or an unreadable bucket.
+ * The dragged buckets as a window, the right edge widened by one bucket so the last bar is in.
+ * `undefined` for a click without a drag or an unreadable bucket.
  */
 export const brushRange = (
 	left: string,
@@ -42,9 +43,6 @@ export const brushRange = (
 		endTime: formatWarehouseDateTime(Math.max(leftMs, rightMs) + bucketMs),
 	}
 }
-
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
 
 type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
 
@@ -64,8 +62,8 @@ export const attributeQueryFilters = (search: Search) => {
 }
 
 /**
- * `buildQueryParams`: the org-global pin overrides the URL's namespace filters (they stay in the
- * URL; unpinning restores them). The first page and every later page send exactly this.
+ * The org-global pin overrides the URL's namespace filters (they stay in the URL; unpinning
+ * restores them). The first page and every later page send exactly this.
  */
 export const listInput = (
 	search: Search,
@@ -76,16 +74,16 @@ export const listInput = (
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
-		services: mutable(search.services),
-		severities: mutable(search.severities),
-		deploymentEnvs: mutable(search.deploymentEnvs),
+		services: search.services,
+		severities: search.severities,
+		deploymentEnvs: search.deploymentEnvs,
 		deploymentEnvMatchMode: search.deploymentEnvMatchMode,
-		namespaces: isPinned ? [pinnedNamespace] : mutable(search.namespaces),
+		namespaces: isPinned ? [pinnedNamespace] : search.namespaces,
 		namespaceMatchMode: isPinned ? undefined : search.namespaceMatchMode,
-		excludedServices: mutable(search.excludedServices),
-		excludedSeverities: mutable(search.excludedSeverities),
-		excludedDeploymentEnvs: mutable(search.excludedDeploymentEnvs),
-		excludedNamespaces: isPinned ? undefined : mutable(search.excludedNamespaces),
+		excludedServices: search.excludedServices,
+		excludedSeverities: search.excludedSeverities,
+		excludedDeploymentEnvs: search.excludedDeploymentEnvs,
+		excludedNamespaces: isPinned ? undefined : search.excludedNamespaces,
 		search: search.search,
 		traceId: search.traceId,
 		...attributeQueryFilters(search),
@@ -97,10 +95,7 @@ export const allLogs = (
 	firstPage: LogsPage | undefined,
 	pagination: Pagination,
 ): ReadonlyArray<LogRowSchema> =>
-	[...(firstPage?.logs ?? []), ...Arr.flatMap(pagination.pages, (page) => page.logs)].slice(
-		0,
-		MAX_RETAINED_LOGS,
-	)
+	pagedRows(firstPage?.logs ?? [], pagination.pages, (page) => page.logs, MAX_RETAINED_LOGS)
 
 /** The cursor the next page starts after, `null` when the last page came back short. */
 export const lastCursor = (firstPage: LogsPage | undefined, pagination: Pagination): string | null =>
@@ -110,28 +105,6 @@ export const hasNextPage = (firstPage: LogsPage | undefined, pagination: Paginat
 	allLogs(firstPage, pagination).length < MAX_RETAINED_LOGS &&
 	!pagination.isStopped &&
 	lastCursor(firstPage, pagination) !== null
-
-// Presets already wide enough that widening the range would not help.
-const WIDE_TIME_PRESETS = new Set([
-	"7d",
-	"1w",
-	"10d",
-	"14d",
-	"2w",
-	"30d",
-	"6w",
-	"1mo",
-	"2mo",
-	"3mo",
-	"6mo",
-	"12mo",
-])
-
-/** Widening only helps from a short relative preset (`LogsTable` passes `""` as the default). */
-export const canWidenRange = (search: Search): boolean =>
-	search.startTime === undefined && !WIDE_TIME_PRESETS.has(search.timePreset ?? "")
-
-// FILTER CHIPS
 
 const FACETS = [
 	{ label: "Severity", include: "severities", exclude: "excludedSeverities" },
@@ -176,15 +149,14 @@ export const logFilterChips = (search: Search): ReadonlyArray<LogFilterChip> => 
 		return filter ? [{ entry, filter }] : []
 	})
 	const facetChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
-		Arr.flatMap(FACETS, (facet) => {
-			const param = isNegated ? facet.exclude : facet.include
-			const values = search[param]
-			const mode = matchModeOf(param)
-			const operator = mode !== undefined && search[mode] === "contains" ? "contains" : undefined
-			return values !== undefined && values.length > 0
-				? [{ param, label: facet.label, values, negated: isNegated, operator }]
-				: []
-		})
+		Arr.map(
+			facetChipsOf(FACETS, (param) => search[param], isNegated),
+			({ param, label, values }) => {
+				const mode = matchModeOf(param)
+				const operator = mode !== undefined && search[mode] === "contains" ? "contains" : undefined
+				return { param, label, values, negated: isNegated, operator }
+			},
+		)
 	const attrChips = (isNegated: boolean): ReadonlyArray<LogFilterChip> =>
 		Arr.map(
 			Arr.filter(attrs, (a) => a.filter.negated === isNegated),
@@ -260,9 +232,7 @@ export const withoutChips = (search: Search, chips: ReadonlyArray<LogFilterChip>
 	}
 }
 
-// VOLUME
-
-/** `LogsVolumeChart`'s denser histogram target, and its request. */
+/** The volume strip's denser histogram target, and its request. */
 export const HISTOGRAM_TARGET_POINTS = 150
 
 export const volumeInput = (
@@ -278,16 +248,16 @@ export const volumeInput = (
 	endTime: window.endTime,
 	bucketSeconds,
 	filters: {
-		serviceNames: mutable(search.services),
-		severities: mutable(search.severities),
-		environments: mutable(search.deploymentEnvs),
+		serviceNames: search.services,
+		severities: search.severities,
+		environments: search.deploymentEnvs,
 		deploymentEnvMatchMode: search.deploymentEnvMatchMode,
-		namespaces: pinnedNamespace !== null ? [pinnedNamespace] : mutable(search.namespaces),
+		namespaces: pinnedNamespace !== null ? [pinnedNamespace] : search.namespaces,
 		namespaceMatchMode: pinnedNamespace === null ? search.namespaceMatchMode : undefined,
-		excludedServiceNames: mutable(search.excludedServices),
-		excludedSeverities: mutable(search.excludedSeverities),
-		excludedEnvironments: mutable(search.excludedDeploymentEnvs),
-		excludedNamespaces: pinnedNamespace === null ? mutable(search.excludedNamespaces) : undefined,
+		excludedServiceNames: search.excludedServices,
+		excludedSeverities: search.excludedSeverities,
+		excludedEnvironments: search.excludedDeploymentEnvs,
+		excludedNamespaces: pinnedNamespace === null ? search.excludedNamespaces : undefined,
 		traceId: search.traceId,
 		...attributeQueryFilters(search),
 	},
@@ -317,7 +287,7 @@ export const volumeSeriesKeys = (buckets: ReadonlyArray<VolumeBucket>): Readonly
 export const volumeTotal = (buckets: ReadonlyArray<VolumeBucket>): number =>
 	Arr.reduce(buckets, 0, (sum, bucket) => sum + Arr.reduce(Rec.values(bucket.counts), 0, (s, v) => s + v))
 
-/** The chip's id in `ActiveFilterChips`: its param, `attrs:<entry>` or `<param>:<index>`. */
+/** The chip's id: its param, `attrs:<entry>` or `<param>:<index>`. */
 export const chipId = (chip: LogFilterChip): string =>
 	chip.attr !== undefined
 		? `attrs:${chip.attr}`

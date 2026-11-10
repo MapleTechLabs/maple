@@ -96,7 +96,6 @@ const position = (menu: Menu) =>
 			anchor: { x: 8, y: 860, width: 203, height: 32 },
 		},
 	})
-// TESTS
 
 describe("sidebar collapse", () => {
 	test("the trigger folds the rail to icons, saves the cookie, and turns sections into menus", () => {
@@ -267,7 +266,6 @@ describe("menus", () => {
 		)
 	})
 })
-// ORG SWITCHER
 
 describe("org switcher", () => {
 	test("each opening re-reads the namespaces; picking one pins it for this org and reports it", () => {

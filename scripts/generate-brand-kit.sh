@@ -15,7 +15,7 @@
 #
 #   * It is ONE evenodd path. The eyes and the trunk notch are knockouts, so
 #     whatever sits behind reads through them. Every variant keeps
-#     fill-rule="evenodd" and a flat fill — a gradient shows through the eyes at
+#     fill-rule="evenodd" and a flat fill: a gradient shows through the eyes at
 #     a different value than at the silhouette edge and they stop reading as
 #     eyes.
 #   * It is bottom-cropped: the trunk runs to the very bottom of its 739-unit
@@ -24,7 +24,7 @@
 #     square reads bottom-heavy.
 #
 # What "colorway" means depends on the variant. On a tile it names a pair (Soot
-# is amber-on-ink, Fired is ink-on-amber — the names come from the Maple Logo
+# is amber-on-ink, Fired is ink-on-amber; the names come from the Maple Logo
 # brand sheet). On a bare mark there is no tile, so it collapses to the mark's
 # own fill and the files are named for the ink instead: amber / ink / white.
 #
@@ -61,10 +61,10 @@ render() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 # Lockups are wider than they are tall, so they are rendered to a width and left
 # to find their own height. Passing both would squash them, and driving them off
 # a height would make the number in the filename mean one thing for a square mark
-# and another for a lockup — "-1024" has to mean the same size to a reader.
+# and another for a lockup. "-1024" has to mean the same size to a reader.
 render_w() { rsvg-convert -w "$2" "$1" -o "$3"; }
 
-# --- bare mark: the actual logo file ----------------------------------------
+# Bare mark: the actual logo file.
 # Native 739 viewBox, no tile, no padding. This is what someone dropping the
 # Maple logo into a deck or a README wants.
 bare_mark() { # bare_mark <fill> <name>
@@ -82,7 +82,7 @@ bare_mark "$AMBER" amber
 bare_mark "$INK"   ink
 bare_mark "$WHITE" white
 
-# --- tiled mark: the app-icon lockup ----------------------------------------
+# Tiled mark: the app-icon lockup.
 # Same geometry generate-icons.sh uses for the 32px favicon: 74% of the tile
 # wide, seated 2.5 units off the bottom.
 SEATED="$(awk 'BEGIN { m = 0.7396 * 32; printf "translate(%.4f %.4f) scale(%.7f)", (32 - m) / 2, 32 - 2.5 - m, m / 739 }')"
@@ -102,10 +102,10 @@ tiled_mark() { # tiled_mark <tile-fill> <mark-fill> <name>
 tiled_mark "$INK"   "$AMBER" soot
 tiled_mark "$AMBER" "$INK"   fired
 
-# --- lockup: mark + wordmark ------------------------------------------------
+# Lockup: mark + wordmark.
 # brand/lockup.svg comes from scripts/outline-wordmark.py, which draws the
 # `09 — Wordmark / lockup` artboard's spec with the type already converted to
-# outlines — a wordmark that ships as live <text> renders in a fallback face on
+# outlines: a wordmark that ships as live <text> renders in a fallback face on
 # every machine that does not have Geist installed, which is all of them.
 #
 # The source carries exactly two flat fills, mark and type, so a colorway here is
@@ -132,7 +132,7 @@ if [ -f "$LOCKUP_SRC" ]; then
 	}
 
 	# The primary cut is the file as drawn, so it is copied rather than run
-	# through a no-op substitution — a sed that silently stopped matching would
+	# through a no-op substitution: a sed that silently stopped matching would
 	# otherwise ship an unrecolored file under a colorway name.
 	cp "$LOCKUP_SRC" "$OUT/wordmark/maple-lockup-primary.svg"
 	for size in "${PNG_SIZES[@]}"; do
@@ -151,7 +151,7 @@ else
 	rmdir "$OUT/wordmark"
 fi
 
-# --- icons: the shipped app icon set, copied in as-is -----------------------
+# Icons: the shipped app icon set, copied in as-is.
 # Not regenerated here. These are generate-icons.sh's output and the kit should
 # hand out the exact bytes the product serves, not a second rendering of them.
 cp apps/landing/public/favicon.svg  "$OUT/icons/favicon.svg"
@@ -159,7 +159,6 @@ cp apps/landing/public/favicon.ico  "$OUT/icons/favicon.ico"
 cp apps/landing/public/logo192.png  "$OUT/icons/logo192.png"
 cp apps/landing/public/logo512.png  "$OUT/icons/logo512.png"
 
-# --- zip --------------------------------------------------------------------
 # Named directories rather than `-r .` so the archive can live inside the
 # directory it archives without swallowing itself on the next run.
 ( cd "$OUT" && zip -qr maple-brand-kit.zip "${KIT_DIRS[@]}" )

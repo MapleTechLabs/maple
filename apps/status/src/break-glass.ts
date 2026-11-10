@@ -2,7 +2,7 @@ import {
 	StatusPageIncidentImpact,
 	type StatusPageIncidentKind,
 	StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	sha256Base64Url,
 	STATUS_PAGE_OVERLAY_MAX_ENTRIES,

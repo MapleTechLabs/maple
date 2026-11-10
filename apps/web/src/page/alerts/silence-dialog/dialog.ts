@@ -11,8 +11,6 @@ import { shortZoneName } from "../../kit/timezone-zones"
 import { hasMatchers, MatcherField, splitList } from "../shared/matcher-fields"
 import { createSilence } from "../shared/silences"
 
-// "Silence notifications": the side panel the hub, a rule and an incident open, as one Submodel.
-
 export const SilenceDuration = Schema.Literals(["1h", "4h", "morning", "custom"])
 export type SilenceDuration = typeof SilenceDuration.Type
 
@@ -200,8 +198,6 @@ export const isFormReady = (model: Model): boolean =>
 	hasMatchers(matchersOf(model.scope)) &&
 	Option.isSome(silenceEndMs(model.duration, model.until, model.nowMs, model.timeZone))
 
-// COMMANDS
-
 export const SaveSilence = Command.define("SaveAlertSilence", {
 	args: {
 		openCount: Schema.Number,
@@ -228,8 +224,6 @@ export const SaveSilence = Command.define("SaveAlertSilence", {
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
 })
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },

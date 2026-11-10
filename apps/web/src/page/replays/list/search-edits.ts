@@ -1,4 +1,4 @@
-import { nextTagSelection } from "../../../components/replays/session-tags"
+import { nextTagSelection } from "../kit/session-tags"
 import type { Facet, Range } from "./message"
 import type { Search } from "./model"
 import { selectedTags } from "./derive"
@@ -11,13 +11,13 @@ const withTags = (search: Search, tags: ReadonlyArray<string>): Search => ({
 	tags: tags.length > 0 ? tags : undefined,
 })
 
-/** `setSingle`: the last toggled option wins, unchecking the only one clears it. */
+/** The last toggled option wins, unchecking the only one clears it. */
 export const toggledFacet = (search: Search, facet: Facet, name: string): Search => ({
 	...search,
 	[facet]: search[facet] === name ? undefined : name,
 })
 
-/** `setTags`: a newly ticked tier replaces the previous tier. */
+/** A newly ticked tier replaces the previous tier. */
 export const toggledTag = (search: Search, tag: string): Search => {
 	const selected = selectedTags(search)
 	const values = Arr.some(selected, (other) => other === tag)
@@ -37,7 +37,7 @@ export const toggledEngaged = (search: Search): Search => {
 	)
 }
 
-/** A row's tag pill adds its tag (`onFilterTag`). */
+/** A row's tag pill adds its tag. */
 export const addedRowTag = (search: Search, tag: string): Search => {
 	const selected = selectedTags(search)
 	return { ...search, tags: nextTagSelection(selected, [...selected, tag]) }

@@ -146,7 +146,7 @@ export const MountLinkedCursor = Mount.defineStream("MountLinkedCursor", {
 	execute: ({ element }) => linkedCursorStream(element, LinkedCursorMessage.CompletedMountLinkedCursor()),
 })
 
-/** `LinkedCursorOverlay`: positioned and shown by `MountLinkedCursor`. */
+/** The linked cursor overlay, positioned and shown by `MountLinkedCursor`. */
 export const linkedCursorOverlay = <M>(h: HtmlBuilder<M>, chartId: string): Html =>
 	h.div(
 		[

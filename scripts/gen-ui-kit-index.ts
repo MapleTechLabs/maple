@@ -18,11 +18,10 @@ function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir).sort()) {
 		const path = join(dir, entry)
 		if (statSync(path).isDirectory()) yield* walk(path)
-		else if (entry.endsWith(".ts") && !/\.(test|generated)\.ts$/.test(entry)) yield path
+		else if (entry.endsWith(".ts") && !/\.(test|generated|styles)\.ts$/.test(entry)) yield path
 	}
 }
 
-/** The first sentence of a comment block, flattened to one line. */
 const firstSentence = (comment: string) => {
 	const text = comment
 		.replace(/^\/\*\*?|\*\/$/g, "")

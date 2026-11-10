@@ -1,4 +1,4 @@
-import { parseLogsWhereClause } from "../../../lib/logs/advanced-filter-sync"
+import { parseLogsWhereClause } from "./advanced-filter-sync"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { kbd } from "@maple/views/ui/display"
 import {

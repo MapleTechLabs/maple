@@ -13,14 +13,13 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { dataTableEmpty } from "../../../infra/kit/data-table"
+import { dataTableEmpty } from "../../../kit/data-table"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { pageHeroParts, searchToolbar } from "../../../infra/kit/page-parts"
-import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { integrationConnectCta } from "../../kit/integration-empty"
-import { AWS_ACCENT } from "../../../integrations/catalog"
-import { pageTime } from "../../kit/page-time"
+import { integrationConnectCta } from "../../../kit/integration-empty"
+import { pageTime } from "../../../kit/page-time"
 import type { AwsStatus, FleetRead } from "../data"
 import {
 	BAND_CELLS,
@@ -39,8 +38,7 @@ import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 import { typography } from "@maple/views/ui/typography"
-
-// `/infra/aws`: every streamed resource of the connected accounts, problems first.
+import { providerBrand } from "../../../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -191,7 +189,7 @@ const FEATURES = [
 
 const awsConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" },
+		brand: providerBrand("aws"),
 		features: FEATURES,
 		hint: "Deploy a read-only role, pick regions and services, then Maple streams their CloudWatch metrics.",
 		label: "Connect AWS",

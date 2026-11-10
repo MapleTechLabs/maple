@@ -11,9 +11,9 @@ import {
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
 import { selfObservabilityEnv } from "@maple/infra/env"
+import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Clock, Effect } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -35,11 +35,6 @@ const props = Effect.gen(function* () {
 	}
 })
 
-/** Discharge alchemy's phantom color, the way alchemy's own runtime helpers do. */
-const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effect<A, E> =>
-	// oxlint-disable-next-line effecttsgo/strict-effect-provide -- a phantom tag with no service behind it; nothing to compose at a root
-	Effect.provide(effect, RuntimeContext.phantom)
-
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 	"status",
 	props,
@@ -56,7 +51,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 			fetch: Effect.gen(function* () {
 				const request = yield* HttpServerRequest.HttpServerRequest
 				const web = yield* HttpServerRequest.toWeb(request).pipe(Effect.orDie)
-				const [kvBinding, bucketBinding, limiterBinding] = yield* runtime(
+				const [kvBinding, bucketBinding, limiterBinding] = yield* dischargeRuntimeContext(
 					Effect.all([kv.raw, bucket.raw, limiter.raw]),
 				)
 				const storage = nativeStorage({

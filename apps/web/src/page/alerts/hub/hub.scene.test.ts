@@ -27,15 +27,15 @@ import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	destinationRow,
+	hubAt,
+	type HubAt,
 	incidentRow,
 	NOW,
 	ORG,
 	ruleId,
 	ruleRow,
 	stateRow,
-	hubAt,
-	type HubAt,
-} from "../shared/test-rows"
+} from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, ruleMenuId, update } from "./update"

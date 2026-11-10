@@ -8,11 +8,9 @@ import type { ExecutionProfile } from "../ecosystems"
 import type { AgentContext, ExecutionPolicy } from "../prompts"
 import type { Candidate, UncoveredSurface } from "../results"
 import { decodeAgentJson } from "../results"
-import type { CoverageUnit, EstimatedSeverity, Finding, Severity } from "../schema"
+import type { CoverageUnit, EstimatedSeverity, Finding, Profile, Severity } from "../schema"
 import type { LedgerUnit } from "./ledger"
 import { AuditAgents, type AuditRole, AuditStore, type AuditEvent } from "./ports"
-
-export type Profile = "quick" | "standard" | "deep"
 
 export interface PriorRun {
 	readonly runId: string

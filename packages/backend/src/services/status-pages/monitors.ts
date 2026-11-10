@@ -3,7 +3,7 @@ import type { MapleDb } from "@maple/db/client"
 import { UptimeMonitors } from "@maple/db/tables"
 import { StatusPageValidationError } from "@maple/domain/http"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
-import type { OrgId, UptimeMonitorId } from "@maple/domain/primitives"
+import type { OrgId, UptimeMonitorId } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 
 const encodeMonitorId = Schema.encodeSync(UptimeMonitorPublicId)

@@ -4,10 +4,9 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 
-// The advanced filter dialog's state (`AdvancedFilterDialog` + `WhereClauseEditor` +
-// `useWhereClauseAutocomplete`), kept apart from the list Model it sits in.
+// The advanced filter dialog's state, kept apart from the list Model it sits in.
 
-/** The lookups `AutocompleteValuesProvider` fires on first focus (the traces facets are the list's). */
+/** The lookups fired on first focus (the traces facets are the list's). */
 export const ADVANCED_LOOKUPS: ReadonlyArray<AutocompleteLookup> = [
 	"logsFacets",
 	"spanAttributeKeys",

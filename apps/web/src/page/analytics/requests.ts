@@ -1,12 +1,8 @@
 import type { SearchConsoleIntegrationStatus, SearchConsoleSiteStatus } from "@maple/domain/http"
 import { completeThrough, pacificToday } from "@maple/domain/search-console"
-import {
-	filtersFromSearch,
-	hasActiveFilters,
-	type AnalyticsFilters,
-} from "../../components/analytics/filters"
-import { previousWindow } from "../../components/analytics/previous-window"
-import { sparkBucketSeconds } from "../../components/analytics/ai/ai-traffic-model"
+import { filtersFromSearch, hasActiveFilters, type AnalyticsFilters } from "./filters"
+import { previousWindow } from "./previous-window"
+import { sparkBucketSeconds } from "./ai-traffic-model"
 import { chartBucketSeconds } from "@maple/views/lib/infra-chart-units"
 import { Option, Struct, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -37,7 +33,7 @@ import {
 import { type Message, SlotName } from "./message"
 import type { Model, Search, SearchSort, SearchTable } from "./model"
 
-// The reads the page makes, each keyed by its input (S6).
+// The reads the page makes, each keyed by its input.
 
 type Cmd = Command.Command<Message, never, Resources>
 

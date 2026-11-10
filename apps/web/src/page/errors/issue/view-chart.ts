@@ -1,6 +1,6 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { densifySpark, surgeRatio } from "../../../lib/models/error-signal"
+import { densifySpark, surgeRatio } from "../kit/error-signal"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -12,12 +12,10 @@ import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
-import { SEVERITY_TOKEN } from "../kit/severity"
+import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import type { ChartWindow } from "./derive"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
-
-// `IssueOccurrencePanel` and `IssueOccurrenceChart` (components/errors/).
 
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>
@@ -39,7 +37,7 @@ export type ChartInputs = Readonly<{
 	timeZone: string
 }>
 
-/** `IssueOccurrenceChart`: the bars, or the dashed empty line when the window saw nothing. */
+/** The bars, or the dashed empty line when the window saw nothing. */
 const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((model, inputs, h) =>
 	sortedOccurrences(inputs.points).length === 0
 		? emptyMessage(

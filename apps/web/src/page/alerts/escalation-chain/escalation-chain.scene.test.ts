@@ -30,7 +30,7 @@ import {
 	populatedChains,
 } from "../shared/escalation-test-fixtures"
 import { memberId, mixedTargetChain, oncallMembers, populatedSchedules } from "../shared/oncall-test-fixtures"
-import { ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import { FocusChainElement } from "./command"
 import { payloadOf } from "./form"
 import { Message } from "./message"

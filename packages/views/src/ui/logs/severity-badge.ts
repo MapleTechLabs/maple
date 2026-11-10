@@ -4,7 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../display"
 import { severityLabel } from "./log-row-view"
 
-// `SeverityBadge` (packages/ui/src/components/logs/severity-badge.tsx).
+// A log severity as a toned badge.
 
 export type SeverityBadgeOptions = Readonly<{ severity: string; severityNumber?: number; className?: string }>
 

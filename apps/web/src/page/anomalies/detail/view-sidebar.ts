@@ -5,12 +5,10 @@ import {
 	deviation,
 	formatSignalValue,
 	isStaleOpenIncident,
-	META_CHIP_CLASS,
 	RESOLVE_REASON_LABEL,
 	SIGNAL_LABEL,
-	severityToneFor,
-	TRIAGE_STATUS_CHIP,
 } from "@maple/web-data/anomalies/format"
+import { META_CHIP_CLASS, severityToneFor, TRIAGE_STATUS_CHIP } from "@maple/views/lib/anomaly-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
@@ -18,14 +16,12 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { anomalyFingerprintRow } from "../kit/evidence"
-import { shortIssueId } from "../kit/row"
+import { anomalyFingerprintRow } from "../../kit/anomaly-evidence"
+import { shortIssueId } from "@maple/ui/lib/ids"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `AnomalySidebar`: the anomaly detail's side rail.
 
 type H = HtmlBuilder<Message>
 

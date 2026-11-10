@@ -32,8 +32,6 @@ export type ChartHost<M> = Readonly<{
 	onChart: (id: string, message: ChartModel.Message) => M
 }>
 
-// TABLES
-
 /** A cell's text, or `None` when it holds something the model authored itself (a link, an image). */
 const inlineText = (inlines: ReadonlyArray<Markdown.Inline>): Option.Option<string> =>
 	Arr.reduce<(typeof inlines)[number], Option.Option<string>>(inlines, Option.some(""), (acc, inline) =>
@@ -94,7 +92,7 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 	}
 }
 
-/** `MarkdownTable`: Maple's `Table` in a panel; body cells under a known header are recognised. */
+/** Maple's `Table` in a panel; body cells under a known header are recognised. */
 const tableView =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>) =>
 	(views: Markdown.Views) =>
@@ -158,11 +156,8 @@ const tableView =
 		])
 	}
 
-// CHARTS
-
 const PLOT_HEIGHT = "h-[160px] w-full"
 
-/** `<Panel render={<figure />} padded="sm">`. */
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
 	panel(
 		h,
@@ -247,7 +242,7 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 	})
 }
 
-/** `MarkdownChart`: a ```chart fence as a plot; a payload that is not a chart stays visible as text. */
+/** A ```chart fence as a plot; a payload that is not a chart stays visible as text. */
 const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html =>
 	Option.match(Option.fromNullishOr(parseChartSpec(code)), {
 		onNone: () =>

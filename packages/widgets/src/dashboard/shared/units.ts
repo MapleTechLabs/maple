@@ -21,8 +21,7 @@ import { Array as Arr, String as Str } from "effect"
  * widgets store them. A catalog built from the match arms alone would reject
  * every such widget on a get -> edit -> update round trip.
  *
- * `packages/ui/src/lib/format.unit-parity.test.ts` pins (1); `WIDGET_UNITS` is
- * the input to that test.
+ * `formatValueByUnit` keys its formatters by `WidgetUnitToken`, so (1) cannot drift.
  */
 export interface WidgetUnitMeta {
 	readonly token: string
@@ -38,7 +37,7 @@ export interface WidgetUnitMeta {
 	readonly expects: string
 }
 
-export const WIDGET_UNITS: ReadonlyArray<WidgetUnitMeta> = [
+export const WIDGET_UNITS = [
 	// Ordered as the web unit pickers show them, not alphabetically.
 	{ token: "none", label: "None", expects: "any number; rendered like `number`" },
 	{ token: "number", label: "Number", expects: "any number; grouped thousands" },
@@ -65,7 +64,10 @@ export const WIDGET_UNITS: ReadonlyArray<WidgetUnitMeta> = [
 	{ token: "bytes", label: "Bytes", expects: "bytes; scaled decimal (1000-base), not 1024" },
 	{ token: "requests_per_sec", label: "Requests/sec", expects: "a per-second rate" },
 	{ token: "short", label: "Short", expects: "any number; rendered like `number`" },
-]
+] as const satisfies ReadonlyArray<WidgetUnitMeta>
+
+/** A catalogued unit token; `formatValueByUnit` gives every one a formatter. */
+export type WidgetUnitToken = (typeof WIDGET_UNITS)[number]["token"]
 
 export const WIDGET_UNIT_TOKENS: ReadonlyArray<string> = Arr.map(WIDGET_UNITS, (unit) => unit.token)
 

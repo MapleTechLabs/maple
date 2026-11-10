@@ -12,18 +12,11 @@ import {
 	fromUnion,
 	type CHQuery,
 	type ColumnAccessor,
-	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ServiceOverviewHourly,
-	ServiceOverviewMinutely,
-	ServiceOverviewSpans,
-	ServiceUsage,
-	TracesAggregatesHourly,
-	orgIdParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import {
@@ -34,21 +27,7 @@ import {
 	type FacetOutput,
 } from "./query-helpers"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
-
-// Service overview
-
-const SERVICE_RAW_DURATION_STATE = "quantilesTDigestState(0.5, 0.95, 0.99)(Duration)"
-const SERVICE_ROLLUP_DURATION_STATE = "quantilesTDigestMergeState(0.5, 0.95, 0.99)(DurationQuantiles)"
-
-/**
- * The type both of the above produce — the raw branch and the rollup branch
- * UNION-merge cleanly precisely because they agree on it.
- *
- * Opaque by design: the value is a t-digest an outer `-Merge` consumes, never a
- * row anyone decodes. Declaring it is what lets the queries carrying it derive
- * a row schema for their *other* columns.
- */
-export const DURATION_STATE = T.aggregateState("quantilesTDigest(0.5, 0.95, 0.99)", "UInt64")
+import { DURATION_STATE, RAW_DURATION_STATE, ROLLUP_DURATION_STATE } from "./service-operations"
 
 /** A commit tuple as JSON: `[sha, spanCount, errorCount, firstSeen]`. */
 const COMMIT_TUPLE = T.array(
@@ -169,7 +148,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			: undefined,
 	]
 
-	const rawEdges = from(ServiceOverviewSpans)
+	const rawEdges = from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bBucket: grain === "minute" ? CH.toStartOfMinute($.Timestamp) : CH.toStartOfHour($.Timestamp),
 			bServiceName: $.ServiceName,
@@ -181,7 +160,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.countIf($.StatusCode.eq("Error")),
 			bEstimatedErrorCount: CH.sumIf($.SampleRate, $.StatusCode.eq("Error")),
 			bDurationSum: CH.sum(CH.rawExpr("toFloat64(Duration)", T.float64)),
-			bDurationQuantiles: CH.rawExpr(SERVICE_RAW_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(RAW_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.Timestamp),
 			bApdexSatisfiedCount: CH.countIf($.StatusCode.neq("Error").and($.Duration.lt(500_000_000))),
 			bApdexToleratingCount: CH.countIf(
@@ -194,7 +173,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 		])
 		.groupBy(...SERVICE_WINDOW_GROUP_KEYS)
 
-	const hourlyInterior = from(ServiceOverviewHourly)
+	const hourlyInterior = from(Datasources.serviceOverviewHourly)
 		.select(($) => ({
 			bBucket: $.Hour,
 			bServiceName: $.ServiceName,
@@ -206,7 +185,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.sum($.ErrorCount),
 			bEstimatedErrorCount: CH.sum($.EstimatedErrorCount),
 			bDurationSum: CH.sum($.DurationSum),
-			bDurationQuantiles: CH.rawExpr(SERVICE_ROLLUP_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.FirstSeen),
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
@@ -224,7 +203,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 	// Without it, the minute tier covers the whole interior on its own, and the
 	// window is bounded by this table's 90-day retention rather than the hourly
 	// table's year.
-	const minutelyInterior = from(ServiceOverviewMinutely)
+	const minutelyInterior = from(Datasources.serviceOverviewMinutely)
 		.select(($) => ({
 			bBucket: $.Minute,
 			bServiceName: $.ServiceName,
@@ -236,7 +215,7 @@ export function serviceOverviewWindows(filters: ServiceWindowFilters, tiers: Ser
 			bErrorCount: CH.sum($.ErrorCount),
 			bEstimatedErrorCount: CH.sum($.EstimatedErrorCount),
 			bDurationSum: CH.sum($.DurationSum),
-			bDurationQuantiles: CH.rawExpr(SERVICE_ROLLUP_DURATION_STATE, DURATION_STATE),
+			bDurationQuantiles: CH.rawExpr(ROLLUP_DURATION_STATE, DURATION_STATE),
 			bFirstSeen: CH.min_($.FirstSeen),
 			bApdexSatisfiedCount: CH.sum($.ApdexSatisfiedCount),
 			bApdexToleratingCount: CH.sum($.ApdexToleratingCount),
@@ -278,23 +257,6 @@ export type ServiceCommitTuple = readonly [
 	firstSeen: DateTime.Utc,
 ]
 
-export interface ServiceOverviewOutput {
-	readonly serviceName: string
-	readonly serviceNamespace: string
-	readonly environment: string
-	readonly throughput: number
-	readonly errorCount: number
-	readonly estimatedErrorCount: number
-	readonly spanCount: number
-	readonly p50LatencyMs: number
-	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
-	readonly estimatedSpanCount: number
-	readonly firstSeen: DateTime.Utc
-	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
-	readonly commits: readonly ServiceCommitTuple[]
-}
-
 export const serviceOverviewRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	serviceNamespace: Schema.String,
@@ -311,8 +273,11 @@ export const serviceOverviewRowSchema = Schema.Struct({
 	// `CHNumber`, never `Schema.Number`: the counts are UInt64, and a
 	// gateway/readonly cluster that refuses `output_format_json_quote_64bit_integers=0`
 	// returns them as quoted strings.
+	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
 	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse])),
-}) satisfies CompiledQueryRowSchema<ServiceOverviewOutput>
+})
+
+export type ServiceOverviewOutput = typeof serviceOverviewRowSchema.Type
 
 export interface ServiceCatalogOpts {
 	serviceName?: string
@@ -472,12 +437,6 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 		.format("JSON")
 }
 
-// Service presence
-
-export interface ServicePresenceOutput {
-	readonly spanCount: number
-}
-
 /**
  * Span count for one service over the window, from the same tiers as
  * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
@@ -496,9 +455,9 @@ export function servicePresenceQuery(opts: { serviceName: string }) {
 
 export const servicePresenceRowSchema = Schema.Struct({
 	spanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<ServicePresenceOutput>
+})
 
-// Service health snapshot
+export type ServicePresenceOutput = typeof servicePresenceRowSchema.Type
 
 export interface ServiceHealthSnapshotOpts {
 	environments?: readonly string[]
@@ -528,7 +487,7 @@ export interface ServiceHealthSnapshotOutput {
  * `serviceHealthSnapshotHours` gives callers the same span to divide rates by.
  */
 export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			environment: $.DeploymentEnv,
@@ -553,8 +512,6 @@ export function serviceHealthSnapshotQuery(opts: ServiceHealthSnapshotOpts) {
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// Service health baseline
 
 export interface ServiceHealthBaselineOpts {
 	environments?: readonly string[]
@@ -596,8 +553,6 @@ export function serviceHealthBaselineQuery(opts: ServiceHealthBaselineOpts) {
 		.format("JSON")
 }
 
-// Service releases timeline
-
 export interface ServiceReleasesTimelineOpts {
 	serviceName: string
 	/**
@@ -623,7 +578,7 @@ export interface ServiceReleasesTimelineOutput {
 function serviceReleasesTimelineRawQuery(
 	opts: ServiceReleasesTimelineOpts,
 ): CHQuery<ColumnDefs, ServiceReleasesTimelineOutput> {
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			commitSha: $.CommitSha,
@@ -664,8 +619,6 @@ export function serviceReleasesTimelineQuery(
 		.format("JSON")
 }
 
-// Service environments
-//
 // Distinct non-empty deployment environments reported in the window, for one
 // service or for the whole organization. Backs the service-detail environment
 // switcher and the mobile app's global environment picker, replacing an
@@ -703,8 +656,6 @@ export function serviceEnvironmentsQuery(opts: ServiceEnvironmentsOpts = {}) {
 		.limit(100)
 		.format("JSON")
 }
-
-// Service Apdex time series
 
 export interface ServiceApdexTimeseriesOpts {
 	serviceName: string
@@ -770,7 +721,7 @@ export function serviceApdexTimeseriesQuery(
 	// `CommitSha` from ResourceAttributes. Cuts scan volume by ~20-100x vs.
 	// the raw-table path (same pattern `tracesTimeseriesQuery` already uses via
 	// `canUseServiceOverviewMv`).
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			totalCount: CH.count(),
@@ -787,8 +738,6 @@ export function serviceApdexTimeseriesQuery(
 		.format("JSON") as CHQuery<ColumnDefs, ServiceApdexTimeseriesOutput>
 }
 
-// Service usage
-
 export interface ServiceUsageOpts {
 	serviceName?: string
 	/**
@@ -799,23 +748,6 @@ export interface ServiceUsageOpts {
 	 * names here.
 	 */
 	serviceNames?: readonly string[]
-}
-
-export interface ServiceUsageOutput {
-	readonly serviceName: string
-	readonly totalLogCount: number
-	readonly totalLogSizeBytes: number
-	readonly totalTraceCount: number
-	readonly totalTraceSizeBytes: number
-	readonly totalSumMetricCount: number
-	readonly totalSumMetricSizeBytes: number
-	readonly totalGaugeMetricCount: number
-	readonly totalGaugeMetricSizeBytes: number
-	readonly totalHistogramMetricCount: number
-	readonly totalHistogramMetricSizeBytes: number
-	readonly totalExpHistogramMetricCount: number
-	readonly totalExpHistogramMetricSizeBytes: number
-	readonly totalSizeBytes: number
 }
 
 export const serviceUsageRowSchema = Schema.Struct({
@@ -833,10 +765,12 @@ export const serviceUsageRowSchema = Schema.Struct({
 	totalExpHistogramMetricCount: CHNumber,
 	totalExpHistogramMetricSizeBytes: CHNumber,
 	totalSizeBytes: CHNumber,
-}) satisfies CompiledQueryRowSchema<ServiceUsageOutput>
+})
+
+export type ServiceUsageOutput = typeof serviceUsageRowSchema.Type
 
 export function serviceUsageQuery(opts: ServiceUsageOpts) {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			totalLogCount: CH.sum($.LogCount),
@@ -878,25 +812,20 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 		.format("JSON")
 }
 
-export interface TraceSpanVolumeOutput {
-	readonly serviceName: string
-	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
-	readonly spanCount: number
-	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
-	readonly firstHourSpanCount: number
-	readonly lastHourSpanCount: number
-}
-
 export const traceSpanVolumeRowSchema = Schema.Struct({
 	serviceName: Schema.String,
+	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
 	spanCount: CHNumber,
+	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
 	firstHourSpanCount: CHNumber,
 	lastHourSpanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<TraceSpanVolumeOutput>
+})
+
+export type TraceSpanVolumeOutput = typeof traceSpanVolumeRowSchema.Type
 
 /** Stored spans per service over every hour overlapping the window: sizes a raw `traces` scan before it runs. */
 export function traceSpanVolumeByServiceQuery() {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanCount: CH.sum($.TraceCount),
@@ -932,12 +861,12 @@ export interface ServiceUsageWithPreviousOutput extends ServiceUsageOutput {
  * delta chips consume.
  */
 export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
-	const inCurrent = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
+	const inCurrent = ($: ColumnAccessor<typeof Datasources.serviceUsage.columns>) =>
 		$.Hour.gte(utcHourFloor("startTime")).and($.Hour.lte(utcHourFloor("endTime")))
-	const inPrevious = ($: ColumnAccessor<typeof ServiceUsage.columns>) =>
+	const inPrevious = ($: ColumnAccessor<typeof Datasources.serviceUsage.columns>) =>
 		$.Hour.gte(utcHourFloor("previousStartTime")).and($.Hour.lte(utcHourFloor("previousEndTime")))
 
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			totalLogCount: CH.sumIf($.LogCount, inCurrent($)),
@@ -985,8 +914,6 @@ export function serviceUsageWithPreviousQuery(opts: ServiceUsageOpts) {
 		.orderBy(["totalSizeBytes", "desc"])
 		.format("JSON")
 }
-
-// Services facets (UNION ALL — environment + commit_sha facets)
 
 export type ServicesFacetsOutput = FacetOutput
 

@@ -2,8 +2,8 @@ import type { BillingAccount, BillingAccountOrg, BillingAccountOrgUsage } from "
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
-import { formatCount, formatUsage } from "../../../lib/billing/usage"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatCount, formatUsage } from "../../kit/billing/usage"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
@@ -15,7 +15,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { settingsSection } from "../kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { canManage, Message, type Model } from "./model"
 import { linkTargetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -29,7 +29,7 @@ type H = HtmlBuilder<Message>
 const nameOf = (org: Readonly<{ name: string | null }>): string =>
 	org.name === null || Str.trim(org.name) === "" ? "Unnamed organization" : org.name
 
-/** `OrgAvatar`: the org's logo over its initials on a warm tile keyed by the name. */
+/** The org's logo over its initials on a warm tile keyed by the name. */
 const orgAvatar = (h: H, name: string, imageUrl: string | null, className = "size-8"): Html =>
 	avatarFallback(
 		h,
@@ -48,8 +48,6 @@ const prose = (h: H, children: ReadonlyArray<Html | string>, className?: string)
 		[h.Class(cn(typographyClass({ size: "sm", tone: "muted", className: "font-prose" }), className))],
 		children,
 	)
-
-// MEMBER
 
 /** A member org: who pays for it, and (admins) the way out. Plan, caps and invoices live there. */
 export const memberSection = (h: H, model: Model, account: BillingAccount): Html => {
@@ -79,8 +77,6 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 		]),
 	])
 }
-
-// BILLING ORG
 
 /** One org's volume, compact: bytes across signals, then sessions and events when there are any. */
 const volumeLabel = (usage: BillingAccountOrgUsage): string =>
@@ -194,8 +190,6 @@ export const billedOrgsSection = (h: H, model: Model, account: BillingAccount, t
 		],
 	)
 
-// STANDALONE
-
 /** An admin's other orgs to bill this one through; hidden until there is at least one. */
 export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
@@ -252,8 +246,6 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 		),
 	]
 }
-
-// DIALOGS
 
 export const accountDialogs = (h: H, model: Model, account: BillingAccount | null): ReadonlyArray<Html> => {
 	const target = linkTargetOf(model)

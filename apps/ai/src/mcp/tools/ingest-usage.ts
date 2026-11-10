@@ -4,7 +4,8 @@ import { CH } from "@maple/query-engine"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -81,7 +82,6 @@ export function registerIngestUsageTool(server: McpToolRegistrar) {
 			service: P.service(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: IngestUsageOutput,
 		hints: { readOnly: true },
 		phrases: ["Measuring ingest volume"],
 		handler: Effect.fn("McpTool.ingestUsage")(function* (params) {

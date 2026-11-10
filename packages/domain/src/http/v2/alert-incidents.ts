@@ -17,7 +17,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import {
 	AlertIncidentEventPublicId,
 	AlertIncidentPublicId,

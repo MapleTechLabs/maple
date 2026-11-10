@@ -6,13 +6,13 @@ import { buildTraceDetail } from "@maple/ui/lib/span-tree"
 import { DateTime, Effect, Option, Schema, Array as Arr } from "effect"
 import { queryRows } from "./local-query"
 
-// The query of `useLocalTraceDetail` (the span panel reads through `TraceSource`), and the log
+// The trace detail query (the span panel reads through `TraceSource`), and the log
 // sheet's trace timeline (`LogSource.traceSpans`).
 
 const decodeTraceId = Schema.decodeUnknownOption(TraceId)
 
 /**
- * The full span hierarchy, shaped like `TraceViewTabs` reads it; none for a trace with no spans.
+ * The full span hierarchy, shaped like the trace views read it; none for a trace with no spans.
  * `narrowByTime` stays off: the trace-id lookup is cheaper than threading time bounds.
  */
 export const fetchTrace = (traceId: string, apiBase: string) =>

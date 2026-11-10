@@ -30,7 +30,9 @@ import {
 	type RestrictionDraft,
 } from "./form"
 import { type Direction, Message } from "./message"
-import { canManage, type Model, zoneItems } from "./model"
+import { type Model, zoneItems } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsScheduleNew" }>
@@ -197,7 +199,7 @@ const zonePicked = (model: Model, message: Combobox.Message): Return => {
 }
 
 const save = (model: Model): Return =>
-	model.isSaving || !canManage(model)
+	model.isSaving || !canManageAlerts(model)
 		? { model }
 		: Option.match(payloadOf(model.form), {
 				onNone: () => ({ model: { ...model, isShowingErrors: true } }),
@@ -243,8 +245,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				// Members stay unknown (names read "Member"), and the picker says why it is empty.
 				onFailure: (error) => ({ model: { ...model, members: null, membersError: error } }),
 			}),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		ChangedName: ({ value }) => withForm(model, { ...model.form, name: value }),
 		ChangedDescription: ({ value }) => withForm(model, { ...model.form, description: value }),
 		GotZoneMessage: ({ message: child }) => zonePicked(model, child),

@@ -11,9 +11,9 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { imageDropzone, typeToConfirmField } from "../kit/image-dropzone"
 import { adminOnlyNotice } from "../kit/members"
-import { dangerRow, dangerZone } from "../kit/danger-zone"
-import { saveBar } from "../kit/save-bar"
-import { settingsSection, settingsSections } from "../kit/section"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
@@ -59,7 +59,7 @@ const deletionFacts = (h: H): Html =>
 		),
 	)
 
-/** `OrgAvatar fit="contain"`: the logo preview (the initials until images are rendered). */
+/** The logo preview: the initials until images are rendered. */
 const orgAvatar = (h: H, name: string): Html =>
 	avatarFallback(
 		h,

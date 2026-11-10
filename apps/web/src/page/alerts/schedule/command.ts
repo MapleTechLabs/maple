@@ -1,8 +1,8 @@
+import { readClock } from "@maple/views/data/timing"
 import { OnCallOverrideId, OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallOverrideCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readGrants } from "../../../data/session-tenant"
 import {
 	createOverride,
 	deleteOverride,
@@ -12,11 +12,9 @@ import {
 } from "../shared/oncall-schedules"
 import { listOrgMembers } from "../shared/org-members"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
-export const ReadScheduleClock = Command.define("ReadScheduleClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadScheduleClock = readClock("ReadScheduleClock", Message.ReadClock)
 
 export const FetchSchedule = Command.define("FetchOnCallSchedule", {
 	args: { key: Schema.String, scheduleId: OnCallScheduleId },
@@ -57,12 +55,7 @@ export const FetchScheduleMembers = Command.define("FetchScheduleMembers", {
 	),
 })
 
-export const FetchScheduleSession = Command.define("FetchScheduleSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchScheduleSession = fetchSessionGrants("FetchScheduleSession", Message.CompletedFetchSession)
 
 export const CreateOverride = Command.define("CreateOnCallOverride", {
 	args: { openCount: Schema.Number, scheduleId: OnCallScheduleId, payload: V2OnCallOverrideCreateParams },

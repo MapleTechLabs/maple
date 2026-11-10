@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
-// The span-volume fixture of `TreemapSpike` and its
-// service palette, kept apart from the definition so the lab page can build the legend.
+// The treemap spike's span-volume fixture and its service palette, kept apart from the definition
+// so the lab page can build the legend.
 
 export interface TreemapRow {
 	readonly service: string

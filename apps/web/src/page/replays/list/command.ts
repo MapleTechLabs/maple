@@ -1,21 +1,22 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { getReplaysFacets, listReplays, type ListReplaysInput } from "@maple/web-data/warehouse/replays"
-import { sessionTagsFromSearch } from "../../../components/replays/session-tags"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { sessionTagsFromSearch } from "../kit/session-tags"
+import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { TimeWindow } from "../../../data/time-range"
 import { ReplaysSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { virtualizeSessions } from "../kit/virtualize"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ReplaysFacets, ReplaysPage, type Search } from "./model"
 
-/** `REPLAYS_PAGE_SIZE`. */
 export const PAGE_SIZE = 50
 
-/** `replaysFilterInputs`: the window and the URL filters, seconds mapped to ms. */
+/** The window and the URL filters, seconds mapped to ms. */
 export const filterInputs = (search: Search, window: TimeWindow) => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
@@ -38,24 +39,7 @@ export const filterInputs = (search: Search, window: TimeWindow) => ({
 	activeTimeMaxMs: search.activeMax !== undefined ? search.activeMax * 1000 : undefined,
 })
 
-export const ResolveWindow = Command.define("ResolveReplaysWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveReplaysWindow", Message.CompletedResolveWindow)
 
 const listPage = (input: ListReplaysInput) =>
 	Effect.map(listReplays({ data: input }), (page): ReplaysPage => ({
@@ -64,8 +48,7 @@ const listPage = (input: ListReplaysInput) =>
 		nextCursor: page.nextCursor,
 	}))
 
-const fetchPage = (input: ListReplaysInput) =>
-	listPage(input).pipe(Effect.mapError(toLoadFailure), Effect.result)
+const fetchPage = (input: ListReplaysInput) => listPage(input).pipe(settled)
 
 const PageArgs = { key: Schema.String, search: ReplaysSearch, window: TimeWindow }
 
@@ -76,14 +59,10 @@ export const FetchFirstPage = Command.define("FetchReplaysFirstPage", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.listReplays, schema: ReplaysPage },
 			listPage({ ...filterInputs(search, window), limit: PAGE_SIZE }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFirstPage({ key, result }))),
 })
 
-/** `fetchNextPage`: the cursor the last page handed back. */
+/** Fetches with the cursor the last page handed back. */
 export const FetchNextPage = Command.define("FetchReplaysNextPage", {
 	args: { ...PageArgs, cursor: Schema.String, generation: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
@@ -100,11 +79,7 @@ export const FetchFacets = Command.define("FetchReplaysFacets", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.replaysFacets, schema: ReplaysFacets },
 			getReplaysFacets({ data: filterInputs(search, window) }),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFacets({ key, result }))),
 })
 
 export const LoadSignalPresence = Command.define("LoadReplaysSignalPresence", {
@@ -114,7 +89,7 @@ export const LoadSignalPresence = Command.define("LoadReplaysSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ReachEndSentinel`: the 1px marker under the list came within 400 px of the viewport. */
+/** The 1px marker under the list came within 400 px of the viewport. */
 export const WatchListEnd = Mount.defineStream("WatchReplaysListEnd", {
 	messages: [Message.ReachedListEnd],
 	execute: ({ element }) =>
@@ -136,7 +111,7 @@ export const WatchListEnd = Mount.defineStream("WatchReplaysListEnd", {
 		),
 })
 
-/** `useVirtualizer` over the page scroller: the rows to render and where. */
+/** The virtualizer over the page scroller: the rows to render and where. */
 export const VirtualizeList = Mount.defineStream("VirtualizeReplaysList", {
 	messages: [Message.ChangedVirtualWindow],
 	execute: ({ element }) =>
@@ -145,15 +120,15 @@ export const VirtualizeList = Mount.defineStream("VirtualizeReplaysList", {
 			: Stream.never,
 })
 
-/** `ToolbarSearch`'s 300 ms debounce. */
+/** The toolbar search's debounce. */
 export const DebounceQuery = Command.define("DebounceReplaysQuery", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedQueryDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.CompletedQueryDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedQueryDebounce({ generation })),
 })
 
-/** `RangeFilterSection`'s 400 ms pause before typed values commit. */
+/** The range filters' 400 ms pause before typed values commit. */
 export const DebounceDraft = Command.define("DebounceReplaysRangeDraft", {
 	args: { version: Schema.Number },
 	messages: [Message.CompletedDraftDebounce],
@@ -161,9 +136,4 @@ export const DebounceDraft = Command.define("DebounceReplaysRangeDraft", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.CompletedDraftDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteReplaysReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteReplaysReloadSpin", Message.CompletedReloadSpin)

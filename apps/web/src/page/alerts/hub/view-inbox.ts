@@ -1,7 +1,7 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
 import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	displaySignalType,
@@ -32,9 +32,9 @@ import { icon } from "@maple/views/ui/icon"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
 import { HEADROOM_FILL, HEADROOM_TEXT } from "../shared/headroom-tone"
-import { incidentHref, ruleHref } from "../shared/links"
+import { incidentHref, ruleHref } from "../../kit/alert-links"
 import { sortIncidents } from "../shared/sort"
-import { isoMs, msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { dividedList, stripClass } from "@maple/views/ui/rule"
@@ -43,8 +43,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { barFillClass } from "@maple/views/ui/meter"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
-
-// `InboxTab` and `HeadroomList`: the hub's Inbox tab.
 
 const HOUR_MS = 60 * 60 * 1000
 const INCIDENT_GRID = "grid grid-cols-[minmax(0,1fr)_150px_90px_140px] items-center gap-4"
@@ -164,8 +162,6 @@ const quietStreak = <M>(
 	])
 }
 
-// OPEN INCIDENTS
-
 const openIncidentsList = <M>(
 	h: HtmlBuilder<M>,
 	incidents: ReadonlyArray<AlertIncidentDocument>,
@@ -279,8 +275,6 @@ const openIncidentRow = <M>(
 	])
 }
 
-// LAST 24 HOURS
-
 const fireStrip = <M>(
 	h: HtmlBuilder<M>,
 	lanes: ReadonlyArray<FireLane>,
@@ -288,7 +282,7 @@ const fireStrip = <M>(
 	range: Range,
 	enabledRuleIds: ReadonlyArray<string>,
 ): Html => {
-	const inWindow = Arr.filter(incidents, (i) => isoMs(i.firstTriggeredAt) >= range.min)
+	const inWindow = Arr.filter(incidents, (i) => toEpochMs(i.firstTriggeredAt) >= range.min)
 	const resolved = Arr.filter(inWindow, (i) => i.resolvedAt !== null)
 	const mttr =
 		resolved.length === 0
@@ -298,7 +292,8 @@ const fireStrip = <M>(
 						resolved,
 						0,
 						(sum, i) =>
-							sum + (isoMs(i.resolvedAt ?? i.firstTriggeredAt) - isoMs(i.firstTriggeredAt)),
+							sum +
+							(toEpochMs(i.resolvedAt ?? i.firstTriggeredAt) - toEpochMs(i.firstTriggeredAt)),
 					) / resolved.length,
 				)
 	const shown = lanes.slice(0, MAX_LANES)
@@ -392,8 +387,6 @@ const fireLaneRow = <M>(h: HtmlBuilder<M>, lane: FireLane): Html =>
 		],
 	)
 
-// BLIND SPOTS
-
 const BLIND_SPOT_META = new Map<BlindSpotKind, { label: string; action: string; className: string }>([
 	["error", { label: "Error", action: "Fix", className: "text-severity-error" }],
 	["stale", { label: "Stale", action: "Check", className: "text-severity-warn" }],
@@ -469,8 +462,6 @@ const blindSpotRow = <M>(h: HtmlBuilder<M>, spot: BlindSpot): Html => {
 		],
 	)
 }
-
-// HEADROOM
 
 const ruleValue = (rule: AlertRuleDocument, value: number): string => {
 	const draft = rule.queryBuilderDraft

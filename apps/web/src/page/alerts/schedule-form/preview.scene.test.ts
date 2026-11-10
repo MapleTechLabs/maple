@@ -16,7 +16,7 @@ import {
 import { expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { memberId, ONCALL_NOW, oncallMembers } from "../shared/oncall-test-fixtures"
-import { ORG } from "../shared/test-rows"
+import { ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

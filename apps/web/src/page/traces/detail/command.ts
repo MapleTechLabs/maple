@@ -1,22 +1,23 @@
+import { readClock } from "@maple/views/data/timing"
 import { TraceId } from "@maple/domain"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { getLogsCount } from "@maple/web-data/warehouse/logs"
 import { getProductEventsForTrace } from "@maple/web-data/warehouse/product-events"
 import { getReplaysForTrace } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy, getTraceSpanEvents } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { requestKey, type RequestKey } from "@maple/views/data/request-key"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { listQueryOf } from "./list-query"
 import { Message } from "./message"
 import { ProductEvent } from "./model"
 import { SpanEvents, TraceData } from "@maple/views/traces/trace-data"
 
-/** `decodeTraceIdParam`: a pasted id may carry whitespace; anything still undecodable is not found. */
+/** A pasted id may carry whitespace; anything still undecodable is not found. */
 export const decodeTraceId = (raw: string): Option.Option<TraceId> =>
 	Schema.decodeOption(TraceId)(Str.trim(raw))
 
@@ -36,10 +37,7 @@ export const correlationWindow = (
 			})
 }
 
-export const ReadClock = Command.define("ReadTraceDetailClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadTraceDetailClock", Message.CompletedReadClock)
 
 /** The list filters on the page's URL, which its search schema does not decode. */
 export const ReadListQuery = Command.define("ReadTraceListQuery", {
@@ -49,7 +47,7 @@ export const ReadListQuery = Command.define("ReadTraceListQuery", {
 	),
 })
 
-/** `getSpanHierarchyResultAtom({ data })`'s identity, shared with the investigation's trace chips. */
+/** The span hierarchy read's identity, shared with the investigation's trace chips. */
 export const spanHierarchyKey = (
 	orgId: string,
 	traceId: TraceId,
@@ -68,9 +66,7 @@ export const FetchHierarchy = Command.define("FetchSpanHierarchy", {
 	messages: [Message.CompletedFetchHierarchy],
 	execute: ({ key, traceId, timestamp }) =>
 		readSpanHierarchy(key, traceId, timestamp).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchHierarchy({ key, result })),
+			settleTo((result) => Message.CompletedFetchHierarchy({ key, result })),
 		),
 })
 
@@ -88,11 +84,7 @@ export const FetchSpanEvents = Command.define("FetchTraceSpanEvents", {
 			Effect.map(getTraceSpanEvents({ data: { traceId, traceStartTime, totalDurationMs } }), (events) =>
 				Rec.fromEntries(events),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSpanEvents({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchSpanEvents({ key, result }))),
 })
 
 const WindowArgs = { key: Schema.String, traceId: TraceId, startTime: Schema.String, endTime: Schema.String }
@@ -107,11 +99,7 @@ export const FetchLogsCount = Command.define("FetchTraceLogsCount", {
 				getLogsCount({ data: { traceId, startTime, endTime } }),
 				(response) => response.data[0]?.total ?? 0,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchLogsCount({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchLogsCount({ key, result }))),
 })
 
 export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
@@ -131,14 +119,10 @@ export const FetchProductEvents = Command.define("FetchTraceProductEvents", {
 					attributes: event.attributes,
 				})),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchProductEvents({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchProductEvents({ key, result }))),
 })
 
-/** `getReplaysForTraceResultAtom`: the first session that observed the trace, if any. */
+/** The first session that observed the trace, if any. */
 export const FetchReplays = Command.define("FetchTraceReplays", {
 	args: { key: Schema.String, traceId: TraceId },
 	messages: [Message.CompletedFetchReplays],
@@ -149,14 +133,9 @@ export const FetchReplays = Command.define("FetchTraceReplays", {
 				getReplaysForTrace({ data: { traceId } }),
 				(response) => response.data[0]?.sessionId ?? null,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchReplays({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchReplays({ key, result }))),
 })
 
-/** `TraceIdBadge`'s `useCopy({ label: "trace ID" })`. */
 export const CopyTraceId = Command.define("CopyTraceId", {
 	args: { traceId: Schema.String },
 	messages: [Message.CompletedCopyTraceId],

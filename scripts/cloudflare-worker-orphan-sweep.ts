@@ -6,13 +6,13 @@
  *
  * PR-preview stages deploy every app as `maple-<base>-pr-<n>`
  * (packages/infra/src/cloudflare/stage.ts, resolveWorkerName). `alchemy
- * destroy --stage pr-<n>` deletes them on PR close — but the close-event
+ * destroy --stage pr-<n>` deletes them on PR close, but the close-event
  * teardown is best-effort (see cleanup-preview-orphans.yml), so workers leak.
  *
  * Leaked workers are not just clutter: `maple-alerting-pr-<n>` workers keep
  * their cron triggers, and workers deployed from branches predating the
  * non-prod cron gate (#239, 2026-07-21) run the ticks unconditionally. They
- * ran silently against their own preview resources for months — until the
+ * ran silently against their own preview resources for months, until the
  * sibling sweeps (correctly) deleted those resources, after which every tick
  * failed with "Hyperdrive config deleted." into self-observability as
  * service.name="alerting", masquerading as a production alerting outage
@@ -20,9 +20,9 @@
  *
  * Worker ↔ queue deletion is mutually deadlocked: a Worker that is a
  * registered queue CONSUMER cannot be deleted (error 10064, NOT covered by
- * ?force=true — run 30406588392, and why the original close-event teardowns
+ * ?force=true; run 30406588392, and why the original close-event teardowns
  * wedged), and a queue referenced by a Worker's producer BINDING cannot be
- * deleted either (error 11005 — run 30407693847). Each preview api worker
+ * deleted either (error 11005, run 30407693847). Each preview api worker
  * both binds and consumes its stage's `maple-vcs-sync-pr-<n>`, `maple-vcs-backfill-pr-<n>` /
  * `maple-planetscale-webhooks-pr-<n>` queues (apps/api/src/resources/queues.ts), so
  * the sweep breaks the cycle in three passes:
@@ -32,18 +32,17 @@
  *
  * Deletion is double-gated like the sibling sweeps: the queue/worker name must
  * match `maple-<base>-pr-<digits>` exactly, where <base> may not contain
- * `-dev-` (prd `maple-api` can never match; a dev stage
- * named "pr-3" would produce `maple-api-dev-pr-3`, hence the -dev- exclusion),
- * AND the GitHub API must affirmatively report that PR closed — unknown/open →
- * keep. Worker deletes use ?force=true because preview workers service-bind
- * each other and hold Workflows and Durable Objects; without force those
- * deletions 400. The sweep matches on the `maple-<base>-pr-<digits>` shape
+ * `-dev-` (prd `maple-api` can never match; a dev stage named "pr-3" would
+ * produce `maple-api-dev-pr-3`, hence the -dev- exclusion), AND the GitHub API
+ * must affirmatively report the preview retired (PR closed or unlabelled);
+ * unknown/live → keep. Worker deletes use ?force=true because preview workers
+ * service-bind each other and hold Workflows and Durable Objects; without force
+ * those deletions 400. The sweep matches on the `maple-<base>-pr-<digits>` shape
  * rather than an app allowlist, so it still reaches previews of apps that no
  * longer exist in this repo (e.g. leftover `maple-chat-flue-pr-<n>` workers
  * from before chat moved into apps/api). Deleting a queue or worker out from
- * under a later alchemy
- * destroy of the same stage is fine: alchemy tolerates already-deleted
- * resources.
+ * under a later alchemy destroy of the same stage is fine: alchemy tolerates
+ * already-deleted resources.
  *
  * Auth: CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID (the same credentials
  * the deploy workflow's alchemy steps use), GITHUB_REPOSITORY +
@@ -51,6 +50,7 @@
  */
 
 import { Option, Schema, Array as Arr } from "effect"
+import { parsePreviewResourceName } from "../packages/infra/src/cloudflare/stage.ts"
 import { fetchPreviewState, hasPrStateCredentials, type PreviewState } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -88,8 +88,6 @@ interface QueueConsumer {
 	readonly script_name?: string
 }
 
-const PR_RESOURCE_PATTERN = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
-
 const cfRequest = async (
 	token: string,
 	path: string,
@@ -124,7 +122,7 @@ const main = async (): Promise<void> => {
 	const token = requireEnv("CLOUDFLARE_API_TOKEN")
 	const accountId = requireEnv("CLOUDFLARE_ACCOUNT_ID")
 
-	// One PR-state lookup per PR number, shared across both passes — a stage
+	// One PR-state lookup per PR number, shared across both passes: a stage
 	// leaks ~8 workers + 2 queues and they all share the same verdict.
 	const stateByPr = new Map<string, PreviewState>()
 	const prState = async (prNumber: string): Promise<PreviewState> => {
@@ -146,19 +144,19 @@ const main = async (): Promise<void> => {
 		fail(`Could not list Queues (HTTP ${listedQueues.status}): ${showJson(listedQueues.errors)}`)
 	}
 	// A success response whose `result` isn't an array means the API shape
-	// changed under us — fail loudly rather than green-no-op'ing the safety net.
+	// changed under us: fail loudly rather than green-no-op'ing the safety net.
 	if (!Arr.isArray(listedQueues.result)) {
 		fail(`Unexpected Queue list response shape (result is ${typeof listedQueues.result}, expected array)`)
 	}
 	const queues = listedQueues.result as ReadonlyArray<QueueInfo>
-	const queueCandidates = Arr.filter(
-		Arr.map(queues, (queue) => ({
-			id: queue.queue_id ?? "",
-			name: queue.queue_name ?? "",
-			match: PR_RESOURCE_PATTERN.exec(queue.queue_name ?? ""),
-		})),
-		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-			entry.match !== null && entry.id.length > 0,
+	const queueCandidates = Arr.getSomes(
+		Arr.map(queues, (queue) => {
+			const id = queue.queue_id ?? ""
+			const name = queue.queue_name ?? ""
+			return id === ""
+				? Option.none()
+				: Option.map(parsePreviewResourceName(name), ({ prNumber }) => ({ id, name, prNumber }))
+		}),
 	)
 	console.log(
 		`Found ${queues.length} Queue(s), ${queueCandidates.length} maple-*-pr-*: ${
@@ -169,8 +167,7 @@ const main = async (): Promise<void> => {
 		}`,
 	)
 	const queuesToDelete: Array<{ id: string; name: string }> = []
-	for (const { id, name, match } of queueCandidates) {
-		const prNumber = match[2]
+	for (const { id, name, prNumber } of queueCandidates) {
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
@@ -222,13 +219,11 @@ const main = async (): Promise<void> => {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
-	const candidates = Arr.filter(
-		Arr.map(scripts, (script) => ({
-			name: script.id ?? "",
-			match: PR_RESOURCE_PATTERN.exec(script.id ?? ""),
-		})),
-		(entry): entry is { name: string; match: RegExpExecArray } =>
-			entry.match !== null && entry.name.length > 0,
+	const candidates = Arr.getSomes(
+		Arr.map(scripts, (script) => {
+			const name = script.id ?? ""
+			return Option.map(parsePreviewResourceName(name), ({ prNumber }) => ({ name, prNumber }))
+		}),
 	)
 	console.log(
 		`Found ${scripts.length} Worker script(s), ${candidates.length} maple-*-pr-*: ${
@@ -238,8 +233,7 @@ const main = async (): Promise<void> => {
 			) || "—"
 		}`,
 	)
-	for (const { name, match } of candidates) {
-		const prNumber = match[2]
+	for (const { name, prNumber } of candidates) {
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
@@ -259,7 +253,7 @@ const main = async (): Promise<void> => {
 		}
 	}
 
-	// Pass 3: the queues themselves — only now that no worker binds them.
+	// Pass 3: the queues themselves, only now that no worker binds them.
 	for (const { id, name } of queuesToDelete) {
 		console.log(`… deleting orphan queue ${name}`)
 		const removed = await cfRequest(token, `/accounts/${accountId}/queues/${id}`, {

@@ -291,7 +291,6 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				)
 				yield* Effect.annotateCurrentSpan({ "vcs.commit.sha": sha })
 
-				// 1. Fast path — already stored.
 				const storedOpt = yield* asPersistence(repo.findCommitBySha(orgId, sha))
 				if (Option.isSome(storedOpt)) {
 					const stored = storedOpt.value
@@ -325,7 +324,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				}
 				if (cachedUntil !== undefined) negativeCache.delete(cacheKey)
 
-				// 2. Resolve on the fly. Only processable (active) installations count.
+				// Resolve on the fly. Only processable (active) installations count.
 				const allInstallations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
 				const installations = Arr.filter(allInstallations, (installation) =>
 					isInstallationProcessable(installation),

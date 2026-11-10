@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // The org's 3D service map world, one row per entity (`kind` is its `_tag`). `data` is the
@@ -20,5 +20,3 @@ export const ServiceMapWorldEntities = PG.table("service_map_world_entities", {
 	primaryKey: ["orgId", "entityId"],
 	tenantColumn: "orgId",
 })
-
-export type ServiceMapWorldEntityRow = PG.SelectRowOf<typeof ServiceMapWorldEntities>

@@ -1,20 +1,20 @@
-import type { ReleaseServiceImpact } from "../../../components/releases/release-model"
-import { deriveReleaseImpacts } from "../../../components/releases/release-model"
+import type { RequestMode } from "@maple/views/data/keyed"
+import type { ReleaseServiceImpact } from "../release-model"
+import { deriveReleaseImpacts } from "../release-model"
 import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { commitDetailKey } from "../../kit/commit-card"
+import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext, PageReturn } from "../../contract"
-import { commitMarkers, markerShas } from "../../services/detail/derive-markers"
-import { commitRangesKey, isResolvableSha } from "../kit"
+import { commitRangesKey } from "../kit"
 import { deriveOf } from "../list/derive"
-import type { RequestMode } from "../list/message"
 import { FetchChangeset, FetchMarkerCommit, FetchReleaseDetail, FetchServiceIssues } from "./command"
 import { Message } from "./message"
 import type { Model, ReleaseDetail } from "./model"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 // The release body for one service (`?service=`): the version this one replaced is
 // read off the list first, then the detail bundle, then what mounts with it (issues, changeset,
@@ -35,7 +35,7 @@ const busiestFirst = Order.flip(
 	Order.mapInput(Order.Number, (impact: { readonly spanCount: number }) => impact.spanCount),
 )
 
-/** `ReleaseBody`: the busiest environment's baseline for this service and version. */
+/** The busiest environment's baseline for this service and version. */
 export const baselineOf = (model: Model, serviceName: string): string | undefined =>
 	Option.getOrUndefined(
 		Option.flatMap(AsyncData.getData(model.releases.data), (data) =>
@@ -59,7 +59,7 @@ export type ServiceDerived = Readonly<{
 	releases: ReadonlyArray<{ bucket: string; commitSha: string; count: number; errorCount: number }>
 }>
 
-/** `ReleaseBodyLoaded`'s memo: impacts, the busiest one of this version, the service's timeline. */
+/** Impacts, the busiest one of this version, the service's timeline. */
 export const derivedOf = (model: Model, serviceName: string): ServiceDerived | undefined =>
 	Option.getOrUndefined(
 		Option.map(AsyncData.getData(model.detail.data), (detail) => {
@@ -95,7 +95,7 @@ export const seriesPoints = (model: Model, derived: ServiceDerived | undefined) 
 			? derived.detail.points
 			: derived.detail.baselinePoints
 
-/** This release's own commit is the title's read; the markers share it (one `commitQueryAtom`). */
+/** This release's own commit is the title's read; the markers share it (one read). */
 const commitsOf = (model: Model): Model["markerCommits"] =>
 	Option.match(AsyncData.getData(model.commit.data), {
 		onNone: () => model.markerCommits,
@@ -203,13 +203,7 @@ export const followService = (model: Model, context: PageContext, mode: RequestM
 	if (!AsyncData.hasData(model.releases.data) && !AsyncData.isFailure(model.releases.data)) return { model }
 	const runtime: Return =
 		model.chartRuntime === null
-			? withCommands({ ...model, chartRuntime: ChartRuntime.Loading() }, [
-					Command.mapMessage(LoadChartRuntime(), (message) =>
-						message._tag === "CompletedLoadChartRuntime"
-							? Message.CompletedLoadChartRuntime()
-							: Message.FailedLoadChartRuntime({ reason: message.reason }),
-					),
-				])
+			? withCommands({ ...model, chartRuntime: ChartRuntime.Loading() }, [LoadChartRuntime()])
 			: { model }
 	const input = {
 		serviceName,

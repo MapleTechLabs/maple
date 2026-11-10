@@ -5,8 +5,7 @@ import { Array as Arr, String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 
-// The markdown widget's renderer: headings, bullet
-// and numbered lists, paragraphs; inline links, bold, italic and code.
+// Headings, bullet and numbered lists, paragraphs; inline links, bold, italic and code.
 
 const HEADING_RE = /^(#{1,6})\s+(.*)$/
 const LIST_RE = /^[-*]\s+(.*)$/
@@ -14,7 +13,7 @@ const ORDERED_LIST_RE = /^\d+\.\s+(.*)$/
 const INLINE_RE = /(\[[^\]]+\]\([^)]+\))|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)/g
 const LINK_RE = /^\[([^\]]+)\]\(([^)]+)\)$/
 
-/** `renderInline`: the text between tokens stays plain, each token its element. */
+/** The text between tokens stays plain, each token its element. */
 const renderInline = <M>(h: HtmlBuilder<M>, text: string): ReadonlyArray<Html | string> => {
 	const matches = [...Str.matchAll(INLINE_RE)(text)]
 	const pieces = Arr.reduce<
@@ -143,7 +142,7 @@ const renderBlock = <M>(h: HtmlBuilder<M>, block: Block): Html => {
 	}
 }
 
-/** `renderMarkdown`: the note's blocks in order. */
+/** The note's blocks in order. */
 export const renderMarkdown = <M>(h: HtmlBuilder<M>, content: string): ReadonlyArray<Html> => {
 	const parsed = Arr.reduce<string, ParseState>(
 		Str.split(/\r?\n/)(content),

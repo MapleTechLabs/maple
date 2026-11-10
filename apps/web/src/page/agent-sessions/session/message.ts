@@ -68,7 +68,7 @@ export const Message = defineMessageUnion({
 	PickedSpanTab: { tab: Schema.NullOr(SpanDetailTab) },
 	ClickedCloseSpan: {},
 	GotCloseTooltipMessage: { message: Tooltip.Message },
-	/** Base UI opens a tooltip on keyboard focus only: what `:focus-visible` said of a focus. */
+	/** A tooltip opens on keyboard focus only: what `:focus-visible` said of a focus. */
 	CheckedCloseFocus: { triggerId: Schema.String, isFocusVisible: Schema.Boolean },
 	/** The popover's "Open in Traces view": close it, cross, and land on the row. */
 	ClickedOpenInTraceView: {},

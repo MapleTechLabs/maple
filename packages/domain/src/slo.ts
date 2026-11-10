@@ -1,5 +1,5 @@
 import { Array as Arr, Option, Schema, String as Str } from "effect"
-import { SloLatencyThresholdMs } from "./primitives"
+import { SloLatencyThresholdMs } from "@maple/primitives"
 
 // Service level objectives: what counts as a good event (the SLI), the target share of good
 // events, and the rolling window the error budget is measured over.

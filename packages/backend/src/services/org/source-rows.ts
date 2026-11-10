@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { SourceInsert, SourceRow } from "@maple/db/tables"
 import type { SourceTokenStatus } from "@maple/domain/http"
 import { type SourceHealthInput, sourceHealth } from "@maple/domain/source-health"
-import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import { type OrgId, type PullSourcePlatform, SourceId } from "@maple/primitives"
 import { Schema } from "effect"
 
 const decodeSourceIdSync = Schema.decodeUnknownSync(SourceId)
@@ -78,7 +78,6 @@ export const SOURCE_HEALTH_COLUMNS = [
 	"pollResources",
 ] as const
 
-/** A source's health from its row and what its integration adds. */
 export const sourceRowHealth = (
 	row: Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>,
 	now: number,

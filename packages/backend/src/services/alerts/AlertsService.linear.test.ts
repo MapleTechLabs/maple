@@ -3,9 +3,8 @@ import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, Option }
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
-import { AlertsService } from "./AlertsService"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
@@ -16,6 +15,7 @@ import {
 	makeLayer,
 	makeWarehouseStub,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 import { LinearAlertDestinationConfig } from "@maple/domain/http"
 
@@ -185,7 +185,7 @@ describe("AlertsService with a Linear destination", () => {
 		const orgId = asOrgId("org_linear_create")
 		return Effect.gen(function* () {
 			yield* connectLinear(testDb, linear.fetch, orgId)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				asUserId("user_linear"),
@@ -241,7 +241,7 @@ describe("AlertsService with a Linear destination", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			yield* connectLinear(testDb, linear.fetch, orgId)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,

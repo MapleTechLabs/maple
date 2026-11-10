@@ -1,12 +1,12 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { DateTime, Option, Predicate, Schema, Array as Arr, String as Str } from "effect"
 import type { AppRoute, RouteTag } from "./app-route"
 
 // The session time range middleware: a navigation that names no
 // window gets the one last chosen in this tab, when it fits the page's ceiling.
 
-/** `SessionTimeRangeSchema`: what the tab remembers, per org. */
+/** What the tab remembers, per org. */
 export const SessionTimeRange = Schema.Struct({
 	startTime: Schema.optionalKey(Schema.String),
 	endTime: Schema.optionalKey(Schema.String),
@@ -14,7 +14,8 @@ export const SessionTimeRange = Schema.Struct({
 })
 export type SessionTimeRange = typeof SessionTimeRange.Type
 
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
+/** The long-range tier's ceiling, a year: these routes and every page on the long-range preset rail. */
+export const LONG_RANGE_MAX_SECONDS = 365 * 24 * 60 * 60
 /** `DEFAULT_MAX_RANGE_SECONDS`: the widest standard preset, a calendar month. */
 const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 
@@ -22,7 +23,7 @@ const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 	...Arr.map(
 		["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const,
-		(tag) => [tag, ONE_YEAR_SECONDS] as const,
+		(tag) => [tag, LONG_RANGE_MAX_SECONDS] as const,
 	),
 	...Arr.map(
 		[
@@ -84,7 +85,7 @@ const isSet = (value: unknown): value is string => typeof value === "string" && 
 const namesTimeRange = (search: Readonly<Record<string, unknown>>): boolean =>
 	isSet(search["timePreset"]) || isSet(search["startTime"]) || isSet(search["endTime"])
 
-/** `isCompleteTimeRange`: a preset, or both absolute bounds. Only these are remembered. */
+/** A preset, or both absolute bounds. Only these are remembered. */
 export const completeRangeOf = (route: AppRoute): Option.Option<SessionTimeRange> =>
 	Option.flatMap(searchOf(route), (search) => {
 		const { timePreset, startTime, endTime } = search
@@ -95,7 +96,7 @@ export const completeRangeOf = (route: AppRoute): Option.Option<SessionTimeRange
 const epochOf = (value: string): Option.Option<number> =>
 	Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis)
 
-/** `isTimeRangeWithin`, a preset resolved against the clock first (`relativeToAbsolute`). */
+/** Whether a range fits the ceiling, a preset resolved against the clock first. */
 export const isWithin = (
 	stored: SessionTimeRange,
 	maxSeconds: number,

@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../platform/auth-mode"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
@@ -37,7 +37,7 @@ import { GROUP_LABEL, NO_TIP, navBadge, type RailTip, triggerFor } from "./view-
 import { typography } from "@maple/views/ui/typography"
 
 /**
- * `useOrganizationFeatureFlags`: self-hosted turns every rollout on; a Clerk org reads its public
+ * Self-hosted turns every rollout on; a Clerk org reads its public
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
  */
 export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
@@ -82,7 +82,6 @@ const activeSubHrefOf = (subItems: ReadonlyArray<NavSubItem>, currentPath: strin
 			? { href: sub.href, length: matched.length }
 			: best
 	})?.href
-// ROWS
 
 const collapsedSectionRow = (h: HtmlBuilder<Message>, model: Model, item: NavItem, isActive: boolean): Html =>
 	sidebarMenuItem(h, undefined, [
@@ -251,7 +250,7 @@ const navRow = (
 
 const MAX_PINNED = 5
 
-/** `PinnedGroup`: starred dashboards (device-local favorites), capped, hidden on the collapsed rail. */
+/** Starred dashboards (device-local favorites), capped, hidden on the collapsed rail. */
 export const pinnedGroup = (
 	h: HtmlBuilder<Message>,
 	model: Model,

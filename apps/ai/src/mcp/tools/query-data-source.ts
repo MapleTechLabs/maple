@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Record as Rec, Schema, String as Str } from "effect"
-import { QueryDataSourceOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { ResourceExternalQuery, type ExternalQuery } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
@@ -61,7 +60,6 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: { source: "data_source", query: "sql" },
-		output: QueryDataSourceOutput,
 		hints: { readOnly: true, openWorld: true },
 		phrases: ["Querying a data source", "Running a data source query"],
 		handler: Effect.fn("McpTool.queryDataSource")(function* (params) {

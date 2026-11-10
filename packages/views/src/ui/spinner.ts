@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
+import { spinnerStyles } from "./spinner.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 
-// Port of packages/ui/src/components/ui/spinner.tsx: the loader glyph, spinning, as a status.
+// The loader glyph, spinning, as a status.
 
 export const spinner = <M>(
 	h: HtmlBuilder<M>,

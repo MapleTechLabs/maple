@@ -20,9 +20,9 @@ const rectsSlot = createLazy()
 const particlesSlot = createLazy()
 
 export type MapViewOptions = Readonly<{
-	/** The side panel for the selected node (`renderDetailPanel`). */
+	/** The side panel for the selected node. */
 	detailPanel?: (selectedId: string) => Html
-	/** Shown when the graph has no nodes at all (`emptyState`). */
+	/** Shown when the graph has no nodes at all. */
 	emptyState?: Html
 	/** `viewMode`: in 3D the scene replaces the canvas, without presentation controls or legend. */
 	viewMode?: "2d" | "3d"

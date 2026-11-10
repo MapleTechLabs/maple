@@ -1,6 +1,6 @@
-import { FACE_TONE, fade, type InkPalette } from "../../../components/service-map/three/appearance"
-import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
-import type { District } from "../../../components/service-map/three/spatial-layout"
+import { FACE_TONE, fade, type InkPalette } from "./appearance"
+import type { FactoryLink } from "./factory-routing"
+import type { District } from "./spatial-layout"
 import * as THREE from "three"
 import {
 	type Child,

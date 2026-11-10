@@ -23,8 +23,9 @@ import {
 	SupabaseConnectionId,
 	SupabaseProjectId,
 	type SupabaseProjectRef,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	Sources,
 	SupabaseConnections,
@@ -50,7 +51,9 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import {
 	type SupabaseAccessTokenError,
 	SupabaseOAuthService,
@@ -63,7 +66,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	upsertWithSource,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	createLogDrain,
 	DRAINS_PLAN_MESSAGE,
@@ -77,6 +80,7 @@ import {
 	type SupabaseProject,
 } from "./supabase/api"
 import { deleteSupabaseScrapeTargets, reconcileSupabaseScrapeTargets } from "./supabase/scrape-targets"
+import { SUPABASE_LOG_PROJECT_REF_ATTRIBUTE, SUPABASE_SERVICE_NAME } from "@maple/query-engine-integrations"
 
 /** A discovery holds its lease this long; a crashed run frees the org after it. */
 const LEASE_MS = 5 * 60_000
@@ -89,7 +93,6 @@ const DISCOVER_NOW_TIMEOUT = Duration.seconds(20)
 const RATE_LIMIT_HOLD_MS = 60_000
 /** Bounds the hourly lane: no org starts after this. */
 const TICK_BUDGET_MS = 10 * 60_000
-const ORG_CONCURRENCY = 3
 
 /** Statuses Supabase reports for a project that needs attention. */
 export const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
@@ -199,9 +202,9 @@ export class SupabaseConnectionService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const sources = yield* SourcesService
 		const env = yield* Env
-		const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
-		const ingestLogsUrl = `${ingestBaseUrl}/v1/logs`
-		const ingestHost = URL.canParse(ingestBaseUrl) ? new URL(ingestBaseUrl).host : null
+		const ingestBase = ingestBaseUrl(env)
+		const ingestLogsUrl = `${ingestBase}/v1/logs`
+		const ingestHost = URL.canParse(ingestBase) ? new URL(ingestBase).host : null
 		const dbExecute = makeDbExecute(database, "SupabaseConnectionService", toPersistenceError)
 
 		const loadConnection = (orgId: OrgId) =>
@@ -474,9 +477,9 @@ export class SupabaseConnectionService extends Context.Service<
 					description: `Log drain of Supabase project ${ref}, created by the Supabase integration.`,
 					allowedSignals: ["logs"],
 					resourceAttributes: [
-						{ key: "supabase.project.ref", value: ref, mode: "set" },
+						{ key: SUPABASE_LOG_PROJECT_REF_ATTRIBUTE, value: ref, mode: "set" },
 						{ key: "supabase.project.name", value: project.name, mode: "set" },
-						{ key: "service.name", value: "supabase", mode: "default" },
+						{ key: "service.name", value: SUPABASE_SERVICE_NAME, mode: "default" },
 					],
 				})
 				.pipe(
@@ -819,12 +822,8 @@ export class SupabaseConnectionService extends Context.Service<
 						.set({ discoveryLeaseUntil: now + LEASE_MS, updatedAt: now })
 						.where(($) => [
 							$.id.eq(connectionId),
-							PG.or(
-								$.discoveryLeaseUntil.isNull(),
-								$.discoveryLeaseUntil.lt(now),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-								$.discoveryLeaseUntil.gt(now + 2 * 60 * 60_000),
-							),
+							// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
+							leaseClaimable($.discoveryLeaseUntil, now, 2 * 60 * 60_000),
 						])
 						.returning(),
 				),
@@ -838,9 +837,7 @@ export class SupabaseConnectionService extends Context.Service<
 						.set({ discoveryLeaseUntil: holdUntil })
 						.where(($) => [
 							$.id.eq(connection.id),
-							connection.discoveryLeaseUntil === null
-								? $.discoveryLeaseUntil.isNull()
-								: $.discoveryLeaseUntil.eq(connection.discoveryLeaseUntil),
+							leaseStillOurs($.discoveryLeaseUntil, connection.discoveryLeaseUntil),
 						]),
 				),
 			)
@@ -1235,7 +1232,7 @@ export class SupabaseConnectionService extends Context.Service<
 						]),
 				),
 			)
-			const summaries = yield* Effect.forEach(
+			const summaries = yield* pollFleet(
 				due,
 				(row) =>
 					Effect.gen(function* () {
@@ -1244,25 +1241,18 @@ export class SupabaseConnectionService extends Context.Service<
 							return { orgId, skipped: "tick budget", projects: 0, removed: 0, error: null }
 						}
 						return yield* discoverOrg(orgId)
-					}).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("supabase org discovery failed", {
-										orgId: row.orgId,
-										error: summarizeCause(cause),
-									}).pipe(
-										Effect.as<SupabaseDiscoverySummary>({
-											orgId: row.orgId,
-											skipped: null,
-											projects: 0,
-											removed: 0,
-											error: "org discovery failed",
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
+					}),
+				{
+					message: "supabase org discovery failed",
+					annotations: (row) => ({ orgId: row.orgId }),
+					fallback: (row): SupabaseDiscoverySummary => ({
+						orgId: row.orgId,
+						skipped: null,
+						projects: 0,
+						removed: 0,
+						error: "org discovery failed",
+					}),
+				},
 			)
 			const summary = {
 				orgs: due.length,

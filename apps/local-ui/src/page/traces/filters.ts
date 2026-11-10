@@ -51,7 +51,7 @@ export const filtersOf = (query: URLSearchParams): TraceFilters => ({
 export const activeFilterCount = (query: URLSearchParams): number =>
 	Arr.filter(FILTER_KEYS, (key) => Boolean(query.get(key))).length
 
-/** `clearFilters`: every sidebar filter, the search and the span scope. */
+/** Every sidebar filter, the search and the span scope. */
 export const clearedFilters = (): Readonly<Record<string, null>> => ({
 	...Rec.fromEntries(Arr.map(FILTER_KEYS, (key) => [key, null])),
 	q: null,

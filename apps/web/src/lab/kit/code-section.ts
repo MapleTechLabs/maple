@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { highlightCode } from "@maple/views/lib/highlight"
 import { highlight, highlightKey } from "../../page/investigations/conversation/kit/code-highlight"
 import { codeBlock as fenceBlock } from "../../page/investigations/conversation/kit/view-code"
-import { codeBlock } from "../../page/settings/kit/code-block"
+import { codeBlock } from "../../page/kit/code-block"
 import type * as CopyButton from "@maple/views/ui/copy-button"
 import { kitSection } from "./kit-layout"
 

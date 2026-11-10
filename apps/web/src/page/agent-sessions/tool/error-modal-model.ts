@@ -77,11 +77,11 @@ export const Model = Schema.Struct({
 	/** The narrowing the pages extend (`JSON.stringify` of the samples input) and one slot per page. */
 	samplesKey: Schema.String,
 	pages: Schema.Array(SamplesSlot),
-	/** `SamplesPane`: the open sample, and whether the reader closed it. */
+	/** The samples pane: the open sample, and whether the reader closed it. */
 	selected: Schema.Number,
 	isSampleClosed: Schema.Boolean,
 	linkCopy: CopyState,
-	/** The open sample's `ArgumentsBlock`: the full payload shown, and its copy. */
+	/** The open sample's arguments block: the full payload shown, and its copy. */
 	isFullArguments: Schema.Boolean,
 	argumentsCopy: CopyState,
 })

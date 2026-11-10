@@ -6,7 +6,7 @@ import { SaveVariables } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The toolbar's `VariablesManagerDialog`: opened on the saved variables, saved as one write.
+// Opened on the saved variables, saved as one write.
 
 type Return = PageReturn<Model, Message>
 

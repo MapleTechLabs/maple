@@ -1,7 +1,12 @@
 import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
-import { SourceUsage, SourceUsageBucket, SourceUsageSummary, SourceUsageTotal } from "@maple/domain/http"
+import {
+	SourceUsage,
+	SourceUsageBucket,
+	SourceUsageSummary,
+	SourceUsageTotal,
+	type TenantContext,
+} from "@maple/domain/http"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 const HOUR_MS = 60 * 60 * 1000

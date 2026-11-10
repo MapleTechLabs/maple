@@ -19,8 +19,6 @@ import { typeSettings } from "./view-rail-types"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `WidgetSettingsBar` and the `WidgetSettings` fields the timeseries panels compose.
-
 type H = HtmlBuilder<Message>
 
 const stateOf = (isFilled: boolean): FieldState => ({
@@ -37,7 +35,7 @@ const idsOf = (name: string) => ({
 	error: `widget-editor-${name}-error`,
 })
 
-/** `RailSetting`: an eyebrow caption over its control. */
+/** An eyebrow caption over its control. */
 export const railSetting = (
 	h: H,
 	name: string,
@@ -52,7 +50,7 @@ export const railSetting = (
 
 export const divider = (h: H): Html => separator(h, "horizontal", undefined)
 
-/** `Segments`: the rail's full-width segmented control. */
+/** The rail's full-width segmented control. */
 export const segments = <T extends string>(
 	h: H,
 	value: T,
@@ -61,7 +59,6 @@ export const segments = <T extends string>(
 ): Html =>
 	segmentedSelect(h, { options, value, onChange, size: "sm", className: "w-full *:flex-1 *:text-xs" })
 
-/** `CheckboxRow`. */
 export const checkboxRow = (
 	h: H,
 	id: string,
@@ -118,7 +115,7 @@ const descriptionField = (h: H, state: EditorState): Html =>
 	])
 
 /**
- * `WidgetTimeRange`: Dashboard or Custom, and under Custom the override's own picker.
+ * Dashboard or Custom, and under Custom the override's own picker.
  * TODO(picker): the picker's custom-range tab (an absolute window) is not built yet.
  */
 const timeRangeField = (h: H, model: Model, state: EditorState, timeZone: string): Html =>
@@ -189,7 +186,7 @@ const DURATION_SCALES = [
 	{ value: "duration_s", label: "s" },
 ]
 
-/** `Unit`: the duration tokens collapse into one entry with a scale under it. */
+/** The duration tokens collapse into one entry with a scale under it. */
 export const unitField = (h: H, model: Model, state: EditorState, label = "Y-Axis Unit"): Html => {
 	const isDuration = Str.startsWith("duration_")(state.unit)
 	return pageSelect(h, model, "unit", isDuration ? "duration" : state.unit, UNIT_OPTIONS, {
@@ -205,7 +202,7 @@ export const unitField = (h: H, model: Model, state: EditorState, label = "Y-Axi
 	})
 }
 
-/** `Legend`, with the Min/Max/Mean/Last table under it. */
+/** The legend, with the Min/Max/Mean/Last table under it. */
 export const legendField = (h: H, state: EditorState, hasSeriesStats = true): Html =>
 	railSetting(h, "legend", "Legend", false, [
 		segments(
@@ -235,7 +232,7 @@ const seriesStats = (h: H, state: EditorState): Html =>
 		],
 	)
 
-/** `QueryOptions`: comparison and its % change, on the panels whose lowering keeps a comparison. */
+/** Comparison and its % change, on the panels whose lowering keeps a comparison. */
 export const queryOptions = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
 	queryCapabilitiesOf(state).comparison ? comparisonOptions(h, model, state) : []
 
@@ -269,7 +266,7 @@ const comparisonOptions = (h: H, model: Model, state: EditorState): ReadonlyArra
 	]),
 ]
 
-/** `TimeSeriesSettings`: stacking on bar and area, curve and points on line and area. */
+/** Stacking on bar and area, curve and points on line and area. */
 const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const panel = toPanelType(state.visualization, state.chartId)
 	const isStackable = panel === "bar" || panel === "area"
@@ -325,7 +322,7 @@ const timeseriesSettings = (h: H, model: Model, state: EditorState): ReadonlyArr
 	]
 }
 
-/** The "Panel options" rail: the shared fields, then the panel type's own (`ConfigPanel`). */
+/** The "Panel options" rail: the shared fields, then the panel type's own. */
 export const settingsRail = (h: H, model: Model, timeZone: string): Html => {
 	const state = model.state
 	if (state === null) return h.empty

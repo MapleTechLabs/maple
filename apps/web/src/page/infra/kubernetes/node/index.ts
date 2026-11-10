@@ -1,5 +1,5 @@
 import { definePage } from "../../../contract"
-import { kubernetesBreadcrumbs } from "../../kit/view-tabs"
+import { kubernetesBreadcrumbs } from "../../../kit/view-tabs"
 import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"

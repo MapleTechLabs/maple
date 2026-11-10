@@ -140,7 +140,6 @@ describe("recommendation detail", () => {
 			started.model,
 			Message.CompletedApply({ result: Result.fail(toLoadFailure(new Error("no"))) }),
 		)
-		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",

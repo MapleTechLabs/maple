@@ -1,21 +1,24 @@
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
-	formatWarehouseDateTime,
 	TinybirdDateTime,
 	type QueryEngineExecuteRequest,
 	type QueryEngineExecuteResponse,
 	type FacetItem,
 	type DurationStats,
 	type AttributeValueItem,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { Clock, Effect, Schema, String as Str } from "effect"
 import { HttpClientError } from "effect/http"
 import { PublicHttpErrorBodySchema, type AnyPublicHttpErrorBody } from "@maple/domain/http"
 import { makeClientErrorBody, NetworkErrorBody } from "../lib/error-messages"
 import { ApiReachability, MapleApiV2Http, MapleInternalHttp, WarehouseExecutor } from "./warehouse-services"
 
-export * from "./warehouse-services"
-
 export const WarehouseDateTimeString = TinybirdDateTime
+
+/** A domain request class's constructor input: callers hand it over as the payload itself. */
+export type RequestInput<Request> = Request extends new (input: infer Input, ...rest: infer _Rest) => object
+	? Input
+	: never
 
 /** An integration page's window; `resolveInfraWindow` fills a missing bound with the last 6 hours. */
 export const InfraWindowInput = Schema.Struct({
@@ -350,8 +353,6 @@ const executeQueryEngineEffect = Effect.fn("QueryEngine.execute")(function* (
 	const executor = yield* WarehouseExecutor
 	return yield* executor.enqueue(payload).pipe(Effect.catch(failNormalized("QueryEngine.executeBatch")))
 })
-
-// Typed result extractors for QueryEngineResult union
 
 export function extractFacets(response: QueryEngineExecuteResponse): ReadonlyArray<FacetItem> {
 	const r = response.result

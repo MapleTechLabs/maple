@@ -37,8 +37,8 @@ import {
 	ShareWidgetNotFoundError,
 	type ShareWidgetDataOutcome,
 	UserId,
+	type TenantContext,
 } from "@maple/domain/http"
-import { RoleName } from "@maple/domain/primitives"
 import { QuerySetSchema } from "@maple/query-model"
 import {
 	MAX_LIST_RANGE_SECONDS,
@@ -49,11 +49,11 @@ import {
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	planWidgetRequest,
-	QueryEngineExecuteRequest,
 	rawSqlRowsForDisplay,
 	type PlannedWidgetRequest,
 	type VariableValues,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { fallbackStrategyFromWire, runQuerySet } from "@maple/query-engine/query-set"
 import { makeExecuteRawSql } from "@maple/query-engine/runtime"
 import type { WarehouseExecutionError } from "@maple/query-engine/execution"
@@ -61,7 +61,6 @@ import type { RawSqlValidationError } from "@maple/domain/http"
 import { Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeServerQuerySetExecutor } from "./server-query-set-executor"
 import type { RouteEndpointContext } from "./route-endpoint-plans"
 import { resolveShareVariables } from "./share-variables"
@@ -72,6 +71,7 @@ import {
 	widgetReadFamilies,
 	widgetReadPath,
 } from "./widget-read-families"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 // Shares and the API's widget data read both land here, so the wording names neither.
 const UNSUPPORTED_WIDGET_MESSAGE = "This widget type can't be read outside the dashboard yet."
@@ -112,7 +112,6 @@ const asWidgetOutcomeFailure =
 		)
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /**
@@ -123,12 +122,8 @@ const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
  * nothing — it only supplies the org whose data the share points at, for a
  * viewer who has no account of their own.
  */
-export const shareViewerTenant = (orgId: OrgId): TenantContext => ({
-	orgId,
-	userId: decodeUserIdSync("system-share-viewer"),
-	roles: [decodeRoleNameSync("root")],
-	authMode: "self_hosted",
-})
+export const shareViewerTenant = (orgId: OrgId): TenantContext =>
+	systemTenant(orgId, decodeUserIdSync("system-share-viewer"))
 
 export interface ResolvedWindow {
 	readonly startTime: string
@@ -416,7 +411,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			})
 
 			// `{ data: rows }` in every branch — the envelope the browser's server
-			// functions return, which the shared `toReadyWidgetData` unwraps on
+			// functions return, which the shared `toReadyData` unwraps on
 			// the client for both paths alike.
 			// Branches on the same path the scope gate classified, never on the stored shape.
 			if (path._tag === "QuerySet") {

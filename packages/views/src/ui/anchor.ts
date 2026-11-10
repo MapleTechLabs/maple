@@ -79,7 +79,6 @@ const coordsFor = (input: PositionInput, side: Side, align: Align) => {
 					: anchor.x + anchor.width + input.sideOffset
 	return isVertical(side) ? { x: cross, y: main } : { x: main, y: cross }
 }
-// POSITION
 
 /** How far the popup crosses the viewport edge `edge`, with that edge's padding. */
 const overflow = (input: PositionInput, at: { x: number; y: number }, edge: Side, padding: number) =>

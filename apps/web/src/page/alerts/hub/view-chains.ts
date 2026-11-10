@@ -26,11 +26,10 @@ import { chainDeleteConfirm } from "../shared/chain-delete-confirm"
 import { chainHref, chainSummary, newChainHref } from "../shared/escalation-chains"
 import { memberName } from "../shared/org-members"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { chainMenuId, chainRuleNames } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
-
-// The Routing tab's "Escalation chains" section and its delete confirmation.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +44,7 @@ const nameOfDestination =
 			() => "an unavailable destination",
 		)
 
-/** `ChainRow`: name, the steps in one line, and how many rules start it. */
+/** Name, the steps in one line, and how many rules start it. */
 export const chainRow = (
 	h: H,
 	model: Model,
@@ -126,7 +125,7 @@ export const chainRow = (
 						},
 						[usage],
 					),
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								rowActionsMenu(h, {
 									slotId: menuId,
@@ -153,10 +152,10 @@ const chainsEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No escalation chains yet"]),
 				emptyDescription(h, [
 					"A chain pages one set of destinations, waits for someone to acknowledge, then pages the next. A rule's severity tier can start one on top of its own destinations.",
-					...(canManage(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManage(model)
+			...(canManageAlerts(model)
 				? [
 						emptyActions(h, [
 							linkButton(h, { size: "sm", href: newChainHref() }, [
@@ -219,7 +218,7 @@ export const chainsSection = (h: H, model: Model): Html =>
 					sectionHeading(h, {
 						title: "Escalation chains",
 						actions:
-							canManage(model) && hasChains(model)
+							canManageAlerts(model) && hasChains(model)
 								? linkButton(h, { size: "sm", variant: "outline", href: newChainHref() }, [
 										icon(h, "PlusIcon"),
 										"New chain",

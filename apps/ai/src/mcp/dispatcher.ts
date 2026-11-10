@@ -1,73 +1,23 @@
-import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
-
-import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { SandboxClient } from "@maple/backend/sandbox/client"
-import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
-
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
-
-import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
-import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
-import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
-import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-
-import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
-import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
-import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
-import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
-import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
-import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
-import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
-import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
-import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
-
-import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
-import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
-import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
-import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
-import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
-import { SlosService } from "@maple/backend/services/slos/SlosService"
-import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
-import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
-import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
-import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
-import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
-import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { DataSourcePersistenceError, ExternalDataSourceDocument } from "@maple/domain/data-sources"
-import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
-import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
-import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
-import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
-import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { withoutInvocationContext } from "@maple/backend/platform/invocation-context"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
-import { FetchHttpClient } from "effect/http"
-import type { McpToolResult } from "./tools/types"
-import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./lib/query-warehouse"
-import { recordExpectedMcpFailure } from "./expected-failures"
+import { Context, Effect, Layer, Array as Arr } from "effect"
+import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
+import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools/runtime-services"
+import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
+import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { loadRegistry } from "./tool-catalog"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.
@@ -86,23 +36,9 @@ const failureResult = (text: string, category: string): McpToolResult => ({
  * agents (chat, bot) are not asked to report on Maple.
  */
 export const withFeedbackHint = (text: string, name: string, surface: McpToolSurface): string =>
-	surface === "mcp" && name !== "send_maple_feedback"
-		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`send_maple_feedback\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
+	surface === "mcp" && name !== FEEDBACK_TOOL
+		? `${text}\nIf this looks like a bug in Maple rather than in your call, report it now with \`${FEEDBACK_TOOL}\` (kind "bug", related_to "${name}", what you called and what came back, no user data), then tell the user in one line that you did.`
 		: text
-
-/**
- * Real failures leave the dispatcher span through the error channel so it exports as Error; the
- * caller converts them into in-band results outside it. Expected 4xx stay Ok inside the span.
- */
-const REAL_FAILURE_CATEGORY = new Map<string, string>([
-	["@maple/mcp/errors/McpQueryError", "query"],
-	["@maple/mcp/errors/McpTenantError", "tenant"],
-	["@maple/mcp/errors/McpAuthUnavailableError", "auth"],
-	["@maple/mcp/errors/McpInvalidTenantError", "tenant"],
-])
-
-/** Matches `expected-failures.ts`, so both kinds of failure carry the same message bound. */
-const MAX_SPAN_MESSAGE_CHARS = 500
 
 const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 	name: string,
@@ -162,14 +98,8 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 					}),
 					Effect.as(failureResult(`Query too expensive: ${error.message}`, "query_budget")),
 				),
-			// Missing/invalid credentials are expected 401s, not failures: they are
-			// recorded on the span as attributes + a Warn log (see
-			// `expected-failures.ts`), never as an Error status or exception event.
-			"@maple/mcp/errors/McpAuthMissingError": (error) =>
-				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
-					Effect.as(failureResult(`Authentication required: ${error.message}`, "auth")),
-				),
-			// A credential that is valid but may not do this is a permission answer, not a bug.
+			// A credential that is valid but may not do this is a permission answer, not a bug. An
+			// expected 401: span attributes and a Warn log, never an Error status.
 			"@maple/mcp/errors/McpAuthInvalidError": (error) =>
 				recordExpectedMcpFailure(error, "MCP authentication failed").pipe(
 					Effect.as(
@@ -197,17 +127,16 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 					: { "maple.mcp.error.category": result.failureCategory }),
 			}),
 		),
-		Effect.tapError((error) => {
-			const category = REAL_FAILURE_CATEGORY.get(error._tag)
-			return category === undefined
-				? Effect.void
-				: Effect.annotateCurrentSpan({
-						"result.isError": true,
-						"maple.mcp.error.category": category,
-						// As expected failures record it: a tool's failure reasons are one query, not a log join.
-						"maple.mcp.error.message": Str.slice(0, MAX_SPAN_MESSAGE_CHARS)(error.message),
-					})
-		}),
+		// A real failure leaves the span through the error channel so it exports as Error; the caller
+		// converts it into an in-band result outside the span. Expected 4xx stay Ok inside it.
+		Effect.tapErrorTag("@maple/mcp/errors/McpQueryError", (error) =>
+			Effect.annotateCurrentSpan({
+				"result.isError": true,
+				"maple.mcp.error.category": "query",
+				// As expected failures record it: a tool's failure reasons are one query, not a log join.
+				"maple.mcp.error.message": spanFailureMessage(error.message),
+			}),
+		),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
 })
@@ -215,46 +144,18 @@ const dispatchInSpan = Effect.fn("McpToolDispatcher.call")(function* (
 /** Raw dispatcher. Executable handlers stay private so callers cannot omit the request tenant. */
 const callMcpToolUnscoped = (name: string, input: unknown, surface: McpToolSurface) =>
 	dispatchInSpan(name, input, surface).pipe(
-		Effect.catchTags({
-			"@maple/mcp/errors/McpQueryError": (error) =>
-				Effect.logError("MCP tool execution failed").pipe(
-					Effect.annotateLogs({
-						"error.message": error.message,
-						"error.type": error._tag,
-						"maple.mcp.pipe": error.pipeName,
-					}),
-					Effect.as(
-						failureResult(
-							withFeedbackHint(`Query failed: ${error.message}`, name, surface),
-							"query",
-						),
-					),
+		Effect.catchTag("@maple/mcp/errors/McpQueryError", (error) =>
+			Effect.logError("MCP tool execution failed").pipe(
+				Effect.annotateLogs({
+					"error.message": error.message,
+					"error.type": error._tag,
+					"maple.mcp.pipe": error.pipeName,
+				}),
+				Effect.as(
+					failureResult(withFeedbackHint(`Query failed: ${error.message}`, name, surface), "query"),
 				),
-			"@maple/mcp/errors/McpTenantError": (error) =>
-				Effect.logError("MCP tool execution failed").pipe(
-					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
-					Effect.as(
-						failureResult(
-							withFeedbackHint(`Tenant error: ${error.message}`, name, surface),
-							"tenant",
-						),
-					),
-				),
-			"@maple/mcp/errors/McpAuthUnavailableError": (error) =>
-				Effect.logError("MCP authentication dependency failed").pipe(
-					Effect.annotateLogs({ "error.message": error.message, "error.type": error._tag }),
-					Effect.as(failureResult("Authentication is temporarily unavailable.", "auth")),
-				),
-			"@maple/mcp/errors/McpInvalidTenantError": (error) =>
-				Effect.logError("MCP tenant validation failed").pipe(
-					Effect.annotateLogs({
-						"error.message": error.message,
-						"error.type": error._tag,
-						"maple.mcp.field": error.field,
-					}),
-					Effect.as(failureResult(`Tenant error (${error.field}): ${error.message}`, "tenant")),
-				),
-		}),
+			),
+		),
 		Effect.annotateLogs({ "maple.mcp.tool": name }),
 	)
 
@@ -296,59 +197,6 @@ const MAX_PREPARED_REPOSITORIES = 3
  * must then supply its authenticated tenant explicitly, so no transport can
  * accidentally execute a raw handler without CurrentMcpTenant.
  */
-const McpRuntimeServicesLive = Layer.mergeAll(
-	AgentFeedbackService.layer,
-	AlertReadModelsService.layer,
-	AlertIncidentAckService.layer,
-	AlertIncidentPagesService.layer,
-	AlertRulesService.layer,
-	EscalationChainsService.layer,
-	AlertMaintenanceWindowsService.layer,
-	OnCallSchedulesService.layer,
-	AlertSilencesService.layer,
-	AlertsService.layer,
-	AuditLogService.layer,
-	DashboardPersistenceService.layer,
-	DependencyScanReader.layer,
-	ErrorActorsService.layer,
-	ErrorIssueReadModelsService.layer,
-	ErrorIssueWorkflowService.layer,
-	ErrorIssueMergeService.layer,
-	ErrorPolicyService.layer,
-	ErrorsService.layer,
-	IntegrationInventoryService.layer,
-	SourcesService.layer,
-	InvestigationService.layer,
-	IssueFixVerificationService.layer,
-	QueryEngineService.layer,
-	RailwayMetricsService.layer,
-	RecommendationIssueService.layer,
-	RepoSandboxService.layer,
-	RuntimeAdvisoryCatalog.layer,
-	RuntimeReleaseCatalog.layer,
-	ScrapeTargetsService.layer,
-	SearchConsoleService.layer,
-	SecurityAuditStore.layer,
-	SetupAuditService.layer,
-	SlosService.layer,
-	StatusPageSnapshotBuilder.layer,
-	StatusPagesService.layer,
-	UptimeMonitorsService.layer,
-	UsersReadService.layer,
-	IngestRuleService.layer,
-	VcsCommitService.layer,
-	VcsSourceService.layer,
-	WarehouseQueryService.layer,
-).pipe(
-	Layer.provide(
-		CloudflareRepoSandboxLive.pipe(
-			Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)),
-		),
-	),
-	Layer.provide(PullRequestLookupLive),
-	Layer.provide(FetchHttpClient.layer),
-)
-
 export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExecutorApi>()(
 	"@maple/ai/mcp/McpToolExecutor",
 	{

@@ -15,7 +15,7 @@ import {
 	SendTestTrace,
 	updateConnect,
 } from "./quick-start-connect"
-import { ingestUrl } from "../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../platform/ingest-url"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
 
 const { onboardingConnectPoll } = connectSubscriptions

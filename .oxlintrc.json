@@ -127,10 +127,15 @@
 				"maple/ui-copy": "error"
 			}
 		},
-		// The kit draws the controls, so it alone gives a control its `accent` hover.
+		// The kit draws the controls, so it alone gives a control its `accent` hover; its style
+		// modules carry the raw surfaces (a sheet's popup) the wrappers compose.
 		{
-			"files": ["packages/ui/src/**"],
+			"files": ["packages/ui/src/**", "packages/views/src/ui/*.styles.ts"],
 			"rules": { "maple/surface-washes": ["error", { "allowControlHover": true }] }
+		},
+		{
+			"files": ["packages/views/src/ui/*.styles.ts"],
+			"rules": { "maple/popup-radius": "off" }
 		},
 		// The kit itself, the lab that showcases it, and tests render raw elements.
 		{
@@ -250,20 +255,20 @@
 		// implementation of `parseWarehouseDateTime` itself is the one permanent entry.
 		{
 			"files": [
-				"apps/web/src/components/infra/gcp/list-model.ts",
-				"apps/web/src/components/integrations/gcp-connector-state.ts",
-				"apps/web/src/components/integrations/gcp-usage.ts",
-				"apps/web/src/components/integrations/planetscale-setup-steps.ts",
-				"apps/web/src/components/releases/release-model.ts",
-				"apps/web/src/components/replays/replay-timeline.ts",
-				"apps/web/src/components/settings/audit-log-filters.ts",
-				"apps/web/src/components/settings/keys-table.ts",
+				"apps/web/src/page/infra-integrations/gcp/list-model.ts",
+				"apps/web/src/page/infra-integrations/gcp/connector-state.ts",
+				"apps/web/src/page/infra-integrations/gcp/usage.ts",
+				"apps/web/src/page/infra-integrations/planetscale/setup-steps.ts",
+				"apps/web/src/page/releases/release-model.ts",
+				"apps/web/src/page/replays/kit/replay-timeline.ts",
+				"apps/web/src/page/settings/kit/audit-log-filters.ts",
+				"apps/web/src/page/settings/kit/keys-table.ts",
 				"apps/web/src/lab/alerts-fixture.ts",
 				"apps/web/src/lab/cloudflare-fixture.ts",
 				"apps/web/src/lab/gcp-infra-fixture.ts",
 				"apps/web/src/lab/gcp-workload-fixture.ts",
-				"apps/web/src/lib/billing/spend.ts",
-				"apps/web/src/lib/models/error-signal.ts",
+				"apps/web/src/page/settings/billing/spend.ts",
+				"apps/web/src/page/errors/kit/error-signal.ts",
 				"packages/web-data/**",
 				"apps/cli/**",
 				"packages/ui/**",
@@ -329,6 +334,7 @@
 				"packages/local-server/src/eventing/control-store.ts",
 				"packages/local-server/src/local-address.ts",
 				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/local-store-migrations.ts",
 				"packages/local-server/src/otlp/encode.ts",
 				"packages/local-server/src/schema-physical.ts",
 				"packages/local-server/src/serve.ts",
@@ -347,6 +353,7 @@
 				"packages/local-server/src/checkpoints.ts",
 				"packages/local-server/src/insert-batcher.ts",
 				"packages/local-server/src/local-store-migration-journal.ts",
+				"packages/local-server/src/local-store-migrations.ts",
 				"packages/local-server/src/otlp/encode.ts",
 				"packages/local-server/src/schema-manifest.ts",
 				"packages/local-server/src/schema-physical.ts",
@@ -363,6 +370,7 @@
 				"packages/local-server/src/checkpoints.ts",
 				"packages/local-server/src/eventing/control-store.ts",
 				"packages/local-server/src/identity-schema.ts",
+				"packages/local-server/src/local-store-migrations/legacy-to-current.ts",
 				"packages/local-server/src/service-map-rollup.ts",
 				"packages/local-server/src/store-version.ts"
 			],

@@ -24,7 +24,7 @@ import {
 	verificationWindowMs,
 	MAX_VERIFICATION_ATTEMPTS,
 } from "@maple/domain/http"
-import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/domain/primitives"
+import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorIssueEvents,
@@ -54,6 +54,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { PullRequestLookup } from "./PullRequestLookup"
+import { PullRequestLookupLive } from "./pull-request-lookup-live"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
 const decodePullRequestIdSync = Schema.decodeUnknownSync(ErrorIssuePullRequestIdSchema)
@@ -478,9 +479,8 @@ const make: Effect.Effect<
 			)
 		}
 
-		// Read back rather than trusting a driver write-result shape (see the
-		// Postgres conventions in CLAUDE.md) — and because on a conflict the insert
-		// wrote nothing and the existing row is what callers need.
+		// Read back rather than trusting a driver write-result shape, and because on
+		// a conflict the insert wrote nothing and the existing row is what callers need.
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIssuePullRequests)
@@ -545,7 +545,7 @@ const make: Effect.Effect<
 			nowMs,
 		})
 		if (row === null) {
-			// Not an invalid URL — it parsed at `:388`. The insert-and-read-back found
+			// Not an invalid URL: it parsed above. The insert-and-read-back found
 			// no row, which is a persistence anomaly: reporting it as a 400 would tell
 			// the caller their well-formed URL was unrecognizable, and because the
 			// invalid-URL tag is an anticipated error its span exception is suppressed,
@@ -1272,6 +1272,8 @@ export class IssueFixVerificationService extends Context.Service<
 	IssueFixVerificationServiceApi
 >()("@maple/backend/services/errors/IssueFixVerificationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer)),
+		Layer.provide(
+			Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer, PullRequestLookupLive),
+		),
 	)
 }

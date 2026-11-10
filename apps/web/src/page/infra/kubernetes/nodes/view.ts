@@ -1,5 +1,5 @@
-import { deriveHostStatus, type HostStatus } from "../../../../components/infra/format"
-import { statusLabel } from "../../../../components/infra/severity-tokens"
+import { deriveHostStatus, type HostStatus } from "../../kit/format"
+import { statusLabel } from "../../../kit/severity-tokens"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
@@ -22,19 +22,17 @@ import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { fleetBand } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, NODE_LIST_LIMIT, type NodeFacets, type NodeRow } from "./model"
 import { DEFAULT_PRESET, filtersOf } from "./update"
 import { nodeTable, nodeTableLoading } from "./view-table"
-
-// `NodesPage` and `NodesFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 

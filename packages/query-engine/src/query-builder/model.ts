@@ -391,8 +391,6 @@ function parseBucketSeconds(raw: string): number | undefined {
 	return undefined
 }
 
-// Clause-to-filter mapping via Match
-
 interface AccumulatedAttributeFilterLeaf {
 	key: string
 	value?: string
@@ -529,8 +527,6 @@ function operatorToAttrFilter(operator: string): {
 	)
 }
 
-// Builds an accumulated attribute filter from a clause, omitting `value` for the
-// value-less `exists`/`!exists` operators and only setting `negated` when true.
 function makeAttrFilter(attributeKey: string, operator: string, value: string): AccumulatedAttributeFilter {
 	const { mode, negated } = operatorToAttrFilter(operator)
 	const hasValue = operator !== "exists" && operator !== "!exists"
@@ -1082,8 +1078,6 @@ function applyMetricsClause(
 	)
 }
 
-// Group-by vocabulary
-//
 // ONE alias map per data source is the authority for what a group-by token
 // means. The dashboard query-spec builder below and the exported
 // `resolveGroupBy` (used by alert compilation) both resolve through it, and the
@@ -1390,8 +1384,6 @@ export function resolveGroupBy(
 	return { tokens, attributeKeys, resourceAttributeKeys, warnings }
 }
 
-// Accumulator → QuerySpec filters
-
 function buildTracesSpecFilters(acc: TracesFilterAccumulator): Record<string, unknown> | undefined {
 	const filters: Record<string, unknown> = {}
 
@@ -1433,8 +1425,6 @@ function dedupeGroupByKeys<T extends string>(keys: readonly T[]): T[] {
 	}
 	return result
 }
-
-// Query spec builders
 
 export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): BuildSpecResult {
 	const warnings: string[] = []

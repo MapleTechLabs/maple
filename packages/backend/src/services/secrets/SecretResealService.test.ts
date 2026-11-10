@@ -16,7 +16,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import * as slots from "@maple/backend/platform/secret-slots"
 import { UptimeHeadersJson } from "@maple/backend/services/uptime/uptime-headers"
 import { RESEAL_TARGETS } from "./reseal-targets"

@@ -1,6 +1,6 @@
 import type { DependencyBundle } from "./model-tabs"
-import type { Release } from "./model"
-import { Array as Arr, String as Str, Option, Order } from "effect"
+import { Array as Arr, Order } from "effect"
+import { type Release } from "../../kit/service-metrics/points"
 
 // Pure halves of the Overview panels (recent deploys, dependency strip).
 
@@ -39,19 +39,6 @@ export const deriveDeploys = (releases: ReadonlyArray<Release>): ReadonlyArray<D
 		Order.flip(
 			Order.mapInput(Order.String, (deploy: { readonly firstSeen: string }) => deploy.firstSeen),
 		),
-	)
-}
-
-/** A full 40-hex git SHA, the only kind the VCS endpoint resolves (`isResolvableSha`). */
-export const isResolvableSha = (sha: string): boolean => /^[0-9a-f]{40}$/i.test(sha)
-
-/** `firstLine`: a commit message's subject. */
-export const firstLine = (message: string): string => {
-	return Str.trim(
-		Option.match(Str.indexOf("\n")(message), {
-			onNone: () => message,
-			onSome: (index) => Str.slice(0, index)(message),
-		}),
 	)
 }
 

@@ -1,16 +1,11 @@
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import {
-	integerTickValues,
-	linearYDomain,
-	minBarLength,
-	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { integerTickValues, linearYDomain, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { barY, defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { Option, Order, Array as Arr } from "effect"
-import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
+import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"

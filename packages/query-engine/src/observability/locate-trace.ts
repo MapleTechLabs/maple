@@ -1,12 +1,12 @@
 import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { TRACES_TTL_DAYS } from "@maple/domain/tinybird/datasources"
 import * as CH from "../ch"
 import { formatWarehouseDateTime } from "../datetime"
 import { WarehouseExecutor, type WarehouseExecutorError } from "./WarehouseExecutor"
 
 const HOUR_MS = 60 * 60 * 1000
 
-/** `traces` and `trace_index` keep 30 days. */
-export const TRACE_RETENTION_HOURS = 30 * 24
+export const TRACE_RETENTION_HOURS = TRACES_TTL_DAYS * 24
 
 /** Probe tier edges, newest first: most lookups land in the last day or week. */
 const PROBE_TIER_HOURS = [24, 7 * 24] as const

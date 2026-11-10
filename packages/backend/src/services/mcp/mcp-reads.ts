@@ -14,13 +14,13 @@ import {
 	type McpSessionRequestItem,
 	type McpSessionsRequest,
 	type McpToolRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { MCP_CLIENT_KINDS, UNKNOWN_MCP_CLIENT } from "@maple/domain/mcp-clients"
 import { Array as Arr, DateTime, Effect, Option, Order, pipe, Record as Rec, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { timestampMs } from "@maple/backend/platform/time"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 // The MCP hub's reads: each page is one request fanning out, in parallel, to `ch/queries/mcp.ts`.
@@ -567,7 +567,6 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 	})
 })
 
-/** Sessions the list reads at most. */
 const SESSION_LIST_LIMIT = 200
 /** Requests the session page reads at most; one more tells it the session was cut. */
 const SESSION_REQUEST_LIMIT = 1_000
@@ -749,7 +748,6 @@ export const issuedSession = (row: IssuedRow): McpSessionItem => ({
 /** Session rows each listed MCP server contributes to one user's stitched read (a per-server cap). */
 const ONE_USER_ACTIVITY_LIMIT = 5_000
 
-/** A user's session on one MCP server. */
 export type ServerUserSession = McpSessionItem & Readonly<{ service: string }>
 
 /**

@@ -94,7 +94,7 @@ const headerActions = (h: H, model: Model): Html => {
 	])
 }
 
-/** `ActiveUserFilter`: the banner over the list while a user or visitor filter is set. */
+/** The banner over the list while a user or visitor filter is set. */
 const activeUserFilter = (
 	h: H,
 	config: Readonly<{ userId: string; count: number; label: string; clearLabel: string; onClear: Message }>,

@@ -1,6 +1,6 @@
-import { Array as Arr, Effect, Option, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, String as Str } from "effect"
 import { WarehouseDriverError, WarehouseResponseLimitError } from "@maple/query-engine/execution"
-import { __testables } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseSqlClientFactory } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeLargeTraceSpans, makeTraceLogs } from "./fixtures"
 import { FIXTURES } from "./utils"
 
@@ -22,11 +22,7 @@ export type FixtureRule = {
 export const readsTraceSpans = (sql: string): boolean =>
 	/\bFROM traces\b/.test(sql) && Str.includes("FROM trace_index")(sql)
 
-/**
- * Default fixtures for the large-trace `inspect_trace` scenario. Both the
- * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
- * table, so we route by table name.
- */
+/** Default fixtures for the large-trace `inspect_trace` scenario, routed by table and trace id. */
 export const defaultTraceFixtures = (): FixtureRule[] => [
 	{
 		match: (sql) => readsTraceSpans(sql) && Str.includes(FIXTURES.traceId)(sql),
@@ -39,10 +35,17 @@ export const defaultTraceFixtures = (): FixtureRule[] => [
 	},
 ]
 
+let fakeClient: ReturnType<typeof WarehouseSqlClientFactory.defaultValue> | undefined
+
+/** The eval runtime's warehouse driver: the installed fake, else the real one. Read on every route. */
+export const fakeableWarehouseLayer = Layer.succeed(WarehouseSqlClientFactory, (config) =>
+	(fakeClient ?? WarehouseSqlClientFactory.defaultValue())(config),
+)
+
 /**
  * Replace the warehouse SQL client with a fake that answers from fixtures. The
  * REAL WarehouseQueryService still runs (OrgId enforcement, CH-DSL compile,
- * pipe-dispatch, row parsing) — only the wire call is faked. Unmatched SQL
+ * row parsing); only the wire call is faked. Unmatched SQL
  * throws loudly so missing fixtures never look like an empty result.
  *
  * The client is built once with the layer and cannot be re-installed for a
@@ -58,7 +61,7 @@ export const installFakeWarehouse = (
 	/** What unmatched SQL gets: a loud failure (default), or no rows, for suites that only need tools to run. */
 	unmatched: "fail" | "empty" = "fail",
 ): void => {
-	__testables.setClientFactory(() =>
+	fakeClient = () =>
 		Effect.succeed({
 			sql: (statement) =>
 				Effect.suspend(
@@ -101,8 +104,9 @@ export const installFakeWarehouse = (
 					},
 				),
 			insert: () => Effect.void,
-		}),
-	)
+		})
 }
 
-export const restoreWarehouse = (): void => __testables.reset()
+export const restoreWarehouse = (): void => {
+	fakeClient = undefined
+}

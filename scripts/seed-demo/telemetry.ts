@@ -165,8 +165,6 @@ const makeResource = (
 	],
 })
 
-// ── output ──────────────────────────────────────────────────────────────────
-
 export interface Grouped<T> {
 	readonly resource: Resource
 	readonly items: T[]
@@ -234,8 +232,6 @@ const group = <T>(map: Map<string, Grouped<T>>, resource: Resource): Grouped<T> 
 	map.set(resource.key, created)
 	return created
 }
-
-// ── trace construction ──────────────────────────────────────────────────────
 
 interface Parent {
 	readonly spanId: string
@@ -656,8 +652,6 @@ const logRecord = (
 	spanId: ids?.spanId,
 })
 
-// ── windows ─────────────────────────────────────────────────────────────────
-
 /** Generate everything that happened in `[from, to)`. Call windows in order: the RNG is shared. */
 export const generateWindow = (world: World, rng: Rng, from: number, to: number): WindowOutput => {
 	const sink = new Sink()
@@ -729,8 +723,6 @@ const backgroundLogs = (world: World, sink: Sink, rng: Rng, minute: number) => {
 		)
 	}
 }
-
-// ── metrics ─────────────────────────────────────────────────────────────────
 
 const histogramPoint = (
 	minute: number,

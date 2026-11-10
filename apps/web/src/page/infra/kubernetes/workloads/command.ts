@@ -1,7 +1,7 @@
 import { getWorkloadFacets, listWorkloads } from "@maple/web-data/warehouse/infra"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { Message, WorkloadKindSchema } from "./message"
 
 const StringList = Schema.optional(Schema.Array(Schema.String))
@@ -24,9 +24,8 @@ export const FetchWorkloads = Command.define("FetchInfraWorkloads", {
 	messages: [Message.CompletedFetchWorkloads],
 	execute: ({ key, input }) =>
 		listWorkloads({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchWorkloads({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchWorkloads({ key, result })),
 		),
 })
 
@@ -42,8 +41,7 @@ export const FetchFacets = Command.define("FetchInfraWorkloadFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, input }) =>
 		getWorkloadFacets({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })

@@ -6,7 +6,7 @@ import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { selectDistinctOrgIds } from "@maple/backend/platform/distinct-org-ids"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 
 const createdDbs: TestDb[] = []
 

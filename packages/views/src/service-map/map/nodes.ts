@@ -1,14 +1,8 @@
-import {
-	resolveDbNodeStyle,
-	resolvePlanetScaleDbStyle,
-	withAlpha,
-} from "@maple/ui/components/service-map/service-map-db-style"
-import {
-	getServiceMapNodeColor,
-	type ServiceNodeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+import { resolveDbNodeStyle, resolvePlanetScaleDbStyle, withAlpha } from "../graph/service-map-db-style"
+import { getServiceMapNodeColor, type ServiceNodeData } from "../graph/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
+import { formatLag } from "../../charts/planetscale-metric-series"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -36,7 +30,7 @@ import { formatRuntime } from "./runtime"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack, vstack } from "../../ui/stack"
 
-// `ServiceNode`, `DatabaseNode`, `NamespaceAggregateNode` and the `ServiceMapNode` wrapper.
+// The service, database and namespace-aggregate node cards, and the wrapper that picks one.
 
 const handles = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	flowHandle(h, id, "target", "left", HANDLE_CLASSES),
@@ -153,8 +147,6 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 		),
 	]
 }
-
-const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
 
 const planetscaleRow = <M>(
 	h: HtmlBuilder<M>,
@@ -312,7 +304,7 @@ const namespaceAggregateNode = <M>(
 	]
 }
 
-/** `ServiceMapNode`: the card for the node's kind inside the focus-dim wrapper. */
+/** The card for the node's kind inside the focus-dim wrapper. */
 export const serviceMapNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class(cn("transition-opacity duration-200", data.dimmed && "opacity-25"))],

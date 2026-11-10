@@ -25,7 +25,7 @@ import {
 	populatedChains,
 	runOf,
 } from "../page/alerts/shared/escalation-test-fixtures"
-import { incidentRow, INCIDENT_ID, NOW, ORG, ruleId, ruleRow, hubAt } from "../page/alerts/shared/test-rows"
+import { hubAt, incidentRow, INCIDENT_ID, NOW, ORG, ruleId, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { keepLocal } from "./local-commands"

@@ -1,11 +1,11 @@
-import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
-import type { TenantContext as McpTenantContext } from "@maple/backend/services/auth/tenant-context"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
+import { HttpServerRequest } from "effect/http"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Env } from "@maple/backend/platform/Env"
-import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { API_KEY_PREFIX } from "@maple/backend/platform/credential-tokens"
+import { ActorId, OrgId, RoleName, UserId, type TenantContext as McpTenantContext } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES, missingReadScopes, scopeAllows } from "@maple/domain/http/v2"
 import {
 	McpAuthInvalidError,
@@ -15,19 +15,12 @@ import {
 } from "../tools/types"
 import { recordExpectedMcpFailure } from "../expected-failures"
 
-/** Exported so the audit layer classifies the same token the same way. */
-export const INTERNAL_SERVICE_PREFIX = "maple_svc_"
-/** The user every internal service call resolves to: a credential, not a person. */
-export const INTERNAL_SERVICE_USER_ID = "internal-service"
-
 /**
  * The tenant plus the rate-limit identity of the credential that produced it,
- * consumed by the MCP authorization middleware. Absent only for internal
- * service auth: that is Maple's own traffic behind one shared token, so a
- * single bucket would throttle every internal caller together.
+ * consumed by the MCP authorization middleware.
  */
 export interface McpAuthenticatedTenant extends McpTenantContext {
-	readonly rateLimitCredentialId?: string
+	readonly rateLimitCredentialId: string
 }
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeUserId = Schema.decodeUnknownEffect(UserId)
@@ -108,7 +101,6 @@ export const mcpScopeAccess = (
 		: "read"
 }
 
-const MAPLE_API_KEY_PREFIX = "maple_ak_"
 const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
 
 /**
@@ -116,12 +108,12 @@ const PLACEHOLDER = /\$\{[^}]*\}|^\$[A-Za-z_][A-Za-z0-9_]*$|^<[^>]+>$/
  * a JWT parse error. Undefined when the token may be valid and should be looked up.
  */
 export const describeMalformedBearer = (token: string | undefined): string | undefined => {
-	if (token === undefined || Str.startsWith(MAPLE_API_KEY_PREFIX)(token)) return undefined
+	if (token === undefined || Str.startsWith(API_KEY_PREFIX)(token)) return undefined
 	if (PLACEHOLDER.test(token)) {
-		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`.`
+		return `The bearer token \`${token}\` is an unexpanded placeholder: your MCP client sent the variable name, not its value. Set the variable or paste the key; Maple API keys start with \`${API_KEY_PREFIX}\`.`
 	}
 	if (Str.split(".")(token).length === 3) return undefined
-	return `The bearer token is not a Maple API key. Maple API keys start with \`${MAPLE_API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
+	return `The bearer token is not a Maple API key. Maple API keys start with \`${API_KEY_PREFIX}\`; create one in Maple's settings, or connect with OAuth.`
 }
 
 /**
@@ -129,67 +121,6 @@ export const describeMalformedBearer = (token: string | undefined): string | und
  * The same value apps/api binds OAuth grants to, never a forwarded host header.
  */
 export const mcpResourceUrl = (apiBaseUrl: string) => `${Str.replace(/\/+$/, "")(apiBaseUrl)}/mcp`
-
-/** Maple's own service token: the org comes from `x-org-id`, the user is `internal-service`. */
-const resolveInternalServiceTenant = Effect.fn("McpTenant.resolveInternalServiceTenant")(function* (
-	request: Request,
-	token: string,
-) {
-	const provided = Str.slice(INTERNAL_SERVICE_PREFIX.length)(token)
-	const env = yield* Env
-	const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
-		onNone: () => undefined,
-		onSome: (value) => Redacted.value(value),
-	})
-
-	if (!expected) {
-		return yield* new McpAuthMissingError({
-			message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
-		})
-	}
-
-	if (secretsEqual(provided, expected)) {
-		const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
-			onNone: () => request.headers.get("x-org-id"),
-			onSome: (value) => value,
-		})
-		if (!orgId) {
-			return yield* new McpAuthMissingError({
-				message: "x-org-id header is required for internal service auth",
-			})
-		}
-
-		const validOrgId = yield* decodeOrgId(orgId).pipe(
-			Effect.mapError(
-				(e) =>
-					new McpInvalidTenantError({
-						message: e.message,
-						field: "orgId",
-					}),
-			),
-		)
-		const validUserId = yield* decodeUserId(INTERNAL_SERVICE_USER_ID).pipe(
-			Effect.mapError(
-				(e) =>
-					new McpInvalidTenantError({
-						message: e.message,
-						field: "userId",
-					}),
-			),
-		)
-		const tenant: McpAuthenticatedTenant = {
-			orgId: validOrgId,
-			userId: validUserId,
-			roles: [],
-			authMode: "self_hosted",
-		}
-		return tenant
-	}
-
-	return yield* new McpAuthInvalidError({
-		message: "Internal service token mismatch",
-	})
-})
 
 /** A request with neither an `Authorization` header nor a cookie sent nothing a session reads. */
 const carriesCredential = (headers: Headers): boolean => headers.has("authorization") || headers.has("cookie")
@@ -244,15 +175,11 @@ const resolveSessionTenant = Effect.fn("McpTenant.resolveSessionTenant")(functio
 })
 
 /**
- * The tenant for the in-product chat routes: a signed-in session, or Maple's own service token.
- * Needs no `ApiKeysService`, so a router built on it cannot accept a key by accident.
+ * The tenant for the in-product chat routes: a signed-in session only. Needs no `ApiKeysService`,
+ * so a router built on it cannot accept a key or Maple's service token by accident.
  */
 export const resolveChatSessionTenantContext = Effect.fn("McpTenant.resolveChatSessionTenantContext")(
 	function* (request: Request) {
-		const token = getBearerToken(request.headers)
-		if (token !== undefined && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
-			return yield* resolveInternalServiceTenant(request, token)
-		}
 		return yield* resolveSessionTenant(request)
 	},
 	(effect) =>
@@ -262,12 +189,6 @@ export const resolveChatSessionTenantContext = Effect.fn("McpTenant.resolveChatS
 export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantContext")(
 	function* (request: Request) {
 		const token = getBearerToken(request.headers)
-
-		// Internal service auth (e.g. chat agent)
-		if (token && Str.startsWith(INTERNAL_SERVICE_PREFIX)(token)) {
-			return yield* resolveInternalServiceTenant(request, token)
-		}
-
 		const malformed = describeMalformedBearer(token)
 		if (malformed !== undefined) {
 			return yield* new McpAuthInvalidError({ message: malformed, reason: "malformed_token" })
@@ -344,7 +265,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				),
 			)
 
-			return {
+			const keyTenant: McpAuthenticatedTenant = {
 				orgId: validOrgId,
 				userId: validUserId,
 				roles: resolved.roles ?? apiKeyDefaultRoles,
@@ -353,7 +274,8 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				...(actorId ? { actorId } : undefined),
 				...(scopeAccess === "read" ? { readOnly: true } : undefined),
 				...(isMcpOAuthToken || resolved.scopes === null ? undefined : { scopes: resolved.scopes }),
-			} as McpAuthenticatedTenant
+			}
+			return keyTenant
 		}
 
 		// Fall back to existing Clerk / self-hosted session auth
@@ -362,13 +284,14 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 			.resolveMcpTenant(toHeaderRecord(request.headers))
 			.pipe(sessionAuthFailure(request))
 
-		return {
+		const sessionTenant: McpAuthenticatedTenant = {
 			orgId: tenant.orgId,
 			userId: tenant.userId,
 			roles: [...tenant.roles],
 			authMode: tenant.authMode,
 			rateLimitCredentialId: `user:${tenant.userId}`,
 		}
+		return sessionTenant
 	},
 	// Missing/invalid credentials are an expected 401, not a failure: annotate the
 	// span and log at Warn so it exports with an Ok status (the tag is also listed
@@ -378,3 +301,11 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 	(effect) =>
 		Effect.tapError(effect, (error) => recordExpectedMcpFailure(error, "MCP authentication failed")),
 )
+
+export const resolveHttpMcpTenant = Effect.gen(function* () {
+	const req = yield* HttpServerRequest.HttpServerRequest
+	const nativeReq = yield* HttpServerRequest.toWeb(req).pipe(
+		Effect.mapError((e) => new McpAuthMissingError({ message: `Failed to read request: ${e.message}` })),
+	)
+	return yield* resolveMcpTenantContext(nativeReq)
+})

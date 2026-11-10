@@ -3,13 +3,13 @@ import { Effect, Array as Arr, String as Str, Option } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	CLOUDFLARE_BREAKDOWN_DIMENSIONS,
-	CLOUDFLARE_BREAKDOWN_OTHER_KEY,
 	cloudflareBreakdownMetrics,
 	cloudflareZoneBreakdownCoverageSQL,
 	cloudflareZoneBreakdownTimeseriesSQL,
 	cloudflareZoneBreakdownTotalsSQL,
 	cloudflareZoneFacetsQuery,
 } from "./cloudflare-infra-breakdowns"
+import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
 import { OrgId } from "@maple/domain"
 
 const zoneParams = {

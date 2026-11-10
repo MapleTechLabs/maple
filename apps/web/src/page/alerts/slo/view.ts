@@ -19,7 +19,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
+import { incidentHref } from "../../kit/alert-links"
 import { editSloHref, SLO_NOT_FOUND_CODE, slosTabHref } from "../shared/slo-commands"
 import {
 	burnOf,
@@ -39,7 +39,7 @@ import {
 	overspentText,
 } from "../shared/slo-derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { sloOf } from "./update"
 import {
 	alertingPanel,
@@ -52,15 +52,14 @@ import {
 	sliPanel,
 } from "./view-panels"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `/alerts/slos/$sloId`: the header, a callout while the budget burns or is spent, then the panels.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
 const headerActions = (h: H, model: Model, slo: Slo): Html =>
 	detailActions(
 		h,
-		canManage(model)
+		canManageAlerts(model)
 			? [
 					linkButton(h, { size: "sm", variant: "outline", href: editSloHref(slo.id) }, [
 						icon(h, "PencilIcon"),

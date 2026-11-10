@@ -1,3 +1,6 @@
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -15,15 +18,15 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
-	chartBucketSeconds,
 	DEFAULT_TOOL_PRESET,
 	selectedPercentile,
 	toolSelection,
+	toolWindowArgs,
 	type ToolPercentile,
 	type TotalsResult,
-} from "../tools-kit/model"
-import { ALL, facetValue, initFacetSelect } from "../tools-kit/toolbar"
-import { nextSort } from "../tools-kit/table"
+} from "../../kit/tools/model"
+import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
+import { nextSort } from "../../kit/table-sort"
 import {
 	CompleteReloadSpin,
 	DebounceSearch,
@@ -34,9 +37,10 @@ import {
 	LoadSignalPresence,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Breakdowns, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -56,7 +60,7 @@ const keyed = <A, E>(
 	})
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
-	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
+	chartBucketSecondsBetween(toEpochMs(window.startTime), toEpochMs(window.endTime))
 
 /**
  * The tab counts read the bare window, which with no filter set is the page's own read: like two
@@ -155,13 +159,7 @@ const acceptBreakdowns = (
 })
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
-	ResolveWindow({
-		mode,
-		startTime: search.startTime,
-		endTime: search.endTime,
-		preset: search.timePreset ?? DEFAULT_TOOL_PRESET,
-		timeZone: context.timeZone,
-	})
+	ResolveWindow(toolWindowArgs(search, context.timeZone, mode))
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -215,11 +213,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(search, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -242,7 +236,7 @@ export const routeChanged = (
 		searchInput: isOutsideQuery ? query : model.searchInput,
 		lastSentQuery: isOutsideQuery ? query : model.lastSentQuery,
 	}
-	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	// The window re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? requestAll(next, context, "Load")
 		: {
@@ -283,11 +277,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchTabBreakdowns: ({ key, result }) => ({
 			model: { ...model, ...acceptBreakdowns(model, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -327,15 +317,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		RemovedScopeChip: ({ kind }) => navigate(model, { ...model.search, [kind]: undefined }),
 		ClickedClearScope: () => navigate(model, { ...model.search, tool: undefined, model: undefined }),
 		ClickedTableSort: ({ key }) => ({
-			model: { ...model, tableSort: nextSort(model.tableSort, key, ["key"]) },
+			model: { ...model, tableSort: nextSort(model.tableSort, key, { stringKeys: ["key"] }) },
 		}),
-		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
+		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),
 		GotPercentileMessage: ({ message: inner }) => {
 			const next = ToggleGroup.update(model.percentileToggle, inner)
 			const commands = Command.mapMessages(next.commands ?? [], (toggle) =>
 				Message.GotPercentileMessage({ message: toggle }),
 			)
-			// A press on the pressed item empties the group: Base UI reports no value and the page keeps its own.
+			// A press on the pressed item reports no value, and the page keeps its own.
 			const picked = PERCENTILES.find((candidate) => candidate === next.model.values[0])
 			return inner._tag === "ClickedItem" && picked !== undefined
 				? {
@@ -354,25 +344,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: searchHref({
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: searchHref({
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotSparkMessage: () => ({ model }),
 		CompletedLoadSignalPresence: ({ result }) => ({
@@ -389,17 +373,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 	})
 
-const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message): Return => {
-	const slot = facet === "service" ? "serviceSelect" : facet === "model" ? "modelSelect" : "envSelect"
-	const next = Select.update(model[slot], message)
-	const updated: Model = { ...model, [slot]: next.model }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+const facetPicked = (model: Model, facet: FacetKey, message: Select.Message): Return => {
+	const step = facetSelectStep(model, facet, message, (inner) =>
 		Message.GotFacetSelectMessage({ facet, message: inner }),
 	)
-	return next.outMessage === undefined
-		? { model: updated, commands }
-		: {
-				...navigate(updated, { ...model.search, [facet]: facetValue(next.outMessage.value) }),
-				commands,
-			}
+	return Option.match(step.picked, {
+		onNone: () => ({ model: step.model, commands: step.commands }),
+		onSome: (value) => ({
+			...navigate(step.model, { ...model.search, [facet]: value }),
+			commands: step.commands,
+		}),
+	})
 }
