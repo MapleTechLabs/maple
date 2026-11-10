@@ -4,6 +4,13 @@
  * filters by that org, so a store for one org cannot read or write another's runs.
  */
 import { aiCreditsUsd } from "@maple/domain/billing"
+import type {
+	SecurityAuditEvent,
+	SecurityAuditFinding,
+	SecurityAuditRun,
+	SecurityAuditTarget,
+	SecurityAuditUnit,
+} from "@maple/domain/http"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type { VcsRepositoryId } from "@maple/domain/http/vcs"
 import {
@@ -325,6 +332,106 @@ const UNIT_SUMMARY_EXPR = PG.rawExpr(
 export type SecurityAuditEventRecord = Omit<SecurityAuditEventRow, "detail"> & {
 	readonly detail: SecurityAuditEventRow["detail"] | null
 }
+
+// The API's view of each record: the domain shapes `/api/security-audit` returns, read off the rows
+// this store writes, so a column and the field it feeds change in one place.
+
+export const securityAuditTargetView = (row: SecurityAuditTargetRow): SecurityAuditTarget => ({
+	id: row.id,
+	repository: row.repository,
+	branch: row.branch,
+	enabled: row.enabled,
+	profile: row.profile,
+	scopePaths: row.scopePaths,
+	discoveryModel: row.discoveryModel,
+	validationModel: row.validationModel,
+	createdBy: row.createdBy,
+	createdAt: row.createdAt,
+	updatedAt: row.updatedAt,
+})
+
+export const securityAuditRunView = (row: SecurityAuditRunRow): SecurityAuditRun => ({
+	id: row.id,
+	targetId: row.targetId,
+	kind: row.kind,
+	status: row.status,
+	sourceRef: row.sourceRef,
+	profile: row.profile,
+	scopePaths: row.scopePaths,
+	budget: row.budget,
+	invocationsSpent: row.invocationsSpent,
+	inputTokens: row.inputTokens,
+	outputTokens: row.outputTokens,
+	costUsd: row.costUsd === null ? null : aiCreditsUsd(row.costUsd),
+	sandboxUsd: row.sandboxUsd,
+	discoveryModel: row.discoveryModel,
+	validationModel: row.validationModel,
+	incompleteReason: row.incompleteReason,
+	error: row.error,
+	startedAt: row.startedAt,
+	finishedAt: row.finishedAt,
+})
+
+export const securityAuditEventView = (row: SecurityAuditEventRecord): SecurityAuditEvent => ({
+	id: row.id,
+	at: row.at,
+	kind: row.kind,
+	role: row.role,
+	agentId: row.agentId,
+	outcome: row.outcome,
+	message: row.detail?.message ?? null,
+	phase: row.detail?.phase ?? null,
+	detail: row.detail?.detail ?? null,
+	costUsd: row.detail?.costUsd == null ? null : aiCreditsUsd(row.detail.costUsd),
+	inputTokens: row.inputTokens,
+	outputTokens: row.outputTokens,
+})
+
+export const securityAuditFindingView = (row: Omit<SecurityAuditFindingRow, "id">): SecurityAuditFinding => ({
+	fingerprint: row.fingerprint,
+	targetId: row.targetId,
+	verdict: row.verdict,
+	overallSeverity: row.overallSeverity,
+	// The column is only ever set on needs_validation rows; the guard keeps the contract if one is not.
+	estimatedSeverity: row.verdict === "needs_validation" ? row.estimatedSeverity : null,
+	status: row.status,
+	statusReason: row.statusReason,
+	statusChangedBy: row.statusChangedBy,
+	statusChangedAt: row.statusChangedAt,
+	record: row.record,
+	firstSeenRunId: row.firstSeenRunId,
+	lastSeenRunId: row.lastSeenRunId,
+	firstSeenRef: row.firstSeenRef,
+	lastSeenRef: row.lastSeenRef,
+	fixedRunId: row.fixedRunId,
+	createdAt: row.createdAt,
+	updatedAt: row.updatedAt,
+})
+
+/** A unit's unresolved notes trimmed, and only the first few: the listing stays lean for large ledgers. */
+const MAX_UNRESOLVED = 3
+const MAX_UNRESOLVED_CHARS = 300
+const MAX_RESULT_FINGERPRINTS = 20
+
+export const securityAuditUnitView = (row: SecurityAuditUnitSummary): SecurityAuditUnit => ({
+	coverageId: row.coverageId,
+	status: row.status,
+	wave: row.wave,
+	agentId: row.agentId,
+	stale: row.fields === null,
+	subsystem: row.fields?.subsystem ?? null,
+	surface: row.fields?.surface ?? null,
+	boundary: row.fields?.boundary ?? null,
+	attackClass: row.fields?.attack_class ?? null,
+	priorStatus: row.fields?.prior_status ?? null,
+	priority: row.fields?.priority ?? null,
+	failedAttempts: row.fields?.failed_attempts ?? null,
+	resultFingerprints: (row.fields?.result_fingerprints ?? []).slice(0, MAX_RESULT_FINGERPRINTS),
+	carriedFingerprint: row.fields?.carried_fingerprint ?? null,
+	unresolved: Arr.map((row.fields?.unresolved ?? []).slice(0, MAX_UNRESOLVED), (note) =>
+		Str.slice(0, MAX_UNRESOLVED_CHARS)(note),
+	),
+})
 
 export class SecurityAuditRunInProgress extends Schema.TaggedError<SecurityAuditRunInProgress>()(
 	"@maple/backend/security-audit/RunInProgress",
