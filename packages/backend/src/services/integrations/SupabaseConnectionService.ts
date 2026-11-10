@@ -50,6 +50,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import {
@@ -90,7 +91,6 @@ const DISCOVER_NOW_TIMEOUT = Duration.seconds(20)
 const RATE_LIMIT_HOLD_MS = 60_000
 /** Bounds the hourly lane: no org starts after this. */
 const TICK_BUDGET_MS = 10 * 60_000
-const ORG_CONCURRENCY = 3
 
 /** Statuses Supabase reports for a project that needs attention. */
 export const UNHEALTHY_STATUSES: ReadonlySet<string> = new Set([
@@ -1236,7 +1236,7 @@ export class SupabaseConnectionService extends Context.Service<
 						]),
 				),
 			)
-			const summaries = yield* Effect.forEach(
+			const summaries = yield* pollFleet(
 				due,
 				(row) =>
 					Effect.gen(function* () {
@@ -1245,25 +1245,18 @@ export class SupabaseConnectionService extends Context.Service<
 							return { orgId, skipped: "tick budget", projects: 0, removed: 0, error: null }
 						}
 						return yield* discoverOrg(orgId)
-					}).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("supabase org discovery failed", {
-										orgId: row.orgId,
-										error: summarizeCause(cause),
-									}).pipe(
-										Effect.as<SupabaseDiscoverySummary>({
-											orgId: row.orgId,
-											skipped: null,
-											projects: 0,
-											removed: 0,
-											error: "org discovery failed",
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
+					}),
+				{
+					message: "supabase org discovery failed",
+					annotations: (row) => ({ orgId: row.orgId }),
+					fallback: (row): SupabaseDiscoverySummary => ({
+						orgId: row.orgId,
+						skipped: null,
+						projects: 0,
+						removed: 0,
+						error: "org discovery failed",
+					}),
+				},
 			)
 			const summary = {
 				orgs: due.length,

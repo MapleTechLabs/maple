@@ -6,11 +6,11 @@ import { SearchConsoleSiteId } from "@maple/domain/primitives"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OAuthConnections, SearchConsoleSites, type SearchConsoleSiteRow } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Ref, Result, Schedule, Schema, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Ref, Result, Schedule, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -492,7 +492,8 @@ export class SearchConsoleImportService extends Context.Service<
 		) =>
 			Effect.gen(function* () {
 				yield* Effect.annotateCurrentSpan("maple.search_console.due_sites", due.length)
-				const outcomes = yield* Effect.forEach(
+				// One property's database failure must not fail the tick.
+				const outcomes = yield* pollFleet(
 					due,
 					(candidate) =>
 						Effect.gen(function* () {
@@ -500,22 +501,13 @@ export class SearchConsoleImportService extends Context.Service<
 							const claimedAt = yield* Clock.currentTimeMillis
 							const site = yield* claim(candidate, claimedAt, mode)
 							return site === null ? SKIPPED : yield* importSite(site, claimedAt, mode)
-						}).pipe(
-							// One property's database failure must not fail the tick.
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("search console import failed").pipe(
-											Effect.annotateLogs({
-												orgId: candidate.orgId,
-												siteId: candidate.id,
-												error: summarizeCause(cause),
-											}),
-											Effect.as(FAILED),
-										),
-							),
-						),
-					{ concurrency: SITE_CONCURRENCY },
+						}),
+					{
+						message: "search console import failed",
+						annotations: (candidate) => ({ orgId: candidate.orgId, siteId: candidate.id }),
+						fallback: () => FAILED,
+					},
+					SITE_CONCURRENCY,
 				)
 				const count = (status: SiteOutcome["status"]) =>
 					Arr.filter(outcomes, (outcome) => outcome.status === status).length

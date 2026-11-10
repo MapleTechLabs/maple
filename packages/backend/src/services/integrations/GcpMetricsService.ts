@@ -17,7 +17,6 @@ import type { OrgId } from "@maple/domain/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import {
-	Cause,
 	Clock,
 	Context,
 	Duration,
@@ -33,7 +32,7 @@ import {
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
@@ -827,7 +826,8 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					budget,
 				}
 
-				const outcomes = yield* Effect.forEach(
+				// One connector's database or ingest-key failure must not fail the tick.
+				const outcomes = yield* pollFleet(
 					candidates,
 					(candidate) =>
 						Effect.gen(function* () {
@@ -846,19 +846,13 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								),
 							)
 							return connector === undefined ? null : yield* pollConnector(connector, tick)
-						}).pipe(
-							// One connector's database or ingest-key failure must not fail the tick.
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("gcp connector poll failed", {
-											orgId: candidate.orgId,
-											connectorId: candidate.id,
-											error: summarizeCause(cause),
-										}).pipe(Effect.as(FAILED)),
-							),
-						),
-					{ concurrency: CONNECTOR_CONCURRENCY },
+						}),
+					{
+						message: "gcp connector poll failed",
+						annotations: (candidate) => ({ orgId: candidate.orgId, connectorId: candidate.id }),
+						fallback: () => FAILED,
+					},
+					CONNECTOR_CONCURRENCY,
 				)
 				const polled = Arr.filter(outcomes, (outcome) => outcome !== null)
 				return {

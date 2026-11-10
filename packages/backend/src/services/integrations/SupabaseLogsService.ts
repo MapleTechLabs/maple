@@ -22,11 +22,11 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import {
 	type IngestSendError,
@@ -63,7 +63,6 @@ const RATE_LIMIT_HOLD_MS = 60_000
 const REFUSED_HOLD_MS = 60 * 60_000
 /** Records per ingest request; a full page is split so no body gets too large. */
 const INGEST_CHUNK = 250
-const ORG_CONCURRENCY = 3
 const PROJECT_CONCURRENCY = 4
 
 const REVOKED_REASON = "Supabase no longer accepts this authorization. Reconnect Supabase."
@@ -540,29 +539,21 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [$.logsEnabled.eq(true), $.removedAt.isNull()]),
 					),
 				)
-				const summaries = yield* Effect.forEach(
+				const summaries = yield* pollFleet(
 					orgs,
-					(row) =>
-						pollOrgAt(decodeOrgId(row.orgId), started).pipe(
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("supabase logs org poll failed", {
-											orgId: row.orgId,
-											error: summarizeCause(cause),
-										}).pipe(
-											Effect.as<SupabaseLogsPollOrgSummary>({
-												orgId: decodeOrgId(row.orgId),
-												skipped: "org poll failed",
-												projects: 0,
-												calls: 0,
-												rows: 0,
-												failures: 1,
-											}),
-										),
-							),
-						),
-					{ concurrency: ORG_CONCURRENCY },
+					(row) => pollOrgAt(decodeOrgId(row.orgId), started),
+					{
+						message: "supabase logs org poll failed",
+						annotations: (row) => ({ orgId: row.orgId }),
+						fallback: (row): SupabaseLogsPollOrgSummary => ({
+							orgId: decodeOrgId(row.orgId),
+							skipped: "org poll failed",
+							projects: 0,
+							calls: 0,
+							rows: 0,
+							failures: 1,
+						}),
+					},
 				)
 				const summary = {
 					orgs: orgs.length,

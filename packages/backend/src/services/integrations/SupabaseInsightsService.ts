@@ -24,11 +24,11 @@ import {
 	type SupabaseProjectInsightsRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { isSourcePaused } from "@maple/backend/services/org/integration-sources"
 import type { SupabaseApiError } from "./supabase/api"
@@ -44,7 +44,6 @@ const LEASE_MS = 12 * 60_000
 /** No project starts after this. */
 const TICK_BUDGET_MS = 5 * 60_000
 const RATE_LIMIT_HOLD_MS = 5 * 60_000
-const ORG_CONCURRENCY = 3
 const PROJECT_CONCURRENCY = 4
 const ERROR_CHARS = 500
 
@@ -410,30 +409,18 @@ export class SupabaseInsightsService extends Context.Service<
 		const pollAllOrgs = Effect.gen(function* () {
 			const started = yield* Clock.currentTimeMillis
 			const orgs = yield* dbExecute((db) => db.run(PG.from(SupabaseConnections).select("orgId")))
-			const summaries = yield* Effect.forEach(
-				orgs,
-				(row) =>
-					pollOrgAt(decodeOrgId(row.orgId), started).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("supabase insights org poll failed", {
-										orgId: row.orgId,
-										error: summarizeCause(cause),
-									}).pipe(
-										Effect.as<SupabaseInsightsPollOrgSummary>({
-											orgId: decodeOrgId(row.orgId),
-											skipped: "org poll failed",
-											projects: 0,
-											advisorsRead: 0,
-											queriesRead: 0,
-											failures: 1,
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
-			)
+			const summaries = yield* pollFleet(orgs, (row) => pollOrgAt(decodeOrgId(row.orgId), started), {
+				message: "supabase insights org poll failed",
+				annotations: (row) => ({ orgId: row.orgId }),
+				fallback: (row): SupabaseInsightsPollOrgSummary => ({
+					orgId: decodeOrgId(row.orgId),
+					skipped: "org poll failed",
+					projects: 0,
+					advisorsRead: 0,
+					queriesRead: 0,
+					failures: 1,
+				}),
+			})
 			const summary = {
 				orgs: orgs.length,
 				advisorsRead: Arr.reduce(summaries, 0, (sum, item) => sum + item.advisorsRead),

@@ -52,7 +52,7 @@ import {
 } from "./planetscale/api"
 import { makePlanetScalePollState } from "./planetscale/poll-state"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { timestampMs } from "@maple/backend/platform/time"
 import { type PollOutcome, reportPoll } from "@maple/backend/services/org/integration-sources"
 
@@ -109,7 +109,6 @@ const REQUEST_TIMEOUT_RETRIES = 2
 const isUpstreamTimeout = (error: { readonly _tag: string; readonly status?: number }) =>
 	error._tag === "@maple/http/errors/IntegrationsUpstreamError" &&
 	error.status === PLANETSCALE_TIMEOUT_STATUS
-const ORG_CONCURRENCY = 3
 const INVENTORY_WRITE_CONCURRENCY = 4
 /** Pagination caps — a runaway org can't make a tick unbounded. */
 const PAGE_SIZE = 100
@@ -751,17 +750,10 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					(row) =>
 						refreshDeployRequestsFor(connection, row).pipe(
 							// One bad database must not stop the others.
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("PlanetScale deploy-request backfill failed").pipe(
-											Effect.annotateLogs({
-												orgId: connection.orgId,
-												database: row.name,
-												error: summarizeCause(cause),
-											}),
-											Effect.as(0),
-										),
+							isolatePollFailure(
+								"PlanetScale deploy-request backfill failed",
+								{ orgId: connection.orgId, database: row.name },
+								0,
 							),
 						),
 					{ concurrency: DEPLOY_REQUESTS_CONCURRENCY },
@@ -788,16 +780,10 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// safe to enter on every tick. Its own error boundary — a broken
 				// backfill must never cost the org its inventory.
 				const deployEvents = yield* refreshDeployRequests(connection).pipe(
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.logWarning("PlanetScale deploy-request backfill failed for org").pipe(
-									Effect.annotateLogs({
-										orgId: connection.orgId,
-										error: summarizeCause(cause),
-									}),
-									Effect.as(0),
-								),
+					isolatePollFailure(
+						"PlanetScale deploy-request backfill failed for org",
+						{ orgId: connection.orgId },
+						0,
 					),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -919,13 +905,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					)
 				},
 				// Webhooks must never cost the org its inventory or deploy timeline.
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause)
-						? Effect.interrupt
-						: Effect.logWarning("PlanetScale webhook sync failed").pipe(
-								Effect.annotateLogs({ error: summarizeCause(cause) }),
-							),
-				),
+				isolatePollFailure("PlanetScale webhook sync failed", {}, undefined),
 			)
 
 			const pollAllOrgs = Effect.gen(function* () {
@@ -939,25 +919,15 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					),
 				)
 
-				const results = yield* Effect.forEach(
+				// A broken org must not stop the fleet.
+				const results = yield* pollFleet(
 					connections,
-					(connection) =>
-						pollOrg(connection).pipe(
-							Effect.tap(() => syncWebhooks(connection)),
-							// A broken org must not stop the fleet.
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("PlanetScale org poll failed").pipe(
-											Effect.annotateLogs({
-												orgId: connection.orgId,
-												error: summarizeCause(cause),
-											}),
-											Effect.as({ outcome: "failed" as const, deployEvents: 0 }),
-										),
-							),
-						),
-					{ concurrency: ORG_CONCURRENCY },
+					(connection) => pollOrg(connection).pipe(Effect.tap(() => syncWebhooks(connection))),
+					{
+						message: "PlanetScale org poll failed",
+						annotations: (connection) => ({ orgId: connection.orgId }),
+						fallback: () => ({ outcome: "failed" as const, deployEvents: 0 }),
+					},
 				)
 
 				const countOutcome = (outcome: (typeof results)[number]["outcome"]) =>
