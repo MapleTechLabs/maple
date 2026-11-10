@@ -6,11 +6,12 @@ import {
 	quoteWhereValue,
 	splitWhereClause,
 } from "@maple/domain/where-clause"
+import { type QueryBuilderDataSource, whereKeyMatchesAnyOf } from "@maple/query-engine/query-builder"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 
 // The condition builder's rows and their two-way mapping to the where-clause string
 // (`@maple/domain/where-clause`): rows are AND-ed; a row's values are OR-ed for `=`/`contains`
-// and AND-ed for `!=`/`!contains`.
+// and AND-ed for `!=`/`!contains`. Reading is per data source: what one source ORs another drops.
 
 /** One `[field] [operator] [values]` row; `key` is empty until a field is picked. */
 export const ConditionRow = Schema.Struct({
@@ -43,13 +44,19 @@ const draftOf = (clause: ParsedClause): Draft => ({
 	values: isValueless(clause.operator) ? [] : [clause.value],
 })
 
-/** Why a clause has no rows: an OR across fields, an OR a row's operators can't hold, or other syntax. */
-export type UnshowableReason = "mixedFields" | "orOperators" | "syntax"
+/**
+ * Why a clause has no rows: an OR across fields, an OR a row's operators can't hold, an OR on a
+ * key the source does not OR, or other syntax.
+ */
+export type UnshowableReason = "mixedFields" | "orOperators" | "orNotApplied" | "syntax"
 
 type Part = Result.Result<Draft, UnshowableReason>
 
-/** One AND-ed part: a single clause, or an OR group whose members share key and an any-of operator. */
-const readPart = (part: string): Part => {
+/**
+ * One AND-ed part: a single clause, or an OR group whose members share key and an any-of
+ * operator, on a key the source ORs (the engine's `whereKeyMatchesAnyOf`).
+ */
+const readPart = (part: string, dataSource: QueryBuilderDataSource): Part => {
 	const parsed = parseWhereClause(part, { orGroups: true })
 	if (parsed.warnings.length > 0) return Result.fail("syntax")
 	const [clause] = parsed.clauses
@@ -64,14 +71,19 @@ const readPart = (part: string): Part => {
 	if (!Arr.every(drafts, (draft) => draft.key === first.key)) return Result.fail("mixedFields")
 	if (!isAnyOf(first.operator) || !Arr.every(drafts, (draft) => draft.operator === first.operator))
 		return Result.fail("orOperators")
+	// Such a row holds one value: shown as a row, the next pick would drop the rest of a saved group.
+	if (drafts.length > 1 && !whereKeyMatchesAnyOf(dataSource, first.key)) return Result.fail("orNotApplied")
 	return Result.succeed({ ...first, values: Arr.flatMap(drafts, (draft) => draft.values) })
 }
 
-const partOf = (part: string): Option.Option<Draft> => Result.getSuccess(readPart(part))
-
-/** Why the builder can't show a clause, or none when it reads as rows. */
-export const unshowableReasonOf = (whereClause: string): Option.Option<UnshowableReason> =>
-	Arr.findFirst(splitWhereClause(Str.trim(whereClause)), (part) => Result.getFailure(readPart(part)))
+/** Why the builder can't show a clause on this source, or none when it reads as rows. */
+export const unshowableReasonOf = (
+	whereClause: string,
+	dataSource: QueryBuilderDataSource,
+): Option.Option<UnshowableReason> =>
+	Arr.findFirst(splitWhereClause(Str.trim(whereClause)), (part) =>
+		Result.getFailure(readPart(part, dataSource)),
+	)
 
 /** A row with the clause text it was read from, so an untouched row keeps the user's spelling. */
 type Spelled = Readonly<{ draft: Draft; text: string }>
@@ -101,19 +113,28 @@ const mergeNoneOf = (parts: ReadonlyArray<Spelled>): ReadonlyArray<Spelled> =>
 		})
 	})
 
-const spelledRows = (whereClause: string): Option.Option<ReadonlyArray<Spelled>> =>
+const spelledRows = (
+	whereClause: string,
+	dataSource: QueryBuilderDataSource,
+): Option.Option<ReadonlyArray<Spelled>> =>
 	Option.map(
 		Option.all(
 			Arr.map(splitWhereClause(Str.trim(whereClause)), (text) =>
-				Option.map(partOf(text), (draft): Spelled => ({ draft, text })),
+				Option.map(Result.getSuccess(readPart(text, dataSource)), (draft): Spelled => ({
+					draft,
+					text,
+				})),
 			),
 		),
 		mergeNoneOf,
 	)
 
-/** The rows a where clause reads as, or none when it uses syntax a row cannot show. */
-export const parseConditionRows = (whereClause: string): Option.Option<ReadonlyArray<ConditionRow>> =>
-	Option.map(spelledRows(whereClause), (parts) =>
+/** The rows a where clause reads as on this source, or none when a row cannot show it. */
+export const parseConditionRows = (
+	whereClause: string,
+	dataSource: QueryBuilderDataSource,
+): Option.Option<ReadonlyArray<ConditionRow>> =>
+	Option.map(spelledRows(whereClause, dataSource), (parts) =>
 		Arr.map(parts, ({ draft }, index) => ({ id: `c${index}`, ...draft })),
 	)
 
@@ -165,8 +186,12 @@ export const printConditionRows = (rows: ReadonlyArray<ConditionRow>): string =>
  * `printConditionRows`, but a row `original` already holds keeps its text there, so an edit
  * rewrites only the clauses it changed.
  */
-export const printConditionRowsOver = (rows: ReadonlyArray<ConditionRow>, original: string): string => {
-	const spelled = Option.getOrElse(spelledRows(original), () => Arr.empty<Spelled>())
+export const printConditionRowsOver = (
+	rows: ReadonlyArray<ConditionRow>,
+	original: string,
+	dataSource: QueryBuilderDataSource,
+): string => {
+	const spelled = Option.getOrElse(spelledRows(original, dataSource), () => Arr.empty<Spelled>())
 	const [, texts] = Arr.mapAccum(
 		Arr.filter(rows, isComplete),
 		spelled,

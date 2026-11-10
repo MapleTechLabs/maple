@@ -49,9 +49,9 @@ export const isOperatorSelect = (id: string): boolean => Str.startsWith(`${OPERA
 /** The kept rows while they still mean the query's where clause, else none. */
 const keptRowsOf = (model: Model, query: QueryDraft): Option.Option<ReadonlyArray<ConditionRow>> =>
 	Option.flatMap(Option.fromNullishOr(model.conditions[query.id]), (kept) =>
-		Option.filter(parseConditionRows(query.whereClause), (parsed) => sameConditions(parsed, kept)).pipe(
-			Option.map(() => kept),
-		),
+		Option.filter(parseConditionRows(query.whereClause, query.dataSource), (parsed) =>
+			sameConditions(parsed, kept),
+		).pipe(Option.map(() => kept)),
 	)
 
 /** The rows a query shows: the kept ones while they mean its where clause, else a fresh parse. */
@@ -59,7 +59,7 @@ export const conditionRowsOf = (
 	model: Model,
 	query: QueryDraft,
 ): Option.Option<ReadonlyArray<ConditionRow>> =>
-	Option.orElse(keptRowsOf(model, query), () => parseConditionRows(query.whereClause))
+	Option.orElse(keptRowsOf(model, query), () => parseConditionRows(query.whereClause, query.dataSource))
 
 /** A fresh parse renumbers the rows: drop the query's rows, pickers, drills and operator selects. */
 export const withoutBuilderState = (model: Model, queryId: string): Model => {
@@ -101,7 +101,7 @@ const emitted = (
 			queryId: query.id,
 			change: QueryChange.SetText({
 				field: "whereClause",
-				value: printConditionRowsOver(rows, query.whereClause),
+				value: printConditionRowsOver(rows, query.whereClause, query.dataSource),
 			}),
 		}),
 	}
@@ -121,7 +121,7 @@ const withRows = (
 		onSome: (rows) => step({ model, query, rows }),
 		// Stale kept rows mean the ids renumber: their pickers go. The fresh rows are kept either way.
 		onNone: () =>
-			Option.match(parseConditionRows(query.whereClause), {
+			Option.match(parseConditionRows(query.whereClause, query.dataSource), {
 				onNone: () => ({ model }),
 				onSome: (rows) => {
 					const fresh =
@@ -243,7 +243,8 @@ export const fieldStep = (
 		const current = { ...stored, selected: row.key === "" ? [] : [row.key] }
 		const drill = base.fieldDrills[id] ?? "all"
 		const fields = fieldsOf(query.dataSource, inputs?.baseValuesOf(query) ?? {})
-		const items = fieldPickerItems(fields, drill, Combobox.queryOf(current))
+		const items = fieldPickerItems(fields, drill, Combobox.queryOf(current), query.dataSource)
+		// A pick is one of the offered items, so a key the source drops (never offered) cannot be picked.
 		const picked = Option.flatMap(Option.fromNullishOr(pickedValue(current, message)), (value) =>
 			Arr.findFirst(items, (item) => item.value === value),
 		)
@@ -264,7 +265,7 @@ export const fieldStep = (
 							...current,
 							inputValue: "",
 							highlighted: fieldHighlightOf(
-								fieldPickerItems(fields, navigated.value, ""),
+								fieldPickerItems(fields, navigated.value, "", query.dataSource),
 								row.key,
 								drill,
 							),
@@ -281,7 +282,7 @@ export const fieldStep = (
 			? {
 					...next.model,
 					highlighted: fieldHighlightOf(
-						fieldPickerItems(fields, drill, Combobox.queryOf(next.model)),
+						fieldPickerItems(fields, drill, Combobox.queryOf(next.model), query.dataSource),
 						row.key,
 					),
 				}

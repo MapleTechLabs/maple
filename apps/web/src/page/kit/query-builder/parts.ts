@@ -75,6 +75,7 @@ const whereTextEditor = (
 const UNSHOWABLE_NOTE = {
 	mixedFields: "This filter mixes fields in an OR, so it stays in Text.",
 	orOperators: "This filter uses an OR the builder can't show, so it stays in Text.",
+	orNotApplied: "This OR group is on a field that can't be OR-ed, so it stays in Text.",
 	syntax: "This filter uses syntax the builder can't show, so it stays in Text.",
 } satisfies Record<UnshowableReason, string>
 
@@ -112,7 +113,7 @@ export const whereClauseEditor = (
 		{ gap: "2", wrap: true, justify: "end", className: "float-right mb-1 ml-2 max-w-full" },
 		[toggle, ...(options.trailing ?? [])],
 	)
-	const note = Option.match(unshowableReasonOf(query.whereClause), {
+	const note = Option.match(unshowableReasonOf(query.whereClause, query.dataSource), {
 		onNone: () => [],
 		onSome: (reason) => [
 			// One line beside the controls where the editor is wide, else its own lines under them.

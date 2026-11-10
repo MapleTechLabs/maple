@@ -65,8 +65,13 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 	},
 	{
 		title: "OR group the query drops",
-		hint: "Named fields can't be OR-ed: the warning says the group is not applied.",
-		query: draft("dropped", "E", "traces", '(service.name = "checkout" OR span.name = "GET /health")'),
+		hint: "A named field can't be OR-ed: the filter stays in Text, and the warning names the group the query drops.",
+		query: draft(
+			"dropped",
+			"E",
+			"traces",
+			'(service.name = "checkout" OR service.name = "worker") AND attr.http.route exists',
+		),
 	},
 	{
 		title: "Text mode",

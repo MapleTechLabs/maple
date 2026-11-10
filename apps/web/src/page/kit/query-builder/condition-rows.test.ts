@@ -12,8 +12,10 @@ import {
 } from "./condition-rows"
 import { Array as Arr, Option } from "effect"
 
-const rowsOf = (whereClause: string) =>
-	Option.map(parseConditionRows(whereClause), (rows) =>
+type DataSource = Parameters<typeof parseConditionRows>[1]
+
+const rowsOf = (whereClause: string, dataSource: DataSource = "traces") =>
+	Option.map(parseConditionRows(whereClause, dataSource), (rows) =>
 		Arr.map(rows, ({ key, operator, values }) => ({ key, operator, values })),
 	)
 
@@ -29,8 +31,15 @@ describe("parseConditionRows", () => {
 		["", []],
 		['service.name = "checkout"', [{ key: "service.name", operator: "=", values: ["checkout"] }]],
 		[
-			'(service.name = "checkout" OR service.name = "api")',
-			[{ key: "service.name", operator: "=", values: ["checkout", "api"] }],
+			'(attr.http.route = "/cart" OR attr.http.route = "/pay")',
+			[{ key: "attr.http.route", operator: "=", values: ["/cart", "/pay"] }],
+		],
+		// A group of one is a plain clause, on any field.
+		['(service.name = "checkout")', [{ key: "service.name", operator: "=", values: ["checkout"] }]],
+		// AND-ed excludes are one row on any field: every source applies them.
+		[
+			'service.name != "a" AND service.name != "b"',
+			[{ key: "service.name", operator: "!=", values: ["a", "b"] }],
 		],
 		["attr.http.route exists", [{ key: "attr.http.route", operator: "exists", values: [] }]],
 		["resource.host.name !exists", [{ key: "resource.host.name", operator: "!exists", values: [] }]],
@@ -62,15 +71,16 @@ describe("parseConditionRows", () => {
 		// Not the grammar at all.
 		"service.name ~ checkout",
 		'service.name = "unclosed',
-		// OR groups a row cannot show: mixed keys, mixed or negated operators, nesting.
+		// OR groups a row cannot show: mixed keys, mixed or negated operators, a named field, nesting.
 		'(service.name = "a" OR span.name = "b")',
+		'(service.name = "a" OR service.name = "b")',
 		'(service.name = "a" OR service.name contains "b")',
 		'(service.name != "a" OR service.name != "b")',
 		'(service.name = "a" OR (span.name = "b"))',
 		// A group without orGroups support in a row: AND inside parentheses.
 		'(service.name = "a" AND span.name = "b")',
 	])("%s cannot be shown", (whereClause) => {
-		expect(Option.isNone(parseConditionRows(whereClause))).toBe(true)
+		expect(Option.isNone(parseConditionRows(whereClause, "traces"))).toBe(true)
 	})
 })
 
@@ -78,8 +88,8 @@ describe("printConditionRows", () => {
 	test.each([
 		[[row("service.name", "=", ["checkout"])], 'service.name = "checkout"'],
 		[
-			[row("service.name", "=", ["checkout", "api"])],
-			'(service.name = "checkout" OR service.name = "api")',
+			[row("attr.http.route", "=", ["/cart", "/pay"])],
+			'(attr.http.route = "/cart" OR attr.http.route = "/pay")',
 		],
 		[[row("severity", "!=", ["DEBUG", "TRACE"])], 'severity != "DEBUG" AND severity != "TRACE"'],
 		[[row("attr.http.route", "exists", [])], "attr.http.route exists"],
@@ -124,19 +134,19 @@ describe("round trip", () => {
 	test.each([
 		'service.name = "checkout"',
 		'service.name = checkout AND span.name contains "GET /api"',
-		'(service.name = "a" OR service.name = "b") AND has_error = true',
+		'(attr.http.route = "/a" OR attr.http.route = "/b") AND has_error = true',
 		'severity != "DEBUG" AND service.name = "x" AND severity != "TRACE"',
 		"attr.http.response.status_code >= 500 AND attr.http.response.status_code < 600",
 		"resource.k8s.pod.name exists AND attr.db.system !exists",
 		`attr.message contains 'it''s' AND span.name = 'say "hi"'`,
-		'(body contains "timeout" OR body contains "refused")',
+		'(attr.error.message contains "timeout" OR attr.error.message contains "refused")',
 	])("%s", (whereClause) => {
-		const rows = Option.getOrThrow(parseConditionRows(whereClause))
+		const rows = Option.getOrThrow(parseConditionRows(whereClause, "traces"))
 		const printed = printConditionRows(rows)
 		expect(meaning(printed)).toEqual(meaning(whereClause))
-		expect(Option.map(parseConditionRows(printed), (again) => Arr.map(again, (r) => r.values))).toEqual(
-			Option.some(Arr.map(rows, (r) => r.values)),
-		)
+		expect(
+			Option.map(parseConditionRows(printed, "traces"), (again) => Arr.map(again, (r) => r.values)),
+		).toEqual(Option.some(Arr.map(rows, (r) => r.values)))
 	})
 })
 
@@ -150,13 +160,13 @@ describe("nextRowId", () => {
 describe("printConditionRowsOver", () => {
 	const original =
 		"service = checkout AND attr.http.route exists AND severity != DEBUG AND severity != TRACE"
-	const rows = Option.getOrThrow(parseConditionRows(original))
+	const rows = Option.getOrThrow(parseConditionRows(original, "logs"))
 
 	test("untouched rows keep their text, a changed row is printed afresh", () => {
 		const edited = Arr.map(rows, (row) =>
 			row.key === "attr.http.route" ? { ...row, operator: "!exists" as const } : row,
 		)
-		expect(printConditionRowsOver(edited, original)).toBe(
+		expect(printConditionRowsOver(edited, original, "logs")).toBe(
 			"service = checkout AND attr.http.route !exists AND severity != DEBUG AND severity != TRACE",
 		)
 	})
@@ -166,6 +176,7 @@ describe("printConditionRowsOver", () => {
 			printConditionRowsOver(
 				Arr.filter(rows, (row) => row.key !== "attr.http.route"),
 				original,
+				"logs",
 			),
 		).toBe("service = checkout AND severity != DEBUG AND severity != TRACE")
 	})
@@ -198,9 +209,57 @@ describe("unshowableReasonOf", () => {
 		['(service.name = "a" OR span.name = "b")', Option.some("mixedFields")],
 		['(service.name = "a" OR service.name contains "b")', Option.some("orOperators")],
 		['(service.name != "a" OR service.name != "b")', Option.some("orOperators")],
+		['(service.name = "checkout" OR service.name = "worker")', Option.some("orNotApplied")],
+		["attr.b exists AND (has_error = true OR has_error = false)", Option.some("orNotApplied")],
 		["service.name ~ checkout", Option.some("syntax")],
 		['service.name = "a" AND (service.name = "b" AND span.name = "c")', Option.some("syntax")],
 	])("%s", (whereClause, expected) => {
-		expect(unshowableReasonOf(whereClause)).toEqual(expected)
+		expect(unshowableReasonOf(whereClause, "traces")).toEqual(expected)
+	})
+})
+
+// An OR group reads as a multi-value row only where the source applies it (the engine's
+// `whereKeyMatchesAnyOf`); anywhere else a row would hold one value and a pick would drop the rest.
+describe("OR groups by source", () => {
+	const twoValues = (key: string) => `(${key} = "a" OR ${key} = "b")`
+
+	test.each([
+		["traces", "attr.http.route"],
+		["traces", "resource.host.name"],
+		// Traces read a bare unknown key as a span attribute.
+		["traces", "db.system"],
+		["logs", "attr.http.route"],
+		["logs", "resource.host.name"],
+		["metrics", "attr.state"],
+	] as const)("%s ORs %s: one row, two values", (dataSource, key) => {
+		expect(rowsOf(twoValues(key), dataSource)).toEqual(
+			Option.some([{ key, operator: "=", values: ["a", "b"] }]),
+		)
+		expect(unshowableReasonOf(twoValues(key), dataSource)).toEqual(Option.none())
+	})
+
+	test.each([
+		["traces", "service.name"],
+		["traces", "span.name"],
+		["traces", "deployment.environment"],
+		["logs", "service.name"],
+		["logs", "severity"],
+		// Logs and metrics drop a bare unknown key.
+		["logs", "db.system"],
+		["metrics", "service.name"],
+		["metrics", "db.system"],
+		// Product events lower no OR group at all.
+		["product_events", "event.name"],
+		["product_events", "attr.plan"],
+		["product_events", "plan"],
+	] as const)("%s does not OR %s: it stays in Text", (dataSource, key) => {
+		expect(rowsOf(twoValues(key), dataSource)).toEqual(Option.none())
+		expect(unshowableReasonOf(twoValues(key), dataSource)).toEqual(Option.some("orNotApplied"))
+	})
+
+	test("a product-events OR across fields still reads as mixed fields", () => {
+		expect(unshowableReasonOf('(event.name = "a" OR host = "b")', "product_events")).toEqual(
+			Option.some("mixedFields"),
+		)
 	})
 })
