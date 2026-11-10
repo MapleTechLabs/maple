@@ -10,11 +10,24 @@ if [ "${1:-start}" != "start" ]; then
 fi
 [ "$#" -gt 0 ] && shift
 
+# maple trims a secret the way JavaScript does and treats a blank one as unset, which would
+# serve without auth. So blank here means the same: ASCII whitespace plus, as UTF-8 bytes,
+# U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF.
+is_blank() {
+	[ -z "$(printf '%s' "$1" | LC_ALL=C sed \
+		-e 's/[[:space:]]//g' \
+		-e "$(printf 's/\302\240//g')" \
+		-e "$(printf 's/\341\232\200//g')" \
+		-e "$(printf 's/\342\200[\200-\212\250\251\257]//g')" \
+		-e "$(printf 's/\342\201\237//g')" \
+		-e "$(printf 's/\343\200\200//g')" \
+		-e "$(printf 's/\357\273\277//g')")" ]
+}
+
 for name in MAPLE_LOCAL_INGEST_KEY MAPLE_LOCAL_ACCESS_TOKEN; do
 	value=""
 	eval "value=\${$name:-}"
-	# maple trims a secret and treats a blank one as unset, which would serve without auth.
-	if [ -z "$(printf '%s' "$value" | tr -d '[:space:]')" ]; then
+	if is_blank "$value"; then
 		echo "error: $name is required (generate one with: openssl rand -hex 32)" >&2
 		exit 64
 	fi

@@ -71,6 +71,16 @@ fi
 grep -q "MAPLE_LOCAL_INGEST_KEY is required" "$BODY" || fail "missing-secret error was unclear: $(cat "$BODY")"
 pass "refuses to start without secrets"
 
+# --- A blank secret is no secret: the server trims it to unset and would serve without auth.
+for blank in '   ' "$(printf '\302\240')"; do
+	if docker run --rm -e MAPLE_LOCAL_INGEST_KEY="$blank" -e MAPLE_LOCAL_ACCESS_TOKEN="$ACCESS_TOKEN" \
+		"$IMAGE" >"$BODY" 2>&1; then
+		fail "the image started with a blank MAPLE_LOCAL_INGEST_KEY"
+	fi
+	grep -q "MAPLE_LOCAL_INGEST_KEY is required" "$BODY" || fail "blank-secret error was unclear: $(cat "$BODY")"
+done
+pass "refuses a blank secret, a non-breaking space included"
+
 # --- A root-owned volume, as platforms mount them.
 docker volume create "$VOLUME" >/dev/null
 docker run --rm -v "$VOLUME:/data" --entrypoint chown "$IMAGE" -R 0:0 /data
