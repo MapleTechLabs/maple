@@ -1,8 +1,11 @@
+import type * as ToolAnalytics from "@maple/web-data/lib/tool-analytics"
+import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 import { Schema, String as Str } from "effect"
 import type { PresetValue } from "../time-controls"
+import type { RequestMode } from "@maple/views/data/keyed"
 
 // Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by
-// `/agent-sessions/tools` and the tool detail page.
+// `/agent-sessions/tools` and the tool detail page. Each is checked against the type it decodes.
 
 const measures = {
 	calls: Schema.Number,
@@ -13,11 +16,15 @@ const measures = {
 	p95: Schema.Number,
 }
 
-export const ToolTotals = Schema.Struct(measures)
-export type ToolTotals = typeof ToolTotals.Type
+export const ToolTotals = Schema.Struct(measures) satisfies Schema.Codec<ToolAnalytics.ToolTotals>
+export type ToolTotals = ToolAnalytics.ToolTotals
 
-export const ToolSeriesPoint = Schema.Struct({ bucket: Schema.Number, seriesKey: Schema.String, ...measures })
-export type ToolSeriesPoint = typeof ToolSeriesPoint.Type
+export const ToolSeriesPoint = Schema.Struct({
+	bucket: Schema.Number,
+	seriesKey: Schema.String,
+	...measures,
+}) satisfies Schema.Codec<ToolAnalytics.ToolSeriesPoint>
+export type ToolSeriesPoint = ToolAnalytics.ToolSeriesPoint
 
 export const ToolSeries = Schema.Struct({
 	data: Schema.Array(ToolSeriesPoint),
@@ -30,8 +37,8 @@ export const ToolBreakdownRow = Schema.Struct({
 	...measures,
 	lastSeen: Schema.Number,
 	firstSeen: Schema.Number,
-})
-export type ToolBreakdownRow = typeof ToolBreakdownRow.Type
+}) satisfies Schema.Codec<ToolAnalytics.ToolBreakdownRow>
+export type ToolBreakdownRow = ToolAnalytics.ToolBreakdownRow
 
 export const TotalsResult = Schema.Struct({
 	current: ToolTotals,
@@ -56,13 +63,13 @@ export const ToolErrorRow = Schema.Struct({
 	lastSeen: Schema.Number,
 	callsSince: Schema.Number,
 	trend: Schema.Array(Schema.Struct({ bucket: Schema.Number, calls: Schema.Number })),
-})
-export type ToolErrorRow = typeof ToolErrorRow.Type
+}) satisfies Schema.Codec<ToolAnalytics.ToolErrorRow>
+export type ToolErrorRow = ToolAnalytics.ToolErrorRow
 
-export const ToolMetric = Schema.Literals(["calls", "sessions", "error_rate", "duration"])
-export type ToolMetric = typeof ToolMetric.Type
-export const ToolPercentile = Schema.Literals(["p50", "p90", "p95"])
-export type ToolPercentile = typeof ToolPercentile.Type
+export const ToolMetric = Schema.Literals(TOOL_METRICS)
+export type ToolMetric = ToolAnalytics.ToolMetric
+export const ToolPercentile = Schema.Literals(TOOL_PERCENTILES)
+export type ToolPercentile = ToolAnalytics.ToolPercentile
 
 /** The search fields every tools page reads (`ToolAnalyticsSearchFields`). */
 export type ToolSearch = Readonly<{
@@ -80,6 +87,15 @@ export type ToolSearch = Readonly<{
 }>
 
 export const DEFAULT_TOOL_PRESET: PresetValue = "1w"
+
+/** A tools page's resolve args: the URL window, the `1w` default, the viewer's zone. */
+export const toolWindowArgs = (search: ToolSearch, timeZone: string, mode: RequestMode) => ({
+	mode,
+	startTime: search.startTime,
+	endTime: search.endTime,
+	preset: search.timePreset ?? DEFAULT_TOOL_PRESET,
+	timeZone,
+})
 export const selectedMetric = (search: ToolSearch): ToolMetric => search.metric ?? "calls"
 export const selectedPercentile = (search: ToolSearch): ToolPercentile => search.percentile ?? "p90"
 
@@ -99,12 +115,6 @@ export const toolSelection = (
 		search: needle === "" ? undefined : needle,
 		failingOnly: search.failing === true ? true : undefined,
 	}
-}
-
-/** `chartBucketSeconds` (components/infra/chart-utils.ts): about 100 buckets, 5-minute multiples. */
-export const chartBucketSeconds = (startMs: number, endMs: number): number => {
-	const windowSeconds = Math.max((endMs - startMs) / 1000, 300)
-	return Math.max(300, Math.ceil(windowSeconds / 100 / 300) * 300)
 }
 
 /** `toolDetailLinkSearch`: the ambient scope a tool row carries into its page. */

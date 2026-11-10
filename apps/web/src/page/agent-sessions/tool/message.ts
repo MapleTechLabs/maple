@@ -11,9 +11,7 @@ import { Facets } from "../list/model"
 import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
 import { SessionRows } from "./model"
-
-export const FacetKey = Schema.Literals(["service", "model", "env"])
-export type FacetKey = typeof FacetKey.Type
+import { FacetKey } from "../../kit/tools/toolbar"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

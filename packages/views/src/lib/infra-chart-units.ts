@@ -24,8 +24,14 @@ import { Array as Arr, String as Str } from "effect"
  * poller's 5-minute granularity and rounded to whole 5-minute steps.
  */
 export function chartBucketSeconds(startTime: string, endTime: string): number {
-	const startMs = new Date(Str.replace(" ", "T")(startTime) + "Z").getTime()
-	const endMs = new Date(Str.replace(" ", "T")(endTime) + "Z").getTime()
+	return chartBucketSecondsBetween(
+		new Date(Str.replace(" ", "T")(startTime) + "Z").getTime(),
+		new Date(Str.replace(" ", "T")(endTime) + "Z").getTime(),
+	)
+}
+
+/** {@link chartBucketSeconds} over epoch ms bounds. */
+export const chartBucketSecondsBetween = (startMs: number, endMs: number): number => {
 	const windowSeconds = Math.max((endMs - startMs) / 1000, 300)
 	return Math.max(300, Math.ceil(windowSeconds / 100 / 300) * 300)
 }

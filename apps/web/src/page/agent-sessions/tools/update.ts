@@ -18,14 +18,14 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
-	chartBucketSeconds,
 	DEFAULT_TOOL_PRESET,
 	selectedPercentile,
 	toolSelection,
+	toolWindowArgs,
 	type ToolPercentile,
 	type TotalsResult,
 } from "../../kit/tools/model"
-import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
+import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
 import { nextSort } from "../../kit/tools/table"
 import {
 	CompleteReloadSpin,
@@ -37,9 +37,10 @@ import {
 	LoadSignalPresence,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message } from "./message"
+import { Message } from "./message"
 import type { Breakdowns, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -59,7 +60,7 @@ const keyed = <A, E>(
 	})
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
-	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
+	chartBucketSecondsBetween(toEpochMs(window.startTime), toEpochMs(window.endTime))
 
 /**
  * The tab counts read the bare window, which with no filter set is the page's own read: like two
@@ -158,13 +159,7 @@ const acceptBreakdowns = (
 })
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
-	ResolveWindow({
-		mode,
-		startTime: search.startTime,
-		endTime: search.endTime,
-		preset: search.timePreset ?? DEFAULT_TOOL_PRESET,
-		timeZone: context.timeZone,
-	})
+	ResolveWindow(toolWindowArgs(search, context.timeZone, mode))
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -324,7 +319,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedTableSort: ({ key }) => ({
 			model: { ...model, tableSort: nextSort(model.tableSort, key, ["key"]) },
 		}),
-		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
+		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),
 		GotPercentileMessage: ({ message: inner }) => {
 			const next = ToggleGroup.update(model.percentileToggle, inner)
 			const commands = Command.mapMessages(next.commands ?? [], (toggle) =>
@@ -378,17 +373,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 	})
 
-const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message): Return => {
-	const slot = facet === "service" ? "serviceSelect" : facet === "model" ? "modelSelect" : "envSelect"
-	const next = Select.update(model[slot], message)
-	const updated: Model = { ...model, [slot]: next.model }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+const facetPicked = (model: Model, facet: FacetKey, message: Select.Message): Return => {
+	const step = facetSelectStep(model, facet, message, (inner) =>
 		Message.GotFacetSelectMessage({ facet, message: inner }),
 	)
-	return next.outMessage === undefined
-		? { model: updated, commands }
-		: {
-				...navigate(updated, { ...model.search, [facet]: facetValue(next.outMessage.value) }),
-				commands,
-			}
+	return Option.match(step.picked, {
+		onNone: () => ({ model: step.model, commands: step.commands }),
+		onSome: (value) => ({
+			...navigate(step.model, { ...model.search, [facet]: value }),
+			commands: step.commands,
+		}),
+	})
 }

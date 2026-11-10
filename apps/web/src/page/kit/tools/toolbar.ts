@@ -8,7 +8,8 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { switchControl } from "@maple/views/ui/switch"
 import { listToolbar } from "../list-toolbar"
 import { hstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
+import { Command } from "foldkit"
 
 // The tool filter toolbar and its facet selects.
 
@@ -23,6 +24,41 @@ export const initFacetSelect = (id: string, value: string | undefined): Select.M
 
 /** The URL value a facet select's change writes. */
 export const facetValue = (value: string): string | undefined => (value === ALL ? undefined : value)
+
+/** The URL params the facet selects write. */
+export const FacetKey = Schema.Literals(["service", "model", "env"])
+export type FacetKey = typeof FacetKey.Type
+
+/** The facet selects a tools page keeps, one per `FacetKey`. */
+export type FacetSelects = Readonly<{
+	serviceSelect: Select.Model
+	modelSelect: Select.Model
+	envSelect: Select.Model
+}>
+
+const FACET_SLOT = {
+	service: "serviceSelect",
+	model: "modelSelect",
+	env: "envSelect",
+} as const satisfies Record<FacetKey, keyof FacetSelects>
+
+/** One facet select's step: its Model and Commands, and the URL value it picked, if any. */
+export const facetSelectStep = <M extends FacetSelects, Msg>(
+	model: M,
+	facet: FacetKey,
+	message: Select.Message,
+	toMessage: (message: Select.Message) => Msg,
+) => {
+	const slot = FACET_SLOT[facet]
+	const next = Select.update(model[slot], message)
+	const updated: M = { ...model, [slot]: next.model }
+	return {
+		model: updated,
+		commands: Command.mapMessages(next.commands ?? [], toMessage),
+		picked:
+			next.outMessage === undefined ? Option.none() : Option.some(facetValue(next.outMessage.value)),
+	}
+}
 
 export type FacetSelectConfig<M> = Readonly<{
 	label: string
