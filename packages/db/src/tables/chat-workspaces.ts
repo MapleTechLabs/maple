@@ -40,7 +40,7 @@ export const ChatWorkspaces = PG.table("chat_workspaces", {
 		// for a connector that authenticates with one deployment-wide credential,
 		// which is why this is three nullable columns rather than a second table.
 		// The AAD binds the envelope to `(org_id, connector, external_workspace_id)`
-		// (`chat-workspace-credentials.ts`), so a row's ciphertext cannot be moved
+		// (`secret-slots.ts`), so a row's ciphertext cannot be moved
 		// onto another org's row by anyone holding only database write access.
 		credentialsCiphertext: PG.column(PG.nullable(PG.text), { name: "credentials_ciphertext" }),
 		credentialsIv: PG.column(PG.nullable(PG.text), { name: "credentials_iv" }),
