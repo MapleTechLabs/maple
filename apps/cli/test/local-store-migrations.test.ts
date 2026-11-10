@@ -59,6 +59,7 @@ import {
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
 import {
+	LOCAL_SCHEMA_HISTORY_TIP,
 	localSchemaHistory,
 	localSchemaIdentity,
 	localSchemaSnapshot,
@@ -85,16 +86,11 @@ const [v10ToV11ProductEventsModule] = Arr.filter(
 ok(v10ToV11ProductEventsModule !== undefined)
 
 describe("current local schema identity", () => {
-	it("matches the generated v53 revision and keeps the issue-297 identity frozen", () => {
-		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_FINGERPRINT).toBe("5657aa0197e694d6")
-		// oxlint-disable-next-line test-slop/no-constant-pin -- rewritten by local-schema:bump; catches an unbumped schema edit
-		expect(SCHEMA_DIGEST).toBe("5657aa0197e694d67d53b24ec656d46f66d4e68da06bb4aab08aa9d07ea45cb4")
+	it("is the newest frozen snapshot", () => {
+		// Fails on a schema edit that skipped local-schema:bump.
+		expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(LOCAL_SCHEMA_HISTORY_TIP))
 		expect(CURRENT_SCHEMA_PROJECT_REVISION).toMatch(/^[0-9a-f]{64}$/)
 		expect(LOCAL_SCHEMA_MANIFEST.objects.length).toBeGreaterThan(60)
-		// oxlint-disable-next-line test-slop/no-constant-pin -- anchor that local-schema:bump rewrites on every bump
-		expect(CURRENT_LOCAL_SCHEMA.version).toBe(53)
-		expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(53))
 		const logs = Option.getOrUndefined(
 			Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === "logs"),
 		)
@@ -479,10 +475,12 @@ describe("local migration registry", () => {
 		).toThrow(/no registered/)
 		expect(() =>
 			resolveMigrationChain(
-				// One past the current tip — bump alongside LOCAL_SCHEMA_VERSION, or this
-				// stops testing the future-store guard and starts testing the
-				// unknown-fingerprint one.
-				{ ...CURRENT_LOCAL_SCHEMA, version: 54, fingerprint: "future", digest: SCHEMA_DIGEST },
+				{
+					...CURRENT_LOCAL_SCHEMA,
+					version: CURRENT_LOCAL_SCHEMA.version + 1,
+					fingerprint: "future",
+					digest: SCHEMA_DIGEST,
+				},
 				CURRENT_LOCAL_SCHEMA,
 			),
 		).toThrow(/newer than this build/)
@@ -608,8 +606,8 @@ describe("local migration registry", () => {
 	})
 
 	it("walks the step table as the one registered chain, each row bound to its frozen identities", () => {
-		// Pinned in order; local-schema:bump appends the new id after the previous tip.
-		const expected = [
+		// Ids are journal keys: every shipped one must stay exactly as it was. A bump only appends.
+		const shipped = [
 			"local-0000-to-0001-raw-replay",
 			"local-0001-to-0002-error-rollup",
 			"local-0002-to-0003-service-map-ingest-bridge",
@@ -668,8 +666,10 @@ describe("local migration registry", () => {
 			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
 			return { from: Number(match?.[1]), to: Number(match?.[2]) }
 		}
-		expect(Arr.map(localStoreMigrations, (migration) => migration.id)).toEqual(expected)
-		expect(Arr.map(LOCAL_STORE_STEPS, (step) => step.id)).toEqual(expected.slice(1))
+		const ids = Arr.map(localStoreMigrations, (migration) => migration.id)
+		expect(ids.slice(0, shipped.length)).toEqual(shipped)
+		expect(ids).toHaveLength(CURRENT_LOCAL_SCHEMA.version)
+		expect(Arr.map(LOCAL_STORE_STEPS, (step) => step.id)).toEqual(ids.slice(1))
 		expect(resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)).toEqual(localStoreMigrations)
 		for (const [index, step] of LOCAL_STORE_STEPS.entries()) {
 			const migration = localStoreMigrations[index + 1]
@@ -1712,51 +1712,7 @@ describe("v10 -> v11 product events module", () => {
 		])
 		// The chain must reach v11 through this module and only this module.
 		const chain = resolveMigrationChain(localSchemaIdentity(10), CURRENT_LOCAL_SCHEMA)
-		expect(Arr.map(chain, (migration) => migration.id)).toEqual([
-			"local-0010-to-0011-product-events",
-			"local-0011-to-0012-service-map-edge-quantiles",
-			"local-0012-to-0013-service-operations-discriminators",
-			"local-0013-to-0014-ai-trace-index",
-			"local-0014-to-0015-commit-sha-vcs-revision",
-			"local-0015-to-0016-ai-trace-index-filter-columns",
-			"local-0016-to-0017-audit-log",
-			"local-0017-to-0018-product-events-from-traces",
-			"local-0018-to-0019-ai-trace-index-usage-conventions",
-			"local-0019-to-0020-error-events-attribute-fallback",
-			"local-0020-to-0021-ai-trace-index-list-columns",
-			"local-0021-to-0022-ai-trace-index-tool-detail-columns",
-			"local-0022-to-0023-ai-crawler-requests",
-			"local-0023-to-0024-trace-facets-hourly",
-			"local-0024-to-0025-trace-facets-hourly-daily-partition",
-			"local-0025-to-0026-ai-trace-index-gateway-stamps",
-			"local-0026-to-0027-alert-checks-skip-reason",
-			"local-0027-to-0028-service-overview-spans-span-kind",
-			"local-0028-to-0029-external-edges-legacy-db-system",
-			"local-0029-to-0030-error-fingerprint-v3",
-			"local-0030-to-0031-error-fingerprint-span-name-frames",
-			"local-0031-to-0032-alert-checks-level",
-			"local-0032-to-0033-trace-index",
-			"local-0033-to-0034-traces-trace-key",
-			"local-0034-to-0035-drop-trace-detail-spans",
-			"local-0035-to-0036-aligned-ttls",
-			"local-0036-to-0037-source-usage-hourly",
-			"local-0037-to-0038-ci-runs-jobs",
-			"local-0038-to-0039-service-api-http-details",
-			"local-0039-to-0040-service-map-spans-trace-key",
-			"local-0040-to-0041-service-map-db-edges-minutely",
-			"local-0041-to-0042-security-telemetry",
-			"local-0042-to-0043-error-fingerprint-fuzz-fixes",
-			"local-0043-to-0044-error-fingerprint-json-frames",
-			"local-0044-to-0045-error-fingerprint-interleaved-values",
-			"local-0045-to-0046-error-custom-fingerprint",
-			"local-0046-to-0047-error-fingerprint-v4",
-			"local-0047-to-0048-user-activity-hourly",
-			"local-0048-to-0049-error-events-user-id",
-			"local-0049-to-0050-user-activity-channels",
-			"local-0050-to-0051-service-overview-slo-latency-ladder",
-			"local-0051-to-0052-search-console-daily",
-			"local-0052-to-0053-error-events-blank-event-fingerprint",
-		])
+		expect(chain).toEqual(localStoreMigrations.slice(10))
 		expect(chain[0]?.to).toEqual(localSchemaIdentity(11))
 		// The dropped table is declared, and the backfilled ones say what they
 		// are rebuilt from.

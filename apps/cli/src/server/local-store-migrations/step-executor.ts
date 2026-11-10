@@ -189,6 +189,30 @@ export interface StepSpec {
 	readonly dispositions: ReadonlyArray<StateDispositionEntry>
 }
 
+/** A row of the step table: its id and versions follow from its position. */
+export type StepRow = Omit<StepSpec, "id" | "from" | "to" | "verifies"> & {
+	/** The id's suffix; with the position it is the journal key, so it never changes once shipped. */
+	readonly slug: string
+	/** Defaults to the plain physical-schema and raw-count check. */
+	readonly verifies?: string
+}
+
+const padVersion = Str.padStart(4, "0")
+
+/** Row `i` migrates v(i+1) to v(i+2); v0 -> v1 is the hand-written legacy module. */
+export const stepSpecs = (rows: ReadonlyArray<StepRow>): ReadonlyArray<StepSpec> =>
+	Arr.map(rows, ({ slug, verifies, ...row }, index) => {
+		const from = index + 1
+		const to = from + 1
+		return {
+			...row,
+			id: `local-${padVersion(String(from))}-to-${padVersion(String(to))}-${slug}`,
+			from,
+			to,
+			verifies: verifies ?? `Verify the v${to} physical schema and the retained raw telemetry counts`,
+		}
+	})
+
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
 

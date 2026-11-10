@@ -1,6 +1,6 @@
 // The local-store migration chain after v0 -> v1, one row per schema version.
-// Append-only: a row's id, versions, operations and journal keys are what an
-// unfinished migration resumes against, so never edit a row that has shipped.
+// Append-only: a row's position and slug (its id), operations and journal keys are
+// what an unfinished migration resumes against, so never edit a row that has shipped.
 import {
 	PRODUCT_EVENTS_BROWSER_BACKFILL,
 	PRODUCT_EVENTS_SOURCE_FILTER,
@@ -19,7 +19,9 @@ import {
 	dropTables,
 	dropViews,
 	modifyTtl,
+	stepSpecs,
 	unchangedRowCount,
+	type StepRow,
 	type StepSpec,
 } from "./step-executor"
 import type { StateDispositionEntry } from "../local-store-migration-module"
@@ -127,11 +129,9 @@ const SERVICE_OVERVIEW_SLO_LATENCY_COLUMNS = [
 	["EstimatedUnder10000Ms", "SimpleAggregateFunction(sum, Float64) DEFAULT 0"],
 ] as const
 
-export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
+const STEP_ROWS: ReadonlyArray<StepRow> = [
 	{
-		id: "local-0001-to-0002-error-rollup",
-		from: 1,
-		to: 2,
+		slug: "error-rollup",
 		description: "Add the durable minutely error-fingerprint rollup to a v1 local store",
 		clonedBefore: "target-only DDL changes",
 		beforeBootstrap: [
@@ -164,9 +164,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// The long-lived error view stays triggered by traces; only the new
 		// fingerprint rollup cascades from error_events.
-		id: "local-0002-to-0003-service-map-ingest-bridge",
-		from: 2,
-		to: 3,
+		slug: "service-map-ingest-bridge",
 		description:
 			"Restore the deployment-safe error view trigger and add the service-map ingress bridge to v2",
 		clonedBefore: "additive DDL runs",
@@ -198,9 +196,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive, and never backfilled: the raw session_events read path
 		// covers the window until the shared 30-day TTL makes the rollup complete.
-		id: "local-0003-to-0004-web-events",
-		from: 3,
-		to: 4,
+		slug: "web-events",
 		description: "Add the web_events analytics fact table and its materialized view to v3",
 		clonedBefore: "additive DDL runs",
 		plan: [["install-web-events", "Install the web_events fact table and its materialized view"]],
@@ -228,9 +224,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive and filled forward only: the minute tier is read for
 		// windows under ~5 days, and the hourly tier answers in the interim.
-		id: "local-0004-to-0005-service-overview-minutely",
-		from: 4,
-		to: 5,
+		slug: "service-overview-minutely",
 		description: "Add the service_overview_minutely rollup and its materialized view to v4",
 		clonedBefore: "additive DDL runs",
 		plan: [
@@ -263,9 +257,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// A view's SELECT is frozen at creation, so a changed body is dropped before
 		// the IF NOT EXISTS bootstrap; dropping a view never touches its target's rows.
-		id: "local-0005-to-0006-error-events-fingerprint-hygiene",
-		from: 5,
-		to: 6,
+		slug: "error-events-fingerprint-hygiene",
 		description:
 			"Rebuild the error-events views: exclude exception-less 4xx client spans and redact ids from fingerprint frames",
 		clonedBefore: "the views are replaced",
@@ -293,9 +285,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// ADD COLUMN is what widens an existing table; the bootstrap's CREATE TABLE
 		// IF NOT EXISTS is a no-op against it. Metadata-only, no part is rewritten.
-		id: "local-0006-to-0007-error-service-version",
-		from: 6,
-		to: 7,
+		slug: "error-service-version",
 		description:
 			"Add ServiceVersion to the error-events tables and rebuild the error-events views on fingerprint v2",
 		clonedBefore: "any DDL runs",
@@ -342,9 +332,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0007-to-0008-apple-crash-frames",
-		from: 7,
-		to: 8,
+		slug: "apple-crash-frames",
 		description: "Rebuild the error-events views so the fingerprint recognises Apple crash frames",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -371,9 +359,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Physical verify fails on leftover objects and columns too, so the removed
 		// ones are dropped explicitly. Every view precedes the table it writes into.
-		id: "local-0008-to-0009-mv-sweep",
-		from: 8,
-		to: 9,
+		slug: "mv-sweep",
 		description:
 			"Drop the unread error_spans table and rebuild the trace-detail, attribute-value and span-metrics views",
 		clonedBefore: "any view is replaced",
@@ -446,9 +432,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Every view pre-extracting a renamed OTel key; the TO targets are unchanged.
-		id: "local-0009-to-0010-semconv-key-renames",
-		from: 9,
-		to: 10,
+		slug: "semconv-key-renames",
 		description: "Rebuild every view that reads a renamed OTel attribute to accept both spellings",
 		clonedBefore: "any view is replaced",
 		beforeBootstrap: [
@@ -500,9 +484,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// web_events is dropped last, once product_events is backfilled from the same
 		// session_events window and its writer is live. Every statement is idempotent.
-		id: "local-0010-to-0011-product-events",
-		from: 10,
-		to: 11,
+		slug: "product-events",
 		description:
 			"Add identity columns to session_events; replace web_events with the backfilled product_events table and add identity_links",
 		clonedBefore: "any DDL runs",
@@ -609,9 +591,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Columns and view drops both precede the bootstrap: dropping the views after
 		// it deleted them outright (the native probe caught it). Nothing is backfilled.
-		id: "local-0011-to-0012-service-map-edge-quantiles",
-		from: 11,
-		to: 12,
+		slug: "service-map-edge-quantiles",
 		description:
 			"Add a sample-weighted duration t-digest to the service-map database and external edge rollups so edges report a real p95",
 		clonedBefore: "any DDL runs",
@@ -679,9 +659,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Only the post-migration view writes ClassifiedSpanCount, so a 0 there marks
 		// an older bucket as unknown rather than none. Nothing is backfilled.
-		id: "local-0012-to-0013-service-operations-discriminators",
-		from: 12,
-		to: 13,
+		slug: "service-operations-discriminators",
 		description:
 			"Count server and routed spans per service operation so endpoints can be told apart from outbound calls and raw URL paths",
 		clonedBefore: "any DDL runs",
@@ -747,9 +725,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the
 		// whole edge. Filled forward only, as the managed side accepts.
-		id: "local-0013-to-0014-ai-trace-index",
-		from: 13,
-		to: 14,
+		slug: "ai-trace-index",
 		description:
 			"Create ai_trace_index and its materialized view so Agent Sessions detection reads a filtered projection instead of scanning raw traces",
 		clonedBefore: "any DDL runs",
@@ -759,7 +735,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create ai_trace_index and ai_trace_index_mv via the v14 bootstrap (both new, IF NOT EXISTS)",
 			],
 		],
-		verifies: "Verify the v14 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "ai_trace_index",
@@ -774,9 +749,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0014-to-0015-commit-sha-vcs-revision",
-		from: 14,
-		to: 15,
+		slug: "commit-sha-vcs-revision",
 		description:
 			"Rebuild the service-overview views so CommitSha reads vcs.ref.head.revision instead of the retired deployment.commit_sha",
 		clonedBefore: "any view is replaced",
@@ -815,9 +788,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0015-to-0016-ai-trace-index-filter-columns",
-		from: 15,
-		to: 16,
+		slug: "ai-trace-index-filter-columns",
 		description:
 			"Add DeploymentEnv, Model, AgentName and ToolName to ai_trace_index and recreate its view",
 		clonedBefore: "any DDL runs",
@@ -844,7 +815,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add the filter dimensions and per-span measures to ai_trace_index and rebuild ai_trace_index_mv to fill them",
 			],
 		],
-		verifies: "Verify the v16 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			AI_TRACE_INDEX_SOURCE,
 			{
@@ -859,13 +829,10 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Purely additive; local mode has no authenticated actors, so it stays empty.
-		id: "local-0016-to-0017-audit-log",
-		from: 16,
-		to: 17,
+		slug: "audit-log",
 		description: "Add the audit_log table",
 		clonedBefore: "the new table is created",
 		plan: [["create-audit-log", "Create the empty audit_log table by bootstrapping the v17 schema"]],
-		verifies: "Verify the v17 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "audit_log",
@@ -878,9 +845,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// The backfill writes product_events directly after the bootstrap, so no view
 		// double-fires. Two equalities: nothing disturbed, every annotated span arrived.
-		id: "local-0017-to-0018-product-events-from-traces",
-		from: 17,
-		to: 18,
+		slug: "product-events-from-traces",
 		description:
 			"Add TraceId/SpanId to product_events and project spans annotated with maple.product_event.name into it, backfilled from retained traces",
 		clonedBefore: "any DDL runs",
@@ -961,9 +926,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0018-to-0019-ai-trace-index-usage-conventions",
-		from: 18,
-		to: 19,
+		slug: "ai-trace-index-usage-conventions",
 		description:
 			"Recreate ai_trace_index_mv so Tokens counts nested cache and reasoning buckets once, and add ResponseId",
 		clonedBefore: "any DDL runs",
@@ -977,7 +940,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add ResponseId to ai_trace_index and rebuild ai_trace_index_mv to fill it and to count Tokens under the reporter's usage convention",
 			],
 		],
-		verifies: "Verify the v19 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			AI_TRACE_INDEX_SOURCE,
 			{
@@ -991,9 +953,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0019-to-0020-error-events-attribute-fallback",
-		from: 19,
-		to: 20,
+		slug: "error-events-attribute-fallback",
 		description:
 			"Rebuild the error-events views so an exception-less span is labelled from its exception.* / error.* attributes",
 		clonedBefore: "the views are replaced",
@@ -1019,9 +979,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0020-to-0021-ai-trace-index-list-columns",
-		from: 20,
-		to: 21,
+		slug: "ai-trace-index-list-columns",
 		description:
 			"Add the vendor version and the five token buckets to ai_trace_index and recreate ai_trace_index_mv to fill them",
 		clonedBefore: "any DDL runs",
@@ -1042,7 +1000,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add the vendor version and the five token buckets to ai_trace_index and rebuild ai_trace_index_mv to fill them",
 			],
 		],
-		verifies: "Verify the v21 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			AI_TRACE_INDEX_SOURCE,
 			{
@@ -1056,9 +1013,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0021-to-0022-ai-trace-index-tool-detail-columns",
-		from: 21,
-		to: 22,
+		slug: "ai-trace-index-tool-detail-columns",
 		description:
 			"Add the failure type, the status message, the tool description, a failed tool call's result and the error fingerprint to ai_trace_index and recreate ai_trace_index_mv to fill them",
 		clonedBefore: "any DDL runs",
@@ -1078,7 +1033,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add the failure type, the status message, the tool description, a failed tool call's result and the error fingerprint to ai_trace_index and rebuild ai_trace_index_mv to fill them",
 			],
 		],
-		verifies: "Verify the v22 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			AI_TRACE_INDEX_SOURCE,
 			{
@@ -1093,9 +1047,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the whole edge.
-		id: "local-0022-to-0023-ai-crawler-requests",
-		from: 22,
-		to: 23,
+		slug: "ai-crawler-requests",
 		description:
 			"Create ai_crawler_requests and its materialized view so the Web Analytics AI tab reads AI crawler fetches without scanning raw traces",
 		clonedBefore: "any DDL runs",
@@ -1105,7 +1057,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create ai_crawler_requests and ai_crawler_requests_mv via the v23 bootstrap (both new, IF NOT EXISTS)",
 			],
 		],
-		verifies: "Verify the v23 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "ai_crawler_requests",
@@ -1121,9 +1072,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Both objects are new; the backfill rolls up the root spans already retained.
-		id: "local-0023-to-0024-trace-facets-hourly",
-		from: 23,
-		to: 24,
+		slug: "trace-facets-hourly",
 		description:
 			"Create trace_facets_hourly and its materialized view, backfilled from trace_list_mv, so the traces sidebar facets read an hourly rollup",
 		clonedBefore: "any DDL runs",
@@ -1134,7 +1083,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create trace_facets_hourly and trace_facets_hourly_mv via the v24 bootstrap and backfill the rollup from trace_list_mv",
 			],
 		],
-		verifies: "Verify the v24 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "trace_facets_hourly",
@@ -1149,9 +1097,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Partitioning cannot be altered in place, so the rollup is recreated and rebuilt.
-		id: "local-0024-to-0025-trace-facets-hourly-daily-partition",
-		from: 24,
-		to: 25,
+		slug: "trace-facets-hourly-daily-partition",
 		description: "Recreate trace_facets_hourly partitioned by day and rebuild it from trace_list_mv",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [dropViews("trace_facets_hourly_mv"), dropTables("trace_facets_hourly")],
@@ -1162,7 +1108,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Drop trace_facets_hourly and its view, recreate both partitioned by day, and backfill from trace_list_mv",
 			],
 		],
-		verifies: "Verify the v25 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "trace_facets_hourly",
@@ -1176,9 +1121,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0025-to-0026-ai-trace-index-gateway-stamps",
-		from: 25,
-		to: 26,
+		slug: "ai-trace-index-gateway-stamps",
 		description: "Recreate ai_trace_index_mv as a projection of the ingest gateway's maple_ai.* stamps",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [dropViews("ai_trace_index_mv")],
@@ -1188,7 +1131,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Rebuild ai_trace_index_mv to project the maple_ai.* facts the ingest gateway stamps on each span",
 			],
 		],
-		verifies: "Verify the v26 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			AI_TRACE_INDEX_SOURCE,
 			{
@@ -1202,14 +1144,11 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0026-to-0027-alert-checks-skip-reason",
-		from: 26,
-		to: 27,
+		slug: "alert-checks-skip-reason",
 		description: "Add SkipReason to alert_checks",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [addColumns("alert_checks", [["SkipReason", "LowCardinality(String) DEFAULT ''"]])],
 		plan: [["widen-alert-checks", "Add SkipReason to alert_checks so skipped checks record why"]],
-		verifies: "Verify the v27 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "alert_checks",
@@ -1221,9 +1160,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0027-to-0028-service-overview-spans-span-kind",
-		from: 27,
-		to: 28,
+		slug: "service-overview-spans-span-kind",
 		description:
 			"Add SpanKind and IsRoot to service_overview_spans and recreate service_overview_spans_mv to fill them",
 		clonedBefore: "any DDL runs",
@@ -1240,7 +1177,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add SpanKind and IsRoot to service_overview_spans and rebuild service_overview_spans_mv to fill them",
 			],
 		],
-		verifies: "Verify the v28 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{
@@ -1256,9 +1192,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0028-to-0029-external-edges-legacy-db-system",
-		from: 28,
-		to: 29,
+		slug: "external-edges-legacy-db-system",
 		description:
 			"Recreate service_external_edges_hourly_mv so spans with only the legacy db.system are excluded like db.system.name spans",
 		clonedBefore: "any DDL runs",
@@ -1269,7 +1203,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Rebuild service_external_edges_hourly_mv to exclude spans that set only the legacy db.system",
 			],
 		],
-		verifies: "Verify the v29 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{
@@ -1285,12 +1218,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		// TODO(v29 -> v30): what changes, and what is NOT backfilled. Fill beforeBootstrap
-		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
-		// plan line and dispositions. The v30 physical verify fails an unfinished row.
-		id: "local-0029-to-0030-error-fingerprint-v3",
-		from: 29,
-		to: 30,
+		slug: "error-fingerprint-v3",
 		description: "Rebuild the error-events views with fingerprint v3 grouping and a version-salted hash",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1315,9 +1243,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0030-to-0031-error-fingerprint-span-name-frames",
-		from: 30,
-		to: 31,
+		slug: "error-fingerprint-span-name-frames",
 		description: "Drop location-less Effect span frames from the error fingerprint",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1342,9 +1268,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0031-to-0032-alert-checks-level",
-		from: 31,
-		to: 32,
+		slug: "alert-checks-level",
 		description: "Add Level to alert_checks",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [addColumns("alert_checks", [["Level", "LowCardinality(String) DEFAULT ''"]])],
@@ -1354,7 +1278,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add Level to alert_checks so checks record the severity tier they breached",
 			],
 		],
-		verifies: "Verify the v32 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "alert_checks",
@@ -1367,9 +1290,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Both objects are new; the backfill indexes the spans already retained.
-		id: "local-0032-to-0033-trace-index",
-		from: 32,
-		to: 33,
+		slug: "trace-index",
 		description: "Create trace_index and its view: where each trace's spans live in traces",
 		clonedBefore: "any DDL runs",
 		afterBootstrap: [backfill(...TRACE_INDEX_BACKFILL)],
@@ -1379,7 +1300,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create trace_index and trace_index_mv via the v33 bootstrap and index every retained span from traces",
 			],
 		],
-		verifies: "Verify the v33 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "trace_index",
@@ -1395,9 +1315,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// The bootstrap keeps the v33 traces (IF NOT EXISTS); the custom step swaps in a
 		// v34-keyed copy. Every view and rollup is untouched: none fires on the copy.
-		id: "local-0033-to-0034-traces-trace-key",
-		from: 33,
-		to: 34,
+		slug: "traces-trace-key",
 		description: "Re-sort traces by service, 5-minute bucket and trace id, with a span-name bloom index",
 		clonedBefore: "any DDL runs",
 		custom: tracesTraceKeyRekey,
@@ -1421,14 +1339,11 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// The view goes before its table, or inserts into traces fail on the missing target.
-		id: "local-0034-to-0035-drop-trace-detail-spans",
-		from: 34,
-		to: 35,
+		slug: "drop-trace-detail-spans",
 		description: "Drop trace_detail_spans and its view; trace-id reads seek traces through trace_index",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [dropViews("trace_detail_spans_mv"), dropTables("trace_detail_spans")],
 		plan: [["drop-trace-detail-spans", "Drop trace_detail_spans and trace_detail_spans_mv"]],
-		verifies: "Verify the v35 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "trace_detail_spans",
@@ -1441,9 +1356,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Rows are not rewritten: each TTL moves to its partition's toDate(...) expression.
-		id: "local-0035-to-0036-aligned-ttls",
-		from: 35,
-		to: 36,
+		slug: "aligned-ttls",
 		description: "Align raw-timestamp TTLs to their daily partitions",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: Arr.map(ALIGNED_TTLS, ([table, ttl]) => modifyTtl(table, ttl)),
@@ -1453,7 +1366,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Key the TTL of each table partitioned by day off toDate(...) so a day's rows expire together",
 			],
 		],
-		verifies: "Verify the v36 physical schema and the retained raw telemetry counts",
 		dispositions: Arr.map(ALIGNED_TTLS, ([name]) => ({
 			name,
 			classification: "derived",
@@ -1465,9 +1377,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive and filled forward only: the sources view reads 24 hours,
 		// and local OTLP ingest stamps no maple_source_id, so there is nothing to backfill.
-		id: "local-0036-to-0037-source-usage-hourly",
-		from: 36,
-		to: 37,
+		slug: "source-usage-hourly",
 		description: "source_usage_hourly + its six views: hourly volume and bytes per source",
 		clonedBefore: "additive DDL runs",
 		plan: [
@@ -1476,7 +1386,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Install the source_usage_hourly rollup and its six materialized views via the v37 bootstrap",
 			],
 		],
-		verifies: "Verify the v37 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "source_usage_hourly",
@@ -1493,9 +1402,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive and filled forward only: CI traces come from the GitHub App's
 		// webhooks, which never reach a local store, so there is nothing to backfill.
-		id: "local-0037-to-0038-ci-runs-jobs",
-		from: 37,
-		to: 38,
+		slug: "ci-runs-jobs",
 		description: "ci_runs + ci_jobs and their views: CI runs and jobs off github-actions traces",
 		clonedBefore: "additive DDL runs",
 		plan: [
@@ -1504,7 +1411,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Install the ci_runs and ci_jobs projections and their materialized views via the v38 bootstrap",
 			],
 		],
-		verifies: "Verify the v38 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "ci_runs",
@@ -1530,9 +1436,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		// Six additive counters on both service-operations rollups (zeros on old rows, which
 		// HttpClassifiedSpanCount = 0 marks unknown) plus the new endpoint-details rollup,
 		// backfilled from retained traces like trace_facets_hourly at v24.
-		id: "local-0038-to-0039-service-api-http-details",
-		from: 38,
-		to: 39,
+		slug: "service-api-http-details",
 		description: "HTTP measures on service_operations_* and the service_endpoint_details_hourly rollup",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [
@@ -1590,9 +1494,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Like v34: the bootstrap keeps the v39 tables (IF NOT EXISTS); the custom step swaps in
 		// re-keyed copies. Their view writes TO them by name, so it follows the swap.
-		id: "local-0039-to-0040-service-map-spans-trace-key",
-		from: 39,
-		to: 40,
+		slug: "service-map-spans-trace-key",
 		description: "Re-sort service_map_spans and service_map_children by 5-minute bucket and trace id",
 		clonedBefore: "any DDL runs",
 		custom: serviceMapSpansTraceKeyRekey,
@@ -1624,9 +1526,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive and filled forward only: the read path keeps raw traces for any
 		// minute before the view's first write, so nothing needs backfilling.
-		id: "local-0040-to-0041-service-map-db-edges-minutely",
-		from: 40,
-		to: 41,
+		slug: "service-map-db-edges-minutely",
 		description: "service_map_db_edges_minutely + its view: per-minute service-to-database edges",
 		clonedBefore: "additive DDL runs",
 		plan: [
@@ -1635,7 +1535,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Install the service_map_db_edges_minutely rollup and its materialized view via the v41 bootstrap",
 			],
 		],
-		verifies: "Verify the v41 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "service_map_db_edges_minutely",
@@ -1651,9 +1550,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// Both objects are new and fill forward; nothing is backfilled.
-		id: "local-0041-to-0042-security-telemetry",
-		from: 41,
-		to: 42,
+		slug: "security-telemetry",
 		description:
 			"Create scanner_requests and service_runtimes_hourly with their views for the Security Center's Exposure and Runtimes tabs",
 		clonedBefore: "any DDL runs",
@@ -1664,7 +1561,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create scanner_requests, service_runtimes_hourly and their views via the v42 bootstrap (all new, IF NOT EXISTS)",
 			],
 		],
-		verifies: "Verify the v42 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "scanner_requests",
@@ -1689,9 +1585,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0042-to-0043-error-fingerprint-fuzz-fixes",
-		from: 42,
-		to: 43,
+		slug: "error-fingerprint-fuzz-fixes",
 		description: "Recreate the error_events MVs with the fingerprint fuzz fixes",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1716,9 +1610,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0043-to-0044-error-fingerprint-json-frames",
-		from: 43,
-		to: 44,
+		slug: "error-fingerprint-json-frames",
 		description:
 			"Recreate the error_events MVs: JSON path values, route-not-found variants, masked secrets, internal and repeated frames",
 		clonedBefore: "the views are replaced",
@@ -1744,9 +1636,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0044-to-0045-error-fingerprint-interleaved-values",
-		from: 44,
-		to: 45,
+		slug: "error-fingerprint-interleaved-values",
 		description: "Recreate the error_events MVs: single-case interleaved value tokens fold",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1771,9 +1661,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0045-to-0046-error-custom-fingerprint",
-		from: 45,
-		to: 46,
+		slug: "error-custom-fingerprint",
 		description: "Recreate the error_events MVs: a maple.fingerprint attribute sets the grouping key",
 		clonedBefore: "the views are replaced",
 		beforeBootstrap: [dropTables("error_events_mv", "error_events_by_time_mv")],
@@ -1798,9 +1686,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		id: "local-0046-to-0047-error-fingerprint-v4",
-		from: 46,
-		to: 47,
+		slug: "error-fingerprint-v4",
 		description:
 			"Recreate the error_events MVs for fingerprint v4 (in-app frames) and add the lineage table that re-keys issues",
 		clonedBefore: "the views are replaced",
@@ -1831,9 +1717,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	{
 		// All new (IF NOT EXISTS); the rollup is backfilled from retained traces and logs like v39.
-		id: "local-0047-to-0048-user-activity-hourly",
-		from: 47,
-		to: 48,
+		slug: "user-activity-hourly",
 		description: "Create user_activity_hourly and its traces and logs views for the users pages",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [],
@@ -1844,7 +1728,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Create user_activity_hourly and its two views via the v48 bootstrap and backfill it from retained traces and logs",
 			],
 		],
-		verifies: "Verify the v48 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "user_activity_hourly",
@@ -1861,9 +1744,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// A metadata-only column on both error tables; the views are recreated to fill it.
 		// Existing rows read UserId '' and are not backfilled: the targets keep no span attributes.
-		id: "local-0048-to-0049-error-events-user-id",
-		from: 48,
-		to: 49,
+		slug: "error-events-user-id",
 		description: "Add UserId to error_events and error_events_by_time and recreate their views",
 		clonedBefore: "any DDL runs",
 		beforeBootstrap: [
@@ -1878,7 +1759,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add UserId to error_events and error_events_by_time and recreate their views so new occurrences carry the end user",
 			],
 		],
-		verifies: "Verify the v49 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{
@@ -1895,9 +1775,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Metadata-only request channel counts; both views are recreated to write them. Existing
 		// hours read 0 classified requests and are not backfilled, so the channel shares skip them.
-		id: "local-0049-to-0050-user-activity-channels",
-		from: 49,
-		to: 50,
+		slug: "user-activity-channels",
 		description:
 			"Add the classified, web and mobile request counts to user_activity_hourly and recreate its views",
 		clonedBefore: "any DDL runs",
@@ -1915,7 +1793,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Add the request channel counts to user_activity_hourly and recreate its two views so new requests are classified",
 			],
 		],
-		verifies: "Verify the v50 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{
@@ -1928,14 +1805,9 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 		],
 	},
 	{
-		// TODO(v50 -> v51): what changes, and what is NOT backfilled. Fill beforeBootstrap
-		// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
-		// plan line and dispositions. The v51 physical verify fails an unfinished row.
 		// Metadata-only counters on both service-overview rollups; the views are recreated to fill
 		// them. Existing buckets read 0 and are not backfilled: the hourly tier outlives raw traces.
-		id: "local-0050-to-0051-service-overview-slo-latency-ladder",
-		from: 50,
-		to: 51,
+		slug: "service-overview-slo-latency-ladder",
 		description:
 			"Add the SLO latency ladder counters to service_overview_hourly and service_overview_minutely and recreate their views",
 		clonedBefore: "any DDL runs",
@@ -1980,9 +1852,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// Purely additive: a new empty table, created by the bootstrap. Search Console rows come
 		// from the hosted importer, so a local store has nothing to backfill.
-		id: "local-0051-to-0052-search-console-daily",
-		from: 51,
-		to: 52,
+		slug: "search-console-daily",
 		description: "Create search_console_daily for imported Google Search Console performance",
 		clonedBefore: "additive DDL runs",
 		plan: [
@@ -1991,7 +1861,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Install the empty search_console_daily table via the v52 bootstrap",
 			],
 		],
-		verifies: "Verify the v52 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			{
 				name: "search_console_daily",
@@ -2004,9 +1873,7 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	{
 		// The error and lineage views are recreated so a blank-after-trim event key falls back to
 		// the span's. No column change; stored rows keep their hashes.
-		id: "local-0052-to-0053-error-events-blank-event-fingerprint",
-		from: 52,
-		to: 53,
+		slug: "error-events-blank-event-fingerprint",
 		description:
 			"Recreate the error_events views so a blank-after-trim event maple.fingerprint falls back to the span's",
 		clonedBefore: "the views are replaced",
@@ -2019,7 +1886,6 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 				"Drop and recreate the error-events and lineage views so an exception event whose maple.fingerprint is blank after trimming groups by the span's key",
 			],
 		],
-		verifies: "Verify the v53 physical schema and the retained raw telemetry counts",
 		dispositions: [
 			TRACES_UNDER_REPLACED_VIEWS,
 			{
@@ -2035,3 +1901,5 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 	},
 	// local-schema:bump appends the next step above this line.
 ]
+
+export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = stepSpecs(STEP_ROWS)

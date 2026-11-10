@@ -4,9 +4,8 @@
  * Everything the append-only gate demands except the DDL itself is a pure
  * function of one integer: the snapshot copy (the history derives its identity
  * from it), the version constant, two edit sites in `local-schema-history.ts`,
- * a new row in the step table, and the pinned literals in both the bun test and
- * the native probe. This script writes all of them, then leaves the row's
- * operations to a human, which is the only part that was ever real work.
+ * and a new row in the step table. This script writes all of them, then leaves
+ * the row's operations to a human, which is the only part that was ever real work.
  *
  * Run it AFTER `bun run clickhouse:schema` has regenerated the local DDL, so
  * `schema/local-schema.sql` already holds the schema being bumped to.
@@ -25,8 +24,6 @@ const SERVER_DIR = "packages/local-server/src"
 const STEPS_FILE = "apps/cli/src/server/local-store-migrations/steps.ts"
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
 const SNAPSHOT_DIR = `${SCHEMA_DIR}/history`
-const TEST_FILE = "apps/cli/test/local-store-migrations.test.ts"
-const NATIVE_PROBE = "apps/cli/test/native-local-store-migration.sh"
 
 // The annotation is on the variable, not just the arrow: TypeScript narrows
 // control flow through a `never`-returning const only when it is declared this
@@ -50,24 +47,15 @@ interface PlannedWrite {
  * `existsSync` guards then rejected the retry, so the developer had to unpick
  * a partial scaffold by hand before trying again.
  */
-const plan = (path: string, edits: ReadonlyArray<readonly [string | RegExp, string]>): PlannedWrite => {
+const plan = (path: string, edits: ReadonlyArray<readonly [string, string]>): PlannedWrite => {
 	let source = read(path)
 	for (const [needle, replacement] of edits) {
-		const matches =
-			typeof needle === "string"
-				? Str.split(needle)(source).length - 1
-				: [...source.matchAll(new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`))]
-						.length
-		if (matches === 0) fail(`${path}: anchor did not match, so the bump was not applied:\n  ${needle}`)
-		if (typeof needle === "string" && matches > 1)
-			fail(`${path}: anchor matched ${matches} times, expected exactly one:\n  ${needle}`)
-		source =
-			typeof needle === "string"
-				? Str.replace(needle, replacement)(source)
-				: Str.replace(
-						new RegExp(needle.source, `${Str.replace("g", "")(needle.flags)}g`),
-						replacement,
-					)(source)
+		const matches = Str.split(needle)(source).length - 1
+		if (matches !== 1)
+			fail(
+				`${path}: anchor matched ${matches} times, expected exactly one, so the bump was not applied:\n  ${needle}`,
+			)
+		source = Str.replace(needle, replacement)(source)
 	}
 	return { path, content: source }
 }
@@ -112,11 +100,11 @@ if (existsSync(snapshotPath)) fail(`${snapshotPath} already exists; v${to} looks
 // `local-schema-history.ts`, which cannot even be imported until the v{to}
 // snapshot it statically imports exists.
 const currentSql = read(`${SCHEMA_DIR}/local-schema.sql`)
-const identity = { version: to, fingerprint: schemaFingerprint(currentSql), digest: schemaDigest(currentSql) }
+const fingerprint = schemaFingerprint(currentSql)
 
 if (schemaDigest(currentSql) === schemaDigest(read(`${SNAPSHOT_DIR}/local-schema-v${from}.sql`)))
 	fail(
-		`the generated schema still hashes to the v${from} snapshot (${identity.fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
+		`the generated schema still hashes to the v${from} snapshot (${fingerprint}).\nEdit the schema and run \`bun run clickhouse:schema\` before bumping.`,
 	)
 
 // ---------------------------------------------------------------------------
@@ -124,27 +112,19 @@ if (schemaDigest(currentSql) === schemaDigest(read(`${SNAPSHOT_DIR}/local-schema
 // the v{to} bootstrap and the raw-row verification are the executor's.
 // ---------------------------------------------------------------------------
 
-const stepsSource = read(STEPS_FILE)
-const previousModuleId = new RegExp(`id: "(local-${pad(from - 1)}-to-${pad(from)}-[a-z0-9-]+)"`).exec(
-	stepsSource,
-)?.[1]
-if (!previousModuleId) fail(`no v${from - 1} -> v${from} row in ${STEPS_FILE} to follow`)
+// A row's id and versions follow from its position, so the new row only names its slug.
 const moduleId = `local-${pad(from)}-to-${pad(to)}-${slug}`
-if (Str.includes(`"${moduleId}"`)(stepsSource)) fail(`${moduleId} is already in ${STEPS_FILE}`)
 
 const STEPS_ANCHOR = "\t// local-schema:bump appends the next step above this line.\n"
 const newRow = `\t{
 \t\t// TODO(v${from} -> v${to}): what changes, and what is NOT backfilled. Fill beforeBootstrap
 \t\t// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
 \t\t// plan line and dispositions. The v${to} physical verify fails an unfinished row.
-\t\tid: "${moduleId}",
-\t\tfrom: ${from},
-\t\tto: ${to},
+\t\tslug: "${slug}",
 \t\tdescription: ${encodeJsonString(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
 \t\tclonedBefore: "any DDL runs",
 \t\tbeforeBootstrap: [],
 \t\tplan: [["TODO-v${to}-change", "TODO(v${from} -> v${to}): what the v${to} bootstrap changes"]],
-\t\tverifies: "Verify the v${to} physical schema and the retained raw telemetry counts",
 \t\tdispositions: [],
 \t},
 `
@@ -170,37 +150,6 @@ const plannedSnapshots: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.
 
 const plannedSteps: PlannedWrite = plan(STEPS_FILE, [[STEPS_ANCHOR, `${newRow}${STEPS_ANCHOR}`]])
 
-const plannedTest: PlannedWrite = plan(TEST_FILE, [
-	[/matches the generated v\d+ revision/, `matches the generated v${to} revision`],
-	[
-		/expect\(SCHEMA_FINGERPRINT\)\.toBe\("[0-9a-f]+"\)/,
-		`expect(SCHEMA_FINGERPRINT).toBe("${identity.fingerprint}")`,
-	],
-	[/expect\(SCHEMA_DIGEST\)\.toBe\("[0-9a-f]+"\)/, `expect(SCHEMA_DIGEST).toBe("${identity.digest}")`],
-	[
-		`expect(CURRENT_LOCAL_SCHEMA.version).toBe(${from})`,
-		`expect(CURRENT_LOCAL_SCHEMA.version).toBe(${to})`,
-	],
-	[
-		`expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(${from}))`,
-		`expect(CURRENT_LOCAL_SCHEMA).toEqual(localSchemaIdentity(${to}))`,
-	],
-	// The future-store guard is pinned one past the tip on purpose.
-	[
-		`{ ...CURRENT_LOCAL_SCHEMA, version: ${to}, fingerprint: "future", digest: SCHEMA_DIGEST }`,
-		`{ ...CURRENT_LOCAL_SCHEMA, version: ${to + 1}, fingerprint: "future", digest: SCHEMA_DIGEST }`,
-	],
-	// Every pinned chain list (both resolved chains and the table walk) ends at the previous tip.
-	[new RegExp(`(\\t+)"${previousModuleId}",\\n`), `$1"${previousModuleId}",\n$1"${moduleId}",\n`],
-])
-
-const plannedProbe: PlannedWrite = plan(NATIVE_PROBE, [
-	[
-		/\.schemaVersion == \d+ and \.schema == "[0-9a-f]+"/,
-		`.schemaVersion == ${to} and .schema == "${identity.fingerprint}"`,
-	],
-])
-
 // Every anchor matched, so the bump is now committed to disk in one go.
 const writes: ReadonlyArray<PlannedWrite> = [
 	// The retained snapshot is the generated DDL, verbatim.
@@ -208,8 +157,6 @@ const writes: ReadonlyArray<PlannedWrite> = [
 	plannedVersion,
 	plannedSnapshots,
 	plannedSteps,
-	plannedTest,
-	plannedProbe,
 ]
 for (const write of writes) writeFileSync(write.path, write.content)
 
@@ -219,13 +166,12 @@ try {
 	// A bump outside a git checkout is still a valid bump.
 }
 
-console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
+console.log(`bumped local schema v${from} -> v${to} (${fingerprint})
 
   ${snapshotPath}
   ${STEPS_FILE}  <- fill in the ${moduleId} row
 
-edited: local-schema-version.ts, local-schema-history.ts,
-        ${TEST_FILE}, ${NATIVE_PROBE}
+edited: local-schema-version.ts, local-schema-history.ts
 
 next:
   1. write the row's beforeBootstrap operations, plan line and dispositions (see its TODO)
