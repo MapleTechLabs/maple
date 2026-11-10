@@ -39,13 +39,6 @@ const MAX_VERIFICATIONS_PER_TICK = 20
 const VERSION_SCAN_LIMIT = 1000
 
 /**
- * How far a row's window moves out when its occurrences could not be read. Long
- * enough that a failing org is not retried every minute, short enough that a
- * brief warehouse outage delays a verdict by minutes rather than hours.
- */
-export const UNREADABLE_WINDOW_RETRY_MS = 15 * 60_000
-
-/**
  * Split one window's version rows against the merge-time baseline.
  *
  * Occurrences with no reported build cannot be attributed either way: counting
@@ -301,17 +294,13 @@ const make: Effect.Effect<
 										error: summarizeCause(cause),
 									}),
 									// Leave the row waiting; the warehouse being down is not a verdict.
-									// Its window moves out so an org whose warehouse keeps failing
-									// does not sit at the head of the due queue, ahead of every other org.
+									// It goes to the back of the due queue, so an org whose warehouse
+									// keeps failing does not sit ahead of every other org.
 									Effect.andThen(
 										guardedWrite(
 											row,
 											"defer",
-											verification.deferVerification(
-												row,
-												nowMs + UNREADABLE_WINDOW_RETRY_MS,
-												nowMs,
-											),
+											verification.deferVerification(row, nowMs),
 										),
 									),
 									Effect.as(

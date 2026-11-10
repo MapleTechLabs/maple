@@ -19,7 +19,6 @@ import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import {
 	FixVerificationTickService,
 	splitVersionRows,
-	UNREADABLE_WINDOW_RETRY_MS,
 	verdictFromInvestigationStatus,
 } from "./FixVerificationTickService"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
@@ -238,7 +237,7 @@ const verificationOf = (issueId: ErrorIssueId) =>
 		const rows = yield* database.execute((db) =>
 			db.run(
 				PG.from(ErrorIssueVerifications)
-					.select("status", "verifyAfter")
+					.select("status", "verifyAfter", "updatedAt")
 					.where(($) => [$.issueId.eq(issueId)]),
 			),
 		)
@@ -266,21 +265,23 @@ describe("FixVerificationTickService.runTick", () => {
 		}).pipe(Effect.provide(makeTickLayer())),
 	)
 
-	it.effect("moves a row's window out when its occurrences cannot be read", () =>
+	it.effect("sends a row whose occurrences cannot be read to the back, with its window intact", () =>
 		Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
 			const tick = yield* FixVerificationTickService
 			const issueId = yield* seedOverdueVerification
+			const before = yield* verificationOf(issueId)
 
+			yield* TestClock.setTime(NOW + 60_000)
 			const first = yield* tick.runTick
 			assert.strictEqual(first.skipped, 1)
-			// Not a verdict: the row is still waiting, just no longer at the head of the queue.
+			// Not a verdict: still waiting, and the window an inconclusive verdict measures from is unchanged.
 			const row = yield* verificationOf(issueId)
 			assert.strictEqual(row?.status, "waiting")
-			assert.strictEqual(row?.verifyAfter, NOW + UNREADABLE_WINDOW_RETRY_MS)
+			assert.strictEqual(row?.verifyAfter, before?.verifyAfter)
+			// Touched, which is what puts it behind rows the tick has not reached yet.
+			assert.strictEqual(row?.updatedAt, NOW + 60_000)
 
-			assert.strictEqual((yield* tick.runTick).examined, 0)
-			yield* TestClock.setTime(NOW + UNREADABLE_WINDOW_RETRY_MS)
 			assert.strictEqual((yield* tick.runTick).examined, 1)
 		}).pipe(Effect.provide(makeTickLayer())),
 	)
