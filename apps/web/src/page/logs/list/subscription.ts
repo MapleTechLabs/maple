@@ -1,6 +1,7 @@
 import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
-import { Duration, Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
+import { Duration, Option, Schema, Stream } from "effect"
+import { Dom, Subscription } from "foldkit"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import type { PageSubscriptionInput } from "../../contract"
 import { searchPreset } from "../../kit/time-controls"
@@ -12,7 +13,30 @@ import { pollTicks } from "../../../data/poll"
 
 type Input = PageSubscriptionInput<Model>
 
+/** `F` opens the advanced filter while no field has focus and no dialog is open. */
+const advancedFilterKey: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
+	target: () => document,
+	type: "keydown",
+	filterMapEvent: (event) =>
+		(event.key === "f" || event.key === "F") &&
+		!event.metaKey &&
+		!event.ctrlKey &&
+		!event.altKey &&
+		!event.shiftKey &&
+		!isEditableTarget(event.target) &&
+		!isDialogOpen()
+			? Option.some(Message.ClickedAdvancedFilter())
+			: Option.none(),
+})
+
 export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
+	advancedFilterKey: entry(
+		{ isOpen: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({ isOpen: model.advanced.dialog.isOpen }),
+			dependenciesToStream: ({ isOpen }) => (isOpen ? Stream.empty : advancedFilterKey),
+		},
+	),
 	/** `useListNavigation` and the →/← expand hotkeys, while the stream has rows. */
 	navigationKeys: entry(
 		{ hasRows: Schema.Boolean },
@@ -35,8 +59,7 @@ export const subscriptions = Subscription.make<Input, Message>()((entry) => ({
 		{
 			modelToDependencies: ({ model }) => ({
 				intervalSeconds:
-					isInspectingOf(model) ||
-					searchPreset(model.search, DEFAULT_PRESET) === undefined
+					isInspectingOf(model) || searchPreset(model.search, DEFAULT_PRESET) === undefined
 						? 0
 						: resolveRefreshIntervalSeconds(model.search.refresh, undefined),
 			}),

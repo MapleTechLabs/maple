@@ -43,6 +43,7 @@ import {
 } from "./command"
 import {
 	allLogs,
+	attributeQueryFilters,
 	brushRange,
 	chipId,
 	FETCH_THRESHOLD,
@@ -57,6 +58,8 @@ import {
 	withoutChips,
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
+import { advancedHandlers, initAdvanced } from "./advanced"
+import { navigate } from "./navigation"
 import { type Facet, Message, type RequestMode } from "./message"
 import type { LogsPage, Model, Pagination } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -187,7 +190,7 @@ const requestAll = (
 	const { search } = model
 	const input = listInput(search, window, pin)
 	const bucketSeconds = computeBucketSeconds(window.startTime, window.endTime, HISTOGRAM_TARGET_POINTS)
-	const facetsInput = { window, attrs: search.attrs, pinnedNamespace: pin }
+	const facetsInput = { window, ...attributeQueryFilters(search), pinnedNamespace: pin }
 	const listArgs = { search, window, pinnedNamespace: pin }
 	const steps: ReadonlyArray<(step: Step) => Step> = [
 		(step) =>
@@ -286,11 +289,6 @@ const fetchIfNearEnd =
 
 // NAVIGATION
 
-const navigate = (model: Model, search: Search, isReplace = false): Return => ({
-	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Logs({ search })), isReplace }),
-})
-
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
 
 const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
@@ -372,6 +370,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshVersion: 0,
 		isReloading: false,
 		isFilterRailMounted: false,
+		advanced: initAdvanced(),
 	}
 	return {
 		model,
@@ -752,6 +751,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: cleared }
 				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
 		},
+		...advancedHandlers(model, context),
 		LeftVolumeChart: () =>
 			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {

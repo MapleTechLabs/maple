@@ -13,7 +13,9 @@ import type * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
+import { advancedFilterButton, appliedWhereClause } from "../../kit/advanced-filter"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { advancedFilterDialog } from "./view-advanced"
 import { searchPreset, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as LogDetail from "@maple/views/logs/log-sheet"
@@ -129,6 +131,7 @@ const filterChips = (model: Model, pinnedNamespace: string | null) =>
 			label: chip.label,
 			values: chip.values,
 			isNegated: chip.negated,
+			operator: chip.operator,
 			onRemove: Message.RemovedFilterChip({ chipId: chipId(chip) }),
 			// The chip's tooltip keeps the full id; the trace page abbreviates to the same 8 characters.
 			valueLabel: chip.param === "traceId" ? (value: string) => shortId(value, "trace") : undefined,
@@ -140,7 +143,7 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 	// A custom range is a fixed window: nothing new to tail, so the cadence hides (the URL keeps it).
 	const isCustomRange = searchPreset(model.search, DEFAULT_PRESET) === undefined
-	return timeControls(h, {
+	const time = timeControls(h, {
 		search: model.search,
 		defaultPreset: DEFAULT_PRESET,
 		window: model.window,
@@ -172,6 +175,13 @@ const headerActions = (h: HtmlBuilder<Message>, model: Model): Html => {
 				},
 			}),
 	})
+	return hstack(h, { gap: "2", wrap: true }, [
+		advancedFilterButton(h, {
+			isActive: (model.search.whereClause ?? "") !== "",
+			onClick: Message.ClickedAdvancedFilter(),
+		}),
+		time,
+	])
 }
 
 const isSharedFailure = (model: Model): boolean => {
@@ -199,6 +209,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[
 					vstack(h, { grow: true, className: "min-h-0 p-4" }, [
+						...(model.search.whereClause === undefined || model.search.whereClause === ""
+							? []
+							: [
+									appliedWhereClause(h, {
+										whereClause: model.search.whereClause,
+										onClear: Message.ClickedClearWhereClause(),
+									}),
+								]),
 						activeFilterChips(h, {
 							chips: filterChips(model, inputs.context.pinnedNamespace),
 							onClearAll: Message.ClickedClearFilterChips(),
@@ -219,6 +237,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				toParentMessage: (message) => Message.GotDetailMessage({ message }),
 			}),
+			advancedFilterDialog(h, model),
 		],
 	),
 )

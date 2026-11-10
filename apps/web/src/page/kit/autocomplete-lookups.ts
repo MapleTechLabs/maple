@@ -31,8 +31,8 @@ export const AUTOCOMPLETE_LOOKUPS: ReadonlyArray<AutocompleteLookup> = Autocompl
 export const LookupNames = Schema.Record(Schema.String, Schema.Array(Schema.String))
 export type LookupNames = typeof LookupNames.Type
 
-/** `toNames`: trimmed, non-empty, each once. */
-const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): ReadonlyArray<string> =>
+/** `toNames`: facet rows to the names they suggest, trimmed, non-empty, each once. */
+export const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): Array<string> =>
 	Arr.dedupe(
 		Arr.filter(
 			Arr.map(rows ?? [], (row) => Str.trim(row.name)),

@@ -180,6 +180,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 ## apps/web/src/page/kit
 
+- `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
 - `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `commitDetailBody`: The commit SHA hover card: the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.

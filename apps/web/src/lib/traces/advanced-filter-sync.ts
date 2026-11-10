@@ -1,31 +1,17 @@
+import { parseBoolean, parseNumber } from "@maple/domain/where-clause"
+import { Match, String as Str } from "effect"
 import {
-	normalizeKey,
-	parseBoolean,
-	parseNumber,
-	parseWhereClause as parseWhereClauses,
-	quoteWhereValue,
-	type Operator,
-	type ParsedClause,
-} from "@maple/domain/where-clause"
-import { Match, Array as Arr, String as Str } from "effect"
+	type AttributeFilterEntry,
+	type AttributeMaps,
+	parseFilterClauses,
+} from "../query-builder/where-clause-filters"
 
-/**
- * How an attribute filter compares. Absent means equality; `exists` carries an
- * empty value. `!=`, `!contains` and `!exists` are the same modes with `negated`.
- */
-export type AttributeMatchMode = "contains" | "exists" | "gt" | "gte" | "lt" | "lte"
-
-interface AttributeFilterEntryLeaf {
-	key: string
-	value: string
-	matchMode?: AttributeMatchMode
-	negated?: boolean
-}
-
-interface AttributeFilterEntry extends AttributeFilterEntryLeaf {
-	/** The other members of an `(a OR b)` group; the entry matches when any member does. */
-	or?: readonly AttributeFilterEntryLeaf[]
-}
+export {
+	type AttributeFilterEntry,
+	type AttributeMatchMode,
+	attributeFilterOperator,
+	formatAttributeClause,
+} from "../query-builder/where-clause-filters"
 
 export interface TracesSearchLike {
 	services?: string[]
@@ -57,7 +43,7 @@ export interface TracesSearchLike {
 
 type FilterMatchMode = "contains"
 
-export interface ParsedWhereClauseFilters {
+export interface ParsedWhereClauseFilters extends AttributeMaps {
 	service?: string
 	spanName?: string
 	deploymentEnv?: string
@@ -68,8 +54,6 @@ export interface ParsedWhereClauseFilters {
 	rootOnly?: false
 	minDurationMs?: number
 	maxDurationMs?: number
-	attributeFilters: AttributeFilterEntry[]
-	resourceAttributeFilters: AttributeFilterEntry[]
 	matchModes?: Partial<Record<string, FilterMatchMode>>
 	excludedServices?: string[]
 	excludedSpanNames?: string[]
@@ -78,33 +62,6 @@ export interface ParsedWhereClauseFilters {
 	excludedHttpMethods?: string[]
 	excludedHttpStatusCodes?: string[]
 }
-
-interface AttributeOperator {
-	readonly matchMode?: AttributeMatchMode
-	readonly negated?: true
-}
-
-const ATTRIBUTE_OPERATORS = {
-	"=": {},
-	"!=": { negated: true },
-	contains: { matchMode: "contains" },
-	"!contains": { matchMode: "contains", negated: true },
-	exists: { matchMode: "exists" },
-	"!exists": { matchMode: "exists", negated: true },
-	">": { matchMode: "gt" },
-	">=": { matchMode: "gte" },
-	"<": { matchMode: "lt" },
-	"<=": { matchMode: "lte" },
-} satisfies Record<Operator, AttributeOperator>
-
-const MATCH_MODE_OPERATORS = {
-	contains: ["contains", "!contains"],
-	exists: ["exists", "!exists"],
-	gt: [">", ">"],
-	gte: [">=", ">="],
-	lt: ["<", "<"],
-	lte: ["<=", "<="],
-} as const satisfies Record<AttributeMatchMode, readonly [string, string]>
 
 // Named fields whose search param has a substring match mode.
 const CONTAINS_FIELD_KEYS = new Set([
@@ -117,268 +74,126 @@ const CONTAINS_FIELD_KEYS = new Set([
 const EQUALITY_FIELD_KEYS = new Set(["http.method", "http.status_code"])
 const SCALAR_KEYS = new Set(["has_error", "root_only", "min_duration_ms", "max_duration_ms"])
 
-/** The where-clause operator an attribute filter entry reads back as. */
-export function attributeFilterOperator(entry: Pick<AttributeFilterEntry, "matchMode" | "negated">): string {
-	if (!entry.matchMode) return entry.negated ? "!=" : "="
-	const [positive, negative] = MATCH_MODE_OPERATORS[entry.matchMode]
-	return entry.negated ? negative : positive
-}
-
-/** An attribute filter entry as where-clause text; a group reads back as `(a OR b)`. */
-export function formatAttributeClause(prefix: string, entry: AttributeFilterEntry): string {
-	if (entry.or !== undefined && entry.or.length > 0) {
-		const { or, ...first } = entry
-		return `(${Arr.join(
-			Arr.map([first, ...or], (member) => formatAttributeClause(prefix, member)),
-			" OR ",
-		)})`
-	}
-	const operator = attributeFilterOperator(entry)
-	if (entry.matchMode === "exists") return `${prefix}${entry.key} ${operator}`
-	return `${prefix}${entry.key} ${operator} ${quoteWhereValue(entry.value)}`
-}
+const emptyFilters = (): ParsedWhereClauseFilters => ({ attributeFilters: [], resourceAttributeFilters: [] })
 
 export function parseWhereClause(whereClause: string | undefined): {
 	filters: ParsedWhereClauseFilters
 	/** One message per clause that was not applied, for the editor to show. */
 	warnings: string[]
 } {
-	if (!whereClause || !Str.trim(whereClause)) {
-		return {
-			filters: { attributeFilters: [], resourceAttributeFilters: [] },
-			warnings: [],
-		}
-	}
+	return parseFilterClauses(
+		whereClause,
+		emptyFilters,
+		(parsed, { clause, key, warnings, pushAttribute, unsupported }) => {
+			const isContains = clause.operator === "contains"
+			const isNegated = clause.operator === "!="
 
-	const parsedClauses = parseWhereClauses(Str.trim(whereClause), { orGroups: true })
-	const clauses = parsedClauses.clauses
-	const warnings = Arr.map(parsedClauses.warnings, (warning) => warning.message)
+			const withMatchMode = (
+				next: ParsedWhereClauseFilters,
+				modeKey: string,
+			): ParsedWhereClauseFilters =>
+				isContains ? { ...next, matchModes: { ...next.matchModes, [modeKey]: "contains" } } : next
 
-	let parsed: ParsedWhereClauseFilters = { attributeFilters: [], resourceAttributeFilters: [] }
-
-	// Takes `parsed` and `warnings` as parameters (shadowing the outer ones) so an
-	// OR group member can be applied alone, with its warnings kept apart.
-	const applyClause = (
-		parsed: ParsedWhereClauseFilters,
-		clause: ParsedClause,
-		warnings: string[],
-	): ParsedWhereClauseFilters => {
-		const key = normalizeKey(clause.key)
-		const isContains = clause.operator === "contains"
-		const isNegated = clause.operator === "!="
-
-		function setMatchMode(modeKey: string) {
-			if (isContains) {
-				parsed.matchModes ??= {}
-				parsed.matchModes[modeKey] = "contains"
-			}
-		}
-
-		// Attribute keys are case-sensitive, so they come from the key as typed.
-		const typedKey = Str.trim(clause.rawKey ?? clause.key)
-		function pushAttribute(target: AttributeFilterEntry[], attributeKey: string, label: string) {
-			if (!attributeKey) {
-				warnings.push(`Missing attribute key ignored: ${label}`)
-				return
-			}
-			if (target.length >= 5) {
-				warnings.push(`Maximum of 5 filters per attribute map; ignoring ${label}`)
-				return
-			}
-			const { matchMode, negated }: AttributeOperator = ATTRIBUTE_OPERATORS[clause.operator]
-			const valueless = matchMode === "exists"
-			target.push({
-				key: attributeKey,
-				value: valueless ? "" : clause.value,
-				...(matchMode ? { matchMode } : undefined),
-				...(negated ? { negated } : undefined),
-			})
-		}
-
-		if (Str.startsWith("attr.")(key)) {
-			pushAttribute(parsed.attributeFilters, Str.trim(Str.slice(5)(typedKey)), typedKey)
-			return parsed
-		}
-
-		if (Str.startsWith("resource.")(key)) {
-			pushAttribute(parsed.resourceAttributeFilters, Str.trim(Str.slice(9)(typedKey)), typedKey)
-			return parsed
-		}
-
-		const unsupported = (supported: string) => {
-			warnings.push(`${clause.key} supports only ${supported}; ignoring ${clause.operator}`)
-			return parsed
-		}
-
-		// Named fields have an include list and an exclude list, and some a substring
-		// mode. Any other operator would silently turn into an exact match on the
-		// value, so it is reported instead.
-		const isEqualityOperator = clause.operator === "=" || isNegated
-		if (CONTAINS_FIELD_KEYS.has(key) && !isEqualityOperator && !isContains) {
-			unsupported("=, != and contains")
-			return parsed
-		}
-		if (EQUALITY_FIELD_KEYS.has(key) && !isEqualityOperator) {
-			unsupported("= and !=")
-			return parsed
-		}
-		if (SCALAR_KEYS.has(key) && clause.operator !== "=") {
-			unsupported("=")
-			return parsed
-		}
-
-		parsed = Match.value(key).pipe(
-			Match.when("service.name", () => {
-				if (isNegated) {
-					const current = parsed.excludedServices ?? []
-					return { ...parsed, excludedServices: [...current, clause.value] }
-				}
-				setMatchMode("service")
-				return { ...parsed, service: clause.value }
-			}),
-			Match.when("span.name", () => {
-				if (isNegated) {
-					const current = parsed.excludedSpanNames ?? []
-					return { ...parsed, excludedSpanNames: [...current, clause.value] }
-				}
-				setMatchMode("spanName")
-				return { ...parsed, spanName: clause.value }
-			}),
-			Match.when("deployment.environment", () => {
-				if (isNegated) {
-					const current = parsed.excludedDeploymentEnvs ?? []
-					return { ...parsed, excludedDeploymentEnvs: [...current, clause.value] }
-				}
-				setMatchMode("deploymentEnv")
-				return { ...parsed, deploymentEnv: clause.value }
-			}),
-			Match.when("service.namespace", () => {
-				if (isNegated) {
-					const current = parsed.excludedNamespaces ?? []
-					return { ...parsed, excludedNamespaces: [...current, clause.value] }
-				}
-				setMatchMode("namespace")
-				return { ...parsed, namespace: clause.value }
-			}),
-			Match.when("http.method", () => {
-				if (isNegated) {
-					const current = parsed.excludedHttpMethods ?? []
-					return { ...parsed, excludedHttpMethods: [...current, clause.value] }
-				}
-				return { ...parsed, httpMethod: clause.value }
-			}),
-			Match.when("http.status_code", () => {
-				if (isNegated) {
-					const current = parsed.excludedHttpStatusCodes ?? []
-					return { ...parsed, excludedHttpStatusCodes: [...current, clause.value] }
-				}
-				return { ...parsed, httpStatusCode: clause.value }
-			}),
-			Match.when("has_error", () => {
-				const boolValue = parseBoolean(clause.value)
-				if (boolValue === null) {
-					warnings.push(`Invalid ${key} value ignored: ${clause.value}`)
-					return parsed
-				}
-				return { ...parsed, hasError: boolValue === true ? (true as const) : undefined }
-			}),
-			Match.when("root_only", () => {
-				const boolValue = parseBoolean(clause.value)
-				if (boolValue === null) {
-					warnings.push(`Invalid ${key} value ignored: ${clause.value}`)
-					return parsed
-				}
-				return { ...parsed, rootOnly: boolValue === false ? (false as const) : undefined }
-			}),
-			Match.when("min_duration_ms", () => {
-				const numeric = parseNumber(clause.value)
-				if (numeric === null) {
-					warnings.push(`Invalid ${key} value ignored: ${clause.value}`)
-					return parsed
-				}
-				return { ...parsed, minDurationMs: numeric }
-			}),
-			Match.when("max_duration_ms", () => {
-				const numeric = parseNumber(clause.value)
-				if (numeric === null) {
-					warnings.push(`Invalid ${key} value ignored: ${clause.value}`)
-					return parsed
-				}
-				return { ...parsed, maxDurationMs: numeric }
-			}),
-			// Any other key is a span attribute (`request.id = "x"` means `attr.request.id`).
-			Match.orElse(() => {
-				pushAttribute(parsed.attributeFilters, typedKey, typedKey)
+			// Named fields have an include list and an exclude list, and some a substring
+			// mode. Any other operator would silently turn into an exact match on the
+			// value, so it is reported instead.
+			const isEqualityOperator = clause.operator === "=" || isNegated
+			if (CONTAINS_FIELD_KEYS.has(key) && !isEqualityOperator && !isContains) {
+				unsupported("=, != and contains")
 				return parsed
-			}),
-		)
-		return parsed
-	}
-
-	for (const clause of clauses) parsed = applyClause(parsed, clause, warnings)
-
-	// An `(a OR b)` group: each member goes through `applyClause` on its own, and
-	// must land as exactly one attribute entry on the same map. Named fields
-	// (service, span name, http method, ...) are single-valued params and cannot
-	// be OR-ed.
-	for (const group of parsedClauses.groups) {
-		const label = `(${Arr.join(
-			Arr.map(group, (c) => c.rawKey ?? c.key),
-			" OR ",
-		)})`
-		const members: Array<{
-			map: "attributeFilters" | "resourceAttributeFilters"
-			entry: AttributeFilterEntry
-		}> = []
-		for (const clause of group) {
-			const memberWarnings: string[] = []
-			const alone = applyClause(
-				{ attributeFilters: [], resourceAttributeFilters: [] },
-				clause,
-				memberWarnings,
-			)
-			const setsOtherField = Arr.some(
-				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
-				Object.entries(alone),
-				([field, value]) =>
-					field !== "attributeFilters" &&
-					field !== "resourceAttributeFilters" &&
-					value !== undefined,
-			)
-			const map =
-				alone.attributeFilters.length === 1 && alone.resourceAttributeFilters.length === 0
-					? "attributeFilters"
-					: alone.resourceAttributeFilters.length === 1 && alone.attributeFilters.length === 0
-						? "resourceAttributeFilters"
-						: undefined
-			const entry = map === undefined ? undefined : alone[map][0]
-			if (memberWarnings.length > 0 || setsOtherField || map === undefined || entry === undefined) {
-				members.length = 0
-				warnings.push(`OR group ignored: only attribute filters can be OR-ed: ${label}`)
-				break
 			}
-			members.push({ map, entry })
-		}
-		const [first, ...rest] = members
-		if (first === undefined) continue
-		if (Arr.some(rest, (m) => m.map !== first.map)) {
-			warnings.push(`OR group ignored: its members mix span and resource attributes: ${label}`)
-			continue
-		}
-		if (parsed[first.map].length >= 5) {
-			warnings.push(`Maximum of 5 filters per attribute map; ignoring ${label}`)
-			continue
-		}
-		parsed = {
-			...parsed,
-			[first.map]: [...parsed[first.map], { ...first.entry, or: Arr.map(rest, (m) => m.entry) }],
-		}
-	}
+			if (EQUALITY_FIELD_KEYS.has(key) && !isEqualityOperator) {
+				unsupported("= and !=")
+				return parsed
+			}
+			if (SCALAR_KEYS.has(key) && clause.operator !== "=") {
+				unsupported("=")
+				return parsed
+			}
 
-	return {
-		filters: parsed,
-		warnings,
-	}
+			const invalid = () => {
+				warnings.push(`Invalid ${key} value ignored: ${clause.value}`)
+				return parsed
+			}
+
+			return Match.value(key).pipe(
+				Match.when("service.name", () =>
+					isNegated
+						? { ...parsed, excludedServices: [...(parsed.excludedServices ?? []), clause.value] }
+						: withMatchMode({ ...parsed, service: clause.value }, "service"),
+				),
+				Match.when("span.name", () =>
+					isNegated
+						? {
+								...parsed,
+								excludedSpanNames: [...(parsed.excludedSpanNames ?? []), clause.value],
+							}
+						: withMatchMode({ ...parsed, spanName: clause.value }, "spanName"),
+				),
+				Match.when("deployment.environment", () =>
+					isNegated
+						? {
+								...parsed,
+								excludedDeploymentEnvs: [
+									...(parsed.excludedDeploymentEnvs ?? []),
+									clause.value,
+								],
+							}
+						: withMatchMode({ ...parsed, deploymentEnv: clause.value }, "deploymentEnv"),
+				),
+				Match.when("service.namespace", () =>
+					isNegated
+						? {
+								...parsed,
+								excludedNamespaces: [...(parsed.excludedNamespaces ?? []), clause.value],
+							}
+						: withMatchMode({ ...parsed, namespace: clause.value }, "namespace"),
+				),
+				Match.when("http.method", () =>
+					isNegated
+						? {
+								...parsed,
+								excludedHttpMethods: [...(parsed.excludedHttpMethods ?? []), clause.value],
+							}
+						: { ...parsed, httpMethod: clause.value },
+				),
+				Match.when("http.status_code", () =>
+					isNegated
+						? {
+								...parsed,
+								excludedHttpStatusCodes: [
+									...(parsed.excludedHttpStatusCodes ?? []),
+									clause.value,
+								],
+							}
+						: { ...parsed, httpStatusCode: clause.value },
+				),
+				Match.when("has_error", () => {
+					const boolValue = parseBoolean(clause.value)
+					if (boolValue === null) return invalid()
+					return { ...parsed, hasError: boolValue === true ? (true as const) : undefined }
+				}),
+				Match.when("root_only", () => {
+					const boolValue = parseBoolean(clause.value)
+					if (boolValue === null) return invalid()
+					return { ...parsed, rootOnly: boolValue === false ? (false as const) : undefined }
+				}),
+				Match.when("min_duration_ms", () => {
+					const numeric = parseNumber(clause.value)
+					return numeric === null ? invalid() : { ...parsed, minDurationMs: numeric }
+				}),
+				Match.when("max_duration_ms", () => {
+					const numeric = parseNumber(clause.value)
+					return numeric === null ? invalid() : { ...parsed, maxDurationMs: numeric }
+				}),
+				// Any other key is a span attribute (`request.id = "x"` means `attr.request.id`).
+				Match.orElse(() => {
+					pushAttribute()
+					return parsed
+				}),
+			)
+		},
+	)
 }
 
 type ClauseFields = Omit<TracesSearchLike, "startTime" | "endTime" | "whereClause">
