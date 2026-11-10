@@ -91,7 +91,12 @@ export const chainRow = (
 				rowIcon(h, "BellIcon"),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
 					typography(h, { size: "sm", weight: "medium", truncate: true, as: "p" }, [
-						textLink(h, { href: chainHref(chain.id), tone: "inherit" }, [chain.name]),
+						// `block truncate`: an inline-flex link would be clipped without an ellipsis.
+						textLink(
+							h,
+							{ href: chainHref(chain.id), tone: "inherit", className: "block truncate" },
+							[chain.name],
+						),
 					]),
 					typography(
 						h,
