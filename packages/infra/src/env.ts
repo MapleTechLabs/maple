@@ -4,7 +4,7 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { optionalString } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
-import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
+import { PRD_DOMAINS, prdOrigin, resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -85,7 +85,33 @@ export const plainWithDefault = (key: string, fallback: string): Config.Config<P
 export const derived = (key: string, value: string): Config.Config<PlainEnv> =>
 	Config.succeed({ [key]: value })
 
+/**
+ * The deployed revision: the first set of `preferred`, `COMMIT_SHA`, `GITHUB_SHA`, else `""`. An
+ * unstamped build makes the error evaluator reopen fixed issues on any occurrence.
+ */
+export const commitSha = (...preferred: ReadonlyArray<string>): Config.Config<string> =>
+	plainFrom([...preferred, "COMMIT_SHA", "GITHUB_SHA"], "")
+
+/** {@link commitSha} as `{ COMMIT_SHA }`, omitted when unknown. */
+export const commitShaEnv = (...preferred: ReadonlyArray<string>): Config.Config<PlainEnv> =>
+	commitSha(...preferred).pipe(Config.map((sha): PlainEnv => (sha === "" ? {} : { COMMIT_SHA: sha })))
+
+/** The one sender address notification emails use; the `send_email` binding allows only it. */
+export const NOTIFICATIONS_SENDER_ADDRESS = "notifications@noreply.maple.dev"
+
 // ── Shared groups ───────────────────────────────────────────────────────────
+
+/**
+ * Dev only: on a deploy a pin would point every session at one tenant. The local stack's pin names
+ * a seeded org the dev user is not a member of, so it admits non-members.
+ */
+export const devOrgOverrideEnv = (stage: MapleStage): Config.Config<WorkerEnv> =>
+	stage.kind === "dev"
+		? merge(
+				optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
+				plainWithDefault("MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS", "true"),
+			)
+		: merge()
 
 /** Session auth, shared by `api`, `alerting` and `electric-sync`. */
 export const authEnv: Config.Config<WorkerEnv> = merge(
@@ -119,20 +145,17 @@ export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv>
 		// Derived where the deploy has its own gateway: a preview must hand out its own endpoint.
 		domains.ingest
 			? derived("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest}`)
-			: plainWithDefault("MAPLE_INGEST_PUBLIC_URL", "https://ingest.maple.dev"),
-		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+			: plainWithDefault("MAPLE_INGEST_PUBLIC_URL", prdOrigin("ingest")),
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? PRD_DOMAINS.web}`),
 		// Canonical API origin for self-published URLs (MCP `server.json`, email one-click
 		// unsubscribe), never forwarded headers.
 		domains.api
 			? derived("MAPLE_API_BASE_URL", `https://${domains.api}`)
-			: plainWithDefault("MAPLE_API_BASE_URL", "https://api.maple.dev"),
-		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
+			: plainWithDefault("MAPLE_API_BASE_URL", prdOrigin("api")),
+		plainWithDefault("EMAIL_FROM", `Maple <${NOTIFICATIONS_SENDER_ADDRESS}>`),
 	)
 
-/**
- * The Worker's own OTLP export. `COMMIT_SHA` falls back to `GITHUB_SHA`: an unstamped build
- * makes the error evaluator reopen fixed issues on any occurrence.
- */
+/** The Worker's own OTLP export, stamped with its revision ({@link commitShaEnv}). */
 export const selfObservabilityEnv = (
 	stage: MapleStage,
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
@@ -156,13 +179,7 @@ export const selfObservabilityEnv = (
 		derived("MAPLE_REGION", region),
 		// Tells the instances apart in the shared internal org.
 		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),
-		// Read via Config, not `process.env`, so `.env` / `--env-file` apply.
-		merge(optionalPlain("COMMIT_SHA"), optionalPlain("GITHUB_SHA")).pipe(
-			Config.map((record): PlainEnv => {
-				const sha = record.COMMIT_SHA ?? record.GITHUB_SHA
-				return typeof sha === "string" && sha ? { COMMIT_SHA: sha } : {}
-			}),
-		),
+		commitShaEnv(),
 	)
 
 /**

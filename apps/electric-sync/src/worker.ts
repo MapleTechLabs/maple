@@ -13,10 +13,10 @@ import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	authEnv,
 	derived,
+	devOrgOverrideEnv,
 	merge,
 	optionalPlain,
 	optionalSecret,
-	plainWithDefault,
 	selfObservabilityEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -28,13 +28,7 @@ import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		authEnv,
-		// Dev only, like the API: on a deploy a pin would point every session at one tenant.
-		stage.kind === "dev"
-			? merge(
-					optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-					plainWithDefault("MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS", "true"),
-				)
-			: merge(),
+		devOrgOverrideEnv(stage),
 		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
 		// a `preview:web` stage has none, so sync stays off.
 		stage.kind === "pr"

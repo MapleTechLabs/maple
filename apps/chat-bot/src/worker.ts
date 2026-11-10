@@ -14,6 +14,7 @@ import {
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
+	PRD_DOMAINS,
 } from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
@@ -37,7 +38,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// Not on previews: no webhook hostname, and a socket would fight dev's bot session.
 		...(stage.kind === "pr" ? [] : [connectorConfigEnv]),
 		// App link base, and the chart-image signing key (without it charts render as text).
-		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? PRD_DOMAINS.web}`),
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Opens credentials a connector sealed on a workspace row; only those connectors need it.
 		optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),

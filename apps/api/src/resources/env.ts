@@ -10,6 +10,7 @@ import {
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
+	devOrgOverrideEnv,
 	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
@@ -35,14 +36,7 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("CLICKHOUSE_PASSWORD"),
 		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
-		// Dev only: on a deploy a pin would point the whole API at one tenant. The local stack's
-		// pin names a seeded org the dev user is not a member of, so it admits non-members.
-		...(stage.kind === "dev"
-			? [
-					optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-					plainWithDefault("MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS", "true"),
-				]
-			: []),
+		devOrgOverrideEnv(stage),
 		// PR previews only: the shared key behind the sign-in page's preview access form.
 		...(stage.kind === "pr" ? [optionalSecret("PREVIEW_SIGNIN_KEY")] : []),
 		authEnv,

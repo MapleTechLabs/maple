@@ -30,7 +30,7 @@ import {
 } from "@maple/infra/cloudflare"
 import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
-import { optionalPlain, requiredPlain } from "@maple/infra/env"
+import { commitShaEnv, optionalPlain, requiredPlain } from "@maple/infra/env"
 
 /** Compiled ahead of time by CI so the image build is a COPY. Absent on a dev machine. */
 const PREBUILT_BINARY = "apps/ingest/dist/maple-ingest"
@@ -345,13 +345,6 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			capacityProviders: [capacityProvider.name],
 			tags,
 		})
-
-		const revisions = {
-			...(yield* optionalPlain("INGEST_COMMIT_SHA")),
-			...(yield* optionalPlain("COMMIT_SHA")),
-			...(yield* optionalPlain("GITHUB_SHA")),
-		}
-		const ingestRevision = revisions.INGEST_COMMIT_SHA || revisions.COMMIT_SHA || revisions.GITHUB_SHA
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
@@ -691,7 +684,7 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				...(yield* optionalPlain("INGEST_SHUTDOWN_DRAIN_SECS")),
 				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
 				// `apps/ingest` alone does not change the task definition and roll the hosts.
-				...(ingestRevision ? { COMMIT_SHA: ingestRevision } : undefined),
+				...(yield* commitShaEnv("INGEST_COMMIT_SHA")),
 			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags,

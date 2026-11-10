@@ -63,7 +63,8 @@ export const resolveWorkerPlacement = (
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
 ): { readonly region: `aws:${AwsRegionName}` } => ({ region: `aws:${REGION_INFRA[region].awsRegion}` })
 
-const PRD_DOMAINS: MapleDomains = {
+/** The US prd hostnames, also the default wherever a stage has no hostname of its own. */
+export const PRD_DOMAINS = {
 	web: "app.maple.dev",
 	api: "api.maple.dev",
 	ingest: "ingest.maple.dev",
@@ -72,7 +73,10 @@ const PRD_DOMAINS: MapleDomains = {
 	landing: "maple.dev",
 	local: "local.maple.dev",
 	chat: "chat.maple.dev",
-}
+} satisfies MapleDomains
+
+/** An app's US prd origin (`https://ingest.maple.dev`). */
+export const prdOrigin = (app: keyof typeof PRD_DOMAINS): string => `https://${PRD_DOMAINS[app]}`
 
 /** EU hostnames under `eu.maple.dev`. No landing or local-ui (shared apps run in `us` only). */
 const PRD_DOMAINS_EU: MapleDomains = {

@@ -6,12 +6,13 @@
 import {
 	ApiWorker,
 	MapleStack,
+	prdOrigin,
 	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
-import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
+import { commitSha, plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Schema } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
@@ -58,7 +59,7 @@ const props = Effect.gen(function* () {
 			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys.
 			VITE_MAPLE_SELF_INGEST_URL:
 				stage.kind === "pr"
-					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
+					? yield* plainFrom(["VITE_INGEST_URL"], prdOrigin("ingest"))
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
 			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
@@ -85,7 +86,7 @@ const props = Effect.gen(function* () {
 			// Browser telemetry's `deployment.environment.name`, matching the Worker's (`pr-<n>` on previews).
 			VITE_MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
-			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
+			VITE_COMMIT_SHA: yield* commitSha("VITE_COMMIT_SHA"),
 		},
 	}
 }).pipe(

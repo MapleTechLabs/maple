@@ -31,6 +31,7 @@ import {
 	MapleStack,
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
+	prdOrigin,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
@@ -238,7 +239,7 @@ const MapleStackLive = Layer.effect(
 				// would go to production ingest.
 				ingest:
 					devEnv?.MAPLE_INGEST_URL ??
-					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev")),
+					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", prdOrigin("ingest"))),
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),

@@ -3,6 +3,7 @@ import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import { plainFrom, requiredPlain } from "../env.ts"
 import { MapleStack } from "./stack.ts"
+import { prdOrigin } from "./stage.ts"
 import { String as Str } from "effect"
 
 /** prd destination slugs (derived from their names), referenced by non-owning stages. */
@@ -19,7 +20,7 @@ export const WorkersObservabilityDestinations = Effect.gen(function* () {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 
-	const endpoint = yield* plainFrom(["MAPLE_ENDPOINT"], "https://ingest.maple.dev")
+	const endpoint = yield* plainFrom(["MAPLE_ENDPOINT"], prdOrigin("ingest"))
 	const ingestEndpoint = Str.replace(/\/+$/, "")(endpoint)
 	const headers = { authorization: `Bearer ${yield* requiredPlain("MAPLE_OTEL_INGEST_KEY")}` }
 	const tracesDestination = yield* Cloudflare.Workers.ObservabilityDestination(
