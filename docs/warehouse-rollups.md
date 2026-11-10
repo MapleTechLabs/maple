@@ -1,6 +1,6 @@
 # Warehouse rollups and materialized views
 
-We have 44 materialized views across 42 datasources. They accreted one product feature at a
+We have 59 materialized views across 52 datasources. They accreted one product feature at a
 time, and for a long time nobody could answer "should this be an MV?" without re-deriving it
 from scratch. This is that answer.
 

@@ -32,6 +32,7 @@ import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
+import { utcHourFloor } from "./query-helpers"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
 import {
@@ -134,7 +135,7 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.inList($.ServiceName, opts.services),
 		])

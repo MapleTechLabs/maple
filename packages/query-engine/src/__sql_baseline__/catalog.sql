@@ -182,31 +182,16 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:anomaly:anomalyErrorSpikeServiceTimeseriesQuery:default  [045a5d5d]
+-- builder:anomaly:anomalyErrorSpikeTimeseriesQuery:default  [a4ee3341]
 SELECT
-          toStartOfInterval(error_events_by_time.Timestamp, INTERVAL 300 SECOND) AS bucket,
+          toStartOfInterval(error_events.Timestamp, INTERVAL 300 SECOND) AS bucket,
           count() AS count
-        FROM error_events_by_time
-        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
-          AND error_events_by_time.ServiceName = 'api'
-          AND error_events_by_time.DeploymentEnv = 'production'
-          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
-          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
-        GROUP BY bucket
-        ORDER BY bucket ASC
-        LIMIT 400
-        FORMAT JSON
-
--- builder:anomaly:anomalyErrorSpikeTimeseriesQuery:default  [d4aaaa21]
-SELECT
-          toStartOfInterval(error_events_by_time.Timestamp, INTERVAL 300 SECOND) AS bucket,
-          count() AS count
-        FROM error_events_by_time
-        WHERE error_events_by_time.OrgId = 'org_sql_catalog'
-          AND error_events_by_time.FingerprintHash = toUInt64('11640393269246331608')
-          AND error_events_by_time.DeploymentEnv = 'production'
-          AND error_events_by_time.Timestamp >= '2026-01-01 10:30:00'
-          AND error_events_by_time.Timestamp <= '2026-01-03 14:15:00'
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash = toUInt64('11640393269246331608')
+          AND error_events.DeploymentEnv = 'production'
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY bucket
         ORDER BY bucket ASC
         LIMIT 2500
