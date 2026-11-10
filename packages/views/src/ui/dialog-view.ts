@@ -30,6 +30,9 @@ import { focusGuard, isMounted, stateAttributes } from "./overlay/transition"
 
 export type SheetSide = "right" | "left" | "top" | "bottom"
 
+/** A sheet's dim: `dialog` blurs and darkens the page, `panel` only dims it lightly. */
+export type SheetScrim = "dialog" | "panel"
+
 type Parts = Readonly<{
 	backdrop: string
 	viewport: string
@@ -51,6 +54,7 @@ const partsOf = (
 	className: string | undefined,
 	isBottomStick = true,
 	size: SheetStyles.SheetSize = "default",
+	scrim: SheetScrim = "dialog",
 ): Parts => {
 	switch (kind) {
 		case "dialog":
@@ -89,7 +93,11 @@ const partsOf = (
 			}
 		case "sheet":
 			return {
-				backdrop: cn(SheetStyles.sheetBackdropStyles),
+				backdrop: cn(
+					scrim === "panel"
+						? SheetStyles.sheetBackdropPanelStyles
+						: SheetStyles.sheetBackdropStyles,
+				),
 				viewport: cn(
 					SheetStyles.sheetViewportStyles,
 					side === "bottom" && SheetStyles.sheetViewportBottomStyles,
@@ -137,6 +145,8 @@ export type ViewInputs = Readonly<{
 	/** A left or right sheet's width (`SheetSize`): pick by content, never a `max-w-*` class. */
 	size?: SheetStyles.SheetSize
 	hasTrigger?: boolean
+	/** A sheet's dim (`dialog` by default); see `SheetScrim`. */
+	scrim?: SheetScrim
 	/** `false`: the content renders its own close. */
 	showCloseButton?: boolean
 	/** `closeProps={{ className }}`: classes merged onto the close button's own. */
@@ -166,6 +176,7 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 		inputs.className,
 		inputs.isBottomStickOnMobile,
 		inputs.size,
+		inputs.scrim,
 	)
 	const slot = slotPrefix(model.kind)
 	const isVisible = isMounted(model.isOpen, model.animation)

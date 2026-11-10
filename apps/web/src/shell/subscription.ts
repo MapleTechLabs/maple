@@ -1,8 +1,10 @@
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
-import { Option, Stream, String as Str } from "effect"
+import { Clock, Duration, Effect, Option, Stream, String as Str } from "effect"
 import { Dom } from "foldkit"
 import { DASHBOARD_FAVORITES_EVENT, readDashboardFavorites } from "./favorites"
 import { Message } from "./message"
+import type { Model } from "./model"
+import { ONCALL_CHANGED_EVENT } from "../page/alerts/shared/oncall-schedules"
 
 /** `max-md`: below 768px the sidebar is a sheet. */
 export const MOBILE_QUERY = "(max-width: 767px)"
@@ -81,4 +83,45 @@ export const favoritesChanges: Stream.Stream<Message> = Dom.streamFromEvent({
 	target: favoritesTarget,
 	type: DASHBOARD_FAVORITES_EVENT,
 	mapEvent: () => Message.ChangedDashboardFavorites({ favorites: readDashboardFavorites() }),
+})
+
+/** When the on-call pill next reads the schedules; `null` while one is in flight or none is due. */
+export const onCallReadAt = (model: Model): number | null => model.onCallNextReadAtMs
+
+/** Waits until the pill's next read is due. */
+export const onCallTimer = (atMs: number): Stream.Stream<Message> =>
+	Stream.fromEffect(
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			yield* Effect.sleep(Duration.millis(Math.max(0, atMs - now)))
+			return Message.ElapsedOnCallTimer({ nowMs: yield* Clock.currentTimeMillis })
+		}),
+	)
+
+/** The tab came back into view or focus (a handoff may have passed while it slept). */
+// Suspended: `window` and `document` are read on subscribe, so importing the shell needs no DOM.
+export const onCallWakes: Stream.Stream<Message> = Stream.suspend(() => {
+	const wakeTarget: Dom.TypedEventTarget<{ focus: FocusEvent }> = window
+	return Stream.merge(
+		Dom.streamFromEvent({ target: wakeTarget, type: "focus", mapEvent: () => true }),
+		Dom.streamFromEvent({
+			target: document,
+			type: "visibilitychange",
+			mapEvent: () => document.visibilityState === "visible",
+		}),
+	)
+}).pipe(
+	Stream.filter((isAwake) => isAwake),
+	Stream.mapEffect(() => Clock.currentTimeMillis),
+	Stream.map((nowMs) => Message.WokeOnCall({ nowMs })),
+)
+
+/** A page wrote a schedule or an override. */
+export const onCallChanges: Stream.Stream<Message> = Stream.suspend(() => {
+	const target: Dom.TypedEventTarget<{ [ONCALL_CHANGED_EVENT]: Event }> = window
+	return Dom.streamFromEvent({
+		target,
+		type: ONCALL_CHANGED_EVENT,
+		mapEvent: () => Message.ChangedOnCallSchedules(),
+	})
 })

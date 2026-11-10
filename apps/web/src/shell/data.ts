@@ -7,6 +7,11 @@ import { MapleInternalApiClient } from "../platform/api-clients"
 import { loadServicesFacets } from "../data/services-facets-probe"
 import { loadSources, sourcesListKey } from "../page/sources/kit/data"
 import { Message } from "./message"
+import { SessionTenant } from "../data/session-tenant"
+import { listOnCallSchedules } from "../page/alerts/shared/oncall-schedules"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { readEffectiveTimeZone } from "../platform/time-zone"
+import { isNoSchedulesFresh } from "./oncall"
 
 /**
  * Everything the shell loads at boot, over the S1 API clients. The data layer (S6) is designed in
@@ -75,4 +80,50 @@ export const LoadNamespaces = Command.define("LoadNamespaces", {
 			)
 			return Message.SucceededLoadNamespaces({ orgId, namespaces })
 		}).pipe(failed(Message.FailedLoadNamespaces({ orgId }))),
+})
+
+// ON CALL
+
+/**
+ * The org's schedules (who holds each now, as the API reads it), who is looking and in which zone.
+ * An org whose "no schedules" answer is fresh is not asked at all.
+ */
+export const LoadOnCall = Command.define("LoadOnCall", {
+	args: { orgId: Schema.String, noSchedulesCheckedAtMs: Schema.NullOr(Schema.Number) },
+	messages: [Message.SucceededLoadOnCall, Message.FailedLoadOnCall],
+	execute: ({ orgId, noSchedulesCheckedAtMs }) =>
+		Effect.gen(function* () {
+			const readAtMs = yield* Clock.currentTimeMillis
+			if (isNoSchedulesFresh(noSchedulesCheckedAtMs ?? undefined, readAtMs))
+				return Message.SucceededLoadOnCall({
+					orgId,
+					readAtMs,
+					isFromCache: true,
+					snapshot: { userId: "", viewerTimeZone: "UTC", shifts: [] },
+				})
+			const tenant = yield* (yield* SessionTenant).get
+			const schedules = yield* listOnCallSchedules
+			const viewerTimeZone = yield* readEffectiveTimeZone
+			return Message.SucceededLoadOnCall({
+				orgId,
+				readAtMs,
+				isFromCache: false,
+				snapshot: {
+					userId: tenant.userId,
+					viewerTimeZone,
+					shifts: Arr.map(schedules, (schedule) => ({
+						scheduleName: schedule.name,
+						userId: schedule.on_call_now?.user_id ?? null,
+						endsAtMs:
+							schedule.on_call_now === null ? null : toEpochMs(schedule.on_call_now.ends_at),
+					})),
+				},
+			})
+		}).pipe(
+			Effect.catch(() =>
+				Effect.map(Clock.currentTimeMillis, (failedAtMs) =>
+					Message.FailedLoadOnCall({ orgId, failedAtMs }),
+				),
+			),
+		),
 })

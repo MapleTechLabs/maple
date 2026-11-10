@@ -21,6 +21,14 @@ export const SCHEDULE_LIST_LIMIT = 50
 /** 409 on delete while an escalation chain still pages the schedule. */
 export const SCHEDULE_IN_USE_CODE = "oncall_schedule_in_use"
 
+/**
+ * Fired on `window` after a schedule or override is written, so the sidebar's on-call pill reads
+ * again (a page's single out-message is already its toast or navigation).
+ */
+export const ONCALL_CHANGED_EVENT = "maple:oncall-schedules-changed"
+
+const announceOnCallChange = Effect.sync(() => window.dispatchEvent(new Event(ONCALL_CHANGED_EVENT)))
+
 export const listOnCallSchedules = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	const page = yield* client.oncallSchedules.list({ query: { limit: SCHEDULE_LIST_LIMIT } })
@@ -46,13 +54,19 @@ export const saveOnCallSchedule = (
 					params: { id: editingId },
 					payload: { ...payload, description: payload.description ?? null },
 				})
-	}).pipe(Effect.mapError(toLoadFailure))
+	}).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.tap(() => announceOnCallChange),
+	)
 
 export const deleteOnCallSchedule = (id: OnCallScheduleId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		yield* client.oncallSchedules.delete({ params: { id } })
-	}).pipe(Effect.mapError(toLoadFailure))
+	}).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.tap(() => announceOnCallChange),
+	)
 
 /** Each layer's shifts and the final ones over `[fromMs, toMs)`. */
 export const listShifts = (id: OnCallScheduleId, fromMs: number, toMs: number) =>
@@ -97,13 +111,19 @@ export const createOverride = (id: OnCallScheduleId, payload: V2OnCallOverrideCr
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		return yield* client.oncallSchedules.createOverride({ params: { id }, payload })
-	}).pipe(Effect.mapError(toLoadFailure))
+	}).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.tap(() => announceOnCallChange),
+	)
 
 export const deleteOverride = (id: OnCallScheduleId, overrideId: OnCallOverrideId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		yield* client.oncallSchedules.deleteOverride({ params: { id, override_id: overrideId } })
-	}).pipe(Effect.mapError(toLoadFailure))
+	}).pipe(
+		Effect.mapError(toLoadFailure),
+		Effect.tap(() => announceOnCallChange),
+	)
 
 const encodePublicId = Schema.encodeSync(OnCallSchedulePublicId)
 const decodePublicId = Schema.decodeUnknownOption(OnCallSchedulePublicId)

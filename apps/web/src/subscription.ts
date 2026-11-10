@@ -215,6 +215,35 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						),
 		},
 	),
+	/** The on-call pill's next read: a handoff, the hourly check off call, or a retry. */
+	shellOnCallTimer: entry(
+		{ atMs: Schema.NullOr(Schema.Number) },
+		{
+			modelToDependencies: (model) => ({
+				atMs: model.session._tag === "SignedIn" ? Shell.onCallReadAt(model.shell) : null,
+			}),
+			dependenciesToStream: ({ atMs }) =>
+				atMs === null
+					? Stream.empty
+					: Stream.map(Shell.onCallTimer(atMs), (message) => Message.GotShellMessage({ message })),
+		},
+	),
+	/** Focus and visibility, and a page's schedule writes, refresh the on-call pill. */
+	shellOnCallEvents: entry(
+		{ isShellOpen: Schema.Boolean },
+		{
+			modelToDependencies: (model) => ({
+				isShellOpen: model.session._tag === "SignedIn" && rendersShell(model.route),
+			}),
+			dependenciesToStream: ({ isShellOpen }) =>
+				Stream.when(
+					Stream.map(Stream.merge(Shell.onCallWakes, Shell.onCallChanges), (message) =>
+						Message.GotShellMessage({ message }),
+					),
+					Effect.sync(() => isShellOpen),
+				),
+		},
+	),
 	/** The dashboards list starred or unstarred one. */
 	shellDashboardFavorites: entry(
 		{},

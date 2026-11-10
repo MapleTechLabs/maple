@@ -22,7 +22,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import { FocusElement, SaveInfraSurfaces, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
-import { LoadInfraSurfaces, LoadNamespaces } from "./data"
+import { LoadInfraSurfaces, LoadNamespaces, LoadOnCall } from "./data"
 import { type Integration, Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
 import { MeasureSidebarOverflow, MountNamespaceSearch, PositionMenu } from "./mounts"
@@ -196,7 +196,8 @@ describe("sidebar collapse", () => {
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
 			...open(),
-			Command.expectExact(LoadInfraSurfaces),
+			Command.expectExact(LoadInfraSurfaces, LoadOnCall),
+			Command.resolve(LoadOnCall, Message.FailedLoadOnCall({ orgId: "org_parity", failedAtMs: 0 })),
 			Command.resolve(LoadInfraSurfaces, surfacesAnswer("org_parity", [])),
 			Command.expectExact(SaveInfraSurfaces({ orgId: "org_parity", surfaces: [] })),
 			Command.resolve(SaveInfraSurfaces, Message.CompletedSaveInfraSurfaces()),
