@@ -1,4 +1,4 @@
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Array as Arr, Effect, Queue, Schema, Stream } from "effect"
 import { Dom, Mount } from "foldkit"
 import { Align, measurePosition, Side } from "@maple/views/ui/anchor"
 import { applyScrollOverflow } from "@maple/views/ui/scroll-area"
@@ -57,16 +57,34 @@ export const MountNamespaceSearch = Mount.defineStream("MountNamespaceSearch", {
 })
 
 /** The sidebar nav's `ScrollArea` overflow (its bottom fade), kept current on scroll and resize. */
-/** Scrolls the nav so the active row clears the pinned footer on a deep-linked load. */
+/**
+ * Scrolls the nav so the open section (its row and every sub-item) clears the pinned footer, or
+ * the active row alone when the section is taller than the nav.
+ */
 const revealActiveRow = (viewport: HTMLElement): void => {
 	const rows = viewport.querySelectorAll<HTMLElement>('[data-active="true"]')
 	const row = rows.item(rows.length - 1)
 	if (row === null) return
-	const top = row.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
-	const bottom = top + row.offsetHeight
-	if (bottom > viewport.scrollTop + viewport.clientHeight)
-		viewport.scrollTop = bottom - viewport.clientHeight + 8
+	const section = row.closest<HTMLElement>('[data-sidebar="menu-item"]') ?? row
+	// Past the scroll area's 1.5rem edge fades, so the last sub-item reads at full strength.
+	const margin = 28
+	const target = section.offsetHeight + 2 * margin <= viewport.clientHeight ? section : row
+	const top = target.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+	const bottom = top + target.offsetHeight
+	if (top < viewport.scrollTop + margin) viewport.scrollTop = Math.max(0, top - margin)
+	else if (bottom > viewport.scrollTop + viewport.clientHeight - margin)
+		viewport.scrollTop = bottom - viewport.clientHeight + margin
 }
+
+/** Which rows are active: a re-render that leaves them alone doesn't move the nav. */
+const activeKeyOf = (viewport: HTMLElement): string =>
+	Arr.join(
+		Arr.map(
+			Arr.fromIterable(viewport.querySelectorAll('[data-active="true"]')),
+			(row) => row.getAttribute("href") ?? "",
+		),
+		" ",
+	)
 
 export const MeasureSidebarOverflow = Mount.defineStream("MeasureSidebarOverflow", {
 	messages: [Message.MeasuredSidebarOverflow],
@@ -81,12 +99,27 @@ export const MeasureSidebarOverflow = Mount.defineStream("MeasureSidebarOverflow
 					if (element.firstElementChild !== null) observer.observe(element.firstElementChild)
 					element.addEventListener("scroll", measure, { passive: true })
 					revealActiveRow(element)
+					// A route change moves the active row (or opens a section): bring it into view too.
+					const seen = { key: activeKeyOf(element) }
+					const routed = new MutationObserver(() => {
+						const key = activeKeyOf(element)
+						if (key === seen.key) return
+						seen.key = key
+						revealActiveRow(element)
+					})
+					routed.observe(element, {
+						subtree: true,
+						childList: true,
+						attributes: true,
+						attributeFilter: ["data-active"],
+					})
 					measure()
 					Queue.offerUnsafe(queue, Message.MeasuredSidebarOverflow())
-					return { observer, measure }
+					return { observer, measure, routed }
 				}),
 				(handles) =>
 					Effect.sync(() => {
+						handles?.routed.disconnect()
 						handles?.observer.disconnect()
 						if (handles !== undefined) element.removeEventListener("scroll", handles.measure)
 					}),

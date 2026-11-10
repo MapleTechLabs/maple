@@ -40,7 +40,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { alertsHref } from "../shared/links"
+import { alertsHref, ruleHref } from "../shared/links"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
 import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
@@ -544,7 +544,7 @@ export const breadcrumbsOf = (model: Model) =>
 		],
 		onSome: ({ incident, rule }) => [
 			{ label: "Alerts", href: "/alerts" },
-			{ label: rule?.name ?? incident.ruleName, href: `/alerts/${incident.ruleId}` },
+			{ label: rule?.name ?? incident.ruleName, href: ruleHref(incident.ruleId) },
 			{ label: "Incident" },
 		],
 	})

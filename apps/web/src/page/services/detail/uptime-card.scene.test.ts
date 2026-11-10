@@ -73,7 +73,7 @@ describe("service detail, Uptime card", () => {
 				"href",
 				"/alerts/uptime/new?serviceName=checkout-api",
 			),
-			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts?tab=uptime"),
+			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts/uptime"),
 		)
 	})
 })

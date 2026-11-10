@@ -114,4 +114,4 @@ export const newSloHref = (search: typeof AlertsSloNewSearch.Type = {}): string 
 
 export const editSloHref = (id: SloId): string => newSloHref({ sloId: encodePublicId(id) })
 
-export const slosTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "slos" } }))
+export const slosTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "slos", search: {} }))

@@ -1,9 +1,10 @@
 import { Effect, Option, Schema, Stream, String as Str } from "effect"
-import { Subscription, Update } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { Subscription, type Update } from "foldkit"
 import { readSessionToken } from "../platform/auth-api"
 import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
+
+export { foldLabShell, labShellView } from "./shell-frame"
 
 // Shell lab pages render inside the real shell: the same Shell Submodel the
 // app root keeps, booted for the session's org, with the frame around the page and its overlays.
@@ -14,6 +15,7 @@ export const LabShellFlags = Schema.Struct({
 		theme: Shell.Theme,
 		pinnedNamespaces: Schema.Record(Schema.String, Schema.String),
 		dashboardFavorites: Schema.Array(Schema.String),
+		collapsedNavGroups: Schema.optionalKey(Schema.Array(Schema.String)),
 	}),
 	maybeOrgId: Schema.Option(Schema.String),
 })
@@ -54,52 +56,6 @@ export const initLabShell = (
 		onSome: (orgId) => Shell.enter(orgId)(shell),
 	})
 }
-
-/** Folds Shell Messages; a lab page has no queries to rebuild on a namespace pin. */
-export const foldLabShell = <Model extends { readonly shell: Shell.Model }, Message>(
-	toParentMessage: (message: Shell.Message) => Message,
-) =>
-	Update.foldChild({
-		update: Shell.update,
-		read: (model: Model) => Option.some(model.shell),
-		write: (model: Model, shell: Shell.Model): Model => ({ ...model, shell }),
-		toParentMessage,
-		foldOutMessage: () => (model: Model) => ({ model }),
-	})
-
-/** The frame around the page, then the mobile sheet and menu layers (the root's `shellRoute`). */
-export const labShellView = <Message>(
-	h: HtmlBuilder<Message>,
-	shell: Shell.Model,
-	toParentMessage: (message: Shell.Message) => Message,
-	frame: Readonly<{
-		currentPath: string
-		breadcrumbs: ReadonlyArray<Shell.BreadcrumbEntry>
-		page: () => Html
-	}>,
-): ReadonlyArray<Html> => [
-	h.submodel({
-		slotId: "shell-frame",
-		model: shell,
-		view: Shell.frameView,
-		toParentMessage,
-		viewInputs: { ...frame, topbarActions: () => null },
-	}),
-	h.submodel({
-		slotId: "shell-sheet",
-		model: shell,
-		view: Shell.sheetLayerView,
-		toParentMessage,
-		viewInputs: { currentPath: frame.currentPath },
-	}),
-	h.submodel({
-		slotId: "shell-menu",
-		model: shell,
-		view: Shell.menuLayerView,
-		toParentMessage,
-		viewInputs: { currentPath: frame.currentPath },
-	}),
-]
 
 /** The root's shell Subscriptions: `useIsMobile`, the sidebar shortcut and the Pinned group's shape. */
 export const labShellSubscriptions = <Model extends { readonly shell: Shell.Model }, Message>(

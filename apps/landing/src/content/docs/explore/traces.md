@@ -86,9 +86,9 @@ Three views show the spans:
 
 Click a span to open the span panel. Press Esc to close it. The selected span is kept in the URL, so you can share a link to it.
 
-The span panel shows the duration and status, and an error section when the status is `Error`. It has these tabs:
+The span panel shows the duration, the self time (time not spent in child spans), the span's share of the trace, and its status. When the status is `Error`, an error section shows the message, and its sparkle button copies the error as a prompt for an AI assistant. It has these tabs:
 
-- **Details**: **Start Time**, **Span ID**, **Parent Span ID**, then **Span Attributes** and **Resource Attributes**. Each attribute row has **Filter by** and **Exclude** actions that open the trace list with that attribute filter applied.
+- **Details**: **Start time**, **Span ID**, **Parent span ID**, then **Events**, the span's events in time order with a **Stack trace** for each exception, then **Span attributes** and **Resource attributes**. Each attribute row has **Filter by** and **Exclude** actions that open the trace list with that attribute filter applied.
 - **Logs**: logs emitted inside this span. Click one to open its detail.
 - **Infrastructure**: host, container, or Kubernetes details, shown when the span carries those resource attributes.
 

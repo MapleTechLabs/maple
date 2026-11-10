@@ -57,6 +57,8 @@ A connection can stream CloudWatch metrics to Maple. Under **Choose data**, pick
 
 Maple reads nothing back from your account for this: AWS pushes the metrics. The first ones arrive a few minutes after the stack finishes.
 
+Once metrics arrive, **AWS** shows under **Infrastructure** in the sidebar. It has a tab for each kind of resource that reported (**ECS**, **EC2**, **Load balancers**, **RDS**, **Lambda** and **SQS**), with problems such as **Hot**, **Idle, still billed** or **Serving 5xx** called out above a table of resources. Each resource opens a page with its charts, a link to the AWS console, and the traced service it runs as, when Maple can match one.
+
 AWS bills the metric stream at $0.003 per 1,000 metric updates, and each metric updates once a minute, so 100 metrics cost about $13 a month. Firehose adds a few cents per gigabyte. Stream only the namespaces you need.
 
 To stop streaming, turn the metric stream off in Maple and run the setup script again: it removes the stack from every region. The cleanup script removes it too.

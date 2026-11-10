@@ -40,7 +40,7 @@ import {
 	populatedSchedules,
 	schedulePublicId,
 } from "../page/alerts/shared/oncall-test-fixtures"
-import { incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/alerts/shared/test-rows"
+import { incidentRow, INCIDENT_ID, ORG, ruleRow, hubAt } from "../page/alerts/shared/test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 import { isoMs } from "../page/alerts/shared/time"
@@ -128,8 +128,8 @@ const hubStep = (model: HubModel.Model, message: HubMessage.Message) =>
 	HubUpdate.update(model, message, CONTEXT)
 
 const hubFor = (state: LabState): Step<HubModel.Model, HubMessage.Message> => {
-	const tab = state === "strip" ? "inbox" : state === "chain-dialog" ? "routing" : "oncall"
-	const entered = HubUpdate.init({ _tag: "Alerts", search: { tab } }, CONTEXT).model
+	const tab = state === "strip" ? "inbox" : state === "chain-dialog" ? "routing" : "on-call"
+	const entered = HubUpdate.init(hubAt({ tab }), CONTEXT).model
 	const schedules = state === "schedules-empty" ? [] : populatedSchedules(ONCALL_NOW)
 	const chains = [mixedTargetChain(chainDestinations[0]?.id ?? "")]
 	return fold(

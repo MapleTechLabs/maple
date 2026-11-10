@@ -104,7 +104,7 @@ export const newMonitorHref = (search: typeof AlertsUptimeNewSearch.Type = {}): 
 export const editMonitorHref = (id: UptimeMonitorId): string =>
 	newMonitorHref({ monitorId: encodePublicId(id) })
 
-export const uptimeTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "uptime" } }))
+export const uptimeTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "uptime", search: {} }))
 
 /** Every check is a span in the `maple-uptime` service, namespace `maple-services`. */
 export const UPTIME_SERVICE = UPTIME_SERVICE_NAME

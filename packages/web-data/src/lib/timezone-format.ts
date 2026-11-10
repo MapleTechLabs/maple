@@ -80,13 +80,18 @@ export function formatTimestampInTimezone(
 
 export function formatTimeInTimezone(
 	input: TimezoneFormatInput,
-	options: { timeZone: string; withSeconds?: boolean },
+	options: {
+		timeZone: string
+		withSeconds?: boolean
+		/** A 24h clock (`h23`) where the time sits beside a 24h picker. */
+		hourCycle?: "h12" | "h23"
+	},
 ): string {
 	const date = toValidDate(input)
 	if (!date) return EMPTY_VALUE
 
 	const tz = resolveTimeZone(options.timeZone)
-	const key = `${tz}|${options.withSeconds ? "s" : ""}`
+	const key = `${tz}|${options.withSeconds ? "s" : ""}|${options.hourCycle ?? ""}`
 	let formatter = timeFormatters.get(key)
 	if (!formatter) {
 		formatter = new Intl.DateTimeFormat("en-US", {
@@ -94,6 +99,7 @@ export function formatTimeInTimezone(
 			hour: "2-digit",
 			minute: "2-digit",
 			second: options.withSeconds ? "2-digit" : undefined,
+			hourCycle: options.hourCycle,
 		})
 		timeFormatters.set(key, formatter)
 	}

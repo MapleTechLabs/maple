@@ -21,7 +21,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 
-// `/alerts/$ruleId`.
+// `/alerts/rules/$ruleId`.
 
 const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
 

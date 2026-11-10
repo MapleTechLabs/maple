@@ -79,7 +79,7 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 					? [TrackRuleCreated({ signal: model.form.signalType })]
 					: [],
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({}),
+				url: alertsHref({}, "rules"),
 				isReplace: false,
 				toast: {
 					type: "success",

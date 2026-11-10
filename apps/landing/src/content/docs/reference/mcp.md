@@ -6,7 +6,7 @@ order: 5
 navLabel: "MCP server"
 ---
 
-Maple runs a Model Context Protocol (MCP) server. Each connection works inside one organization. From there an agent can query services, traces, logs and infrastructure, triage error issues, edit dashboards and manage alert rules.
+Maple runs a Model Context Protocol (MCP) server. Each connection works inside one organization. From there an agent can query services, traces, logs and infrastructure, triage error issues, edit dashboards, manage alert rules, SLOs, uptime monitors and ingest rules, update status pages, read security audit runs, and query the databases and APIs the organization connected as data sources.
 
 |                          |                                                                                                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -95,6 +95,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `release_error_issue`              | write  | Give up your lease, optionally moving the issue to another state                                    |
 | `transition_error_issue`           | write  | Move an issue to another workflow state                                                             |
 | `transition_error_issues`          | write  | Move up to 200 issues to one workflow state, with a note on each                                    |
+| `merge_error_issues`               | write  | Fold up to 50 duplicate issues into one; each merged issue is archived pointing at the kept one     |
 | `set_issue_severity`               | write  | Set or clear an issue's triage severity                                                             |
 | `comment_on_error_issue`           | write  | Add a comment or agent note to an issue's timeline                                                  |
 | `propose_fix`                      | write  | Record a proposed fix and move the issue to `in_review`                                             |
@@ -105,37 +106,60 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 
 ### Alerting
 
-| Tool                        | Access | What it does                                                                             |
-| --------------------------- | ------ | ---------------------------------------------------------------------------------------- |
-| `list_alert_rules`          | read   | Alert rules with severity, signal type and condition                                     |
-| `get_alert_rule`            | read   | One rule's full configuration: thresholds, filters, evaluation settings and destinations |
-| `list_alert_destinations`   | read   | Notification destinations with id, type and delivery health                              |
-| `list_alert_incidents`      | read   | Triggered alert incidents, open and resolved, with the last observed value               |
-| `get_incident_timeline`     | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'       |
-| `list_alert_checks`         | read   | A rule's recent evaluations with observed value, threshold and sample count              |
-| `preview_alert_rule`        | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason       |
-| `create_alert_rule`         | write  | Create an alert rule from a template or from signal type, comparator and threshold       |
-| `update_alert_rule`         | write  | Change the fields you pass on an alert rule                                              |
-| `delete_alert_rule`         | write  | Delete an alert rule and its incident history. Requires `confirm=true`                   |
-| `list_escalation_chains`    | read   | Escalation chains with their steps, repeats and the rules using them                     |
-| `create_escalation_chain`   | write  | Page destinations step by step, waiting for an acknowledgement between steps             |
-| `update_escalation_chain`   | write  | Change a chain's name, steps, repeats or description                                     |
-| `delete_escalation_chain`   | write  | Delete a chain no rule uses                                                              |
-| `list_maintenance_windows`  | read   | One-off and weekly maintenance windows with their schedule, matchers and next occurrence |
-| `create_maintenance_window` | write  | Silence matching rules once or every week; can keep those hours out of anomaly baselines |
-| `delete_maintenance_window` | write  | Delete a maintenance window and end an occurrence in progress. Requires `confirm=true`   |
-| Tool                        | Access | What it does                                                                             |
-| -------------------------   | ------ | ---------------------------------------------------------------------------------------- |
-| `list_oncall_schedules`     | read   | On-call schedules with their layers and who is on call now                               |
-| `who_is_on_call`            | read   | Who is on call for a schedule at an instant, why, and who is next                        |
-| `create_oncall_schedule`    | write  | Rotate workspace members daily, weekly or every N hours, in layers                       |
-| `update_oncall_schedule`    | write  | Change a schedule's name, time zone, layers or description                               |
-| `delete_oncall_schedule`    | write  | Delete a schedule and its overrides                                                      |
-| `create_oncall_override`    | write  | Put one member on call for a window, over every layer                                    |
-| `delete_oncall_override`    | write  | Delete an override so the layers decide again                                            |
-| `list_alert_silences`       | read   | Active and scheduled alert silences, or ended ones, with their matchers and window       |
-| `create_alert_silence`      | write  | Hold back notifications for matching rules for a duration or until a time                |
-| `end_alert_silence`         | write  | End a silence now so notifications resume; cancels a scheduled one                       |
+| Tool                         | Access | What it does                                                                             |
+| ---------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `list_alert_rules`           | read   | Alert rules with severity, signal type and condition                                     |
+| `get_alert_rule`             | read   | One rule's full configuration: thresholds, filters, evaluation settings and destinations |
+| `list_alert_destinations`    | read   | Notification destinations with id, type and delivery health                              |
+| `list_alert_incidents`       | read   | Triggered alert incidents, open and resolved, with the last observed value               |
+| `acknowledge_alert_incident` | write  | Acknowledge an open incident, which pauses its reminders, or clear the acknowledgement   |
+| `get_incident_timeline`      | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'       |
+| `list_alert_checks`          | read   | A rule's recent evaluations with observed value, threshold and sample count              |
+| `preview_alert_rule`         | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason       |
+| `create_alert_rule`          | write  | Create an alert rule from a template or from signal type, comparator and threshold       |
+| `update_alert_rule`          | write  | Change the fields you pass on an alert rule                                              |
+| `delete_alert_rule`          | write  | Delete an alert rule and its incident history. Requires `confirm=true`                   |
+| `list_escalation_chains`     | read   | Escalation chains with their steps, repeats and the rules using them                     |
+| `create_escalation_chain`    | write  | Page destinations step by step, waiting for an acknowledgement between steps             |
+| `update_escalation_chain`    | write  | Change a chain's name, steps, repeats or description                                     |
+| `delete_escalation_chain`    | write  | Delete a chain no rule uses                                                              |
+| `list_maintenance_windows`   | read   | One-off and weekly maintenance windows with their schedule, matchers and next occurrence |
+| `create_maintenance_window`  | write  | Silence matching rules once or every week; can keep those hours out of anomaly baselines |
+| `delete_maintenance_window`  | write  | Delete a maintenance window and end an occurrence in progress. Requires `confirm=true`   |
+| `list_oncall_schedules`      | read   | On-call schedules with their layers and who is on call now                               |
+| `who_is_on_call`             | read   | Who is on call for a schedule at an instant, why, and who is next                        |
+| `create_oncall_schedule`     | write  | Rotate workspace members daily, weekly or every N hours, in layers                       |
+| `update_oncall_schedule`     | write  | Change a schedule's name, time zone, layers or description                               |
+| `delete_oncall_schedule`     | write  | Delete a schedule and its overrides                                                      |
+| `create_oncall_override`     | write  | Put one member on call for a window, over every layer                                    |
+| `delete_oncall_override`     | write  | Delete an override so the layers decide again                                            |
+| `list_alert_silences`        | read   | Active and scheduled alert silences, or ended ones, with their matchers and window       |
+| `create_alert_silence`       | write  | Hold back notifications for matching rules for a duration or until a time                |
+| `end_alert_silence`          | write  | End a silence now so notifications resume; cancels a scheduled one                       |
+
+### SLOs and uptime monitors
+
+| Tool                    | Access | What it does                                                                                           |
+| ----------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `list_slos`             | read   | Every SLO with its current SLI, error budget left and worst burn rate, breaching ones first            |
+| `inspect_slo`           | read   | One SLO in full: config, error budget, the burn rate of each window and its burn-rate alerting         |
+| `create_slo`            | write  | Define an availability or latency SLO on one service, with burn-rate alerts                            |
+| `update_slo`            | write  | Change an SLO's service, SLI, target, window or burn-rate alerting                                     |
+| `delete_slo`            | write  | Delete an SLO and its burn-rate alert rule. Requires `confirm=true`                                    |
+| `list_uptime_monitors`  | read   | HTTP, TCP and DNS checks and heartbeats with their status, last check and recent pass rate, down first |
+| `create_uptime_monitor` | write  | Start an HTTP, TCP or DNS check, or a heartbeat; returns a heartbeat's ping URL                        |
+| `update_uptime_monitor` | write  | Pause, resume or change a monitor's target, assertions, schedule or destinations                       |
+| `delete_uptime_monitor` | write  | Delete a monitor and its alert rule. Requires `confirm=true`                                           |
+
+The write tools here need the org admin or engineer role.
+
+### Status pages
+
+| Tool                       | Access | What it does                                                                                    |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `get_status_page`          | read   | Every status page, or one page as visitors see it, with component status and open incidents     |
+| `post_status_page_update`  | write  | Open a public incident or maintenance notice, or post its next update; new ones start as drafts |
+| `apply_status_page_config` | write  | Replace a page's settings, theme and components in one write. Org admins and engineers only     |
 
 ### Dashboards
 
@@ -182,9 +206,30 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `audit_setup`                         | read   | Check the whole organization setup: alert routing, error notifications and per-service ingest coverage |
 | `get_instrumentation_recommendations` | read   | Span and resource attribute problems found in your live data                                           |
 | `list_integrations`                   | read   | Connected integrations, what each one feeds, and which resources are failing or stale                  |
-| `list_sources`                        | read   | Everything that sends data to the organization, worst health first, and when each last sent data       |
+| `list_ingest_sources`                 | read   | Everything that sends data to the organization, worst health first, and when each last sent data       |
 | `ingest_freshness`                    | read   | Newest received timestamp per signal, with its lag                                                     |
 | `ingest_usage`                        | read   | Spans, log records and metric data points ingested per service, with org totals                        |
+
+### Ingest rules
+
+| Tool                  | Access | What it does                                                                                   |
+| --------------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `list_ingest_rules`   | read   | The rules that drop or redact telemetry before Maple stores or bills it, in the order they run |
+| `preview_ingest_rule` | read   | Run a saved or draft rule over recent traces or logs and count what it would drop or redact    |
+| `create_ingest_rule`  | write  | Add a drop or redact rule; it applies to new data within 30 seconds                            |
+| `update_ingest_rule`  | write  | Turn a rule on or off, rename or move it, or replace its signals, conditions or action         |
+| `delete_ingest_rule`  | write  | Delete a rule. Requires `confirm=true`                                                         |
+
+The write tools here need the org admin or engineer role.
+
+### Data sources
+
+| Tool                   | Access | What it does                                                                                        |
+| ---------------------- | ------ | --------------------------------------------------------------------------------------------------- |
+| `list_data_sources`    | read   | The external databases and APIs the organization connected for Maple to query in place              |
+| `search_data_sources`  | read   | Find which data source, table or field holds a topic, such as failed payments or signups            |
+| `describe_data_source` | read   | One data source's tables or resources, their fields and sample values, and its query language       |
+| `query_data_source`    | read   | Run one read-only SQL or resource query against a data source; `explain=true` returns only the plan |
 
 ### Infrastructure
 
@@ -195,10 +240,12 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 
 ### Security
 
-| Tool                       | Access | What it does                                                                                                                        |
-| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `list_security_findings`   | read   | Code audit findings, vulnerable dependencies, scanner probes that got a 2xx and outdated runtimes, worst first, or one area in full |
-| `inspect_security_finding` | read   | One finding in full, or whether an advisory (CVE, GHSA) affects any repository or service                                           |
+| Tool                         | Access | What it does                                                                                                                        |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `list_security_findings`     | read   | Code audit findings, vulnerable dependencies, scanner probes that got a 2xx and outdated runtimes, worst first, or one area in full |
+| `inspect_security_finding`   | read   | One finding in full, or whether an advisory (CVE, GHSA) affects any repository or service                                           |
+| `list_security_audit_runs`   | read   | Code security audit runs, newest first, with status, cost and findings, and this month's audit spend against its limit              |
+| `inspect_security_audit_run` | read   | One audit run in full: what it covered, every claim it reported, and its step log. Org admins and engineers only                    |
 
 ### Integrations
 
@@ -209,19 +256,27 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `update_scrape_target` | write  | Pause, resume or change a Prometheus scrape target                               |
 | `delete_scrape_target` | write  | Delete a Prometheus scrape target and its check history; its stored metrics stay |
 
-These are admin-only. Connecting a provider, and adding a scrape credential, stay in Settings → Integrations.
+These are admin-only. Connecting a provider, and adding a scrape credential, stay in the dashboard, under **Sources** or **Settings → Integrations**.
+
+### Search Console
+
+| Tool                     | Access | What it does                                                                                                                |
+| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `search_console_queries` | read   | Google search queries from the connected Search Console: clicks, impressions, CTR and position, against the previous period |
+| `search_console_pages`   | read   | Search landing pages joined with Maple web analytics: sessions, bounce rate and, optionally, conversions                    |
 
 ### Feedback
 
 | Tool                  | Access | What it does                                                                                            |
 | --------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
 | `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
+| `list_maple_feedback` | read   | Maple team only: read the feedback agents sent. Refused for any other organization                      |
 
 The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.
 
 ## Prompts and resources
 
-The server also provides three prompts (`incident_triage`, `latency_analysis`, `debug_errors`) and one resource, `maple://instructions`, which explains Maple's data model to the model.
+The server also provides three prompts (`incident_triage`, `latency_analysis`, `debug_errors`) and two resources: `maple://instructions`, which explains Maple's data model to the model, and `maple://data-sources`, which lists the organization's connected data sources.
 
 ## Related
 

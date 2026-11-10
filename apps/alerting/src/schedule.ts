@@ -47,8 +47,9 @@ export const ALERTING_SCHEDULE = {
 		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
 		deadline: "10 minutes",
 	},
+	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>
