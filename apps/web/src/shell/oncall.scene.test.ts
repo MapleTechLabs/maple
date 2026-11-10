@@ -240,7 +240,8 @@ describe("on-call reads", () => {
 		expectVitest(commandsOf(empty)).toEqual([
 			{ name: "SaveNoSchedules", args: { orgId: ORG, checkedAtMs: NOW } },
 		])
-		expectVitest(empty.model.onCallNextReadAtMs).toBeNull()
+		// Asked again within the hour, so a tab left open and focused still finds a first schedule.
+		expectVitest(empty.model.onCallNextReadAtMs).toBe(NOW + ONCALL_IDLE_READ_MS)
 		const booted = enter(ORG)(init({ ...flags, noScheduleOrgs: { [ORG]: NOW } }))
 		expectVitest(commandsOf(booted)).toContainEqual({
 			name: "LoadOnCall",

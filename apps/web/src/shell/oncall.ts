@@ -131,15 +131,16 @@ const backedOff = (nowMs: number, backoffMs: number): OnCallSchedule => {
 }
 
 /**
- * After an answer: at the next handoff, or within the hour while the user is off call; a handoff
- * the answer already places in the past (the API has not caught up) retries with backoff.
+ * After an answer: at the next handoff, or within the hour while the user is off call or the org
+ * has no schedules; a handoff the answer already places in the past retries with backoff.
  */
 export const scheduleAfterAnswer = (
 	snapshot: OnCallSnapshot,
 	nowMs: number,
 	backoffMs: number,
 ): OnCallSchedule => {
-	if (snapshot.shifts.length === 0) return { nextReadAtMs: null, backoffMs: 0 }
+	// No schedules yet: a teammate may make the first one while this tab stays open and focused.
+	if (snapshot.shifts.length === 0) return { nextReadAtMs: nowMs + ONCALL_IDLE_READ_MS, backoffMs: 0 }
 	const handoff = nextHandoffMs(snapshot)
 	if (handoff !== null && handoff <= nowMs) return backedOff(nowMs, backoffMs)
 	const isOnCall = onCallStatusOf(snapshot, nowMs)._tag === "OnCall"
