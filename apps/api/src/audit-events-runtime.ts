@@ -26,14 +26,6 @@ export const AuditEventsLive = WarehouseQueryService.layer.pipe(
 )
 
 /**
- * Must match `maxRetries` on the audit-events consumer in `worker.ts`.
- * Cloudflare routes the message to the DLQ after this many retries without
- * telling us; the check below is what makes the hand-off visible in logs at
- * the moment it happens.
- */
-const AUDIT_EVENTS_MAX_RETRIES = 5
-
-/**
  * Best-effort identity for the exhaustion log. The body reached us as queue
  * JSON and may be anything at all, so these read defensively rather than
  * decoding — a drop must still be reported when the payload is the problem.
@@ -53,11 +45,11 @@ interface DecodedMessage {
 }
 
 /**
- * Retrying past the limit is what hands the message to the DLQ; acking there
- * would silently discard it instead.
+ * Retrying past the consumer's `maxRetries` is what hands the message to the DLQ;
+ * acking there would silently discard it. The log makes that silent hand-off visible.
  */
-const retryOrExhaust = (message: Message, cause: unknown) => {
-	const isFinalAttempt = message.attempts > AUDIT_EVENTS_MAX_RETRIES
+const retryOrExhaust = (message: Message, cause: unknown, maxRetries: number) => {
+	const isFinalAttempt = message.attempts > maxRetries
 	return Effect.annotateCurrentSpan({
 		"maple.audit.queue.message_outcome": isFinalAttempt ? "exhausted_dlq" : "retry",
 	}).pipe(
@@ -86,7 +78,10 @@ const retryOrExhaust = (message: Message, cause: unknown) => {
  * time; write failures retry through the queue's policy and, once exhausted,
  * land in `audit-events-dlq` rather than disappearing.
  */
-export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(function* (batch: QueueBatch) {
+export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(function* (
+	batch: QueueBatch,
+	maxRetries: number,
+) {
 	const warehouse = yield* WarehouseQueryService
 	const now = yield* Clock.currentTimeMillis
 
@@ -144,7 +139,8 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 							? Effect.interrupt
 							: Effect.forEach(
 									group,
-									({ message }) => retryOrExhaust(message, summarizeCause(cause)),
+									({ message }) =>
+										retryOrExhaust(message, summarizeCause(cause), maxRetries),
 									{
 										discard: true,
 									},
