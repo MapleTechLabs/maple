@@ -255,6 +255,20 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 	}
 }
 
+/** A PR preview's resource name (`maple-<base>-pr-<n>`); a dev stage's `-dev-` names never match. */
+const PREVIEW_RESOURCE_RE = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
+
+/**
+ * The inverse of {@link resolveWorkerName} for a PR preview's resource, for the orphan sweeps:
+ * `maple-db-pr-12` is `{ base: "db", prNumber: "12" }`.
+ */
+export const parsePreviewResourceName = (
+	name: string,
+): Option.Option<{ readonly base: string; readonly prNumber: string }> =>
+	Option.flatMap(Str.match(PREVIEW_RESOURCE_RE)(name), ([, base, prNumber]) =>
+		base === undefined || prNumber === undefined ? Option.none() : Option.some({ base, prNumber }),
+	)
+
 /**
  * Physical name of a per-stage resource on either cloud (Worker, bucket, Hyperdrive, ALB, ECS),
  * e.g. `maple-api-eu-dev-makisuo`. AWS callers keep their base short: ALB names cap at 32 chars.

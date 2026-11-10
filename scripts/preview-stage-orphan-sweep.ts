@@ -32,6 +32,7 @@
 import { spawnSync } from "node:child_process"
 import { join } from "node:path"
 import { Option, Schema, Array as Arr } from "effect"
+import { parsePreviewResourceName } from "../packages/infra/src/cloudflare/stage.ts"
 import { fetchPreviewState, hasActivePreviewRun, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -56,9 +57,13 @@ const requireEnv = (key: string): string => {
 	return value
 }
 
-const WORKER_PATTERN = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
 const NEON_BRANCH_PATTERN = /^pr-(\d+)$/
-const REPLAY_BUCKET_PATTERN = /^maple-replay-blobs-pr-(\d+)$/
+
+/** A preview's replay bucket (`resolveWorkerName("replay-blobs", ...)`): its PR number, or `None`. */
+const replayBucketPr = (name: string): Option.Option<string> =>
+	Option.flatMap(parsePreviewResourceName(name), ({ base, prNumber }) =>
+		base === "replay-blobs" ? Option.some(prNumber) : Option.none(),
+	)
 
 interface WorkerScript {
 	readonly id?: string
@@ -138,10 +143,10 @@ const listPreviewWorkers = async (token: string, accountId: string, candidates: 
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
 	let matched = 0
 	for (const script of scripts) {
-		const match = WORKER_PATTERN.exec(script.id ?? "")
-		if (!match) continue
+		const preview = parsePreviewResourceName(script.id ?? "")
+		if (Option.isNone(preview)) continue
 		matched++
-		addCandidate(candidates, match[2], script.id as string)
+		addCandidate(candidates, preview.value.prNumber, script.id as string)
 	}
 	console.log(`Found ${scripts.length} Worker script(s), ${matched} maple-*-pr-*`)
 }
@@ -160,10 +165,10 @@ const listReplayBuckets = async (token: string, accountId: string, candidates: C
 	}
 	let matched = 0
 	for (const bucket of buckets as ReadonlyArray<R2Bucket>) {
-		const match = REPLAY_BUCKET_PATTERN.exec(bucket.name ?? "")
-		if (!match) continue
+		const prNumber = replayBucketPr(bucket.name ?? "")
+		if (Option.isNone(prNumber)) continue
 		matched++
-		addCandidate(candidates, match[1], bucket.name as string)
+		addCandidate(candidates, prNumber.value, bucket.name as string)
 	}
 	console.log(`Found ${matched} maple-replay-blobs-pr-* R2 bucket(s)`)
 }
@@ -319,7 +324,7 @@ const main = async (): Promise<void> => {
 			)
 			continue
 		}
-		const bucket = markers.find((marker) => REPLAY_BUCKET_PATTERN.test(marker))
+		const bucket = markers.find((marker) => Option.isSome(replayBucketPr(marker)))
 		const branchId = neonBranchIdByPr.get(prNumber)
 		console.log(
 			`… tearing down ${stage} (PR #${prNumber} is closed or unlabelled; found ${Arr.join(markers, ", ")})`,

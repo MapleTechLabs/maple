@@ -32,6 +32,7 @@
  */
 
 import { Option, Schema, Array as Arr } from "effect"
+import { parsePreviewResourceName } from "../packages/infra/src/cloudflare/stage.ts"
 import { fetchPreviewState, hasPrStateCredentials } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -102,14 +103,14 @@ const main = async (): Promise<void> => {
 		fail(`Unexpected Hyperdrive list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const configs = listed.result as ReadonlyArray<HyperdriveConfig>
-	const candidates = Arr.filter(
-		Arr.map(configs, (config) => ({
-			id: config.id ?? "",
-			name: config.name ?? "",
-			match: /^maple-db-pr-(\d+)$/.exec(config.name ?? ""),
-		})),
-		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-			entry.match !== null && entry.id.length > 0,
+	const candidates = Arr.getSomes(
+		Arr.map(configs, (config) => {
+			const id = config.id ?? ""
+			const name = config.name ?? ""
+			return Option.flatMap(parsePreviewResourceName(name), ({ base, prNumber }) =>
+				base === "db" && id !== "" ? Option.some({ id, name, prNumber }) : Option.none(),
+			)
+		}),
 	)
 	console.log(
 		`Found ${configs.length} Hyperdrive config(s), ${candidates.length} maple-db-pr-*: ${
@@ -121,17 +122,17 @@ const main = async (): Promise<void> => {
 	)
 
 	const failures: string[] = []
-	for (const { id, name, match } of candidates) {
-		const state = await fetchPreviewState(match[1])
+	for (const { id, name, prNumber } of candidates) {
+		const state = await fetchPreviewState(prNumber)
 		if (state === "live") {
-			console.log(`… keeping ${name} (PR #${match[1]} has a live preview)`)
+			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
 			continue
 		}
 		if (state === "unknown") {
-			console.log(`⚠ skipping ${name} (PR #${match[1]} state unknown)`)
+			console.log(`⚠ skipping ${name} (PR #${prNumber} state unknown)`)
 			continue
 		}
-		console.log(`… deleting orphan ${name} (PR #${match[1]} is closed or unlabelled)`)
+		console.log(`… deleting orphan ${name} (PR #${prNumber} is closed or unlabelled)`)
 		const removed = await cfRequest(token, `/accounts/${accountId}/hyperdrive/configs/${id}`, {
 			method: "DELETE",
 		})

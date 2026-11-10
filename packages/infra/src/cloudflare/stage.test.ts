@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 import {
 	formatMapleDeployment,
@@ -6,6 +7,7 @@ import {
 	parseMapleDeployment,
 	parseMapleDeploymentEffect,
 	parseMapleStage,
+	parsePreviewResourceName,
 	resolveHyperdriveRefId,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
@@ -80,6 +82,23 @@ describe("resolveWorkerName", () => {
 	it("suffixes eu right after the base, mirroring the AWS names", () => {
 		expect(resolveWorkerName("api", stage("prd"), "eu")).toBe("maple-api-eu")
 		expect(resolveWorkerName("db", stage("dev_makisuo"), "eu")).toBe("maple-db-eu-dev-dev-makisuo")
+	})
+})
+
+describe("parsePreviewResourceName", () => {
+	it("reads back the base and PR number resolveWorkerName put into a preview's name", () => {
+		for (const base of ["api", "db", "replay-blobs", "electric-sync"]) {
+			expect(parsePreviewResourceName(resolveWorkerName(base, stage("pr-12")))).toStrictEqual(
+				Option.some({ base, prNumber: "12" }),
+			)
+		}
+	})
+
+	it("never matches a prd or dev-stage resource, so a sweep cannot delete one", () => {
+		expect(parsePreviewResourceName(resolveWorkerName("api", stage("prd")))).toStrictEqual(Option.none())
+		expect(parsePreviewResourceName(resolveWorkerName("api", stage("dev-pr-12")))).toStrictEqual(
+			Option.none(),
+		)
 	})
 })
 

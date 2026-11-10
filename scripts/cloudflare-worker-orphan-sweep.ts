@@ -51,6 +51,7 @@
  */
 
 import { Option, Schema, Array as Arr } from "effect"
+import { parsePreviewResourceName } from "../packages/infra/src/cloudflare/stage.ts"
 import { fetchPreviewState, hasPrStateCredentials, type PreviewState } from "./lib/pr-state.ts"
 
 const FAILURE = 1
@@ -87,8 +88,6 @@ interface QueueConsumer {
 	readonly script?: string
 	readonly script_name?: string
 }
-
-const PR_RESOURCE_PATTERN = /^maple-((?:(?!-dev-).)+)-pr-(\d+)$/
 
 const cfRequest = async (
 	token: string,
@@ -151,14 +150,14 @@ const main = async (): Promise<void> => {
 		fail(`Unexpected Queue list response shape (result is ${typeof listedQueues.result}, expected array)`)
 	}
 	const queues = listedQueues.result as ReadonlyArray<QueueInfo>
-	const queueCandidates = Arr.filter(
-		Arr.map(queues, (queue) => ({
-			id: queue.queue_id ?? "",
-			name: queue.queue_name ?? "",
-			match: PR_RESOURCE_PATTERN.exec(queue.queue_name ?? ""),
-		})),
-		(entry): entry is { id: string; name: string; match: RegExpExecArray } =>
-			entry.match !== null && entry.id.length > 0,
+	const queueCandidates = Arr.getSomes(
+		Arr.map(queues, (queue) => {
+			const id = queue.queue_id ?? ""
+			const name = queue.queue_name ?? ""
+			return id === ""
+				? Option.none()
+				: Option.map(parsePreviewResourceName(name), ({ prNumber }) => ({ id, name, prNumber }))
+		}),
 	)
 	console.log(
 		`Found ${queues.length} Queue(s), ${queueCandidates.length} maple-*-pr-*: ${
@@ -169,8 +168,7 @@ const main = async (): Promise<void> => {
 		}`,
 	)
 	const queuesToDelete: Array<{ id: string; name: string }> = []
-	for (const { id, name, match } of queueCandidates) {
-		const prNumber = match[2]
+	for (const { id, name, prNumber } of queueCandidates) {
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
@@ -222,13 +220,11 @@ const main = async (): Promise<void> => {
 		fail(`Unexpected Worker list response shape (result is ${typeof listed.result}, expected array)`)
 	}
 	const scripts = listed.result as ReadonlyArray<WorkerScript>
-	const candidates = Arr.filter(
-		Arr.map(scripts, (script) => ({
-			name: script.id ?? "",
-			match: PR_RESOURCE_PATTERN.exec(script.id ?? ""),
-		})),
-		(entry): entry is { name: string; match: RegExpExecArray } =>
-			entry.match !== null && entry.name.length > 0,
+	const candidates = Arr.getSomes(
+		Arr.map(scripts, (script) => {
+			const name = script.id ?? ""
+			return Option.map(parsePreviewResourceName(name), ({ prNumber }) => ({ name, prNumber }))
+		}),
 	)
 	console.log(
 		`Found ${scripts.length} Worker script(s), ${candidates.length} maple-*-pr-*: ${
@@ -238,8 +234,7 @@ const main = async (): Promise<void> => {
 			) || "—"
 		}`,
 	)
-	for (const { name, match } of candidates) {
-		const prNumber = match[2]
+	for (const { name, prNumber } of candidates) {
 		const state = await prState(prNumber)
 		if (state === "live") {
 			console.log(`… keeping ${name} (PR #${prNumber} has a live preview)`)
