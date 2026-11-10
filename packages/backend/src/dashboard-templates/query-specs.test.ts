@@ -39,7 +39,7 @@ function allParams(template: TemplateDefinition): TemplateParameterValues {
 // v3 replaced the `custom_query_builder_*` endpoint names with `kind: "query"`
 // plus a `resultShape`, so the spec builder is selected by shape.
 function specBuilderFor(
-	resultKind,
+	resultKind: string,
 ): ((query: Parameters<typeof buildTimeseriesQuerySpec>[0]) => BuildSpecResult) | null {
 	if (resultKind === "timeseries") return buildTimeseriesQuerySpec
 	if (resultKind === "breakdown") return buildBreakdownQuerySpec

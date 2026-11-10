@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { ApiKeyId } from "@maple/domain/http"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { ApiV2RateLimit, RateLimitBindingError, type RateLimiter } from "@maple/backend/platform/bindings"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { ApiV2RateLimiter, makeApiV2RateLimitKey } from "./ApiV2RateLimiter"
+import { ApiV2RateLimiter } from "./ApiV2RateLimiter"
 
 const KEY_A = Schema.decodeSync(ApiKeyId)("00000000-0000-4000-8000-000000000001")
 const KEY_B = Schema.decodeSync(ApiKeyId)("00000000-0000-4000-8000-000000000002")
@@ -30,8 +30,10 @@ describe("ApiV2RateLimiter", () => {
 			const limiter = yield* ApiV2RateLimiter
 			expect(yield* limiter.check(KEY_A)).toBe("allowed")
 			expect(yield* limiter.check(KEY_B)).toBe("allowed")
-			expect(keys).toEqual([makeApiV2RateLimitKey("stg", KEY_A), makeApiV2RateLimitKey("stg", KEY_B)])
-			expect(Arr.join(keys, " ")).not.toContain("maple_ak_")
+			expect(keys).toEqual([
+				"stg:00000000-0000-4000-8000-000000000001",
+				"stg:00000000-0000-4000-8000-000000000002",
+			])
 		}).pipe(Effect.provide(limiterLayer({ limit: allowing(keys) })))
 	})
 
@@ -47,8 +49,8 @@ describe("ApiV2RateLimiter", () => {
 			expect(yield* run("production")).toBe("allowed")
 			expect(yield* run("stg")).toBe("allowed")
 			expect(observed).toEqual([
-				makeApiV2RateLimitKey("production", KEY_A),
-				makeApiV2RateLimitKey("stg", KEY_A),
+				"production:00000000-0000-4000-8000-000000000001",
+				"stg:00000000-0000-4000-8000-000000000001",
 			])
 		})
 	})
