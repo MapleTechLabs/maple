@@ -1,6 +1,10 @@
 export const sheetBackdropStyles =
 	"fixed inset-0 z-50 bg-scrim backdrop-blur-sm transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
 
+/** Behind a side panel: a lighter dim and no blur, so the page it edits stays readable. */
+export const sheetBackdropPanelStyles =
+	"fixed inset-0 z-50 bg-scrim-panel transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0"
+
 export const sheetViewportStyles = "fixed inset-0 z-50 grid"
 
 export const sheetViewportBottomStyles = "grid grid-rows-[1fr_auto] pt-12"
@@ -27,12 +31,13 @@ export const sheetPopupRightStyles =
 	"col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8"
 
 /**
- * A side sheet's width, by what it holds. `default` a form or filter list, `detail` a peek at one
- * item, `wide` reading content (a log, a review, a setup guide), `full` a trace waterfall.
+ * A side sheet's width, by what it holds. `default` a filter list, `detail` a peek at one item,
+ * `form` a create or edit form, `wide` reading content (a log, a review), `full` a trace waterfall.
  */
 export const sheetSizeStyles = {
 	default: "sm:max-w-md",
 	detail: "sm:max-w-xl",
+	form: "sm:max-w-2xl",
 	wide: "sm:max-w-3xl",
 	full: "sm:max-w-[min(1100px,calc(100vw-2rem))]",
 } as const

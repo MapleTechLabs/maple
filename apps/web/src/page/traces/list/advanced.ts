@@ -13,7 +13,7 @@ import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { type AutocompleteLookup, lookupField, type LookupNames } from "../../kit/autocomplete-lookups"
+import { type AutocompleteLookup, lookupField, type LookupNames, names } from "../../kit/autocomplete-lookups"
 import { ADVANCED_LOOKUPS, type AdvancedFilter } from "./advanced-model"
 import { FetchAdvancedLookup, PlaceAdvancedCursor } from "./command"
 import { Message } from "./message"
@@ -38,8 +38,6 @@ const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
 /** The `traces` values the provider hands the editor. */
 const valuesOf = (model: Model) => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
-	const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		Arr.map(rows ?? [], (row) => row.name)
 	return {
 		services: names(facets?.services),
 		spanNames: names(facets?.spanNames),

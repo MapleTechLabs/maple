@@ -4,7 +4,15 @@ import type {
 	AlertRuleRow,
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
+import { alertsSectionRoute } from "../../../route"
+import type { AlertsHubSearch, AlertsTab } from "../../../route/search"
 import { isoMs } from "./time"
+
+/** A hub section and its filters, as the tests and labs spell where they stand. */
+export type HubAt = typeof AlertsHubSearch.Type & { readonly tab?: AlertsTab }
+
+/** The hub route for `at`: `/alerts` for the Inbox (the default), else `/alerts/<tab>`. */
+export const hubAt = ({ tab = "inbox", ...search }: HubAt = {}) => alertsSectionRoute(tab, search)
 
 // Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
 

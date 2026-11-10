@@ -70,6 +70,8 @@ When a Worker also sends traces, Maple matches the script to the traced service 
 
 The source page shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused**, or **Disabled**) and 24-hour request counts, and a **Workers** card.
 
+**Manage zones** on the board picks which zones Maple collects, per account. Unchecked zones are paused, and data already collected for them stays. **Collect new zones automatically** adds zones created in Cloudflare later. Changing zones needs the org admin or engineer role.
+
 ## Verify
 
 Cloudflare publishes analytics in 5-minute batches and needs about 10 minutes before a batch is complete.

@@ -90,7 +90,7 @@ test.describe("alert rules", () => {
 					await browser.locator("#sentence-card-name-summary").tap()
 					await screen.getByLabel("Rule name").fill(`e2e tiers renamed ${tag}`)
 					await screen.getByRole("button", "Save changes").tap()
-					await expect(browser).toHaveURL(/\/alerts$/)
+					await expect(browser).toHaveURL(/\/alerts\/rules$/)
 					const renamed = await read()
 					expect(renamed.body.name).toBe(`e2e tiers renamed ${tag}`)
 					expect(renamed.body.thresholds).toEqual(tiers)
@@ -100,7 +100,7 @@ test.describe("alert rules", () => {
 					await browser.locator("#sentence-card-condition-summary").tap()
 					await screen.getByLabel("Critical threshold").fill("4")
 					await screen.getByRole("button", "Save changes").tap()
-					await expect(browser).toHaveURL(/\/alerts$/)
+					await expect(browser).toHaveURL(/\/alerts\/rules$/)
 					const retuned = await read()
 					expect(Arr.map(retuned.body.thresholds, (tier) => tier.value)).toEqual([0.007, 0.04])
 				} finally {

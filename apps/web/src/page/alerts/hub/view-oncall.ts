@@ -284,10 +284,3 @@ export const deleteScheduleDialog = (h: H, model: Model): Html => {
 		onConfirm: Message.ClickedConfirmDeleteSchedule(),
 	})
 }
-
-/** The tab header's "New schedule", once one exists. */
-export const newScheduleButton = (h: H): Html =>
-	linkButton(h, { size: "sm", variant: "outline", href: newScheduleHref() }, [
-		icon(h, "PlusIcon"),
-		"New schedule",
-	])

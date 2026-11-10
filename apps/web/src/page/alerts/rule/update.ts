@@ -322,7 +322,7 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 			model: next,
 			commands,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({ tab: "overview" }),
+				url: alertsHref({}),
 				isReplace: false,
 			}),
 		}

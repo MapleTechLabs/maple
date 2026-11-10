@@ -1,11 +1,11 @@
 ---
 title: "Maple Local"
-description: "Run the whole of Maple as one binary on your machine: OTLP ingest, an embedded ClickHouse, a query API, the dashboard and a CLI. No account, no containers, nothing to deploy."
+description: "Run Maple as one binary on your machine: OTLP ingest, an embedded ClickHouse, a query API, the dashboard and a CLI. No account, no containers, nothing to deploy."
 group: "Local Mode"
 order: 1
 ---
 
-Maple Local is the full product running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors and a service map. It is not a client for the hosted service and needs no account. Your telemetry is stored and queried on your machine. The CLI does make a few network calls of its own by default, listed in [What connects to the internet](#what-connects-to-the-internet).
+Maple Local is Maple running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors and a service map. It is not a client for the hosted service and needs no account. Your telemetry is stored and queried on your machine. The CLI does make a few network calls of its own by default, listed in [What connects to the internet](#what-connects-to-the-internet).
 
 Two commands get you running:
 
@@ -16,12 +16,12 @@ maple start
 
 ## What you get
 
-| Surface              | What it is                                                                                                                                                                   |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged.                                                              |
-| **Dashboard**        | The same Maple UI, either auto-updating from `local.maple.dev` or bundled in the binary for offline use.                                                                     |
-| **CLI**              | `maple services`, `maple traces`, `maple errors` and the other query commands in the [CLI reference](/docs/reference/cli), printing JSON you can pipe into `jq` or an agent. |
-| **Raw SQL**          | `maple query "<sql>"` against the embedded store when the typed commands don't cover it.                                                                                     |
+| Surface              | What it is                                                                                                                                                                                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged.                                                                                                                                                  |
+| **Dashboard**        | Maple's services, service map, traces, logs, metrics, sessions, errors and SQL query pages, either auto-updating from `local.maple.dev` or bundled in the binary for offline use. Custom dashboards, infrastructure pages and alerting are only in hosted Maple. |
+| **CLI**              | `maple services`, `maple traces`, `maple errors` and the other query commands in the [CLI reference](/docs/reference/cli), printing JSON you can pipe into `jq` or an agent.                                                                                     |
+| **Raw SQL**          | `maple query "<sql>"` against the embedded store when the typed commands don't cover it.                                                                                                                                                                         |
 
 Data lives in `~/.maple/data` and survives restarts. See [Your data](#your-data) for retention and restore points.
 

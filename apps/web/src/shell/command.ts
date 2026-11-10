@@ -9,6 +9,8 @@ import { Message, Theme } from "./message"
 export const NAMESPACE_STORAGE_PREFIX = "maple.global-namespace."
 /** `maple.infra-surfaces.<orgId>`: the org's last settled infra surfaces, JSON. */
 export const INFRA_SURFACES_STORAGE_PREFIX = "maple.infra-surfaces."
+/** The nav group ids the user folded, JSON. */
+export const COLLAPSED_NAV_GROUPS_KEY = "maple.sidebar.collapsed-groups"
 /** The theme key the app and the pre-paint script in index.html share. */
 export const THEME_STORAGE_KEY = "maple-theme"
 
@@ -21,7 +23,7 @@ export class ShellStorageError extends Schema.TaggedError<ShellStorageError>()(
 	},
 ) {}
 
-const encodeSurfaces = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+const encodeStrings = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
 /** Base UI moves DOM focus to the open popup and to the hovered or arrowed item. */
 export const FocusElement = Command.define("FocusElement", {
@@ -96,9 +98,46 @@ export const SaveInfraSurfaces = Command.define("SaveInfraSurfaces", {
 	messages: [Message.CompletedSaveInfraSurfaces],
 	execute: ({ orgId, surfaces }) =>
 		Effect.sync(() => {
-			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, encodeSurfaces(surfaces))
+			writeLocalStorage(`${INFRA_SURFACES_STORAGE_PREFIX}${orgId}`, encodeStrings(surfaces))
 			return Message.CompletedSaveInfraSurfaces()
 		}),
+})
+
+/** Remembers which nav groups are folded; storage that throws keeps them for this tab only. */
+export const SaveCollapsedNavGroups = Command.define("SaveCollapsedNavGroups", {
+	args: { groups: Schema.Array(Schema.String) },
+	messages: [Message.CompletedSaveNavGroups],
+	execute: ({ groups }) =>
+		Effect.sync(() => {
+			writeLocalStorage(COLLAPSED_NAV_GROUPS_KEY, encodeStrings(groups))
+			return Message.CompletedSaveNavGroups()
+		}),
+})
+
+/** `maple.oncall.no-schedules.<orgId>`: when the org last answered with no schedules, epoch ms. */
+export const NO_SCHEDULES_STORAGE_PREFIX = "maple.oncall.no-schedules."
+
+/** Remembers an org's "no schedules" answer, or forgets it (`null`) once it has one. */
+export const SaveNoSchedules = Command.define("SaveNoSchedules", {
+	args: { orgId: Schema.String, checkedAtMs: Schema.NullOr(Schema.Number) },
+	messages: [Message.CompletedSaveNoSchedules],
+	execute: ({ orgId, checkedAtMs }) => {
+		const key = `${NO_SCHEDULES_STORAGE_PREFIX}${orgId}`
+		return (
+			checkedAtMs === null
+				? Effect.ignore(
+						Effect.try({
+							try: () => localStorage.removeItem(key),
+							catch: (cause) =>
+								new ShellStorageError({
+									message: "Could not clear the on-call cache",
+									cause,
+								}),
+						}),
+					)
+				: Effect.sync(() => writeLocalStorage(key, String(checkedAtMs)))
+		).pipe(Effect.as(Message.CompletedSaveNoSchedules()))
+	},
 })
 
 /** `SidebarProvider.setOpen`: the `sidebar_state` cookie (7 days), which `readShellFlags` reads at boot. */
@@ -121,7 +160,7 @@ export const LogOut = Command.define("LogOut", {
 
 /**
  * `focusSearch`: a page tags its primary search with `data-shortcut-focus="search"`. A field is
- * focused and selected; anything else (the traces Advanced Filter trigger) is clicked.
+ * focused and selected; anything else (an Advanced Filter trigger) is clicked.
  */
 export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
 	messages: [Message.CompletedFocusShortcutSearch],

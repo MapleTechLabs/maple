@@ -34,6 +34,12 @@ export interface NavSubItem {
 	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
+	/** Pages under another path that this row stands in for (schedules under On-call). */
+	readonly alsoActive?: ReadonlyArray<string>
+	/** A live count beside the title, read by the shell (the Inbox's unacknowledged incidents). */
+	readonly count?: "alertsInbox"
+	/** Starts a group of rows: a small gap above it, no heading. */
+	readonly startsGroup?: boolean
 }
 
 export interface NavItem {
@@ -129,6 +135,48 @@ const exploreItem: NavItem = {
 	],
 }
 
+const alertsItem: NavItem = {
+	title: "Alerts",
+	href: "/alerts",
+	icon: "BellIcon",
+	alsoActive: ["/anomalies"],
+	subItems: [
+		{
+			title: "Inbox",
+			href: "/alerts",
+			icon: "BellIcon",
+			paletteTitle: "Alerts",
+			alsoActive: ["/anomalies"],
+			count: "alertsInbox",
+		},
+		{
+			title: "Rules",
+			href: "/alerts/rules",
+			icon: "ChartLineIcon",
+			paletteTitle: "Alert rules",
+			alsoActive: ["/alerts/create"],
+			startsGroup: true,
+		},
+		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
+		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
+		{ title: "Silences", href: "/alerts/silences", icon: "BellSlashIcon", startsGroup: true },
+		{
+			title: "Maintenance",
+			href: "/alerts/maintenance",
+			icon: "CalendarIcon",
+			paletteTitle: "Maintenance windows",
+		},
+		{
+			title: "On-call",
+			href: "/alerts/on-call",
+			icon: "UsersIcon",
+			alsoActive: ["/alerts/schedules"],
+			startsGroup: true,
+		},
+		{ title: "Routing", href: "/alerts/routing", icon: "BranchForkIcon", paletteTitle: "Alert routing" },
+	],
+}
+
 /** The org rollout flags that gate a nav row each. */
 export type NavFlags = Readonly<{
 	releases: boolean
@@ -150,9 +198,6 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 					...(flags.statusPages ? [] : ["/status-pages"]),
 				],
 			},
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
@@ -174,7 +219,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		label: "Triage",
 		items: [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			{ title: "Alerts", href: "/alerts", icon: "BellIcon", alsoActive: ["/anomalies"] },
+			alertsItem,
 			{
 				title: "Code review",
 				href: "/code-review",
@@ -184,6 +229,9 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			},
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
+				: []),
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
 				: []),
 		],
 	},
@@ -197,8 +245,9 @@ export const isPathActive = (currentPath: string, href: string): boolean =>
 
 export const matchSubItem = (currentPath: string, sub: NavSubItem): string | undefined =>
 	Arr.reduce<string, string | undefined>(
-		Arr.filter([sub.href, ...Arr.map(sub.views ?? [], (view) => view.href)], (href) =>
-			isPathActive(currentPath, href),
+		Arr.filter(
+			[sub.href, ...Arr.map(sub.views ?? [], (view) => view.href), ...(sub.alsoActive ?? [])],
+			(href) => isPathActive(currentPath, href),
 		),
 		undefined,
 		(best, href) => (best === undefined || href.length > best.length ? href : best),
@@ -208,6 +257,9 @@ export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
 	Arr.some(item.alsoActive ?? [], (href) => isPathActive(currentPath, href)) ||
 	Arr.some(item.subItems ?? [], (sub) => matchSubItem(currentPath, sub) !== undefined)
+
+/** The Alerts row is open here, so its Inbox count is shown (and worth reading). */
+export const isAlertsOpenAt = (currentPath: string): boolean => isNavItemActive(currentPath, alertsItem)
 
 export interface NavPreview {
 	readonly glyphs: ReadonlyArray<NavSubItem>

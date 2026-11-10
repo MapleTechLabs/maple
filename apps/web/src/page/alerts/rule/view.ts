@@ -200,7 +200,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						resourceNotFound(h, {
 							title: "Rule not found",
 							description: "This alert rule could not be found. It may have been deleted.",
-							back: { href: alertsHref({}), label: "Back to rules" },
+							back: { href: alertsHref({}, "rules"), label: "Back to rules" },
 						}),
 					])
 				: dashboardPage(h, { ...header(h, model, rule, timeZone), tabs: tabStrip(h, model) }, [
@@ -229,6 +229,7 @@ export const breadcrumbsOf = (model: Model) => {
 	const rule = model.rules === null ? null : ruleOf(model)
 	return [
 		{ label: "Alerts", href: "/alerts" },
+		{ label: "Rules", href: "/alerts/rules" },
 		{ label: model.rules === null ? "Loading…" : rule === null ? "Not found" : rule.name },
 	]
 }

@@ -143,10 +143,10 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/select.ts` `listId`, `itemId` (stateful: Model, init, update): Base UI `Select` (`@maple/ui/select`): the popup opens over the trigger with the selected item on the trigger's value (`alignItemWithTrigger`), or below it when that does not fit.
 - `packages/views/src/ui/selectable-row.ts` `selectableRow`: `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection lane and tint; a clickable one is a `pressable` with `selectedLane`.
 - `packages/views/src/ui/setting-row.ts` `settingRow`: Port of packages/ui/src/components/ui/setting-row.tsx.
-- `packages/views/src/ui/sheet.ts` `leftSheet`: `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
+- `packages/views/src/ui/sheet.ts` `leftSheet`, `sidePanelSheet`, `followUrl`, `isDismissed`, `mapSheetCommands`: `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
 - `packages/views/src/ui/shift-timeline.ts` `zonedDayStart`, `placeBar`, `timelineDays`, `barRoomPct`, `shiftTimeline`: `ShiftTimeline`: rows of time bars over a day-ruled axis in one time zone, with a now line (an on-call schedule's layers and its final row).
 - `packages/views/src/ui/side-panel.ts` `sidePanelFrame`: A detail side panel's frame (span, service, database): a full-height clipped column on the page background.
-- `packages/views/src/ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+- `packages/views/src/ui/sidebar.ts` `sidebarWrapper`, `sidebarDesktop`, `sidebarMobile`, `sidebarHeader`, `sidebarFooter`, `sidebarContent`, `sidebarGroup`, `sidebarGroupLabel`, `sidebarGroupContent`, `sidebarGroupToggle`, `sidebarGroupAction`, `sidebarSeparator`, `sidebarMenu`, `sidebarMenuItem`, `sidebarMenuBadge`, `sidebarMenuSub`, `sidebarMenuSubItem`, `isLinkActive`, `sidebarMenuButton`, `sidebarMenuSubButton`, `sidebarRail`, `sidebarInset`, `sidebarTrigger`: The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
 - `packages/views/src/ui/signal-empty-state.ts` `emptyActions`, `filteredEmpty`, `presenceLoading`, `signalEmptyState`: `SignalEmptyState` and `FilteredEmpty`.
 - `packages/views/src/ui/skeleton.ts` `skeleton`, `skeletonSlowNote`, `skeletonList`, `skeletonBlock`, `skeletonMeterClass`, `skeletonMeter`, `skeletonSwitchClass`, `skeletonSwitch`, `skeletonLine`: Port of packages/ui/src/components/ui/skeleton.tsx.
 - `packages/views/src/ui/spaced.ts` `spacedClass`, `spaced`: `Spaced`: a block whose children stack with `space-y-*` margins (not a flex column), usually a row's text column that fills the free width and lets its lines truncate.
@@ -181,7 +181,8 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 
 ## apps/web/src/page/kit
 
-- `apps/web/src/page/kit/autocomplete-lookups.ts` `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
+- `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
+- `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
 - `apps/web/src/page/kit/clipboard.ts` `writeClipboard`, `copyToast`: `useCopy`'s write: the clipboard API, then the `execCommand` fallback; `true` when it landed.
 - `apps/web/src/page/kit/commit-card.ts` `isResolvableSha`, `commitDetailKey`, `commitDetailsKey`, `readCommitDetail`, `readCommitDetails`, `loadCommitDetail`, `commitDetailBody`: The commit SHA hover card: the body `CommitDetailBody` renders once `commitQueryAtom(sha)` settles, and the lookup itself.
 - `apps/web/src/page/kit/compliance-line.ts` `compliance`: The compliance footnote under the plan pickers (DPA available, SOC 2 and ISO 27001 in progress).
@@ -235,6 +236,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: `SheetDetailHeader`: a detail sheet's eyebrow kind, title, screen-reader description and meta row.
+- `apps/web/src/page/kit/sheet-param.ts` `withSheetParam`, `sheetParamOf`, `dismissalOf`, `pushSheetUrl`, `dismissSheetUrl`: A side sheet held in the URL as `?sheet=<id>`.
 - `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for `SignalEmptyState`: where each signal comes from, and the setup page and guides it links.
 - `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence over `telemetrySignalsAtom`.
 - `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
@@ -243,7 +245,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/time-controls.ts` `isPresetValue`, `presetLabel`, `presetSpanLabel`, `searchPreset`, `timeControls`, `timeRangeTriggerContent`: The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 - `apps/web/src/page/kit/time-range-picker.ts` `searchPatchOf`, `dashboardTimeRangeOf`, `rejectedToast`, `unpicked`, `isActivePreset`, `isOpenKey`, `openOnHotkey`, `view` (stateful: Model, init, update): `TimeRangePicker`: the header popover with the preset rail and quick select.
 - `apps/web/src/page/kit/timezone-select-view.ts` `zoneListView`: The timezone select's list: the search input, "No timezone matches that." and the grouped zone list with clock and offset.
-- `apps/web/src/page/kit/timezone-zones.ts` `formatUtcOffset`, `zoneLabel`, `matchesZoneQuery`, `zoneRows`, `readZoneRows`: The zone list logic of the timezone select.
+- `apps/web/src/page/kit/timezone-zones.ts` `shortZoneName`, `formatUtcOffset`, `zoneLabel`, `matchesZoneQuery`, `zoneRows`, `readZoneRows`: The zone list logic of the timezone select.
 - `apps/web/src/page/kit/underline-tabs.ts` `underlineTabStrip`, `underlineTabClass`, `linkTabStrip`: `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
 - `apps/web/src/page/kit/where-autocomplete-view.ts` `suggestionListbox`, `whereKeyHandler`: `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
 - `apps/web/src/page/kit/where-autocomplete.ts` `caretEvents`, `keepFocusEvents`, `listboxEvents`, `placeCaret`, `initWhereCaret`, `isOpenOf`, `activeKeysAt`, `syncedCaret`, `applied`, `listboxStyle`: The where clause autocomplete and its suggestion list, shared by every where editor (see lib/query-builder/where-clause-autocomplete.ts).

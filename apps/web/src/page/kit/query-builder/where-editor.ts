@@ -20,6 +20,8 @@ export type WhereEditorAutocomplete<M> = Readonly<{
 	/** The field's spec; its `expression` is the editor's `value`. */
 	spec: WhereFieldSpec
 	toMessage: (message: WhereFieldMessage) => M
+	/** Inside a dialog: the list moves to `<body>` so the popup's transform does not offset it. */
+	isPortaled?: boolean
 }>
 
 /**
@@ -49,6 +51,7 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 	if (ac === undefined) {
 		const onEnter = options.onEnter
 		return {
+			isOpen: false,
 			onKey: (key: string) =>
 				key === "Enter" && onEnter !== undefined ? Option.some(onEnter) : Option.none<M>(),
 			mounts: [],
@@ -60,6 +63,7 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 	const autocomplete = autocompleteOf(ac.fields, fieldId, ac.spec)
 	const isOpen = isOpenOf(caret, autocomplete)
 	return {
+		isOpen,
 		onKey: whereKeyHandler<M>(isOpen, {
 			enter: toMessage(WhereFieldMessage.PressedEnter({ fieldId })),
 			move: (step) => toMessage(WhereFieldMessage.MovedSuggestion({ fieldId, step })),
@@ -75,9 +79,14 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 						anchor: caret.anchor,
 						onApply: (index) =>
 							toMessage(WhereFieldMessage.AppliedSuggestion({ fieldId, index })),
+						isPortaled: ac.isPortaled,
 						keepFocus: h.OnMount(
 							Mount.mapMessage(
-								MountWhereFieldListbox({ fieldId, textareaId: ac.spec.textareaId }),
+								MountWhereFieldListbox({
+									fieldId,
+									textareaId: ac.spec.textareaId,
+									isPortaled: ac.isPortaled === true,
+								}),
 								toMessage,
 							),
 						),
@@ -102,6 +111,7 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 				defaultValue: options.value,
 				attributes: [
 					h.AriaLabel(options.ariaLabel),
+					h.AriaExpanded(suggestions.isOpen),
 					h.Placeholder(options.placeholder),
 					h.Rows(options.rows ?? 2),
 					h.OnInput(options.onInput),
@@ -127,6 +137,7 @@ export const highlightOverlay = <M>(
 		: [
 				h.div(
 					[
+						h.Key("where-highlight"),
 						h.AriaHidden(true),
 						h.Class(
 							cn(

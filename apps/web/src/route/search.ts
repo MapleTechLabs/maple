@@ -520,8 +520,23 @@ export const AgentSessionsSearch = Schema.Struct({
 	sortDir: Schema.optional(AiSessionSortDir),
 })
 
-export const AlertsSearch = Schema.Struct({
-	tab: StringParam,
+/** The Alerts hub's sections past the Inbox, each at `/alerts/<section>`. */
+export const AlertsSection = Schema.Literals([
+	"rules",
+	"uptime",
+	"slos",
+	"silences",
+	"maintenance",
+	"on-call",
+	"routing",
+])
+export type AlertsSection = typeof AlertsSection.Type
+
+/** A hub section: the Inbox at `/alerts`, the rest at `/alerts/<section>`. */
+export const AlertsTab = Schema.Union([Schema.Literal("inbox"), AlertsSection])
+export type AlertsTab = typeof AlertsTab.Type
+
+const alertsHubSearchFields = {
 	serviceName: StringParam,
 	status: StringParam,
 	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
@@ -530,7 +545,15 @@ export const AlertsSearch = Schema.Struct({
 	anomalyStatus: StringParam,
 	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
 	window: StringParam,
-})
+	/** The open side panel (`SHEET_PARAM`): "silence" is the new-silence form. */
+	sheet: StringParam,
+}
+
+/** `/alerts` and `/alerts/<section>`: the filters every section shares. */
+export const AlertsHubSearch = Schema.Struct(alertsHubSearchFields)
+
+/** `/alerts`: a legacy `tab` redirects to its section's own path. */
+export const AlertsSearch = Schema.Struct({ tab: StringParam, ...alertsHubSearchFields })
 
 export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
@@ -583,6 +606,19 @@ export const InvestigationsSearch = Schema.Struct({
 	q: StringParam,
 })
 
+/** A where-clause attribute predicate (`/traces` and `/logs` advanced filters). */
+const attributeFilterParamFields = {
+	key: Schema.String,
+	value: Schema.String,
+	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
+	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+}
+
+const AttributeFilterParam = Schema.Struct({
+	...attributeFilterParamFields,
+	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
+})
+
 export const LogsSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	severities: OptionalStringArrayParam,
@@ -595,6 +631,10 @@ export const LogsSearch = Schema.Struct({
 	excludedDeploymentEnvs: OptionalStringArrayParam,
 	excludedNamespaces: OptionalStringArrayParam,
 	attrs: OptionalStringArrayParam,
+	/** The advanced filter's clause; the facet params it sets are synced into their own params. */
+	whereClause: StringParam,
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	columns: OptionalStringArrayParam,
 	search: StringParam,
 	traceId: StringParam,
@@ -671,18 +711,6 @@ export const ServicesSearch = Schema.Struct({
 	health: Schema.optional(Schema.Literals(["healthy", "degraded", "unhealthy"])),
 	groupBy: Schema.optional(Schema.Literals(["namespace", "environment"])),
 	...TimeRangeSearchFields,
-})
-
-const attributeFilterParamFields = {
-	key: Schema.String,
-	value: Schema.String,
-	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
-	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
-}
-
-const AttributeFilterParam = Schema.Struct({
-	...attributeFilterParamFields,
-	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
 })
 
 export const TracesSearch = Schema.Struct({

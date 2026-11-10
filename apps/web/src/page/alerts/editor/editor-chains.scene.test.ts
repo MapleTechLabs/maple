@@ -73,7 +73,7 @@ describe("alert rule editor, escalation chains", () => {
 			given(ready()),
 			themeResolved(),
 			expectView(role("combobox", { name: "Escalation chain" })).toExist(),
-			expectView(role("link", { name: "Create a chain" })).toHaveAttr("href", "/alerts?tab=routing"),
+			expectView(role("link", { name: "Create a chain" })).toHaveAttr("href", "/alerts/routing"),
 		)
 	})
 

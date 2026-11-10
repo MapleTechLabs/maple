@@ -303,6 +303,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 /** `AlertRuleFormShell`'s breadcrumb. */
 export const breadcrumbsOf = (model: Model) => [
 	{ label: "Alerts", href: "/alerts" },
+	{ label: "Rules", href: "/alerts/rules" },
 	{
 		label: (model.form === null ? model.search.ruleId !== undefined : model.editingRuleId !== null)
 			? "Edit rule"

@@ -37,7 +37,7 @@ import { INTERVAL_SELECT_ID } from "./interval"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./update"
-import { view as pageView } from "./view"
+import { breadcrumbsOf, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -426,13 +426,18 @@ describe("alert rule editor", () => {
 		expect(late.preview).toEqual(edited.preview)
 	})
 
-	test("save sends once when ready, and lands on /alerts with a toast", () => {
+	test("save sends once when ready, and lands on the rules with a toast; the crumbs go through Rules", () => {
 		const ready = withLists(entered({ template: "slow_p95" }))
 		const saving = pageUpdate(ready, Message.ClickedSave())
 		expect(names(saving.commands)).toEqual(["SaveAlertRule"])
 		expect(names(pageUpdate(saving.model, Message.ClickedSave()).commands)).toEqual([])
 		const saved = pageUpdate(saving.model, Message.CompletedSave({ result: Result.succeed(undefined) }))
-		expect(saved.outMessage?._tag).toBe("RequestedNavigation")
+		expect(saved.outMessage).toMatchObject({ _tag: "RequestedNavigation", url: "/alerts/rules" })
+		expect(breadcrumbsOf(ready)).toEqual([
+			{ label: "Alerts", href: "/alerts" },
+			{ label: "Rules", href: "/alerts/rules" },
+			{ label: "New rule" },
+		])
 	})
 
 	test("a created rule records alert_rule_created with its signal; a failed save does not", () => {
