@@ -9,7 +9,10 @@ import { MAX_REPLAY_CHUNKS_PER_REQUEST, MAX_REPLAY_EVENTS_RESPONSE_BYTES } from 
 import { CH } from "@maple/query-engine"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ReplayBlobStore, type HydratableChunk } from "@maple/backend/platform/ReplayBlobStore"
+import {
+	ReplayBlobStore,
+	type HydratableChunk,
+} from "@maple/backend/services/session-replays/ReplayBlobStore"
 
 /** Optional partition-pruning window around one session. */
 export interface SessionWindow {

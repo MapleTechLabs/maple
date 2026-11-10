@@ -9,7 +9,7 @@
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId } from "@maple/domain/http"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import {
 	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,

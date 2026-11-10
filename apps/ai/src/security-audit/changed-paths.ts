@@ -4,7 +4,7 @@
  * fits, so a large change is still read in full rather than counted as everything changed.
  */
 import type { OrgId } from "@maple/domain/http"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import type {
 	RepoSandboxServiceApi,
 	RepositoryTarget,

@@ -42,7 +42,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { type ExecutorTransport, SandboxClientError } from "@maple/backend/sandbox/client"
+import { type ExecutorTransport, SandboxClientError } from "@maple/backend/services/sandbox/client"
 import { makeExecutor } from "@maple/backend/services/sandbox/ExecutorService"
 import {
 	EXECUTOR_DESTROY_PATH,

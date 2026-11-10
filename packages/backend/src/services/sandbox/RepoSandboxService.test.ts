@@ -9,7 +9,7 @@ import {
 	SandboxOutput,
 	SandboxStarted,
 	SandboxResourceUse,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"

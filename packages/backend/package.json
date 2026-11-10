@@ -8,7 +8,6 @@
 		"./http/*": "./src/http/*.ts",
 		"./queries/*": "./src/queries/*.ts",
 		"./observability/*": "./src/observability/*.ts",
-		"./sandbox/*": "./src/sandbox/*.ts",
 		"./testing/*": "./src/testing/*.ts",
 		"./dashboard-templates": "./src/dashboard-templates/index.ts",
 		"./dashboard-templates/*": "./src/dashboard-templates/*.ts"

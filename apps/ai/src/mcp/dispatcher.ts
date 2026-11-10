@@ -2,9 +2,9 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
-import { SandboxClient } from "@maple/backend/sandbox/client"
+import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
+import type { SandboxError } from "@maple/backend/services/sandbox/contract"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"

@@ -30,7 +30,7 @@ import { AwsConnectionService } from "@maple/backend/services/integrations/AwsCo
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
-import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
