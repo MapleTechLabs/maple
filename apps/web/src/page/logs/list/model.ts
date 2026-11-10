@@ -19,6 +19,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { Density } from "@maple/views/ui/logs/viewer"
+import { laterPagesFields } from "../../kit/infinite-pages"
 
 /** `LogRow` (`@maple/query-engine` route-rows), shared with the stream (`ui/logs`). */
 export const LogRowSchema = LogRecord
@@ -51,13 +52,7 @@ export const AttributeKey = Schema.Struct({ name: Schema.String, count: Schema.N
 export type AttributeKey = typeof AttributeKey.Type
 
 /** `useInfiniteLogs`' later pages: owned by one first page (`generation`), reset with it. */
-export const Pagination = Schema.Struct({
-	generation: Schema.Number,
-	pages: Schema.Array(LogsPage),
-	isFetching: Schema.Boolean,
-	/** A page failed: the sentinel stops retrying until the first page or filters change. */
-	isStopped: Schema.Boolean,
-})
+export const Pagination = Schema.Struct(laterPagesFields(LogsPage))
 export type Pagination = typeof Pagination.Type
 
 /** `LogsVolumeChart`'s drag-to-zoom: `refAreaLeft`/`refAreaRight` and `isSelecting`. */

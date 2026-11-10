@@ -63,8 +63,9 @@ import {
 import { initSearchHelp } from "./view-search-help"
 import { type Facet, Message } from "./message"
 import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
-import type { LogsPage, Model, Pagination } from "./model"
+import type { LogsPage, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -73,13 +74,6 @@ type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export const DEFAULT_PRESET = "12h"
 
 const NO_BRUSH = { left: null, right: null, isSelecting: false }
-
-const freshPagination = (generation: number): Pagination => ({
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
-})
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -240,7 +234,7 @@ const requestAll = (
 	const isNewFirstPage = done.model.firstPage.key !== model.firstPage.key
 	return {
 		model: isNewFirstPage
-			? { ...done.model, pagination: freshPagination(model.pagination.generation + 1) }
+			? { ...done.model, pagination: freshLaterPages(model.pagination.generation + 1) }
 			: done.model,
 		commands: done.commands,
 	}
@@ -271,7 +265,7 @@ const fetchIfNearEnd =
 			return result
 		return {
 			...result,
-			model: { ...model, pagination: { ...model.pagination, isFetching: true } },
+			model: { ...model, pagination: fetchingNext(model.pagination) },
 			commands: [
 				...(result.commands ?? []),
 				FetchNextPage({
@@ -319,7 +313,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		window: null,
 		nowMs: 0,
 		firstPage: Keyed.idle(),
-		pagination: freshPagination(0),
+		pagination: freshLaterPages(0),
 		facets: Keyed.idle(),
 		volume: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
@@ -457,7 +451,7 @@ const acceptFirstPage = (
 	const firstPage = Keyed.accept(model.firstPage, key, result)
 	if (firstPage === model.firstPage) return { model }
 	// A refreshed first page owns a fresh set of later pages; its rows replace the stream's.
-	const next = { ...model, firstPage, pagination: freshPagination(model.pagination.generation + 1) }
+	const next = { ...model, firstPage, pagination: freshLaterPages(model.pagination.generation + 1) }
 	return fetchIfNearEnd(context)(replaceStreamRows(next, context))
 }
 
@@ -469,9 +463,7 @@ const acceptNextPage = (
 	context: PageContext,
 ): Return => {
 	if (key !== model.firstPage.key || generation !== model.pagination.generation) return { model }
-	const pagination: Pagination = Result.isSuccess(result)
-		? { ...model.pagination, isFetching: false, pages: [...model.pagination.pages, result.success] }
-		: { ...model.pagination, isFetching: false, isStopped: true }
+	const pagination = appendedPage(model.pagination, result)
 	return fetchIfNearEnd(context)({ model: setStreamRows({ ...model, pagination }, context) })
 }
 

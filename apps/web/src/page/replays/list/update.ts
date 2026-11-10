@@ -1,6 +1,6 @@
 import { pickerStep } from "../../kit/page-time"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Option, Result, Array as Arr, Record as Rec } from "effect"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -41,6 +41,7 @@ import {
 	toggledTag,
 	withRange,
 } from "./search-edits"
+import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -58,10 +59,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 
 const freshPagination = (key: string | null, generation: number): Pagination => ({
 	key,
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
+	...freshLaterPages(generation),
 })
 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
@@ -115,7 +113,7 @@ const fetchNext = (model: Model): Return => {
 	)
 		return { model }
 	return {
-		model: { ...model, pagination: { ...pagination, isFetching: true } },
+		model: { ...model, pagination: fetchingNext(pagination) },
 		commands: [
 			FetchNextPage({
 				key: pagination.key,
@@ -297,19 +295,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: {
 						model: {
 							...model,
-							pagination: Result.match(result, {
-								onSuccess: (page) => ({
-									...model.pagination,
-									pages: [...model.pagination.pages, page],
-									isFetching: false,
-									isStopped: isRepeatedCursor(model, page),
-								}),
-								onFailure: () => ({
-									...model.pagination,
-									isFetching: false,
-									isStopped: true,
-								}),
-							}),
+							pagination: appendedPage(model.pagination, result, (page) =>
+								isRepeatedCursor(model, page),
+							),
 						},
 					},
 		CompletedFetchFacets: ({ key, result }) => ({

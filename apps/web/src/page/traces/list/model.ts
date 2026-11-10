@@ -9,6 +9,7 @@ import { AdvancedFilter } from "./advanced-model"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { Model as TraceDetailModel } from "../detail/model"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { laterPagesFields } from "../../kit/infinite-pages"
 
 // The `/traces` list.
 
@@ -65,11 +66,7 @@ export type VirtualRow = typeof VirtualRow.Type
 /** `useInfiniteTraces`' pages after the first, for the current first-page key. */
 export const Pagination = Schema.Struct({
 	key: Schema.NullOr(Schema.String),
-	/** Bumped by every fresh set of pages: a page fetched for an earlier one is dropped. */
-	generation: Schema.Number,
-	pages: Schema.Array(TracesPage),
-	isFetching: Schema.Boolean,
-	isStopped: Schema.Boolean,
+	...laterPagesFields(TracesPage),
 })
 export type Pagination = typeof Pagination.Type
 
