@@ -1,4 +1,4 @@
-import { Result, Array as Arr } from "effect"
+import { Array as Arr, Option, Record as Rec, Result, Schema } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { AUDIT_ENTRIES, AUDIT_MEMBERS, AUDIT_NOW } from "../../../lab/audit-log-fixture"
@@ -8,6 +8,8 @@ import * as CustomRange from "../../kit/custom-range"
 import { Message } from "./model"
 import { init, revisit, searchChanged, update } from "./update"
 import { view } from "./view"
+import { entryHref } from "./view-detail"
+import { SettingsSearch } from "../../../route/search"
 
 const page = { data: [], has_more: true, next_cursor: "cursor_2" }
 
@@ -237,9 +239,7 @@ describe("audit log tab", () => {
 
 	describe("an entry's detail", () => {
 		const search = { tab: "audit-log" } as const
-		const loadedWith = (
-			searchFor: typeof search | { readonly tab: "audit-log"; readonly entry: string },
-		) => {
+		const loadedWith = (searchFor: typeof SettingsSearch.Type) => {
 			const entered = init(searchFor).model
 			const withMembers = update(
 				entered,
@@ -364,6 +364,34 @@ describe("audit log tab", () => {
 					isReplace: true,
 				}),
 			)
+		})
+
+		test("an entry's link lists the minute that ends at the entry, and opens it", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = Schema.decodeSync(SettingsSearch)(
+				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
+			)
+			// The fixture's sixth entry happened 47 minutes before `AUDIT_NOW`.
+			expect(linked).toEqual({
+				tab: "audit-log",
+				kind: "all",
+				since: new Date(AUDIT_NOW - 48 * 60_000).toISOString(),
+				until: new Date(AUDIT_NOW - 47 * 60_000).toISOString(),
+				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, target.id),
+			})
+			expect(loadedWith(linked).model.expanded).toEqual([target.id])
+		})
+
+		test("an entry Maple itself made still names its surface", () => {
+			const target = Arr.findFirst(AUDIT_ENTRIES, (entry) => entry.source === "system")
+			if (Option.isNone(target)) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.value.id }),
+				search,
+			).model
+			scene(sceneOf(search), given(opened), expectView(text("Surface")).toExist())
 		})
 
 		test("the Origin section names the country an entry came from", () => {

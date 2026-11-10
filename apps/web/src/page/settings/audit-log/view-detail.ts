@@ -235,8 +235,8 @@ export const entryHref = (entry: V2AuditLogEntry): string => {
 	)
 }
 
+// Every entry has a surface, so the section shows even when Maple itself acted and nothing else is known.
 const originSection = (h: H, model: Model, entry: V2AuditLogEntry): ReadonlyArray<Html> => {
-	if (entry.origin_ip === null && entry.origin_country === null && entry.request_id === null) return []
 	return [
 		h.section(
 			[h.Class("space-y-1.5")],
