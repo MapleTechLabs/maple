@@ -43,6 +43,27 @@ export const settleAbandoned = <ER, EV>(rows: {
 			yield* settleRow(rows.failReply, "Could not record the abandoned reply")
 	})
 
+/**
+ * `settleAbandoned` for the rows a turn names: its review, its reply, or neither. Apart from the
+ * runner so the choice of write, and what each is told, is testable without a turn's runtime.
+ */
+export const settleAbandonedTurn = <Org, ReviewId, ReplyId, ReviewError, ER, EV>(turn: {
+	readonly orgId: Org
+	readonly prReviewId: ReviewId | undefined
+	readonly prReplyId: ReplyId | undefined
+	readonly reviewInterrupted: ReviewError
+	readonly failReview: (orgId: Org, id: ReviewId, error: ReviewError) => Effect.Effect<void, EV>
+	readonly failReply: (orgId: Org, id: ReplyId, error: string) => Effect.Effect<void, ER>
+}) =>
+	settleAbandoned({
+		...(turn.prReviewId === undefined
+			? undefined
+			: { failReview: turn.failReview(turn.orgId, turn.prReviewId, turn.reviewInterrupted) }),
+		...(turn.prReplyId === undefined
+			? undefined
+			: { failReply: turn.failReply(turn.orgId, turn.prReplyId, NO_REPLY_INTERRUPTED) }),
+	})
+
 export const makeUnfinishedSettler = <EI, ER, EV>(options: {
 	readonly outcome: AutonomousOutcome
 	readonly signal: AbortSignal | undefined
