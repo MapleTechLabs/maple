@@ -15949,180 +15949,402 @@ SELECT
           AND logs.Body ILIKE '%timeout%'
         FORMAT JSON
 
--- pipe:logs_facets:default:baseline  [c9735985]
+-- pipe:logs_facets:default:baseline  [fb6c9fcb]
 SELECT * FROM (
 SELECT
-          logs_aggregates_hourly.SeverityText AS severityText,
+          facet.value AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'severity' AS facetType
+        FROM (
+SELECT
+          logs.SeverityText AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.SeverityText AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY severityText
 UNION ALL
 SELECT
           '' AS severityText,
-          logs_aggregates_hourly.ServiceName AS serviceName,
+          facet.value AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'service' AS facetType
+        FROM (
+SELECT
+          logs.ServiceName AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceName AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY serviceName
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
-          logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
+          facet.value AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.DeploymentEnv AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.DeploymentEnv != ''
+        GROUP BY value
+) AS facet
         GROUP BY deploymentEnv
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
-          logs_aggregates_hourly.ServiceNamespace AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          facet.value AS namespace,
+          sum(facet.count) AS count,
           'namespace' AS facetType
+        FROM (
+SELECT
+          logs.ResourceAttributes['service.namespace'] AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ResourceAttributes['service.namespace'] != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceNamespace AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceNamespace != ''
+        GROUP BY value
+) AS facet
         GROUP BY namespace
 )
 ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- pipe:logs_facets:default:bloom  [c9735985]
+-- pipe:logs_facets:default:bloom  [fb6c9fcb]
 SELECT * FROM (
 SELECT
-          logs_aggregates_hourly.SeverityText AS severityText,
+          facet.value AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'severity' AS facetType
+        FROM (
+SELECT
+          logs.SeverityText AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.SeverityText AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY severityText
 UNION ALL
 SELECT
           '' AS severityText,
-          logs_aggregates_hourly.ServiceName AS serviceName,
+          facet.value AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'service' AS facetType
+        FROM (
+SELECT
+          logs.ServiceName AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceName AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY serviceName
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
-          logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
+          facet.value AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.DeploymentEnv AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.DeploymentEnv != ''
+        GROUP BY value
+) AS facet
         GROUP BY deploymentEnv
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
-          logs_aggregates_hourly.ServiceNamespace AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          facet.value AS namespace,
+          sum(facet.count) AS count,
           'namespace' AS facetType
+        FROM (
+SELECT
+          logs.ResourceAttributes['service.namespace'] AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ResourceAttributes['service.namespace'] != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceNamespace AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceNamespace != ''
+        GROUP BY value
+) AS facet
         GROUP BY namespace
 )
 ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- pipe:logs_facets:default:text  [c9735985]
+-- pipe:logs_facets:default:text  [fb6c9fcb]
 SELECT * FROM (
 SELECT
-          logs_aggregates_hourly.SeverityText AS severityText,
+          facet.value AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'severity' AS facetType
+        FROM (
+SELECT
+          logs.SeverityText AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.SeverityText AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY severityText
 UNION ALL
 SELECT
           '' AS severityText,
-          logs_aggregates_hourly.ServiceName AS serviceName,
+          facet.value AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'service' AS facetType
+        FROM (
+SELECT
+          logs.ServiceName AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceName AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY serviceName
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
-          logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
+          facet.value AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.DeploymentEnv AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.DeploymentEnv != ''
+        GROUP BY value
+) AS facet
         GROUP BY deploymentEnv
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
-          logs_aggregates_hourly.ServiceNamespace AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          facet.value AS namespace,
+          sum(facet.count) AS count,
           'namespace' AS facetType
+        FROM (
+SELECT
+          logs.ResourceAttributes['service.namespace'] AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ResourceAttributes['service.namespace'] != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceNamespace AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceNamespace != ''
+        GROUP BY value
+) AS facet
         GROUP BY namespace
 )
 ORDER BY count DESC
@@ -19098,83 +19320,179 @@ SELECT
 ) AS counts
         FORMAT JSON
 
--- spec:logs-facets-single-dimension:baseline  [aa382b6a]
+-- spec:logs-facets-single-dimension:baseline  [acc3ec18]
 SELECT * FROM (
 SELECT
-          logs_aggregates_hourly.SeverityText AS severityText,
+          facet.value AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'severity' AS facetType
+        FROM (
+SELECT
+          logs.SeverityText AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.SeverityText AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY value
+) AS facet
         GROUP BY severityText
 )
 ORDER BY count DESC
 LIMIT 500
 FORMAT JSON
 
--- spec:logs-facets:baseline  [8d65d221]
+-- spec:logs-facets:baseline  [7249a0b1]
 SELECT * FROM (
 SELECT
-          logs_aggregates_hourly.SeverityText AS severityText,
+          facet.value AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'severity' AS facetType
+        FROM (
+SELECT
+          logs.SeverityText AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ServiceName = 'api'
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.SeverityText AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceName = 'api'
+        GROUP BY value
+) AS facet
         GROUP BY severityText
 UNION ALL
 SELECT
           '' AS severityText,
-          logs_aggregates_hourly.ServiceName AS serviceName,
+          facet.value AS serviceName,
           '' AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'service' AS facetType
+        FROM (
+SELECT
+          logs.ServiceName AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ServiceName = 'api'
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceName AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceName = 'api'
+        GROUP BY value
+) AS facet
         GROUP BY serviceName
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
-          logs_aggregates_hourly.DeploymentEnv AS deploymentEnv,
+          facet.value AS deploymentEnv,
           '' AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          sum(facet.count) AS count,
           'deploymentEnv' AS facetType
+        FROM (
+SELECT
+          coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ServiceName = 'api'
+          AND coalesce(nullIf(logs.ResourceAttributes['deployment.environment.name'], ''), logs.ResourceAttributes['deployment.environment']) != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.DeploymentEnv AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceName = 'api'
           AND logs_aggregates_hourly.DeploymentEnv != ''
+        GROUP BY value
+) AS facet
         GROUP BY deploymentEnv
 UNION ALL
 SELECT
           '' AS severityText,
           '' AS serviceName,
           '' AS deploymentEnv,
-          logs_aggregates_hourly.ServiceNamespace AS namespace,
-          sum(logs_aggregates_hourly.Count) AS count,
+          facet.value AS namespace,
+          sum(facet.count) AS count,
           'namespace' AS facetType
+        FROM (
+SELECT
+          logs.ResourceAttributes['service.namespace'] AS value,
+          count() AS count
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND (TimestampTime < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimestampTime >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+          AND logs.ServiceName = 'api'
+          AND logs.ResourceAttributes['service.namespace'] != ''
+        GROUP BY value
+UNION ALL
+SELECT
+          logs_aggregates_hourly.ServiceNamespace AS value,
+          sum(logs_aggregates_hourly.Count) AS count
         FROM logs_aggregates_hourly
         WHERE logs_aggregates_hourly.OrgId = 'org_sql_catalog'
-          AND logs_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
-          AND logs_aggregates_hourly.Hour <= '2026-01-03 14:15:00'
+          AND logs_aggregates_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND logs_aggregates_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND logs_aggregates_hourly.ServiceName = 'api'
           AND logs_aggregates_hourly.ServiceNamespace != ''
+        GROUP BY value
+) AS facet
         GROUP BY namespace
 )
 ORDER BY count DESC
