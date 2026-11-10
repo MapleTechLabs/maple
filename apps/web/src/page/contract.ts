@@ -47,13 +47,20 @@ export interface PageViewInputs {
 	readonly isBelowLg?: boolean
 }
 
+/** The inputs a page's view gets, the media flags defaulted to `false`. */
+const withViewDefaults = (inputs: PageViewInputs): PageViewInputs => ({
+	context: inputs.context,
+	isMobile: inputs.isMobile ?? false,
+	isBelowSm: inputs.isBelowSm ?? false,
+	isBelowLg: inputs.isBelowLg ?? false,
+})
+
 /** What a page's Subscriptions see: its own Model plus the context. */
 export interface PageSubscriptionInput<Model> {
 	readonly model: Model
 	readonly context: PageContext
 }
 
-/** A toast action the root runs itself, whichever page is open (`retryOrgCollections`). */
 /**
  * A toast action the root runs itself, so it outlives the page that raised it: a reconnect, or
  * a dashboard's Undo (the user may have left the board inside the toast's 6 s).
@@ -106,15 +113,11 @@ export const PageOutMessage = defineMessageUnion({
 	 * button (`actionProps`); the root sends it back to the page that is open when it is clicked.
 	 */
 	RequestedToast: {
-		type: ToastType,
-		title: Schema.String,
-		description: Schema.String,
-		timeoutMs: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		...NavigationToast.fields,
+		/** Wins over `rootAction` when both are set. */
 		action: Schema.optionalKey(
 			Schema.NullOr(Schema.Struct({ label: Schema.String, message: Schema.Unknown })),
 		),
-		/** An action button the root handles (`action` wins when both are set). */
-		rootAction: Schema.optionalKey(Schema.Struct({ label: Schema.String, action: RootToastAction })),
 	},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
@@ -485,12 +488,7 @@ export const definePage = <
 						slotId: id,
 						model: slot.model,
 						view: spec.view,
-						viewInputs: {
-							context: inputs.context,
-							isMobile: inputs.isMobile ?? false,
-							isBelowSm: inputs.isBelowSm ?? false,
-							isBelowLg: inputs.isBelowLg ?? false,
-						},
+						viewInputs: withViewDefaults(inputs),
 						toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
 					})
 				: null,
@@ -504,12 +502,7 @@ export const definePage = <
 							slotId: `${id}:topbar`,
 							model: slot.model,
 							view: actions,
-							viewInputs: {
-								context: inputs.context,
-								isMobile: inputs.isMobile ?? false,
-								isBelowSm: inputs.isBelowSm ?? false,
-								isBelowLg: inputs.isBelowLg ?? false,
-							},
+							viewInputs: withViewDefaults(inputs),
 							toParentMessage: wrapFor(slot.key, slot.orgId, slot.instance),
 						})
 					: null

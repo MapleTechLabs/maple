@@ -1,9 +1,9 @@
 import { Array, Option, Predicate, Schema, Record as Rec } from "effect"
-import { Subscription } from "foldkit"
+import { AsyncData, Subscription } from "foldkit"
 import type { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../platform/resources"
-import type { AppRoute } from "../route"
+import { AppRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import type { PageSourceRef } from "../shell/source-link"
 import type {
@@ -194,9 +194,7 @@ export const pages = [
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */
-const BARE_PAGE_ROUTES: ReadonlyArray<AppRoute["_tag"]> = ["Share"]
-
-export const isBarePageRoute = (route: AppRoute): boolean => BARE_PAGE_ROUTES.includes(route._tag)
+export const isBarePageRoute = AppRoute.isAnyOf(["Share"])
 
 export const PageSlot = Schema.Union(Array.map(pages, (page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
@@ -259,23 +257,12 @@ export const enterRoute = (
 		},
 	)
 
-const ASYNC_DATA_TAGS: ReadonlyArray<string> = [
-	"Idle",
-	"Loading",
-	"Refreshing",
-	"Failure",
-	"Stale",
-	"Success",
-]
-
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
 const hasLoadInFlight = (value: unknown): boolean => {
 	if (Array.isArray(value)) return Array.some(value, hasLoadInFlight)
 	if (!Predicate.isReadonlyObject(value)) return false
-	const tag = value["_tag"]
 	// An `AsyncData`'s own data holds no requests: rows are not walked.
-	if (Predicate.isString(tag) && ASYNC_DATA_TAGS.includes(tag))
-		return tag === "Loading" || tag === "Refreshing"
+	if (AsyncData.isAsyncData(value)) return AsyncData.isPending(value)
 	return Array.some(Rec.values(value), hasLoadInFlight)
 }
 
@@ -337,6 +324,7 @@ export const updatePage = (
 				onSome: (page) => toTransition(page.update(current, message, context), current),
 			})
 
+/** Widens one page's step to the registry's transition union (the per-page types do not unify). */
 const toHeld = (step: Option.Option<PageStep<PageSlot, PageMessage>>): Option.Option<PageTransition> => step
 
 /**
