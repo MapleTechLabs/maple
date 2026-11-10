@@ -481,6 +481,65 @@ describe("AuditLogService.layerMemory", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
+	it.effect("the changes kind keeps denied access; the access kind lists only access", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "user", userId: USER },
+				source: "dashboard",
+				action: "dashboard.created",
+				resourceId: DASHBOARD_ID,
+			})
+			yield* TestClock.adjust("1 second")
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "agent" },
+				source: "mcp",
+				action: "telemetry.read",
+			})
+			yield* TestClock.adjust("1 second")
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "agent" },
+				source: "mcp",
+				action: "telemetry.sql_executed",
+				outcome: "denied",
+				denialReason: "write statement",
+			})
+			const actions = (rows: ReadonlyArray<{ readonly action: string }>) =>
+				Arr.map(rows, (row) => row.action)
+			expect(actions(yield* audit.list(ORG, { actionKind: "changes", limit: 10, offset: 0 }))).toEqual([
+				"telemetry.sql_executed",
+				"dashboard.created",
+			])
+			expect(actions(yield* audit.list(ORG, { actionKind: "access", limit: 10, offset: 0 }))).toEqual([
+				"telemetry.sql_executed",
+				"telemetry.read",
+			])
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
+	)
+
+	it.effect("compiles the changes kind to an exclusion that keeps denied entries", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.list(ORG, { actionKind: "changes", limit: 5, offset: 0 })
+				yield* audit.list(ORG, { actionKind: "access", limit: 5, offset: 0 })
+			}).pipe(
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+			const [changes, access] = warehouse.sql
+			expect(changes).toContain("NOT ((endsWith(audit_log.Action, '.read')")
+			expect(changes).toContain("OR audit_log.Outcome = 'denied')")
+			expect(access).toContain("endsWith(audit_log.Action, '.sql_executed')")
+			expect(access).not.toContain("NOT (endsWith(")
+		}),
+	)
+
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,
