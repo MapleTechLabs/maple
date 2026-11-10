@@ -1,20 +1,22 @@
 # Maple for iOS
 
-A native SwiftUI client for Maple, reading the **v2 public API**. Three tabs,
-in the order the questions get asked — see [`PRODUCT.md`](PRODUCT.md):
+A native SwiftUI client for Maple, reading the **v2 public API**. Four tabs
+and a search tab, in the order the questions get asked (see [`PRODUCT.md`](PRODUCT.md)):
 
-- **Home** — is anything wrong right now? Status headline, open alerts with
+- **Overview**: is anything wrong right now? Status headline, open alerts with
   the rule's own last hour, services needing attention, what's new in 24h.
-- **Services** — the list, and a detail that leads with a health verdict and
+- **Services**: the list, and a detail that leads with a health verdict and
   its reason, one full-width scrubbable chart per golden signal (throughput,
   errors, latency percentiles), window aggregates, scoped alerts, the busiest
   operations re-rankable by failures / p95 / volume, and issues. It paints from
   one request, `GET /v2/services/{name}/overview`, which composes the summary,
   an all-signal timeseries and the operations server-side; alerts and issues
   arrive in a second pass.
-- **Alerts** — the triage hub: incidents (with a "why" detail: what the rule
+- **Triage**: the triage hub, with incidents (with a "why" detail: what the rule
   saw, what changed on the service, likely cause, timeline), error issues,
   anomalies.
+- **Explore**: traces, logs and read-only dashboards under one tab.
+- **Search**: services, issues and trace ids; a 32-hex query opens that trace.
 
 ## Getting started
 
@@ -48,7 +50,7 @@ Config/                      xcconfigs; Secrets.xcconfig is gitignored
 Maple/App                    entry point, auth gate, build-time config, Route
 Maple/Auth                   token provider, session state machine, org picker
 Maple/DesignSystem           tokens, type scale, service colours, shared primitives
-Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues
+Maple/Features               Home, Services, Alerts (incidents/anomalies), Issues, Explore, Search
 Maple/Components             LoadableView, formatting, Sparkline, alert formatting
 Maple/Fixtures               FixtureAPI — the app without Clerk or a network
 Maple/Widgets                publishes the widget's snapshot; background refresh
@@ -71,7 +73,7 @@ incident is opened (or from the bell on Home), receives the APNs token via
 tab root. Registration is per organization; sign-out unregisters. A tapped
 notification lands on the incident (`AppNavigation.openIncident`).
 
-The server side is `apps/api/src/services/push` + `platform/Apns.ts`; it sends
+The server side is `packages/backend/src/services/push` + `packages/backend/src/platform/Apns.ts`; it sends
 only when `APNS_TEAM_ID` / `APNS_KEY_ID` / `APNS_PRIVATE_KEY` are set on the
 alerting worker. `aps-environment` in the entitlements is `development` and
 Xcode flips it for archives; the app reads whichever landed in the embedded

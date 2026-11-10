@@ -122,7 +122,6 @@ impl BenchFixture {
                 batch_max_bytes: 4 * 1024 * 1024,
                 queue_max_age: Duration::ZERO,
                 batch_max_wait: Duration::from_millis(10),
-                export_concurrency_per_shard: 1,
                 export_max_attempts: 20,
                 clickhouse_export_timeout: Duration::from_secs(5),
                 clickhouse_breaker: ClickHouseBreakerConfig::default(),

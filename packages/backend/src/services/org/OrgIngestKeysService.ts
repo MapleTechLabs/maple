@@ -33,7 +33,7 @@ import {
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
+	parseIngestKeyEncryptionKey,
 	type EncryptedValue,
 } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -64,17 +64,6 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 // across every database in a process. A Worker that wants it for the whole isolate
 // provides `SharedIngestKeysMemo`.
 const ORG_INGEST_KEYS_MEMO_TTL_MS = 300_000
-
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
 
 const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
 	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
@@ -108,8 +97,9 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const ingestKeysMemo =
 				(yield* SharedIngestKeysMemo) ?? (yield* makeExpiringStore<OrgIngestKeyRow>())
 			const env = yield* Env
-			const encryptionKey = yield* parseEncryptionKey(
+			const encryptionKey = yield* parseIngestKeyEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+				toEncryptionError,
 			)
 			const lookupHmacKey = yield* parseLookupHmacKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),

@@ -5,7 +5,6 @@ import {
 	ESCALATION_SILENCE_RECHECK_MS,
 	type EscalationIncidentState,
 	type EscalationRunPosition,
-	escalationStepCount,
 	planEscalationAdvance,
 } from "./escalation"
 
@@ -175,6 +174,7 @@ describe("planEscalationAdvance", () => {
 				sent + 1,
 			)
 		}
-		expect(walk(run({ repeatCount: 2 }), T0, 0)).toBe(escalationStepCount(steps, 2))
+		// Two repeats: the chain runs three times in all.
+		expect(walk(run({ repeatCount: 2 }), T0, 0)).toBe(steps.length * 3)
 	})
 })

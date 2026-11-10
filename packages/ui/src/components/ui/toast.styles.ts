@@ -1,13 +1,3 @@
-export function upsertReplayClassName(toast: { type?: string; updateKey?: number }): string | undefined {
-	const k = toast.updateKey ?? 0
-	if (k <= 0) return undefined
-	const isEven = k % 2 === 0
-	if (toast.type === "error") {
-		return isEven ? "animate-toast-error-even" : "animate-toast-error-odd"
-	}
-	return isEven ? "animate-toast-success-even" : "animate-toast-success-odd"
-}
-
 export const toastViewportStyles = [
 	"fixed z-60 mx-auto flex w-[calc(100%-var(--toast-inset)*2)] max-w-90 [--toast-inset:--spacing(4)] sm:[--toast-inset:--spacing(8)]",
 	"data-[position*=top]:top-(--toast-inset)",
@@ -55,42 +45,15 @@ export const toastContentStyles =
 
 export const toastBodyStyles = "flex gap-2"
 
-export const toastAnchoredBodyStyles = "flex gap-2"
-
 export const toastIconStyles = "[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
-
-export const toastAnchoredIconStyles = "[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
 export const toastIconGlyphStyles =
 	"in-data-[type=loading]:animate-spin in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80"
 
-export const toastAnchoredIconGlyphStyles =
-	"in-data-[type=loading]:animate-spin in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80"
-
 export const toastTextStyles = "flex flex-col gap-0.5"
-
-export const toastAnchoredTextStyles = "flex flex-col gap-0.5"
 
 export const toastTitleStyles = "font-medium"
 
-export const toastAnchoredTitleStyles = "font-medium"
-
 export const toastDescriptionStyles = "whitespace-pre-line text-muted-foreground"
 
-export const toastAnchoredDescriptionStyles = "whitespace-pre-line text-muted-foreground"
-
 export const toastViewportAnchoredStyles = "outline-none"
-
-export const toastPositionerStyles = "z-50 max-w-[min(--spacing(64),var(--available-width))]"
-
-export const toastPopupStyles =
-	"relative text-balance border bg-popover not-dark:bg-clip-padding text-popover-foreground text-xs transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:shadow-control data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0"
-
-export const toastPopupTooltipStyles = "rounded-md shadow-popup before:rounded-md-inset"
-
-export const toastPopupDefaultStyles = "rounded-lg shadow-popup before:rounded-lg-inset"
-
-export const toastPopupTooltipContentStyles = "pointer-events-auto px-2 py-1"
-
-export const toastPopupContentStyles =
-	"pointer-events-auto flex items-center justify-between gap-1.5 overflow-hidden px-3.5 py-3 text-sm"

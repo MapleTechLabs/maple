@@ -38,7 +38,7 @@ with `packageManager`.
   `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
   OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
-  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
+  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `Subagent` from `@yielded/agent/subagent`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.

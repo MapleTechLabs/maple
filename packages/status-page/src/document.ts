@@ -1,5 +1,6 @@
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
-import { escapeHtml, safeUrl } from "./escape"
+import { escapeHtml } from "@maple/strings"
+import { safeUrl } from "./escape"
 import { baseStyles, presetStyles } from "./styles"
 import { resolveSafeTheme, safeTheme } from "./theme"
 import { Option, Array as Arr, String as Str } from "effect"

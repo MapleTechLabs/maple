@@ -7,7 +7,7 @@ import { Result, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage } from "../../contract"
 import { Message, type Model } from "./model"
-import { init, isConnectionDirty, isRunActive, update } from "./update"
+import { init, isRunActive, update } from "./update"
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
@@ -52,12 +52,11 @@ describe("data platform tab", () => {
 		expect(names(loaded().commands)).toEqual(["FetchOrgClickHouseApplyStatus"])
 	})
 
-	test("an edit is dirty and Save sends the trimmed connection", () => {
+	test("Save sends the trimmed connection of an edit", () => {
 		const edited = update(
 			loaded().model,
 			Message.ChangedConnection({ field: "database", value: " maple_prod " }),
 		).model
-		expect(isConnectionDirty(edited)).toBe(true)
 		expect(update(edited, Message.ClickedSave()).commands?.[0]).toMatchObject({
 			name: "SaveOrgClickHouseConnection",
 			args: {

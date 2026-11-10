@@ -206,6 +206,9 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 				const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 					audit
 						.list(tenant.orgId, {
+							...(query.kind !== undefined && query.kind !== "all"
+								? { actionKind: query.kind }
+								: undefined),
 							...(query.actor_type !== undefined ? { actorType: query.actor_type } : undefined),
 							...identity,
 							...(affectedUser !== undefined ? { affectedUserId: affectedUser } : undefined),

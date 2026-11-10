@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { BillingAddress } from "@maple/domain/http"
-import { fieldOrNull, formatAddressLines, hasAddress, verificationBadge } from "./billing-profile"
+import { fieldOrNull, formatAddressLines, verificationBadge } from "./billing-profile"
 
 describe("formatAddressLines", () => {
 	it("renders street, 'postal city, state' and the country name", () => {
@@ -24,11 +24,6 @@ describe("formatAddressLines", () => {
 		).toEqual(["Paris", "France"])
 		expect(formatAddressLines(new BillingAddress({}))).toEqual([])
 		expect(formatAddressLines(null)).toEqual([])
-	})
-
-	it("hasAddress mirrors the line count", () => {
-		expect(hasAddress(new BillingAddress({ country: "US" }))).toBe(true)
-		expect(hasAddress(new BillingAddress({ line1: "" }))).toBe(false)
 	})
 })
 

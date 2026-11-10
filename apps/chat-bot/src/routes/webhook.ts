@@ -6,10 +6,8 @@
  * verify a signature, parse a body or know a payload: a connector that cannot
  * authenticate its own caller is a connector that has not been written yet.
  *
- * Nothing registered today delivers this way — the first connector is a socket
- * one — so this exists as the contract's other half, tested against a fake
- * connector. It is also why the Worker takes no public hostname yet; see
- * `../worker.ts`.
+ * A connector of `kind: "webhook"` is delivered this way, which is why the Worker
+ * takes a public hostname where the stage has one; see `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
 import { ConfigProvider, Effect, Option, Schema, Array as Arr } from "effect"

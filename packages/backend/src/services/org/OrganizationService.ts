@@ -61,6 +61,7 @@ import {
 	ErrorIssueEvents,
 	ErrorIssueFingerprints,
 	ErrorIssueStates,
+	ErrorIssueVerifications,
 	ErrorIssues,
 	ErrorNotificationPolicies,
 	LiveActivities,
@@ -214,6 +215,9 @@ const ORG_SCOPED_TABLES: ReadonlyArray<OrgScopedTable> = [
 	ErrorIncidents,
 	// The aliases go with the issues they point at.
 	ErrorIssueFingerprints,
+	// A `waiting` row left behind is due work: the verification tick scans every org's and
+	// would pick it up on each run, for an issue that is purged below.
+	ErrorIssueVerifications,
 	ErrorIssues,
 	ErrorNotificationPolicies,
 	Actors,
@@ -315,7 +319,6 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
-	"ErrorIssueVerifications",
 	"ErrorNotificationDeliveries",
 	"ErrorTickStates",
 	"Investigations",

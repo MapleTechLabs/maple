@@ -80,6 +80,9 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 			case "prose":
 				lines.push(block.markdown)
 				break
+			case "page":
+				lines.push(block.fallback)
+				break
 			case "chart": {
 				// A title and a summary are built from model-authored chart JSON, which is bounded by
 				// nothing; an over-long field is not a bad embed, it is a rejected message — and so is

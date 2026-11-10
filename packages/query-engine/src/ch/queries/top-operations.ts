@@ -8,25 +8,15 @@
 import { finiteOrZero } from "./format"
 import { Match } from "effect"
 import type { TracesMetric } from "@maple/domain/query-engine"
-import { compile } from "@maple-dev/effect-orm/sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { avg, count, countIf, quantile } from "@maple-dev/effect-orm/clickhouse"
 import { if_ } from "@maple-dev/effect-orm/clickhouse"
-import { round } from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import { Traces, orgIdParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
-import * as T from "@maple-dev/effect-orm/clickhouse"
+import { apdexExprs } from "./query-helpers"
 import { displaySpanName, mergedDurationQuantile, serviceOperationWindows } from "./service-operations"
-
-/**
- * Wrap an expression in parentheses. The DSL's arithmetic combinators
- * (`add`/`mul`/`div`) emit flat infix SQL without grouping, so explicit
- * grouping is required when a sum must bind before a division.
- */
-const paren = (expr: CH.Expr<number>): CH.Expr<number> =>
-	CH.rawExpr(`(${compile(expr.toFragment())})`, T.float64)
 
 export type TopOperationsMetric = TracesMetric
 
@@ -57,23 +47,10 @@ const metricExpr = (
 		Match.when("error_rate", () =>
 			if_(count().gt(0), countIf($.StatusCode.eq("Error")).div(count()), CH.lit(0)),
 		),
-		Match.when("apdex", () =>
-			if_(
-				count().gt(0),
-				round(
-					// (satisfied + tolerating * 0.5) / total — the numerator must be
-					// grouped so the division binds after the sum.
-					paren(
-						countIf(durationMs($.Duration).lt(500)).add(
-							countIf(durationMs($.Duration).gte(500).and(durationMs($.Duration).lt(2000))).mul(
-								0.5,
-							),
-						),
-					).div(count()),
-					4,
-				),
-				CH.lit(0),
-			),
+		// The shared definition, so a failed span is frustrated here as it is on the service page.
+		Match.when(
+			"apdex",
+			() => apdexExprs(durationMs($.Duration), 500, $.StatusCode.eq("Error")).apdexScore,
 		),
 		Match.exhaustive,
 	)

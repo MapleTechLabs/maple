@@ -3,7 +3,7 @@
  *
  * `MUTATING_TOOL_NAMES` stays exactly where it is and keeps its shape: it seeds `DEFAULT_RULESET`
  * here, and it remains the allowlist floor for applying an approval. The equivalence is pinned
- * by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
+ * by a test in `../mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
  * accident.
  */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
@@ -80,13 +80,10 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"error_detail",
 ]
 
-/** A reply reads what a review reads; its only writes are its own completion tools. */
-export const PR_REPLY_RULESET: PermissionRuleset = [
-	new PermissionRule({ tool: "*", action: "deny" }),
-	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
-]
-
 export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
 	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
 ]
+
+/** A reply reads what a review reads; its only writes are its own completion tools. */
+export const PR_REPLY_RULESET: PermissionRuleset = PR_REVIEW_RULESET

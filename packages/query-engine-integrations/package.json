@@ -5,8 +5,6 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./ai": "./src/ai/index.ts",
-		"./cloudflare": "./src/cloudflare/index.ts",
-		"./planetscale": "./src/planetscale/index.ts",
 		"./product": "./src/product/index.ts",
 		"./benchmark": "./src/benchmark/index.ts"
 	},

@@ -309,24 +309,28 @@ export class OnCallSchedulesService extends Context.Service<
 			const nowMs = yield* runtime.now
 			const [from, to] = nowWindow(nowMs)
 			const [rows, nearby, active, chains] = yield* dbExecute((db) =>
-				Effect.all([
-					db.run(
-						PG.from(OnCallSchedules)
-							.select()
-							.where(($) => [$.orgId.eq(orgId)])
-							.orderBy(["name", "asc"])
-							.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
-					),
-					overlappingOverrides(db, orgId, from, to),
-					// The org-wide window above is capped, so the overrides that decide who is on
-					// call now are read on their own: at most the upcoming cap per schedule.
-					db.run(
-						PG.from(OnCallOverrides)
-							.select()
-							.where(($) => [$.orgId.eq(orgId), $.startsAt.lte(nowMs), $.endsAt.gt(nowMs)]),
-					),
-					chainIdsBySchedule(db, orgId),
-				]),
+				Effect.all(
+					[
+						db.run(
+							PG.from(OnCallSchedules)
+								.select()
+								.where(($) => [$.orgId.eq(orgId)])
+								.orderBy(["name", "asc"])
+								.limit(MAX_ONCALL_SCHEDULES_PER_ORG),
+						),
+						overlappingOverrides(db, orgId, from, to),
+						// The org-wide window above is capped, so the overrides that decide who is on
+						// call now are read on their own: at most the upcoming cap per schedule.
+						db.run(
+							PG.from(OnCallOverrides)
+								.select()
+								.where(($) => [$.orgId.eq(orgId), $.startsAt.lte(nowMs), $.endsAt.gt(nowMs)]),
+						),
+						chainIdsBySchedule(db, orgId),
+					],
+					// Four independent reads, so they share the pool instead of queueing.
+					{ concurrency: "unbounded" },
+				),
 			)
 			const overrides = Arr.dedupeWith([...active, ...nearby], (a, b) => a.id === b.id)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)

@@ -41,7 +41,6 @@ apps/ai/.evals/
 .alchemy
 .mcp.json
 .dev.vars
-apps/chat-agent/.dev.vars
 
 # playwright (perf harness artifacts)
 test-results/

@@ -271,6 +271,8 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 			PORT: Output.map(Output.asOutput(route.port), String),
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
+			// The scraper's default is a fixed port; ingest's dev script listens on its route's port.
+			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
 			// The alchemy CLI sets NODE_ENV=production and children inherit it; vite and
 			// astro read it for `import.meta.env.DEV`/`PROD`, so dev servers must override it.
 			NODE_ENV: "development",

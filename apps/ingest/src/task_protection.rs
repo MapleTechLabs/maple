@@ -1,11 +1,12 @@
 //! ECS task scale-in protection driven by WAL backlog.
 //!
-//! The WAL lives on Fargate ephemeral storage, which is destroyed with the
-//! task — so a scale-in that lands on a task holding unexported frames loses
-//! them. Backlog is largest exactly when the autoscaler wants to scale in
-//! (after a burst or a warehouse outage), so this loop marks the task
-//! protected via the ECS agent's task-protection endpoint while the primary
-//! lanes hold meaningful backlog, and releases it once they drain.
+//! The WAL lives on the EC2 host's instance store (`/mnt/wal`), which is wiped
+//! when the instance stops or is replaced, so a scale-in that lands on a task
+//! holding unexported frames puts them at risk. Backlog is largest exactly
+//! when the autoscaler wants to scale in (after a burst or a warehouse
+//! outage), so this loop marks the task protected via the ECS agent's
+//! task-protection endpoint while the primary lanes hold meaningful backlog,
+//! and releases it once they drain.
 //!
 //! The endpoint is signed by the agent itself; the task role only needs
 //! `ecs:UpdateTaskProtection` (granted in `apps/ingest/alchemy.run.ts`).

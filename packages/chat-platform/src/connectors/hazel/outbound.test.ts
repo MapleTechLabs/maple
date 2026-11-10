@@ -113,6 +113,66 @@ describe("hazel transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("publishes a page for the channel, then posts it as the message's HTML embed", () => {
+		const http = stub([
+			[
+				"/html-renders",
+				{
+					status: 200,
+					body: JSON.stringify({ data: { renderId: "r1", title: "Acme cancelled", height: 900 } }),
+				},
+			],
+			["/messages", { status: 200, body: JSON.stringify({ data: { id: "m1" } }) }],
+		])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			yield* transport.post(target, [
+				{
+					kind: "page",
+					title: "Acme cancelled",
+					html: "<p>report</p>",
+					height: 900,
+					fallback: "**Acme** cancelled",
+				},
+			])
+			const [publish, post] = http.seen
+			expect(publish?.url).toBe("https://api.hazel.sh/api/v1/html-renders")
+			expect(sentBody(publish)).toEqual({
+				channelId: THREAD,
+				title: "Acme cancelled",
+				html: "<p>report</p>",
+				height: 900,
+			})
+			expect(sentBody(post)).toEqual({
+				channelId: THREAD,
+				content: "",
+				embeds: [{ html: { renderId: "r1", title: "Acme cancelled", height: 900 } }],
+				replyToMessageId: null,
+				threadChannelId: null,
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("posts nothing when Hazel refuses the page", () => {
+		const http = stub([["/html-renders", { status: 400, body: "{}" }]])
+		return Effect.gen(function* () {
+			const transport = yield* hazelOutbound.transport
+			const error = yield* Effect.flip(
+				transport.post(target, [
+					{
+						kind: "page",
+						title: "Acme cancelled",
+						html: "<p>report</p>",
+						height: 900,
+						fallback: "**Acme** cancelled",
+					},
+				]),
+			)
+			expect(error.reason).toBe("rejected")
+			expect(http.seen).toHaveLength(1)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect(
 		"streams a turn through the message's live state, and writes the message once at the end",
 		() => {

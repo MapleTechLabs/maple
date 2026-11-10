@@ -39,8 +39,14 @@ export const makeFakeStorage = () => {
 	const unlisted = new Set<string>()
 	// Runs once inside the next `list`, to land a concurrent write while it is in flight.
 	const duringList: ListHook = { run: null }
+	// Every key a KV `get` asked for, in order.
+	const kvReads = new Array<string>()
 	const storage: StatusStorage = {
-		kvGet: (key) => guard("kv", key, () => kv.get(key) ?? null),
+		kvGet: (key) =>
+			guard("kv", key, () => {
+				kvReads.push(key)
+				return kv.get(key) ?? null
+			}),
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
 			guard("kv", prefix, () => {
@@ -66,7 +72,7 @@ export const makeFakeStorage = () => {
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
-	return { storage, kv, r2, cache, failing, limits, unlisted, duringList, ids }
+	return { storage, kv, kvReads, r2, cache, failing, limits, unlisted, duringList, ids }
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>

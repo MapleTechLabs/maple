@@ -12,7 +12,13 @@ const decodeJson = (raw: string): Option.Option<Schema.Json> =>
 // TanStack Router's default search format: each value is JSON when it parses as JSON, raw
 // otherwise, and a string that would parse as JSON is written quoted. Same URLs both ways.
 
-const parseValue = (raw: string): Schema.Json => Option.getOrElse(decodeJson(raw), () => raw)
+// A number that does not print back as written (20 digits, `1e5`) stays text: a string param
+// stringifies what it gets, and an id that lost its low digits would be the wrong id.
+const printsBack = (raw: string) => (value: Schema.Json) =>
+	!Predicate.isNumber(value) || String(value) === raw
+
+const parseValue = (raw: string): Schema.Json =>
+	Option.getOrElse(Option.filter(decodeJson(raw), printsBack(raw)), () => raw)
 
 const isJson = (raw: string): boolean => Option.isSome(decodeJson(raw))
 
