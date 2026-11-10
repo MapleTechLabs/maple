@@ -17,6 +17,11 @@ export * from "./warehouse-services"
 
 export const WarehouseDateTimeString = TinybirdDateTime
 
+/** A domain request class's constructor input: callers hand it over as the payload itself. */
+export type RequestInput<Request> = Request extends new (input: infer Input, ...rest: infer _Rest) => object
+	? Input
+	: never
+
 /** An integration page's window; `resolveInfraWindow` fills a missing bound with the last 6 hours. */
 export const InfraWindowInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
