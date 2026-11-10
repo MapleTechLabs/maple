@@ -38,10 +38,7 @@ import {
 } from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/cache"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import {
 	Array as Arr,
 	Cause,
@@ -2303,53 +2300,14 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			orgsToProcess,
 			(org) =>
-				Effect.gen(function* () {
-					// Orgs whose warehouse rejected queries with an auth/config-class
-					// error are parked (see warehouse-org-quarantine.ts).
-					if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
-						yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
-							Effect.annotateLogs({ orgId: org }),
-						)
-						return emptyStats
-					}
-					return yield* processOrg(org, nowMs, runRetention)
-				}).pipe(
-					// Isolate genuine per-org failures/defects so one bad org can't fail
-					// the whole tick. Interrupts (isolate teardown) are NOT per-org
-					// failures — re-raise them so the tick cancels promptly instead of
-					// logging a phantom failure and marching through the remaining orgs.
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.gen(function* () {
-									const quarantined = yield* quarantineOnConfigClassCause(
-										edgeCache,
-										org,
-										cause,
-										nowMs,
-									)
-									if (quarantined) {
-										yield* Effect.logInfo(
-											"Org warehouse rejected queries with a config-class error; quarantined",
-										).pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									} else {
-										yield* Effect.logError("Anomaly tick failed for org").pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									}
-									yield* Ref.update(orgFailures, (n) => n + 1)
-									return emptyStats
-								}),
-					),
-				),
+				// A parked org is skipped; one bad org cannot fail the tick.
+				runWarehouseOrgTurn(edgeCache, org, nowMs, processOrg(org, nowMs, runRetention), {
+					skipped: emptyStats,
+					failed: Ref.update(orgFailures, (n) => n + 1).pipe(Effect.as(emptyStats)),
+					failureMessage: "Anomaly tick failed for org",
+					skipMessage: "Skipping org with quarantined warehouse",
+					gateLookup: withOutboundPermit,
+				}),
 			{ concurrency: 4 },
 		)
 

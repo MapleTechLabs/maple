@@ -81,6 +81,8 @@ export interface WarehouseOrgTurn<A> {
 	readonly skipMessage?: string
 	/** Whether parking the org logs at Info. Defaults to true. */
 	readonly logQuarantine?: boolean
+	/** Runs the parked-org lookup, e.g. under the tick's outbound permits. */
+	readonly gateLookup?: (lookup: Effect.Effect<boolean>) => Effect.Effect<boolean>
 }
 
 /**
@@ -96,7 +98,8 @@ export const runWarehouseOrgTurn = <A, E, R>(
 	turn: WarehouseOrgTurn<A>,
 ): Effect.Effect<A, never, R> =>
 	Effect.gen(function* () {
-		if (yield* isOrgWarehouseQuarantined(edgeCache, orgId)) {
+		const lookup = isOrgWarehouseQuarantined(edgeCache, orgId)
+		if (yield* turn.gateLookup === undefined ? lookup : turn.gateLookup(lookup)) {
 			if (turn.skipMessage !== undefined)
 				yield* Effect.logInfo(turn.skipMessage).pipe(Effect.annotateLogs({ orgId }))
 			return turn.skipped
