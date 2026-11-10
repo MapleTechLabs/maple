@@ -200,6 +200,18 @@ describe("vercel overview", () => {
 		)
 	})
 
+	test("a slow project counts as slow in the band, not as healthy", () => {
+		const slowDocs = Arr.map(VERCEL_PROJECTS, (project) =>
+			project.projectId === "prj_docs" ? { ...project, p95DurationMs: 1_500 } : project,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, slowDocs)),
+			themeResolved(),
+			expectView(text(/1 healthy · 1 slow · 1 build failing · 1 erroring/)).toExist(),
+		)
+	})
+
 	test("a fleet band cell filters the table to its projects, and pressing it again leaves the filter", () => {
 		scene(
 			{ update: pageUpdate, view },

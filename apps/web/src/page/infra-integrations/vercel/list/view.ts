@@ -108,12 +108,15 @@ const band = (
 	const erroring = count(healths, "erroring")
 	const failed = count(healths, "failedDeploy")
 	const idle = count(healths, "idle")
+	const degraded = count(healths, "slow") + count(healths, "coldStarts")
+	const healthy = rows.length - erroring - failed - degraded - idle
 	return fleetBand<VercelProjectScope, Message>(h, {
 		total: rows.length,
 		noun: "project",
-		caption: `${rows.length - erroring - failed - idle} healthy · ${failed} build failing · ${erroring} erroring · ${idle} idle`,
+		caption: `${healthy} healthy · ${degraded} slow · ${failed} build failing · ${erroring} erroring · ${idle} idle`,
 		segments: [
-			{ key: "healthy", count: rows.length - erroring - failed - idle, className: TONE_FILL.ok },
+			{ key: "healthy", count: healthy, className: TONE_FILL.ok },
+			{ key: "slow", count: degraded, className: TONE_FILL.warn },
 			{ key: "failed deploy", count: failed, className: TONE_FILL.warn },
 			{ key: "erroring", count: erroring, className: TONE_FILL.crit },
 			{ key: "idle", count: idle, className: TONE_FILL.neutral },

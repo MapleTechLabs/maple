@@ -19,7 +19,7 @@ import {
 } from "../../../../components/infra/vercel/project-rail"
 import { percentOf } from "../../../../components/integrations/vercel-model"
 import { relativeTime } from "../../../kit/relative-time"
-import { type Clock, dataOf } from "../view-parts"
+import { type Clock, dataOf, failureOf } from "../view-parts"
 import type { Message, Model } from "./model"
 
 // `VercelProjectRail`: the project's facts, its slowest functions, the hosts it calls and its
@@ -92,6 +92,10 @@ const forwarding = (status: VercelIntegrationStatus): string => {
 }
 
 const projectGroup = (h: H, model: Model, clock: Clock): Html => {
+	if (failureOf(model.status.data) !== null)
+		return detailRailGroup(h, "Project", [
+			typography(h, { size: "2xs", tone: "muted" }, ["Couldn't load the Vercel connection"]),
+		])
 	const status = dataOf(model.status.data)
 	if (status === null) return detailRailGroup(h, "Project", railLoading(h))
 	const project = Arr.findFirst(status.projects, (p) => p.id === model.projectId)

@@ -241,7 +241,7 @@ const tabStrip = (h: H, model: Model, time: TimeSearch): Html =>
 
 /** The project's own service on the service map: ingest names Vercel's runtime spans after the project. */
 const serviceMapHref = (model: Model, time: TimeSearch): string =>
-	hrefOf(AppRoute.ServiceMap({ search: { ...time, focusService: titleOf(model) } }))
+	hrefOf(AppRoute.ServiceMap({ search: { ...time, focusService: serviceNameOf(model) ?? titleOf(model) } }))
 
 /** The regression callout over the linked strips; a skeleton until the series and the theme are in. */
 const trafficSignals = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {

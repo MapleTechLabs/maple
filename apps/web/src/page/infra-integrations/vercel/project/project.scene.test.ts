@@ -255,6 +255,19 @@ describe("vercel project", () => {
 		)
 	})
 
+	test("a failed status read says so in the rail instead of loading forever", () => {
+		const model = steps(init(routeTo(), context).model, [
+			() => Message.CompletedResolveWindow({ window, nowMs: Date.now(), mode: "Load" }),
+			(m) => Message.CompletedLoadStatus({ key: m.status.key ?? "", result: failed }),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("Couldn't load the Vercel connection")).toExist(),
+		)
+	})
+
 	test("the inventory names the project; its id stands in until then", () => {
 		expect(titleOf(init(routeTo(), context).model)).toBe("prj_api")
 		expect(titleOf(opened())).toBe("api")
