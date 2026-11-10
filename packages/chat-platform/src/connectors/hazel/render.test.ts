@@ -12,6 +12,36 @@ describe("hazel render", () => {
 		expect(body.content).toBe("Checkout is slow. cc @​[directive:channel] @​[userId:abc]")
 	})
 
+	it("shows a published page as the message's HTML embed, and an unpublished one as its fallback", () => {
+		const published = renderHazelMessage(
+			[
+				{
+					kind: "page",
+					title: "Acme cancelled",
+					html: "<p>report</p>",
+					height: 900,
+					fallback: "**Acme** cancelled",
+				},
+			],
+			[{ renderId: "r1", title: "Acme cancelled", height: 900 }],
+		)
+		expect(published).toEqual({
+			content: "",
+			embeds: [{ html: { renderId: "r1", title: "Acme cancelled", height: 900 } }],
+		})
+		expect(
+			renderHazelMessage([
+				{
+					kind: "page",
+					title: "Acme cancelled",
+					html: "<p>report</p>",
+					height: 900,
+					fallback: "**Acme** cancelled",
+				},
+			]),
+		).toEqual({ content: "**Acme** cancelled", embeds: [] })
+	})
+
 	it("puts an open approval on an embed with two buttons carrying Maple's control ids", () => {
 		const body = renderHazelMessage([
 			{

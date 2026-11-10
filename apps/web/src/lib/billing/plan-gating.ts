@@ -202,14 +202,6 @@ function isHardCapped(balance: Balance | undefined): balance is Balance {
 	return (balance.granted ?? 0) > 0
 }
 
-// True when any metered ingest feature bills usage-based overage. Such orgs have
-// no fixed cap, so they should never see a usage-limit alert.
-export function isUsageBasedPlan(customer: Customer | null | undefined): boolean {
-	const balances = customer?.balances
-	if (!balances) return false
-	return Arr.some(METERED_INGEST_FEATURES, (featureId) => balances[featureId]?.overageAllowed === true)
-}
-
 // Per-feature quota standing for the hard-capped (base-plan) ingest features.
 // Features that are unlimited, usage-based, or un-granted are omitted.
 export function getFeatureQuotas(customer: Customer | null | undefined): FeatureQuota[] {

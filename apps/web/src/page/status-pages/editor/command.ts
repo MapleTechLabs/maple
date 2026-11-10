@@ -6,6 +6,7 @@ import {
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageIncidentPostUpdateParams,
+	V2StatusPageIncidentUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import { Clock, Duration, Effect, Schema } from "effect"
@@ -15,6 +16,7 @@ import {
 	applyPageConfig,
 	createIncident,
 	deleteComponent,
+	deleteIncident,
 	deletePage,
 	listComponents,
 	listPageIncidents,
@@ -151,6 +153,27 @@ export const PublishIncident = Command.define("PublishStatusPageIncident", {
 		updateIncident(incidentId, { published: true }).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedPublishIncident({ incidentId, result })),
+		),
+})
+
+/** Saves an incident's title, impact and components; posts no update. */
+export const SaveIncident = Command.define("SaveStatusPageIncident", {
+	args: { incidentId: StatusPageIncidentId, payload: V2StatusPageIncidentUpdateParams },
+	messages: [Message.CompletedSaveIncident],
+	execute: ({ incidentId, payload }) =>
+		updateIncident(incidentId, payload).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSaveIncident({ result })),
+		),
+})
+
+export const DeleteIncident = Command.define("DeleteStatusPageIncident", {
+	args: { incidentId: StatusPageIncidentId },
+	messages: [Message.CompletedDeleteIncident],
+	execute: ({ incidentId }) =>
+		deleteIncident(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteIncident({ result })),
 		),
 })
 

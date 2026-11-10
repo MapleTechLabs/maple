@@ -1,23 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { V2ErrorIssue, encodePublicId } from "@maple/domain/http/v2"
-import {
-	appendUniqueErrorIssues,
-	buildErrorIssueListQuery,
-	buildServiceOpenIssuesQuery,
-	errorIssueFromV2,
-} from "./error-issues"
+import { buildServiceOpenIssuesQuery, errorIssueFromV2 } from "./error-issues"
 
 describe("error issue v2 queries", () => {
-	it("builds one bounded, server-filtered page for the issues route", () => {
-		expect(
-			buildErrorIssueListQuery({ workflowState: "triage", severity: "critical", kind: "error" }),
-		).toEqual({ limit: 100, workflow_state: "triage", severity: "critical", kind: "error" })
-		expect(buildErrorIssueListQuery({ workflowState: "all", severity: "all", kind: "all" })).toEqual({
-			limit: 100,
-		})
-	})
-
 	it("requests exactly five actionable service issues in urgency order", () => {
 		expect(buildServiceOpenIssuesQuery("checkout-api")).toEqual({
 			service_name: "checkout-api",
@@ -102,6 +88,5 @@ describe("errorIssueFromV2", () => {
 		expect(adapted.commentCount).toBe(3)
 		expect(adapted.openPullRequestCount).toBe(1)
 		expect(adapted.mergedPullRequestCount).toBe(2)
-		expect(appendUniqueErrorIssues([adapted], [adapted])).toEqual([adapted])
 	})
 })

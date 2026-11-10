@@ -7,7 +7,7 @@ import {
 	makeSnapshot,
 } from "@maple/status-page/fixtures"
 import { beforeEach, describe, expect, it } from "vitest"
-import { cacheKey } from "./snapshot"
+import { CACHE_FRESH_MS, cacheKey } from "./snapshot"
 import {
 	type FakeStorage,
 	makeFakeStorage,
@@ -109,6 +109,28 @@ describe("serving a page", () => {
 		expect(response.status).toBe(200)
 		expect(html).toContain(`href="/s/acme/feed.atom"`)
 		expect((await send(fake, "https://status.maple.workers.dev/s/unknown/")).status).toBe(404)
+	})
+
+	it("asks KV for the shared host once per cache window, not on every slug request", async () => {
+		const url = "https://status.maple.workers.dev/s/acme/"
+		const hostKey = StatusPageKeys.host("status.maple.workers.dev")
+		const hostReads = () => Arr.filter(fake.kvReads, (key) => key === hostKey).length
+		expect((await send(fake, url)).status).toBe(200)
+		expect((await send(fake, url)).status).toBe(200)
+		expect(hostReads()).toBe(1)
+		expect((await send(fake, url, { nowMs: FIXTURE_NOW + CACHE_FRESH_MS })).status).toBe(200)
+		expect(hostReads()).toBe(2)
+	})
+
+	it("serves a host that gains a page once its remembered miss has aged out", async () => {
+		const page = "https://status.late.example/"
+		expect((await send(fake, page)).status).toBe(404)
+		fake.kv.set(StatusPageKeys.host("status.late.example"), FIXTURE_PAGE_ID)
+		expect((await send(fake, page, { nowMs: FIXTURE_NOW + CACHE_FRESH_MS })).status).toBe(200)
+	})
+
+	it("keeps a host's own page ahead of the slug path, so it never serves another page", async () => {
+		expect((await send(fake, "https://status.acme.example/s/acme/")).status).toBe(404)
 	})
 
 	it("stops serving a renamed page under its old slug", async () => {

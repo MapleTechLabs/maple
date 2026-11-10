@@ -14,9 +14,9 @@ import { StatusPageSearch } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import { ComponentForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
+import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
 import { Picker } from "../shared/picker"
-import { PreviewHistory, PreviewScheme } from "../shared/preview"
+import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
 // `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
 // preview or the list opens in the side panel; Settings and JSON are views of their own.
@@ -78,6 +78,9 @@ export const Model = Schema.Struct({
 	panel: Schema.NullOr(Panel),
 	// Preview
 	previewScheme: PreviewScheme,
+	/** Looking only, like the scheme: neither is saved with the page. */
+	previewWidth: PreviewWidth,
+	previewState: PreviewState,
 	previewGeneration: Schema.Number,
 	previewShown: Schema.Number,
 	previewHistory: PreviewHistory,
@@ -102,6 +105,13 @@ export const Model = Schema.Struct({
 	/** The generation the next update post takes. */
 	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
+	/** The incident whose title, impact and components are being edited; `null` while none is. */
+	incidentEdit: Schema.NullOr(IncidentEditForm),
+	isSavingIncident: Schema.Boolean,
+	incidentEditFailure: Schema.NullOr(LoadFailure),
+	confirmDeleteIncidentId: Schema.NullOr(StatusPageIncidentId),
+	deleteIncidentDialog: Dialog.Model,
+	isDeletingIncident: Schema.Boolean,
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
 	publicBaseUrl: Schema.String,

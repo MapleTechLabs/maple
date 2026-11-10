@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { pipe, Array as Arr, String as Str } from "effect"
-import { codePointAt, codeUnitAt, indexOfFrom, matchAllIndexed, replaceWith } from "./index"
+import {
+	codePointAt,
+	codeUnitAt,
+	escapeHtml,
+	indexOfFrom,
+	matchAllIndexed,
+	replaceWith,
+	truncate,
+} from "./index"
 
 describe("replaceWith", () => {
 	it("passes capture groups and replaces every match of a global regex", () => {
@@ -57,5 +65,23 @@ describe("position reads", () => {
 			["1", 1],
 			["22", 3],
 		])
+	})
+})
+
+describe("escapeHtml", () => {
+	it("escapes markup and both quote styles, ampersands first", () => {
+		expect(escapeHtml(`<a href="x" title='y'>&amp;</a>`)).toBe(
+			"&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;amp;&lt;/a&gt;",
+		)
+	})
+})
+
+describe("truncate", () => {
+	it("returns text that already fits untouched", () => {
+		expect(truncate("hello", 5)).toBe("hello")
+	})
+
+	it("cuts longer text to exactly max characters, ending in an ellipsis", () => {
+		expect(truncate("hello world", 5)).toBe("hell…")
 	})
 })

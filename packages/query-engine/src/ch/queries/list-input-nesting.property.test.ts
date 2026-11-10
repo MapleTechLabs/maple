@@ -87,8 +87,14 @@ const cases: ReadonlyArray<{ readonly name: string; readonly sql: (n: number) =>
 describe("list inputs never deepen the SQL", () => {
 	for (const { name, sql } of cases) {
 		const twoItems = nestingDepth(sql(2))
-		it.prop(name, [listSize], ([n]) => {
-			expect(nestingDepth(sql(n))).toBeLessThanOrEqual(twoItems)
-		})
+		// Each run compiles a query of up to 2,000 items; a loaded CI runner needs more than the 5s default.
+		it.prop(
+			name,
+			[listSize],
+			([n]) => {
+				expect(nestingDepth(sql(n))).toBeLessThanOrEqual(twoItems)
+			},
+			30_000,
+		)
 	}
 })

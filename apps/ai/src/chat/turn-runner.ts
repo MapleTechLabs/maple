@@ -42,6 +42,8 @@ import {
 } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
+import type { AiSessionPortsLayer } from "../worker/bindings"
+import { provideSessionPorts } from "./session-ports"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
 import type { ChatSession } from "./ChatSession"
 import { withToolTranscript } from "./close-out"
@@ -70,7 +72,7 @@ import {
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeAutonomousOutcome, type PhaseKind } from "./autonomous-outcome"
-import { makeUnfinishedSettler, runAutonomousTurn, settleRow } from "./autonomous-settle"
+import { makeUnfinishedSettler, runAutonomousTurn, settleAbandonedTurn, settleRow } from "./autonomous-settle"
 import { type AgentDefinition, agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn } from "./run"
@@ -125,6 +127,8 @@ export interface RunChatSessionTurnInput {
 	readonly workersAi?: Option.Option<WorkersAiBinding>
 	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
 	readonly chatSessions?: ChatSessionNamespace
+	/** The data-source call limiters and the audit queue, from the activation; none where a test runs the turn. */
+	readonly bindingPorts?: AiSessionPortsLayer
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
@@ -320,6 +324,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			Layer.provideMerge(layerMapleDbConnection(input.env)),
 			Layer.provideMerge(envPorts(input.env)),
 			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
+			provideSessionPorts(input.bindingPorts),
 			Layer.provideMerge(ReturnedToolFailuresOkLive.pipe(Layer.provideMerge(telemetry.layer))),
 		),
 	)
@@ -363,15 +368,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				),
 			)
 			if (runTenant === undefined) return yield* annotateTurn()
-			if (prReviewId !== undefined && input.abandoned === true) {
+			if (input.abandoned === true) {
 				observability.outcome = "abandoned"
-				yield* reviews
-					.failReview(tenant.orgId, prReviewId, reviewFailureError("interrupted"))
-					.pipe(
-						Effect.catchCause((cause) =>
-							Effect.logError("Could not record the abandoned review", cause),
-						),
-					)
+				yield* settleAbandonedTurn({
+					orgId: tenant.orgId,
+					prReviewId,
+					prReplyId,
+					reviewInterrupted: reviewFailureError("interrupted"),
+					failReview: (orgId, id, error) => reviews.failReview(orgId, id, error),
+					failReply: (orgId, id, error) => conversations.failReply(orgId, id, error),
+				})
 				yield* annotateTurn()
 				return
 			}
@@ -445,7 +451,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						),
 						"Could not record the refused reply",
 					)
-				if (autonomous)
+				// A reply's row is settled above, with the refusal's own notice.
+				else if (autonomous)
 					yield* failUnfinished("ai_credits_exhausted", creditRefusalError(refusal.value))
 				observability.failureReason = `AiCreditsExhausted:${refusal.value.reason}`
 				input.session.endTurn(input.messageId, { reason: "error", error: refusal.value.message })

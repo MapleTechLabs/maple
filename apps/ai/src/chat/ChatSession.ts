@@ -1,8 +1,7 @@
 /**
  * `ChatSession` — the durable transcript, one Durable Object per `"<orgId>:<tabId>"`.
  *
- * Replaces Flue's `FlueMapleChatAgent` + `FlueRegistry` SQLite Durable Objects. The DO owns four
- * things:
+ * The DO owns four things:
  *
  *   1. **Ordering.** It assigns every event a monotonic `seq`. That is what makes the client
  *      transport resumable by construction: reconnect is `?cursor=<last seq you saw>`, not a
@@ -28,14 +27,14 @@
  *
  * Startup-CPU note (Cloudflare error 10021): this class is reachable from `worker.ts`, whose
  * module scope Cloudflare evaluates during upload validation. It must therefore import nothing
- * from the app service graph at module scope — hence `@maple/domain` (the wire contract and its
- * transcript fold) being the only import, and `./turn-runner` (which pulls in the whole graph)
- * arriving through a dynamic import inside the method that needs it, exactly as `worker.ts` does
+ * from the app service graph at module scope: only the wire contract, its transcript fold and
+ * the Worker's binding ports are imported, and `./turn-runner` (which pulls in the whole graph)
+ * arrives through a dynamic import inside the method that needs it, exactly as `worker.ts` does
  * for the route graph.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import { Effect, FileSystem, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, FileSystem, Layer, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
 	ChatTurnTenant,
@@ -49,6 +48,7 @@ import {
 	type ChatProposalSettlement,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
+	prReplyIdFromChatSessionId,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
 import { type ChatAbortReason, type ChatSessionRpc, isChatAbortReason } from "@maple/domain/chat-session-stub"
@@ -56,6 +56,7 @@ import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/pla
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
+import { aiSessionPorts, BoundAiClients } from "../worker/bindings"
 import type { RunChatSessionTurnInput } from "./turn-runner"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
@@ -226,6 +227,14 @@ const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
  */
 const resumable = (input: TurnInput): boolean =>
 	input.origin.kind === "autonomous" && prReviewIdFromChatSessionId(input.sessionId) !== undefined
+
+/**
+ * Turns whose rows nothing else settles once the fiber is gone: a review past its resumes, and a
+ * pull request reply, which is not started again because a second run could answer twice.
+ */
+const settlesWhenAbandoned = (input: TurnInput): boolean =>
+	resumable(input) ||
+	(input.origin.kind === "autonomous" && prReplyIdFromChatSessionId(input.sessionId) !== undefined)
 
 /** How the session runs a turn: a port for the same reason as {@link ProposalApplier}. */
 export type TurnRunner = (input: RunChatSessionTurnInput) => Promise<void>
@@ -728,8 +737,8 @@ export class ChatSession {
 	 *
 	 * An autonomous review is started again under a new turn id, from the kickoff `beginTurn`
 	 * stored, up to {@link MAX_TURN_RESUMES} times. Past that, or for any other turn, the slot is
-	 * released; a review is also told it failed, since nothing else would move its row off
-	 * `running` and its check run off in-progress.
+	 * released; a review or a pull request reply is also told it failed, since nothing else would
+	 * move its row off `running`, its check run off in-progress, or tell the pull request.
 	 */
 	private recoverEvictedTurn(messageId: string): void {
 		const row = this.sessionRow()
@@ -743,7 +752,7 @@ export class ChatSession {
 			return
 		}
 		if (!this.endTurn(messageId, TURN_FAILED)) return
-		if (Option.isSome(turn) && resumable(turn.value)) {
+		if (Option.isSome(turn) && settlesWhenAbandoned(turn.value)) {
 			const input = { ...this.turnRunInput(messageId, turn.value), abandoned: true as const }
 			this.ctx.waitUntil(
 				Effect.runPromise(
@@ -897,16 +906,23 @@ export interface ChatSessionSchema<E, R> {
  */
 export const makeChatSessionActivation = <SE, SR, R>(
 	migrations: Effect.Effect<ChatSessionSchema<SE, SR>, never, R>,
+	ports: { readonly apply: ProposalApplier; readonly run: TurnRunner } = {
+		apply: applyThroughWorker,
+		run: runThroughWorker,
+	},
 ) =>
 	Effect.map(
 		Effect.all([
 			Cloudflare.DurableObjectState,
 			Cloudflare.WorkerEnvironment,
 			WorkersAiGateway,
+			BoundAiClients,
 			Effect.serviceOption(Cloudflare.DurableObjectScope),
 			migrations,
 		]),
-		([state, env, workersAi, scope, schema]) => {
+		([state, env, workersAi, clients, scope, schema]) => {
+			// The limiters and the audit queue the Worker bound: a turn's runtime has no init to read them from.
+			const bindingPorts = aiSessionPorts(clients)
 			// Always there in the isolate; absent only where a test builds the activation by hand.
 			const chatSessions: ChatSessionNamespace | undefined = Option.getOrUndefined(
 				Option.filter(scope, isChatSessionNamespace),
@@ -919,8 +935,8 @@ export const makeChatSessionActivation = <SE, SR, R>(
 					new ChatSession(
 						state.raw,
 						env,
-						(input) => applyThroughWorker({ ...input, chatSessions }),
-						(input) => runThroughWorker({ ...input, workersAi, chatSessions }),
+						(input) => ports.apply({ ...input, chatSessions, bindingPorts }),
+						(input) => ports.run({ ...input, workersAi, chatSessions, bindingPorts }),
 					),
 				)
 			})
@@ -940,6 +956,8 @@ export const ChatSessionLive = ChatSessionObject.make<
 	| Cloudflare.WorkerEnvironment
 	| Cloudflare.Worker
 	| WorkersAiGateway
+	| BoundAiClients
 	| FileSystem.FileSystem
 	| Path.Path
->(activateChatSession)
+	// The same layer value the init's bindings hold, so the clients are bound once.
+>(activateChatSession).pipe(Layer.provide(BoundAiClients.layer))

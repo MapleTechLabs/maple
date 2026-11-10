@@ -34,11 +34,11 @@ export interface ScraperEnvConfig {
 	readonly PORT: number
 }
 
-// Defaults target the local dev stack (`bun dev`: api on 3472, ingest on
-// 3474, the docker-compose dev token) so the scraper boots without extra
-// configuration instead of crashing the turbo dev TUI. Production overrides
-// all three (apps/scraper/alchemy.run.ts); a missing override
-// degrades to visible per-reconcile warnings, never a crash loop.
+// Defaults target a standalone run (api on 3472, ingest on 3474, the
+// docker-compose dev token) so the scraper boots without extra configuration.
+// `bun dev` passes both URLs from its routes (root alchemy.run.ts) and
+// production overrides all three (apps/scraper/alchemy.run.ts); a missing
+// override degrades to visible per-reconcile warnings, never a crash loop.
 //
 // Numeric settings ARE validated at layer build, unlike the URLs: a missing
 // URL fails loudly every reconcile, but SCRAPER_CONCURRENCY=0 builds a

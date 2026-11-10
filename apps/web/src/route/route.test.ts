@@ -25,6 +25,47 @@ describe("routes", () => {
 		}
 	})
 
+	test("a string param a link wrote unquoted decodes to its text", () => {
+		expect(parse("/replays?userId=12345")).toMatchObject({ _tag: "Replays", search: { userId: "12345" } })
+		expect(parse("/logs?search=404")).toMatchObject({ _tag: "Logs", search: { search: "404" } })
+		expect(parse("/users?q=true")).toMatchObject({ _tag: "Users", search: { q: "true" } })
+		expect(parse("/metrics?q=null")).toMatchObject({ _tag: "Metrics", search: { q: "null" } })
+		expect(parse("/traces?httpStatusCodes=%5B404%2C%22500%22%5D")).toMatchObject({
+			_tag: "Traces",
+			search: { httpStatusCodes: ["404", "500"] },
+		})
+	})
+
+	test("an unquoted id too long or too odd for a number keeps every character", () => {
+		// Past 2^53, and exponent form: both would change when read as a number.
+		expect(parse("/traces/abc?spanId=9876543210987654321")).toMatchObject({
+			_tag: "Trace",
+			search: { spanId: "9876543210987654321" },
+		})
+		expect(parse("/logs?traceId=1e5")).toMatchObject({ _tag: "Logs", search: { traceId: "1e5" } })
+		// A span id is 16 hex characters, which can all be digits.
+		expect(parse("/agent-sessions/s1?span=1234567890123456")).toMatchObject({
+			_tag: "AgentSession",
+			search: { span: "1234567890123456" },
+		})
+		// The one required string param.
+		expect(parse("/infra/railway/svc?environmentId=42")).toMatchObject({
+			_tag: "InfraRailwayService",
+			search: { environmentId: "42" },
+		})
+	})
+
+	test("a numeric-looking string is written quoted and reads back the same", () => {
+		const route = parse("/replays?userId=12345")
+		expect(hrefOf(route)).toBe("/replays?userId=%2212345%22")
+		expect(parse(hrefOf(route))).toEqual(route)
+	})
+
+	test("a number param still reads a number the text does not print back as", () => {
+		expect(parse("/replays?durationMin=1e3")).toMatchObject({ search: { durationMin: 1000 } })
+		expect(parse("/traces?minDurationMs=1.50")).toMatchObject({ search: { minDurationMs: 1.5 } })
+	})
+
 	test("a user page takes any id the API accepts, decoded, and nothing longer", () => {
 		// Cloudflare delivers an encoded `%2F` as a real slash, so the id is the rest of the path.
 		const route = parse("/users/user/42%20ada")

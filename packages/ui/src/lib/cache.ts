@@ -26,9 +26,3 @@ export const cacheResultStyles = {
 	hit: "bg-primary-a2 text-primary border-primary-a3",
 	miss: "bg-chart-p50/15 text-chart-p50 border-chart-p50/30",
 }
-
-export const CACHE_OPERATION_COLORS: Record<string, string> = {
-	GET: "bg-cache-get",
-	SET: "bg-cache-set",
-	DELETE: "bg-cache-delete",
-} satisfies Record<string, string>

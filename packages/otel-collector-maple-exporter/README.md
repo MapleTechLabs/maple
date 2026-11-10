@@ -26,9 +26,9 @@ exporters:
         database: default
         username: maple
         password: ${env:MAPLE_CLICKHOUSE_PASSWORD}
-        org_id: org_3AuiNCIuD1XCbbzcjkzE3s5HoQj # static fallback; per-record
-            # `maple_org_id` resource attr
-            # wins over this
+        org_id: org_3AuiNCIuD1XCbbzcjkzE3s5HoQj # stamped on every record; a
+            # resource attribute overrides it only when
+            # `org_id_from_resource_attribute` is set
         timeout: 30s
         retry_on_failure:
             enabled: true

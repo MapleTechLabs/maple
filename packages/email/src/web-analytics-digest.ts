@@ -9,7 +9,8 @@
  */
 import { FRAGMENTS, PAGE } from "./generated/web-analytics-digest"
 import { C, deltaPalette, deltaParts, rowBorder, trendColor } from "./delta-render"
-import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
+import { escapeHtml } from "@maple/strings"
+import { fill, preheaderPadding, truncate } from "./template"
 import {
 	deriveWebAnalyticsHeadline,
 	emailIcon,

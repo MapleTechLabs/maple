@@ -52,6 +52,10 @@ else
 fi
 
 mkdir -p "$OUT_DIR"
+# The `bun run` steps below resolve root scripts and workspaces from the working
+# directory. Pin OUT_DIR first so a relative one still means the caller's.
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+cd "$REPO_ROOT"
 
 # Several workspace packages are published from gitignored `dist/` directories.
 # A fresh checkout / CI only runs `bun install`, so build the repository's
@@ -68,11 +72,11 @@ trap restore_stub EXIT
 bun run "$REPO_ROOT/scripts/gen-ui-embed.ts"
 
 echo "==> Compiling maple binary (bun build --compile) — version $MAPLE_BUILD_VERSION"
-( cd "$REPO_ROOT" && bun build apps/cli/src/bin.ts --compile \
+bun build apps/cli/src/bin.ts --compile \
 	--define "__MAPLE_VERSION__=\"$MAPLE_BUILD_VERSION\"" \
 	--define "__CHDB_VERSION__=\"$LIBCHDB_VERSION\"" \
 	${COMPILE_TARGET[@]+"${COMPILE_TARGET[@]}"} \
-	--outfile "$OUT_DIR/maple" )
+	--outfile "$OUT_DIR/maple"
 
 echo "==> Downloading libchdb $LIBCHDB_VERSION for $MAPLE_TARGET"
 case "$MAPLE_TARGET" in

@@ -1,9 +1,10 @@
 //! The WAL's durability tier: sealed segments shipped to S3, and the claiming
 //! protocol that lets a booting task recover a dead one's.
 //!
-//! The local WAL lives on Fargate ephemeral storage, which is destroyed with the
-//! task. A drain on SIGTERM covers a graceful stop; this covers everything else
-//! — a crash, a spot reclaim, an AZ event — by keeping every sealed, unexported
+//! The local WAL lives on the EC2 host's instance store (`/mnt/wal`), which
+//! survives a reboot but is wiped when the instance stops or is replaced. A
+//! drain on SIGTERM covers a graceful stop; this covers everything else (a
+//! crash, a spot reclaim, an AZ event) by keeping every sealed, unexported
 //! segment in an object store too.
 //!
 //! Cost is small because segments are transient: a segment is deleted from the

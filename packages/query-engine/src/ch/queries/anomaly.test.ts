@@ -140,8 +140,10 @@ describe("anomalyErrorSpikeTimeseriesQuery", () => {
 			deploymentEnv: "prod",
 			bucketSeconds: 300,
 		})
-		expect(sql).toContain("FROM error_events_by_time")
-		expect(sql).toContain("toStartOfInterval(error_events_by_time.Timestamp, INTERVAL 300 SECOND)")
+		// The fingerprint-sorted table, not its time-sorted sibling.
+		expect(sql).toContain("FROM error_events\n")
+		expect(sql).not.toContain("error_events_by_time")
+		expect(sql).toContain("toStartOfInterval(error_events.Timestamp, INTERVAL 300 SECOND)")
 		expect(sql).toContain("FingerprintHash = toUInt64('12345')")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
 		expect(sql).toContain("OrgId = 'org_1'")

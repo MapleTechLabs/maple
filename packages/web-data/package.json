@@ -4,8 +4,6 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
-		".": "./src/index.ts",
-		"./collections": "./src/collections/index.ts",
 		"./collections/*": "./src/collections/*.ts",
 		"./alerts/*": "./src/alerts/*.ts",
 		"./anomalies/*": "./src/anomalies/*.ts",

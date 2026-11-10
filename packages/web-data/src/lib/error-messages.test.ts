@@ -7,7 +7,6 @@ import {
 	NetworkErrorTag,
 	UnexpectedErrorTag,
 	displayError,
-	isAutomaticRetryError,
 	isUnexpectedError,
 	publicError,
 } from "./error-messages"
@@ -158,7 +157,6 @@ describe("displayError", () => {
 			retryable: true,
 			recovery: "retry",
 		})
-		expect(isAutomaticRetryError(displayed)).toBe(true)
 	})
 
 	it("automatically retries typed transport timeouts declared retryable", () => {
@@ -173,9 +171,9 @@ describe("displayError", () => {
 		expect(displayed).toMatchObject({
 			_tag: "@maple/web/errors/TimeoutError",
 			message: "The API did not respond in time. Try again when you're ready.",
+			retryable: true,
 			recovery: "retry",
 		})
-		expect(isAutomaticRetryError(displayed)).toBe(true)
 	})
 
 	it("automatically retries decoded v2 failures only when the body opts in", () => {
@@ -186,8 +184,8 @@ describe("displayError", () => {
 				recovery: "retry",
 			}),
 		)
-		expect(isAutomaticRetryError(retryable)).toBe(true)
-		expect(isAutomaticRetryError(displayError(errorEnvelope()))).toBe(false)
+		expect(retryable.retryable).toBe(true)
+		expect(displayError(errorEnvelope()).retryable).toBe(false)
 	})
 
 	it("does not interpret raw tags or human-readable messages", () => {

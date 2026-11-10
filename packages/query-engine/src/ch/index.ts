@@ -82,8 +82,6 @@ export {
 	type AttributeValuesOutput,
 } from "./queries/attribute-keys"
 
-// Queries — Setup audit
-
 // Queries — Metrics
 export {
 	metricDeltaExpr,
@@ -157,9 +155,7 @@ export {
 // Queries — Session Events (distilled stream)
 export {
 	sessionTranscriptQuery,
-	sessionEventMatchQuery,
 	sessionActivityQuery,
-	sessionActivityAggregateQuery,
 	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
 	type SessionTranscriptOpts,
@@ -373,7 +369,6 @@ export {
 	releasesTimelineQuery,
 	releaseErrorFingerprintsQuery,
 	RELEASES_LIST_CAP,
-	PLACEHOLDER_COMMIT_SHAS,
 	type ReleasesListOpts,
 	type ReleasesListOutput,
 	type ReleasesTimelineOpts,
@@ -464,7 +459,6 @@ export {
 	anomalyTraceSignalTimeseriesQuery,
 	anomalyLogVolumeTimeseriesQuery,
 	anomalyErrorSpikeTimeseriesQuery,
-	anomalyErrorSpikeServiceTimeseriesQuery,
 	matchedHoursOfDay,
 	type AnomalyTraceSignalsOpts,
 	type AnomalyTraceSignalsOutput,
@@ -654,26 +648,6 @@ export {
 	cancellationServiceUsageQuery,
 	cancellationToolCallsQuery,
 } from "./queries/cancellation-evidence"
-
-// Queries — Cloudflare integration usage (integrations-page ingest proof)
-
-// Queries — Cloudflare service-map stats (per-zone / per-Worker node rollups)
-
-// Queries — PlanetScale service-map stats (per-database / per-branch rollups)
-
-// Queries — PlanetScale infrastructure page (per-database / per-branch timeseries)
-
-// Queries — Cloudflare infrastructure page (per-zone HTTP + per-Worker rollups & timeseries)
-
-// Queries — Cloudflare infrastructure page, extended datasets (hosts, firewall, DNS, platform)
-
-// Queries — Cloudflare zone filters (which dimensions each metric family actually carries)
-
-// Queries — Cloudflare zone breakdowns (generic per-dimension totals/timeseries) + filter facets
-
-// Queries — Internal observability (Maple's own self-instrumentation)
-
-// Queries — Billing (daily ingested volume behind the spend chart)
 
 // Queries — Telemetry liveness (auto-resolve gating + local-mode header heartbeat)
 export {

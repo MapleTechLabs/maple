@@ -189,7 +189,7 @@ export async function postToIngest(
 	// `length` never exceeds the byte size, so a body already past the budget is
 	// not encoded only to be refused.
 	const release =
-		body.length > KEEPALIVE_BUDGET_BYTES
+		!keepalive || body.length > KEEPALIVE_BUDGET_BYTES
 			? undefined
 			: reserveKeepalive(keepalive, byteLength(body), options.otlp)
 	try {

@@ -9,6 +9,7 @@ import {
 	getActiveSink,
 	getSession,
 	hasConsent,
+	isLikelyBot,
 	mayPersistIdentifier,
 	onConsentChange,
 	type PrivacyOptions,
@@ -19,6 +20,7 @@ import {
 	type SessionEventSink,
 	type MetadataSessionHandle,
 } from "@maple/browser-session"
+import { browserNavigator } from "./browser-globals.js"
 import { setupStandaloneSession } from "./standalone-session.js"
 import { getCurrentIdentity } from "./user.js"
 import { CLIENT_SDK_HINT } from "../version.js"
@@ -68,19 +70,18 @@ interface Runtime {
 	metadata?: MetadataSessionHandle | undefined
 }
 
-const noOpHandle: ClientSessionHandle = { stop: () => Promise.resolve() }
-
 /**
  * Own the complete client-session lifecycle. Consent can change after startup:
  * grant starts capture, revoke synchronously detaches producers and discards
  * buffers, and a later grant creates a clean runtime.
  */
 export const startClientSession = (config: ClientSessionConfig): ClientSessionHandle => {
-	configurePrivacy(config.privacy)
+	// Kept for `stop`: a remount would otherwise add its `sanitizeUrl` on top of the last one.
+	const removeSanitizer = configurePrivacy(config.privacy)
 	if (!hasConsent()) clearPendingEvents()
 	// React Native exposes window without a browser DOM or Web Crypto.
 	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
-		return noOpHandle
+		return { stop: () => Promise.resolve(removeSanitizer()) }
 
 	const engineConfig = {
 		endpoint: Str.replace(/\/$/, "")(config.endpoint),
@@ -90,7 +91,11 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		maskAllText: config.replay?.maskAllText ?? false,
 		getIdentity: getCurrentIdentity,
 	}
-	const replayEnabled = (config.replay?.enabled ?? true) && typeof document !== "undefined"
+	// Crawlers keep their session row and events but record no replay. See `isLikelyBot`.
+	const replayEnabled =
+		(config.replay?.enabled ?? true) &&
+		typeof document !== "undefined" &&
+		!isLikelyBot(browserNavigator()?.userAgent ?? "")
 	let runtime: Runtime | undefined
 	let stopped = false
 	let generation = 0
@@ -183,27 +188,28 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 	}
 
 	startRuntime()
-	const stopConsentListener = config.privacy?.requireConsent
-		? onConsentChange((allowed) => {
-				if (allowed) {
-					startRuntime()
-					return
-				}
-				rotateOnNextStart = runtime !== undefined
-				clearPendingEvents()
-				// Before the teardown: a flush still compressing the chunk then finds nothing to send.
-				clearPendingChunk()
-				setVisitorTracking(false)
-				void stopRuntime(false)
-			})
-		: () => {}
+	// Consent is page-wide and only tightens: another SDK copy can turn the gate
+	// on after this start. Without a gate the listener never fires.
+	const stopConsentListener = onConsentChange((allowed) => {
+		if (allowed) {
+			startRuntime()
+			return
+		}
+		rotateOnNextStart = runtime !== undefined
+		clearPendingEvents()
+		// Before the teardown: a flush still compressing the chunk then finds nothing to send.
+		clearPendingChunk()
+		setVisitorTracking(false)
+		void stopRuntime(false)
+	})
 
 	return {
 		stop: async (options) => {
 			if (stopped) return
 			stopped = true
 			stopConsentListener()
-			await stopRuntime(options?.flush ?? true)
+			// After the last flush, so the rows it sends still go through the app's sanitizer.
+			await stopRuntime(options?.flush ?? true).finally(removeSanitizer)
 		},
 	}
 }

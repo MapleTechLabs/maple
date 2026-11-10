@@ -10,7 +10,6 @@ interface ImportMetaEnv {
 	readonly VITE_ELECTRIC_SYNC_URL?: string
 	readonly VITE_INGEST_URL?: string
 	readonly VITE_MAPLE_AUTH_MODE?: string
-	readonly VITE_MAPLE_CAPTURE?: string
 	readonly VITE_MAPLE_COOKIE_DOMAIN?: string
 	readonly VITE_MAPLE_ENVIRONMENT?: string
 	readonly VITE_MAPLE_INGEST_KEY?: string

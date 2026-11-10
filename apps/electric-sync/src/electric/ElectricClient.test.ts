@@ -199,21 +199,18 @@ describe("buildUpstreamShapeUrl", () => {
 		assert.isNull(params.get("replica"))
 	})
 
-	it.each(["alert_destinations", "alert_destinations_v2"] as const)(
-		"pins %s's column projection and drops the secret columns",
-		(shape) => {
-			const columns = columnsOf(buildUrl(shape).params)
-			// PK + org scope must be present for Electric.
-			assert.include(columns, "id")
-			assert.include(columns, "org_id")
-			// The public config the browser renders is allowed…
-			assert.include(columns, "config_json")
-			// …but the encrypted secret columns must never be projected.
-			assert.notInclude(columns, "secret_ciphertext")
-			assert.notInclude(columns, "secret_iv")
-			assert.notInclude(columns, "secret_tag")
-		},
-	)
+	it("pins alert_destinations_v2's column projection and drops the secret columns", () => {
+		const columns = columnsOf(buildUrl("alert_destinations_v2").params)
+		// PK + org scope must be present for Electric.
+		assert.include(columns, "id")
+		assert.include(columns, "org_id")
+		// The public config the browser renders is allowed…
+		assert.include(columns, "config_json")
+		// …but the encrypted secret columns must never be projected.
+		assert.notInclude(columns, "secret_ciphertext")
+		assert.notInclude(columns, "secret_iv")
+		assert.notInclude(columns, "secret_tag")
+	})
 
 	it("projects only safe API-key display fields", () => {
 		const { params } = buildUrl("api_keys")
@@ -230,7 +227,7 @@ describe("buildUpstreamShapeUrl", () => {
 
 	it("never lets the client widen a column-restricted shape back to secrets", () => {
 		const columns = columnsOf(
-			buildUrl("alert_destinations", {
+			buildUrl("alert_destinations_v2", {
 				query: "columns=id%2Corg_id%2Csecret_ciphertext%2Csecret_iv%2Csecret_tag",
 			}).params,
 		)

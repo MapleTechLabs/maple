@@ -22,6 +22,18 @@ export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: strin
 		return Effect.succeed(decoded)
 	})
 
+/** The same parse for `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, with messages that name the variable. */
+export const parseIngestKeyEncryptionKey = <E>(raw: string, onError: (message: string) => E) =>
+	parseBase64Aes256GcmKey(raw, (message) =>
+		onError(
+			message === "Expected a non-empty base64 encryption key"
+				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
+				: message === "Expected base64 for exactly 32 bytes"
+					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
+					: message,
+		),
+	)
+
 /**
  * Optional additional authenticated data. AAD is authenticated but not stored,
  * so it binds a ciphertext to the row it was written for: decryption only
