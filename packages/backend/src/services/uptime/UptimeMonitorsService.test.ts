@@ -1260,6 +1260,37 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
+		it.effect("drops sealed headers when an update removes or replaces the headers", () => {
+			const testDb = createTestDb(trackedDbs)
+			const sealedColumn = (id: UptimeMonitorId) =>
+				Effect.promise(() =>
+					queryFirstRow<{ readonly headers_ciphertext: string | null }>(
+						testDb,
+						"select headers_ciphertext from uptime_monitors where id = $1",
+						[id],
+					),
+				)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const replaced = yield* createHttp("Replaced")
+				const cleared = yield* createHttp("Cleared")
+				yield* sealInto(testDb, ORG, replaced.id, SECRET)
+				yield* sealInto(testDb, ORG, cleared.id, SECRET)
+
+				const rotated = { Authorization: "Bearer rotated" }
+				yield* service.update(ORG, replaced.id, {
+					updatedBy: USER,
+					config: httpConfig(undefined, { headers: rotated }),
+				})
+				yield* service.update(ORG, cleared.id, { updatedBy: USER, config: httpConfig() })
+
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, replaced.id)).config), rotated)
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, cleared.id)).config), {})
+				assert.deepStrictEqual(yield* sealedColumn(replaced.id), { headers_ciphertext: null })
+				assert.deepStrictEqual(yield* sealedColumn(cleared.id), { headers_ciphertext: null })
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
 		it.effect("reads headers that are still in the config", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
