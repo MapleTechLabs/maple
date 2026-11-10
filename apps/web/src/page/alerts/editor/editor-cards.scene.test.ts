@@ -301,6 +301,8 @@ describe("alert rule editor, sentence cards", () => {
 			expectView(text("Missing: Who gets notified")).toExist(),
 			expectView(text("Missing: Rule name")).toExist(),
 			expectAll(all.selector('[aria-invalid="true"]')).toHaveCount(0),
+			expectAll(all.selector("[aria-describedby='rule-name-error']")).toHaveCount(0),
+			expectView(selector("#rule-name-error")).not.toExist(),
 			expectView(routeError).not.toExist(),
 		)
 		scene(
@@ -309,6 +311,12 @@ describe("alert rule editor, sentence cards", () => {
 			given(run(pristine, [Message.BlurredField({ id: "rule-name" })])),
 			themeResolved(),
 			expectView(role("textbox", { name: "Rule name" })).toHaveAttr("aria-invalid", "true"),
+			// The error the input is described by is on the page, under the field.
+			expectView(role("textbox", { name: "Rule name" })).toHaveAttr(
+				"aria-describedby",
+				"rule-name-error",
+			),
+			expectView(selector("#rule-name-error")).toHaveText("Give the rule a name."),
 			expectView(routeError).not.toExist(),
 			// Pressing save shows the rest, and lands on the first thing to fix.
 			click(role("button", { name: "Create rule" })),

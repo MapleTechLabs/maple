@@ -4,7 +4,7 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { bareInput } from "@maple/views/ui/bare-input"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
-import { field, fieldDescription, fieldLabel, input } from "@maple/views/ui/field"
+import { field, fieldDescription, fieldError, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { textarea } from "@maple/views/ui/textarea"
@@ -124,6 +124,8 @@ const nameField = (h: H, model: DetailsView, form: RuleForm, isNameInvalid: bool
 				h.OnBlur(Message.BlurredField({ id: ids.control })),
 			],
 		}),
+		// The invalid input names this id in `aria-describedby`: the two render together.
+		...(isNameInvalid ? [fieldError(h, { ids, state }, "Give the rule a name.")] : []),
 	])
 }
 
