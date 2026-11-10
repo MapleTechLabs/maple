@@ -8,7 +8,7 @@
  * keys that the same edit would simply extend.
  *
  * The handler's other job is covered here too, because it is one line and the whole feature hangs
- * off it: an addressed message reaches the conversation's relay, and an unaddressed one does not.
+ * off it: a message reaches the conversation's relay, and one that could not be a turn does not.
  */
 import type { InboundEvent } from "@maple/chat-platform"
 import { Context, Effect, Logger, References, Tracer, Array as Arr, Record as Rec } from "effect"

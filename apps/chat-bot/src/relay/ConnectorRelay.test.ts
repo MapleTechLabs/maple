@@ -12,7 +12,7 @@ import type { ChatConversation, InboundMessage } from "@maple/chat-platform"
 import { chatConnectorId } from "@maple/chat-platform"
 import { ChatConversationKey } from "@maple/domain/chat-session"
 import { Effect, Option, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it } from "vitest"
 import {
 	ConnectorRelay,
 	type ConnectorRelayLedger,
@@ -230,6 +230,10 @@ const checkpoint = (): RelayTurnCheckpoint =>
 		}),
 	)
 const TURN_KEY = "turn:org_1:bot-testchat-thread_7:a1"
+
+// The cases that reach the real heavy half pay its import (the whole backend graph) here, under its
+// own timeout, rather than inside whichever test touches it first.
+beforeAll(() => import("./run.ts"), 60_000)
 
 describe("turn jobs", () => {
 	it("does nothing for a job whose turn was already forgotten", async () => {
