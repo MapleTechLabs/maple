@@ -31,6 +31,7 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageNotifier } from "@maple/backend/services/status-pages/StatusPageNotifier"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
@@ -99,6 +100,8 @@ export const layerTick = (
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
 		StatusPageNotifier.layer,
+		// Unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
+		StatusPageCustomDomainsService.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
@@ -481,9 +484,9 @@ const prReviewPostMergeTick = makeTick(
 )
 
 /**
- * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
- * and the heartbeat (written by the sweep only once it reached the database), then emails new
- * incident updates to subscribers. Each step isolated.
+ * Imports break-glass updates, repairs auto incidents, checks custom domains due a check, then
+ * sweeps: edge cleanups, lagging pages and the heartbeat (written by the sweep only once it
+ * reached the database), then emails new incident updates to subscribers. Each step isolated.
  */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
@@ -504,6 +507,19 @@ const statusPagesTick = Effect.gen(function* () {
 		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
 	)
 	const nowMs = yield* Clock.currentTimeMillis
+	// Before the sweep, so a domain that just went live is routed in this same minute.
+	yield* makeTick(
+		StatusPageCustomDomainsService.use((domains) => domains.poll(nowMs)),
+		"status_page_custom_domains",
+		(result) =>
+			result.checked > 0
+				? {
+						statusPageCustomDomainsChecked: result.checked,
+						statusPageCustomDomainsActivated: result.activated,
+						statusPageCustomDomainsFailed: result.failed,
+					}
+				: undefined,
+	)
 	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
 		result.due + result.cleaned + result.cleanupsFailed > 0
 			? {
