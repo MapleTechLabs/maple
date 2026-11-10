@@ -1,3 +1,4 @@
+import { pickerStep } from "../../kit/page-time"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { errorTrendBucket } from "../../kit/tools/tool-error-display"
@@ -330,25 +331,19 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ToggledErrorsExpanded: () => ({ model: { ...model, isErrorsExpanded: !model.isErrorsExpanded } }),
 		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefFor(model.toolName, {
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefFor(model.toolName, {
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const current = Option.getOrElse(Record.get(model.charts, chartId), () => Chart.init())

@@ -1,3 +1,4 @@
+import { pickerStep } from "../../kit/page-time"
 import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
@@ -506,29 +507,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
 			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOf(
-								AppRoute.Services({
-									search: {
-										...model.search,
-										...TimeRangePicker.searchPatchOf(next.outMessage),
-									},
-								}),
-							),
-							isReplace: false,
-						}),
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOf(
+							AppRoute.Services({
+								search: {
+									...model.search,
+									...patch,
+								},
+							}),
+						),
+						isReplace: false,
+					}),
+				{ toastRejected: true },
+			)
 		},
 	})

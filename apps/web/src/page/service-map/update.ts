@@ -1,3 +1,4 @@
+import { pickerStep } from "../kit/page-time"
 import { applySteps } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
@@ -289,23 +290,18 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 }
 
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? TimeRangePicker.unpicked(lifted, next.outMessage)
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+		{ toastRejected: true },
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>

@@ -1,11 +1,11 @@
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Resources } from "../../platform/resources"
-import { PageOutMessage } from "../contract"
+import { PageOutMessage, type PageReturn } from "../contract"
 import { type PresetValue, timeControls, type TimeSearch } from "./time-controls"
 import * as TimeRangePicker from "./time-range-picker"
 
-// The header time cluster every infra integration page shares: `DashboardPage`'s `time` prop.
+// The header time cluster pages share (`DashboardPage`'s `time` prop) and the picker's update step.
 
 export type TimePickerStep<M> = Readonly<{
 	timePicker: TimeRangePicker.Model
@@ -33,6 +33,27 @@ export const stepTimePicker = <M>(
 					isReplace: false,
 				}),
 			}
+}
+
+/**
+ * A page's `GotTimePickerMessage`: the picker's next state in the Model, and a picked range as
+ * `onPick(patch)`'s OutMessage. `toastRejected`: a range wider than allowed shows its toast.
+ */
+export const pickerStep = <Model extends Readonly<{ timePicker: TimeRangePicker.Model }>, M>(
+	model: Model,
+	message: TimeRangePicker.Message,
+	toMessage: (message: TimeRangePicker.Message) => M,
+	onPick: (patch: TimeRangePicker.TimeSearchPatch) => PageOutMessage | undefined,
+	options?: Readonly<{ toastRejected?: boolean }>,
+): PageReturn<Model, M> => {
+	const next = TimeRangePicker.update(model.timePicker, message)
+	const lifted = {
+		model: { ...model, timePicker: next.model },
+		commands: Command.mapMessages(next.commands, toMessage),
+	}
+	if (next.outMessage === undefined || next.outMessage._tag === "RejectedRange")
+		return options?.toastRejected === true ? TimeRangePicker.unpicked(lifted, next.outMessage) : lifted
+	return { ...lifted, outMessage: onPick(TimeRangePicker.searchPatchOf(next.outMessage)) }
 }
 
 /** `applyTimeRangeSearch`: a preset clears the absolute bounds, a custom range the preset. */

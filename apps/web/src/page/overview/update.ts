@@ -1,3 +1,4 @@
+import { pickerStep } from "../kit/page-time"
 import { keyed as keyedStep, runSteps, type Step as KitStep } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
@@ -446,23 +447,17 @@ const retryPage = (model: Model, context: PageContext): Return => {
 }
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (picker) =>
-			Message.GotTimePickerMessage({ message: picker }),
-		),
-	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {

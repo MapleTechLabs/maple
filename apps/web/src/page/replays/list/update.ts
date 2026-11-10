@@ -1,3 +1,4 @@
+import { pickerStep } from "../../kit/page-time"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Result, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -267,19 +268,16 @@ const changedQuery = (model: Model, value: string): Return => {
 }
 
 const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
-		timePicker: next.model,
-	})
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>

@@ -1,3 +1,4 @@
+import { pickerStep } from "../../kit/page-time"
 import { WIDEN_TIME_PRESET } from "../../kit/time-controls"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
@@ -746,23 +747,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		LeftVolumeChart: () =>
 			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
-		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = liftChild({ ...model, timePicker: next.model }, next.commands, (m) =>
-				Message.GotTimePickerMessage({ message: m }),
-			)
-			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						...navigate(lifted.model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}),
-						commands: lifted.commands,
-					}
-		},
+		// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
+		GotTimePickerMessage: ({ message: inner }) =>
+			pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) => navigate(model, { ...model.search, ...patch }).outMessage,
+			),
 	})
 
 const savePreferences = (model: Model): Return => ({

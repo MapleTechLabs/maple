@@ -1,3 +1,4 @@
+import { pickerStep } from "../../kit/page-time"
 import { keyedSlot } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
@@ -249,26 +250,20 @@ const liftTypeSelect = (model: Model, message: Select.Message): Return => {
 }
 
 const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted: Return = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
 	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL (a push, not a replace).
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: PageOutMessage.RequestedNavigation({
-					url: searchHref({
-						...model.search,
-						...TimeRangePicker.searchPatchOf(next.outMessage),
-					}),
-					isReplace: false,
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			PageOutMessage.RequestedNavigation({
+				url: searchHref({
+					...model.search,
+					...patch,
 				}),
-			}
+				isReplace: false,
+			}),
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
