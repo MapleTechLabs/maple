@@ -26,7 +26,7 @@ import {
 	DEFAULT_MODEL_LABEL,
 	MODEL_OPTIONS,
 } from "./update"
-import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 

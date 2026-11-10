@@ -6,7 +6,7 @@ import * as Select from "@maple/views/ui/select"
 import * as SelectView from "@maple/views/ui/select-view"
 import { searchInput } from "@maple/views/ui/search-input"
 import { switchControl } from "@maple/views/ui/switch"
-import { listToolbar } from "../../kit/list-toolbar"
+import { listToolbar } from "../list-toolbar"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 

@@ -5,8 +5,8 @@ import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { expect } from "vitest"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { listMonitors } from "./uptime-commands"
-import { httpMonitor, monitorId } from "./uptime-test-monitors"
+import { listMonitors } from "./commands"
+import { httpMonitor, monitorId } from "./test-monitors"
 
 const encode = Schema.encodeSync(V2UptimeMonitor)
 

@@ -1,7 +1,7 @@
 import { gcpWorkloadSearch } from "../../../components/infra/gcp/tabs"
 import { resourceSearch } from "../../infra-integrations/aws/derive"
 import { AppRoute, hrefOf } from "../../../route"
-import type { TimeSearch } from "../kit/view-tabs"
+import type { TimeSearch } from "../../kit/view-tabs"
 import type { FindingTarget, SourceId } from "./model"
 
 // `FindingLink` and `SourceLink`, as hrefs.

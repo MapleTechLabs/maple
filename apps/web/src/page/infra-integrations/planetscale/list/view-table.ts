@@ -5,13 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { badge } from "@maple/views/ui/display"
 import { skeleton } from "@maple/views/ui/skeleton"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	skeletonRows,
-	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { DatabaseStat } from "../data"
 import {

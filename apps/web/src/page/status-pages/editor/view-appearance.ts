@@ -13,7 +13,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
-import { settingsSection } from "../../settings/kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
@@ -26,7 +26,7 @@ import {
 } from "../shared/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { isoMs } from "../../alerts/shared/time"
+import { isoMs } from "../../kit/alert-time"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {

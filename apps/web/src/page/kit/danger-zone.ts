@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { panel } from "@maple/views/ui/panel"
-import { settingsSection } from "./section"
+import { settingsSection } from "./settings-section"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 

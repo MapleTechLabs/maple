@@ -15,10 +15,10 @@ import { meter } from "@maple/views/ui/meter"
 import { panelHeader } from "@maple/views/ui/panel"
 import { relativeTime } from "../kit/relative-time"
 import { seriesLegend } from "../kit/series-legend"
-import { TOOL_CHIP } from "../agent-sessions/kit/error-chip"
-import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-kit/model"
-import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
-import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
+import { TOOL_CHIP } from "../kit/error-chip"
+import type { ToolPercentile, ToolSeriesPoint } from "../kit/tools/model"
+import { type ToolPlotInputs, toolPlotView } from "../kit/tools/series-chart"
+import { volumeSparkCell } from "../kit/tools/spark"
 import type { McpClientKind } from "./data"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -318,11 +318,7 @@ export const clientIcon = <M>(h: HtmlBuilder<M>, name: string, size = 14): Html 
 
 /** The client's kind as a quiet uppercase tag; unknown clients carry none. */
 export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArray<Html> =>
-	kind === "unknown"
-		? []
-		: [
-				eyebrow(h, { variant: "mono", as: "span" }, [kind]),
-			]
+	kind === "unknown" ? [] : [eyebrow(h, { variant: "mono", as: "span" }, [kind])]
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>

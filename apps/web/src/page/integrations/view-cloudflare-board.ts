@@ -15,7 +15,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { countChipItem } from "./kit/count-chip"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { columnHead } from "../infra/kit/data-table"
+import { columnHead } from "../kit/data-table"
 import { CLOUDFLARE_ACCENT } from "./catalog"
 import type { ZoneSortKey } from "./cloudflare"
 import {

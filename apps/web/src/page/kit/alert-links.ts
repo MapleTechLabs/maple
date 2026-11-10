@@ -1,7 +1,7 @@
 import { AlertRuleId } from "@maple/domain/http"
 import { Option, Schema } from "effect"
-import { AppRoute, hrefOf } from "../../../route"
-import type { AlertRuleSearch, AlertsCreateSearch, AlertsSearch } from "../../../route/search"
+import { AppRoute, hrefOf } from "../../route/index"
+import type { AlertRuleSearch, AlertsCreateSearch, AlertsSearch } from "../../route/search"
 
 const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
 

@@ -6,7 +6,7 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import {
 	type CheckRow,
 	flowColumns,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { component, componentId, incident, statusPage } from "./test-pages"
 import { summarizePage } from "./derive"
-import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 
 describe("status page summary", () => {
 	test("a component whose monitor is down puts the page in a major outage", () => {

@@ -21,7 +21,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
 import { AppRoute, hrefOf } from "../../../route"
-import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../anomalies/kit/evidence"
+import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../kit/anomaly-evidence"
 
 // An anomaly rule's incident: the detector's evidence (its signal against the baseline, the
 // values, the grouped errors) and the way to the anomaly, its issue and its triage.

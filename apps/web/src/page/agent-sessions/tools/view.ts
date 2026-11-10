@@ -20,16 +20,16 @@ import { presenceOf } from "@maple/views/data/signal-presence"
 import { presetSpanLabel, timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { agentSessionsTabs } from "../kit/tabs"
-import { metricStrip, metricStripLoading } from "../tools-kit/metric-strip"
+import { metricStrip, metricStripLoading } from "../../kit/tools/metric-strip"
 import {
 	DEFAULT_TOOL_PRESET,
 	selectedMetric,
 	selectedPercentile,
 	type ToolSeriesPoint,
-} from "../tools-kit/model"
-import { scopeRow } from "../tools-kit/scope-row"
-import { seriesChart, TOOL_CHART_TOKENS } from "../tools-kit/series-chart"
-import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
+} from "../../kit/tools/model"
+import { scopeRow } from "../../kit/tools/scope-row"
+import { seriesChart, TOOL_CHART_TOKENS } from "../../kit/tools/series-chart"
+import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { bucketSecondsOf } from "./update"

@@ -8,8 +8,8 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
-import { selectableTile } from "../agent-sessions/tools-kit/metric-strip"
-import type { ToolPercentile } from "../agent-sessions/tools-kit/model"
+import { selectableTile } from "../kit/tools/metric-strip"
+import type { ToolPercentile } from "../kit/tools/model"
 import {
 	errorTone,
 	shareCell,
@@ -19,7 +19,7 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import type {
 	McpClientRow,
 	McpCoverageRow,

@@ -9,7 +9,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import { SUPABASE_NOT_CONFIGURED } from "../infra-integrations/supabase/connect"
 import { lifecycleOf } from "../infra-integrations/supabase/health"
 import {

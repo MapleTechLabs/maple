@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 
 const SEVERITY_RANK = new Map<string, number>([
 	["critical", 0],

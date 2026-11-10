@@ -28,7 +28,7 @@ import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { alertsHref, createHref, ruleHref } from "../shared/links"
+import { alertsHref, createHref, ruleHref } from "../../kit/alert-links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
@@ -38,7 +38,7 @@ import {
 } from "../shared/oncall-schedules"
 import { WINDOW_LIST_LIMIT, windowIdOfParam } from "../shared/maintenance-windows"
 import { newSloHref, SLO_LIST_LIMIT } from "../shared/slo-commands"
-import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
+import { editMonitorHref, newMonitorHref, UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import {
 	DeleteSchedule,
 	FetchHubMembers,

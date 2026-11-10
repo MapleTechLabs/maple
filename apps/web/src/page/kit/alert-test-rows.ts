@@ -4,7 +4,7 @@ import type {
 	AlertRuleRow,
 	AlertRuleStateRow,
 } from "@maple/web-data/collections/alerts"
-import { isoMs } from "./time"
+import { isoMs } from "./alert-time"
 
 // Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
 

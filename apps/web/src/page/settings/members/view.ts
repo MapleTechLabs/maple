@@ -27,7 +27,7 @@ import {
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { adminOnlyNotice } from "../kit/members"
-import { settingsSection, settingsSections } from "../kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, type InvitationRow, type MemberRow, Message, type Model } from "./model"
 import { hasMore, roleSelectFor } from "./update"
 import { typographyClass } from "@maple/views/ui/typography"

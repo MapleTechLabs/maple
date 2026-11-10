@@ -15,7 +15,7 @@ import { panel } from "@maple/views/ui/panel"
 import { textarea } from "@maple/views/ui/textarea"
 import { messageResponse } from "../../code-review/kit/markdown"
 import { relativeTime } from "../../kit/relative-time"
-import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../kit/actor"
+import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../../kit/issue-actor"
 import {
 	DOT_CLASS,
 	EVENT_LABEL,

@@ -1,4 +1,4 @@
-import { severityDot } from "../../errors/kit/severity"
+import { severityDot } from "../../kit/issue-severity"
 import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -281,10 +281,7 @@ const leadCounts = (h: H, findings: ReadonlyArray<SecurityAuditFinding>): Html =
 						h.Class(cn(hstackClass({ gap: "1.5", inline: true }), ROW_LINK_LIFT)),
 						h.Title(countTitle(counts[severity], severity, unverified)),
 					],
-					[
-						severityDot(h, severity),
-						String(counts[severity]),
-					],
+					[severityDot(h, severity), String(counts[severity])],
 				),
 			),
 			...(toValidate === 0

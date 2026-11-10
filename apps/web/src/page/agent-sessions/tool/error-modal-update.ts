@@ -5,7 +5,7 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
-import type { Selection } from "../tools-kit/reads"
+import type { Selection } from "../../kit/tools/reads"
 import {
 	CopyErrorArguments,
 	CopyErrorLink,

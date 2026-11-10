@@ -15,8 +15,8 @@ import { rowLink } from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
 import { alertStatusBadge, severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
-import { isoMs } from "../shared/time"
+import { incidentHref } from "../../kit/alert-links"
+import { isoMs } from "../../kit/alert-time"
 
 // An anomaly rule's Overview: the anomalies it paged on in the window, and its scope and routing.
 // It has no query to replay and no threshold, window or sample count of its own.

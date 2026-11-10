@@ -20,7 +20,7 @@ import {
 import { Option, Array as Arr } from "effect"
 import { lastBy } from "../../kit/last-by"
 import { previewPayload } from "../shared/preview"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import type { Model } from "./model"
 
 const MINUTE_MS = 60_000

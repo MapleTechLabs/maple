@@ -13,7 +13,7 @@ import { relativeTime } from "../../../kit/relative-time"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { pageHeroParts, headerActions } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { type SparkWindow } from "../../kit/window-sparkline"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { healthPill, isReadPending, projectHealth } from "../health"
@@ -129,7 +129,7 @@ const heroMeta = (
 		...(project === null || project.region === "" ? [] : [project.region]),
 		...(summary === null || summary.lastSeen === ""
 			? []
-			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped", })]),
+			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped" })]),
 	]
 	return parts.length === 0
 		? []

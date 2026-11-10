@@ -40,10 +40,10 @@ import {
 	populatedSchedules,
 	schedulePublicId,
 } from "../page/alerts/shared/oncall-test-fixtures"
-import { incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/alerts/shared/test-rows"
+import { incidentRow, INCIDENT_ID, ORG, ruleRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
-import { isoMs } from "../page/alerts/shared/time"
+import { isoMs } from "../page/kit/alert-time"
 
 // `/lab/oncall`: on-call schedules in the hub (the On-call tab and the inbox's "On call now"
 // strip), the schedule form, the calendar with overrides and a DST week, the chain dialog with

@@ -1,7 +1,7 @@
 import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import type { Resources } from "../../../platform/resources"
+import type { Resources } from "../../platform/resources"
 
 // The S8 request step (`Keyed.request` writes the slot and yields its fetch), shared by every
 // infra page so each `update` lists its slots and nothing else.

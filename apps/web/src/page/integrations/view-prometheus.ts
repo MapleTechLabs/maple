@@ -27,7 +27,7 @@ import {
 	integrationEmptyFooter,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"

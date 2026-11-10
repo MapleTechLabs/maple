@@ -19,7 +19,7 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { listToolbar, toolbarStat } from "../../../kit/list-toolbar"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
 import {

@@ -20,7 +20,7 @@ import {
 	sloUuid,
 	type SloScenario,
 } from "../page/alerts/shared/slo-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG } from "../page/alerts/shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG } from "../page/kit/alert-test-rows"
 import * as SloMessage from "../page/alerts/slo/message"
 import * as SloModel from "../page/alerts/slo/model"
 import * as SloUpdate from "../page/alerts/slo/update"

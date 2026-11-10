@@ -1,9 +1,9 @@
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { Resources } from "../../../platform/resources"
-import { PageOutMessage } from "../../contract"
-import { type PresetValue, timeControls, type TimeSearch } from "../../kit/time-controls"
-import * as TimeRangePicker from "../../kit/time-range-picker"
+import type { Resources } from "../../platform/resources"
+import { PageOutMessage } from "../contract"
+import { type PresetValue, timeControls, type TimeSearch } from "./time-controls"
+import * as TimeRangePicker from "./time-range-picker"
 
 // The header time cluster every infra integration page shares: `DashboardPage`'s `time` prop.
 

@@ -1,7 +1,7 @@
 import type { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
 import { parseHeartbeatCron } from "@maple/domain/uptime"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
-import type { UptimeMonitor } from "../shared/uptime-derive"
+import type { UptimeMonitor } from "./derive"
 import { type AssertionDraft, type Form, emptyForm } from "./form"
 
 // The form's checks, its wire payload, and the form an existing monitor opens as.

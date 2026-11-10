@@ -4,7 +4,7 @@ import { OnCallOverrideId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { isoMs, msIso } from "../shared/time"
+import { isoMs, msIso } from "../../kit/alert-time"
 import { memberName } from "../shared/org-members"
 import { formatShiftEdge } from "../shared/oncall-schedules"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -23,7 +23,7 @@ import {
 	overrideUuid,
 	schedulePublicId,
 } from "../shared/oncall-test-fixtures"
-import { ORG } from "../shared/test-rows"
+import { ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, overrideIssue, rangeOf, readRangeOf, update } from "./update"

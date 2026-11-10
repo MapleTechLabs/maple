@@ -18,7 +18,7 @@ import {
 	HttpMethod,
 	INTERVALS,
 	type TextField,
-} from "./form"
+} from "../../kit/uptime/form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"

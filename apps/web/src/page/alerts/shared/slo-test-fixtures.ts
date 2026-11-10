@@ -1,6 +1,6 @@
 import { V2Slo, V2SloHistory, V2SloStatus } from "@maple/domain/http/v2"
 import { Array as Arr, Schema } from "effect"
-import { DESTINATION_ID, NOW, ruleId } from "./test-rows"
+import { DESTINATION_ID, NOW, ruleId } from "../../kit/alert-test-rows"
 
 // SLOs, statuses and budget histories as the v2 client decodes them, for the scene tests and the lab.
 

@@ -1,8 +1,8 @@
 import { V2UptimeMonitorCreateParams, V2UptimeMonitorUpdateParams } from "@maple/domain/http/v2"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { formFromMonitor, formIssues, isPrivateHost, wirePayload } from "./derive"
-import { heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
+import { formFromMonitor, formIssues, isPrivateHost, wirePayload } from "./form-derive"
+import { heartbeatMonitor, httpMonitor } from "./test-monitors"
 import { emptyForm } from "./form"
 
 const decodeCreate = Schema.decodeUnknownExit(V2UptimeMonitorCreateParams)

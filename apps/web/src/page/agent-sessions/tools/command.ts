@@ -5,7 +5,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { fetchTotals, Selection, toInput } from "../tools-kit/reads"
+import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
 import { Message, RequestMode } from "./message"
 
 export const ResolveWindow = Command.define("ResolveAgentToolsWindow", {

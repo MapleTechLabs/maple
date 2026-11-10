@@ -11,7 +11,7 @@ import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import * as SilenceDialog from "../page/alerts/silence-dialog/dialog"
-import { destinationRow, NOW, ORG, ruleRow, stateRow } from "../page/alerts/shared/test-rows"
+import { destinationRow, NOW, ORG, ruleRow, stateRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 

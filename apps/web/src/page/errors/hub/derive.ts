@@ -11,7 +11,7 @@ import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
-import { severityRank } from "../kit/severity"
+import { severityRank } from "../../kit/issue-severity"
 import type { ListQuery, WarehouseFilters } from "./command"
 import type { Model } from "./model"
 

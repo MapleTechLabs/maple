@@ -25,7 +25,7 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { GCP_ACCENT } from "./catalog"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"

@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http/v2"
 import type { AlertIncidentRow, AlertRuleRow } from "@maple/web-data/collections/alerts"
 import { Array as Arr, Schema } from "effect"
-import { DESTINATION_ID, incidentRow, NOW, ruleId, ruleRow } from "./test-rows"
+import { DESTINATION_ID, incidentRow, NOW, ruleId, ruleRow } from "../../kit/alert-test-rows"
 
 // Anomaly rules, their alert incidents and the detector's anomaly behind one, for the scene tests
 // and `/lab/anomaly-alerts`.

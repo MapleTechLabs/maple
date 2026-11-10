@@ -22,7 +22,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../../kit/alert-test-rows"
 import { ToggleRuleEnabled } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"

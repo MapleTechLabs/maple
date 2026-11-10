@@ -1,5 +1,5 @@
 import type { McpClientKind } from "@maple/domain/http"
-import type { ToolSeriesPoint } from "../agent-sessions/tools-kit/model"
+import type { ToolSeriesPoint } from "../kit/tools/model"
 
 // What the MCP hub reads, per server and per tool. Every field comes from the MCP semantic
 // conventions (`mcp.method.name`, `gen_ai.tool.name`, `error.type`, `user_agent.original`).

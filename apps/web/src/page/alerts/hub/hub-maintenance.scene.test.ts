@@ -15,7 +15,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import {
 	disabledWindow,
 	endedWindow,
@@ -26,7 +26,7 @@ import {
 	weeklyWindow,
 } from "../shared/maintenance-test-fixtures"
 import { windowPublicId, windowSilencesHref } from "../shared/maintenance-windows"
-import { NOW, ORG, ruleRow } from "../shared/test-rows"
+import { NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update, windowMenuId } from "./update"

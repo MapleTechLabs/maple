@@ -8,7 +8,7 @@ import {
 	integrationEmptyFeatures,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../kit/integration-empty"
+} from "../../kit/integration-empty"
 
 // The Supabase on-ramp /infra/supabase shows while nothing is connected.
 

@@ -9,7 +9,7 @@ import {
 	failureStatus,
 	fillTrend,
 	unwrapToolErrorText,
-} from "../kit/tool-error-display"
+} from "../../kit/tools/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -22,8 +22,8 @@ import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../tools-kit/error-parts"
-import type { ToolErrorRow } from "../tools-kit/model"
+import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../../kit/tools/error-parts"
+import type { ToolErrorRow } from "../../kit/tools/model"
 import {
 	shareCell,
 	type SortState,
@@ -33,7 +33,7 @@ import {
 	toolTable,
 	toolTableBody,
 	toolTableHead,
-} from "../tools-kit/table"
+} from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"

@@ -49,7 +49,7 @@ import {
 	skeletonRows,
 	ROW_LINK_CLASS,
 	NUMERIC_CELL,
-} from "../../../infra/kit/data-table"
+} from "../../../kit/data-table"
 import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
 import {

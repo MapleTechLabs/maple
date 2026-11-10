@@ -13,7 +13,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../kit/hero-chip"
 import * as Frame from "../../kit/frame"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { pageHeroParts } from "../../kit/page-parts"
 import {

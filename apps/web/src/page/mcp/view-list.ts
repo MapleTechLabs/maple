@@ -13,7 +13,7 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import type { McpServerRow } from "./data"
 import {
 	attr,

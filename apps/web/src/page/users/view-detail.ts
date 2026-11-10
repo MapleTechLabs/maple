@@ -39,7 +39,7 @@ import {
 	toolTableFooter,
 	toolTableHead,
 	toolTableRow,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import { AppRoute, hrefOf } from "../../route"
 import { listRelativeTime } from "../kit/relative-time"
 import { clientIcon, kindTag } from "../mcp/view-kit"
@@ -47,7 +47,7 @@ import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
 import { namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
-import { WORKFLOW_LABEL, workflowRingIcon } from "../errors/kit/workflow"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/issue-workflow"
 import { userAvatar } from "./view-kit"
 
 // `/users/$userId`: one end user's identity, then everything Maple holds for them, by tab.

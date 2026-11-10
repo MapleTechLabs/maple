@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Schema, Array as Arr } from "effect"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 
 // The evaluator's own record of a rule, bucketed: what the scheduler observed, not a replay.
 

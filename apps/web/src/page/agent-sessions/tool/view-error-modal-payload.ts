@@ -8,7 +8,7 @@ import {
 	payloadLinesBytes,
 	unwrapToolErrorText,
 	whatsWrong,
-} from "../kit/tool-error-display"
+} from "../../kit/tools/tool-error-display"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"

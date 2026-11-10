@@ -4,7 +4,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { TimeWindow } from "../../../data/time-range"
-import { ChartModels, SeriesResult, SeriesSlots } from "../../infra/kit/series"
+import { ChartModels, SeriesResult, SeriesSlots } from "../series"
 
 // The infra correlation panel: the pod,
 // node, container or host charts of the record a log sheet or span panel shows.

@@ -21,7 +21,7 @@ import { meter } from "@maple/views/ui/meter"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { pressable } from "@maple/views/ui/pressable"
 import { textLink, textLinkClass } from "@maple/views/ui/text-link"
-import { columnHead, dataTable, NUMERIC_CELL } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL } from "../../../kit/data-table"
 import { sectionHeading } from "../../../kit/section-heading"
 import type { Statement } from "../data"
 import { Message } from "./model"
@@ -110,7 +110,15 @@ const statementRow = (
 			),
 			h.div([h.Class(cn("w-16 text-foreground-soft", NUMERIC_CELL))], [formatNumber(row.calls)]),
 			h.div(
-				[h.Class(cn("w-20", NUMERIC_CELL, db === null ? "text-muted-foreground" : latencyToneClass(db)))],
+				[
+					h.Class(
+						cn(
+							"w-20",
+							NUMERIC_CELL,
+							db === null ? "text-muted-foreground" : latencyToneClass(db),
+						),
+					),
+				],
 				[db === null ? EMPTY_VALUE : formatLatency(db)],
 			),
 			h.div(
@@ -129,7 +137,10 @@ const statementRow = (
 				],
 				[rowsPerCall === undefined ? EMPTY_VALUE : formatNumber(Math.round(rowsPerCall))],
 			),
-			h.div([h.Class(cn("w-[56px]", NUMERIC_CELL, lockTone(row.lockShare)))], [formatPercent(row.lockShare)]),
+			h.div(
+				[h.Class(cn("w-[56px]", NUMERIC_CELL, lockTone(row.lockShare)))],
+				[formatPercent(row.lockShare)],
+			),
 			h.div(
 				[h.Class("hidden w-28 items-center gap-2 md:flex")],
 				[

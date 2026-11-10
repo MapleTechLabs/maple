@@ -13,7 +13,7 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
 import { catalogEntry, chatIntegrationId, chatManifestOf } from "./catalog"
 import { Message } from "./message"

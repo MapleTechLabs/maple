@@ -33,7 +33,7 @@ import {
 	skeletonRows,
 	ROW_LINK_CLASS,
 	NUMERIC_CELL,
-} from "../../../infra/kit/data-table"
+} from "../../../kit/data-table"
 import { metaLine } from "../../../infra/kit/meta-line"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { QueueRow, ZoneRow } from "../data"
@@ -275,7 +275,11 @@ const zoneRow = (
 			h.div(
 				[
 					h.Class(
-						cn("w-20", NUMERIC_CELL, rated ? errorRateClass(zone.errorRate) : "text-muted-foreground"),
+						cn(
+							"w-20",
+							NUMERIC_CELL,
+							rated ? errorRateClass(zone.errorRate) : "text-muted-foreground",
+						),
 					),
 				],
 				[rated ? formatErrorRate(zone.errorRate) : EMPTY_VALUE],

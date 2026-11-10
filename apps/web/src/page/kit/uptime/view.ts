@@ -12,7 +12,7 @@ import {
 	STATUS_TONE,
 	statusLabel,
 	type UptimeMonitor,
-} from "./uptime-derive"
+} from "./derive"
 import { Array as Arr } from "effect"
 
 // The uptime marks: the status chip, the status square and the recent-checks strip.

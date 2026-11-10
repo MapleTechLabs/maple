@@ -13,7 +13,7 @@ import { Effect, Exit, Schema, Array as Arr } from "effect"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { PageOutMessage } from "../../contract"
-import { WORKFLOW_LABEL } from "../kit/workflow"
+import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
 
 // `useIssueMutations`: one row's write, or the bulk bar's
 // over the selection, four at a time (`BULK_CONCURRENCY`), each issue's outcome kept.

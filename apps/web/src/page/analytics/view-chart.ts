@@ -12,7 +12,7 @@ import type { Message, Model } from "@maple/views/charts/chart"
 import type { ChartSpec } from "@maple/views/charts/chart-spec"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../infra-integrations/kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../kit/chart-card"
 import { seriesLegend } from "../kit/series-legend"
 
 // `AnalyticsTrafficChart`: the card, its legend

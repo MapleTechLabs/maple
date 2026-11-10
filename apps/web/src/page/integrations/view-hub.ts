@@ -29,7 +29,7 @@ import {
 	matchesFilter,
 	offeredFilters,
 } from "./hub-rows"
-import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../kit/integration-empty"
 import { filterChip } from "@maple/views/ui/filter-chip"
 import { type AvailableOverview, HEALTH_TONE, lastSyncText } from "./derive"
 import { Message } from "./message"

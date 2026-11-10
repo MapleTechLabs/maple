@@ -26,7 +26,7 @@ import { memberName, memberOf } from "../shared/org-members"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import { dividedList } from "@maple/views/ui/rule"
 
 // The hub's On-call tab (each schedule with who is on call and the next handoff), the inbox's

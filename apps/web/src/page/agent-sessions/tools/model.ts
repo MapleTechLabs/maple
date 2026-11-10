@@ -11,7 +11,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
-import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../tools-kit/model"
+import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 
 // `/agent-sessions/tools`.
 

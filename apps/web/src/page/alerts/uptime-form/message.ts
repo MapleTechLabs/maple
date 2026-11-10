@@ -15,7 +15,7 @@ import {
 	RecordType,
 	ScheduleMode,
 	TextField,
-} from "./form"
+} from "../../kit/uptime/form"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
 

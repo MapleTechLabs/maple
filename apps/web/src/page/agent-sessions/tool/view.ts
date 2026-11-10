@@ -20,9 +20,9 @@ import {
 	DEFAULT_TOOL_PRESET,
 	type ToolSeriesPoint,
 	type TotalsResult,
-} from "../tools-kit/model"
-import { scopeRow } from "../tools-kit/scope-row"
-import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
+} from "../../kit/tools/model"
+import { scopeRow } from "../../kit/tools/scope-row"
+import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import { SESSIONS_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"

@@ -11,7 +11,7 @@ import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertsScheduleNewSearch } from "../../../route/search"
-import { isoMs, msIso } from "./time"
+import { isoMs, msIso } from "../../kit/alert-time"
 
 // On-call schedule reads and writes as Effects the pages' Commands wrap, their links, and how a
 // shift's edges read.

@@ -14,8 +14,8 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
-import type { ToolPercentile } from "../agent-sessions/tools-kit/model"
+} from "../kit/tools/table"
+import type { ToolPercentile } from "../kit/tools/model"
 import type { McpCallRow, McpErrorGroup, McpToolDetail } from "./data"
 import {
 	attr,

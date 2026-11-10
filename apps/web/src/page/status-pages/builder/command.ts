@@ -2,7 +2,7 @@ import { StatusPagePreviewParams, V2StatusPageCreateParams } from "@maple/domain
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
-import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
+import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { createPage, previewPage } from "../shared/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"

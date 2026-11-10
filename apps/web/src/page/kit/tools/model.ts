@@ -1,5 +1,5 @@
 import { Schema, String as Str } from "effect"
-import type { PresetValue } from "../../kit/time-controls"
+import type { PresetValue } from "../time-controls"
 
 // Schemas for the tool analytics reads (`@maple/web-data/lib/tool-analytics` types), shared by
 // `/agent-sessions/tools` and the tool detail page.

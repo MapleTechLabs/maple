@@ -6,7 +6,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
 import {

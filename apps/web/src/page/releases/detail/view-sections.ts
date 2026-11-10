@@ -17,7 +17,7 @@ import {
 } from "../release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { listRow } from "@maple/views/ui/list-row"
 import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"

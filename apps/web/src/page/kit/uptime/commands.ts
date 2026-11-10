@@ -10,7 +10,7 @@ import {
 import { Effect, Option, Ref, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { AppRoute, hrefOf } from "../../../route"
+import { AppRoute, hrefOf } from "../../../route/index"
 import type { AlertsUptimeNewSearch } from "../../../route/search"
 
 // The uptime monitor reads and writes, as Effects the pages' Commands wrap, and their links.

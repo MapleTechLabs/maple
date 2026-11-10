@@ -1,6 +1,6 @@
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
-import { isoMs } from "./time"
+import { isoMs } from "../alert-time"
 import { Array as Arr, String as Str } from "effect"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.

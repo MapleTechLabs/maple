@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkHealth, formatMs, formatShare, medianOf } from "./uptime-derive"
+import { checkHealth, formatMs, formatShare, medianOf } from "./derive"
 import { Array as Arr } from "effect"
 
 describe("checkHealth", () => {

@@ -27,7 +27,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
-import { createHref } from "../shared/links"
+import { createHref } from "../../kit/alert-links"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { destinationMenuId } from "./update"

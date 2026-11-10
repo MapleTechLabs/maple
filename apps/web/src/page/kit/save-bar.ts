@@ -37,7 +37,12 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 			actions: [
 				button(
 					h,
-					{ variant: "ghost", size: "sm", isDisabled: isPending, attributes: [h.OnClick(options.onDiscard)] },
+					{
+						variant: "ghost",
+						size: "sm",
+						isDisabled: isPending,
+						attributes: [h.OnClick(options.onDiscard)],
+					},
 					["Discard"],
 				),
 				button(

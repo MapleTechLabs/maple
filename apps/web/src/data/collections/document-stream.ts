@@ -1,9 +1,9 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import { eq } from "@tanstack/db"
 import { Option, Array as Arr } from "effect"
-import { rowToDocument } from "../../../data/collections/dashboards"
-import { liveQueryStream } from "../../../data/live-query"
-import { orgLive } from "../../../data/collections/org-collections"
+import { rowToDocument } from "./dashboards"
+import { liveQueryStream } from "../live-query"
+import { orgLive } from "./org-collections"
 
 /** `useDashboardsRead`'s `dashboards.find(id)`: the board's row, decoded, as that row changes. */
 export const documentStream = <M>(

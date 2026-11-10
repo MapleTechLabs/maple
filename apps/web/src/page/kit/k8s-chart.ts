@@ -13,7 +13,7 @@ import {
 } from "@maple/views/charts/infra-metric-chart"
 import { chartError, chartLoading } from "@maple/views/ui/chart-state"
 import type { SeriesSlot } from "./series"
-import { seriesLegend } from "../../kit/series-legend"
+import { seriesLegend } from "./series-legend"
 import { Array as Arr } from "effect"
 
 // `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend,

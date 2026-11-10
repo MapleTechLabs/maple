@@ -1,7 +1,7 @@
 import { encodePublicId, V2AlertIncidentEscalation, V2EscalationChain } from "@maple/domain/http/v2"
 import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
 import { Schema, Array as Arr, String as Str } from "effect"
-import { destinationRow, NOW } from "./test-rows"
+import { destinationRow, NOW } from "../../kit/alert-test-rows"
 
 // Escalation chains, their destinations and incident runs for the scene tests and `/lab/escalation`.
 

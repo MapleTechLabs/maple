@@ -6,7 +6,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesWorkloadParams, InfraKubernetesWorkloadSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
 
 // `/infra/kubernetes/workloads/$kind/$workloadName`.
@@ -38,4 +38,5 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string => `${model.metric}:${model.groupByPod}`
+export const seriesId = (model: Pick<Model, "metric" | "groupByPod">): string =>
+	`${model.metric}:${model.groupByPod}`

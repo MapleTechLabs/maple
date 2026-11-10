@@ -7,7 +7,7 @@ import {
 	unwrapToolErrorText,
 	variantDifferences,
 	type VariantDifference,
-} from "../kit/tool-error-display"
+} from "../../kit/tools/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -22,7 +22,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { errorTextHeading, failureStatusLine, windowRangeLabel } from "../tools-kit/error-parts"
+import { errorTextHeading, failureStatusLine, windowRangeLabel } from "../../kit/tools/error-parts"
 import { type ErrorDetail, Message, type Model } from "./error-modal-model"
 import { occurrencesOf } from "./error-modal-update"
 import { railView } from "./view-error-modal-rail"

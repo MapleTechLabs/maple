@@ -4,8 +4,8 @@ import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
-import { collectionLoadFailed } from "../shared/collection-load"
-import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
+import { collectionLoadFailed } from "../../kit/collection-load"
+import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../kit/alert-collections"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -66,7 +66,8 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		}),
 		/** The destination dialog's Linear connect popup coming back. */
 		destinationConnectReturn: entry(DestinationDialog.ConnectReturnDependencies, {
-			modelToDependencies: ({ model }) => DestinationDialog.connectReturnDependencies(model.destinationDialog),
+			modelToDependencies: ({ model }) =>
+				DestinationDialog.connectReturnDependencies(model.destinationDialog),
 			dependenciesToStream: (dependencies) =>
 				Stream.map(DestinationDialog.connectReturnStream(dependencies), (message) =>
 					Message.GotDestinationDialogMessage({ message }),
@@ -74,7 +75,8 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		}),
 		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
 		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
-			modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
+			modelToDependencies: ({ model }) =>
+				DestinationDialog.chatConnectDependencies(model.destinationDialog),
 			dependenciesToStream: (dependencies) =>
 				Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
 					Message.GotDestinationDialogMessage({ message }),
@@ -87,7 +89,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: () =>
 					Stream.tick(CLOCK_TICK).pipe(
 						Stream.drop(1),
-						Stream.mapEffect(() => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs }))),
+						Stream.mapEffect(() =>
+							Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+						),
 					),
 			},
 		),

@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../../route"
-import type { TimeSearch } from "../../kit/time-controls"
-import { linkTabStrip } from "../../kit/underline-tabs"
+import { AppRoute, hrefOf } from "../../route/index"
+import type { TimeSearch } from "./time-controls"
+import { linkTabStrip } from "./underline-tabs"
 import { Array as Arr, Option } from "effect"
 
 // `HostsViewTabs` and `KubernetesViewTabs`, on the kit's `linkTabStrip`.

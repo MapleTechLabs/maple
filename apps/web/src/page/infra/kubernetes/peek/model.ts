@@ -4,7 +4,7 @@ import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodMetric, PodSummary } from "../pod-data"
 
 // `PodPeekSheet`: a pod's page in a sheet over the list.

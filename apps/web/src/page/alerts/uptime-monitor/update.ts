@@ -7,8 +7,8 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { monitorIdFromUrl } from "../shared/uptime-commands"
-import { formatMs } from "../shared/uptime-derive"
+import { monitorIdFromUrl } from "../../kit/uptime/commands"
+import { formatMs } from "../../kit/uptime/derive"
 import {
 	CheckMonitorNow,
 	FetchCheckStats,

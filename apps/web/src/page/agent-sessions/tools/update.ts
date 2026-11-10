@@ -21,9 +21,9 @@ import {
 	toolSelection,
 	type ToolPercentile,
 	type TotalsResult,
-} from "../tools-kit/model"
-import { ALL, facetValue, initFacetSelect } from "../tools-kit/toolbar"
-import { nextSort } from "../tools-kit/table"
+} from "../../kit/tools/model"
+import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
+import { nextSort } from "../../kit/tools/table"
 import {
 	CompleteReloadSpin,
 	DebounceSearch,

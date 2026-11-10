@@ -24,7 +24,7 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { codeBlock } from "../settings/kit/code-block"
+import { codeBlock } from "./code-block"
 import { Array as Arr, Option } from "effect"
 
 // `FrameworkIconStrip`, `FrameworkPicker` and `ConnectInstructions`, with `PackageManagerCodeBlock`.

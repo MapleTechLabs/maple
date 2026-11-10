@@ -2,8 +2,8 @@ import { UptimeMonitorId } from "@maple/domain"
 import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { DESTINATION_ID, NOW, ruleId } from "./test-rows"
-import type { UptimeMonitor } from "./uptime-derive"
+import { DESTINATION_ID, NOW, ruleId } from "../alert-test-rows"
+import type { UptimeMonitor } from "./derive"
 
 // Uptime monitors as `uptimeMonitors.list` decodes them, for the scene tests.
 

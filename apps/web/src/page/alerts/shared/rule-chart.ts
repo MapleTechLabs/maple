@@ -37,7 +37,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 

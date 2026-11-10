@@ -1,4 +1,4 @@
-import { errorTrendBucket } from "../kit/tool-error-display"
+import { errorTrendBucket } from "../../kit/tools/tool-error-display"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -13,10 +13,10 @@ import type { AgentSessionToolSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { chartBucketSeconds, DEFAULT_TOOL_PRESET, toolSelection } from "../tools-kit/model"
-import type { Selection } from "../tools-kit/reads"
-import { nextSort } from "../tools-kit/table"
-import { ALL, facetValue, initFacetSelect } from "../tools-kit/toolbar"
+import { chartBucketSeconds, DEFAULT_TOOL_PRESET, toolSelection } from "../../kit/tools/model"
+import type { Selection } from "../../kit/tools/reads"
+import { nextSort } from "../../kit/tools/table"
+import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
 import {
 	CompleteReloadSpin,
 	FetchErrors,

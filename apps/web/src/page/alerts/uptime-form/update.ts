@@ -7,7 +7,7 @@ import type { AppRoute } from "../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { pickedDestination } from "../../kit/destination-picker"
-import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
+import { monitorHref, monitorIdFromUrl } from "../../kit/uptime/commands"
 import {
 	FetchExistingMonitor,
 	FetchFormServices,
@@ -16,8 +16,21 @@ import {
 	SaveDraft,
 	TestDraft,
 } from "./command"
-import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
-import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
+import {
+	defaultName,
+	formFromMonitor,
+	formIssues,
+	wireConfig,
+	wirePayload,
+} from "../../kit/uptime/form-derive"
+import {
+	ASSERTION_OPS,
+	type AssertionDraft,
+	emptyForm,
+	type Form,
+	MonitorKind,
+	type TextField,
+} from "../../kit/uptime/form"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 

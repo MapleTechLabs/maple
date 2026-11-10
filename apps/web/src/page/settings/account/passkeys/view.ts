@@ -19,7 +19,7 @@ import {
 } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
-import { settingsSection, settingsSections } from "../../kit/section"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
 import { textField } from "../fields"
 import type { AccountPasskey, AccountUser } from "../user"
 import { Message, type Model } from "./model"

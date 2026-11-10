@@ -6,7 +6,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
-import { SeriesResult } from "../../kit/series"
+import { SeriesResult } from "../../../kit/series"
 import { fetchPods, PodsInput, PodsPage } from "../pod-data"
 import { WorkloadKind, WorkloadMetric, WorkloadSummary } from "./model"
 

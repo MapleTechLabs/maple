@@ -10,13 +10,7 @@ import { icon } from "@maple/views/ui/icon"
 import type * as Select from "@maple/views/ui/select"
 import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	skeletonRows,
-	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import type { Resources } from "../data"

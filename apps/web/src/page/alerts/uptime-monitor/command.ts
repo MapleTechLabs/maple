@@ -6,7 +6,7 @@ import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { readGrants } from "../../../data/session-tenant"
-import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../shared/uptime-commands"
+import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
 import { UptimeWindow } from "./model"
 

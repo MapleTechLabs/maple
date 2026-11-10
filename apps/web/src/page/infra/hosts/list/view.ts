@@ -15,7 +15,7 @@ import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { hostsViewTabs } from "../../kit/view-tabs"
+import { hostsViewTabs } from "../../../kit/view-tabs"
 import { HOST_LIST_LIMIT } from "./command"
 import { filterHosts } from "./derive"
 import { hostSummaryBand } from "./view-band"
@@ -118,23 +118,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: "Hosts",
-					description: "Every machine sending CPU, memory, disk and network metrics, busiest first.",
-					actions: hstack(h, { gap: "2", wrap: true },
-						[
-							button(
-								h,
-								{ size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] },
-								[icon(h, "PlusIcon"), "Add host"],
-							),
-							Frame.controls(
-								h,
-								model.frame,
-								{ search: model.search, defaultPreset: DEFAULT_PRESET },
-								toFrame,
-								AsyncData.isFailure(model.hosts.data),
-							),
-						],
-					),
+					description:
+						"Every machine sending CPU, memory, disk and network metrics, busiest first.",
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] }, [
+							icon(h, "PlusIcon"),
+							"Add host",
+						]),
+						Frame.controls(
+							h,
+							model.frame,
+							{ search: model.search, defaultPreset: DEFAULT_PRESET },
+							toFrame,
+							AsyncData.isFailure(model.hosts.data),
+						),
+					]),
 					tabs: hostsViewTabs(h, "hosts", model.search),
 					gap: "lg",
 				},

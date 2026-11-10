@@ -5,7 +5,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
-import { alertsHref } from "../alerts/shared/links"
+import { alertsHref } from "../kit/alert-links"
 import { Array as Arr } from "effect"
 import type { Incident } from "./model"
 
