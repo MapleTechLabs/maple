@@ -77,7 +77,7 @@ import { makeChildFindings } from "../src/chat/review-child-findings"
 import { makeReviewCoverage } from "../src/chat/review-coverage"
 import { makeReviewLedger } from "../src/chat/review-ledger"
 import { runChatTurn, type SettledChild } from "../src/chat/run"
-import { makeRunUsage, savedFindingsRequest } from "../src/chat/tools"
+import { makeRunUsage, reviewCompletion, savedFindingsRequest } from "../src/chat/tools"
 import type { McpToolExecutorApi } from "../src/mcp/dispatcher"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
 import {
@@ -1090,14 +1090,12 @@ export const reviewLocally = async (
 			origin: { kind: "autonomous" },
 			toolExecutor: executor,
 			model,
-			// A `pr-` session is never offered `submit_diagnosis`, so this is never called.
-			submitDiagnosis: () => Effect.void,
-			submitReview: (_orgId, _reviewId, request) =>
+			completion: reviewCompletion({ kind: "autonomous" }, reviewState, (request) =>
 				Effect.sync(() => {
 					submitted = request
 				}),
+			),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
-			review: reviewState,
 			pullRequest: { repository, number: args.number },
 			...(promptOverride === undefined && args.historical !== true
 				? undefined

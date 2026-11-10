@@ -96,7 +96,6 @@ describe("runChatTurn input", () => {
 				origin: { kind: "app" },
 				toolExecutor: noTools,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a default session"),
 				text,
 				history: [],
 				usage: makeRunUsage(),

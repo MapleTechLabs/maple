@@ -18,8 +18,9 @@ import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
+import { makeChildFindings } from "./review-child-findings"
 import { makeReviewLedger } from "./review-ledger"
-import { makeRunUsage } from "./tools"
+import { diagnosisCompletion, makeRunUsage, replyCompletion, reviewCompletion } from "./tools"
 import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
@@ -81,7 +82,6 @@ const run = (model: ResolvedModel, executor: McpToolExecutorApi) => {
 		origin: { kind: "app" },
 		toolExecutor: executor,
 		model,
-		submitDiagnosis: () => Effect.die("no investigation in a default session"),
 		text: "how many services?",
 		history: [],
 		usage: makeRunUsage(),
@@ -181,7 +181,9 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			completion: diagnosisCompletion({ kind: "autonomous" }, (request) =>
+				Effect.sync(() => filed.push(request.report)),
+			),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -222,7 +224,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.void,
+			completion: diagnosisCompletion({ kind: "autonomous" }, () => Effect.void),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -266,7 +268,9 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			completion: diagnosisCompletion({ kind: "autonomous" }, (request) =>
+				Effect.sync(() => filed.push(request.report)),
+			),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -313,7 +317,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: slowExecutor,
 			model,
-			submitDiagnosis: () => Effect.void,
+			completion: diagnosisCompletion({ kind: "autonomous" }, () => Effect.void),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -351,9 +355,13 @@ describe("runChatTurn reply rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.die("no investigation in a reply session"),
-			submitReply: (_org, _id, body) => Effect.sync(() => (posted.push(body), "posted")),
-			stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+			completion: replyCompletion(
+				{ kind: "autonomous" },
+				{
+					submit: (body) => Effect.sync(() => (posted.push(body), "posted")),
+					stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+				},
+			),
 			text: "@maple fix this",
 			history: [],
 			usage: makeRunUsage(),
@@ -397,12 +405,15 @@ describe("runChatTurn review refusals", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.die("no investigation in a review session"),
-			submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
-			review: {
-				coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
-				ledger: makeReviewLedger(),
-			},
+			completion: reviewCompletion(
+				{ kind: "autonomous" },
+				{
+					coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
+					ledger: makeReviewLedger(),
+					childFindings: makeChildFindings(),
+				},
+				(request) => Effect.sync(() => filed.push(request)),
+			),
 			text: "Review pull request #1.",
 			history: [],
 			usage: makeRunUsage(),

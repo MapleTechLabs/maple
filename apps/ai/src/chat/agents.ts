@@ -14,16 +14,23 @@
  * `ChatTurnOrigin`, and `./profiles.ts` is the one place that reads it — so a surface becoming
  * reachable from somewhere new costs a profile branch rather than a mode, a record and a prompt.
  *
- * `ChatMode` and `chatModeFromSessionId` stay in the domain package because the session id is on
- * the wire and the mode is derived from it server-side. Every mode names an agent, by
- * construction; `agents.test.ts` fails if one is ever added without one.
+ * `ChatMode` and `chatSessionKind` stay in the domain package because the session id is on the
+ * wire and the mode is derived from it server-side. Every mode names an agent, by construction.
  */
 import * as Agent from "@yielded/agent/agent"
 import { AgentPolicy } from "@yielded/agent/agent-policy"
 import * as Output from "@yielded/agent/output"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import type { Toolkit } from "effect/ai"
-import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
+import {
+	chatSessionKind,
+	type ChatMode,
+	type ChatSessionKind,
+	type ChatTurnOrigin,
+} from "@maple/domain/chat-session"
+import { PrReviewId, PrReviewReplyId } from "@maple/domain/http"
+import { InvestigationId } from "@maple/domain/primitives"
+import type { AiUsageSource } from "@maple/backend/services/billing/autumn-tracker"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
 import {
@@ -41,11 +48,35 @@ import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
 import { DEFAULT_RULESET, PR_REVIEW_RULESET } from "./permissions"
 import {
+	CLOSE_OUT_PROMPT,
 	INVESTIGATE_SYSTEM_PROMPT,
+	PR_REPLY_CLOSE_OUT_PROMPT,
 	PR_REPLY_SYSTEM_PROMPT,
+	PR_REVIEW_CLOSE_OUT_PROMPT,
+	PR_REVIEW_CONTINUE_PROMPT,
 	PR_REVIEW_SYSTEM_PROMPT,
 	SYSTEM_PROMPT,
 } from "./prompts"
+import { SUBMIT_DIAGNOSIS, SUBMIT_REPLY, SUBMIT_REVIEW } from "./completion"
+
+/**
+ * How a row-backed agent's unattended pass ends, and what the runner does when it does not. One
+ * record per agent, so the runner holds no per-mode branches.
+ */
+export interface AgentCompletion {
+	/** The tool the pass answers through; the run settles when it lands. */
+	readonly tool: string
+	/** The close-out run's message: stop reading, file what you have. */
+	readonly closeOutPrompt: string
+	/** The turn's error when neither the pass nor its close-out filed. */
+	readonly noReportMessage: string
+	/** The span attribute that records whether the close-out filed. */
+	readonly closedOutAttribute: string
+	/** What its turns bill as, keyed on the row rather than the session. */
+	readonly billingSource: Extract<AiUsageSource, "triage" | "review">
+	/** A stuck pass starts over once, and one that answered in prose continues with this prompt. */
+	readonly continuePrompt?: string
+}
 
 export interface AgentDefinition {
 	readonly name: string
@@ -69,15 +100,22 @@ export interface AgentDefinition {
 	readonly model: AgentModel
 	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
 	readonly codeMode?: boolean
+	/** Present on the agents whose session names a row: investigation, review, reply. */
+	readonly completion?: AgentCompletion
 }
 
 export type AgentModel = "triage" | "review"
 
+/** The modes whose session id names a row that the turn settles. */
+export type RowMode = Exclude<ChatMode, "default">
+
 /**
  * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
- * `undefined` discovered mid-turn, and `agentForSession` needs no non-null assertion.
+ * `undefined` discovered mid-turn. A row-backed mode cannot be declared without its completion.
  */
-export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
+export const AGENTS: {
+	readonly default: AgentDefinition
+} & { readonly [M in RowMode]: AgentDefinition & { readonly completion: AgentCompletion } } = {
 	default: {
 		name: "default",
 		description: "General Maple assistant.",
@@ -96,6 +134,13 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		budget: INVESTIGATION_BUDGET,
 		model: "triage",
 		codeMode: true,
+		completion: {
+			tool: SUBMIT_DIAGNOSIS,
+			closeOutPrompt: CLOSE_OUT_PROMPT,
+			noReportMessage: "Maple ended this investigation without a diagnosis.",
+			closedOutAttribute: "maple.investigation.closed_out",
+			billingSource: "triage",
+		},
 	},
 	"pr-review": {
 		name: "pr-review",
@@ -108,6 +153,14 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
 		codeMode: true,
+		completion: {
+			tool: SUBMIT_REVIEW,
+			closeOutPrompt: PR_REVIEW_CLOSE_OUT_PROMPT,
+			noReportMessage: "Maple ended this review without a report.",
+			closedOutAttribute: "maple.pr_review.closed_out",
+			billingSource: "review",
+			continuePrompt: PR_REVIEW_CONTINUE_PROMPT,
+		},
 	},
 	"pr-reply": {
 		name: "pr-reply",
@@ -117,12 +170,68 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REPLY_BUDGET,
 		model: "review",
+		completion: {
+			tool: SUBMIT_REPLY,
+			closeOutPrompt: PR_REPLY_CLOSE_OUT_PROMPT,
+			noReportMessage: "Maple ended this answer without posting it.",
+			closedOutAttribute: "maple.pr_reply.closed_out",
+			billingSource: "review",
+		},
 	},
-} as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
+}
 
-/** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
-export const agentForSession = (sessionId: string): AgentDefinition =>
-	AGENTS[chatModeFromSessionId(sessionId)]
+/** The row a session's turns settle, decoded from the id after its tab prefix. */
+export type SessionRow =
+	| { readonly kind: "investigate"; readonly id: InvestigationId }
+	| { readonly kind: "pr-review"; readonly id: PrReviewId }
+	| { readonly kind: "pr-reply"; readonly id: PrReviewReplyId }
+
+const decodeInvestigationId = Schema.decodeUnknownOption(InvestigationId)
+const decodePrReviewId = Schema.decodeUnknownOption(PrReviewId)
+const decodePrReviewReplyId = Schema.decodeUnknownOption(PrReviewReplyId)
+
+const rowOf = (kind: ChatSessionKind): Option.Option<SessionRow> => {
+	switch (kind.mode) {
+		case "default":
+			return Option.none()
+		case "investigate":
+			return Option.map(decodeInvestigationId(kind.rawId), (id): SessionRow => ({
+				kind: "investigate",
+				id,
+			}))
+		case "pr-review":
+			return Option.map(decodePrReviewId(kind.rawId), (id): SessionRow => ({ kind: "pr-review", id }))
+		case "pr-reply":
+			return Option.map(decodePrReviewReplyId(kind.rawId), (id): SessionRow => ({
+				kind: "pr-reply",
+				id,
+			}))
+	}
+}
+
+export interface ChatSessionOf {
+	readonly agent: AgentDefinition
+	/**
+	 * Absent for a plain conversation, and for a mode prefix whose id does not decode (`inv-abc`):
+	 * that session keeps its mode's agent, but runs and bills as an ordinary conversation.
+	 */
+	readonly row: SessionRow | undefined
+}
+
+/** The one reading of a session id: its agent (the mode string *is* the agent name) and its row. */
+export const sessionOf = (sessionId: string): ChatSessionOf => {
+	const kind = chatSessionKind(sessionId)
+	return { agent: AGENTS[kind.mode], row: Option.getOrUndefined(rowOf(kind)) }
+}
+
+export const agentForSession = (sessionId: string): AgentDefinition => sessionOf(sessionId).agent
+
+/**
+ * A machine-started pass the runner closes out itself: an investigation's, a review's, a reply's.
+ * Both halves are stated: the session names its row, the origin says nobody is attending.
+ */
+export const isAutonomousTurn = (row: SessionRow | undefined, origin: ChatTurnOrigin): boolean =>
+	row !== undefined && origin.kind === "autonomous"
 
 /**
  * A Maple agent record as a finite policy.

@@ -1,26 +1,24 @@
 /**
- * `buildDiagnosisCompletion` — the one value an investigation turn answers through.
- *
- * The tool and whether the run is an autonomous pass travel together: the turn runner closes a
- * pass out itself when `submitted()` stays false, and must never do that to a human follow-up.
+ * The completions a run answers through: `submit_diagnosis` for an investigation, `submit_review`
+ * and `record_finding` for a review. Who is offered one is decided by the origin; which one, by the
+ * session's row (`sessionOf`, tested in `agents.test.ts`).
  */
-import { type ChatTurnOrigin, prReviewSessionId } from "@maple/domain/chat-session"
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Result, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildChatToolkit,
-	buildDiagnosisCompletion,
-	buildReviewCompletion,
+	diagnosisCompletion,
 	makeRunUsage,
 	RECORD_FINDING,
+	reviewCompletion,
 	savedFindingsRequest,
-	SUBMIT_DIAGNOSIS,
-	SUBMIT_REVIEW,
 	type SubmitDiagnosis,
 	type SubmitReview,
 } from "./tools"
+import { type CompletionRun, SUBMIT_DIAGNOSIS, SUBMIT_REVIEW } from "./completion"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import {
 	PrReviewFinding,
@@ -30,8 +28,8 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import type { ReviewCoverage } from "./review-coverage"
-import { makeChildFindings } from "./review-child-findings"
-import { makeReviewLedger } from "./review-ledger"
+import { type ChildFindings, makeChildFindings } from "./review-child-findings"
+import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 import { PR_REVIEW_RULESET } from "./permissions"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
@@ -56,24 +54,45 @@ const tenantFor = (userId: UserId): TenantContext => ({
 
 const MODEL_NAME = "@cf/test/model"
 
-const INVESTIGATION_SESSION = `${orgId}:inv-00000000-0000-0000-0000-000000000000`
-
 const submitDiagnosis: SubmitDiagnosis = () => Effect.undefined
 
 const SESSION_ATTRIBUTES = { [MAPLE_NATIVE_SESSION_ID_ATTR]: "session-1" }
 
-const build = (sessionId: string, origin: ChatTurnOrigin) =>
-	buildDiagnosisCompletion(
-		sessionId,
-		"msg-1",
-		tenantFor(human),
-		origin,
-		submitDiagnosis,
-		makeRunUsage(),
-		MODEL_NAME,
-		false,
-		SESSION_ATTRIBUTES,
+const runFor = (partial = false): CompletionRun => ({
+	turnId: "msg-1",
+	usage: makeRunUsage(),
+	modelName: MODEL_NAME,
+	partial,
+	sessionAttributes: SESSION_ATTRIBUTES,
+})
+
+const build = (origin: ChatTurnOrigin) => diagnosisCompletion(origin, submitDiagnosis)?.(runFor())
+
+/** Nothing unread and no whole-diff read: a pass whose coverage nobody is checking. */
+const UNWATCHED: ReviewCoverage = { observe: () => {}, unread: () => [], wholeDiff: () => false }
+
+/** The review completion an unattended pass is handed, with the turn's state defaulted. */
+const reviewFor = (
+	submit: SubmitReview,
+	options: {
+		readonly partial?: boolean
+		readonly coverage?: ReviewCoverage
+		readonly ledger?: ReviewLedger
+		readonly childFindings?: ChildFindings
+	} = {},
+) => {
+	const completion = reviewCompletion(
+		{ kind: "autonomous" },
+		{
+			coverage: options.coverage ?? UNWATCHED,
+			ledger: options.ledger ?? makeReviewLedger(),
+			childFindings: options.childFindings ?? makeChildFindings(),
+		},
+		submit,
 	)
+	assert.isDefined(completion)
+	return completion(runFor(options.partial))
+}
 
 const sampleSubmission = () => ({
 	summary: "Checkout latency doubled after the 14:00 deploy.",
@@ -85,32 +104,16 @@ const sampleSubmission = () => ({
 	confidence: "high",
 })
 
-describe("buildDiagnosisCompletion", () => {
-	it("gives an ordinary conversation no completion at all", () => {
-		assert.isUndefined(build(`${orgId}:tab`, { kind: "app" }))
-	})
-
-	it("gives a session whose inv- suffix is not an id no completion", () => {
-		assert.isUndefined(build(`${orgId}:inv-not-a-uuid`, { kind: "app" }))
-	})
-
-	it("marks the autonomous investigation turn as one the runner must close out", () => {
-		const completion = build(INVESTIGATION_SESSION, { kind: "autonomous" })
-
-		assert.isDefined(completion?.toolkit)
-		assert.isTrue(completion?.autonomous)
-		assert.isFalse(completion?.submitted())
-	})
-
+describe("diagnosisCompletion", () => {
 	/**
 	 * A human follow-up in the same session gets the same tool and is never closed out: it may file
 	 * a superseding diagnosis, but "what did you mean by the pool?" must be answerable in prose.
 	 */
-	it("offers the same tool to a human follow-up without treating it as a pass", () => {
-		const completion = build(INVESTIGATION_SESSION, { kind: "app" })
-
-		assert.isDefined(completion?.toolkit)
-		assert.isFalse(completion?.autonomous)
+	it("offers the tool to the unattended pass and to a human follow-up alike", () => {
+		const pass = build({ kind: "autonomous" })
+		assert.equal(pass?.tool, SUBMIT_DIAGNOSIS)
+		assert.isFalse(pass?.submitted())
+		assert.equal(build({ kind: "app" })?.tool, SUBMIT_DIAGNOSIS)
 	})
 
 	/**
@@ -119,7 +122,7 @@ describe("buildDiagnosisCompletion", () => {
 	 * channel is not where a diagnosis gets settled, so a connector origin is refused here by name.
 	 */
 	it("gives a connector turn no diagnosis tool, even on an investigation session", () => {
-		assert.isUndefined(build(INVESTIGATION_SESSION, CONNECTOR_ORIGIN))
+		assert.isUndefined(build(CONNECTOR_ORIGIN))
 	})
 
 	/**
@@ -128,7 +131,7 @@ describe("buildDiagnosisCompletion", () => {
 	 * as a tool call with no arguments and no result.
 	 */
 	it("records the report and the result on the tool's span", async () => {
-		const completion = build(INVESTIGATION_SESSION, { kind: "autonomous" })
+		const completion = build({ kind: "autonomous" })
 		assert.isDefined(completion)
 		const { spans, tracer } = makeRecordingTracer()
 
@@ -148,14 +151,17 @@ describe("buildDiagnosisCompletion", () => {
 	})
 })
 
-describe("buildReviewCompletion", () => {
-	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
+describe("reviewCompletion", () => {
 	const submitReview: SubmitReview = () => Effect.undefined
-	const buildReview = (sessionId: string, origin: ChatTurnOrigin) =>
-		buildReviewCompletion(sessionId, tenantFor(human), origin, submitReview, makeRunUsage(), MODEL_NAME)
+	const offered = (origin: ChatTurnOrigin) =>
+		reviewCompletion(
+			origin,
+			{ coverage: UNWATCHED, ledger: makeReviewLedger(), childFindings: makeChildFindings() },
+			submitReview,
+		)?.(runFor())
 
 	it("gives the review's unattended pass the review tool", () => {
-		assert.equal(buildReview(REVIEW_SESSION, { kind: "autonomous" })?.tool, SUBMIT_REVIEW)
+		assert.equal(offered({ kind: "autonomous" })?.tool, SUBMIT_REVIEW)
 	})
 
 	/**
@@ -163,12 +169,8 @@ describe("buildReviewCompletion", () => {
 	 * dropped while the tool reports success.
 	 */
 	it("gives a person's follow-up in the review session no review tool", () => {
-		assert.isUndefined(buildReview(REVIEW_SESSION, { kind: "app" }))
-		assert.isUndefined(buildReview(REVIEW_SESSION, CONNECTOR_ORIGIN))
-	})
-
-	it("gives a session that is not a review no review tool", () => {
-		assert.isUndefined(buildReview(INVESTIGATION_SESSION, { kind: "autonomous" }))
+		assert.isUndefined(offered({ kind: "app" }))
+		assert.isUndefined(offered(CONNECTOR_ORIGIN))
 	})
 
 	describe("with files unread", () => {
@@ -179,7 +181,7 @@ describe("buildReviewCompletion", () => {
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []
-			const submit: SubmitReview = (_org, _id, request) => Effect.sync(() => filed.push(request))
+			const submit: SubmitReview = (request) => Effect.sync(() => filed.push(request))
 			return { filed, submit }
 		}
 		const submitWith = (
@@ -188,17 +190,7 @@ describe("buildReviewCompletion", () => {
 			partial = false,
 			wholeDiff = true,
 		) => {
-			const completion = buildReviewCompletion(
-				REVIEW_SESSION,
-				tenantFor(human),
-				{ kind: "autonomous" },
-				submit,
-				makeRunUsage(),
-				MODEL_NAME,
-				partial,
-				undefined,
-				coverage(unread, wholeDiff),
-			)
+			const completion = reviewFor(submit, { partial, coverage: coverage(unread, wholeDiff) })
 			assert.isDefined(completion)
 			return {
 				completion: completion,
@@ -240,7 +232,7 @@ describe("buildReviewCompletion", () => {
 			) => {
 				const filed: Array<SubmitPrReviewRequest> = []
 				const { call } = submitWith(
-					(_org, _id, request) => Effect.sync(() => filed.push(request)),
+					(request) => Effect.sync(() => filed.push(request)),
 					unread,
 					partial,
 					wholeDiff,
@@ -287,19 +279,10 @@ describe("buildReviewCompletion", () => {
 			const filed: Array<SubmitPrReviewRequest> = []
 			const children = makeChildFindings()
 			children.observe(CHILD_ANSWER)
-			const completion = buildReviewCompletion(
-				REVIEW_SESSION,
-				tenantFor(human),
-				{ kind: "autonomous" },
-				(_org, _id, request) => Effect.sync(() => filed.push(request)),
-				makeRunUsage(),
-				MODEL_NAME,
+			const completion = reviewFor((request) => Effect.sync(() => filed.push(request)), {
 				partial,
-				undefined,
-				undefined,
-				makeReviewLedger(),
-				children,
-			)!
+				childFindings: children,
+			})
 			const call = (submission: PrReviewSubmission) =>
 				Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](submission)))
 			return { filed, call }
@@ -333,19 +316,9 @@ describe("buildReviewCompletion", () => {
 			children.observe(
 				"src/queue.ts:7 | warn | observability | Consumer has no span | Untraced | Wrap it | -",
 			)
-			const completion = buildReviewCompletion(
-				REVIEW_SESSION,
-				tenantFor(human),
-				{ kind: "autonomous" },
-				(_org, _id, request) => Effect.sync(() => filed.push(request)),
-				makeRunUsage(),
-				MODEL_NAME,
-				false,
-				undefined,
-				undefined,
-				makeReviewLedger(),
-				children,
-			)!
+			const completion = reviewFor((request) => Effect.sync(() => filed.push(request)), {
+				childFindings: children,
+			})
 			const call = () => Effect.runPromise(Effect.result(completion.handlers[SUBMIT_REVIEW](CLEAN)))
 			assert.isTrue(Result.isFailure(await call()))
 			assert.isTrue(Result.isSuccess(await call()))
@@ -390,19 +363,7 @@ describe("buildReviewCompletion", () => {
 					"\n",
 				),
 			)
-			const completion = buildReviewCompletion(
-				REVIEW_SESSION,
-				tenantFor(human),
-				{ kind: "autonomous" },
-				() => Effect.void,
-				makeRunUsage(),
-				MODEL_NAME,
-				false,
-				undefined,
-				undefined,
-				makeReviewLedger(),
-				children,
-			)!
+			const completion = reviewFor(() => Effect.void, { childFindings: children })
 			const finding = {
 				path: "src/capture.ts",
 				line: 214,
@@ -457,7 +418,6 @@ describe("buildReviewCompletion", () => {
 })
 
 describe("record_finding", () => {
-	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
 	const RETRY: PrReviewFindingSubmission = {
 		path: "src/orders.ts",
 		line: 42,
@@ -469,18 +429,11 @@ describe("record_finding", () => {
 	const setup = (unread: ReadonlyArray<string> = [], partial = false) => {
 		const filed: Array<SubmitPrReviewRequest> = []
 		const ledger = makeReviewLedger()
-		const completion = buildReviewCompletion(
-			REVIEW_SESSION,
-			tenantFor(human),
-			{ kind: "autonomous" },
-			(_org, _id, request) => Effect.sync(() => filed.push(request)),
-			makeRunUsage(),
-			MODEL_NAME,
+		const completion = reviewFor((request) => Effect.sync(() => filed.push(request)), {
 			partial,
-			undefined,
-			{ observe: () => {}, unread: () => unread, wholeDiff: () => true },
+			coverage: { observe: () => {}, unread: () => unread, wholeDiff: () => true },
 			ledger,
-		)
+		})
 		assert.isDefined(completion)
 		const handlers = completion.handlers
 		return {

@@ -21,7 +21,7 @@ import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
 import { makeChildFindings } from "./review-child-findings"
 import { makeReviewLedger } from "./review-ledger"
-import { makeRunUsage } from "./tools"
+import { makeRunUsage, reviewCompletion } from "./tools"
 import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
 const TENANT: TenantContext = {
@@ -110,12 +110,15 @@ describe("runChatTurn review_files children", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: executor,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: () => Effect.void,
-				review: {
-					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
-					ledger: makeReviewLedger(),
-				},
+				completion: reviewCompletion(
+					{ kind: "autonomous" },
+					{
+						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						ledger: makeReviewLedger(),
+						childFindings: makeChildFindings(),
+					},
+					() => Effect.void,
+				),
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),
@@ -164,9 +167,9 @@ describe("runChatTurn review_files children", () => {
 					origin: { kind: "autonomous" },
 					toolExecutor: executor,
 					model,
-					submitDiagnosis: () => Effect.die("no investigation in a review session"),
-					submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
-					review,
+					completion: reviewCompletion({ kind: "autonomous" }, review, (request) =>
+						Effect.sync(() => filed.push(request)),
+					),
 					text: "Review pull request #7 of acme/shop.",
 					history: [],
 					usage: makeRunUsage(),
@@ -241,12 +244,15 @@ describe("runChatTurn review_files children", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: executor,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: () => Effect.void,
-				review: {
-					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
-					ledger: makeReviewLedger(),
-				},
+				completion: reviewCompletion(
+					{ kind: "autonomous" },
+					{
+						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						ledger: makeReviewLedger(),
+						childFindings: makeChildFindings(),
+					},
+					() => Effect.void,
+				),
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),

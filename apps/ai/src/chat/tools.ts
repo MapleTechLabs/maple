@@ -5,18 +5,13 @@
  * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
  * touch control flow at all.
  */
-import {
-	type ChatTurnOrigin,
-	investigationIdFromChatSessionId,
-	prReplyIdFromChatSessionId,
-	prReviewIdFromChatSessionId,
-} from "@maple/domain/chat-session"
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
 	AiTriageSubmission,
-	InvestigationDataCorruptionError,
-	InvestigationNotFoundError,
-	InvestigationPersistenceError,
+	type InvestigationDataCorruptionError,
+	type InvestigationNotFoundError,
+	type InvestigationPersistenceError,
 	normalizePrReviewFinding,
 	overlongFinding,
 	PR_REVIEW_FINDING_WORDS,
@@ -25,11 +20,9 @@ import {
 	PR_REVIEW_MAX_FINDINGS,
 	type PrReviewFinding,
 	PrReviewFindingSubmission,
-	PrReviewId,
-	PrReviewNotFoundError,
+	type PrReviewNotFoundError,
 	PrReviewEditSubmission,
-	PrReviewPersistenceError,
-	PrReviewReplyId,
+	type PrReviewPersistenceError,
 	type PrReviewReplyNotFoundError,
 	PrReviewReplySubmission,
 	PrReviewReport,
@@ -40,12 +33,11 @@ import {
 	SubmitPrReviewRequest,
 	type TenantContext,
 } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
 import type { ModelCallUsage } from "@yielded/agent/usage"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
 import { autumnModelId } from "../platform/ai-credits"
-import { Array as Arr, type Cause, Effect, type Layer, Option, Schema } from "effect"
+import { Array as Arr, type Cause, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -65,60 +57,47 @@ import {
 	unaccountedChildFindings,
 } from "./review-child-findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
-import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
+import type { ReviewLedger } from "./review-ledger"
+import {
+	type CompletionRun,
+	type RunCompletion,
+	SUBMIT_DIAGNOSIS,
+	SUBMIT_REPLY,
+	SUBMIT_REVIEW,
+} from "./completion"
 
-const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
-const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
-const decodePrReviewReplyIdOption = Schema.decodeUnknownOption(PrReviewReplyId)
-
+/** Files the investigation's report; the caller has already bound the org and the investigation. */
 export type SubmitDiagnosis = (
-	orgId: TenantContext["orgId"],
-	investigationId: InvestigationId,
 	request: SubmitDiagnosisRequest,
 ) => Effect.Effect<
 	unknown,
 	InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 >
 
-export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
-export const SUBMIT_REVIEW = "submit_review"
 export const RECORD_FINDING = "record_finding"
-
-export const SUBMIT_REPLY = "submit_reply"
 export const PROPOSE_EDIT = "propose_edit"
 
-export type SubmitReply = (
-	orgId: TenantContext["orgId"],
-	replyId: PrReviewReplyId,
-	body: string,
-) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
+/** Posts the reply, and stages an edit for it; the caller has bound the org and the reply. */
+export interface ReplyWrites {
+	readonly submit: (
+		body: string,
+	) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
+	readonly stageEdit: (
+		edit: PrReviewEditSubmission,
+	) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
+}
 
-export type StageEdit = (
-	orgId: TenantContext["orgId"],
-	replyId: PrReviewReplyId,
-	edit: PrReviewEditSubmission,
-) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
-
+/** Files the review; the caller has bound the org and the review. */
 export type SubmitReview = (
-	orgId: TenantContext["orgId"],
-	reviewId: PrReviewId,
 	request: SubmitPrReviewRequest,
 ) => Effect.Effect<unknown, PrReviewPersistenceError | PrReviewNotFoundError>
 
-/**
- * The tool a run answers through, and whether the run must answer through it.
- *
- * `submitted` is read by the turn runner after the run: a completion whose tool never landed is a
- * pass the runner closes out itself, because the engine is never told the tool is required.
- */
-export interface RunCompletion {
-	readonly tool: string
-	readonly toolkit: Toolkit.Any
-	readonly layer: Layer.Layer<never>
-	/** The raw handlers, which tests drive directly. */
-	readonly handlers: unknown
-	readonly autonomous: boolean
-	readonly submitted: () => boolean
+/** A review turn's own state, shared by its pass and its close-out: what was read, what was saved. */
+export interface ReviewTurnState {
+	readonly coverage: ReviewCoverage
+	readonly ledger: ReviewLedger
+	/** What the turn's `review_files` children answered, so a continuation still accounts for it. */
+	readonly childFindings: ChildFindings
 }
 
 /**
@@ -232,53 +211,6 @@ export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	failureMode: "return",
 })
 
-/** The investigation a session belongs to, or `undefined` for an ordinary conversation. */
-export const investigationForSession = (sessionId: string): InvestigationId | undefined => {
-	const rawId = investigationIdFromChatSessionId(sessionId)
-	if (!rawId) return undefined
-	// An unparseable id simply means this conversation is not an investigation.
-	return Option.getOrUndefined(decodeInvestigationIdOption(rawId))
-}
-
-/**
- * Whether this turn is an investigation's own autonomous pass rather than a person asking a
- * follow-up in the same session. The pass must end on `submit_diagnosis`; the follow-up may answer
- * in prose.
- *
- * Both halves are stated, not inferred: the session says it is an investigation, the turn's origin
- * says it is the unattended pass.
- */
-export const isAutonomousInvestigationTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	investigationForSession(sessionId) !== undefined && origin.kind === "autonomous"
-
-/** The pull request review a session belongs to, or `undefined` for any other conversation. */
-export const prReviewForSession = (sessionId: string): PrReviewId | undefined => {
-	const rawId = prReviewIdFromChatSessionId(sessionId)
-	if (!rawId) return undefined
-	return Option.getOrUndefined(decodePrReviewIdOption(rawId))
-}
-
-/** A review's own unattended pass; it must end on `submit_review`. */
-export const isAutonomousReviewTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	prReviewForSession(sessionId) !== undefined && origin.kind === "autonomous"
-
-/** The pull request reply a session answers, or `undefined` for any other conversation. */
-export const prReplyForSession = (sessionId: string): PrReviewReplyId | undefined => {
-	const rawId = prReplyIdFromChatSessionId(sessionId)
-	if (!rawId) return undefined
-	return Option.getOrUndefined(decodePrReviewReplyIdOption(rawId))
-}
-
-/** A reply's own unattended pass; it must end on `submit_reply`. */
-export const isAutonomousReplyTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	prReplyForSession(sessionId) !== undefined && origin.kind === "autonomous"
-
-/** Any machine-started pass the runner closes out itself: an investigation's, a review's, a reply's. */
-export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	isAutonomousInvestigationTurn(sessionId, origin) ||
-	isAutonomousReviewTurn(sessionId, origin) ||
-	isAutonomousReplyTurn(sessionId, origin)
-
 export const replyTool = Tool.make(SUBMIT_REPLY, {
 	description:
 		"Post your answer on the pull request, in GitHub markdown, where the person asked. Call it " +
@@ -305,44 +237,35 @@ export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
 })
 
 /**
- * `submit_reply` and `propose_edit` for a reply session (`"<orgId>:prr-<id>"`). The reply id rides
- * on the session, so the agent never chooses which thread it answers or which branch it commits to.
+ * `submit_reply` and `propose_edit` for a reply's unattended pass. The caller binds the reply, so
+ * the agent never chooses which thread it answers or which branch it commits to.
  */
-export const buildReplyCompletion = (
-	sessionId: string,
-	tenant: TenantContext,
-	origin: ChatTurnOrigin,
-	submitReply: SubmitReply,
-	stageEdit: StageEdit,
-	sessionAttributes?: Readonly<Record<string, string>>,
-) => {
-	const replyId = prReplyForSession(sessionId)
-	if (replyId === undefined || origin.kind !== "autonomous") return undefined
-	const toolkit = Toolkit.make(replyTool, proposeEditTool)
-	let submitted = false
-	const asToolFailure = (tool: string) => (cause: Cause.Cause<unknown>) =>
-		Effect.fail(new MapleToolFailure({ message: `${tool} failed: ${summarizeToolFailure(cause)}` }))
-	return {
-		tool: SUBMIT_REPLY,
-		toolkit,
-		...toolHandlersWithContent(
+export const replyCompletion = (origin: ChatTurnOrigin, writes: ReplyWrites) => {
+	if (origin.kind !== "autonomous") return undefined
+	return (run: CompletionRun) => {
+		const toolkit = Toolkit.make(replyTool, proposeEditTool)
+		let submitted = false
+		const asToolFailure = (tool: string) => (cause: Cause.Cause<unknown>) =>
+			Effect.fail(new MapleToolFailure({ message: `${tool} failed: ${summarizeToolFailure(cause)}` }))
+		return {
+			tool: SUBMIT_REPLY,
 			toolkit,
-			{
-				[SUBMIT_REPLY]: (submission: PrReviewReplySubmission) =>
-					submitReply(tenant.orgId, replyId, submission.body ?? "").pipe(
-						Effect.tap(() => Effect.sync(() => (submitted = true))),
-						Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
-					),
-				[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
-					stageEdit(tenant.orgId, replyId, edit).pipe(
-						Effect.catchCause(asToolFailure(PROPOSE_EDIT)),
-					),
-			},
-			sessionAttributes,
-		),
-		autonomous: isAutonomousReplyTurn(sessionId, origin),
-		submitted: () => submitted,
-	} satisfies RunCompletion
+			...toolHandlersWithContent(
+				toolkit,
+				{
+					[SUBMIT_REPLY]: (submission: PrReviewReplySubmission) =>
+						writes.submit(submission.body ?? "").pipe(
+							Effect.tap(() => Effect.sync(() => (submitted = true))),
+							Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
+						),
+					[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
+						writes.stageEdit(edit).pipe(Effect.catchCause(asToolFailure(PROPOSE_EDIT))),
+				},
+				run.sessionAttributes,
+			),
+			submitted: () => submitted,
+		} satisfies RunCompletion
+	}
 }
 
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
@@ -429,32 +352,28 @@ export const savedFindingsRequest = (input: {
 	})
 
 /**
- * The `submit_review` tool for a review session (`"<orgId>:pr-<id>"`), built like
- * {@link buildDiagnosisCompletion}: the review id rides on the session, so the agent never chooses
- * which pull request its report is posted to. A connector never files one, for the same reason it
- * never files a diagnosis.
+ * The `submit_review` tool for a review's unattended pass, built like {@link diagnosisCompletion}:
+ * the caller binds the review, so the agent never chooses which pull request its report is posted
+ * to. `review` is the turn's: the first submission with files unread (`coverage`) or a child's
+ * warning unaccounted (`childFindings`) is refused once, and `ledger` holds what `record_finding` saved.
  */
-export const buildReviewCompletion = (
-	sessionId: string,
-	tenant: TenantContext,
+export const reviewCompletion = (
 	origin: ChatTurnOrigin,
+	review: ReviewTurnState,
 	submitReview: SubmitReview,
-	usage: RunUsage,
-	modelName: string,
-	partial = false,
-	sessionAttributes?: Readonly<Record<string, string>>,
-	/** What this pass has read. The first submission with files unread is refused once. */
-	coverage?: ReviewCoverage,
-	/** Findings saved with `record_finding`; the turn's own, or this run's when none is passed. */
-	ledger: ReviewLedger = makeReviewLedger(),
-	/** What this pass's `review_files` children reported. Unaccounted warnings are refused once. */
-	childFindings?: ChildFindings,
 ) => {
-	const reviewId = prReviewForSession(sessionId)
-	if (reviewId === undefined) return undefined
 	// Only the unattended pass files a review. A follow-up in the session answers in prose: the
 	// row is already settled, and a second submission would be dropped while reporting success.
 	if (origin.kind !== "autonomous") return undefined
+	return (run: CompletionRun) => buildReviewCompletion(run, review, submitReview)
+}
+
+const buildReviewCompletion = (
+	{ usage, modelName, partial, sessionAttributes }: CompletionRun,
+	review: ReviewTurnState,
+	submitReview: SubmitReview,
+) => {
+	const { coverage, ledger, childFindings } = review
 	const toolkit = Toolkit.make(reviewTool, recordFindingTool)
 	let submitted = false
 	let refusedUnread = false
@@ -465,7 +384,7 @@ export const buildReviewCompletion = (
 	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
 	// files what it has and a not_applicable verdict reads nothing, so neither is held.
 	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
-		if (coverage === undefined || partial || refusedUnread || verdict === "not_applicable") return []
+		if (partial || refusedUnread || verdict === "not_applicable") return []
 		const unread = coverage.unread()
 		refusedUnread = unread.length > 0
 		return unread
@@ -480,15 +399,12 @@ export const buildReviewCompletion = (
 					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
 				)
 			}
-			const unaccounted =
-				childFindings === undefined
-					? []
-					: unaccountedChildFindings(
-							childFindings.all(),
-							// Deduplicated as the report is, so a finding saved and repeated counts once.
-							mergeSavedFindings(ledger.findings(), normalized.report.findings),
-							normalized.childDismissals,
-						)
+			const unaccounted = unaccountedChildFindings(
+				childFindings.all(),
+				// Deduplicated as the report is, so a finding saved and repeated counts once.
+				mergeSavedFindings(ledger.findings(), normalized.report.findings),
+				normalized.childDismissals,
+			)
 			// A close-out is not refused, but still files what the children found.
 			if (unaccounted.length > 0 && !partial && !refusedChildren) {
 				refusedChildren = true
@@ -517,13 +433,12 @@ export const buildReviewCompletion = (
 			// Refused once already: a peer's warning stands unless the reviewer says why it does not.
 			const childFiled = childFindingsToFile(unaccounted)
 			const saved = [...ledger.findings(), ...childFiled]
-			const unreviewed =
-				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
+			const unreviewed = normalized.report.verdict === "not_applicable" ? [] : coverage.unread()
 			const merged = withSavedFindings(normalized.report, saved, unreviewed)
 			// A close-out files what a stopped pass saved, and not_applicable owes no reads, so
 			// neither counts as a whole-diff read.
 			const report =
-				coverage?.wholeDiff() === true &&
+				coverage.wholeDiff() === true &&
 				!partial &&
 				unreviewed.length === 0 &&
 				normalized.report.verdict !== "not_applicable"
@@ -539,8 +454,6 @@ export const buildReviewCompletion = (
 				),
 			).length
 			return submitReview(
-				tenant.orgId,
-				reviewId,
 				new SubmitPrReviewRequest({
 					report,
 					model: modelName,
@@ -561,7 +474,7 @@ export const buildReviewCompletion = (
 						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
-						"maple.pr_review.child_findings": childFindings?.all().length ?? 0,
+						"maple.pr_review.child_findings": childFindings.all().length,
 						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
 						// Unpostable, or cut by the report's finding cap.
 						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
@@ -624,8 +537,8 @@ export const buildReviewCompletion = (
 			{ [SUBMIT_REVIEW]: record, [RECORD_FINDING]: save },
 			sessionAttributes,
 		),
-		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
+		review,
 	} satisfies RunCompletion
 }
 
@@ -657,12 +570,12 @@ const withSavedFindings = (
 }
 
 /**
- * The `submit_diagnosis` tool for an investigate-mode session (`"<orgId>:inv-<id>"`).
+ * The `submit_diagnosis` tool for an investigation session (`"<orgId>:inv-<id>"`).
  *
  * Its arguments ARE the structured report. Deliberately not approval-gated: it is the structured
- * output channel, not a user-facing mutation. The investigation id and org ride from the session id,
- * so the agent never chooses which investigation it writes. Being outside the ruleset is why the
- * origin is consulted here directly rather than left to the gate.
+ * output channel, not a user-facing mutation. The caller binds the investigation and org from the
+ * session id, so the agent never chooses which investigation it writes. Being outside the ruleset
+ * is why the origin is consulted here directly rather than left to the gate.
  *
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
@@ -673,27 +586,19 @@ const withSavedFindings = (
  * call, which the providers Maple runs on do not reliably honour, and the engine fails the whole
  * run when they do not. The turn runner checks `submitted` instead and closes the pass itself.
  */
-export const buildDiagnosisCompletion = (
-	sessionId: string,
-	/** The turn's message id: a later turn's diagnosis supersedes this one's. */
-	messageId: string,
-	tenant: TenantContext,
-	origin: ChatTurnOrigin,
-	submitDiagnosis: SubmitDiagnosis,
-	usage: RunUsage,
-	modelName: string,
-	/** This run is the close-out: whatever it files is a partial, and lands as `inconclusive`. */
-	partial = false,
-	/** The run's agent-session identity, stamped on the tool span like every other tool's. */
-	sessionAttributes?: Readonly<Record<string, string>>,
-) => {
-	const investigationId = investigationForSession(sessionId)
-	if (investigationId === undefined) return undefined
+export const diagnosisCompletion = (origin: ChatTurnOrigin, submitDiagnosis: SubmitDiagnosis) => {
 	// A connector never files a diagnosis. This tool rides *outside* the ruleset — it is the
 	// investigation's structured output channel, not a gated mutation — so nothing else withholds
 	// it, and it does write: a report row, and the investigation's status. An attended follow-up in
 	// the app may file one; a channel is not where a diagnosis gets settled.
 	if (origin.kind === "connector") return undefined
+	return (run: CompletionRun) => buildDiagnosisCompletion(run, submitDiagnosis)
+}
+
+const buildDiagnosisCompletion = (
+	{ turnId, usage, modelName, partial, sessionAttributes }: CompletionRun,
+	submitDiagnosis: SubmitDiagnosis,
+) => {
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false
 	return {
@@ -706,15 +611,13 @@ export const buildDiagnosisCompletion = (
 					Effect.suspend(() => {
 						const { report, filled } = normalizeTriageSubmission(submission)
 						return submitDiagnosis(
-							tenant.orgId,
-							investigationId,
 							new SubmitDiagnosisRequest({
 								report,
 								model: modelName,
 								inputTokens: usage.input,
 								outputTokens: usage.output,
 								...(partial ? { partial: true } : undefined),
-								turnId: messageId,
+								turnId,
 							}),
 						).pipe(
 							Effect.tap(() =>
@@ -742,7 +645,6 @@ export const buildDiagnosisCompletion = (
 			},
 			sessionAttributes,
 		),
-		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
 	} satisfies RunCompletion
 }
