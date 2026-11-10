@@ -45,6 +45,7 @@ import {
 import { LOGS_BODY_SEARCH_SETTINGS } from "../profiles"
 import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
+import { parseProjectedAttributes } from "../row-text"
 import { memoizeAlertBuckets } from "./alert-evaluation-scope"
 import {
 	alertWindowBucketSeconds,
@@ -235,26 +236,6 @@ function pageTimeWindow(
 		startTime: formatWarehouseDateTime(Math.min(...pageTimes)),
 		endTime: formatWarehouseDateTime(Math.max(...pageTimes)),
 	}
-}
-
-/**
- * `traceListQuery` ships its projected root-attribute map as a JSON string
- * (`toJSONString` — Map columns can't survive an `argMin`). Decode defensively:
- * a malformed value degrades to an empty map, never a thrown defect.
- */
-const decodeProjectedAttributes = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-)
-
-function parseProjectedAttributes(raw: unknown): Record<string, string> {
-	if (typeof raw !== "string" || raw.length === 0) return {}
-	const parsed = decodeProjectedAttributes(raw)
-	if (Option.isNone(parsed)) return {}
-	const out: Record<string, string> = {}
-	for (const [key, value] of Rec.toEntries(parsed.value)) {
-		if (typeof value === "string" && value.length > 0) out[key] = value
-	}
-	return out
 }
 
 function servicesForTraceRow(
