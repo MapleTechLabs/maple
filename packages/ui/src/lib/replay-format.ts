@@ -1,7 +1,5 @@
-// Shared presentation helpers for the session-replay surfaces (list, detail,
-// player, timeline) — used by both the web app and the local-mode UI so the
-// two can't drift. Warehouse-coupled helpers (partition windows) stay in the
-// web app: this package doesn't depend on @maple/query-engine.
+// Shared presentation helpers for the session-replay surfaces (list, detail, player, timeline),
+// used by both the web app and the local-mode UI so the two can't drift.
 
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
 import { String as Str } from "effect"

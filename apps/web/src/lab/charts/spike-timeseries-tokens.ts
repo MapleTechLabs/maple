@@ -5,7 +5,7 @@ export const LINE_TOKENS = ["--chart-p99", "--chart-p95", "--chart-p50"] as cons
 export const AREA_TOKENS = ["--chart-throughput", "--chart-error"] as const
 export const CHROME_TOKENS = ["--border", "--background"] as const
 
-/** `STACK_TOKENS` (stacked-bar-spike.tsx): one chart token per service. */
+/** `STACK_TOKENS`: one chart token per service. */
 export const STACK_TOKEN_BY_SERVICE: ReadonlyMap<string, string> = new Map([
 	["api", "--chart-1"],
 	["web", "--chart-2"],

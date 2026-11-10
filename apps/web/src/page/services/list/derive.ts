@@ -32,7 +32,7 @@ export type HealthSummary = Readonly<{
 export const isoMs = (iso: string): number =>
 	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
 
-// copied: anomaly-format.ts (`isStaleOpenIncident`, `anomalyAffectsServiceHealth`); that module holds icons.
+// Whether an anomaly count row affects service health (a stale open incident does not).
 const ANOMALY_STALE_AFTER_MS = 60 * 60 * 1000
 const anomalyAffectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
 	const lastTriggeredMs = isoMs(row.last_triggered_at)

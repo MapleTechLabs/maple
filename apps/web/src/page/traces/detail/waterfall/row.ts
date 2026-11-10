@@ -26,9 +26,9 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack } from "@maple/views/ui/stack"
 
-// `SpanRow` (packages/ui/src/components/traces/span-row.tsx) and `PixelDurationBar`.
+// `SpanRow` and `PixelDurationBar`.
 
-// copied: `outcomeBadgeStyle(true)` (cloud-platforms/types.ts pulls in the React icon set).
+/** A bad outcome badge's look. */
 const BAD_OUTCOME_STYLE = typographyClass({
 	tone: "error",
 	className: "bg-severity-error-a2 border-severity-error-a3",

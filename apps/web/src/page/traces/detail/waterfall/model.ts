@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { SpanNodeData } from "@maple/views/traces/trace-data"
 
-// The Waterfall tab (`SpanHierarchy`, packages/ui/src/components/traces/span-hierarchy.tsx).
+// The Waterfall tab.
 
 /** One rendered row of the virtual window, by its index into the visible rows. */
 export const VirtualRow = Schema.Struct({ index: Schema.Number, start: Schema.Number })

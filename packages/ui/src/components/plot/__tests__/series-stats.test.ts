@@ -70,11 +70,8 @@ describe("sortZeroSeriesLast", () => {
 	it("keeps the incoming order among the sunk series too", () => {
 		const stats = computeSeriesStats(ROWS, ["zzz-idle"])
 		const sorted = sortZeroSeriesLast(series("zzz-idle", "unknown-b", "demo-api"), stats)
-		// Two series have no entry in `stats` here, so they sink alongside the zero
-		// one; what this pins is that the sunk block keeps its relative order.
-		// (Note this differs from the legacy `query-builder-legend.tsx` helper, which
-		// leaves a series with NO stats where it is. Unreachable in practice — stats
-		// are computed over every key before the legend sees them.)
+		// Two series have no entry in `stats` here, so they sink alongside the zero one; what
+		// this pins is that the sunk block keeps its relative order.
 		expect(Arr.map(sorted, (entry) => entry.key)).toEqual(["zzz-idle", "unknown-b", "demo-api"])
 	})
 

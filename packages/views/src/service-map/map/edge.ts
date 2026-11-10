@@ -15,7 +15,7 @@ import type { XY } from "../xyflow/geometry"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "../../ui/stack"
 
-// `ServiceMapEdge` (packages/ui `service-map/service-map-edge.tsx`): filter-free SVG tubes.
+// `ServiceMapEdge`: filter-free SVG tubes.
 
 const endpointColor = (nodeId: string): string => {
 	if (isDbNodeId(nodeId)) {

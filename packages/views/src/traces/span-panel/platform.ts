@@ -5,8 +5,8 @@ import type { IconName } from "@maple/views/ui/icon"
 import { toneBoxClass } from "@maple/views/ui/tone-box"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
-// copied: packages/ui/src/lib/cloud-platforms/{types,database}.ts with `Icon` as an icon name
-// (the adapters import React icon components). Workers detection and rows are shared.
+// The span panel's cloud platform fields, with `Icon` as an icon name. Workers detection and rows
+// are shared.
 
 export interface PlatformField {
 	readonly label: string

@@ -23,8 +23,8 @@ import { withHint } from "./eyebrow"
 import { icon } from "./icon"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/table.tsx. Rows and cells repeat, so they set one class
-// attribute (S4) instead of `h.Class`.
+// The Table and its parts. Rows and cells repeat, so they set one class attribute (S4) instead of
+// `h.Class`.
 
 type Children = ReadonlyArray<Html | string>
 export type TableVariant = "default" | "card" | "bare"

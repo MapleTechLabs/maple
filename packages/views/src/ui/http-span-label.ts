@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { middleTruncate } from "./middle-truncate"
 
-// Port of `HttpSpanLabel` (packages/ui/src/components/traces/http-span-label.tsx).
+// `HttpSpanLabel`.
 
 export type HttpSpanLabelOptions = Readonly<{
 	spanName: string

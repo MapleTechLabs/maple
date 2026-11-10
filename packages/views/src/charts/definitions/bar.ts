@@ -18,11 +18,9 @@ import { asFiniteNumber, type TimeseriesAxisContext, type TimeseriesRow } from "
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of `QueryBuilderBarChart` (packages/ui/src/components/charts/bar/query-builder-bar-chart.tsx),
-// definition half: bars centred on their bucket on a time scale padded by half a bucket, closed and
-// in-flight lanes, the hovered column kept bright.
-// TODO(bar-thresholds): thresholds, log scale, soft bounds and the "Other" bucketing past
-// `MAX_BAR_SERIES` are not ported.
+// `QueryBuilderBarChart`, definition half: bars centred on their bucket on a time scale padded by
+// half a bucket, closed and in-flight lanes, the hovered column kept bright. TODO(bar-thresholds):
+// thresholds, log scale, soft bounds and the "Other" bucketing past `MAX_BAR_SERIES` are not ported.
 
 type BarSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderBar" }>
 
@@ -44,7 +42,7 @@ interface BarCell {
 	readonly partial: boolean
 }
 
-// copied: `bucketBandDomain` and `timeseriesBandXAxis` (plot/timeseries.tsx, a React module).
+// `bucketBandDomain` and `timeseriesBandXAxis`.
 const bucketBandDomain = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	bucketSeconds: number | undefined,

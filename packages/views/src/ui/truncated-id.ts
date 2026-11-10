@@ -4,8 +4,8 @@ import { truncatedIdCopyStyles, truncatedIdStyles } from "@maple/ui/styles/ui/tr
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 
-// Port of packages/ui/src/components/ui/truncated-id.tsx: a shortened id in mono with the full
-// value as the native tooltip. `copy` adds the CopyButton; its state lives in the caller's Model.
+// A shortened id in mono with the full value as the native tooltip. `copy` adds the CopyButton;
+// its state lives in the caller's Model.
 
 export interface TruncatedIdOptions<M> {
 	readonly value: string

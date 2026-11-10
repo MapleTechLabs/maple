@@ -17,8 +17,7 @@ import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// copied: the pure layout half of packages/ui/src/components/traces/use-trace-timeline.ts (a React
-// module), over the Model's readonly tree.
+// The timeline layout over the Model's readonly tree.
 
 export const ROW_PITCH = ROW_HEIGHT + ROW_GAP
 
@@ -228,7 +227,7 @@ export const virtualRange = (count: number, scrollTop: number, height: number): 
 	return Array.from({ length: to - from + 1 }, (_, i) => from + i)
 }
 
-// copied: `collectMinimapSpans` (packages/ui trace-timeline-minimap.tsx).
+// `collectMinimapSpans`.
 
 export interface MinimapSpan {
 	readonly spanId: string

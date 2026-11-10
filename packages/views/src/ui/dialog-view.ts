@@ -44,7 +44,7 @@ type Parts = Readonly<{
 const proseControls =
 	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
 
-// dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
+// The popup, backdrop and viewport classes of each dialog kind.
 const partsOf = (
 	kind: Kind,
 	side: SheetSide,

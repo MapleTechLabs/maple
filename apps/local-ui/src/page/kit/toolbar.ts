@@ -12,7 +12,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// packages/ui/src/components/toolbar.tsx.
+// The page toolbar: stats, refresh, time range and search.
 
 type Children = ReadonlyArray<Html | null>
 const present = (children: Children): ReadonlyArray<Html> => Arr.filter(children, (child) => child !== null)

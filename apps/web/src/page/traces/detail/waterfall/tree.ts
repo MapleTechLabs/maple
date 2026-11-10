@@ -72,7 +72,6 @@ export const countSpans = (nodes: ReadonlyArray<SpanNodeData>): number =>
 /** `countDescendants` for the collapsed `+N` badge. */
 export const countDescendants = (node: SpanNodeData): number => countSpans(node.children)
 
-// copied: `collectParentIdsByLevel` (use-trace-timeline.ts is a React module).
 export const collectParentIdsByLevel = (rootSpans: ReadonlyArray<SpanNodeData>): Map<number, Set<string>> => {
 	const byLevel = new Map<number, Set<string>>()
 	const visit = (node: SpanNodeData): void => {

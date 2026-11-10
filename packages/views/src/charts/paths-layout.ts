@@ -1,8 +1,8 @@
 import { asFiniteNumber } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// The graph and layout of `PathsChart` (packages/ui/src/components/charts/paths/paths-chart.tsx):
-// rows are hops, column 0 is the anchor, `''` ended and `$other` the folded remainder.
+// The graph and layout of `PathsChart`: rows are hops, column 0 is the anchor, `''` ended and
+// `$other` the folded remainder.
 
 const OTHER = "$other"
 const ENDED = ""

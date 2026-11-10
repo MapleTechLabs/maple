@@ -8,8 +8,8 @@ import { icon } from "../icon"
 import { cappedCode } from "../logs/log-message"
 import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
 
-// Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/
-// attributes-table.tsx) and `CollapsibleJsonValue` (json-value.tsx), against an AttributesPanel Model.
+// `CopyableValue`, `SelectableValue`, `AttributeRow` and `CollapsibleJsonValue`, against an
+// AttributesPanel Model.
 
 type H = HtmlBuilder<Message>
 

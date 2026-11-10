@@ -9,8 +9,7 @@ import {
 } from "@maple/ui/styles/ui/page-layout"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of the header half of packages/ui/src/components/ui/page-layout.tsx (Root, Header, Title,
-// Description, HeaderActions). The sticky area, sidebars and sheets belong to the app shell port.
+// A page's root and header: title, description and header actions.
 
 type Children = ReadonlyArray<Html | string>
 

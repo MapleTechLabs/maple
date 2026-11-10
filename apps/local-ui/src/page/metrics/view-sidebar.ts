@@ -14,7 +14,7 @@ import { filterRailFrame } from "../kit/filter-rail"
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** copied: `metricTypeLabel` (packages/ui/src/components/metrics/metric-type-badge.tsx). */
+/** `metricTypeLabel`. */
 const TYPE_LABELS = new Map([
 	["sum", "Sum"],
 	["gauge", "Gauge"],

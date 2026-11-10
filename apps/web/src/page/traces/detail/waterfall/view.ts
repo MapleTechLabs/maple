@@ -11,7 +11,7 @@ import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `SpanHierarchy` (packages/ui/src/components/traces/span-hierarchy.tsx): the Waterfall tab's body.
+// `SpanHierarchy`: the Waterfall tab's body.
 
 /** Nothing comes from the page but the Model: the selection lives in it too. */
 export type ViewInputs = Readonly<Record<string, never>>

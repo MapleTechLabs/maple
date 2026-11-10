@@ -3,7 +3,7 @@ import { miniBarsStyles } from "@maple/ui/styles/ui/mini-bars"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/mini-bars.tsx: a static bar sparkline in one <svg>.
+// A static bar sparkline in one <svg>.
 
 const finite = (value: number): number => (Number.isFinite(value) && value > 0 ? value : 0)
 

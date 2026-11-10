@@ -95,7 +95,7 @@ const ANOMALY_METRIC = new Map<AnomalySignalType, ServiceHealthCause["metric"]>(
 const isoMs = (iso: string): number =>
 	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
 
-// copied: `anomalyAffectsServiceHealth` (anomaly-format.ts holds icons); every count row is open.
+// Whether an anomaly count row affects service health; every count row is open.
 const ANOMALY_STALE_AFTER_MS = 60 * 60 * 1000
 const affectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
 	const lastTriggeredMs = isoMs(row.last_triggered_at)

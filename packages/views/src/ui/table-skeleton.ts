@@ -9,7 +9,7 @@ import { skeleton, skeletonSlowNote } from "./skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "./table"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/table-skeleton.tsx: the loading placeholder for row tables.
+// The loading placeholder for row tables.
 
 export interface TableSkeletonColumn {
 	readonly header?: Html | string

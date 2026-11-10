@@ -1,9 +1,7 @@
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 import { String as Str } from "effect"
 
-// Framework-free half of `service-map-db.tsx`: colors, labels and an icon KEY per
-// db system. The React module maps keys to icon components; other renderers
-// (the Foldkit app) map them to their own glyphs.
+// Colors, labels and an icon KEY per db system; each renderer maps keys to its own glyphs.
 
 /** PlanetScale's neutral brand accent (DB node stripe, minimap, sidebar icon). */
 export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"

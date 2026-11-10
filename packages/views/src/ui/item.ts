@@ -11,7 +11,7 @@ import {
 import type { VariantProps } from "class-variance-authority"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/item.tsx. `ItemSeparator` waits for the Separator port.
+// The Item row (media, title, description, actions) and its group.
 
 type Children = ReadonlyArray<Html | string>
 type ItemVariant = NonNullable<VariantProps<typeof itemVariants>["variant"]>

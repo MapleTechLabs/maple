@@ -8,8 +8,8 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/middle-truncate.tsx: keeps the last `tail` characters
-// visible and ellipsizes the middle. Pure CSS; the full value is always in `title`.
+// Keeps the last `tail` characters visible and ellipsizes the middle. Pure CSS; the full
+// value is always in `title`.
 
 export interface MiddleTruncateOptions {
 	readonly text: string

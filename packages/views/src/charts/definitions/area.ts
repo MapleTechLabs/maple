@@ -32,8 +32,7 @@ import {
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 import { gradientId, gradientUrl } from "./gradient-id"
 
-// Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
-// line/), definition half: bands or lines, stacked or not, linear or monotone.
+// The area and line chart definitions: bands or lines, stacked or not, linear or monotone.
 // TODO(thresholds): threshold rules, log scale and fitted or soft y bounds are not ported.
 
 type AreaSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderArea" }>

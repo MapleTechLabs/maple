@@ -13,7 +13,7 @@ import {
 } from "@maple/ui/styles/ui/panel"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/panel.tsx: the flat bordered section frame.
+// The flat bordered section frame.
 
 type Children = ReadonlyArray<Html | string>
 export type PanelTone = keyof typeof panelToneStyles

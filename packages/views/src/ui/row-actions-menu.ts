@@ -5,7 +5,7 @@ import { icon } from "./icon"
 import type * as Menu from "./menu"
 import * as MenuView from "./menu-view"
 
-// Port of `RowActionsMenu` (packages/ui/src/components/ui/row-actions-menu.tsx).
+// `RowActionsMenu`.
 
 export type RowActionsMenuOptions<M> = Readonly<{
 	/** The menu's slot and Model. */

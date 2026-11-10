@@ -1,9 +1,6 @@
 /**
  * Min/Max/Mean/Last per series — the figures the stats legend prints.
  *
- * Lifted out of `query-builder-legend.tsx` unchanged. It is pure data with no
- * renderer in it, so it outlives the Recharts legend that used to own it.
- *
  * Note it is computed over ALL series, including hidden ones: a hidden series
  * keeps its legend row and its numbers so it can be brought back. See
  * `useSeriesVisibility` for where that ordering matters.

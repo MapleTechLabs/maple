@@ -23,7 +23,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 
-// Port of packages/ui/src/components/ui/key-value.tsx. The copy state lives in the caller's Model.
+// A list of label and value pairs in one of four layouts. The copy state lives in the caller's Model.
 
 type Children = ReadonlyArray<Html | string>
 export type KeyValueLayout = "split" | "grid" | "stacked" | "inline"

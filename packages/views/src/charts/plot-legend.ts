@@ -6,8 +6,8 @@ import { swatch } from "../ui/swatch"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 
-// Port of `PlotLegend` and `PlotStatsLegend` (packages/ui/src/components/plot/plot-legend.tsx).
-// Hover and click are Chart Messages; `active` and `highlighted` come from the chart Model.
+// `PlotLegend` and `PlotStatsLegend`. Hover and click are Chart Messages; `active` and
+// `highlighted` come from the chart Model.
 
 export interface PlotLegendSeries {
 	readonly key: string

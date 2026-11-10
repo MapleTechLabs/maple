@@ -102,8 +102,7 @@ export const uniqueIssues = (
 	return Arr.filter([...byId.values()], (issue) => viewCovers(view, issue.workflowState))
 }
 
-// copied: `KIND_LABEL`, `errorFilterChips` and `hasErrorFilters` (lib/errors/error-filter-chips.ts
-// types its input from the route module).
+// The error kind labels and the active filter chips.
 export const KIND_LABEL = {
 	error: "Exceptions",
 	alert: "Alert rules",

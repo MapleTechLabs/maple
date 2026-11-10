@@ -20,7 +20,7 @@ export interface PieSpikeRow {
 	readonly value: number
 }
 
-/** `MUTED_COLOR_AMOUNT` (plot-legend.tsx). */
+/** `MUTED_COLOR_AMOUNT`. */
 const MUTED_COLOR_AMOUNT = 0.78
 
 const SLICE_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const

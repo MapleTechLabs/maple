@@ -2,8 +2,8 @@ import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Array as Arr, Order } from "effect"
 
-// copied: `computeServiceShares` (packages/ui/src/components/traces/service-spectrum-bar.tsx, a
-// React module). Wall-clock time per service: each instant goes to the innermost spans running.
+// `computeServiceShares`. Wall-clock time per service: each instant goes to the innermost spans
+// running.
 
 export interface ServiceShare {
 	readonly serviceName: string

@@ -1,7 +1,7 @@
 import { formatBucketLabel } from "../../lib/format"
 import { zonedTimeScale } from "./plot-scales"
 
-// The bucketed x axis, framework-free (moved out of timeseries.tsx so non-React charts share it).
+// The bucketed x axis, shared by every timeseries chart.
 
 /** What `formatBucketLabel` needs to choose a label's precision. */
 export interface TimeseriesAxisContext {

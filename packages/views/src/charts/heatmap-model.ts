@@ -3,8 +3,8 @@ import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 
-// The model half of `QueryBuilderHeatmapChart` (packages/ui/src/components/charts/heatmap/
-// query-builder-heatmap-chart.tsx): points, the pruned grid, holes, ramp positions and labels.
+// The model half of `QueryBuilderHeatmapChart`: points, the pruned grid, holes, ramp positions
+// and labels.
 
 export interface HeatmapPoint {
 	readonly x: string

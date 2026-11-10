@@ -3,8 +3,7 @@ import type { SpanNode } from "@maple/ui/lib/types"
 import { describeSpan } from "./span-category"
 import { Array as Arr, String as Str } from "effect"
 
-// copied: packages/ui/src/components/traces/flow-utils.ts. It reaches React icon components
-// through describeSpan; the node and edge types are local instead of React Flow's.
+// The trace flow graph: nodes and edges from a trace's spans, typed locally.
 
 interface Node<Data, Type extends string = string> {
 	id: string

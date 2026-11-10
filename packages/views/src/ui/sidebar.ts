@@ -43,7 +43,7 @@ import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
 import { String as Str } from "effect"
 
-// The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+// The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
 
 export type SidebarState = "expanded" | "collapsed"
 

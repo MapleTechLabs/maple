@@ -16,8 +16,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 
 // The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
-// copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
-
 /** An Error status, or an HTTP status in the critical band, anywhere in the trace (as on web). */
 export const traceHasError = (trace: TraceData): boolean =>
 	Arr.some(trace.spans, (span) => {

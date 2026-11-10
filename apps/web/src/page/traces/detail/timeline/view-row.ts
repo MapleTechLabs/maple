@@ -15,9 +15,9 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 
-// `TraceTimelineRow` (packages/ui/src/components/traces/trace-timeline-row.tsx).
-// TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and pointer-following) is not
-// ported; it also needs the trace's total duration and start, which RowState does not carry.
+// `TraceTimelineRow`. TODO(tooltip): the hover span tooltip (`spanTooltipContent`, rich and
+// pointer-following) is not ported; it also needs the trace's total duration and start, which
+// RowState does not carry.
 
 const MAX_INDENT_DEPTH = 12
 const BAR_LEFT = "clamp(-50%, calc((var(--b0) - var(--vp0)) * var(--vpk) * 1%), 150%)"

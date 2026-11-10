@@ -17,11 +17,11 @@ import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
+// `FlowSpanNode`.
 
 const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
-/** `<ServiceDot>` (packages/ui `service-dot.tsx`). */
+/** `<ServiceDot>`. */
 export const serviceDot = <M>(h: HtmlBuilder<M>, serviceName: string, className: string): Html =>
 	h.span([
 		h.AriaHidden(true),

@@ -145,7 +145,7 @@ export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		h.Value(model.mode === "multiple" ? "" : model.inputValue),
 	])
 
-/** combobox.tsx's item indicator: an inline round-capped check, not a pixel glyph. */
+/** The combobox item indicator: an inline round-capped check, not a pixel glyph. */
 export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
 	h.svg(
 		[

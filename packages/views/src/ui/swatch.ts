@@ -1,7 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-/** The classes of a colour swatch, for an element the kit doesn't render. */
 const swatchClass = (options: { readonly dashed?: boolean; readonly className?: string } = {}): string =>
 	cn("size-2 shrink-0 rounded-xs", options.dashed === true && "border border-dashed", options.className)
 

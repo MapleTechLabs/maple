@@ -10,7 +10,7 @@ import {
 } from "@maple/ui/styles/ui/delta"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/delta.tsx: change against a previous window.
+// Change against a previous window.
 
 /** Relative change from `previous` to `current`, or null when there is no baseline. */
 export const relativeChange = (current: number, previous: number): number | null =>

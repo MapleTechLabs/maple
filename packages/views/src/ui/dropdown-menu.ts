@@ -18,7 +18,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { Align, PopupPosition, Side } from "./anchor"
 import { icon } from "./icon"
 
-// The Foldkit side of packages/ui/src/components/ui/dropdown-menu.tsx over Base UI's Menu DOM.
+// The dropdown menu's popup, groups, items and triggers over Base UI's Menu DOM.
 
 type Children = ReadonlyArray<Html | string>
 

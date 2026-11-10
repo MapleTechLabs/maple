@@ -9,7 +9,7 @@ import type { Attribute, HtmlBuilder } from "foldkit/html"
 export const rowClass = <Message>(h: HtmlBuilder<Message>, value: string): Attribute<Message> =>
 	h.Attribute("class", value)
 
-// styles: packages/ui/src/components/logs/log-attribute-chip.tsx
+/** An attribute chip's look per tone. */
 export const CHIP_TONE_CLASSES = {
 	crit: "bg-severity-error-a2 text-severity-error border-severity-error-a3 hover:bg-severity-error-a3 active:bg-severity-error-a3",
 	warn: "bg-severity-warn-a2 text-severity-warn border-severity-warn-a3 hover:bg-severity-warn-a3 active:bg-severity-warn-a3",

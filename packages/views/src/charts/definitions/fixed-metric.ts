@@ -30,8 +30,7 @@ import {
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
 import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
-// Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
-// (packages/ui/src/components/charts/{area,line}), definition half. Code copied, constants unchanged.
+// The definitions of the throughput, error rate and latency charts.
 
 type FixedMetricSpec = Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 type Point = ChartPoint<TimeseriesRow, ChartValue, number>

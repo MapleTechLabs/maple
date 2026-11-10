@@ -3,8 +3,7 @@ import type { Node3D } from "../../components/service-map/three/types"
 import { resolveRuntimeGlyph } from "@maple/views/service-map/map/runtime"
 import { String as Str } from "effect"
 
-// copied: `resolveMachineBadge` (components/service-map/three/factory-badge.ts) with the artwork as
-// a key: the labels need only the name, and the mark paths load with the 3D scene chunk.
+// The machine badge of a service, with the artwork as a key: the labels need only the name, and the mark paths load with the 3D scene chunk.
 
 export type MarkKey =
 	| "kafka"

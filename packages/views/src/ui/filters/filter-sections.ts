@@ -3,9 +3,9 @@ import { Effect, Option, Record, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
-// The UI state of a filter rail's `FilterSection`s (packages/ui/src/components/filters/filter-section.tsx):
-// open/closed (remembered across pages like `useSectionCollapse`), "Show N more" and the search text.
-// What is selected lives in the page's URL search, not here.
+// The UI state of a filter rail's `FilterSection`s: open/closed (remembered across pages like
+// `useSectionCollapse`), "Show N more" and the search text. What is selected lives in the page's URL
+// search, not here.
 
 /** `useSectionCollapse`'s storage: section key to open, shared by every sidebar. */
 const STORAGE_KEY = "maple-filter-sections"

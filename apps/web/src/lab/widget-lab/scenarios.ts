@@ -4,8 +4,6 @@ import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
 import { Array as Arr, String as Str } from "effect"
 
-// Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
-
 type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
 
 export type WidgetDataState =

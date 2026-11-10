@@ -17,8 +17,7 @@ import { binLowerBoundLabel, formatBound } from "../histogram-format"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of packages/ui/src/components/charts/histogram/query-builder-histogram-chart.tsx (definition
-// half), plus the lab's binned histogram.
+// The histogram chart definitions: numeric and categorical, plus the lab's binned histogram.
 
 type NumericSpec = Extract<ChartSpec, { readonly _tag: "NumericHistogram" }>
 type CategoricalSpec = Extract<ChartSpec, { readonly _tag: "CategoricalHistogram" }>

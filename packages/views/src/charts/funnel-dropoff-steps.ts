@@ -3,8 +3,8 @@ import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Array as Arr, String as Str } from "effect"
 
-// The step derivation of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/
-// funnel-dropoff-chart.tsx): one column per step, with timing and leavers when the route sends them.
+// The step derivation of `FunnelDropoffChart`: one column per step, with timing and leavers when the
+// route sends them.
 
 export interface Leaver {
 	readonly name: string

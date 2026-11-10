@@ -14,13 +14,12 @@ import { Array as Arr, Option } from "effect"
  *
  * That second anchor is not a lapse in the determinism rule, it is forced.
  * `QueryBuilderLineChart` rebuilds its rows as `{bucket, s1..sN}` before calling
- * `useIncompleteSegments` (query-builder-line-chart.tsx:85-95), so a `partial`
- * flag we set never reaches `markIncompleteSegments` — it is dropped one step
- * earlier, and passing it through would instead register `partial` as a fourth
- * SERIES. The production arm therefore falls back to the spacing + wall-clock
- * heuristic (`incomplete-buckets.ts:38-56`), and a fixed 2026 timestamp exercises
- * nothing at all. `widget-lab/scenarios.ts:546-596` anchors to `now` for exactly
- * this reason.
+ * `useIncompleteSegments`, so a `partial` flag we set never reaches
+ * `markIncompleteSegments` — it is dropped one step earlier, and passing it through would
+ * instead register `partial` as a fourth SERIES. The production arm therefore falls back
+ * to the spacing + wall-clock heuristic (`incomplete-buckets.ts:38-56`), and a fixed 2026
+ * timestamp exercises nothing at all. `widget-lab/scenarios.ts:546-596` anchors to `now`
+ * for exactly this reason.
  *
  * `isPartial` below is that heuristic's predicate, evaluated against the same
  * captured `NOW_MS`. Both arms therefore classify the same buckets, so the dashed

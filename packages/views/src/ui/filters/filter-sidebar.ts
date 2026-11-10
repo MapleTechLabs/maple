@@ -9,7 +9,7 @@ import { eyebrow } from "../eyebrow"
 import { scrollArea } from "../scroll-area"
 import { skeleton } from "../skeleton"
 
-// Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
+// The filter rail: its frame, header, groups, body, loading and error states.
 
 /**
  * `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. `isIdle` marks a rail

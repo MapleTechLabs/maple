@@ -2,8 +2,8 @@ import * as Select from "@maple/views/ui/select"
 import { Schema } from "effect"
 import { SpanEvents, SpanNodeData } from "@maple/views/traces/trace-data"
 
-// The Timeline tab (packages/ui/src/components/traces/trace-timeline.tsx). The viewport lives in
-// the Model and reaches the DOM as the rows container's `--vp0`/`--vpk`.
+// The Timeline tab. The viewport lives in the Model and reaches the DOM as the rows container's
+// `--vp0`/`--vpk`.
 
 export const Viewport = Schema.Struct({ startMs: Schema.Number, endMs: Schema.Number })
 export type Viewport = typeof Viewport.Type

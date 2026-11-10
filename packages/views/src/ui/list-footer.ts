@@ -11,8 +11,8 @@ import { button } from "./button"
 import { spinner } from "./spinner"
 import { String as Str } from "effect"
 
-// Port of `ListFooter`, `LoadMoreButton` and `LoadingMoreRow` (packages/ui/src/components/ui/list-footer.tsx).
-// The count reads `toLocaleString()` there; the app is en-US, so it is formatted en-US here.
+// `ListFooter`, `LoadMoreButton` and `LoadingMoreRow`. The count reads `toLocaleString()` there; the app is
+// en-US, so it is formatted en-US here.
 
 export type ListFooterOptions<M> = Readonly<{
 	shown?: number

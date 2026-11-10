@@ -17,7 +17,7 @@ import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
 // The dotted namespace boxes `ServiceMapFlowCanvas` derives from node extents, and
-// `NamespaceGroupNode` (packages/ui `service-map/service-map-namespace-group.tsx`).
+// `NamespaceGroupNode`.
 
 const FALLBACK_NODE_WIDTH = 220
 const FALLBACK_NODE_HEIGHT = 70

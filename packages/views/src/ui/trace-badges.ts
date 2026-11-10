@@ -9,8 +9,7 @@ import { tooltipTrigger } from "./tooltip-host"
 import { serviceDot } from "./values"
 import { Array as Arr } from "effect"
 
-// Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
-// `ServicePills` (packages/ui/src/components/service-pills.tsx).
+// `TraceIdBadge`, `TraceStatusBadge` and `ServicePills`.
 
 /** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
 export const traceStatusBadge = <M>(
@@ -19,11 +18,9 @@ export const traceStatusBadge = <M>(
 ): Html => {
 	const code = options.httpStatusCode
 	if (code === undefined || code === null) {
-		return badge(
-			h,
-			{ variant: options.hasError ? "crit" : "ok", className: options.className },
-			[options.hasError ? "Error" : "OK"],
-		)
+		return badge(h, { variant: options.hasError ? "crit" : "ok", className: options.className }, [
+			options.hasError ? "Error" : "OK",
+		])
 	}
 	const tone = httpStatusTone(code)
 	// 3xx has no status tone: it keeps its own blue on the neutral chip.

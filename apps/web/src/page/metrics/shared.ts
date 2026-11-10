@@ -18,7 +18,7 @@ export const MetricRow = Schema.Struct({
 })
 export type MetricRow = typeof MetricRow.Type
 
-// copied: `metricTypeConfig` and `METRIC_TYPE_COLORS` (packages/ui/src/components/metrics/metric-type-badge.tsx, a React module).
+// `metricTypeConfig` and `METRIC_TYPE_COLORS`.
 const METRIC_TYPE_CONFIG = new Map<string, Readonly<{ label: string; className: string }>>([
 	["sum", { label: "Sum", className: "bg-chart-p50/15 text-chart-p50" }],
 	["gauge", { label: "Gauge", className: "bg-severity-info-a2 text-severity-info" }],

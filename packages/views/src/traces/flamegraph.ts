@@ -6,9 +6,9 @@ import { findSpanById } from "../service-map/trace-flow/flow-graph"
 import { type FlamegraphInput, spanAtMinimapPercent } from "./flamegraph-layout"
 
 /**
- * `Flamegraph` (packages/ui `traces/flamegraph.tsx`) as a Submodel: click a bar to select its span
- * (an OutMessage, the parent owns selection), Shift+click to zoom into it, the minimap to move the
- * zoom, Reset to leave it. A hover on a bar shows the span tooltip.
+ * `Flamegraph` as a Submodel: click a bar to select its span (an OutMessage, the parent owns
+ * selection), Shift+click to zoom into it, the minimap to move the zoom, Reset to leave it. A
+ * hover on a bar shows the span tooltip.
  */
 
 // MODEL

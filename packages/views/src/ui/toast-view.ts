@@ -29,7 +29,7 @@ import {
 	type ToastType,
 } from "./toast"
 
-// packages/ui/src/components/ui/toast.tsx `Toasts` and `AnchoredToasts`, position "bottom-right".
+// The toast regions, free and anchored, at the bottom right.
 const POSITION = "bottom-right"
 
 const ICONS = {

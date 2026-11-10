@@ -27,9 +27,8 @@ import {
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
-// normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
-// module also holds the React model hook and frame.
+// The React-free half of `Timeseries`: row normalisation, series keys and colour tokens, and
+// the shared x and y axes. Copied, as that module also holds the React model hook and frame.
 
 export const HARD_SERIES_LIMIT = 60
 export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK

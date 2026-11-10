@@ -18,8 +18,7 @@ import { hstack, vstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
 import { chartNoData } from "../ui/chart-frame"
 
-// Port of `FunnelDropoffChart` (packages/ui/src/components/charts/funnel/funnel-dropoff-chart.tsx).
-// The hovered column is the chart Model's `activeKey` (its index).
+// `FunnelDropoffChart`. The hovered column is the chart Model's `activeKey` (its index).
 
 type H = HtmlBuilder<Message>
 

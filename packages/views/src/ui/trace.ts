@@ -14,7 +14,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 
-// Port of packages/ui/src/components/ui/trace.tsx: a list of agent tool-call lines.
+// A list of agent tool-call lines.
 
 export type TraceStatus = "running" | "error" | "pending"
 type Children = ReadonlyArray<Html | string>
@@ -93,7 +93,10 @@ export const traceCollapsible = <M>(
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "trace-collapsible-content"),
 								h.Id(options.panelId),
-								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto" }),
+								h.Style({
+									"--collapsible-panel-height": "auto",
+									"--collapsible-panel-width": "auto",
+								}),
 							],
 							[
 								h.div(
@@ -107,7 +110,7 @@ export const traceCollapsible = <M>(
 		],
 	)
 
-export const traceDescription =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const traceDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span(
 		[h.DataAttribute("slot", "trace-description"), h.Class(cn(traceDescriptionStyles, className))],
 		children,

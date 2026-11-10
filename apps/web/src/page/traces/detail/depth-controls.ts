@@ -5,8 +5,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { hstack } from "@maple/views/ui/stack"
 import { separator } from "@maple/views/ui/display"
 
-// `TraceDepthControls` (packages/ui/src/components/traces/trace-depth-controls.tsx), shared by the
-// Timeline and the Waterfall.
+// `TraceDepthControls`, shared by the Timeline and the Waterfall.
 
 export type DepthControlsOptions<M> = Readonly<{
 	onCollapseOneLevel: M

@@ -7,7 +7,7 @@ import { foldCatalogRows, type MetricEntry } from "../metrics/catalog"
 
 // The metric detail page's queries.
 
-/** `HARD_SERIES_LIMIT` (packages/ui/src/components/plot/timeseries.tsx). */
+/** `HARD_SERIES_LIMIT`. */
 const HARD_SERIES_LIMIT = 60
 
 /** The chart draws at most `HARD_SERIES_LIMIT` lines, so the query caps the series too. */

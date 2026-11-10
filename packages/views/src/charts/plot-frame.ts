@@ -16,8 +16,8 @@ import { layer } from "../ui/layer"
 import { fillRegion } from "../ui/scroll-region"
 import { hstack } from "../ui/stack"
 
-// Port of `PlotFrame` (packages/ui/src/components/plot/plot-frame.tsx). The markup and class
-// composition are the React component's; the chart itself is mounted by `MountChart`.
+// `PlotFrame`. The markup and class composition are the React component's; the chart itself
+// is mounted by `MountChart`.
 
 export interface PlotFrameInputs {
 	readonly chartId: string

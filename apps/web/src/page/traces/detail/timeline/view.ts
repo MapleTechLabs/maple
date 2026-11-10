@@ -13,9 +13,9 @@ import { footer, shortcutsOverlay } from "./view-footer"
 import { type RowState, timelineRow } from "./view-row"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `TraceTimeline` (packages/ui/src/components/traces/trace-timeline.tsx): what its tab panel holds.
-// TODO(gestures): drag-zoom marquee, shift/middle-drag pan, ctrl+wheel zoom, minimap drags, the
-// crosshair readout, the sidebar resize drag and the hover tooltip are not ported yet.
+// `TraceTimeline`: what its tab panel holds. TODO(gestures): drag-zoom marquee, shift/middle-drag
+// pan, ctrl+wheel zoom, minimap drags, the crosshair readout, the sidebar resize drag and the hover
+// tooltip are not ported yet.
 
 export type ViewInputs = Readonly<{
 	/** Prefix for Base UI style ids (tooltip and select triggers). */

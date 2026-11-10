@@ -16,9 +16,8 @@ import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 
-// Port of `QueryBuilderBarChart` + `Timeseries.Frame` (packages/ui/src/components/charts/bar/,
-// plot/timeseries.tsx): the long tail folded into "Other", and its legend; the definition is
-// `definitions/bar.ts`.
+// `QueryBuilderBarChart` + `Timeseries.Frame`: the long tail folded into "Other", and its
+// legend; the definition is `definitions/bar.ts`.
 
 /** The tokens the bar series can resolve to; a page reads them with `ResolveThemeColors`. */
 export const BAR_CHART_TOKENS = [

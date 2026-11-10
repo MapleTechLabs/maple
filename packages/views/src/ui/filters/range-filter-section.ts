@@ -13,8 +13,8 @@ import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } fr
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
 import { type HistogramMessage, type RangeBucket, rangeHistogram } from "./range-histogram"
 
-// Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
-// The draft text lives in the caller's Model; it commits on blur, Enter or the caller's debounce.
+// `RangeFilterSection`. The draft text lives in the caller's Model; it commits on blur, Enter or
+// the caller's debounce.
 
 export type RangePreset = Readonly<{ key: string; label: string; value?: string; min?: number; max?: number }>
 

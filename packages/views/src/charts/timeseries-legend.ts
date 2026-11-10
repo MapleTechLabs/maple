@@ -18,8 +18,8 @@ import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
 import { typography } from "../ui/typography"
 
-// `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
-// Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
+// `TimeseriesLegend`: the compact legend or the Min/Max/Mean/Last table, below or beside the
+// plot; shared by the line, area and bar charts.
 
 export interface LegendSeries {
 	readonly key: string

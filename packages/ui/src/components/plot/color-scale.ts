@@ -45,13 +45,11 @@ import { Array as Arr, String as Str } from "effect"
  * `usePlotColors` (re-resolved on theme flip) *before* they reach the ramp, so the
  * interpolator handed to d3 is a closure over resolved literals.
  *
- * The production heatmap
- * (`packages/ui/src/components/charts/heatmap/query-builder-heatmap-chart.tsx`)
- * blends flanking stops with CSS `color-mix(in oklch, …)` and lets the browser do
- * the mixing. Canvas takes literal colours, so that trick is unavailable to a
- * shared chart definition — `mixOklch` below reproduces `color-mix(in oklch, …)`
- * numerically: componentwise on L and C, shorter-arc on H, which is what the CSS
- * Color 4 `oklch` interpolation rule specifies.
+ * The production heatmap blends flanking stops with CSS `color-mix(in oklch, …)` and lets
+ * the browser do the mixing. Canvas takes literal colours, so that trick is unavailable
+ * to a shared chart definition — `mixOklch` below reproduces `color-mix(in oklch, …)`
+ * numerically: componentwise on L and C, shorter-arc on H, which is what the CSS Color 4
+ * `oklch` interpolation rule specifies.
  */
 
 /** How a value's position along the ramp is computed. */
