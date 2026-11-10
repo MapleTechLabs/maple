@@ -75,7 +75,7 @@ A service panel has two tabs:
 - **Service**: **Throughput**, **Error rate**, **P50 latency**, and **P95 latency**, plus **Dependencies** and **Called by** lists. **View service** opens the [service page](/docs/explore/services).
 - **Infrastructure**: the Kubernetes workloads running the service. See [Kubernetes](/docs/infrastructure/kubernetes) to set it up.
 
-A database panel shows **Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**.
+A database panel shows **Metrics** (**Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**), **Query activity** over the time range, the **Top query shapes**, and the services it is **Called by**. A database behind a Hyperdrive config from the [Cloudflare integration](/docs/integrations/cloudflare) gets a **Hyperdrive configs** section, and one from the [PlanetScale integration](/docs/integrations/planetscale) a **PlanetScale** section.
 
 ## Query the map from an assistant
 

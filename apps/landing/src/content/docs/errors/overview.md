@@ -127,7 +127,7 @@ A lease lasts 30 minutes by default. Any action by the holder renews it. When it
 
 Severity is **Critical**, **High**, **Medium**, **Low**, or not set. Set it from the **Severity** select in the issue sidebar, or for several issues at once from the bulk bar. A severity you set by hand overrides one set by an agent or an alert rule.
 
-To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only organization admins can change this policy.
+To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. **Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify; a severity you set by hand bypasses it. Under **Policy simulator**, pick a severity, decision source and AI confidence, then click **Evaluate policy** to see what the saved policy would do. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only organization admins can change this policy.
 
 ## Notifications
 
@@ -166,7 +166,7 @@ Columns: **Error**, **Trend · 24h**, **Events**, **Service**, **Status**, and *
 
 - Sort by **Most recent** (default), **Most errors**, or **Severity**.
 - Filter by severity, and in the sidebar by **Regressed only**, **Service**, **Environment**, and **Source**.
-- Select rows to change **Severity** or **Move to** a new state in bulk.
+- Select rows to **Claim** them, change **Severity** or **Move to** a new state in bulk. **Merge** folds duplicate issues into the one you keep, which takes their occurrences; the others are archived.
 - Right-click a row for **Change status**, **Open in new tab**, **Copy link**, **Copy ID**, and **Copy agent prompt**.
 
 The list loads 50 issues at a time. Click **Load more** for the next page.
@@ -201,6 +201,8 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 | `list_error_incidents`                     | Incidents under an issue.                                              |
 | `claim_error_issue`, `release_error_issue` | Take or give up the lease.                                             |
 | `transition_error_issue`                   | Change state, with an optional `snooze_until` for Won't fix.           |
+| `transition_error_issues`                  | Change the state of up to 200 issues at once.                          |
+| `merge_error_issues`                       | Fold up to 50 duplicate issues into one.                               |
 | `set_issue_severity`                       | Set severity. Never overrides a severity set by hand.                  |
 | `comment_on_error_issue`                   | Add a comment.                                                         |
 | `propose_fix`                              | Claim the issue, move it to In review, and optionally attach a PR URL. |

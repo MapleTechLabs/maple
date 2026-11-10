@@ -1,6 +1,6 @@
 ---
 title: "Web analytics"
-description: "What the Web Analytics page shows: visitors, sessions, page views, referrers, devices, countries and custom events from the Maple browser SDK, and what data each part needs."
+description: "What the Web Analytics page shows: visitors, sessions, page views, referrers, devices, countries and custom events from the Maple browser SDK, AI traffic, Google Search Console data, and what data each part needs."
 group: "Product Events"
 order: 4
 ---
@@ -13,7 +13,7 @@ The [Browser SDK](/docs/session-replay/browser-sdk) (`@maple-dev/browser`), or t
 
 ## What the page shows
 
-The page opens on the last 7 days. The time range picker, the filters and the **Replays** button (which opens the same window on the Replays page) are in the header.
+The page has three tabs: **Overview**, described below, **AI traffic** and **Search**. It opens on the last 7 days. The time range picker, the filters and the **Replays** button (which opens the same window on the Replays page) are in the header.
 
 <figure class="shot">
   <img src="/screenshots/docs/web-analytics-01-overview.webp" alt="The Web Analytics page over the last 7 days: a live visitors badge, a note that 17% of sessions were bots and are excluded, eight headline metric tiles with sparklines, and a unique visitors and page views chart." loading="lazy" />
@@ -58,6 +58,14 @@ The sidebar filters by **Traffic**, **Site**, **Page**, **Event**, **Referrer**,
 **Traffic** chooses **Humans**, **Bots** or both. Only **Humans** is checked when the page opens. When more than 5% of recorded sessions in the window came from crawlers or automated browsers, a notice says how many and whether they are counted. It only covers bots that ran the browser SDK. Fetchers that do not run JavaScript never create a session.
 
 When the **Event** filter names an event that annotated spans also produce, a **Traces behind** panel lists sample traces for it. See [Product events from traces](/docs/product-events/from-traces).
+
+### AI traffic
+
+**AI visits** counts sessions referred by ChatGPT, Claude, Perplexity and other assistants, from the browser SDK. **AI crawlers** lists the crawlers that fetched your pages, and **What AI crawlers read** the pages they were served. Crawlers do not run JavaScript, so their fetches come from your server's traces: HTTP server spans with the crawler's user agent. Crawls follow only the site and page filters.
+
+### Search
+
+**Search** shows Google Search Console data next to your sessions: **Clicks**, **Impressions**, **CTR** and **Avg position**, the **Top queries**, and **Landing pages** with their **Entry sessions**, **Bounce rate** and, with an **Event** filter, **Conversions**. Click **Connect Search Console** and choose the properties to import. Google reports with a delay of 2 to 3 days. Only the **Event** filter applies on this tab.
 
 ## What each part needs
 
