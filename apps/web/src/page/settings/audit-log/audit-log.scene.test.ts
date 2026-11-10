@@ -303,6 +303,25 @@ describe("audit log tab", () => {
 			)
 		})
 
+		test("Filter from a shared entry link leaves that link's one-minute window", () => {
+			const target = AUDIT_ENTRIES[5]
+			if (target === undefined) throw new Error("fixture")
+			const linked = Schema.decodeSync(SettingsSearch)(
+				Rec.fromEntries([...new URL(entryHref(target), "https://maple.test").searchParams.entries()]),
+			)
+			const step = update(
+				loadedWith(linked).model,
+				Message.ClickedPivot({ key: "actorId", value: "key_aXwpxqBkqtYwtBtmsGbR41" }),
+				linked,
+			)
+			expect(step.outMessage).toEqual(
+				PageOutMessage.RequestedNavigation({
+					url: "/settings?tab=audit-log&actor=key_aXwpxqBkqtYwtBtmsGbR41&kind=all",
+					isReplace: true,
+				}),
+			)
+		})
+
 		test("a shared entry link opens that entry and scrolls to it", () => {
 			const target = AUDIT_ENTRIES[2]
 			if (target === undefined) throw new Error("fixture")
