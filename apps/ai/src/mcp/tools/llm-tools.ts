@@ -31,46 +31,32 @@ import { truncateToolOutput } from "./tool-output"
 import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-
-const UI_MARKER = "__maple_ui"
+import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
 
 /** A tool's typed output in the shape the chat UI's renderers take. */
 export interface ToolUiPayload {
-	readonly [UI_MARKER]: true
+	readonly [TOOL_UI_MARKER]: true
 	readonly tool: string
 	readonly data: Schema.Json
 }
-
-const LegacyUiBlock = Schema.fromJsonString(
-	Schema.Struct({ [UI_MARKER]: Schema.Literal(true), tool: Schema.String, data: Schema.Json }),
-)
-const decodeLegacyUiBlock = Schema.decodeUnknownOption(LegacyUiBlock)
-
-const isLegacyUiBlock = (text: string): boolean => Str.startsWith(`{"${UI_MARKER}":true`)(text)
 
 /**
  * The model's text and the UI's payload, split. The payload is never shown to a model: it doubled
  * every result it rode along on, and half of all tool results carried one.
  */
-export const splitToolResult = (
+const splitToolResult = (
 	name: string,
 	result: {
 		readonly content: ReadonlyArray<{ readonly text: string }>
 		readonly structuredContent?: Schema.Json
 	},
 ): { readonly text: string; readonly ui: ToolUiPayload | undefined } => {
-	const legacy = result.content.find((block) => isLegacyUiBlock(block.text))
 	const ui: ToolUiPayload | undefined =
-		result.structuredContent !== undefined
-			? { [UI_MARKER]: true, tool: name, data: result.structuredContent }
-			: legacy === undefined
-				? undefined
-				: Option.getOrUndefined(decodeLegacyUiBlock(legacy.text))
+		result.structuredContent === undefined
+			? undefined
+			: { [TOOL_UI_MARKER]: true, tool: name, data: result.structuredContent }
 	const text = Arr.join(
-		Arr.map(
-			Arr.filter(result.content, (block) => !isLegacyUiBlock(block.text)),
-			(block) => block.text,
-		),
+		Arr.map(result.content, (block) => block.text),
 		"\n\n",
 	)
 	return { text, ui }
