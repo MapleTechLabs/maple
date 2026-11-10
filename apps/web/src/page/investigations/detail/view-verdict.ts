@@ -13,7 +13,8 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
-import { normalizeRepoFullName } from "@maple/domain/http"
+import { type IssueSeverity, normalizeRepoFullName } from "@maple/domain/http"
+import { SEVERITY_LABEL } from "../../kit/issue-severity"
 import { confidenceMeter } from "../kit"
 import { elapsedBetween } from "./derive"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -27,13 +28,12 @@ type Children = ReadonlyArray<Html | string>
 const verdictHeading = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	kitHeading(h, { level: 2, variant: "title", className: "leading-7 [overflow-wrap:anywhere]" }, [text])
 
-const SEVERITY_LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" } as const
 const SEVERITY_TEXT_TONE = {
 	critical: "crit",
 	high: "crit",
 	medium: "warn",
 	low: "neutral",
-} as const satisfies Record<keyof typeof SEVERITY_LABEL, Tone>
+} as const satisfies Record<IssueSeverity, Tone>
 
 const shell = <M>(
 	h: HtmlBuilder<M>,

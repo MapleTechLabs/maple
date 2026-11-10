@@ -1,7 +1,7 @@
 import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
+import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
 import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -66,6 +66,7 @@ import {
 	severityConfirmStep,
 	startWrite,
 } from "./writes"
+import { isIssueSeverity } from "../../kit/issue-severity"
 
 const decodePullRequestId = Schema.decodeUnknownOption(ErrorIssuePullRequestId)
 
@@ -326,9 +327,6 @@ const selectStep = (
 	return { ...picked, commands: [...(stepped.commands ?? []), ...(picked.commands ?? [])] }
 }
 
-const isSeverity = (value: string): value is IssueSeverity =>
-	value === "critical" || value === "high" || value === "medium" || value === "low"
-
 /** The reads a write invalidates (`invalidateKeys`): the detail, affected users, timeline, escalations, PRs, verifications. */
 const refreshAfterWrite =
 	(context: PageContext) =>
@@ -502,7 +500,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				(severitySelect) => ({ severitySelect }),
 				(next) => Message.GotSeveritySelectMessage({ message: next }),
-				(m, value) => pickedSeverity(m, isSeverity(value) ? value : null),
+				(m, value) => pickedSeverity(m, isIssueSeverity(value) ? value : null),
 			),
 		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
 		ClickedUnmerge: () => startWrite(model, { _tag: "Unmerge" }),

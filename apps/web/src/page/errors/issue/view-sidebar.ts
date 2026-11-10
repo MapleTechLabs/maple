@@ -2,6 +2,7 @@ import {
 	allowedTransitionsForAll,
 	type ErrorIssueDocument,
 	type ErrorIssueEnvironment,
+	type IssueSeverity,
 	type IssueSeveritySource,
 	MACHINE_OWNED_WORKFLOW_STATES,
 	WORKFLOW_STATE_ORDER,
@@ -18,7 +19,7 @@ import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { serviceDot } from "@maple/views/ui/values"
 import { actorChip } from "../../kit/issue-actor"
 import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
+import { isIssueSeverity, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { Message } from "./message"
 import { affectedUsersGroup } from "./view-affected-users"
@@ -27,7 +28,7 @@ import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str, Option } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // The issue sidebar with its state and severity selects.
 // TODO(lease): a held lease should render the lease HUD with Extend and Release; Claim is inert here.
@@ -50,8 +51,7 @@ const OFFERED_STATES = Arr.filter(WORKFLOW_STATE_ORDER, (state) => !MACHINE_OWNE
 
 const isWorkflowState = (value: string): value is WorkflowState =>
 	Arr.some(WORKFLOW_STATE_ORDER, (state) => state === value)
-const isSeverity = (value: string) =>
-	Option.getOrNull(Arr.findFirst(SEVERITY_ORDER, (severity) => severity === value))
+const severityOf = (value: string): IssueSeverity | null => (isIssueSeverity(value) ? value : null)
 
 /** Unreachable states stay listed but disabled, so the list reads the same from every state. */
 const stateEntries = (current: WorkflowState): ReadonlyArray<SelectView.SelectEntry> => {
@@ -117,14 +117,14 @@ const severitySelect = (h: H, model: Model): Html =>
 			className: GHOST_TRIGGER,
 			isDisabled: sidebarBusy(model) === "severity",
 			renderValue: (value) => {
-				const severity = isSeverity(value)
+				const severity = severityOf(value)
 				return withIcon(
 					h,
 					severityDot(h, severity),
 					severity === null ? "Not set" : SEVERITY_LABEL[severity],
 				)
 			},
-			renderItem: (option) => withIcon(h, severityDot(h, isSeverity(option.value)), option.label),
+			renderItem: (option) => withIcon(h, severityDot(h, severityOf(option.value)), option.label),
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),

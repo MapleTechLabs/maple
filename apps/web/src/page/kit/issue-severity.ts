@@ -1,10 +1,10 @@
-import type { IssueSeverity } from "@maple/domain/http"
+import { IssueSeverity } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
 
 // The severity badge's maps and marks.
 
@@ -43,11 +43,10 @@ export const SEVERITY_LABEL = {
 	low: "Low",
 } satisfies Record<IssueSeverity, string>
 
-export const SEVERITY_ORDER: ReadonlyArray<IssueSeverity> = ["critical", "high", "medium", "low"]
+export { SEVERITY_ORDER, severityRank } from "@maple/web-data/investigations/display"
 
-/** Sort rank: critical first, unset last. */
-export const severityRank = (severity: IssueSeverity | null): number =>
-	severity === null ? SEVERITY_ORDER.length : SEVERITY_ORDER.indexOf(severity)
+/** Whether free text (a select value, a URL param) names a severity. */
+export const isIssueSeverity = Schema.is(IssueSeverity)
 
 /** `SeverityDot`: a filled dot, or a hollow ring for "not set". */
 export const severityDot = <M>(h: HtmlBuilder<M>, severity: IssueSeverity | null, className?: string): Html =>
