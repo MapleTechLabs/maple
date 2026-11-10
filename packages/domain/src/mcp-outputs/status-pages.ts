@@ -8,9 +8,6 @@ import {
 	StatusPageIncidentStatus,
 } from "../primitives"
 
-// ---------------------------------------------------------------------------------------------
-// get_status_page / post_status_page_update
-
 export const StatusPageRow = Schema.Struct({
 	/** REST id (`stp_…`). */
 	id: Schema.String,
@@ -87,7 +84,6 @@ export const StatusPageDetail = Schema.Struct({
 export const GetStatusPageOutput = Schema.Struct({
 	/** Every page of the org, when no `page` was asked for. */
 	pages: Schema.optionalKey(Schema.Array(StatusPageRow)),
-	/** The page asked for. */
 	page: Schema.optionalKey(StatusPageDetail),
 	/** With include_config: the document `PUT /v2/status_pages/{id}/config` and apply_status_page_config take. */
 	config: Schema.optionalKey(StatusPageConfig),
@@ -99,9 +95,6 @@ export const StatusPageIncidentMutationOutput = Schema.Struct({
 	/** The incident's page is a draft: nothing on it is public, a published incident included. */
 	pageDraft: Schema.Boolean,
 })
-
-// ---------------------------------------------------------------------------------------------
-// apply_status_page_config
 
 const StatusPageConfigChangesRow = Schema.Struct({
 	/** Page fields whose value changed. */

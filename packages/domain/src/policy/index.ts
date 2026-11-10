@@ -29,7 +29,6 @@ export interface Denial {
 	readonly message: string
 }
 
-/** The lowest role that holds `permission`. */
 export const requiredRole = (permission: Permission): Role => permissions[permission].min
 
 /** Whether a session with these role strings holds `permission`. */

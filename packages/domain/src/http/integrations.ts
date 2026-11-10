@@ -620,7 +620,6 @@ export class PlanetScaleBranchSummary extends Schema.Class<PlanetScaleBranchSumm
 export class PlanetScaleDatabaseSummary extends Schema.Class<PlanetScaleDatabaseSummary>(
 	"PlanetScaleDatabaseSummary",
 )({
-	/** PlanetScale's database id. */
 	id: Schema.String,
 	name: Schema.String,
 	/** Product kind: "mysql" (Vitess) or "postgresql". */
@@ -966,12 +965,6 @@ export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewS
 	settings: PrReviewOrgSettings,
 }) {}
 
-/**
- * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
- * neutral: any connected VCS provider resolves into this same shape. `resolved`
- * distinguishes a DB hit ("stored") from an on-the-fly provider fetch ("fetched")
- * — purely diagnostic.
- */
 /** Ceiling on `vcsPullRequests`, matching one provider page. */
 export const VCS_PULL_REQUESTS_MAX_LIMIT = 100
 /** What the picker asks for when it does not say. */
@@ -989,6 +982,10 @@ export class VcsPullRequestsResponse extends Schema.Class<VcsPullRequestsRespons
 	},
 ) {}
 
+/**
+ * A resolved commit for the commit-SHA hover card, from any connected VCS provider. `resolved`
+ * tells a DB hit ("stored") from a provider fetch ("fetched"), for diagnostics only.
+ */
 export class VcsCommitDetailResponse extends Schema.Class<VcsCommitDetailResponse>("VcsCommitDetailResponse")(
 	{
 		provider: VcsProviderId,
@@ -1453,14 +1450,6 @@ export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrati
 	},
 ) {}
 
-/**
- * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub
- * integrations, plus VCS lookups. Internal transport: session-only, absent from
- * the public docs. PlanetScale and chat connectors are public v2 resources.
- *
- * The OAuth callbacks and webhook receivers are raw routers under `/api/...`,
- * not part of this group: providers store those URLs on their side.
- */
 /** Connected or not; `null` when that provider's lookup failed, so one failure leaves the rest. */
 const ProviderConnected = Schema.NullOr(Schema.Boolean)
 
@@ -1478,6 +1467,10 @@ export class InfraSurfacesResponse extends Schema.Class<InfraSurfacesResponse>("
 	}),
 }) {}
 
+/**
+ * Dashboard control surface for the integrations and VCS lookups; session-only, absent from the
+ * public docs. OAuth callbacks and webhook receivers are raw `/api/...` routers: providers store those URLs.
+ */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.get("linearStatus", "/linear/status", {

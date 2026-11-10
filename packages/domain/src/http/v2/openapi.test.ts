@@ -498,7 +498,6 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(apiKey.examples[0].id).toMatch(/^key_/)
 		expect(decoded.object).toBe("api_key")
 
-		// Field-level docs render too.
 		expect(apiKey.properties.name.description).toEqual(expect.any(String))
 		expect(apiKey.properties.name.examples).toEqual(["ci-pipeline"])
 		expect(apiKey.properties.key_prefix.description).toContain("secret")

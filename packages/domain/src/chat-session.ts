@@ -10,9 +10,9 @@
  *     construction rather than by reconnect heuristics.
  *   - `ChatMessage` — the materialized transcript a cold client reads before it starts streaming.
  *
- * The event names are deliberately Maple's, not `@opencode-ai/ai`'s: `LLMEvent` is a provider-neutral
- * *model* stream, while this is a *session* stream that also carries user turns, approval gates and
- * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
+ * The event names are deliberately Maple's, not the agent engine's: its run events are a *model*
+ * stream, while this is a *session* stream that also carries user turns, approval gates and turn
+ * lifecycle. `apps/ai/src/chat/events.ts` is the only place the two are mapped.
  */
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 import {
@@ -25,8 +25,6 @@ import {
 	RoleName,
 	UserId,
 } from "./primitives"
-
-// Session addressing
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -122,8 +120,6 @@ export const connectorSessionId = (
 	connectorId: ChatConnectorId,
 	conversationKey: ChatConversationKey,
 ): ChatSessionId => makeChatSessionId(orgId, `${CONNECTOR_TAB_PREFIX}${connectorId}-${conversationKey}`)
-
-// Durable transcript
 
 export const ChatRole = Schema.Literals(["user", "assistant"])
 export type ChatRole = Schema.Schema.Type<typeof ChatRole>
@@ -221,13 +217,11 @@ export class ChatHistoryResponse extends Schema.Class<ChatHistoryResponse>("@map
 	running: Schema.Boolean,
 }) {}
 
-// Event stream
-
 /**
  * Marks an event as belonging to a sub-agent turn nested inside a parent turn.
  *
  * A sub-agent runs *in process*, inside the parent's turn, rather than in a Durable Object of its
- * own — see the design note in `apps/api/src/chat/loop/delegate.ts`. So its events land in the parent's
+ * own. So its events land in the parent's
  * log and need a way to say "I am not part of the top-level conversation". `id` is the parent's
  * `task` tool call id, which is what binds a child transcript to the call that started it.
  *
@@ -246,15 +240,9 @@ export const ChatTaskRef = Schema.Struct({
 export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
 
 /**
- * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`.
- *
- * Here rather than in `apps/api/src/chat/agents.ts`, where it started, because the *client* has to
- * recognise a delegation from the tool name alone. A streamed `tool-call` carries the tool's name
- * and nothing else that says "this opens a sub-agent" — the `task` ref only ever rides on the
- * child's own events — so the web client matched the name against a literal `"task"` and never
- * recognised a single delegation live: every sub-agent rendered as an ordinary tool row until the
- * conversation was reloaded and the server's `ChatToolCall.task` took over. Two spellings of one
- * convention in two apps is exactly the drift this file exists to prevent.
+ * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`. Shared
+ * here because the client must recognise a delegation from a streamed `tool-call`'s name alone:
+ * the `task` ref only rides on the child's own events.
  */
 export const DELEGATION_TOOL_PREFIX = "task_"
 
@@ -439,8 +427,6 @@ export const encodeChatEventPayload = (event: ChatEventInput): string => encodeP
 // The stored JSON is a `ChatEvent`'s encoded form minus `seq`, so it decodes to the event class.
 export const decodeChatEventPayload = (payload: string, seq: number): ChatEvent =>
 	decodeStoredEvent({ ...parsePayload(payload), seq })
-
-// Turn identity
 
 /**
  * The caller identity a turn runs as, in the shape that survives a Durable Object hop.
@@ -629,8 +615,6 @@ export type ChatProposalOutcome = "unknown" | "settled" | "decided"
 export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
 	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
 })
-
-// Requests
 
 export class ChatSendRequest extends Schema.Class<ChatSendRequest>("@maple/ChatSendRequest")({
 	/** The full message text, with any client-side context preamble already folded in. */

@@ -51,10 +51,6 @@ export const ShareToken = Schema.String.check(
 ).pipe(Schema.annotate({ identifier: "@maple/ShareToken", title: "Dashboard share token" }))
 export type ShareToken = Schema.Schema.Type<typeof ShareToken>
 
-// ---------------------------------------------------------------------------
-// Management-side records (authed /v2 surface)
-// ---------------------------------------------------------------------------
-
 /**
  * A share as its owner sees it, raw token included.
  *
@@ -88,10 +84,6 @@ export class DashboardShareTombstone extends Schema.Class<DashboardShareTombston
 		revoked: Schema.Boolean,
 	},
 ) {}
-
-// ---------------------------------------------------------------------------
-// Failures
-// ---------------------------------------------------------------------------
 
 /**
  * Unknown token, revoked token, or a share whose dashboard has been deleted —
@@ -353,10 +345,6 @@ export class SharePersistenceError extends HttpTaggedError<SharePersistenceError
 	},
 ) {}
 
-// ---------------------------------------------------------------------------
-// Viewer-facing surface (unauthenticated /v2/share)
-// ---------------------------------------------------------------------------
-
 /**
  * The window a viewer asks for. Absolute only — see `resolveShareWindow`.
  */
@@ -415,16 +403,13 @@ export const ShareWidgetDataPayload = Schema.Struct({
 }).annotate({ identifier: "ShareWidgetDataPayload" })
 export type ShareWidgetDataPayload = Schema.Schema.Type<typeof ShareWidgetDataPayload>
 
-/**
- * Per-widget outcome.
- *
- * Failures ride inside a 200 rather than failing the batch: one widget the
- * share cannot serve must not blank its neighbours, and "this tile is
- * unavailable" is a state the page draws, not an error it reports.
- */
 /** `unsupported` draws a muted tile; `failed` draws a retryable error. */
 export const ShareWidgetFailureReason = Schema.Literals(["unsupported", "not_found", "failed"])
 
+/**
+ * Per-widget outcome. Failures ride inside a 200 rather than failing the batch: one widget the
+ * share cannot serve must not blank its neighbours.
+ */
 export const ShareWidgetDataOutcome = Schema.Union([
 	Schema.Struct({
 		widgetId: Schema.String,
@@ -456,10 +441,6 @@ export class ShareWidgetDataResponse extends Schema.Class<ShareWidgetDataRespons
 		variables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	},
 ) {}
-
-// ---------------------------------------------------------------------------
-// Social preview (OG card)
-// ---------------------------------------------------------------------------
 
 /**
  * The opaque, signed id of a share's preview image (see `shareOgId`).

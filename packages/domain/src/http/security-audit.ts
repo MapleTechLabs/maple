@@ -20,8 +20,6 @@ import {
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
-// Request fields
-
 /** The highest monthly spend limit an org may set, in whole US dollars. */
 export const SECURITY_AUDIT_MAX_MONTHLY_SPEND_USD = 100_000
 /** Events per page, and the most one page may ask for. */
@@ -296,8 +294,6 @@ export const SecurityAuditEventsResponse = Schema.Struct({ events: Schema.Array(
 export const SecurityAuditFindingsResponse = Schema.Struct({ findings: Schema.Array(SecurityAuditFinding) })
 export const SecurityAuditUnitsResponse = Schema.Struct({ units: Schema.Array(SecurityAuditUnit) })
 
-// Errors
-
 /** The org is not in the `securityAudit` rollout. */
 export class SecurityAuditDisabledError extends HttpTaggedError<SecurityAuditDisabledError>()(
 	"@maple/http/security-audit/SecurityAuditDisabledError",
@@ -548,8 +544,6 @@ export class SecurityAuditSpendLimitReachedError extends HttpTaggedError<Securit
 const readErrors = [SecurityAuditDisabledError, SecurityAuditPersistenceError] as const
 /** Writes, and the reads that expose findings or reports: org admins only. */
 const adminErrors = [...readErrors, SecurityAuditForbiddenError] as const
-
-// API group
 
 /** The scheduled security audit, served by the ai Worker. Dashboard only, behind `securityAudit`. */
 export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")

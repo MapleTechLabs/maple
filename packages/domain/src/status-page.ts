@@ -103,8 +103,6 @@ export const StatusPageIncidentHistoryEntry = Schema.Struct({
 })
 export type StatusPageIncidentHistoryEntry = Schema.Schema.Type<typeof StatusPageIncidentHistoryEntry>
 
-// --- Theme ---
-
 export const StatusPageThemePreset = Schema.Literals(["default", "maple", "mono", "midnight", "paper"])
 export type StatusPageThemePreset = Schema.Schema.Type<typeof StatusPageThemePreset>
 export const StatusPageThemeAppearance = Schema.Literals(["auto", "light", "dark"])
@@ -609,8 +607,6 @@ export const StatusPagePublisherHeartbeat = Schema.Struct({
 })
 export type StatusPagePublisherHeartbeat = Schema.Schema.Type<typeof StatusPagePublisherHeartbeat>
 
-// --- Break-glass overlay ---
-
 /** An update posted straight to the status Worker while Maple is down; imported into Postgres later. */
 export const StatusPageOverlayEntry = Schema.Struct({
 	/** Random UUID; the import is idempotent on it. */
@@ -740,8 +736,6 @@ export const applyOverlay = (
 	return { ...snapshot, incidents, components: withIncidentImpact(snapshot.components, incidents) }
 }
 
-// --- Component status ---
-
 const STATUS_RANK = {
 	operational: 0,
 	maintenance: 1,
@@ -839,8 +833,6 @@ const withIncidentImpact = (
 export const overallStatus = (snapshot: StatusPageSnapshot): StatusPageComponentStatus =>
 	worstStatus(Arr.map(snapshot.components, (component) => component.status))
 
-// --- Bars ---
-
 export const dayState = (bar: StatusPageDayBar): StatusPageDayState =>
 	bar.checks === 0 ? "none" : bar.downChecks > 0 ? "down" : bar.failures > 0 ? "degraded" : "ok"
 
@@ -867,8 +859,6 @@ export const fillDays = (
 	return Arr.map(days, (day) => byDay.get(day) ?? { day, checks: 0, failures: 0, downChecks: 0 })
 }
 
-// --- Freshness ---
-
 export type StatusPageFreshness =
 	| { readonly _tag: "live"; readonly updatedAt: number }
 	| { readonly _tag: "delayed"; readonly updatedAt: number }
@@ -893,8 +883,6 @@ export const pageFreshness = (input: {
 		? { _tag: "delayed", updatedAt }
 		: { _tag: "live", updatedAt }
 }
-
-// --- Break-glass token ---
 
 export const STATUS_PAGE_BREAK_GLASS_PREFIX = "mstat_"
 

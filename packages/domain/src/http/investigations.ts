@@ -28,8 +28,6 @@ export {
 	InvestigationSubjectSnapshot,
 } from "../investigations"
 
-// Literals
-
 /**
  * The status moves a person may make by hand: resolve a finished run, or reopen a resolved one.
  * The autonomous pass owns everything else (`investigating` and the verdict it lands on); starting
@@ -64,12 +62,8 @@ export const RESTARTABLE_INVESTIGATION_STATUSES = [
 	"resolved",
 ] as const satisfies Arr.NonEmptyReadonlyArray<InvestigationStatus>
 
-// Run progress
-
 /** How many steps a progress record keeps. */
 export const INVESTIGATION_PROGRESS_STEPS = 12
-
-// Subject (what is being investigated)
 
 /**
  * Just the `type` discriminator of a subject.
@@ -93,8 +87,6 @@ export type InvestigationSubjectType = Schema.Schema.Type<typeof InvestigationSu
 export const InvestigationSubjectDiscriminator = Schema.Struct({
 	type: InvestigationSubjectType,
 }).annotate({ identifier: "@maple/InvestigationSubjectDiscriminator" })
-
-// Documents
 
 export class InvestigationDocument extends Schema.Class<InvestigationDocument>("InvestigationDocument")({
 	id: InvestigationId,
@@ -130,8 +122,6 @@ export class InvestigationsListResponse extends Schema.Class<InvestigationsListR
 	investigations: Schema.Array(InvestigationDocument),
 }) {}
 
-// Requests
-
 export class InvestigationCreateRequest extends Schema.Class<InvestigationCreateRequest>(
 	"InvestigationCreateRequest",
 )({
@@ -161,8 +151,6 @@ export class SubmitDiagnosisRequest extends Schema.Class<SubmitDiagnosisRequest>
 	 */
 	turnId: Schema.optionalKey(Schema.String),
 }) {}
-
-// Errors
 
 export class InvestigationPersistenceError extends HttpTaggedError<InvestigationPersistenceError>()(
 	"@maple/http/investigations/InvestigationPersistenceError",

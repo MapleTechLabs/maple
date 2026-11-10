@@ -99,7 +99,7 @@ export const UptimeCheckDetail = Schema.Struct({
 })
 export type UptimeCheckDetail = Schema.Schema.Type<typeof UptimeCheckDetail>
 
-// --- Probe contract (`/api/internal/uptime-*`, SD_INTERNAL_TOKEN bearer) ---
+// Probe contract: `/api/internal/uptime-*`, behind the SD_INTERNAL_TOKEN bearer.
 
 export class UptimeProbeTarget extends Schema.Class<UptimeProbeTarget>("UptimeProbeTarget")({
 	id: UptimeMonitorId,
@@ -127,8 +127,6 @@ export const UPTIME_CHECK_REPORT_BATCH_MAX = 1_000
 export const UptimeCheckReportList = Schema.Array(UptimeCheckReport).check(
 	Schema.isMaxLength(UPTIME_CHECK_REPORT_BATCH_MAX),
 )
-
-// --- Assertions ---
 
 export interface UptimeHttpObservation {
 	readonly statusCode: number
@@ -232,8 +230,6 @@ export const firstFailedAssertion = (
 	return failures[0] ?? null
 }
 
-// --- Check spans ---
-
 /** `service.name` of the spans the scraper exports per check; the service map drops it. */
 export const UPTIME_SERVICE_NAME = "maple-uptime"
 /** The resource attribute naming the monitor a check span belongs to. */
@@ -253,8 +249,6 @@ export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 export const isMapleService = (row: { readonly serviceName: string; readonly serviceNamespace: string }) =>
 	row.serviceNamespace === MAPLE_SERVICES_NAMESPACE ||
 	(row.serviceNamespace === "" && row.serviceName === UPTIME_SERVICE_NAME)
-
-// --- HTTP check request ---
 
 export const UPTIME_USER_AGENT = "maple-uptime/1.0"
 
@@ -303,8 +297,6 @@ export const uptimeHttpRequest = (
 	}
 }
 
-// --- Up/down machine ---
-
 export const UptimeMonitorStateSnapshot = Schema.Struct({
 	status: UptimeMonitorStatus,
 	consecutiveFailures: Schema.Number,
@@ -337,8 +329,6 @@ export const appendRecentCheck = (
 	recent: ReadonlyArray<UptimeRecentCheck>,
 	check: UptimeRecentCheck,
 ): ReadonlyArray<UptimeRecentCheck> => [...recent, check].slice(-UPTIME_RECENT_LIMIT)
-
-// --- Heartbeat deadlines ---
 
 export type UptimeHeartbeatConfig = Schema.Schema.Type<typeof UptimeHeartbeatConfig>
 

@@ -50,7 +50,6 @@ export const GitCommitSha = Schema.String.pipe(
 )
 export type GitCommitSha = Schema.Schema.Type<typeof GitCommitSha>
 
-/** The set of supported VCS providers. Extend this array to add a provider. */
 export const VcsProviderId = Schema.Literals(["github"]).annotate({
 	identifier: "@maple/VcsProviderId",
 	title: "VCS Provider",

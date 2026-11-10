@@ -15,17 +15,14 @@
  * - `service_map_spans_mv` / `service_map_spans` drop the now-dead
  *   `PeerService` projection and column.
  *
- * DDL only — existing hourly buckets are not backfilled here. Run
- * `scripts/backfill-service-map-edges.ts` once after applying this migration.
+ * DDL only: existing hourly buckets are not backfilled.
  */
 export const migration_0002_service_map_edges_rollup = {
 	version: 2,
 	description:
 		"Service-map edge rollup: drop peer.service MV, rekey db edges on db.system.name, drop dead PeerService",
 	statements: [
-		// Replaced by the scheduled ServiceMapRollupService rollup.
 		"DROP VIEW IF EXISTS service_map_edges_hourly_mv",
-		// Recreate the db-edges MV keyed on the modern `db.system.name` attribute.
 		"DROP VIEW IF EXISTS service_map_db_edges_hourly_mv",
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_db_edges_hourly_mv TO service_map_db_edges_hourly AS
 SELECT
@@ -46,7 +43,6 @@ WHERE SpanKind IN ('Client', 'Producer')
   AND SpanAttributes['db.system.name'] != ''
   AND ServiceName != ''
 GROUP BY OrgId, Hour, ServiceName, DbSystem, DeploymentEnv`,
-		// Drop the dead PeerService projection/column from the spans projection.
 		"DROP VIEW IF EXISTS service_map_spans_mv",
 		"ALTER TABLE service_map_spans DROP COLUMN IF EXISTS PeerService",
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_spans_mv TO service_map_spans AS

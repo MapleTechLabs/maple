@@ -97,10 +97,6 @@ export class ScrapeTargetProbeResponse extends Schema.Class<ScrapeTargetProbeRes
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
-/**
- * One persisted scheduled-scrape attempt (a `scrape_target_checks` row),
- * reported by the scraper and stored by the API.
- */
 export class ScrapeTargetPersistenceError extends HttpTaggedError<ScrapeTargetPersistenceError>()(
 	"@maple/http/errors/ScrapeTargetPersistenceError",
 	{

@@ -1,7 +1,5 @@
 import { Match, Option, Schema, Array as Arr, String as Str } from "effect"
 
-// Schemas
-
 export const Operator = Schema.Literals([
 	"=",
 	"!=",
@@ -33,8 +31,6 @@ export class WhereClauseParseWarning extends Schema.TaggedError<WhereClauseParse
 	},
 ) {}
 
-// Key alias normalization (single source of truth)
-
 export const normalizeKey = (raw: string): string =>
 	Match.value(Str.toLowerCase(Str.trim(raw))).pipe(
 		Match.when("service", () => "service.name"),
@@ -49,8 +45,6 @@ export const normalizeKey = (raw: string): string =>
 		Match.when("errors_only", () => "has_error"),
 		Match.orElse((k) => k),
 	)
-
-// Shared parsing helpers
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "y"])
 const FALSE_VALUES = new Set(["0", "false", "no", "n"])
@@ -75,8 +69,6 @@ export function splitCsv(input: string): string[] {
 		Boolean,
 	)
 }
-
-// Where-clause parser
 
 /**
  * Split an expression on a whitespace-delimited, case-insensitive keyword, but

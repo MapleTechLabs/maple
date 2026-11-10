@@ -29,8 +29,6 @@ import {
 
 export { ErrorIssuePublicId, InvestigationPublicId } from "./resource-ids"
 
-// Subject (snake_case wire form of the internal InvestigationSubject union)
-
 /** A page/entity context hint (structurally the web's AutoContext) — opaque JSON. */
 const InvestigationContextRef = Schema.Record(Schema.String, Schema.Unknown)
 
@@ -280,8 +278,6 @@ const V2InvestigationSnapshot = Schema.Struct({
 	}),
 )
 
-// Resource
-
 const investigationExample = {
 	id: "inv_YofPTrK9782DWwcnXhpcCw",
 	object: "investigation",
@@ -408,8 +404,6 @@ export const V2Investigation = Schema.Struct({
 	examples: [wireExample(investigationExample)],
 })
 export type V2Investigation = Schema.Schema.Type<typeof V2Investigation>
-
-// Requests / queries
 
 export const V2InvestigationCreateParams = Schema.Struct({
 	subject: V2InvestigationCreateSubject,

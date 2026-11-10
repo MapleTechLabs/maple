@@ -29,8 +29,8 @@ export const CLICKHOUSE_MV_SOURCE_TABLES: ReadonlyArray<string> = [
  * `Code: 60. UNKNOWN_TABLE: <db>.<table>` at MV creation. Qualifying every
  * identifier sidesteps the analyzer's "current database" resolution entirely.
  *
- * Used by both the runtime API path (OrgClickHouseSettingsService.applySchema)
- * and the standalone CLI (`@maple/clickhouse-cli`).
+ * Used by both `ClickHouseSchemaApplyWorkflow` in the API and the standalone CLI
+ * (`@maple/clickhouse-cli`).
  */
 export const qualifyStatementForDatabase = (stmt: string, database: string): string => {
 	if (database.length === 0) return stmt

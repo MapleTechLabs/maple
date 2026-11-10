@@ -38,7 +38,6 @@ export const migration_0007_db_namespace_hyperdrive = {
 	description:
 		"Collapse Cloudflare Hyperdrive DbNamespace hashes into the 'hyperdrive' sentinel by recreating the service-map DB-edge/query-shape MVs",
 	statements: [
-		// --- service_map_db_edges_hourly ------------------------------------
 		"DROP VIEW IF EXISTS service_map_db_edges_hourly_mv",
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_db_edges_hourly_mv TO service_map_db_edges_hourly AS
 SELECT
@@ -59,7 +58,6 @@ FROM traces
 WHERE ${DB_SPAN_WHERE}
 GROUP BY OrgId, Hour, ServiceName, DbSystem, DbNamespace, DeploymentEnv`,
 
-		// --- service_map_db_query_shapes_hourly -----------------------------
 		"DROP VIEW IF EXISTS service_map_db_query_shapes_hourly_mv",
 		`CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_db_query_shapes_hourly_mv TO service_map_db_query_shapes_hourly AS
 SELECT

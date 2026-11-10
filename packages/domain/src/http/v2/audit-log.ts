@@ -152,7 +152,6 @@ export const V2AuditLogKind = Schema.Literals(["all", "changes", "access"]).anno
 })
 export type V2AuditLogKind = Schema.Schema.Type<typeof V2AuditLogKind>
 
-/** Audit-log list query: standard pagination plus actor/action/resource/outcome/time filters. */
 export const V2AuditLogQuery = Schema.Struct({
 	...ListQuery.fields,
 	kind: Schema.optional(

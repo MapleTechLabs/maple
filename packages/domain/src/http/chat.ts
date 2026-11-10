@@ -18,7 +18,6 @@ import { SessionAuthorization } from "./current-tenant"
 export class ChatApplyRequest extends Schema.Class<ChatApplyRequest>("ChatApplyRequest")({
 	/** The conversation the proposal came from; it has to be the caller's org. */
 	sessionId: Schema.String,
-	/** The proposed call's id. */
 	toolCallId: Schema.String,
 	/** Required: a body without one is a 400, never an implicit approval of a mutating call. */
 	decision: ChatProposalDecision,

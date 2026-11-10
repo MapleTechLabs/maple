@@ -55,8 +55,6 @@ export {
 	WorkflowState,
 } from "../error-issues"
 
-// Workflow state machine literals
-
 /**
  * The legal workflow-state moves. Rows are the "from" state, values the allowed
  * "to" states.
@@ -142,11 +140,8 @@ export const allowedTransitionsForAll = (from: Iterable<WorkflowState>): Readonl
  * States in which the work is over: the lease is dropped on arrival and the
  * issue cannot be claimed.
  *
- * NOT "no further transition is possible", which is what the old name
- * (`CLOSED_WORKFLOW_STATES`) claimed and what `done` plainly contradicts —
- * `done` reopens to `regressed` on the errors tick, to `verifying` when a linked
- * PR merges, and to `triage` for a human re-triaging by hand. `cancelled` is the
- * only state with genuinely no outgoing moves.
+ * Not "no further transition is possible": `done` reopens to `regressed`, `verifying`
+ * and `triage`. `cancelled` is the only state with no outgoing moves.
  */
 export const CLOSED_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set<WorkflowState>([
 	"done",
@@ -215,8 +210,6 @@ export const describeWorkflowTransitions = (): string =>
  */
 export const ERROR_INCIDENT_AUTO_RESOLVE_MINUTES = 30
 
-// Actor documents
-
 export class ActorDocument extends Schema.Class<ActorDocument>("ActorDocument")({
 	id: ActorId,
 	type: ActorType,
@@ -230,8 +223,6 @@ export class ActorDocument extends Schema.Class<ActorDocument>("ActorDocument")(
 export class ActorsListResponse extends Schema.Class<ActorsListResponse>("ActorsListResponse")({
 	actors: Schema.Array(ActorDocument),
 }) {}
-
-// Issue + event documents
 
 export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorIssueDocument")({
 	id: ErrorIssueId,
@@ -365,8 +356,6 @@ export class ErrorIssueEventsResponse extends Schema.Class<ErrorIssueEventsRespo
 	events: Schema.Array(ErrorIssueEventDocument),
 }) {}
 
-// Request payloads
-
 export class ErrorIssueTransitionRequest extends Schema.Class<ErrorIssueTransitionRequest>(
 	"ErrorIssueTransitionRequest",
 )({
@@ -415,8 +404,6 @@ export class ErrorIssueMergeRequest extends Schema.Class<ErrorIssueMergeRequest>
 		Schema.isMaxLength(MAX_ISSUE_MERGE_SOURCES),
 	),
 }) {}
-
-// Pull request links + fix verification
 
 export class ErrorIssuePullRequestDocument extends Schema.Class<ErrorIssuePullRequestDocument>(
 	"ErrorIssuePullRequestDocument",
@@ -492,8 +479,6 @@ export class ErrorIssueVerificationsResponse extends Schema.Class<ErrorIssueVeri
 	verifications: Schema.Array(ErrorIssueVerificationDocument),
 }) {}
 
-// Notification policy
-
 export class ErrorNotificationPolicyDocument extends Schema.Class<ErrorNotificationPolicyDocument>(
 	"ErrorNotificationPolicyDocument",
 )({
@@ -528,8 +513,6 @@ export class ErrorNotificationPolicyUpsertRequest extends Schema.Class<ErrorNoti
 	severity: Schema.optionalKey(AlertSeverity),
 }) {}
 
-// Escalation policy (severity → destination routing for triage outcomes)
-
 export const EscalationConfidence = Schema.Literals(["low", "medium", "high"]).annotate({
 	identifier: "@maple/EscalationConfidence",
 	title: "Escalation Confidence",
@@ -560,8 +543,6 @@ export class IssueEscalationPolicyUpsertRequest extends Schema.Class<IssueEscala
 	enabled: Schema.optionalKey(Schema.Boolean),
 	rules: Schema.optionalKey(Schema.Array(IssueEscalationPolicyRule)),
 }) {}
-
-// Query schemas
 
 /**
  * Keyset cursor for `listIssues`: the sort key of the last row of the previous
@@ -633,8 +614,6 @@ const IssueEventsQuery = Schema.Struct({
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 500 })),
 	),
 })
-
-// Errors
 
 export class ErrorPersistenceError extends HttpTaggedError<ErrorPersistenceError>()(
 	"@maple/http/errors/ErrorPersistenceError",
@@ -822,8 +801,6 @@ export class ActorNotFoundError extends Schema.TaggedError<ActorNotFoundError>()
 	},
 	{ httpApiStatus: 404 },
 ) {}
-
-// API group
 
 /**
  * Dashboard issue workflow: transitions, comments, severity, lease coordination,

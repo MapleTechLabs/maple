@@ -54,8 +54,6 @@ export const StatusPageIncidentUpdatePublicId = PublicId(
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
 
-// --- Pages ---
-
 const slugField = Schema.String.annotate({
 	description:
 		"The page's address, `<slug>.<status domain>`: 3 to 48 lowercase letters, digits or inner hyphens. Unique across Maple.",
@@ -290,8 +288,6 @@ export const V2StatusPageBreakGlassToken = Schema.Struct({
 })
 export type V2StatusPageBreakGlassToken = Schema.Schema.Type<typeof V2StatusPageBreakGlassToken>
 
-// --- Components ---
-
 const componentStatusField = StatusPageComponentStatus.annotate({
 	description:
 		"A manual status override: `operational`, `maintenance`, `degraded`, `partial_outage` or `major_outage`.",
@@ -400,8 +396,6 @@ const StatusPageComponentList = ListOf(V2StatusPageComponent).annotate({
 	title: "Status page component list",
 	description: "A page's components in display order.",
 })
-
-// --- Config document ---
 
 const configExample = {
 	name: "Acme Status",
@@ -765,8 +759,6 @@ export const diffStatusPageConfig = (
 		duplicateIds: Arr.filter([...listed], (id) => listedIds.indexOf(id) !== listedIds.lastIndexOf(id)),
 	}
 }
-
-// --- Incidents ---
 
 export const V2StatusPageIncidentUpdate = Schema.Struct({
 	id: StatusPageIncidentUpdatePublicId,

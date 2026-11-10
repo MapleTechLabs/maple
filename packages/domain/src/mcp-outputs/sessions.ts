@@ -1,7 +1,3 @@
-/**
- * Output schemas for the sessions MCP tools: browser session replays, product events and
- * funnels, and AI agent sessions with their tool analytics.
- */
 import { Schema } from "effect"
 import { FunnelKeyBy, FunnelStep } from "@maple/query-model"
 import {
@@ -19,8 +15,6 @@ import { OutputPagination, OutputTimeRange } from "./shared"
 import { SessionTag } from "../session-tags"
 
 const StringList = Schema.Array(Schema.String)
-
-/* Browser session replays */
 
 export const SessionSearchRow = Schema.Struct({
 	sessionId: Schema.String,
@@ -153,8 +147,6 @@ export const GetSessionTracesOutput = Schema.Struct({
 	),
 })
 
-/* Product events and funnels */
-
 export const QueryFunnelStepRow = Schema.Struct({
 	/** 1-based. */
 	step: Schema.Number,
@@ -211,8 +203,6 @@ export const ListProductEventsOutput = Schema.Struct({
 	/** Whether a kind or name filter narrowed the list. */
 	narrowed: Schema.Boolean,
 })
-
-/* AI agent sessions */
 
 /** The filters a list_agent_sessions call applied, echoed so a next page repeats them. */
 export const ListAgentSessionsFilters = Schema.Struct({
