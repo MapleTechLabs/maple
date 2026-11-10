@@ -76,9 +76,12 @@ const HEALTH_BADGE = {
 } as const
 
 /** The drains Maple installed, as Vercel lists them: only the enabled signals have one. */
-export const drainNamesOf = (status: Pick<VercelIntegrationStatus, "logsEnabled" | "tracesEnabled">) => [
+export const drainNamesOf = (
+	status: Pick<VercelIntegrationStatus, "logsEnabled" | "tracesEnabled" | "aiGatewayEnabled">,
+) => [
 	...(status.logsEnabled ? ["Maple logs"] : []),
 	...(status.tracesEnabled ? ["Maple traces"] : []),
+	...(status.aiGatewayEnabled ? ["Maple AI Gateway"] : []),
 ]
 
 const mono = (h: H, text: string): Html => typography(h, { tone: "foreground", mono: true }, [text])
@@ -111,7 +114,7 @@ const notConnected = (h: H, model: Model): Html =>
 			...(canManage(model)
 				? [
 						integrationEmptyHint(h, [
-							"Paste a Vercel token. Maple creates a logs drain and a traces drain on the team you pick.",
+							"Paste a Vercel token. Maple creates a logs, a traces and an AI Gateway drain on the team you pick.",
 						]),
 						button(h, { attributes: [h.OnClick(Message.ClickedVercelConfigure({ target: "connect" }))] }, [
 							icon(h, "VercelIcon"),
@@ -320,8 +323,8 @@ const quickMetrics = (h: H, model: Model, status: VercelIntegrationStatus): Html
 			value: usage === null ? "—" : formatCost(usage.summary.costUsd),
 			spark: usage === null ? undefined : Arr.map(usage.timeseries, (bucket) => bucket.costUsd),
 			sparkColor: "var(--foreground)",
-			subline: !status.tracesEnabled
-				? "Traces are off. AI Gateway usage needs them."
+			subline: !status.aiGatewayEnabled
+				? "AI Gateway is off. Turn it on in Configure."
 				: usage === null || usage.summary.requests === 0
 					? "No AI Gateway requests yet"
 					: `${formatNumber(usage.summary.requests)} requests · ${formatNumber(usage.summary.inputTokens + usage.summary.outputTokens)} tokens`,
@@ -490,6 +493,7 @@ const drainsPanel = (h: H, status: VercelIntegrationStatus): Html => {
 					[
 						drainRow(h, "Maple logs", status.logsEnabled, status.drains.logs),
 						drainRow(h, "Maple traces", status.tracesEnabled, status.drains.traces),
+						drainRow(h, "Maple AI Gateway", status.aiGatewayEnabled, status.drains.aiGateway),
 					],
 				),
 				h.dl(
@@ -510,10 +514,14 @@ const drainsPanel = (h: H, status: VercelIntegrationStatus): Html => {
 const disconnectDialog = (h: H, model: Model, status: VercelIntegrationStatus): Html => {
 	const names = drainNamesOf(status)
 	const team = status.team?.name ?? "the team"
-	const drains =
-		names.length > 1
-			? ["the ", mono(h, names[0] ?? ""), " and ", mono(h, names[1] ?? ""), " drains"]
-			: ["the ", mono(h, names[0] ?? ""), " drain"]
+	const drains = [
+		"the ",
+		...Arr.flatMap(names, (name, index) => [
+			...(index === 0 ? [] : [index === names.length - 1 ? " and " : ", "]),
+			mono(h, name),
+		]),
+		names.length > 1 ? " drains" : " drain",
+	]
 	const fact = (term: string, detail: ReadonlyArray<Html | string>): Html =>
 		h.div(
 			[],
@@ -532,7 +540,7 @@ const disconnectDialog = (h: H, model: Model, status: VercelIntegrationStatus): 
 				[h.Class(vstackClass({ gap: "3", className: "pb-3 text-sm" }))],
 				[
 					fact("On Vercel, right away", ["Deletes ", ...drains, " on ", team, "."]),
-					fact("In Maple", ["Removes the token. Logs and traces already in Maple stay until retention ends."]),
+					fact("In Maple", ["Removes the token. Logs, traces and AI Gateway usage already in Maple stay until retention ends."]),
 				],
 			),
 		],

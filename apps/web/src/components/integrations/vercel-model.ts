@@ -13,6 +13,7 @@ export interface VercelDraft {
 	readonly samplingRate: number
 	readonly logsEnabled: boolean
 	readonly tracesEnabled: boolean
+	readonly aiGatewayEnabled: boolean
 }
 
 export const DEFAULT_VERCEL_DRAFT: VercelDraft = {
@@ -21,6 +22,7 @@ export const DEFAULT_VERCEL_DRAFT: VercelDraft = {
 	samplingRate: 1,
 	logsEnabled: true,
 	tracesEnabled: true,
+	aiGatewayEnabled: true,
 }
 
 /** The sampling choices offered; Vercel accepts any rate in 0.01–1. */
@@ -35,12 +37,13 @@ export const draftOf = (status: VercelIntegrationStatus): VercelDraft => ({
 	samplingRate: status.samplingRate,
 	logsEnabled: status.logsEnabled,
 	tracesEnabled: status.tracesEnabled,
+	aiGatewayEnabled: status.aiGatewayEnabled,
 })
 
 /** A draft Maple can apply: something to forward, and at least one project when picking. */
 export const draftProblem = (draft: VercelDraft): string | null =>
-	!draft.logsEnabled && !draft.tracesEnabled
-		? "Forward logs, traces or both."
+	!draft.logsEnabled && !draft.tracesEnabled && !draft.aiGatewayEnabled
+		? "Forward logs, traces or AI Gateway usage."
 		: draft.projectScope === "some" && draft.projectIds.length === 0
 			? "Pick at least one project."
 			: null
@@ -64,6 +67,7 @@ export function settingsPatch(saved: VercelDraft, draft: VercelDraft): VercelSet
 	if (draft.samplingRate !== saved.samplingRate) patch.samplingRate = draft.samplingRate
 	if (draft.logsEnabled !== saved.logsEnabled) patch.logsEnabled = draft.logsEnabled
 	if (draft.tracesEnabled !== saved.tracesEnabled) patch.tracesEnabled = draft.tracesEnabled
+	if (draft.aiGatewayEnabled !== saved.aiGatewayEnabled) patch.aiGatewayEnabled = draft.aiGatewayEnabled
 	return patch
 }
 
@@ -79,6 +83,9 @@ export function stoppedByDraft(
 	const stops: Array<string> = []
 	if (saved.logsEnabled && !draft.logsEnabled) stops.push("Logs: the Maple logs drain is deleted")
 	if (saved.tracesEnabled && !draft.tracesEnabled) stops.push("Traces: the Maple traces drain is deleted")
+	if (saved.aiGatewayEnabled && !draft.aiGatewayEnabled) {
+		stops.push("AI Gateway: the Maple AI Gateway drain is deleted")
+	}
 	if (draft.projectScope === "some") {
 		const dropped =
 			saved.projectScope === "all"
@@ -158,17 +165,18 @@ export function vercelIssues(status: VercelIntegrationStatus): ReadonlyArray<Ver
 	}
 	const issues: Array<VercelIssue> = []
 	const drains = [
-		["Logs", status.logsEnabled, status.drains.logs],
-		["Traces", status.tracesEnabled, status.drains.traces],
+		["Logs", "logs", status.logsEnabled, status.drains.logs],
+		["Traces", "traces", status.tracesEnabled, status.drains.traces],
+		["AI Gateway", "AI Gateway", status.aiGatewayEnabled, status.drains.aiGateway],
 	] as const
-	for (const [name, enabled, drain] of drains) {
+	for (const [key, name, enabled, drain] of drains) {
 		if (!enabled) continue
 		const found = drainProblem(drain)
 		if (found === null) continue
 		issues.push({
-			key: name,
+			key,
 			tone: "warn",
-			title: `The ${Str.toLowerCase(name)} drain ${found.problem}`,
+			title: `The ${name} drain ${found.problem}`,
 			description: found.description,
 			vercelError: drain?.lastError ?? null,
 			fix: "reapply",
@@ -182,9 +190,18 @@ export function vercelHealth(status: VercelIntegrationStatus): VercelHealth {
 	return status.lastSuccessAt === null ? "pending" : "healthy"
 }
 
-/** "Logs and traces" / "Logs" / "Traces". */
-export const signalsLabel = (draft: Pick<VercelDraft, "logsEnabled" | "tracesEnabled">): string =>
-	draft.logsEnabled && draft.tracesEnabled ? "Logs and traces" : draft.logsEnabled ? "Logs" : "Traces"
+/** "Logs, traces and AI Gateway" / "Logs and traces" / "AI Gateway" / … */
+export const signalsLabel = (
+	draft: Pick<VercelDraft, "logsEnabled" | "tracesEnabled" | "aiGatewayEnabled">,
+): string => {
+	const names = [
+		...(draft.logsEnabled ? ["logs"] : []),
+		...(draft.tracesEnabled ? ["traces"] : []),
+		...(draft.aiGatewayEnabled ? ["AI Gateway"] : []),
+	]
+	const last = names.pop() ?? ""
+	return Str.capitalize(names.length === 0 ? last : `${Arr.join(names, ", ")} and ${last}`)
+}
 
 export const scopeLabel = (status: VercelIntegrationStatus): string =>
 	status.projectScope === "all"

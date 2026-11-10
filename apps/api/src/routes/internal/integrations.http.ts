@@ -709,6 +709,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								samplingRate: payload.samplingRate,
 								logsEnabled: payload.logsEnabled,
 								tracesEnabled: payload.tracesEnabled,
+								aiGatewayEnabled: status.aiGatewayEnabled,
 							},
 						})
 						return status
@@ -726,6 +727,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								samplingRate: status.samplingRate,
 								logsEnabled: status.logsEnabled,
 								tracesEnabled: status.tracesEnabled,
+								aiGatewayEnabled: status.aiGatewayEnabled,
 							},
 						})
 						return status

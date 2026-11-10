@@ -26,6 +26,9 @@ describe("vercel lab", () => {
 		expect(vercelHealth(statusOf(model, "first-sync"))).toBe("pending")
 		expect(Arr.map(vercelIssues(statusOf(model, "logs-deleted")), (issue) => issue.key)).toEqual(["Logs"])
 		expect(Arr.map(vercelIssues(statusOf(model, "traces-failing")), (issue) => issue.key)).toEqual(["Traces"])
+		expect(Arr.map(vercelIssues(statusOf(model, "ai-gateway-disabled")), (issue) => issue.title)).toEqual([
+			"The AI Gateway drain is disabled on Vercel",
+		])
 		expect(Arr.map(vercelIssues(statusOf(model, "token-rejected")), (issue) => issue.fix)).toEqual(["token"])
 		expect(sceneOf(model, "usage-failed").hub.vercelCard.projects.data._tag).toBe("Failure")
 	})

@@ -26,11 +26,16 @@ export const VercelConnections = PG.table("vercel_connections", {
 		samplingRate: PG.column(PG.float8, { name: "sampling_rate", default: 1 }),
 		logsEnabled: PG.column(PG.bool, { name: "logs_enabled", default: true }),
 		tracesEnabled: PG.column(PG.bool, { name: "traces_enabled", default: true }),
+		aiGatewayEnabled: PG.column(PG.bool, { name: "ai_gateway_enabled", default: true }),
 		logDrainId: PG.column(PG.nullable(PG.text), { name: "log_drain_id" }),
 		traceDrainId: PG.column(PG.nullable(PG.text), { name: "trace_drain_id" }),
+		aiGatewayDrainId: PG.column(PG.nullable(PG.text), { name: "ai_gateway_drain_id" }),
 		/** What the last check of each drain found; null until one ran. */
 		logDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), { name: "log_drain_state" }),
 		traceDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), { name: "trace_drain_state" }),
+		aiGatewayDrainState: PG.column(PG.nullable(PG.jsonb(VercelDrainState)), {
+			name: "ai_gateway_drain_state",
+		}),
 		/** Lookup hash of the ingest key in the drains' Authorization header; a mismatch re-keys them. */
 		drainKeyHash: PG.column(PG.nullable(PG.text), { name: "drain_key_hash" }),
 		/** Set when Vercel rejected the token; polling stops until a new token is saved. */

@@ -19,7 +19,11 @@ const isProjectsEmpty = (model: Model): boolean =>
 const isAiGatewayEmpty = (model: Model): boolean =>
 	model.search.view === "aiGateway" &&
 	AsyncData.isSuccess(model.aiGateway.data) &&
-	model.aiGateway.data.data.summary.requests === 0
+	model.aiGateway.data.data.summary.requests === 0 &&
+	Option.match(AsyncData.getData(model.status.data), {
+		onNone: () => false,
+		onSome: (status) => status.aiGatewayEnabled,
+	})
 
 const poll = (isEmpty: boolean, slot: "projects" | "aiGateway") =>
 	isEmpty

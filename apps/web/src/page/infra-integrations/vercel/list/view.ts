@@ -56,7 +56,7 @@ import {
 type H = HtmlBuilder<Message>
 
 const VERCEL_DESCRIPTION =
-	"Requests, cache and errors from Vercel's log drain; latency and AI Gateway usage from its trace drain."
+	"Requests, cache and errors from Vercel's log drain; latency from its trace drain; model usage and cost from its AI Gateway drain."
 
 const VERCEL_ICON = (h: H) => icon(h, "VercelIcon", { size: 16, className: "text-foreground" })
 
@@ -211,7 +211,7 @@ const aiGatewayBody = (h: H, model: Model, frame: ListFrame): ReadonlyArray<Html
 			}),
 		]
 	if (data === null) return [aiGatewayLoading(h)]
-	if (data.summary.requests === 0) return [aiGatewayEmpty(h)]
+	if (data.summary.requests === 0) return [aiGatewayEmpty(h, frame.status.aiGatewayEnabled)]
 	return [
 		aiGatewayPanel(h, {
 			data,
@@ -277,7 +277,7 @@ const notConnected = (h: H): Html =>
 		icon: VERCEL_ICON(h),
 		title: "Connect Vercel to see requests, cache and AI Gateway spend",
 		description:
-			"Paste a Vercel token and Maple adds log and trace drains to your team. Requests, cache hits, errors and AI Gateway usage then show here, per project.",
+			"Paste a Vercel token and Maple adds log, trace and AI Gateway drains to your team. Requests, cache hits, errors and AI Gateway usage then show here, per project.",
 		integration: "vercel",
 		actionLabel: "Connect Vercel",
 		docsPage: "vercel",

@@ -156,7 +156,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		name: "sync_vercel",
 		title: "Sync Vercel",
 		description:
-			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's log and trace drains still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm logs and traces flow again. Org admins and engineers only.",
+			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's log, trace and AI Gateway drains still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm logs, traces and AI Gateway usage flow again. Org admins and engineers only.",
 		parameters: Schema.Struct({}),
 		output: SyncVercelOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
@@ -180,6 +180,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 				lastError: status.lastError,
 				logDrain: drain(status.logsEnabled, status.drains.logs),
 				traceDrain: drain(status.tracesEnabled, status.drains.traces),
+				aiGatewayDrain: drain(status.aiGatewayEnabled, status.drains.aiGateway),
 				projects: status.projects.map((project) => ({
 					name: project.name,
 					forwarded: project.forwarded,
@@ -209,6 +210,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 							...[
 								{ label: "Log drain", drain: output.logDrain },
 								{ label: "Trace drain", drain: output.traceDrain },
+								{ label: "AI Gateway drain", drain: output.aiGatewayDrain },
 							].flatMap(({ label, drain }) =>
 								drain === null || drain.status === "enabled"
 									? []
@@ -223,6 +225,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 								["Last error", output.lastError ?? undefined],
 								["Log drain", output.logDrain?.status ?? "off"],
 								["Trace drain", output.traceDrain?.status ?? "off"],
+								["AI Gateway drain", output.aiGatewayDrain?.status ?? "off"],
 							]),
 							doc.table(
 								["Project", "Forwarded", "Latest deployment", "Created"],

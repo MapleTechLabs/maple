@@ -1,6 +1,7 @@
 /**
  * Vercel integration: an org saves a Vercel access token for one team, and Maple keeps a log
- * drain and a trace drain on that team pointing at the ingest gateway (Bearer org ingest key).
+ * drain, a trace drain and an AI Gateway drain on that team pointing at the ingest gateway
+ * (Bearer org ingest key).
  * Each drain's endpoint carries `maple_org=<orgId>`, so Maple finds its own drains in the team's
  * list. Every write and every poll tick reconciles that list against the saved settings
  * (create, patch, delete duplicates), which makes the drains converge after any race or
@@ -104,9 +105,17 @@ const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceErr
 /** Binds each ciphertext to its org so a row copied across orgs fails to decrypt. */
 const tokenAad = (orgId: OrgId) => Buffer.from(`vercel-token:${orgId}`)
 
-type DrainKind = "logs" | "traces"
-const DRAIN_KINDS: ReadonlyArray<DrainKind> = ["logs", "traces"]
-const drainSchema = (kind: DrainKind) => (kind === "logs" ? "log" : "trace")
+type DrainKind = "logs" | "traces" | "aiGateway"
+const DRAIN_KINDS: ReadonlyArray<DrainKind> = ["logs", "traces", "aiGateway"]
+/** Each kind's Vercel schema key, drain name and ingest path. */
+const DRAINS = {
+	logs: { schema: "log", name: "Maple logs", path: "/v1/logpush/vercel" },
+	traces: { schema: "trace", name: "Maple traces", path: "/v1/traces" },
+	aiGateway: { schema: "ai_gateway", name: "Maple AI Gateway", path: "/v1/vercel/ai-gateway" },
+} satisfies Record<DrainKind, { readonly schema: string; readonly name: string; readonly path: string }>
+/** Usage events carry cost: a sampled AI Gateway drain would undercount it, so it is never sampled. */
+const sampled = (kind: DrainKind, forwarding: VercelForwarding) =>
+	kind !== "aiGateway" && forwarding.samplingRate < 1
 
 /** What the drains forward: the part of the connection a drain body is built from. */
 export interface VercelForwarding {
@@ -115,10 +124,24 @@ export interface VercelForwarding {
 	readonly samplingRate: number
 	readonly logsEnabled: boolean
 	readonly tracesEnabled: boolean
+	readonly aiGatewayEnabled: boolean
 }
 
+const drainEnabled = (kind: DrainKind, forwarding: VercelForwarding) =>
+	kind === "logs"
+		? forwarding.logsEnabled
+		: kind === "traces"
+			? forwarding.tracesEnabled
+			: forwarding.aiGatewayEnabled
+
 /** The connection fields a reconcile reads. */
-type DrainOwner = Pick<VercelConnectionRow, "orgId" | "teamId" | "logDrainId" | "traceDrainId">
+type DrainOwner = Pick<
+	VercelConnectionRow,
+	"orgId" | "teamId" | "logDrainId" | "traceDrainId" | "aiGatewayDrainId"
+>
+
+const storedDrainId = (kind: DrainKind, owner: DrainOwner) =>
+	kind === "logs" ? owner.logDrainId : kind === "traces" ? owner.traceDrainId : owner.aiGatewayDrainId
 
 /** The drains' header values, and the hash stored once every drain carries them. */
 interface DrainKey {
@@ -138,9 +161,11 @@ interface DrainOutcome {
 interface DrainOutcomes {
 	readonly logs: DrainOutcome
 	readonly traces: DrainOutcome
+	readonly aiGateway: DrainOutcome
 }
 
-const firstError = (outcomes: DrainOutcomes) => outcomes.logs.error ?? outcomes.traces.error
+const firstError = (outcomes: DrainOutcomes) =>
+	outcomes.logs.error ?? outcomes.traces.error ?? outcomes.aiGateway.error
 
 const drainState = (drain: VercelDrainInfo): VercelDrainState => {
 	const status =
@@ -404,7 +429,7 @@ export class VercelIntegrationService extends Context.Service<
 
 		/** The delivery URL of the org's drain; the `maple_org` marker is how Maple finds it again. */
 		const drainEndpoint = (kind: DrainKind, orgId: OrgId) =>
-			`${ingestUrl}${kind === "logs" ? "/v1/logpush/vercel" : "/v1/traces"}?maple_org=${encodeURIComponent(orgId)}`
+			`${ingestUrl}${DRAINS[kind].path}?maple_org=${encodeURIComponent(orgId)}`
 
 		const drainBody = (
 			kind: DrainKind,
@@ -419,26 +444,32 @@ export class VercelIntegrationService extends Context.Service<
 				"x-maple-source-id": ingestKey.sourceId,
 			}
 			const endpoint = drainEndpoint(kind, orgId)
-			const sampling =
-				forwarding.samplingRate < 1
-					? [{ type: "head_sampling" as const, rate: forwarding.samplingRate }]
-					: // An update must clear a rate set earlier; a create leaves it out.
-						update
-						? []
-						: undefined
+			const sampling = sampled(kind, forwarding)
+				? [{ type: "head_sampling" as const, rate: forwarding.samplingRate }]
+				: // An update must clear a rate set earlier; a create leaves it out.
+					update
+					? []
+					: undefined
 			return {
-				name: kind === "logs" ? "Maple logs" : "Maple traces",
+				name: DRAINS[kind].name,
 				projects: forwarding.projectScope,
 				...(forwarding.projectScope === "some"
 					? { projectIds: forwarding.projectIds }
 					: update
 						? { projectIds: null }
 						: undefined),
-				schemas: { [drainSchema(kind)]: { version: "v1" } },
+				schemas: { [DRAINS[kind].schema]: { version: "v1" } },
 				delivery:
-					kind === "logs"
-						? { type: "http", endpoint, encoding: "ndjson", compression: "none", headers }
-						: { type: "otlphttp", endpoint: { traces: endpoint }, encoding: "proto", headers },
+					kind === "traces"
+						? { type: "otlphttp", endpoint: { traces: endpoint }, encoding: "proto", headers }
+						: {
+								type: "http",
+								endpoint,
+								// AI Gateway events arrive as plain JSON, logs as NDJSON.
+								encoding: kind === "logs" ? "ndjson" : "json",
+								compression: "none",
+								headers,
+							},
 				...(sampling === undefined ? undefined : { sampling }),
 				// Saving the settings turns a disabled drain back on; the poll leaves the owner's choice alone.
 				...(update && reenable ? { status: "enabled" as const } : undefined),
@@ -454,9 +485,8 @@ export class VercelIntegrationService extends Context.Service<
 			reenable: boolean,
 		) => {
 			const [rule, ...more] = drain.sampling
-			const samplingMatches =
-				forwarding.samplingRate < 1
-					? rule !== undefined &&
+			const samplingMatches = sampled(kind, forwarding)
+				? rule !== undefined &&
 						more.length === 0 &&
 						rule.type === "head_sampling" &&
 						Math.abs(rule.rate - forwarding.samplingRate) < 1e-6 &&
@@ -477,11 +507,11 @@ export class VercelIntegrationService extends Context.Service<
 			kind: DrainKind,
 			owner: DrainOwner,
 		) => {
-			const storedId = kind === "logs" ? owner.logDrainId : owner.traceDrainId
+			const storedId = storedDrainId(kind, owner)
 			return Arr.filter(
 				drains,
 				(drain) =>
-					drain.schemas.includes(drainSchema(kind)) &&
+					drain.schemas.includes(DRAINS[kind].schema) &&
 					(drain.endpoint === drainEndpoint(kind, owner.orgId) || drain.id === storedId),
 			)
 		}
@@ -505,7 +535,7 @@ export class VercelIntegrationService extends Context.Service<
 			reenable: boolean,
 		) {
 			const own = ownDrains(drains, kind, owner)
-			const enabled = kind === "logs" ? forwarding.logsEnabled : forwarding.tracesEnabled
+			const enabled = drainEnabled(kind, forwarding)
 			yield* Effect.annotateCurrentSpan({
 				"maple.vercel.drain_kind": kind,
 				"maple.vercel.drains_found": own.length,
@@ -518,7 +548,7 @@ export class VercelIntegrationService extends Context.Service<
 				)
 				return { id: null, state: null, changed: own.length > 0, error } satisfies DrainOutcome
 			}
-			const storedId = kind === "logs" ? owner.logDrainId : owner.traceDrainId
+			const storedId = storedDrainId(kind, owner)
 			const kept =
 				Option.getOrUndefined(Arr.findFirst(own, (drain) => drain.id === storedId)) ??
 				Arr.reduce<VercelListedDrain, VercelListedDrain | undefined>(
@@ -598,7 +628,16 @@ export class VercelIntegrationService extends Context.Service<
 			const drains = yield* listDrains(httpClient, token, owner.teamId)
 			const logs = yield* reconcileDrain("logs", drains, owner, token, forwarding, ingestKey, reenable)
 			const traces = yield* reconcileDrain("traces", drains, owner, token, forwarding, ingestKey, reenable)
-			return { logs, traces } satisfies DrainOutcomes
+			const aiGateway = yield* reconcileDrain(
+				"aiGateway",
+				drains,
+				owner,
+				token,
+				forwarding,
+				ingestKey,
+				reenable,
+			)
+			return { logs, traces, aiGateway } satisfies DrainOutcomes
 		})
 
 		/** Deletes every drain Maple made for the org on the team; true when none is left. */
@@ -641,6 +680,8 @@ export class VercelIntegrationService extends Context.Service<
 				logDrainState: outcomes.logs.state,
 				traceDrainId: outcomes.traces.id,
 				traceDrainState: outcomes.traces.state,
+				aiGatewayDrainId: outcomes.aiGateway.id,
+				aiGatewayDrainState: outcomes.aiGateway.state,
 				...(firstError(outcomes) === null ? { drainKeyHash: keyHash } : undefined),
 				updatedAt: now,
 			})
@@ -793,7 +834,8 @@ export class VercelIntegrationService extends Context.Service<
 					samplingRate: 1,
 					logsEnabled: true,
 					tracesEnabled: true,
-					drains: { logs: null, traces: null },
+					aiGatewayEnabled: true,
+					drains: { logs: null, traces: null, aiGateway: null },
 					projects: [],
 					authFailed: false,
 					connectedAt: null,
@@ -852,9 +894,11 @@ export class VercelIntegrationService extends Context.Service<
 				samplingRate: connection.samplingRate,
 				logsEnabled: connection.logsEnabled,
 				tracesEnabled: connection.tracesEnabled,
+				aiGatewayEnabled: connection.aiGatewayEnabled,
 				drains: {
 					logs: drainStatus(connection.logDrainId, connection.logDrainState),
 					traces: drainStatus(connection.traceDrainId, connection.traceDrainState),
+					aiGateway: drainStatus(connection.aiGatewayDrainId, connection.aiGatewayDrainState),
 				},
 				projects: Arr.map(
 					[...projects].sort((a, b) => Str.localeCompare(b.name)(a.name)),
@@ -964,7 +1008,15 @@ export class VercelIntegrationService extends Context.Service<
 			request: VercelConnectRequest,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.vercel.team_id": request.teamId })
-			yield* validateForwarding(request)
+			const forwarding: VercelForwarding = {
+				projectScope: request.projectScope,
+				projectIds: request.projectIds,
+				samplingRate: request.samplingRate,
+				logsEnabled: request.logsEnabled,
+				tracesEnabled: request.tracesEnabled,
+				aiGatewayEnabled: request.aiGatewayEnabled ?? true,
+			}
+			yield* validateForwarding(forwarding)
 			const token = request.token
 			const team = yield* listTeams(httpClient, token).pipe(
 				Effect.mapError(toListError),
@@ -1004,11 +1056,7 @@ export class VercelIntegrationService extends Context.Service<
 				tokenIv: encrypted.iv,
 				tokenTag: encrypted.tag,
 				connectedByUserId: userId,
-				projectScope: request.projectScope,
-				projectIds: request.projectIds,
-				samplingRate: request.samplingRate,
-				logsEnabled: request.logsEnabled,
-				tracesEnabled: request.tracesEnabled,
+				...forwarding,
 				authFailedAt: null,
 				discoveredAt: now,
 				lastError: null,
@@ -1048,8 +1096,10 @@ export class VercelIntegrationService extends Context.Service<
 															...fields,
 															logDrainId: null,
 															traceDrainId: null,
+															aiGatewayDrainId: null,
 															logDrainState: null,
 															traceDrainState: null,
+															aiGatewayDrainState: null,
 															drainKeyHash: null,
 															deploymentsWatermarkAt: null,
 														},
@@ -1067,7 +1117,7 @@ export class VercelIntegrationService extends Context.Service<
 			}
 			yield* storeProjects(orgId, team.id, projects, now)
 			const ingestKey = yield* drainKey(connection, userId)
-			const reconciled = yield* Effect.result(reconcileDrains(connection, token, request, ingestKey, true))
+			const reconciled = yield* Effect.result(reconcileDrains(connection, token, forwarding, ingestKey, true))
 			if (Result.isSuccess(reconciled)) {
 				if (!(yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now))) {
 					// Disconnected or moved team while this ran: take back what it may have created.
@@ -1108,6 +1158,7 @@ export class VercelIntegrationService extends Context.Service<
 				samplingRate: request.samplingRate ?? connection.samplingRate,
 				logsEnabled: request.logsEnabled ?? connection.logsEnabled,
 				tracesEnabled: request.tracesEnabled ?? connection.tracesEnabled,
+				aiGatewayEnabled: request.aiGatewayEnabled ?? connection.aiGatewayEnabled,
 			}
 			yield* validateForwarding(forwarding)
 			const now = yield* Clock.currentTimeMillis
@@ -1289,8 +1340,9 @@ export class VercelIntegrationService extends Context.Service<
 							yield* removeDrains(claimed, token)
 							return skip("disconnected")
 						}
-						drainsRepaired = Arr.filter([outcomes.logs, outcomes.traces], (o) => o.changed).length
-						for (const outcome of [outcomes.logs, outcomes.traces]) {
+						const all = [outcomes.logs, outcomes.traces, outcomes.aiGateway]
+						drainsRepaired = Arr.filter(all, (o) => o.changed).length
+						for (const outcome of all) {
 							if (outcome.error === null) continue
 							if (isFatal(outcome.error) && (yield* stopFor(outcome.error))) {
 								return { ...skip(outcome.error.kind), drainsRepaired, failures: 1 }

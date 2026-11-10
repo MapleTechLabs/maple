@@ -1,9 +1,10 @@
 // Vercel AI Gateway usage (/infra/vercel, AI Gateway section)
 //
-// A trace drain carries AI Gateway traces as service `ai-gateway` in namespace
-// `vercel`. Each gateway request is one server span carrying the usage, the model
-// and the cost (`vercel.ai_gateway.cost.total`, a decimal string). Keying on the
-// kind, not on an empty parent, keeps requests whose caller propagated a trace
+// The AI Gateway drain's events reach the warehouse as service `ai-gateway` in
+// namespace `vercel` (ingest maps them in `apps/ingest/src/vercel_ai_gateway_drain.rs`).
+// Each gateway request is one server span carrying the usage, the model and the
+// cost (`vercel.ai_gateway.cost.total`, a decimal string). Keying on the kind,
+// not on an empty parent, keeps requests whose caller propagated a trace
 // context. Child spans (routing, model attempts) are not counted.
 
 import * as CH from "@maple-dev/effect-orm/expr"

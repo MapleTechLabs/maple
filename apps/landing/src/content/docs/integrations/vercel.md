@@ -1,11 +1,11 @@
 ---
 title: "Vercel"
-description: "Connect a Vercel team with an access token. Maple creates a log drain and a trace drain on the team, so request, function, build and edge logs, deployment traces, and AI Gateway traces arrive in Maple."
+description: "Connect a Vercel team with an access token. Maple creates log, trace and AI Gateway drains on the team, so request, function, build and edge logs, deployment traces, and AI Gateway usage arrive in Maple."
 group: "Integrations"
 order: 11
 ---
 
-The Vercel integration connects one Vercel team to Maple with an access token. Maple creates two drains on the team: a log drain for request, function, build and edge logs, and a trace drain for deployment traces and AI Gateway traces. The data appears under **Infrastructure → Vercel**, in the [logs](/docs/explore/logs) and [traces](/docs/explore/traces) explorers, and AI Gateway requests also appear in Agent Sessions. Maple also keeps a list of the team's projects and recent deployments.
+The Vercel integration connects one Vercel team to Maple with an access token. Maple creates three drains on the team: a log drain for request, function, build and edge logs, a trace drain for deployment traces, and an AI Gateway drain for model usage and cost. The data appears under **Infrastructure → Vercel**, in the [logs](/docs/explore/logs) and [traces](/docs/explore/traces) explorers, and AI Gateway requests also appear in Agent Sessions. Maple also keeps a list of the team's projects and recent deployments.
 
 ## Prerequisites
 
@@ -20,27 +20,28 @@ The Vercel integration connects one Vercel team to Maple with an access token. M
 3. Pick the team. Maple skips this step when the token can see only one team.
 4. Choose **All projects** or pick the projects to forward.
 5. Set the sampling rate. The default, 100%, forwards every log and trace.
-6. Switch logs and traces on or off.
+6. Switch logs, traces and AI Gateway on or off.
 7. Click **Connect**.
 
 Maple creates the drains right away. The first logs arrive with the next request to a forwarded project.
 
 ## What Maple creates on Vercel
 
-Maple adds two drains to the team:
+Maple adds three drains to the team:
 
-| Drain          | Receives                                                         |
-| -------------- | ---------------------------------------------------------------- |
-| `Maple logs`   | Runtime, build and static logs, including one log per request    |
-| `Maple traces` | Deployment traces and AI Gateway traces, in OpenTelemetry format |
+| Drain              | Receives                                                       |
+| ------------------ | -------------------------------------------------------------- |
+| `Maple logs`       | Runtime, build and static logs, including one log per request  |
+| `Maple traces`     | Deployment traces, in OpenTelemetry format                     |
+| `Maple AI Gateway` | One event per AI Gateway request and per provider attempt      |
 
-Both drains send to Maple's ingest endpoint and authenticate with your organization's ingest key. If you rotate the ingest key, Maple updates the drains. When you change projects, sampling, or the logs and traces switches in Maple, Maple updates the drains on Vercel immediately. You can see them under **Team Settings → Drains** on Vercel; edit them from Maple, not from Vercel.
+All three send to Maple's ingest endpoint and authenticate with your organization's ingest key. If you rotate the ingest key, Maple updates the drains. The sampling rate applies to logs and traces only; the AI Gateway drain forwards every request, so spend totals stay exact. When you change projects, sampling, or the switches in Maple, Maple updates the drains on Vercel immediately. You can see them under **Team Settings → Drains** on Vercel; edit them from Maple, not from Vercel.
 
 ## Cost
 
-Vercel bills drain usage on Pro and Enterprise. At the time of writing, drained data costs $0.50 per GB, measured as uncompressed JSON. AI Gateway traces also cost $0.05 per 1,000 traces, on top of the data volume. See [Vercel's drain pricing](https://vercel.com/docs/drains#usage-and-pricing) for current prices.
+Vercel bills drain usage on Pro and Enterprise. At the time of writing, drained data costs $0.50 per GB, measured as uncompressed JSON. AI Gateway data also costs $0.05 per 1,000 requests, on top of the data volume. See [Vercel's drain pricing](https://vercel.com/docs/drains#usage-and-pricing) for current prices.
 
-A lower sampling rate lowers both charges. Forwarding only the projects you need does too.
+A lower sampling rate lowers the logs and traces volume. Forwarding only the projects you need lowers all three drains.
 
 ## What Maple collects
 
@@ -56,7 +57,7 @@ Vercel sends deployment traces as they are, with the `vercel.projectId` and `ver
 
 ## AI Gateway
 
-Requests that go through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) arrive through the trace drain, under the service `ai-gateway`. The root span of each trace is one request and carries the model, the provider, input and output tokens, and the cost in USD (`vercel.ai_gateway.cost.total`). The traces carry no prompt or completion content.
+Requests that go through [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) arrive through the AI Gateway drain. Maple stores each request as a trace under the service `ai-gateway`: the root span carries the model, the provider, input, cached and output tokens, time to first token, and the cost in USD (`vercel.ai_gateway.cost.total`), and each provider attempt is a child span, so retries and failovers show. Vercel sends no prompt or completion content.
 
 AI Gateway data shows in two places:
 
@@ -89,11 +90,11 @@ The trace drain forwards these spans to Maple. You do not need to configure an e
 - **Connect fails with a message about the plan.** Vercel creates drains only on Pro and Enterprise. Maple shows Vercel's error as it came back.
 - **The token stopped working.** The integration card shows that the token failed. Create a new token and paste it on **Integrations → Vercel**. Maple stops polling Vercel until it has a working token, but the drains keep sending data.
 - **No logs after connecting.** Logs arrive when a forwarded project receives traffic or builds. Check that the project is in the forwarded list and that logs are switched on.
-- **No AI Gateway data.** Check that traces are switched on, and that the requests go through AI Gateway from the connected team.
+- **No AI Gateway data.** Check that AI Gateway is switched on, and that the requests go through AI Gateway from the connected team.
 
 ## Disconnect
 
-On **Integrations → Vercel**, click **Disconnect**. Maple deletes both drains from the Vercel team. Data already in Maple stays until it reaches the end of your retention period.
+On **Integrations → Vercel**, click **Disconnect**. Maple deletes its drains from the Vercel team. Data already in Maple stays until it reaches the end of your retention period.
 
 ## Next steps
 

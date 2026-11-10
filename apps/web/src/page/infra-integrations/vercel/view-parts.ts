@@ -116,19 +116,21 @@ export const deploymentInline = <M>(
 		],
 	)
 
-/** Nothing went through AI Gateway in the window: what makes it show up. */
-export const aiGatewayEmpty = <M>(h: HtmlBuilder<M>): Html =>
+/** Nothing went through AI Gateway in the window: what makes it show up, or that its drain is off. */
+export const aiGatewayEmpty = <M>(h: HtmlBuilder<M>, enabled: boolean): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "SquareSparkleIcon", { size: 16 })]),
-				emptyTitle(h, ["Requests through AI Gateway appear here"]),
+				emptyTitle(h, [enabled ? "Requests through AI Gateway appear here" : "AI Gateway is off"]),
 				emptyDescription(h, [
-					"Call a model through Vercel AI Gateway from a forwarded project. The traces drain carries each request's model, tokens and cost.",
+					enabled
+						? "Call a model through Vercel AI Gateway from a forwarded project. The AI Gateway drain carries each request's model, tokens and cost."
+						: "Turn AI Gateway on in the Vercel connection's settings, and Maple adds an AI Gateway drain to the team.",
 				]),
 			]),
-			emptyContent(h, [emptyActions(h, [docsLink(h, "vercel", "How AI Gateway traces reach Maple")])]),
+			emptyContent(h, [emptyActions(h, [docsLink(h, "vercel", "How AI Gateway usage reaches Maple")])]),
 		],
 		"rounded-md border border-dashed py-14",
 	)

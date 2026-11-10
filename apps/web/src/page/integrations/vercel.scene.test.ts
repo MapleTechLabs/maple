@@ -46,7 +46,8 @@ const connected = (fields: Partial<ConstructorParameters<typeof VercelIntegratio
 		samplingRate: 1,
 		logsEnabled: true,
 		tracesEnabled: true,
-		drains: { logs: drain("enabled"), traces: drain("enabled") },
+		aiGatewayEnabled: true,
+		drains: { logs: drain("enabled"), traces: drain("enabled"), aiGateway: drain("enabled") },
 		projects: Arr.map(
 			PROJECTS,
 			(project) =>
@@ -67,7 +68,8 @@ const NOT_CONNECTED = new VercelIntegrationStatus({
 	samplingRate: 1,
 	logsEnabled: true,
 	tracesEnabled: true,
-	drains: { logs: null, traces: null },
+	aiGatewayEnabled: true,
+	drains: { logs: null, traces: null, aiGateway: null },
 	projects: [],
 	authFailed: false,
 	connectedAt: null,
@@ -121,7 +123,7 @@ describe("vercel card: connecting", () => {
 				error: null,
 			}),
 		])
-		scene({ update: step, view }, given(settings), mounted(), expectView(text("Creates 2 drains on Acme right away.")).toExist())
+		scene({ update: step, view }, given(settings), mounted(), expectView(text("Creates 3 drains on Acme right away.")).toExist())
 
 		const sent = step(settings, Message.SubmittedVercelConnect())
 		expect(names(sent.commands)).toEqual(["ConnectVercel"])
@@ -264,7 +266,7 @@ describe("vercel card: connected", () => {
 	})
 
 	test("a drain deleted on Vercel offers a re-apply, which sends an empty settings save once", () => {
-		const model = withStatus(connected({ drains: { logs: drain("missing"), traces: drain("enabled") } })).model
+		const model = withStatus(connected({ drains: { logs: drain("missing"), traces: drain("enabled"), aiGateway: drain("enabled") } })).model
 		scene(
 			{ update: step, view },
 			given(model),
@@ -294,15 +296,22 @@ describe("vercel card: connected", () => {
 	})
 
 	test("the disconnect confirmation names only the drains Maple installed", () => {
-		const model = run(withStatus(connected({ tracesEnabled: false, drains: { logs: drain("enabled"), traces: null } })).model, [
-			Message.ClickedDisconnect(),
-		])
+		const model = run(
+			withStatus(
+				connected({
+					tracesEnabled: false,
+					drains: { logs: drain("enabled"), traces: null, aiGateway: drain("enabled") },
+				}),
+			).model,
+			[Message.ClickedDisconnect()],
+		)
 		const dialog = role("alertdialog")
 		scene(
 			{ update: step, view },
 			given(model),
 			mounted(),
 			expectView(within(dialog, text("Maple logs"))).toExist(),
+			expectView(within(dialog, text("Maple AI Gateway"))).toExist(),
 			expectView(within(dialog, text("Maple traces"))).toBeAbsent(),
 		)
 		const done = step(
@@ -313,7 +322,8 @@ describe("vercel card: connected", () => {
 			PageOutMessage.RequestedToast({
 				type: "warning",
 				title: "Remove the drains on Vercel",
-				description: "Maple couldn't delete them. Delete Maple logs and Maple traces in the team's drain settings.",
+				description:
+					"Maple couldn't delete them. Delete Maple logs, Maple traces and Maple AI Gateway in the team's drain settings.",
 			}),
 		)
 	})
@@ -337,6 +347,27 @@ describe("vercel card: configure", () => {
 		const done = step(saved.model, Message.CompletedVercelSave({ isReapply: false, error: null }))
 		expect(done.model.vercelCard.configure).toBeNull()
 		expect(names(done.commands)).toEqual(["LoadIntegrationsVercelStatus"])
+	})
+
+	test("turning AI Gateway off asks first, then saves only that switch", () => {
+		const opened = configured(connected())
+		scene(
+			{ update: step, view },
+			given(opened),
+			mounted(),
+			expectView(
+				text("Model usage and cost from Vercel AI Gateway: every request with its model, tokens and cost."),
+			).toExist(),
+		)
+		const asked = step(
+			run(opened, [Message.ToggledVercelSignal({ signal: "aiGatewayEnabled" })]),
+			Message.ClickedVercelSave(),
+		)
+		expect(configureOf(asked.model).confirm.isOpen).toBe(true)
+		const saved = step(asked.model, Message.ConfirmedVercelSave())
+		expect(
+			Option.getOrUndefined(Arr.findFirst(saved.commands ?? [], ({ name }) => name === "SaveVercelSettings"))?.args,
+		).toEqual(expect.objectContaining({ request: { aiGatewayEnabled: false } }))
 	})
 
 	test("a change that forwards more applies at once; a refusal stays in the dialog", () => {

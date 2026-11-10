@@ -47,7 +47,7 @@ const NOT_CONNECTED = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
 	connected: false,
 	team: null,
-	drains: { logs: null, traces: null },
+	drains: { logs: null, traces: null, aiGateway: null },
 	projects: [],
 	connectedAt: null,
 	lastSuccessAt: null,
@@ -82,6 +82,15 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 		usage: "loaded",
 	},
 	{
+		id: "ai-gateway-disabled",
+		title: "AI Gateway drain disabled on Vercel",
+		status: new VercelIntegrationStatus({
+			...VERCEL_STATUS,
+			drains: { ...VERCEL_STATUS.drains, aiGateway: drain("disabled", "drn_ai_gateway") },
+		}),
+		usage: "loaded",
+	},
+	{
 		id: "token-rejected",
 		title: "Token rejected",
 		status: new VercelIntegrationStatus({ ...VERCEL_STATUS, authFailed: true }),
@@ -92,7 +101,11 @@ const scenesAt = (nowMs: number): ReadonlyArray<Scene> => [
 		title: "First sync pending",
 		status: new VercelIntegrationStatus({
 			...VERCEL_STATUS,
-			drains: { logs: drain("unknown", "drn_logs"), traces: drain("unknown", "drn_traces") },
+			drains: {
+				logs: drain("unknown", "drn_logs"),
+				traces: drain("unknown", "drn_traces"),
+				aiGateway: drain("unknown", "drn_ai_gateway"),
+			},
 			projects: [],
 			connectedAt: nowMs - 2 * 60_000,
 			lastSuccessAt: null,

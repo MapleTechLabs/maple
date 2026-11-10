@@ -81,6 +81,7 @@ export const SyncVercelOutput = Schema.Struct({
 	/** Null when that drain is turned off. */
 	logDrain: Schema.NullOr(SyncVercelDrain),
 	traceDrain: Schema.NullOr(SyncVercelDrain),
+	aiGatewayDrain: Schema.NullOr(SyncVercelDrain),
 	projects: Schema.Array(
 		Schema.Struct({
 			name: Schema.String,

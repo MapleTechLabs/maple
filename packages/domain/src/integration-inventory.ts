@@ -117,8 +117,10 @@ export interface IntegrationInventoryInputs {
 				readonly authFailedAt: number | null
 				readonly logsEnabled: boolean
 				readonly tracesEnabled: boolean
+				readonly aiGatewayEnabled: boolean
 				readonly logDrainState: VercelDrainSnapshot | null
 				readonly traceDrainState: VercelDrainSnapshot | null
+				readonly aiGatewayDrainState: VercelDrainSnapshot | null
 				readonly createdAt: number
 		  })
 		| null
@@ -494,6 +496,7 @@ const vercel = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 		resources: [
 			...drain("logs", connection.logsEnabled, connection.logDrainState),
 			...drain("traces", connection.tracesEnabled, connection.traceDrainState),
+			...drain("AI Gateway", connection.aiGatewayEnabled, connection.aiGatewayDrainState),
 		],
 	})
 }

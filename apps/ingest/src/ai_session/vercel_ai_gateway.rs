@@ -1,4 +1,5 @@
-//! Vercel AI Gateway's trace drain, restated for Agent Sessions.
+//! Vercel AI Gateway requests, restated for Agent Sessions. Ingest builds
+//! these spans from the AI Gateway drain (`vercel_ai_gateway_drain.rs`).
 //!
 //! Every gateway request is one trace on resource `service.name=ai-gateway`,
 //! `service.namespace=vercel`. Its root, the server span `<operation> <model>`,

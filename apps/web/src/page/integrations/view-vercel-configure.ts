@@ -294,7 +294,13 @@ const SIGNALS = [
 		flag: "tracesEnabled",
 		title: "Traces",
 		drain: "Maple traces",
-		description: "Deployment traces, and every AI Gateway request with its model, tokens and cost.",
+		description: "Deployment traces from Vercel and @vercel/otel.",
+	},
+	{
+		flag: "aiGatewayEnabled",
+		title: "AI Gateway",
+		drain: "Maple AI Gateway",
+		description: "Model usage and cost from Vercel AI Gateway: every request with its model, tokens and cost.",
 	},
 ] as const
 
@@ -477,7 +483,9 @@ const settingsFields = (h: H, configure: VercelConfigureModel, projects: Readonl
 							),
 						],
 					),
-					h.p([h.Class(SMALL)], ["Vercel samples before it sends, so a lower rate also lowers its bill."]),
+					h.p([h.Class(SMALL)], [
+						"Vercel samples logs and traces before it sends, so a lower rate also lowers its bill. AI Gateway usage is never sampled, so its cost totals stay exact.",
+					]),
 				],
 			),
 			vercelCostNote(h),
@@ -501,7 +509,7 @@ export const vercelCostNote = (h: H): Html =>
 					),
 					h.li(
 						[],
-						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.05 per 1,000"]), " AI Gateway traces"],
+						[typography(h, { weight: "medium", tone: "foreground" }, ["$0.05 per 1,000"]), " AI Gateway requests"],
 					),
 					h.li(
 						[],
@@ -533,7 +541,7 @@ const connectSettingsStage = (
 		]),
 		footer(h, [
 			footerNote(h, [
-				problem ?? `Creates ${draft.logsEnabled && draft.tracesEnabled ? "2 drains" : "a drain"} on ${team.name} right away.`,
+				problem ?? `Creates ${countLabel(Arr.filter(SIGNALS, (signal) => draft[signal.flag]).length, "drain")} on ${team.name} right away.`,
 			]),
 			back(h, configure),
 			button(

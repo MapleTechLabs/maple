@@ -9,6 +9,7 @@ import {
 	draftProblem,
 	samplingLabel,
 	settingsPatch,
+	signalsLabel,
 	stoppedByDraft,
 	vercelHealth,
 	vercelIssues,
@@ -27,7 +28,8 @@ const connected = (overrides: Partial<ConstructorParameters<typeof VercelIntegra
 		samplingRate: 1,
 		logsEnabled: true,
 		tracesEnabled: true,
-		drains: { logs: drain("enabled"), traces: drain("enabled") },
+		aiGatewayEnabled: true,
+		drains: { logs: drain("enabled"), traces: drain("enabled"), aiGateway: drain("enabled") },
 		projects: [],
 		authFailed: false,
 		connectedAt: 1,
@@ -89,9 +91,15 @@ describe("stoppedByDraft", () => {
 	})
 
 	it("says a signal switched off deletes its drain, and lowered sampling", () => {
-		const draft: VercelDraft = { ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, samplingRate: 0.1 }
+		const draft: VercelDraft = {
+			...DEFAULT_VERCEL_DRAFT,
+			logsEnabled: false,
+			aiGatewayEnabled: false,
+			samplingRate: 0.1,
+		}
 		expect(stoppedByDraft(DEFAULT_VERCEL_DRAFT, draft, names)).toEqual([
 			"Logs: the Maple logs drain is deleted",
+			"AI Gateway: the Maple AI Gateway drain is deleted",
 			"Sampling drops to 10% of events",
 		])
 	})
@@ -99,9 +107,15 @@ describe("stoppedByDraft", () => {
 
 describe("draftProblem", () => {
 	it("refuses a draft that forwards nothing", () => {
-		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBe(
-			"Forward logs, traces or both.",
-		)
+		expect(
+			draftProblem({
+				...DEFAULT_VERCEL_DRAFT,
+				logsEnabled: false,
+				tracesEnabled: false,
+				aiGatewayEnabled: false,
+			}),
+		).toBe("Forward logs, traces or AI Gateway usage.")
+		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBeNull()
 		expect(draftProblem({ ...DEFAULT_VERCEL_DRAFT, projectScope: "some" })).toBe(
 			"Pick at least one project.",
 		)
@@ -112,7 +126,10 @@ describe("draftProblem", () => {
 describe("vercelIssues", () => {
 	it("reports only the token while it is rejected", () => {
 		const issues = vercelIssues(
-			connected({ authFailed: true, drains: { logs: drain("missing"), traces: null } }),
+			connected({
+				authFailed: true,
+				drains: { logs: drain("missing"), traces: null, aiGateway: null },
+			}),
 		)
 		expect(Arr.map(issues, (issue) => issue.fix)).toEqual(["token"])
 	})
@@ -121,7 +138,11 @@ describe("vercelIssues", () => {
 		const issues = vercelIssues(
 			connected({
 				tracesEnabled: false,
-				drains: { logs: drain("errored", "endpoint returned 401"), traces: drain("missing") },
+				drains: {
+					logs: drain("errored", "endpoint returned 401"),
+					traces: drain("missing"),
+					aiGateway: drain("enabled"),
+				},
 			}),
 		)
 		expect(issues).toHaveLength(1)
@@ -131,7 +152,9 @@ describe("vercelIssues", () => {
 
 	it("re-keys a failing drain and re-creates a deleted one", () => {
 		const issues = vercelIssues(
-			connected({ drains: { logs: drain("errored"), traces: drain("missing") } }),
+			connected({
+				drains: { logs: drain("errored"), traces: drain("missing"), aiGateway: drain("enabled") },
+			}),
 		)
 		expect(Arr.map(issues, (issue) => issue.description)).toEqual([
 			"Vercel can't deliver to Maple, usually because the ingest key changed. Re-applying the settings sends Maple's current ingest key to the drain.",
@@ -140,7 +163,11 @@ describe("vercelIssues", () => {
 	})
 
 	it("treats an enabled signal without a drain as broken", () => {
-		expect(vercelIssues(connected({ drains: { logs: drain("enabled"), traces: null } }))).toHaveLength(1)
+		expect(
+			vercelIssues(
+				connected({ drains: { logs: drain("enabled"), traces: drain("enabled"), aiGateway: null } }),
+			),
+		).toEqual([expect.objectContaining({ title: "The AI Gateway drain is missing on Vercel" })])
 	})
 })
 
@@ -149,8 +176,29 @@ describe("vercelHealth", () => {
 		expect(vercelHealth(connected({ lastSuccessAt: null }))).toBe("pending")
 		expect(vercelHealth(connected())).toBe("healthy")
 		expect(
-			vercelHealth(connected({ drains: { logs: drain("disabled"), traces: drain("enabled") } })),
+			vercelHealth(
+				connected({
+					drains: {
+						logs: drain("disabled"),
+						traces: drain("enabled"),
+						aiGateway: drain("enabled"),
+					},
+				}),
+			),
 		).toBe("attention")
+	})
+})
+
+describe("signalsLabel", () => {
+	it("lists the signals forwarded", () => {
+		expect(signalsLabel(DEFAULT_VERCEL_DRAFT)).toBe("Logs, traces and AI Gateway")
+		expect(signalsLabel({ ...DEFAULT_VERCEL_DRAFT, tracesEnabled: false })).toBe("Logs and AI Gateway")
+		expect(signalsLabel({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, aiGatewayEnabled: false })).toBe(
+			"Traces",
+		)
+		expect(signalsLabel({ ...DEFAULT_VERCEL_DRAFT, logsEnabled: false, tracesEnabled: false })).toBe(
+			"AI Gateway",
+		)
 	})
 })
 

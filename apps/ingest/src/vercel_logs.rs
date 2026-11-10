@@ -289,7 +289,7 @@ fn log_record(entry: &JsonObject, now_unix_nano: u64) -> LogRecord {
 
 /// Epoch milliseconds, whole or fractional, as nanoseconds. Whole and
 /// fractional parts convert apart: an f64 cannot hold epoch nanoseconds exactly.
-fn timestamp_nanos(millis: &JsonValue) -> Option<u64> {
+pub(crate) fn timestamp_nanos(millis: &JsonValue) -> Option<u64> {
     if let Some(whole) = millis.as_u64() {
         return whole.checked_mul(1_000_000);
     }
@@ -318,11 +318,11 @@ fn hex_bytes(hex: &str, len: usize) -> Vec<u8> {
     bytes
 }
 
-fn text<'a>(parent: &'a JsonObject, key: &str) -> Option<&'a str> {
+pub(crate) fn text<'a>(parent: &'a JsonObject, key: &str) -> Option<&'a str> {
     parent.get(key)?.as_str().filter(|value| !value.is_empty())
 }
 
-fn key_value(key: &str, value: any_value::Value) -> KeyValue {
+pub(crate) fn key_value(key: &str, value: any_value::Value) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
         key_strindex: 0,
@@ -330,11 +330,11 @@ fn key_value(key: &str, value: any_value::Value) -> KeyValue {
     }
 }
 
-fn attribute(key: &str, value: &str) -> KeyValue {
+pub(crate) fn attribute(key: &str, value: &str) -> KeyValue {
     key_value(key, any_value::Value::StringValue(value.to_owned()))
 }
 
-fn push(attributes: &mut Vec<KeyValue>, key: &str, value: Option<&str>) {
+pub(crate) fn push(attributes: &mut Vec<KeyValue>, key: &str, value: Option<&str>) {
     if let Some(value) = value {
         attributes.push(attribute(key, value));
     }

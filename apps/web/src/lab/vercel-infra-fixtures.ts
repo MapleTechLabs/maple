@@ -67,9 +67,11 @@ export const VERCEL_STATUS = new VercelIntegrationStatus({
 	samplingRate: 1,
 	logsEnabled: true,
 	tracesEnabled: true,
+	aiGatewayEnabled: true,
 	drains: {
 		logs: new VercelDrainStatus({ id: "drn_logs", status: "enabled", lastError: null }),
 		traces: new VercelDrainStatus({ id: "drn_traces", status: "enabled", lastError: null }),
+		aiGateway: new VercelDrainStatus({ id: "drn_ai_gateway", status: "enabled", lastError: null }),
 	},
 	projects: [
 		project(
@@ -139,7 +141,7 @@ export const VERCEL_PROJECTS: ReadonlyArray<VercelInfraProject> = [
 export const VERCEL_TRACES_ONLY_STATUS = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
 	logsEnabled: false,
-	drains: { logs: null, traces: VERCEL_STATUS.drains.traces },
+	drains: { ...VERCEL_STATUS.drains, logs: null },
 })
 export const VERCEL_TRACES_ONLY_PROJECTS: ReadonlyArray<VercelInfraProject> = [
 	infraProject("prj_storefront", "", 0, 0, 0, 0, 0, 182),

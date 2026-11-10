@@ -1202,9 +1202,11 @@ export class VercelIntegrationStatus extends Schema.Class<VercelIntegrationStatu
 		samplingRate: Schema.Number,
 		logsEnabled: Schema.Boolean,
 		tracesEnabled: Schema.Boolean,
+		aiGatewayEnabled: Schema.Boolean,
 		drains: Schema.Struct({
 			logs: Schema.NullOr(VercelDrainStatus),
 			traces: Schema.NullOr(VercelDrainStatus),
+			aiGateway: Schema.NullOr(VercelDrainStatus),
 		}),
 		projects: Schema.Array(VercelProjectStatus),
 		/** True when Vercel rejected the stored token; polling is paused until a new one is saved. */
@@ -1236,6 +1238,8 @@ export class VercelConnectRequest extends Schema.Class<VercelConnectRequest>("Ve
 	samplingRate: VercelSamplingRate,
 	logsEnabled: Schema.Boolean,
 	tracesEnabled: Schema.Boolean,
+	/** Absent from older clients; treated as true. */
+	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class VercelSettingsRequest extends Schema.Class<VercelSettingsRequest>("VercelSettingsRequest")({
@@ -1244,6 +1248,7 @@ export class VercelSettingsRequest extends Schema.Class<VercelSettingsRequest>("
 	samplingRate: Schema.optionalKey(VercelSamplingRate),
 	logsEnabled: Schema.optionalKey(Schema.Boolean),
 	tracesEnabled: Schema.optionalKey(Schema.Boolean),
+	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class VercelDisconnectResponse extends Schema.Class<VercelDisconnectResponse>(

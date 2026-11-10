@@ -1271,7 +1271,7 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 			return affected.length === 0
 				? PASS
 				: fail(
-						`Vercel has ${plural(affected.length, "problem")}: logs or traces from the affected drains are not arriving.`,
+						`Vercel has ${plural(affected.length, "problem")}: logs, traces or AI Gateway usage from the affected drains are not arriving.`,
 						affected,
 					)
 		},

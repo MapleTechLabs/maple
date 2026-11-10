@@ -204,19 +204,21 @@ describe("buildIntegrationInventory", () => {
 			authFailedAt: null,
 			logsEnabled: true,
 			tracesEnabled: true,
+			aiGatewayEnabled: true,
 			logDrainState: { status: "enabled", lastError: null },
 			traceDrainState: { status: "enabled", lastError: null },
+			aiGatewayDrainState: { status: "enabled", lastError: null },
 			lastSuccessAt: NOW - MINUTE,
 			lastErrorAt: null,
 			lastError: null,
 			createdAt: NOW - 24 * 60 * MINUTE,
 		}
 
-		it("is healthy with both drains enabled, and counts the team's projects", () => {
+		it("is healthy with every drain enabled, and counts the team's projects", () => {
 			const vercel = providerOf({ vercelConnection: connection, vercelProjectCount: 3 }, "vercel")
 			expect(vercel?.status).toBe("healthy")
 			expect(vercel?.account).toBe("Acme (3 projects)")
-			expect(Arr.map(vercel?.resources ?? [], (r) => r.name)).toEqual(["logs", "traces"])
+			expect(Arr.map(vercel?.resources ?? [], (r) => r.name)).toEqual(["AI Gateway", "logs", "traces"])
 		})
 
 		it("fails on a drain Vercel reports missing, and leaves out a drain that is turned off", () => {
@@ -225,6 +227,7 @@ describe("buildIntegrationInventory", () => {
 					vercelConnection: {
 						...connection,
 						tracesEnabled: false,
+						aiGatewayEnabled: false,
 						logDrainState: { status: "missing", lastError: "Drains need a Pro plan" },
 					},
 				},
