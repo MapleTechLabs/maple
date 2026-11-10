@@ -75,7 +75,7 @@ import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { CANDIDATE_RETENTION_MS, ErrorsService } from "./ErrorsService"
+import { CANDIDATE_RETENTION_MS, ErrorsService, NOTIFICATION_DELIVERY_PRUNE_BATCH } from "./ErrorsService"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { PullRequestLookup } from "./PullRequestLookup"
 import { describeCause, makePersistenceError } from "./error-persistence"
@@ -3172,6 +3172,48 @@ describe("ErrorsService.runTick", () => {
 			expect(new Set(Arr.map(remaining, (row) => row.deliveryKey))).toEqual(
 				new Set(["old-queued", "recent-success"]),
 			)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("one retention run prunes a bounded batch of deliveries and leaves the rest for the next", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			yield* TestClock.setTime(RETENTION_TICK_MS)
+			yield* seedIssue(asIssueId(randomUUID()), { workflowState: "in_review" })
+
+			const old = RETENTION_TICK_MS - 31 * DAY_MS
+			const backlog = NOTIFICATION_DELIVERY_PRUNE_BATCH + 5
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorNotificationDeliveries).values(
+						Arr.makeBy(backlog, (index) => ({
+							id: randomUUID(),
+							orgId: ORG,
+							destinationId: asDestinationId("7d31c9e1-0000-4000-8000-000000000001"),
+							deliveryKey: `backlog-${index}`,
+							payloadJson: {},
+							status: "success" as const,
+							attemptCount: 1,
+							scheduledAt: RETENTION_TICK_MS + DAY_MS,
+							claimedAt: null,
+							claimExpiresAt: null,
+							claimedBy: null,
+							attemptedAt: old,
+							errorMessage: null,
+							createdAt: old,
+							updatedAt: old,
+						})),
+					),
+				),
+			)
+
+			assert.isTrue((yield* errors.runTick).retentionRan)
+
+			const remaining = yield* database.execute((db) =>
+				db.run(PG.from(ErrorNotificationDeliveries).select("id")),
+			)
+			expect(remaining).toHaveLength(5)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
