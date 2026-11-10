@@ -139,7 +139,7 @@ export const nameSection = (h: H, model: Model, placeholder: string): Html =>
 		}),
 	])
 
-const isMethod = (value: string): value is typeof HttpMethod.Type =>
+const isMethod = (value: string): value is HttpMethod =>
 	Arr.some(HttpMethod.literals, (method) => method === value)
 const isAssertionType = (value: string): value is AssertionType =>
 	Arr.some(AssertionType.literals, (type) => type === value)
