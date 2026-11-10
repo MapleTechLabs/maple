@@ -26,7 +26,7 @@ import {
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
-import { publicUrl } from "../shared/commands"
+import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
@@ -245,6 +245,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			logoUrl: orNull(form.logoUrl),
 			privacyUrl: orNull(form.privacyUrl),
 			termsUrl: orNull(form.termsUrl),
+			customDomain: null,
 			showPoweredBy: form.showPoweredBy,
 			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},
@@ -257,7 +258,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 		nowMs,
 		isSelectable: false,
 		selectedIds: [],
-		publicUrl: publicUrl(model.publicBaseUrl, page.slug),
+		publicUrl: pageUrlOf(model, page),
 	})
 }
 

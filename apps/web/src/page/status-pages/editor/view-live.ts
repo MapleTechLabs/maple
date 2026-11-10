@@ -7,7 +7,8 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { heading } from "@maple/views/ui/heading"
-import { publicUrl, statusPageHref } from "../shared/commands"
+import { statusPageHref } from "../shared/commands"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, type Model } from "./model"
 import { revealedToken } from "./view-settings"
@@ -24,7 +25,7 @@ export const NO_DOMAIN_NOTE = "Public address appears once a status domain is co
 
 /** The header's address: a link to the public page, or the note while there is no status domain. */
 export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(model.publicBaseUrl, page.slug)
+	const url = pageUrlOf(model, page)
 	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
 	// A draft is never published, so its address does not resolve yet: text, not a link.
 	if (page.draft) return typography(h, { size: "xs", tone: "muted", mono: true }, [url])
@@ -62,7 +63,7 @@ const nextStep = (
 	])
 
 export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(model.publicBaseUrl, page.slug)
+	const url = pageUrlOf(model, page)
 	const hasToken = page.break_glass_token_suffix !== null
 	return vstack(h, { gap: "8", className: "mx-auto w-full max-w-2xl py-6" }, [
 		vstack(h, { gap: "2" }, [

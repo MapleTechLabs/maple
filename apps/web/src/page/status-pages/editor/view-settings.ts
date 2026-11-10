@@ -22,6 +22,8 @@ import {
 	settingsIssues,
 } from "../shared/form"
 import { appearanceSection, previewPanel } from "./view-appearance"
+import { customDomainSection } from "./view-domain"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
@@ -194,7 +196,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 				"If Maple itself is down, post updates straight to the page with this token at ",
 				h.code(
 					[h.Class(typographyClass({ size: "xs", mono: true }))],
-					[`${publicAddress(page.slug)}/_manage`],
+					[`${pageUrlOf(model, page) ?? publicAddress(page.slug)}/_manage`],
 				),
 				". The page keeps serving from edge storage either way.",
 			],
@@ -329,6 +331,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
+		customDomainSection(h, model),
 		breakGlassSection(h, model, page),
 		...(canManage(model) ? [deleteSection(h)] : []),
 	])

@@ -4,6 +4,7 @@ import {
 	StatusPageConfig,
 	V2StatusPage,
 	V2StatusPageComponent,
+	V2StatusPageCustomDomain,
 	V2StatusPageIncident,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
@@ -129,6 +130,17 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
+	// Custom domain
+	/** The page's custom domain and whether this deployment offers them; read with the page. */
+	customDomain: KeyedSchema(V2StatusPageCustomDomain, LoadFailure),
+	/** The hostname as typed; `null` while the field shows the saved one. */
+	customDomainDraft: Schema.NullOr(Schema.String),
+	customDomainAction: Schema.NullOr(Schema.Literals(["set", "check", "remove"])),
+	customDomainFailure: Schema.NullOr(LoadFailure),
+	removeCustomDomainDialog: Dialog.Model,
+	dnsCopy: CopyButton.Model,
+	/** Which DNS value `dnsCopy` reports on. */
+	dnsCopyKey: Schema.NullOr(Schema.String),
 	// JSON
 	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
 	config: KeyedSchema(StatusPageConfig, LoadFailure),

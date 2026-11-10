@@ -5,6 +5,7 @@ import {
 	V2StatusPage,
 	V2StatusPageBreakGlassToken,
 	V2StatusPageComponent,
+	V2StatusPageCustomDomain,
 	V2StatusPageIncident,
 	V2StatusPagePublishResult,
 	V2UptimeMonitor,
@@ -133,6 +134,19 @@ export const Message = defineMessageUnion({
 	GotBreakGlassDialogMessage: { message: Dialog.Message },
 	GotTokenCopyMessage: { message: CopyButton.Message },
 	ClickedDismissToken: {},
+	// Custom domain
+	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },
+	ChangedCustomDomain: { value: Schema.String },
+	SubmittedCustomDomain: {},
+	CompletedSetCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedCheckCustomDomain: {},
+	CompletedCheckCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedRemoveCustomDomain: {},
+	ClickedConfirmRemoveCustomDomain: {},
+	CompletedRemoveCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	GotRemoveCustomDomainDialogMessage: { message: Dialog.Message },
+	/** `key` names the copied DNS value: one copy status serves every row. */
+	GotDnsCopyMessage: { key: Schema.String, message: CopyButton.Message },
 	// Page
 	ClickedDeletePage: {},
 	ClickedConfirmDeletePage: {},

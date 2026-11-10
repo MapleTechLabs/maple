@@ -20,7 +20,8 @@ import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detai
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { type EditorView, publicUrl, statusPageHref, statusPagesHref } from "../shared/commands"
+import { type EditorView, statusPageHref, statusPagesHref } from "../shared/commands"
+import { pageUrlOf } from "./update-domain"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
@@ -35,6 +36,7 @@ import { canvas } from "./view-canvas"
 import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
+import { removeCustomDomainDialog } from "./view-domain"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -107,12 +109,17 @@ const publishButton = (h: H, model: Model): Html =>
 
 /** The public page in a new tab; disabled, with the reason on hover, while it has no address. */
 const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(model.publicBaseUrl, page.slug)
+	const url = pageUrlOf(model, page)
 	const label = [icon(h, "ExternalLinkIcon"), "Open page"]
 	if (url !== null && !page.draft)
 		return linkButton(
 			h,
-			{ size: "sm", variant: "outline", href: url, attributes: [h.Target("_blank"), h.Rel("noopener")] },
+			{
+				size: "sm",
+				variant: "outline",
+				href: url,
+				attributes: [h.Target("_blank"), h.Rel("noopener")],
+			},
 			label,
 		)
 	// A disabled button fires no hover, so its wrapper carries the reason as a tooltip.
@@ -337,6 +344,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),
 			deletePageDialog(h, model, page),
+			removeCustomDomainDialog(h, model),
 		],
 	)
 }

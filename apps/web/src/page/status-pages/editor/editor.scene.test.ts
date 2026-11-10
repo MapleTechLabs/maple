@@ -5,6 +5,7 @@ import {
 	type StatusPageConfig,
 	StatusPagePublicId,
 	type V2StatusPage,
+	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Option, Result, Schema, Array as Arr } from "effect"
@@ -19,6 +20,7 @@ import {
 	role,
 	scene,
 	selector,
+	submit,
 	tap,
 	text,
 	type,
@@ -40,11 +42,12 @@ import {
 	statusPageConfig,
 } from "../shared/test-pages"
 import { PickerMessage } from "../shared/picker"
-import { FocusEditorElement } from "./command"
+import { CheckCustomDomain, FocusEditorElement, RemoveCustomDomain, SetCustomDomain } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { moved } from "./update-components"
+import { customDomainOf } from "./update-domain"
 import { canvasDocument } from "./view-canvas"
 import { removeComponentCopy, view as pageView } from "./view"
 
@@ -70,7 +73,41 @@ type Fixture = Readonly<{
 	/** The config read's document; by default the page and its components. */
 	config?: StatusPageConfig
 	configFail?: boolean
+	/** The custom domain read; by default none set on a deployment that offers them. */
+	customDomain?: V2StatusPageCustomDomain
 }>
+
+/** The custom domain read as the API answers it. */
+const customDomain = (fields: Partial<V2StatusPageCustomDomain> = {}): V2StatusPageCustomDomain => ({
+	object: "status_page_custom_domain",
+	page_id: statusPage().id,
+	available: true,
+	cname_target: "status-domains.maple.dev",
+	hostname: null,
+	status: null,
+	dns_records: [],
+	last_error: null,
+	last_checked_at: null,
+	activated_at: null,
+	created_at: null,
+	...fields,
+})
+
+const pendingDomain = customDomain({
+	hostname: "status.acme.com",
+	status: "pending_dns",
+	dns_records: [
+		{ type: "CNAME", name: "status.acme.com", value: "status-domains.maple.dev", purpose: "routing" },
+		{
+			type: "TXT",
+			name: "_cf-custom-hostname.status.acme.com",
+			value: "4d0b9f6e-owner",
+			purpose: "ownership",
+		},
+	],
+	last_error: "custom hostname does not CNAME to this zone.",
+	created_at: "2026-10-01T12:00:00.000Z",
+})
 
 const loaded = (fixture: Fixture = {}): Model => {
 	const entered = init(
@@ -104,6 +141,10 @@ const loaded = (fixture: Fixture = {}): Model => {
 				result: fixture.monitorsFail
 					? Result.fail(toLoadFailure(new Error("monitors unavailable")))
 					: Result.succeed([httpMonitor(), downMonitor()]),
+			}),
+			Message.CompletedFetchCustomDomain({
+				key: entered.customDomain.key ?? "",
+				result: Result.succeed(fixture.customDomain ?? customDomain()),
 			}),
 			// Only the JSON tab reads the config.
 			...(entered.config.key === null
@@ -1381,6 +1422,141 @@ describe("settings and appearance views", () => {
 				isReplace: true,
 				toast: { type: "success", title: "Status page deleted", description: "" },
 			}),
+		)
+	})
+})
+
+describe("custom domain", () => {
+	test("adding a domain sends the hostname as typed, normalized, then shows the DNS records to add", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
+			type(role("textbox", { name: "Hostname" }), " Status.Acme.com "),
+			submit(role("form", { name: "Custom domain" })),
+			Command.expectExact(SetCustomDomain({ pageId: statusPage().id, hostname: "status.acme.com" })),
+			Command.resolve(
+				SetCustomDomain,
+				Message.CompletedSetCustomDomain({ result: Result.succeed(pendingDomain) }),
+			),
+			expectView(text("Waiting for DNS")).toExist(),
+			expectView(text("status-domains.maple.dev")).toExist(),
+			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
+			expectView(text("custom hostname does not CNAME to this zone.")).toExist(),
+			expectView(role("button", { name: "Copy TXT value" })).toExist(),
+			expectView(role("button", { name: "Check now" })).toExist(),
+		)
+	})
+
+	test("an apex, an IP or a Maple hostname is refused before it is sent", () => {
+		for (const hostname of ["acme.com", "10.0.0.1", "status.maple.dev"])
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab: "settings" })),
+				type(role("textbox", { name: "Hostname" }), hostname),
+				expectView(role("button", { name: "Add domain" })).toBeDisabled(),
+				expectView(role("textbox", { name: "Hostname" })).toHaveAttr("aria-invalid", "true"),
+			)
+	})
+
+	test("Check now asks Cloudflare again and an active domain becomes the page's address", () => {
+		const checking = pageUpdate(
+			loaded({ tab: "settings", customDomain: pendingDomain }),
+			Message.ClickedCheckCustomDomain(),
+		)
+		expect(checking.commands).toMatchObject([
+			{ name: CheckCustomDomain.name, args: { pageId: statusPage().id } },
+		])
+		const active = customDomain({
+			hostname: "status.acme.com",
+			status: "active",
+			dns_records: [pendingDomain.dns_records[0]!],
+		})
+		const done = pageUpdate(
+			checking.model,
+			Message.CompletedCheckCustomDomain({ result: Result.succeed(active) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(done),
+			expectView(text("Active")).toExist(),
+			expectView(role("link", { name: "https://status.acme.com" })).toHaveAttr(
+				"href",
+				"https://status.acme.com",
+			),
+		)
+	})
+
+	test("a failed domain says what went wrong", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded({
+					tab: "settings",
+					customDomain: customDomain({
+						hostname: "status.acme.com",
+						status: "failed",
+						last_error: "The hostname no longer points at Maple. Check its CNAME record.",
+					}),
+				}),
+			),
+			expectView(text("Needs attention")).toExist(),
+			expectView(text("The hostname no longer points at Maple. Check its CNAME record.")).toExist(),
+		)
+	})
+
+	test("removing the domain asks first, then removes it once", () => {
+		const asking = pageUpdate(
+			loaded({ tab: "settings", customDomain: pendingDomain }),
+			Message.ClickedRemoveCustomDomain(),
+		)
+		expect(asking.model.removeCustomDomainDialog.isOpen).toBe(true)
+		expect(names(asking.commands)).not.toContain(RemoveCustomDomain.name)
+		const removing = pageUpdate(asking.model, Message.ClickedConfirmRemoveCustomDomain())
+		expect(removing.commands).toMatchObject([
+			{ name: RemoveCustomDomain.name, args: { pageId: statusPage().id } },
+		])
+		// A second confirm while the first is in flight sends nothing.
+		expect(pageUpdate(removing.model, Message.ClickedConfirmRemoveCustomDomain()).commands ?? []).toEqual(
+			[],
+		)
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveCustomDomain({ result: Result.succeed(customDomain()) }),
+		)
+		expect(removed.model.removeCustomDomainDialog.isOpen).toBe(false)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Custom domain removed",
+				description: "",
+			}),
+		)
+		expect(Option.getOrNull(customDomainOf(removed.model))?.hostname).toBeNull()
+	})
+
+	test("members see the domain and its records but no control to change them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings", grants: MEMBER, customDomain: pendingDomain })),
+			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
+			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
+			expectView(role("button", { name: "Check now" })).not.toExist(),
+			expectView(role("button", { name: "Remove" })).not.toExist(),
+		)
+	})
+
+	test("a deployment without custom domains says so instead of the form", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded({
+					tab: "settings",
+					customDomain: customDomain({ available: false, cname_target: null }),
+				}),
+			),
+			expectView(text("Custom domains are unavailable on this Maple deployment.")).toExist(),
+			expectView(role("textbox", { name: "Hostname" })).not.toExist(),
 		)
 	})
 })

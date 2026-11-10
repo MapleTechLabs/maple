@@ -124,6 +124,30 @@ export const rotateBreakGlass = (id: StatusPageId) =>
 		return yield* client.statusPages.rotateBreakGlass({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
+export const retrieveCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.getCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const setCustomDomain = (id: StatusPageId, hostname: string) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.setCustomDomain({ params: { id }, payload: { hostname } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const checkCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.checkCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const removeCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.removeCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const revokeBreakGlass = (id: StatusPageId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -240,6 +264,10 @@ export const STATUS_PAGE_BASE_URL: string = Str.replace(
 /** Where visitors read the page, or `null` while no status domain is configured. */
 export const publicUrl = (baseUrl: string, slug: string): string | null =>
 	baseUrl === "" ? null : `${baseUrl}/s/${slug}`
+
+/** The page's canonical address: its active custom domain, else {@link publicUrl}. */
+export const canonicalUrl = (baseUrl: string, slug: string, customDomain: string | null): string | null =>
+	customDomain === null ? publicUrl(baseUrl, slug) : `https://${customDomain}`
 
 /** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
 export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`

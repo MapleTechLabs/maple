@@ -29,7 +29,7 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
-import { publicUrl } from "../shared/commands"
+import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
@@ -110,6 +110,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 			logoUrl: page.logo_url,
 			privacyUrl: page.privacy_url,
 			termsUrl: page.terms_url,
+			customDomain: null,
 			showPoweredBy: page.show_powered_by,
 			theme: previewTheme(page.theme, model.previewScheme),
 		},
@@ -122,7 +123,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 		nowMs,
 		isSelectable: true,
 		selectedIds: selectedIds(model),
-		publicUrl: publicUrl(model.publicBaseUrl, page.slug),
+		publicUrl: pageUrlOf(model, page),
 	})
 }
 

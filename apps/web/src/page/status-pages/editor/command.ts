@@ -14,6 +14,7 @@ import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
 import {
 	applyPageConfig,
+	checkCustomDomain,
 	createIncident,
 	deleteComponent,
 	deleteIncident,
@@ -23,12 +24,15 @@ import {
 	postIncidentUpdate,
 	previewPage,
 	publishPage,
+	removeCustomDomain,
 	reorderComponents,
+	retrieveCustomDomain,
 	retrievePage,
 	retrievePageConfig,
 	revokeBreakGlass,
 	rotateBreakGlass,
 	saveComponent,
+	setCustomDomain,
 	updateIncident,
 	updatePage,
 } from "../shared/commands"
@@ -309,5 +313,45 @@ export const FocusNewRow = Mount.define("FocusStatusPageEditorRow", {
 	execute: ({ element }) =>
 		Effect.sync(() => (element instanceof HTMLElement ? element.focus() : undefined)).pipe(
 			Effect.as(Message.CompletedFocus()),
+		),
+})
+
+export const FetchCustomDomain = Command.define("FetchStatusPageCustomDomain", {
+	args: { key: Schema.String, pageId: StatusPageId },
+	messages: [Message.CompletedFetchCustomDomain],
+	execute: ({ key, pageId }) =>
+		retrieveCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchCustomDomain({ key, result })),
+		),
+})
+
+export const SetCustomDomain = Command.define("SetStatusPageCustomDomain", {
+	args: { pageId: StatusPageId, hostname: Schema.String },
+	messages: [Message.CompletedSetCustomDomain],
+	execute: ({ pageId, hostname }) =>
+		setCustomDomain(pageId, hostname).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSetCustomDomain({ result })),
+		),
+})
+
+export const CheckCustomDomain = Command.define("CheckStatusPageCustomDomain", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedCheckCustomDomain],
+	execute: ({ pageId }) =>
+		checkCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedCheckCustomDomain({ result })),
+		),
+})
+
+export const RemoveCustomDomain = Command.define("RemoveStatusPageCustomDomain", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedRemoveCustomDomain],
+	execute: ({ pageId }) =>
+		removeCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedRemoveCustomDomain({ result })),
 		),
 })

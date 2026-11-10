@@ -162,6 +162,7 @@ const draftDocument = (model: Model): string => {
 			logoUrl: null,
 			privacyUrl: null,
 			termsUrl: null,
+			customDomain: null,
 			showPoweredBy: true,
 			theme: previewTheme(
 				{

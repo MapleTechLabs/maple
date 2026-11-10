@@ -8,13 +8,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import {
-	type EditorView,
-	pageIdFromUrl,
-	publicUrl,
-	STATUS_PAGE_BASE_URL,
-	statusPageHref,
-} from "../shared/commands"
+import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -109,6 +103,19 @@ import {
 	rebaseJsonDraft,
 	updateJsonCopy,
 } from "./update-json"
+import {
+	changeCustomDomain,
+	checkCustomDomain,
+	checkedCustomDomain,
+	confirmRemoveCustomDomain,
+	pageUrlOf,
+	readCustomDomain,
+	removeCustomDomainDialog,
+	removedCustomDomain,
+	savedCustomDomain,
+	submitCustomDomain,
+	updateDnsCopy,
+} from "./update-domain"
 import { acceptGrants } from "../../kit/session-grants"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
@@ -175,6 +182,13 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		tokenCopy: CopyButton.init(),
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
+		customDomain: Keyed.idle(),
+		customDomainDraft: null,
+		customDomainAction: null,
+		customDomainFailure: null,
+		removeCustomDomainDialog: Dialog.init("status-page-remove-custom-domain", "alert-dialog"),
+		dnsCopy: CopyButton.init(),
+		dnsCopyKey: null,
 		jsonEdit: null,
 		isApplyingJson: false,
 		jsonFailure: null,
@@ -186,6 +200,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		readComponents(context, "Load"),
 		readIncidents(context, "Load"),
 		readMonitors(context, "Load"),
+		readCustomDomain(context, "Load"),
 		whenJson(context, "Load"),
 	)
 	return {
@@ -204,9 +219,19 @@ const whenJson =
 	(model: Model): Return =>
 		resolveView(model.search.view) === "json" ? readConfig(context, mode)(model) : { model }
 
+/** The custom domain moves on the server's schedule: opening Settings shows where it is now. */
+const whenSettings =
+	(context: PageContext, mode: Keyed.ReadMode) =>
+	(model: Model): Return =>
+		resolveView(model.search.view) === "settings" ? readCustomDomain(context, mode)(model) : { model }
+
 /** A view switch is a search change; opening JSON re-reads the config, since other views write too. */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
-	whenJson(context, "Refresh")({ ...model, search: route.search, panel: null })
+	chain(
+		{ ...model, search: route.search, panel: null },
+		whenJson(context, "Refresh"),
+		whenSettings(context, "Refresh"),
+	)
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
@@ -274,9 +299,7 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
 		case "public":
 			return Option.match(
-				Option.flatMap(pageOf(model), (page) =>
-					Option.fromNullishOr(publicUrl(model.publicBaseUrl, page.slug)),
-				),
+				Option.flatMap(pageOf(model), (page) => Option.fromNullishOr(pageUrlOf(model, page))),
 				{
 					onNone: () => ({ model: next, commands }),
 					onSome: (url) => ({ model: next, commands: [...commands, OpenPublicPage({ url })] }),
@@ -327,6 +350,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				readComponents(context, "Supersede"),
 				readIncidents(context, "Supersede"),
 				readMonitors(context, "Supersede"),
+				readCustomDomain(context, "Supersede"),
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
@@ -474,6 +498,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: child }) => updateTokenCopy(model, child),
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
+		// Custom domain
+		CompletedFetchCustomDomain: ({ key, result }) => ({
+			model: { ...model, customDomain: Keyed.accept(model.customDomain, key, result) },
+		}),
+		ChangedCustomDomain: ({ value }) => changeCustomDomain(model, value),
+		SubmittedCustomDomain: () => submitCustomDomain(model),
+		CompletedSetCustomDomain: ({ result }) => savedCustomDomain(model, result),
+		ClickedCheckCustomDomain: () => checkCustomDomain(model),
+		CompletedCheckCustomDomain: ({ result }) => checkedCustomDomain(model, result),
+		ClickedRemoveCustomDomain: () =>
+			removeCustomDomainDialog(model, Dialog.open(model.removeCustomDomainDialog)),
+		ClickedConfirmRemoveCustomDomain: () => confirmRemoveCustomDomain(model),
+		CompletedRemoveCustomDomain: ({ result }) => removedCustomDomain(model, result),
+		GotRemoveCustomDomainDialogMessage: ({ message: child }) =>
+			whenIdle(model.customDomainAction === "remove", model, () =>
+				removeCustomDomainDialog(model, Dialog.update(model.removeCustomDomainDialog, child)),
+			),
+		GotDnsCopyMessage: ({ key, message: child }) => updateDnsCopy(model, key, child),
 		// Page
 		ClickedDeletePage: () => deletePageDialog(model, Dialog.open(model.deletePageDialog)),
 		ClickedConfirmDeletePage: () => confirmDeletePage(model),
