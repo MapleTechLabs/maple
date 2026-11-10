@@ -242,6 +242,33 @@ describe("alerts hub, silence side panel", () => {
 		)
 	})
 
+	test("a chips input with nothing to suggest opens no list: how to add a name is said in the form", () => {
+		const focused = pageUpdate(
+			withPanel().model,
+			scopeCombo("services", Combobox.Message.ClickedInput()),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(focused),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Type a name and press Enter to add it. Commas separate several.")).toExist(),
+			expectView(role("listbox")).not.toExist(),
+			expectView(role("combobox", { name: "Services" })).toHaveAttr("aria-expanded", "false"),
+		)
+		// What is typed is listed, so Enter has something to pick.
+		const typed = pageUpdate(
+			focused,
+			scopeCombo("services", Combobox.Message.ChangedInput({ value: "demo-api" })),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(typed),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox()),
+			expectView(role("option", { name: "demo-api" })).toExist(),
+		)
+	})
+
 	test("saving an incomplete form sends nothing and says what is missing, field by field", () => {
 		scene(
 			{ update: pageUpdate, view },

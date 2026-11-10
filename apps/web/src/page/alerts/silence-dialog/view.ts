@@ -75,6 +75,7 @@ const SCOPE_FIELDS: ReadonlyArray<{ field: ScopeField; label: string; placeholde
 ]
 
 const SCOPE_HELP_ID = "silence-scope-help"
+const SCOPE_ENTRY_HELP_ID = "silence-scope-entry-help"
 const SCOPE_ERROR_ID = "silence-scope-error"
 
 const NO_SUGGESTIONS: ScopeSuggestions = { services: [], environments: [], tags: [] }
@@ -105,9 +106,8 @@ const chipsField = (
 			viewInputs: {
 				items: itemsOf(suggestions[field], combo.inputValue),
 				ariaLabelledBy: labelId,
-				ariaDescribedBy: SCOPE_HELP_ID,
+				ariaDescribedBy: `${SCOPE_ENTRY_HELP_ID} ${SCOPE_HELP_ID}`,
 				placeholder,
-				emptyText: "Type a name, then press Enter",
 				isDisabled: model.isSaving,
 				toView: (parts) => h.div([], parts),
 			},
@@ -130,6 +130,12 @@ const scopeSection = (h: H, model: Model, suggestions: ScopeSuggestions): Readon
 		: [
 				...Arr.map(SCOPE_FIELDS, (entry) => chipsField(h, model, scope, suggestions, entry)),
 				vstack(h, { gap: "1.5" }, [
+					// In the flow, not in the list's popup: there it sat over the next field's label.
+					dialogHelp(
+						h,
+						SCOPE_ENTRY_HELP_ID,
+						"Type a name and press Enter to add it. Commas separate several.",
+					),
 					dialogHelp(
 						h,
 						SCOPE_HELP_ID,
