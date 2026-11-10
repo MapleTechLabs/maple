@@ -7,6 +7,7 @@ import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import {
 	type RibbonCell,
+	headroomTone,
 	ruleBucket,
 	ruleConditionSummary,
 	ruleHeadroom,
@@ -26,6 +27,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
+import { HEADROOM_FILL } from "../shared/headroom-tone"
 import { ruleHref } from "../shared/links"
 import { isoMs } from "../shared/time"
 import { Message, type RuleBucket } from "./message"
@@ -55,8 +57,9 @@ const BUCKETS: ReadonlyArray<{ value: RuleBucket; label: string; tone: Tone }> =
 ]
 const BUCKET_TONE = new Map<RuleBucket, Tone>(Arr.map(BUCKETS, (bucket) => [bucket.value, bucket.tone]))
 
+// The ribbon is 28 cells of 4px; Routes takes the width that leaves, and Fired fits its heading on one line.
 const ROW_GRID =
-	"grid grid-cols-[12px_minmax(0,1fr)_170px_150px_minmax(0,160px)_48px_32px] items-center gap-4"
+	"grid grid-cols-[12px_minmax(0,1fr)_170px_112px_minmax(0,200px)_68px_32px] items-center gap-4"
 
 const capGroups = <T>(groups: ReadonlyArray<TagGroup<T>>, limit: number): Array<TagGroup<T>> =>
 	Arr.reduce<TagGroup<T>, { out: Array<TagGroup<T>>; left: number }>(
@@ -111,6 +114,8 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 		)
 	})
 	const groups = groupByTag(filtered, (rule) => rule.tags)
+	// One group of untagged rules is the whole list: its "No tag" header says nothing.
+	const isLoneUntagged = groups.length === 1 && groups[0]?.key === UNTAGGED_KEY
 	const totalRows = Arr.reduce(groups, 0, (sum, group) => sum + group.items.length)
 	const isCapped = !model.isShowingAllRules && totalRows > RENDER_LIMIT
 	const visibleGroups = isCapped ? capGroups(groups, RENDER_LIMIT) : groups
@@ -210,7 +215,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 										h.span([], ["Last ", String(RIBBON_DAYS), " days"]),
 										h.span([], ["Routes to"]),
 										h.span(
-											[h.Class("text-right")],
+											[h.Class("whitespace-nowrap text-right")],
 											["Fired ", String(FIRED_WINDOW_DAYS), "d"],
 										),
 										h.span([], []),
@@ -224,21 +229,31 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 									return h.section(
 										[h.Key(group.key), h.Class("border-b last:border-b-0")],
 										[
-											h.div(
-												[h.Class("border-b bg-surface-sunken px-4 py-2 text-xs")],
-												[
-													typography(h, { weight: "medium" }, [
-														group.key === UNTAGGED_KEY ? "No tag" : group.label,
+											...(isLoneUntagged
+												? []
+												: [
+														h.div(
+															[
+																h.Class(
+																	"border-b bg-surface-sunken px-4 py-2 text-xs",
+																),
+															],
+															[
+																typography(h, { weight: "medium" }, [
+																	group.key === UNTAGGED_KEY
+																		? "No tag"
+																		: group.label,
+																]),
+																typography(h, { tone: "muted" }, [
+																	" ",
+																	countLabel(group.count, "rule"),
+																	...(firingInGroup > 0
+																		? [` · ${firingInGroup} firing`]
+																		: []),
+																]),
+															],
+														),
 													]),
-													typography(h, { tone: "muted" }, [
-														" ",
-														countLabel(group.count, "rule"),
-														...(firingInGroup > 0
-															? [` · ${firingInGroup} firing`]
-															: []),
-													]),
-												],
-											),
 											dividedList(
 												h,
 												{ as: "ul", bordered: false },
@@ -274,7 +289,8 @@ const rulesSearch = (h: H, value: string): Html =>
 	searchInput(h, {
 		id: "alerts-rules-search",
 		size: "sm",
-		className: "w-full max-w-xs",
+		// A fixed width: a fluid one makes the row measure short, and the last filter chip wraps alone.
+		className: "w-64 max-w-full shrink-0",
 		placeholder: "Search rules, services, tags…",
 		value,
 		onInput: (next) => Message.ChangedRulesQuery({ value: next }),
@@ -395,7 +411,7 @@ const headroomMeter = (
 		return typography(h, { size: "xs", tone: "muted" }, ["Too few samples to check"])
 	if (value === null) return typography(h, { size: "xs", tone: "muted" }, ["Waiting on data"])
 	const meter = ruleHeadroom(rule, value)
-	const tone = meter.breached ? "bg-severity-error" : meter.isNear ? "bg-severity-warn" : "bg-severity-info"
+	const tone = headroomTone(meter)
 	const label = meter.breached
 		? "over threshold"
 		: meter.headroom !== null
@@ -408,7 +424,7 @@ const headroomMeter = (
 				[h.Class("relative h-1.5 rounded-full bg-muted")],
 				[
 					h.span([
-						h.Class(cn("absolute inset-y-0 left-0 rounded-full", tone)),
+						h.Class(cn("absolute inset-y-0 left-0 rounded-full", HEADROOM_FILL[tone])),
 						h.Style({ width: `${meter.fill * 100}%` }),
 					]),
 					...Arr.map(meter.ticks, (tick) =>

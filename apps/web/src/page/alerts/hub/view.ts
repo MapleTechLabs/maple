@@ -290,6 +290,7 @@ const hubBody = (
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),
 					serviceName: model.search.serviceName,
+					hasAnomalies: Arr.some(data.incidents, (incident) => incident.signalType === "anomaly"),
 					// Counted under the same service filter the list applies.
 					openAnomalies: Arr.filter(
 						data.openIncidents,
@@ -311,7 +312,7 @@ const hubBody = (
 									}),
 							})
 						: inboxTab(h, data, acknowledge)
-				return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), filters, body])
+				return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), ...filters, body])
 			}
 			return rulesTab(h, model, {
 				data,
