@@ -224,11 +224,9 @@ export const longestGap = (gaps: ReadonlyArray<Interval>): Option.Option<Interva
 		}),
 	)
 
-/** What the summary is about: the zone, the range picked and the stretch checked for gaps. */
+/** What the summary is about: the zone and the stretch checked for gaps. */
 export type GapScope = Readonly<{
 	timeZone: string
-	weekOffset: number
-	days: number
 	/** Gaps are checked over [checkedFromMs, checkedToMs): from now to the range's end. */
 	checkedFromMs: number
 	checkedToMs: number
@@ -244,18 +242,15 @@ export const isUncovered = (
 }
 
 /**
- * "2 gaps in the next 14 days, longest 16h (Sat 21 Nov 00:00 to 16:00)", "Covered for the next
- * 14 days", or "Nobody is on call for the next 14 days" when the one gap is everything checked.
+ * "2 gaps in this period, longest 16h (Sat 21 Nov 00:00 to 16:00)", "Covered in this period", or
+ * "Nobody is on call in this period" when the one gap is everything checked. "This period" is the
+ * range drawn: it ends at its last midnight, so a range from today is never a full "next N days".
  */
 export const gapSummary = (gaps: ReadonlyArray<Interval>, scope: GapScope): string => {
-	const isFromToday = scope.weekOffset === 0
-	if (isUncovered(gaps, scope))
-		return isFromToday
-			? `Nobody is on call for the next ${scope.days} days`
-			: "Nobody is on call in this period"
+	if (isUncovered(gaps, scope)) return "Nobody is on call in this period"
 	return Option.match(longestGap(gaps), {
-		onNone: () => (isFromToday ? `Covered for the next ${scope.days} days` : "Covered in this period"),
+		onNone: () => "Covered in this period",
 		onSome: (longest) =>
-			`${gaps.length} ${gaps.length === 1 ? "gap" : "gaps"} ${isFromToday ? `in the next ${scope.days} days` : "in this period"}, longest ${durationText(longest.endMs - longest.startMs)}${isOpenGap(longest, scope.checkedToMs) ? " or longer" : ""} (${gapRangeText(longest, scope.timeZone, scope.checkedToMs)})`,
+			`${gaps.length} ${gaps.length === 1 ? "gap" : "gaps"} in this period, longest ${durationText(longest.endMs - longest.startMs)}${isOpenGap(longest, scope.checkedToMs) ? " or longer" : ""} (${gapRangeText(longest, scope.timeZone, scope.checkedToMs)})`,
 	})
 }

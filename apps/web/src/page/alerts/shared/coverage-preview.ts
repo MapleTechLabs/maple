@@ -212,8 +212,6 @@ const gapLinks = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>): Htm
 const gapSummaryView = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>): Html => {
 	const scope = {
 		timeZone: options.timeZone,
-		weekOffset: options.weekOffset,
-		days: Number(options.rangeDays),
 		checkedFromMs: Math.max(options.fromMs, options.nowMs),
 		checkedToMs: options.toMs,
 	}

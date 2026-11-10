@@ -482,7 +482,7 @@ describe("on-call schedule page", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("Covered for the next 14 days")).toExist(),
+			expectView(text("Covered in this period")).toExist(),
 			expectView(role("group", { name: "Range" })).toExist(),
 		)
 		const month = pageUpdate(model, Message.PickedRange({ days: "28" }))

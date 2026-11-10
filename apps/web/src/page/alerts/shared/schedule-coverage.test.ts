@@ -222,34 +222,38 @@ describe("previewRange", () => {
 describe("gapSummary", () => {
 	const scope = {
 		timeZone: "Europe/Berlin",
-		weekOffset: 0,
-		days: 14,
 		checkedFromMs: at("2026-11-10T10:30:00Z"),
 		checkedToMs: at("2026-11-23T23:00:00Z"),
 	}
 	it("says covered when there are no gaps", () => {
-		expect(gapSummary([], scope)).toBe("Covered for the next 14 days")
-		expect(gapSummary([], { ...scope, weekOffset: 2 })).toBe("Covered in this period")
+		expect(gapSummary([], scope)).toBe("Covered in this period")
+	})
+	it("names the range drawn, not a count of days: from now, a 14-day range ends short of 14 days", () => {
+		const nowMs = at("2026-11-10T10:30:00Z")
+		const range = previewRange(nowMs, "Europe/Berlin", 0, 14)
+		const today = { timeZone: "Europe/Berlin", checkedFromMs: nowMs, checkedToMs: range.endMs }
+		// What is counted stops at the range's last midnight, 11.5 hours before 14 days from now.
+		expect(range.endMs - nowMs).toBe(14 * 24 * HOUR - 11.5 * HOUR)
+		const late = { startMs: range.endMs - 2 * HOUR, endMs: range.endMs - HOUR }
+		expect(gapSummary([late], today)).toBe("1 gap in this period, longest 1h (Mon 23 Nov 22:00 to 23:00)")
+		expect(gapSummary([], today)).toBe("Covered in this period")
 	})
 	it("counts gaps and names the longest in the schedule's zone", () => {
 		const gaps = [
 			{ startMs: at("2026-11-19T23:00:00Z"), endMs: at("2026-11-20T01:00:00Z") },
 			{ startMs: at("2026-11-20T23:00:00Z"), endMs: at("2026-11-21T15:00:00Z") },
 		]
-		expect(gapSummary(gaps, scope)).toBe(
-			"2 gaps in the next 14 days, longest 16h (Sat 21 Nov 00:00 to 16:00)",
-		)
+		expect(gapSummary(gaps, scope)).toBe("2 gaps in this period, longest 16h (Sat 21 Nov 00:00 to 16:00)")
 	})
 	it("says nobody is on call when the one gap is everything checked", () => {
 		const whole = [{ startMs: scope.checkedFromMs, endMs: scope.checkedToMs }]
-		expect(gapSummary(whole, scope)).toBe("Nobody is on call for the next 14 days")
-		expect(gapSummary(whole, { ...scope, weekOffset: 1 })).toBe("Nobody is on call in this period")
+		expect(gapSummary(whole, scope)).toBe("Nobody is on call in this period")
 	})
 	it("gives a gap cut off by the range's end no end time", () => {
 		const closed = { startMs: at("2026-11-12T08:00:00Z"), endMs: at("2026-11-12T10:00:00Z") }
 		const open = { startMs: at("2026-11-21T07:00:00Z"), endMs: scope.checkedToMs }
 		expect(gapSummary([closed, open], scope)).toBe(
-			"2 gaps in the next 14 days, longest 2d 16h or longer (from Sat 21 Nov 08:00)",
+			"2 gaps in this period, longest 2d 16h or longer (from Sat 21 Nov 08:00)",
 		)
 		expect(gapRangeText(closed, "Europe/Berlin", scope.checkedToMs)).toBe("Thu 12 Nov 09:00 to 11:00")
 		expect(gapRangeText(open, "Europe/Berlin", scope.checkedToMs)).toBe("from Sat 21 Nov 08:00")
