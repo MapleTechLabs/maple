@@ -12,7 +12,6 @@ import {
 	fromUnion,
 	type CHQuery,
 	type ColumnAccessor,
-	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
@@ -260,23 +259,6 @@ export type ServiceCommitTuple = readonly [
 	firstSeen: DateTime.Utc,
 ]
 
-export interface ServiceOverviewOutput {
-	readonly serviceName: string
-	readonly serviceNamespace: string
-	readonly environment: string
-	readonly throughput: number
-	readonly errorCount: number
-	readonly estimatedErrorCount: number
-	readonly spanCount: number
-	readonly p50LatencyMs: number
-	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
-	readonly estimatedSpanCount: number
-	readonly firstSeen: DateTime.Utc
-	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
-	readonly commits: readonly ServiceCommitTuple[]
-}
-
 export const serviceOverviewRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	serviceNamespace: Schema.String,
@@ -293,8 +275,11 @@ export const serviceOverviewRowSchema = Schema.Struct({
 	// `CHNumber`, never `Schema.Number`: the counts are UInt64, and a
 	// gateway/readonly cluster that refuses `output_format_json_quote_64bit_integers=0`
 	// returns them as quoted strings.
+	/** Sorted by span count descending, capped at {@link SERVICE_OVERVIEW_COMMIT_CAP}. */
 	commits: Schema.Array(Schema.Tuple([Schema.String, CHNumber, CHNumber, DateTimeUtcFromWarehouse])),
-}) satisfies CompiledQueryRowSchema<ServiceOverviewOutput>
+})
+
+export type ServiceOverviewOutput = typeof serviceOverviewRowSchema.Type
 
 export interface ServiceCatalogOpts {
 	serviceName?: string
@@ -456,10 +441,6 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 
 // Service presence
 
-export interface ServicePresenceOutput {
-	readonly spanCount: number
-}
-
 /**
  * Span count for one service over the window, from the same tiers as
  * `serviceOverviewQuery`. Group-less, so it always returns one row and is not
@@ -478,7 +459,9 @@ export function servicePresenceQuery(opts: { serviceName: string }) {
 
 export const servicePresenceRowSchema = Schema.Struct({
 	spanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<ServicePresenceOutput>
+})
+
+export type ServicePresenceOutput = typeof servicePresenceRowSchema.Type
 
 // Service health snapshot
 
@@ -783,23 +766,6 @@ export interface ServiceUsageOpts {
 	serviceNames?: readonly string[]
 }
 
-export interface ServiceUsageOutput {
-	readonly serviceName: string
-	readonly totalLogCount: number
-	readonly totalLogSizeBytes: number
-	readonly totalTraceCount: number
-	readonly totalTraceSizeBytes: number
-	readonly totalSumMetricCount: number
-	readonly totalSumMetricSizeBytes: number
-	readonly totalGaugeMetricCount: number
-	readonly totalGaugeMetricSizeBytes: number
-	readonly totalHistogramMetricCount: number
-	readonly totalHistogramMetricSizeBytes: number
-	readonly totalExpHistogramMetricCount: number
-	readonly totalExpHistogramMetricSizeBytes: number
-	readonly totalSizeBytes: number
-}
-
 export const serviceUsageRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	totalLogCount: CHNumber,
@@ -815,7 +781,9 @@ export const serviceUsageRowSchema = Schema.Struct({
 	totalExpHistogramMetricCount: CHNumber,
 	totalExpHistogramMetricSizeBytes: CHNumber,
 	totalSizeBytes: CHNumber,
-}) satisfies CompiledQueryRowSchema<ServiceUsageOutput>
+})
+
+export type ServiceUsageOutput = typeof serviceUsageRowSchema.Type
 
 export function serviceUsageQuery(opts: ServiceUsageOpts) {
 	return from(Datasources.serviceUsage)
@@ -860,21 +828,16 @@ export function serviceUsageQuery(opts: ServiceUsageOpts) {
 		.format("JSON")
 }
 
-export interface TraceSpanVolumeOutput {
-	readonly serviceName: string
-	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
-	readonly spanCount: number
-	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
-	readonly firstHourSpanCount: number
-	readonly lastHourSpanCount: number
-}
-
 export const traceSpanVolumeRowSchema = Schema.Struct({
 	serviceName: Schema.String,
+	/** Stored spans (not sample-weighted): what a raw `traces` scan reads. */
 	spanCount: CHNumber,
+	/** The share of `spanCount` in the window's first and last hour, which it only partly covers. */
 	firstHourSpanCount: CHNumber,
 	lastHourSpanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<TraceSpanVolumeOutput>
+})
+
+export type TraceSpanVolumeOutput = typeof traceSpanVolumeRowSchema.Type
 
 /** Stored spans per service over every hour overlapping the window: sizes a raw `traces` scan before it runs. */
 export function traceSpanVolumeByServiceQuery() {

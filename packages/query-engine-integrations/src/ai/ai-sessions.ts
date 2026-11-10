@@ -132,7 +132,6 @@ import {
 	unionAll,
 	type CHUnionQuery,
 	type ColumnAccessor,
-	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
@@ -1412,21 +1411,7 @@ export interface AiTraceSpansOpts extends AiSessionSpansOpts {
 	readonly traceIds?: readonly string[]
 }
 
-export interface AiSessionSpansOutput {
-	readonly traceId: string
-	readonly spanId: string
-	readonly parentSpanId: string
-	readonly spanName: string
-	readonly spanKind: string
-	readonly serviceName: string
-	readonly durationMs: number
-	readonly statusCode: string
-	readonly statusMessage: string
-	readonly timestamp: string
-	readonly spanAttributes: Record<string, string>
-}
-
-export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutput> = Schema.Struct({
+export const aiSessionSpansRowSchema = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	parentSpanId: Schema.String,
@@ -1442,6 +1427,8 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	// observability path, which reads maps already serialized to a string.
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
+
+export type AiSessionSpansOutput = typeof aiSessionSpansRowSchema.Type
 
 /**
  * A span's attribute map cut down to what `mapAiSpan` reads. Measured on
@@ -1609,47 +1596,6 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 // Session summary — the whole session's totals, computed where the spans are
 // ---------------------------------------------------------------------------
 
-/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
-export interface AiSessionTotalsOutput {
-	readonly traceCount: number
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
-}
-
-export interface AiSessionSummaryOutput {
-	readonly turnKey: string
-	readonly conversationId: string
-	readonly traceIds: readonly string[]
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
-}
-
 const summaryMeasures = {
 	startTime: Schema.String,
 	endTime: Schema.String,
@@ -1668,17 +1614,22 @@ const summaryMeasures = {
 	agentNames: Schema.Array(Schema.String),
 }
 
-export const aiSessionSummaryRowSchema: CompiledQueryRowSchema<AiSessionSummaryOutput> = Schema.Struct({
+export const aiSessionSummaryRowSchema = Schema.Struct({
 	turnKey: Schema.String,
 	conversationId: Schema.String,
 	traceIds: Schema.Array(Schema.String),
 	...summaryMeasures,
 })
 
-export const aiSessionTotalsRowSchema: CompiledQueryRowSchema<AiSessionTotalsOutput> = Schema.Struct({
+export type AiSessionSummaryOutput = typeof aiSessionSummaryRowSchema.Type
+
+export const aiSessionTotalsRowSchema = Schema.Struct({
 	traceCount: CHNumber,
 	...summaryMeasures,
 })
+
+/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
+export type AiSessionTotalsOutput = typeof aiSessionTotalsRowSchema.Type
 
 /** Distinct values one turn row keeps of an open-ended dimension. */
 const SUMMARY_ARRAY_CAP = 50

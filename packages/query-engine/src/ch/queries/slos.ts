@@ -3,9 +3,9 @@
 // An SLO counts a service's entry-point spans (the spans the service overview counts) as good
 // or bad. Counts are sampling-weighted (`SampleRate`), like the service overview's estimates.
 
-import { type DateTime, Schema } from "effect"
+import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { fromUnion, param, unionAll, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { fromUnion, param, unionAll } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import type { SloLatencyThresholdMs } from "@maple/domain/primitives"
 import type { SloSli } from "@maple/domain/slo"
@@ -165,17 +165,14 @@ const sloBuckets = (opts: SloScope, grain: SloReadGrain) => {
 	}
 }
 
-export interface SloTotalsOutput {
-	/** Sampling-weighted entry-point spans in the window. */
-	readonly total: number
-	/** The good ones among them. */
-	readonly good: number
-}
-
 export const sloTotalsRowSchema = Schema.Struct({
+	/** Sampling-weighted entry-point spans in the window. */
 	total: CHNumber,
+	/** The good ones among them. */
 	good: CHNumber,
-}) satisfies CompiledQueryRowSchema<SloTotalsOutput>
+})
+
+export type SloTotalsOutput = typeof sloTotalsRowSchema.Type
 
 /** Good and total events over `[startTime, endTime]`, one row. */
 export function sloTotalsQuery(opts: SloSliQueryOpts) {
@@ -184,15 +181,12 @@ export function sloTotalsQuery(opts: SloSliQueryOpts) {
 		.format("JSON")
 }
 
-export interface SloBucketsOutput extends SloTotalsOutput {
-	readonly bucket: DateTime.Utc
-}
-
 export const sloBucketsRowSchema = Schema.Struct({
 	bucket: DateTimeUtcFromWarehouse,
-	total: CHNumber,
-	good: CHNumber,
-}) satisfies CompiledQueryRowSchema<SloBucketsOutput>
+	...sloTotalsRowSchema.fields,
+})
+
+export type SloBucketsOutput = typeof sloBucketsRowSchema.Type
 
 /**
  * Good and total events per `bucketSeconds` over `[startTime, endTime]`. `hour` needs a bucket
@@ -217,17 +211,13 @@ export interface SloGroupQueryOpts {
 	readonly sli: SloSli
 }
 
-export interface SloTotalsByServiceOutput extends SloTotalsOutput {
-	readonly serviceName: string
-	readonly environment: string
-}
-
 export const sloTotalsByServiceRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
-	total: CHNumber,
-	good: CHNumber,
-}) satisfies CompiledQueryRowSchema<SloTotalsByServiceOutput>
+	...sloTotalsRowSchema.fields,
+})
+
+export type SloTotalsByServiceOutput = typeof sloTotalsByServiceRowSchema.Type
 
 /** `sloTotalsQuery` for many services in one read: the SLOs tab sums the rows each SLO counts. */
 export function sloTotalsByServiceQuery(opts: SloGroupQueryOpts) {
@@ -242,19 +232,6 @@ export function sloTotalsByServiceQuery(opts: SloGroupQueryOpts) {
 		.format("JSON")
 }
 
-export interface SloBurnByServiceOutput {
-	readonly serviceName: string
-	readonly environment: string
-	readonly total5: number
-	readonly good5: number
-	readonly total30: number
-	readonly good30: number
-	readonly total60: number
-	readonly good60: number
-	readonly total360: number
-	readonly good360: number
-}
-
 export const sloBurnByServiceRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
@@ -266,7 +243,9 @@ export const sloBurnByServiceRowSchema = Schema.Struct({
 	good60: CHNumber,
 	total360: CHNumber,
 	good360: CHNumber,
-}) satisfies CompiledQueryRowSchema<SloBurnByServiceOutput>
+})
+
+export type SloBurnByServiceOutput = typeof sloBurnByServiceRowSchema.Type
 
 /** Minute buckets in the `minutes` before `endTime`, as the burn windows count them. */
 const inLastMinutes = (minutes: number) =>

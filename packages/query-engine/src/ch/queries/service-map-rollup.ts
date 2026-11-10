@@ -13,7 +13,7 @@
 // into `ingest` with no reshaping.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import { utcAsWireString } from "./utc-bridge"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -80,24 +80,7 @@ export const serviceMapRollupWindowParams = (orgId: OrgId, oldestHourMs: number,
 	endTime: formatWarehouseDateTime(currentHourMs),
 })
 
-/** One pre-aggregated service-to-service edge bucket — mirrors the columns of
- * the `service_map_edges_hourly` ClickHouse table. */
-export interface ServiceMapEdgesHourlyOutput {
-	readonly OrgId: OrgId
-	readonly Hour: string
-	readonly SourceService: string
-	readonly TargetService: string
-	readonly DeploymentEnv: string
-	readonly CallCount: number
-	readonly ErrorCount: number
-	readonly DurationSumMs: number
-	readonly MaxDurationMs: number
-	readonly SampledSpanCount: number
-	readonly UnsampledSpanCount: number
-	readonly SampleRateSum: number
-}
-
-const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesHourlyOutput> = Schema.Struct({
+const ServiceMapEdgesHourlyOutputSchema = Schema.Struct({
 	// The tables' OrgId column is branded, so the derived output is too — a
 	// declared schema may only narrow, so it has to say the brand as well.
 	OrgId,
@@ -113,6 +96,10 @@ const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesH
 	UnsampledSpanCount: CHNumber,
 	SampleRateSum: CHNumber,
 })
+
+/** One pre-aggregated service-to-service edge bucket — mirrors the columns of
+ * the `service_map_edges_hourly` ClickHouse table. */
+export type ServiceMapEdgesHourlyOutput = typeof ServiceMapEdgesHourlyOutputSchema.Type
 
 export interface ServiceMapEdgesRollupParams {
 	readonly orgId: OrgId

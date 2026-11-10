@@ -27,13 +27,7 @@
 
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import {
-	from,
-	param,
-	unionAll,
-	type CHUnionQuery,
-	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-orm/clickhouse"
+import { from, param, unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
@@ -77,12 +71,6 @@ export function serviceLivenessQuery(opts: ServiceLivenessOpts = {}) {
 			CH.whenTrue(!!opts.scopeToEnvironment, () => $.DeploymentEnv.eq(param.string("deploymentEnv"))),
 		])
 		.format("JSON")
-}
-
-export interface TelemetryPulseOutput {
-	readonly signal: string
-	readonly count: number
-	readonly lastSeen: string
 }
 
 /**
@@ -202,4 +190,6 @@ export const ingestFreshnessRowSchema = Schema.Struct({
 	signal: Schema.String,
 	count: CHNumber,
 	lastSeen: Schema.String,
-}) satisfies CompiledQueryRowSchema<TelemetryPulseOutput>
+})
+
+export type TelemetryPulseOutput = typeof ingestFreshnessRowSchema.Type

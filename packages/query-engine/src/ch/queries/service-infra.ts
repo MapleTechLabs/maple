@@ -25,7 +25,7 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
@@ -47,18 +47,7 @@ export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceWorkloadsOutput {
-	readonly serviceName: string
-	readonly workloadKind: "deployment" | "statefulset" | "daemonset" | "unknown"
-	readonly workloadName: string
-	readonly namespace: string
-	readonly clusterName: string
-	readonly podCount: number
-	readonly avgCpuLimitUtilization: number | null
-	readonly avgMemoryLimitUtilization: number | null
-}
-
-const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutput> = Schema.Struct({
+const ServiceWorkloadsOutputSchema = Schema.Struct({
 	serviceName: Schema.String,
 	workloadKind: Schema.Literals(["deployment", "statefulset", "daemonset", "unknown"]),
 	workloadName: Schema.String,
@@ -68,6 +57,8 @@ const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutpu
 	avgCpuLimitUtilization: Schema.NullOr(CHNumber),
 	avgMemoryLimitUtilization: Schema.NullOr(CHNumber),
 })
+
+export type ServiceWorkloadsOutput = typeof ServiceWorkloadsOutputSchema.Type
 
 // `IN ()` is invalid SQL, so an empty service list short-circuits to a
 // zero-row result with the right column shape.
@@ -241,30 +232,21 @@ export interface ServiceRuntimesOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceRuntimesOutput {
+const ServiceRuntimesOutputSchema = Schema.Struct({
 	/** The series' `service.name`; `tracedServiceOfRuntime` maps it to the traced service. */
-	readonly metricServiceName: string
-	readonly metricName: string
-	/** GCP project, AWS account or Cloudflare account. */
-	readonly account: string
-	readonly region: string
-	/** ECS cluster. */
-	readonly cluster: string
-	readonly railwayServiceId: string
-	readonly railwayEnvironmentId: string
-	readonly railwayEnvironmentName: string
-}
-
-const ServiceRuntimesOutputSchema: CompiledQueryRowSchema<ServiceRuntimesOutput> = Schema.Struct({
 	metricServiceName: Schema.String,
 	metricName: Schema.String,
+	/** GCP project, AWS account or Cloudflare account. */
 	account: Schema.String,
 	region: Schema.String,
+	/** ECS cluster. */
 	cluster: Schema.String,
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
 })
+
+export type ServiceRuntimesOutput = typeof ServiceRuntimesOutputSchema.Type
 
 export function serviceRuntimesSQL(
 	opts: ServiceRuntimesOpts,

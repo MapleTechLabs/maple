@@ -20,7 +20,7 @@
 
 import { type DateTime, Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { dateTime64, from, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { dateTime64, from } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
@@ -100,16 +100,12 @@ export function dailySessionCountQuery() {
 		.format("JSON")
 }
 
-export interface DailyProductEventCountOutput {
-	readonly day: DateTime.Utc
-	readonly events: number
-}
+export const dailyProductEventCountRowSchema = Schema.Struct({
+	day: dateTime64.schema,
+	events: CHNumber,
+})
 
-export const dailyProductEventCountRowSchema: CompiledQueryRowSchema<DailyProductEventCountOutput> =
-	Schema.Struct({
-		day: dateTime64.schema,
-		events: CHNumber,
-	})
+export type DailyProductEventCountOutput = typeof dailyProductEventCountRowSchema.Type
 
 /**
  * Per-UTC-day billable product events for one org.

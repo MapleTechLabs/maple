@@ -6,49 +6,32 @@
 
 import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
-import {
-	from,
-	param,
-	type ColumnAccessor,
-	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-orm/clickhouse"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
 
-export interface SourceUsageHourlyOutput {
-	/** ClickHouse datetime literal of the hour bucket start. */
-	readonly hour: string
-	readonly spans: number
-	readonly logs: number
-	readonly metrics: number
-	readonly bytes: number
-}
-
 export const sourceUsageHourlyRowSchema = Schema.Struct({
+	/** ClickHouse datetime literal of the hour bucket start. */
 	hour: Schema.String,
 	spans: CHNumber,
 	logs: CHNumber,
 	metrics: CHNumber,
 	bytes: CHNumber,
-}) satisfies CompiledQueryRowSchema<SourceUsageHourlyOutput>
+})
 
-export interface SourceUsageTotalsOutput {
-	/** The public `src_` id stamped as `maple_source_id`. */
-	readonly sourceId: string
-	readonly spans: number
-	readonly logs: number
-	readonly metrics: number
-	readonly bytes: number
-}
+export type SourceUsageHourlyOutput = typeof sourceUsageHourlyRowSchema.Type
 
 export const sourceUsageTotalsRowSchema = Schema.Struct({
+	/** The public `src_` id stamped as `maple_source_id`. */
 	sourceId: Schema.String,
 	spans: CHNumber,
 	logs: CHNumber,
 	metrics: CHNumber,
 	bytes: CHNumber,
-}) satisfies CompiledQueryRowSchema<SourceUsageTotalsOutput>
+})
+
+export type SourceUsageTotalsOutput = typeof sourceUsageTotalsRowSchema.Type
 
 type Columns = ColumnAccessor<typeof Datasources.sourceUsageHourly.columns>
 
