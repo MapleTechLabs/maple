@@ -1,6 +1,17 @@
 import { Option } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
-import { Command, click, expect, given, Mount, role, scene, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	Command,
+	click,
+	expect,
+	expectAll,
+	given,
+	Mount,
+	role,
+	scene,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import { SaveCollapsedNavGroups } from "./command"
 import { Message } from "./message"
@@ -97,6 +108,24 @@ describe("sidebar groups", () => {
 			expect(logs).toBeAbsent(),
 			expect(role("link", { name: "Traces" })).toBeAbsent(),
 			expect(dashboards).toBeAbsent(),
+		)
+	})
+
+	test("one link is the current page: the sub-item while its section is open, the section once folded", () => {
+		const explore = role("link", { name: "Explore" })
+		const current = all.role("link", { current: "page" })
+		scene(
+			// Explore links to `/traces`, the page its Traces sub-item is.
+			{ update, view: shellAt("/traces") },
+			given(signedIn()),
+			measured,
+			expectAll(current).toHaveCount(1),
+			expect(role("link", { name: "Traces" })).toHaveAttr("aria-current", "page"),
+			expect(explore).toHaveAttr("data-active", "child"),
+			click(analyze),
+			Command.resolve(SaveCollapsedNavGroups, Message.CompletedSaveNavGroups()),
+			expectAll(current).toHaveCount(1),
+			expect(explore).toHaveAttr("aria-current", "page"),
 		)
 	})
 

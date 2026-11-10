@@ -98,7 +98,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 - Hover fills: a row, list item or chip hovers `bg-surface-sunken`, and a chip already on
   `surface-sunken` hovers `surface-strong`. A control (ghost button, toggle, tab, menu trigger)
   hovers `bg-accent`, and only the kit in `packages/ui` draws one. `hover:bg-muted` is never right
-  (`maple/surface-washes`).
+  (`maple/surface-washes`). A sidebar row hovers `bg-sidebar-accent/50`, half its selected tint:
+  the sidebar is already grey in the light theme, where a neutral wash does not show.
 - Hover outlines: a pickable card or chip hovers `border-border-strong`, a toned one its tone's
   `-a4` edge. `ring` is focus only, and `foreground` or a `/NN` tone is never a hover edge
   (`maple/hover-edge`).

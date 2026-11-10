@@ -15,6 +15,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
+import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
@@ -425,6 +426,40 @@ describe("RailwayMetricsService", () => {
 				const status = yield* railway.sync(orgId)
 				assert.strictEqual(calls.ingest.length, 2)
 				assert.isNotNull(status.environments[0].lastSyncedAt)
+			}),
+		)
+	})
+
+	it.effect("polls with a token that was stored before secrets were sealed per slot", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const stub = stubFetch(calls)
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				const stored = yield* encryptAes256Gcm(
+					"rw_stored_earlier",
+					Buffer.alloc(32, 9),
+					(message) => message,
+					Buffer.from(`railway-token:${orgId}`),
+				)
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						`UPDATE railway_connections SET token_ciphertext = $1, token_iv = $2, token_tag = $3
+						 WHERE org_id = $4 RETURNING id`,
+						[stored.ciphertext, stored.iv, stored.tag, orgId],
+					),
+				)
+				yield* resetWatermarks(testDb)
+				const before = calls.railway.length
+				yield* railway.sync(orgId)
+				const polled = Arr.drop(calls.railway, before)
+				assert.isAbove(polled.length, 0)
+				assert.isTrue(Arr.every(polled, (call) => call.authorization === "Bearer rw_stored_earlier"))
 			}),
 		)
 	})

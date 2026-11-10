@@ -41,6 +41,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Opens credentials a connector sealed on a workspace row; only those connectors need it.
 		optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+		optionalSecret("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
 	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
