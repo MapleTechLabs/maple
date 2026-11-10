@@ -237,6 +237,20 @@ describe("audit log tab", () => {
 		expect(picked.model.customRange).toBeNull()
 	})
 
+	test("opening the custom range moves focus into the popover, so Escape still closes it", () => {
+		const search = { tab: "audit-log" } as const
+		const opened = update(
+			init(search).model,
+			Message.ResolvedCustomToday({
+				timeZone: "UTC",
+				today: { year: 2026, month: 11, day: 9 },
+				lastDay: { year: 2026, month: 11, day: 9 },
+			}),
+			search,
+		)
+		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toEqual(["FocusAuditDateRange"])
+	})
+
 	describe("an entry's detail", () => {
 		const search = { tab: "audit-log" } as const
 		const loadedWith = (searchFor: typeof SettingsSearch.Type) => {
@@ -420,6 +434,31 @@ describe("audit log tab", () => {
 				search,
 			).model
 			scene(sceneOf(search), given(opened), expectView(text("Surface")).toExist())
+		})
+
+		test("an open entry offers a filter beside its actor, action and resource", () => {
+			const target = AUDIT_ENTRIES[2]
+			if (target === undefined) throw new Error("fixture")
+			const opened = update(
+				loadedWith(search).model,
+				Message.ToggledEntry({ id: target.id }),
+				search,
+			).model
+			scene(
+				sceneOf(search),
+				given(opened),
+				expectView(role("button", { name: "Show every entry with this actor" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this action" })).toExist(),
+				expectView(role("button", { name: "Show every entry with this resource" })).toExist(),
+			)
+		})
+
+		test("a row names the kind of actor behind an API key", () => {
+			scene(
+				sceneOf(search),
+				given(loadedWith(search).model),
+				expectView(role("img", { name: "API key" })).toExist(),
+			)
 		})
 
 		test("the Origin section names the country an entry came from", () => {
