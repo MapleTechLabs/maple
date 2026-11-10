@@ -16,16 +16,13 @@ import { ProductEdit, type StepScope, type StepTextField } from "./product-edit"
 import { SUGGESTION_LOOKUPS, suggestionRequestOf } from "./suggestions"
 import type { Return } from "./update"
 
-// The list, funnel and paths panels' steps: their edits, the step inputs' comboboxes, and the
-// suggestions the funnel and paths panels fetch while they are shown.
-
-/** The funnel's step editor or the paths panel is on screen (`showFunnelPanel`, `isPaths`). */
+/** The funnel's step editor or the paths panel is on screen. */
 export const showsProductPanel = (model: Model): boolean =>
 	model.state !== null &&
 	(isProductEventsFunnel(model.state) ||
 		toPanelType(model.state.visualization, model.state.chartId) === "paths")
 
-/** `suggestionWindow`: the widget's own range, else the board's. */
+/** The widget's own range, else the board's. */
 export const suggestionWindowOf = (model: Model, context: PageContext): TimeWindow | null => {
 	const range = model.state?.timeRange ?? model.timeRange
 	if (range === null || model.nowMs === null) return null
@@ -43,7 +40,7 @@ export const eventNamesKeyOf = (orgId: string, window: TimeWindow): string => {
 	return requestKey(orgId, operation, { data })
 }
 
-/** `useFunnelSuggestions`: the three lookups, once a panel that reads them is shown. */
+/** The three lookups, once a panel that reads them is shown. */
 export const requestSuggestions = (model: Model, context: PageContext): Return => {
 	const window = showsProductPanel(model) ? suggestionWindowOf(model, context) : null
 	if (window === null) return { model }
@@ -88,7 +85,7 @@ const parseComboId = (
 	})
 }
 
-/** `SuggestingInput`: the value is whatever was typed, and picking a suggestion types it. */
+/** The value is whatever was typed, and picking a suggestion types it. */
 export const stepComboStep = (
 	model: Model,
 	context: PageContext,

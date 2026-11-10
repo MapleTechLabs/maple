@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { sheetTitleStyles } from "@maple/ui/styles/ui/sheet"
+import { sheetTitleStyles } from "@maple/views/ui/sheet.styles"
 import { linkButton } from "@maple/views/ui/button"
 import * as ContextMenu from "@maple/views/ui/context-menu"
 import * as ContextMenuView from "@maple/views/ui/context-menu-view"

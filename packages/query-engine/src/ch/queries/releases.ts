@@ -8,15 +8,10 @@
 import { type DateTime, Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import {
-	param,
-	from,
-	fromQuery,
-	type CHQuery,
-	type CompiledQueryRowSchema,
-} from "@maple-dev/effect-orm/clickhouse"
+import { param, from, fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import { ErrorEventsByTime, ServiceOverviewSpans, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
 import { serviceOverviewWhereConditions } from "./query-helpers"
@@ -47,20 +42,6 @@ export interface ReleasesListOpts {
 	readonly limit?: number
 }
 
-export interface ReleasesListOutput {
-	readonly serviceName: string
-	readonly environment: string
-	readonly commitSha: string
-	readonly firstSeen: DateTime.Utc
-	readonly spanCount: number
-	readonly errorCount: number
-	readonly p50LatencyMs: number
-	readonly p95LatencyMs: number
-	readonly p99LatencyMs: number
-	readonly apdexSatisfiedCount: number
-	readonly apdexToleratingCount: number
-}
-
 export const releasesListRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
@@ -75,7 +56,9 @@ export const releasesListRowSchema = Schema.Struct({
 	p99LatencyMs: CHNumber,
 	apdexSatisfiedCount: CHNumber,
 	apdexToleratingCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<ReleasesListOutput>
+})
+
+export type ReleasesListOutput = typeof releasesListRowSchema.Type
 
 /**
  * One row per (service, environment, commit) in the window, newest first.
@@ -128,27 +111,20 @@ export function releasesListQuery(opts: ReleasesListOpts = {}) {
 		.format("JSON")
 }
 
-// Running commits
-//
 // Which commit each service served traffic from in the window, for the dependency scanner: a
 // vulnerable package matters most in the commit a busy service is running.
 
 /** At most this many (service, environment, commit) rows, busiest first. */
 export const RUNNING_COMMITS_CAP = 200
 
-export interface RunningCommitsOutput {
-	readonly serviceName: string
-	readonly environment: string
-	readonly commitSha: string
-	readonly spanCount: number
-}
-
 export const runningCommitsRowSchema = Schema.Struct({
 	serviceName: Schema.String,
 	environment: Schema.String,
 	commitSha: Schema.String,
 	spanCount: CHNumber,
-}) satisfies CompiledQueryRowSchema<RunningCommitsOutput>
+})
+
+export type RunningCommitsOutput = typeof runningCommitsRowSchema.Type
 
 /** The releases list without its latency and error columns, ordered by traffic. */
 export function runningCommitsQuery() {
@@ -167,8 +143,6 @@ export function runningCommitsQuery() {
 		.format("JSON")
 }
 
-// Releases timeline
-//
 // The org-wide sibling of `serviceReleasesTimelineQuery`: per bucket, per
 // service, per commit. Feeds the swimlanes and the per-service rollout share
 // (which version carried the last bucket's traffic).
@@ -199,7 +173,7 @@ const RELEASES_TIMELINE_CAP = 5000
 
 /** Sub-minute buckets: no rollup tier can place a row inside a minute. */
 function releasesTimelineRawQuery(opts: ReleasesTimelineOpts): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	return from(ServiceOverviewSpans)
+	return from(Datasources.serviceOverviewSpans)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			serviceName: $.ServiceName,
@@ -257,8 +231,6 @@ export function releasesTimelineQuery(
 		.format("JSON")
 }
 
-// Error fingerprints on a version
-//
 // The bridge from a release to the issues system. Traces key a release on
 // `vcs.ref.head.revision`; error events key on `service.version`, which Maple's
 // SDKs stamp with the same sha. Reads the per-occurrence projection because a
@@ -278,7 +250,7 @@ export interface ReleaseErrorFingerprintsOutput {
 }
 
 export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts) {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			count: CH.count(),
@@ -300,8 +272,6 @@ export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts
 		.format("JSON")
 }
 
-// Service deployments
-//
 // The releases list plus when each version last served, for deploy
 // verification in one call. `lastSeen` is the start of the last bucket the
 // version had traffic in: minute precision without the hourly tier, hour
@@ -317,14 +287,12 @@ export interface ServiceDeploymentsOpts {
 	readonly perServiceLimit?: number
 }
 
-export interface ServiceDeploymentsOutput extends ReleasesListOutput {
-	readonly lastSeen: DateTime.Utc
-}
-
 export const serviceDeploymentsRowSchema = Schema.Struct({
 	...releasesListRowSchema.fields,
 	lastSeen: DateTimeUtcFromWarehouse,
-}) satisfies CompiledQueryRowSchema<ServiceDeploymentsOutput>
+})
+
+export type ServiceDeploymentsOutput = typeof serviceDeploymentsRowSchema.Type
 
 export const DEPLOYMENTS_PER_SERVICE_CAP = 20
 

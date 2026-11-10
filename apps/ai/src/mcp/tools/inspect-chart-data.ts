@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
 import { truncate } from "../lib/format"
 import { resolveDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
@@ -98,7 +98,6 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			),
 			end_time: P.optionalTimestamp("End of the override window (pass with start_time)"),
 		}),
-		output: InspectChartDataOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting chart data"],
 		handler: Effect.fn("McpTool.inspectChartData")(function* ({

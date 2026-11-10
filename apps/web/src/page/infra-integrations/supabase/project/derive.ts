@@ -3,8 +3,6 @@ import { formatPercent } from "@maple/ui/lib/format"
 import type { SupabaseProjectTimeseriesRow } from "../model"
 import { Array as Arr, Record as Rec, Order } from "effect"
 
-// The pure halves of the project page's panels.
-
 type Row = SupabaseProjectTimeseriesRow
 
 const MIX_LABELS: ReadonlyArray<readonly [keyof SupabaseCallerMix, string]> = [

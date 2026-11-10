@@ -1,9 +1,11 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import { loadFleet, loadResources, loadSparks, loadStatus, ResourcesQuery, SparksInput } from "../data"
 import { readLocale } from "@maple/views/lib/locale"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
 export const ResolveWindow = Command.define("ResolveGcpWindow", {
 	args: {
@@ -62,9 +64,4 @@ export const FetchResources = Command.define("FetchGcpResources", {
 		Effect.map(loadResources(query), (result) => Message.CompletedFetchResources({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteGcpReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteGcpReloadSpin", Message.CompletedReloadSpin)

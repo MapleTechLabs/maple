@@ -1,4 +1,4 @@
-import { type ClerkClient, createClerkClient, type OrganizationMembership } from "@clerk/backend"
+import type { ClerkClient, OrganizationMembership } from "@clerk/backend"
 import {
 	AlertMemberDirectoryNotConfiguredError,
 	AlertMemberDirectoryUnavailableError,
@@ -6,9 +6,10 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Option, Redacted, Stream, String as Str } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkModeClient } from "@maple/auth"
 
 export interface OrgMember {
 	readonly userId: string
@@ -38,11 +39,6 @@ export interface UserOrganization {
 
 export interface OrgMembersServiceApi {
 	/**
-	 * Resolve workspace-member user ids to their emails via the auth provider.
-	 * Fails when any id is not a member of the org, or when member resolution
-	 * is unavailable (self-hosted mode without Clerk).
-	 */
-	/**
 	 * Every member of the org. Unlike {@link resolveMembers} this answers for
 	 * the directory as it is now, so a caller labelling historical records gets
 	 * the members it can name and nothing for ids that have since left.
@@ -67,6 +63,11 @@ export interface OrgMembersServiceApi {
 		ReadonlyArray<MemberActivity>,
 		AlertMemberDirectoryNotConfiguredError | AlertMemberDirectoryUnavailableError
 	>
+	/**
+	 * Resolve workspace-member user ids to their emails via the auth provider.
+	 * Fails when any id is not a member of the org, or when member resolution
+	 * is unavailable (self-hosted mode without Clerk).
+	 */
 	readonly resolveMembers: (
 		orgId: OrgId,
 		userIds: ReadonlyArray<UserId>,
@@ -81,10 +82,7 @@ export interface OrgMembersServiceApi {
 const make = Effect.gen(function* () {
 	const env = yield* Env
 
-	const clerk =
-		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
-			: null
+	const clerk = clerkModeClient(env) ?? null
 
 	const notConfigured = new AlertMemberDirectoryNotConfiguredError({
 		message: "Workspace member lookup requires Clerk authentication",

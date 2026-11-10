@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "@maple/ui/styles/ui/radio-group"
+import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "./radio-group.styles"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -12,14 +12,10 @@ import { hiddenInput, labelIdOf, toggleKey } from "./choice"
  * move to the next enabled radio and check it, as a native radio group does.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({ maybeValue: Schema.Option(Schema.String) })
 export type Model = typeof Model.Type
 
 export const init = (value?: string): Model => ({ maybeValue: Option.fromNullishOr(value) })
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	SelectedRadio: { value: Schema.String },
@@ -28,16 +24,12 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 export const FocusRadio = Command.define("FocusRadio", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedFocusRadio],
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusRadio())),
 })
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -50,8 +42,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		}),
 		CompletedFocusRadio: () => ({ model }),
 	})
-
-// VIEW
 
 export type RadioItem = Readonly<{ value: string; id: string; inputId: string; isDisabled?: boolean }>
 

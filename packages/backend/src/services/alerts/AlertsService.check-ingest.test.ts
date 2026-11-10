@@ -5,8 +5,7 @@ import { Duration, Effect, Fiber, HashMap, Option, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import type { OrgId } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService } from "./AlertsService"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	tracesRow,
 	makeWarehouseStub,
@@ -17,6 +16,7 @@ import {
 	createWebhookDestination,
 	createErrorRateRule,
 	insertDeliveryEventRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -86,7 +86,7 @@ describe("AlertsService alert_checks ingest", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const userId = asUserId("user_checks")
 				const rules = yield* Effect.forEach([ORG_OK, ORG_SLOW, ORG_STALLED, ORG_520], (orgId) =>
 					createWebhookDestination(alerts, orgId, userId).pipe(
@@ -167,7 +167,7 @@ describe("AlertsService alert_checks ingest", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const userId = asUserId("user_checks")
 			yield* Effect.forEach(orgs, (orgId) =>
 				createWebhookDestination(alerts, orgId, userId).pipe(

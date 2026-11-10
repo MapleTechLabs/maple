@@ -10,8 +10,6 @@ import { middleTruncate } from "../ui/middle-truncate"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 
-// `SpanTooltipContent` (packages/ui `traces/span-tooltip.tsx`).
-
 export interface SpanTooltipOptions {
 	readonly totalDurationMs?: number
 	readonly traceStartTime?: string

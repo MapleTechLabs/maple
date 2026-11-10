@@ -5,14 +5,12 @@ import {
 	type GcpSubscriptionScope,
 	type GcpWorkloadScope,
 	type RowRules,
-} from "../../../../components/infra/gcp/list-model"
+} from "../list-model"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Array as Arr } from "effect"
-
-// The band specs and `GcpHealthDot`.
 
 interface CellSpec {
 	readonly label: string
@@ -124,7 +122,7 @@ export const gcpWorkloadBand = (noun: string): GcpBandSpec<GcpWorkloadScope> => 
 	},
 })
 
-/** `GcpHealthDot`: the worst signal's tone, hollow for a quiet problem, blue when healthy. */
+/** The worst signal's tone, hollow for a quiet problem, blue when healthy. */
 export const healthDot = <S extends string, M>(
 	h: HtmlBuilder<M>,
 	spec: GcpBandSpec<S>,

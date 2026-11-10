@@ -2,8 +2,8 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
-import { hashIngestKey } from "@maple/db"
-import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/domain/primitives"
+import { hashIngestKey } from "../../platform/credential-tokens"
+import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -11,7 +11,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "./AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws, OTHER_TEST_OIDC_KEY, type FakeAws } from "./aws/fake-aws"
 

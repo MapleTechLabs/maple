@@ -1,15 +1,14 @@
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
 import { rawSqlIssue } from "@maple/domain/raw-sql"
-import { RAW_SQL_TEMPLATES } from "../../../lib/raw-sql/templates"
+import { RAW_SQL_TEMPLATES } from "../kit/raw-sql-templates"
 import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 import { Array as Arr, Schema, String as Str, Record as Rec } from "effect"
 import { toSeriesFieldOptions } from "./drafts"
 import type { EditorState } from "./editor-state"
 import type { Widget } from "./lowering"
 
-// The editor's Raw SQL source (`readRawSqlDraftFromWidget`, `buildRawSqlDataSource`): the SQL
-// draft, the staged copy the preview runs, and the
-// `raw_sql` data source Apply writes for the type picked in the editor.
+// The SQL draft, the staged copy the preview runs, and the `raw_sql` data source Apply writes for
+// the type picked in the editor.
 
 export const RawSqlDraft = Schema.Struct({
 	sql: Schema.String,
@@ -72,7 +71,7 @@ export const sqlValueFieldOf = (state: FieldState): string => {
 	return builderNames.has(field) ? "" : field
 }
 
-/** `buildRawSqlDataSource`: the transform follows the picked type, so only a stat or gauge reduces. */
+/** The transform follows the picked type, so only a stat or gauge reduces. */
 export const rawSqlDataSourceOf = (
 	widget: Widget,
 	draft: RawSqlDraft,

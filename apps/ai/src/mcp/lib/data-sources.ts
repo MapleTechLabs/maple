@@ -4,7 +4,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import type { ExternalDataSourceDocument, QueryLanguage, QueryPlanSummary } from "@maple/domain/data-sources"
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, McpUnavailableError } from "../tools/types"
 import { truncate } from "./format"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { stringifyJson } from "./json"
 
 /** The data source tools read through the agent audience: hidden sources and PII stay out. */
@@ -42,7 +42,6 @@ export const queryLanguageLabel = (language: QueryLanguage): string => {
 	return `${SQL_DIALECT_NAMES.get(dialect) ?? dialect} SQL`
 }
 
-/** `name (kind, query language, environment): description`, one per source. */
 /** A JSON string literal: the text cannot end the quote or start a new prompt section. */
 const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(/"/g, "'")(text)}"`
 
@@ -53,6 +52,7 @@ const quoted = (text: string): string => stringifyJson(text) ?? `"${Str.replace(
 export const untrustedText = (text: string, max = 300): string =>
 	quoted(truncate(Str.replace(/\s+/g, " ")(text), max))
 
+/** `name (kind, query language, environment): description`, one per source. */
 export const dataSourceLine = (source: {
 	readonly name: string
 	readonly kind: string

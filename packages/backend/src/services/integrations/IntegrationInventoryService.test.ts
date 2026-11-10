@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { RailwayConnections, RailwayEnvironments, ScrapeTargets } from "@maple/db/tables"
-import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/primitives"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -10,7 +10,7 @@ import {
 	createTestDb,
 	insertTestSource,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { IntegrationInventoryService } from "./IntegrationInventoryService"
 
 const createdDbs: TestDb[] = []

@@ -1,11 +1,6 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import {
-	activeFilterChips,
-	FILTER_SECTION_LABEL,
-	hasActiveFilters,
-	trafficIncludes,
-} from "../../components/analytics/filters"
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "./filters"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -32,8 +27,6 @@ import type { Breakdowns, Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
-
-// `AnalyticsFilterSidebar`: the page's filter rail.
 
 type H = HtmlBuilder<Message>
 

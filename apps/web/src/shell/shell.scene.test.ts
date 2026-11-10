@@ -22,7 +22,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import { FocusElement, SaveInfraSurfaces, SaveNamespace, SaveSidebarState, SaveTheme } from "./command"
-import { LoadInfraSurfaces, LoadNamespaces } from "./data"
+import { LoadInfraSurfaces, LoadNamespaces, LoadOnCall } from "./data"
 import { type Integration, Menu, Message, OutMessage } from "./message"
 import { DashboardsData, init, type Model, NamespacesData } from "./model"
 import { MeasureSidebarOverflow, MountNamespaceSearch, PositionMenu } from "./mounts"
@@ -96,7 +96,6 @@ const position = (menu: Menu) =>
 			anchor: { x: 8, y: 860, width: 203, height: 32 },
 		},
 	})
-// TESTS
 
 describe("sidebar collapse", () => {
 	test("the trigger folds the rail to icons, saves the cookie, and turns sections into menus", () => {
@@ -197,7 +196,8 @@ describe("sidebar collapse", () => {
 			given(signedIn({ isMobile: true })),
 			expect(sidebar).toBeAbsent(),
 			...open(),
-			Command.expectExact(LoadInfraSurfaces),
+			Command.expectExact(LoadInfraSurfaces, LoadOnCall),
+			Command.resolve(LoadOnCall, Message.FailedLoadOnCall({ orgId: "org_parity", failedAtMs: 0 })),
 			Command.resolve(LoadInfraSurfaces, surfacesAnswer("org_parity", [])),
 			Command.expectExact(SaveInfraSurfaces({ orgId: "org_parity", surfaces: [] })),
 			Command.resolve(SaveInfraSurfaces, Message.CompletedSaveInfraSurfaces()),
@@ -266,7 +266,6 @@ describe("menus", () => {
 		)
 	})
 })
-// ORG SWITCHER
 
 describe("org switcher", () => {
 	test("each opening re-reads the namespaces; picking one pins it for this org and reports it", () => {
@@ -421,6 +420,83 @@ describe("app update banner", () => {
 			Message.CheckedDeployedCommit({ maybeCommit: Option.some("f00dfeed") }),
 		)
 		expectVitest(outdated.model.isAppOutdated).toBe(true)
+	})
+})
+
+describe("alerts section", () => {
+	const measured = Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow())
+
+	test("on an alerts page, Alerts opens its sections with the open one current", () => {
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Rules" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Rules" })).toHaveAttr("href", "/alerts/rules"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Silences" })).toHaveAttr("href", "/alerts/silences"),
+			expect(role("link", { name: "On-call" })).toHaveAttr("href", "/alerts/on-call"),
+		)
+		scene(
+			{ update, view: shellAt("/alerts") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Inbox" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Rules" })).not.toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("a detail page marks the section it belongs to", () => {
+		scene(
+			{ update, view: shellAt("/alerts/schedules/sch_1") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "On-call" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+		)
+		scene(
+			{ update, view: shellAt("/alerts/uptime/mon_1") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Uptime" })).toHaveAttr("aria-current", "page"),
+		)
+		scene(
+			{ update, view: shellAt("/alerts/rules/0199a001-0000-7000-8000-000000000001") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Rules" })).toHaveAttr("aria-current", "page"),
+			expect(role("link", { name: "Inbox" })).not.toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("the Inbox counts unacknowledged incidents for this org", () => {
+		const counted = update(signedIn(), Message.UpdatedAlertsInboxCount({ orgId: "org_parity", count: 3 }))
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(counted.model),
+			measured,
+			expect(text("3")).toExist(),
+		)
+		// Nothing to act on shows no badge; another org's count is dropped, and an org change clears it.
+		scene(
+			{ update, view: shellAt("/alerts/rules") },
+			given(signedIn({ alertsInboxCount: 0 })),
+			measured,
+			expect(text("0")).toBeAbsent(),
+		)
+		const stray = update(signedIn(), Message.UpdatedAlertsInboxCount({ orgId: "org_other", count: 4 }))
+		expectVitest(stray.model.alertsInboxCount).toBeNull()
+		expectVitest(enter("org_other")(counted.model).model.alertsInboxCount).toBeNull()
+	})
+
+	test("elsewhere the sections stay hidden", () => {
+		scene(
+			{ update, view: shellAt("/logs") },
+			given(signedIn()),
+			measured,
+			expect(role("link", { name: "Alerts" })).toExist(),
+			expect(role("link", { name: "Silences" })).toBeAbsent(),
+		)
 	})
 })
 

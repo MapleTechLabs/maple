@@ -6,7 +6,7 @@ import {
 	GcpScopeType,
 	OrgId,
 	SourceId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 

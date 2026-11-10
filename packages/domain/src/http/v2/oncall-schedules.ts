@@ -23,7 +23,7 @@ import {
 	OnCallTimeZone,
 	OnCallWeekday,
 } from "../oncall-schedules"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { isoTimestamp, wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"

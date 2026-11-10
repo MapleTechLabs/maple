@@ -13,7 +13,6 @@ const TIMESTAMP_RE = /^(?:Date|Date32|DateTime|DateTime64)(?:\(.*\))?$/
 const STRING_RE = /^(?:String|FixedString\(\d+\)|Enum(?:8|16)?\(.*\)|UUID|IPv4|IPv6)$/s
 const JSON_RE = /^(?:JSON|Object|Map|Array|Tuple|Nested|Dynamic|Variant)\b/
 
-/** The Maple field type for a ClickHouse column type. */
 export const mapClickHouseType = (nativeType: string): CatalogFieldType => {
 	const base = unwrapType(nativeType)
 	if (base === "Bool") return "boolean"

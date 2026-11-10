@@ -49,7 +49,6 @@ export interface WindowStats {
 	readonly p95Ms: number
 }
 
-/** Whether `at` is at least `duration` after `since`. */
 export const elapsed = (since: DateTime.Utc, at: DateTime.Utc, duration: Duration.Duration): boolean =>
 	DateTime.isGreaterThanOrEqualTo(at, DateTime.addDuration(since, duration))
 
@@ -171,7 +170,6 @@ export const postMergeMarker = (reviewId: string) => `<!-- maple-pr-post-merge $
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`
 
-/** The follow-up comment on the merged pull request. */
 export const renderPostMergeComment = (reviewId: string, postMerge: PrReviewPostMerge): string => {
 	const { deploy } = postMerge
 	const when = Str.replace("T", " ")(Str.slice(0, 16)(DateTime.formatIso(deploy.firstSeen)))

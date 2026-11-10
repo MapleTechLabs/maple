@@ -1,4 +1,4 @@
-import { activeFilterChips } from "../../components/analytics/filters"
+import { activeFilterChips } from "./filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,7 +12,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../contract"
-import { pageTime } from "../infra-integrations/kit/page-time"
+import { pageTime } from "../kit/page-time"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
@@ -29,11 +29,9 @@ import { filtersRail, searchEventRail, showsBreakdownCards } from "./view-filter
 import { overviewContent, sharedPageFailure } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 
-// The web analytics page.
-
 type H = HtmlBuilder<Message>
 
-/** `AnalyticsLiveBadge`: silent until its first poll lands, then the last number it saw. */
+/** The live badge: silent until its first poll lands, then the last number it saw. */
 const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
 	const live = Option.getOrUndefined(AsyncData.getData(model.live.data))
 	if (live === undefined) return []

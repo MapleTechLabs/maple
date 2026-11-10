@@ -4,7 +4,7 @@ import {
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
-} from "../../../components/code-review/code-review-format"
+} from "../kit/code-review-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -17,8 +17,6 @@ import { Message, type Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
-
-// `FindingRow` and the findings list.
 
 type H = HtmlBuilder<Message>
 

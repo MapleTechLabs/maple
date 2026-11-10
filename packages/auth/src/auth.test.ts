@@ -40,7 +40,7 @@ const rootPassword = "root-password"
 const base64UrlJson = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
 
 // Takes the payload as raw JSON text so a test can express shapes `JSON.stringify`
-// cannot round-trip — notably an overflowing number literal, which `JSON.parse`
+// cannot round-trip: notably an overflowing number literal, which `JSON.parse`
 // turns into `Infinity` while `JSON.stringify(Infinity)` would emit `null`.
 const signClaimsJson = (claimsJson: string, header: unknown = { alg: "HS256", typ: "JWT" }): string => {
 	const data = `${base64UrlJson(header)}.${Buffer.from(claimsJson).toString("base64url")}`
@@ -626,7 +626,7 @@ describe("self-hosted session claims (correctly signed, malformed)", () => {
 	)
 
 	// `iat` is required, not optional: `signHs256Jwt` has always emitted one, so
-	// requiring it invalidates nothing already issued — and it is the claim the
+	// requiring it invalidates nothing already issued; and it is the claim the
 	// max-age rule needs in order to bound a token that predates `exp`.
 	it.effect("rejects a token with no iat claim", () =>
 		Effect.gen(function* () {
@@ -846,7 +846,7 @@ describe("self-hosted session temporal boundaries", () => {
 		}),
 	)
 
-	// A live `exp` does not rescue a session past its absolute deadline — that is
+	// A live `exp` does not rescue a session past its absolute deadline: that is
 	// the whole point of tracking the two separately.
 	it.effect("rejects a token whose session_exp has passed even though exp has not", () =>
 		Effect.gen(function* () {
@@ -906,7 +906,6 @@ describe("self-hosted session lifetime", () => {
 		}),
 	)
 
-	// The finding this change closes: a minted token used to verify forever.
 	it.effect("stops accepting a minted token once its TTL elapses", () =>
 		Effect.gen(function* () {
 			yield* advanceBy(clockSeconds)
@@ -998,7 +997,7 @@ describe("self-hosted session lifetime", () => {
 
 	// Rollout: a token minted before `session_exp` existed renews into a bounded
 	// one, and its deadline is the same one the max-age rule already enforces
-	// against it — renewal is not an escape from that clock.
+	// against it; renewal is not an escape from that clock.
 	it.effect("gives a legacy token a bounded deadline derived from its own iat", () =>
 		Effect.gen(function* () {
 			const legacyIat = clockSeconds - 3600
@@ -1201,7 +1200,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			)
 
 			// 403, and deliberately not the 401 that a missing active organization
-			// produces — a client must be able to tell "stop asking for that org"
+			// produces: a client must be able to tell "stop asking for that org"
 			// from "sign in again".
 			assertDenied(exit)
 		}),

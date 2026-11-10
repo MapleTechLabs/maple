@@ -11,9 +11,6 @@ import type { Message } from "./message"
 import type { Model } from "./model"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The rail's Affected users group: how many end users the issue hit in the window, how many of
-// its hits named a user at all, and the users it hit most, each opening their user page.
-
 type H = HtmlBuilder<Message>
 
 const USERS_SHOWN = 5
@@ -97,7 +94,6 @@ const attributedRows = (
 	]
 }
 
-/** The group, or its loading, failed and unattributed states in the same place. */
 export const affectedUsersGroup = (h: H, model: Model): Html =>
 	detailRailGroup(
 		h,

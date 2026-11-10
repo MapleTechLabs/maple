@@ -93,7 +93,6 @@ export const ArchiveProbe = {
 	},
 }
 
-/** Parse JSONEachRow text into an array of objects. */
 export const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 	Arr.map(
 		Arr.filter(
@@ -103,7 +102,6 @@ export const readRows = (text: string): ReadonlyArray<Record<string, unknown>> =
 		(line) => JSON.parse(line) as Record<string, unknown>,
 	)
 
-/** First JSONEachRow row, or undefined. */
 export const firstRow = (text: string): Record<string, unknown> | undefined => readRows(text)[0]
 
 /** Escape a path for a ClickHouse single-quoted literal. */

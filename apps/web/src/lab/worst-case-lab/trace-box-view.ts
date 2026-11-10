@@ -1,14 +1,14 @@
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import * as Timeline from "../../page/traces/detail/timeline"
-import * as Waterfall from "../../page/traces/detail/waterfall"
+import * as Timeline from "@maple/views/traces/timeline"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { flowGraphOf, Message, type Model } from "./trace-box"
 
-// `TraceViewTabs` inside the lab's `h-[640px]` box.
+// The trace view tabs inside the lab's `h-[640px]` box.
 
 type H = HtmlBuilder<Message>
 

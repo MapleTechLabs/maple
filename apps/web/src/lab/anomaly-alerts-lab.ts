@@ -18,7 +18,7 @@ import * as HubMessage from "../page/alerts/hub/message"
 import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
-import type { Incident } from "../page/overview/model"
+import type { HealthIncident as Incident } from "../page/kit/service-health"
 import { alertFiringHero, heroCountsOf } from "../page/overview/view-hero"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
@@ -40,13 +40,15 @@ import {
 } from "../page/alerts/shared/anomaly-test-fixtures"
 import {
 	destinationRow,
+	hubAt,
+	type HubAt,
 	incidentRow,
 	NOW,
 	ORG,
 	ruleId,
 	ruleRow,
 	stateRow,
-} from "../page/alerts/shared/test-rows"
+} from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
@@ -156,7 +158,7 @@ const RESOLVED = [
 ]
 
 const hubFor = (state: LabState) => {
-	const search: HubModel.Model["search"] =
+	const search: HubAt =
 		state === "hub-rules"
 			? { tab: "rules" }
 			: state === "hub-anomalies-resolved"
@@ -167,7 +169,7 @@ const hubFor = (state: LabState) => {
 			? [incidentRow({ rule_name: "Payment p95 latency" })]
 			: [incidentRow({ rule_name: "Payment p95 latency" }), ...OPEN, ...RESOLVED]
 	return fold(
-		HubUpdate.init({ _tag: "Alerts", search }, CONTEXT).model,
+		HubUpdate.init(hubAt(search), CONTEXT).model,
 		[
 			HubMessage.Message.ReadClock({ nowMs: NOW }),
 			HubMessage.Message.UpdatedRules({ orgId: ORG, rows: RULES }),

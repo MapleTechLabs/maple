@@ -74,7 +74,8 @@ export const assertJournalPaths = (dataDir: string, journal: MigrationJournal): 
 		throw new Error("local migration journal final target does not match its chain")
 }
 
-const sameJournalIdentity = (a: LocalSchemaIdentity, b: LocalSchemaIdentity): boolean =>
+/** Same structural schema on the same chDB build; revisions and manifest digests are informational. */
+export const sameSchemaIdentity = (a: LocalSchemaIdentity, b: LocalSchemaIdentity): boolean =>
 	a.version === b.version && a.fingerprint === b.fingerprint && a.digest === b.digest && a.chdb === b.chdb
 
 const assertJournalChainInvariants = (journal: MigrationJournal): void => {
@@ -85,7 +86,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	const last = chain.at(-1)
 	if (first === undefined || last === undefined) throw new Error("migration journal chain is empty")
 	if (
-		!sameJournalIdentity(first.from, {
+		!sameSchemaIdentity(first.from, {
 			version: journal.sourceVersion,
 			fingerprint: journal.sourceFingerprint,
 			digest: journal.sourceDigest,
@@ -94,7 +95,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	)
 		throw new Error("migration journal source identity does not match its first step")
 	if (
-		!sameJournalIdentity(last.to, {
+		!sameSchemaIdentity(last.to, {
 			version: journal.targetVersion,
 			fingerprint: journal.targetFingerprint,
 			digest: journal.targetDigest,
@@ -103,7 +104,7 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 	)
 		throw new Error("migration journal target identity does not match its final step")
 	for (const [offset, [previous, step]] of Arr.zip(chain, chain.slice(1)).entries()) {
-		if (!sameJournalIdentity(previous.to, step.from))
+		if (!sameSchemaIdentity(previous.to, step.from))
 			throw new Error(`migration journal step ${offset + 1} does not continue the previous step`)
 	}
 	for (const [index, step] of chain.slice(0, current).entries()) {

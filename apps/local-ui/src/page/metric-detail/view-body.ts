@@ -30,7 +30,7 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The body of `MetricDetailView`: the chart section and the per-service breakdown.
+// The metric detail page's body: the chart section and the per-service breakdown.
 
 type H = HtmlBuilder<Message>
 

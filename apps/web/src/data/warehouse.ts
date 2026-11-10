@@ -1,4 +1,4 @@
-import { QueryEngineExecuteBatchRequest } from "@maple/query-engine"
+import { QueryEngineExecuteBatchRequest } from "@maple/domain/query-engine"
 import { isBlipping, originOf } from "@maple/web-data/lib/peer-reachability"
 import {
 	ApiReachability,
@@ -7,9 +7,9 @@ import {
 	WarehouseExecutor,
 } from "@maple/web-data/warehouse/warehouse-services"
 import { Effect, Layer } from "effect"
-import { apiBaseUrl } from "../lib/services/common/api-base-url"
+import { apiBaseUrl } from "../platform/api-base-url"
 import { MapleApiV2Client, MapleInternalApiClient } from "../platform/api-clients"
-import { withResourceTiming } from "../lib/resource-timing"
+import { withResourceTiming } from "./resource-timing"
 import { makeExecuteBatcher } from "./execute-batcher"
 
 /**

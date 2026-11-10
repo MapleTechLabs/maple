@@ -9,8 +9,6 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// The service usage cards.
-
 /** Overview tiles share the chart cards' 16px inner inset. */
 const OVERVIEW_TILE_CLASS = "px-4"
 

@@ -1,13 +1,11 @@
+import { alertQueryLimits, alertRuleIntervalMinutes, alertWindowBucketSeconds } from "@maple/query-engine"
 import {
-	alertQueryLimits,
-	alertRuleIntervalMinutes,
-	alertWindowBucketSeconds,
 	CompiledAlertQueryPlan,
 	QueryEngineAlertReducer,
 	QueryEngineNoDataBehavior,
 	type QueryEngineSampleCountStrategy,
 	QuerySpec,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { buildTimeseriesQuerySpec, resolveGroupBy } from "@maple/query-engine/query-builder"
 import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runtime"
 import {
@@ -396,7 +394,7 @@ export const perServiceRules = (
 		),
 	)
 
-export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (rule: {
+export const compileRulePlan = Effect.fn("AlertRuleModel.compileRulePlan")(function* (rule: {
 	readonly signalType: AlertSignalType
 	readonly serviceName: string | null
 	readonly environments: ReadonlyArray<string>
@@ -769,7 +767,7 @@ export const rowToRuleDocument = (
 	})
 
 export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
-	const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
+	const normalizeRuleRow = Effect.fn("AlertRuleModel.normalizeRuleRow")(function* (
 		row: StoredAlertRuleRow,
 	): Effect.fn.Return<NormalizedRule, AlertRuleStoredConfigInvalidError> {
 		const metadata = yield* decodeStoredAlertRuleMetadata(row)
@@ -844,7 +842,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		}
 	})
 
-	const normalizeRule = Effect.fn("AlertsService.normalizeRule")(function* (
+	const normalizeRule = Effect.fn("AlertRuleModel.normalizeRule")(function* (
 		orgId: OrgId,
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },

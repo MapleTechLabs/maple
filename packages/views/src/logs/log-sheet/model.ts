@@ -21,19 +21,19 @@ export const Model = Schema.Struct({
 	id: Schema.String,
 	/** The org the panel reads are keyed under, given at `open`. */
 	orgId: Schema.String,
-	/** The org's namespace pin at `open`: `listLogsResultAtom` is `globalNamespace: "top"`. */
+	/** The org's namespace pin at `open`. */
 	pinnedNamespace: Schema.NullOr(Schema.String),
 	/** `/logs/$logId`: every panel shows at once, so the trace and context read without a tab. */
 	isPage: Schema.Boolean,
 	/** The app's path for one log's page, before its key; null: no page (no full-page link or permalink). */
 	logPagePath: Schema.NullOr(Schema.String),
-	/** `ErrorSection`'s Show more. */
+	/** The error section's Show more. */
 	isErrorExpanded: Schema.Boolean,
-	/** `LogContextPanel`'s scope toggle (instance first when the log names one). */
+	/** The context panel's scope toggle (instance first when the log names one). */
 	contextScope: ToggleGroup.Model,
 	contextBefore: LogRows,
 	contextAfter: LogRows,
-	/** `LogTraceTimeline`: the trace's logs and its spans. */
+	/** The trace timeline: the trace's logs and its spans. */
 	traceLogs: LogRows,
 	traceSpans: KeyedSchema(TraceSpans, LoadFailure),
 	dialog: Dialog.Model,
@@ -42,7 +42,7 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	/** Rebuilt per log, which resets the attribute search. */
 	attributes: AttributesPanel.Model,
-	/** `LogHeroHeader`'s "Show full message". */
+	/** The hero's "Show full message". */
 	isHeroExpanded: Schema.Boolean,
 	/** The last copy from the hero or the meta strip, and its status. */
 	copy: DetailCopy,

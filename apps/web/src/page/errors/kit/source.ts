@@ -1,7 +1,7 @@
-import type { IssueKind } from "@maple/domain/http"
+import { IssueKind } from "@maple/domain/http"
 
 /** What opened an issue. */
-export const SOURCES: ReadonlyArray<IssueKind> = ["error", "alert", "integration"]
+export const SOURCES: ReadonlyArray<IssueKind> = IssueKind.literals
 
 export const SOURCE_COLOR = {
 	error: "var(--chart-error)",

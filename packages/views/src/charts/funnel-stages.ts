@@ -4,12 +4,12 @@ import {
 	cellText,
 	pickValueField,
 	toBreakdownRows,
-} from "@maple/ui/components/charts/_shared/breakdown-rows"
+} from "./series/breakdown-rows"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Array as Arr, Option, String as Str } from "effect"
 
-// The stage derivation of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/
-// query-builder-funnel-chart.tsx): rows folded into stages, grouped rows into one bar per group.
+// The funnel chart's stage derivation: rows folded into stages, grouped rows into one bar
+// per group.
 
 export interface StageGroup {
 	readonly name: string
@@ -111,7 +111,6 @@ const groupedFunnel = (source: ReadonlyArray<Row>, valueField: string): FunnelSt
 	}
 }
 
-/** The `stages` / `legend` memo. */
 export const funnelStages = (source: ReadonlyArray<Row>): FunnelStages => {
 	const valueField = pickValueField(source)
 	const grouped = Arr.filter(source, isGroupedRow)

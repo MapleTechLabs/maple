@@ -1,26 +1,28 @@
 import { cn } from "@maple/ui/lib/utils"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
+import { toggleVariants } from "./toggle.styles"
 import {
 	toggleGroupHorizontalStyles,
 	toggleGroupStandaloneStyles,
 	toggleGroupStyles,
 	toggleGroupTrackStyles,
-} from "@maple/ui/styles/ui/toggle-group"
+} from "./toggle-group.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { segmentItemHeight, togglePrimitive } from "./toggle"
 import { Array as Arr } from "effect"
 
+// Segmented selects: outline toggles in a row, one value or several.
+
 export type MultiSegmentedOption<T extends string> = Readonly<{
 	value: T
 	label: Html | string
-	/** The option's accessible name (`optionAriaLabel`: the value when the label is not text). */
+	/** The option's accessible name (the value when the label is not text). */
 	ariaLabel: string
 	icon?: Html
 	isDisabled?: boolean
 }>
 
-/** `MultiSegmentedSelect`: standalone outline toggles; a pressed one swaps its icon for a check. */
+/** Standalone outline toggles; a pressed one swaps its icon for a check. */
 export const multiSegmentedSelect = <T extends string, M>(
 	h: HtmlBuilder<M>,
 	config: Readonly<{
@@ -122,7 +124,8 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	options: ReadonlyArray<SegmentedOption<T>>
 	value: T
 	onChange: (value: T) => M
-	size?: "xs" | "sm" | "default"
+	/** `lg` keeps each segment at least as tall as a small button, for a choice in a form. */
+	size?: "xs" | "sm" | "default" | "lg"
 	ariaLabel?: string
 	className?: string
 }>

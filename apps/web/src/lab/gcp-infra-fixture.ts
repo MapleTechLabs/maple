@@ -3,9 +3,13 @@
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 
-import type { GcpCloudSqlInstance } from "../components/infra/gcp/inventory"
-import type { GcpFleetRead, GcpProjectHealth, GcpSparklinePoint } from "../components/infra/gcp/list-model"
-import type { GcpMetricPoint, GcpView } from "../components/infra/gcp/tabs"
+import type { GcpCloudSqlInstance } from "../page/infra-integrations/gcp/inventory"
+import type {
+	GcpFleetRead,
+	GcpProjectHealth,
+	GcpSparklinePoint,
+} from "../page/infra-integrations/gcp/list-model"
+import type { GcpMetricPoint, GcpView } from "../page/infra-integrations/gcp/tabs"
 import { Array as Arr } from "effect"
 
 // Three projects over the last 12 hours, as the Paper artboards draw them: a Cloud Run service

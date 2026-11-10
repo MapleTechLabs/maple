@@ -2,7 +2,7 @@ import { type DigestSubscriptionResponse, UpsertDigestSubscriptionRequest } from
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Clock, Effect, Option, Predicate, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -11,8 +11,6 @@ import * as Draft from "../../kit/draft"
 import { DigestDraft, Message, type Model, type ScheduleField } from "./model"
 
 type Return = PageReturn<Model, Message>
-
-// Digest preferences: days, hours, defaults and the set-like draft comparison.
 
 /** Monday first, as people read a week; values are `Date#getDay` numbers (0 = Sunday). */
 export const DIGEST_DAYS = [
@@ -62,8 +60,6 @@ export const digestTimeZoneOptions = (
 	return [...zones].sort((a, b) => (a === "UTC" ? -1 : b === "UTC" ? 1 : Str.localeCompare(b)(a)))
 }
 
-// COMMANDS
-
 const ReadEntry = Command.define("ReadEmailPreferencesEntry", {
 	messages: [Message.CompletedReadEntry],
 	execute: Effect.sync(() =>
@@ -87,9 +83,7 @@ const FetchSubscription = Command.define("FetchDigestSubscription", {
 			(error) => Predicate.isTagged(error, DIGEST_NOT_FOUND),
 			() => Effect.succeed(null),
 		),
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchSubscription({ result })),
+		settleTo((result) => Message.CompletedFetchSubscription({ result })),
 	),
 })
 
@@ -146,7 +140,7 @@ const upsert = (enabled: boolean, fields: UpsertFields) =>
 				}),
 			}),
 		}),
-	).pipe(Effect.asVoid, Effect.mapError(toLoadFailure), Effect.result)
+	).pipe(Effect.asVoid, settled)
 
 const ToggleDigest = Command.define("ToggleDigest", {
 	args: {
@@ -183,9 +177,8 @@ const PreviewDigest = Command.define("PreviewDigest", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			digest === "ops" ? client.digest.preview() : client.digest.previewWebAnalytics(),
 		).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.html, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedPreview({ result })),
+			Effect.map((response) => response.html),
+			settleTo((result) => Message.CompletedPreview({ result })),
 		),
 })
 
@@ -212,8 +205,6 @@ const OpenPreview = Command.define("OpenDigestPreview", {
 			return Message.CompletedPreview({ result: Result.succeed("") })
 		}),
 })
-
-// DERIVED
 
 const savedOf = (model: Model): DigestSubscriptionResponse | null =>
 	Option.getOrNull(Option.flatMap(AsyncData.getData(model.subscription), Option.fromNullishOr))
@@ -243,8 +234,6 @@ export const isBusy = (model: Model): boolean => model.isTogglingOps || model.is
 /** The first write records the prefilled zone, so a toggle alone does not leave the row on UTC. */
 const firstWrite = (model: Model): UpsertFields =>
 	savedOf(model) === null ? { timezone: baselineOf(model).timezone } : {}
-
-// UPDATE
 
 export const init = (): Return => ({
 	model: {

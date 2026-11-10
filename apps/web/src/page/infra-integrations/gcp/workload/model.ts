@@ -1,8 +1,8 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -20,8 +20,6 @@ import {
 	StatementSpan,
 	TraceSide,
 } from "../data"
-
-// `/infra/gcp/$service/$name`.
 
 export const Model = Schema.Struct({
 	service: ServiceId,
@@ -42,22 +40,18 @@ export const Model = Schema.Struct({
 	traceSide: KeyedSchema(TraceSide, LoadFailure),
 	fleet: KeyedSchema(Schema.Array(FleetRead), LoadFailure),
 	showAllQueries: Schema.Boolean,
-	/** `GcpQueryPeekSheet`, opened by `search.peek`. */
+	/** The query peek sheet, opened by `search.peek`. */
 	queryPeek: Dialog.Model,
 	/** The peeked statement's slowest spans. */
 	statementSpans: KeyedSchema(Schema.Array(StatementSpan), LoadFailure),
 	copyStatement: CopyButton.Model,
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -75,9 +69,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTraceSide: result(TraceSide),
 	CompletedFetchFleet: result(Schema.Array(FleetRead)),
 	CompletedFetchStatementSpans: result(Schema.Array(StatementSpan)),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	AttachedLinkedCursor: {},
 	ClickedRetryTimeseries: {},
 	ClickedShowAllQueries: {},

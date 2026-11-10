@@ -1,3 +1,4 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import {
 	AlertDestinationId,
@@ -15,7 +16,6 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -31,7 +31,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
-import { Tier } from "./form"
+import { RuleCard, Tier } from "./form"
 import { DryRun, TraceFacets } from "./model"
 
 /** The form's free-text fields, each one input. */
@@ -100,14 +100,12 @@ export const Message = defineMessageUnion({
 		isSaved: Schema.Boolean,
 		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
 	},
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },
 	GotRadioMessage: {
-		group: Schema.Literals(["signal", "severity", "interval"]),
+		group: Schema.Literals(["signal", "severity"]),
 		message: RadioGroup.Message,
 	},
 	ClickedOpenInBuilder: {},
@@ -144,6 +142,15 @@ export const Message = defineMessageUnion({
 	BlurredTagInput: {},
 	ClickedRemoveTag: { tag: Schema.String },
 	ClickedAddNotes: {},
+	/** A closed sentence card's summary: opens the card for editing. */
+	ClickedExpandCard: { card: RuleCard },
+	/** An open card's Done, or Escape inside it: back to its summary. */
+	ClickedCollapseCard: { card: RuleCard },
+	CompletedFocusCard: {},
+	/** A form control lost focus (by element id): its error may show from now on. */
+	BlurredField: { id: Schema.String },
+	/** One of the action bar's "Fix before saving" items: opens its card and focuses its field. */
+	ClickedIssue: { issue: Schema.String },
 	ToggledSqlCollapsed: {},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },

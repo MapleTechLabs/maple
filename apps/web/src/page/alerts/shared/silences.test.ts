@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Option, Schema } from "effect"
 import { AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import type { V2AlertSilence } from "@maple/domain/http/v2"
-import { activeSilenceFor, matchersForRule } from "./silences"
+import { activeSilenceFor, formatSilenceRange, formatSilenceTime, matchersForRule } from "./silences"
 
 const ruleId = Schema.decodeSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
 const asSilenceId = Schema.decodeSync(AlertSilenceId)
@@ -38,6 +38,39 @@ const groupedRule = {
 	signalType: "error_rate" as const,
 	queryBuilderDraft: null,
 }
+
+describe("silence times", () => {
+	const BERLIN = "Europe/Berlin"
+
+	it("reads on the viewer's clock, and names the day when it is not today there", () => {
+		// NOW is 13:00 in Berlin.
+		expect(formatSilenceTime(Date.UTC(2026, 10, 6, 14, 0), NOW, BERLIN)).toBe("03:00 PM")
+		expect(formatSilenceTime(Date.UTC(2026, 10, 7, 8, 0), NOW, BERLIN)).toBe("Nov 7, 09:00 AM")
+		// 23:30 UTC is still today in UTC, and already tomorrow in Berlin.
+		const late = Date.UTC(2026, 10, 6, 23, 30)
+		expect(formatSilenceTime(late, NOW, "UTC")).toBe("11:30 PM")
+		expect(formatSilenceTime(late, NOW, BERLIN)).toBe("Nov 7, 12:30 AM")
+	})
+
+	it("reads on a 24h clock when asked, midnight as 00", () => {
+		expect(formatSilenceTime(Date.UTC(2026, 10, 6, 14, 30), NOW, BERLIN, "h23")).toBe("15:30")
+		expect(formatSilenceTime(Date.UTC(2026, 10, 7, 8, 0), NOW, BERLIN, "h23")).toBe("Nov 7, 09:00")
+		expect(formatSilenceTime(Date.UTC(2026, 10, 6, 23, 30), NOW, BERLIN, "h23")).toBe("Nov 7, 00:30")
+	})
+
+	it("names the day of a window once when both ends share it", () => {
+		const start = Date.UTC(2026, 10, 7, 14, 0)
+		expect(formatSilenceRange(start, start + 60 * 60_000, NOW, BERLIN)).toBe(
+			"Nov 7, 03:00 PM to 04:00 PM",
+		)
+		expect(formatSilenceRange(start, start + 24 * 60 * 60_000, NOW, BERLIN)).toBe(
+			"Nov 7, 03:00 PM to Nov 8, 03:00 PM",
+		)
+		expect(formatSilenceRange(NOW + 60 * 60_000, NOW + 2 * 60 * 60_000, NOW, BERLIN)).toBe(
+			"02:00 PM to 03:00 PM",
+		)
+	})
+})
 
 describe("activeSilenceFor", () => {
 	it("picks the latest-ending silence in force, from the window not the stored status", () => {

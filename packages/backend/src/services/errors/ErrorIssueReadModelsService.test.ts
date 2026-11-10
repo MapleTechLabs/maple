@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
-import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
+import { ErrorIncidentId, ErrorIssueId, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { Clock, Effect, Layer, Schema, Array as Arr, DateTime, Order, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
 	WarehouseQueryService,
@@ -35,6 +35,26 @@ const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
 
+/** What the warehouse holds for the issue detail reads, by query context. */
+const WAREHOUSE_ROWS = new Map<string, ReadonlyArray<Record<string, unknown>>>([
+	["errorIssueEnvFingerprints", [{ fingerprintHash: "fp-checkout" }]],
+	["errorIssueTimeseries", [{ bucket: "2026-11-05 10:00:00", count: 4 }]],
+	[
+		"errorIssueSampleTraces",
+		[
+			{
+				traceId: "0af7651916cd43dd8448eb211c80319c",
+				spanId: "b7ad6b7169203331",
+				serviceName: "checkout-api",
+				timestamp: "2026-11-05 10:01:02",
+				exceptionMessage: "upstream timed out",
+				durationMicros: 1500,
+			},
+		],
+	],
+	["errorIssueEnvironments", [{ name: "production", count: 4 }]],
+])
+
 const makeWarehouseStub = (contexts: Array<string>, sqls: Array<string>): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected pipe query")),
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
@@ -48,11 +68,7 @@ const makeWarehouseStub = (contexts: Array<string>, sqls: Array<string>): Wareho
 		}).pipe(
 			Effect.andThen(
 				compiledQueryOf(compiled)
-					.decodeRows(
-						options?.context === "errorIssueEnvFingerprints"
-							? [{ fingerprintHash: "fp-checkout" }]
-							: [],
-					)
+					.decodeRows(WAREHOUSE_ROWS.get(options?.context ?? "") ?? [])
 					.pipe(Effect.orDie),
 			),
 		)
@@ -113,9 +129,8 @@ const seedIssue = (
 	})
 
 describe("ErrorIssueReadModelsService", () => {
-	it.effect("serves org-scoped issue and incident projections from the narrow graph", () => {
-		const contexts: Array<string> = []
-		return Effect.gen(function* () {
+	it.effect("serves org-scoped issue and incident projections from the narrow graph", () =>
+		Effect.gen(function* () {
 			const database = yield* Database
 			const readModels = yield* ErrorIssueReadModelsService
 			const now = yield* Clock.currentTimeMillis
@@ -156,6 +171,19 @@ describe("ErrorIssueReadModelsService", () => {
 			assert.strictEqual(detail.issue.id, issueId)
 			assert.strictEqual(detail.issue.hasOpenIncident, true)
 			assert.lengthOf(detail.incidents, 1)
+			// The detail panel's warehouse sections carry what the warehouse holds for the issue.
+			assert.deepStrictEqual(
+				Arr.map(detail.timeseries, (point) => point.count),
+				[4],
+			)
+			assert.deepStrictEqual(
+				Arr.map(detail.sampleTraces, (trace) => [trace.traceId, trace.durationMicros]),
+				[["0af7651916cd43dd8448eb211c80319c", 1500]],
+			)
+			assert.deepStrictEqual(
+				Arr.map(detail.environments, (env) => [env.name, env.count]),
+				[["production", 4]],
+			)
 
 			const issueIncidents = yield* readModels.listIssueIncidents(ORG, issueId)
 			const openIncidents = yield* readModels.listOpenIncidents(ORG)
@@ -177,17 +205,8 @@ describe("ErrorIssueReadModelsService", () => {
 				Arr.map(batched.incidents, (incident) => incident.id),
 				[incidentId],
 			)
-			// getIssue reads these warehouse models; dropping one leaves its detail panel empty.
-			expect(contexts).toEqual(
-				expect.arrayContaining([
-					"errorIssueEnvFingerprints",
-					"errorIssueTimeseries",
-					"errorIssueSampleTraces",
-					"errorIssueEnvironments",
-				]),
-			)
-		}).pipe(Effect.provide(makeLayer(contexts)))
-	})
+		}).pipe(Effect.provide(makeLayer([]))),
+	)
 
 	it.effect("restricts the list to an explicit fingerprint set", () => {
 		const contexts: Array<string> = []

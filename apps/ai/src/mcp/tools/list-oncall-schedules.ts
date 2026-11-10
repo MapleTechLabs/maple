@@ -1,8 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema } from "effect"
-import { ListOnCallSchedulesOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { formatLayers, formatOnCallNow, memberNames, toScheduleRow } from "../lib/oncall-schedules"
 import { doc } from "../lib/tool-doc"
@@ -15,7 +14,6 @@ export function registerListOnCallSchedulesTool(server: McpToolRegistrar) {
 			"List on-call schedules: layered rotations in a time zone that say who is on call when, with overrides on top. " +
 			"Shows each schedule's layers, participants and who is on call right now. Ask about one instant with who_is_on_call.",
 		parameters: Schema.Struct({}),
-		output: ListOnCallSchedulesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing on-call schedules"],
 		handler: Effect.fn("McpTool.listOnCallSchedules")(function* () {

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badgeVariants } from "../badge.styles"
 import { prettyJson, tryParseJson } from "../../lib/display-text"
 import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,14 +8,14 @@ import { icon } from "../icon"
 import { cappedCode } from "../logs/log-message"
 import { type AttributeSource, copyStatusOf, isOpen, Message, type Model } from "./attributes-panel"
 
-// Port of `CopyableValue`, `SelectableValue`, `AttributeRow` (packages/ui/src/components/attributes/
-// attributes-table.tsx) and `CollapsibleJsonValue` (json-value.tsx), against an AttributesPanel Model.
+// An attribute row: a copyable or selectable value and collapsible JSON, against an
+// AttributesPanel Model.
 
 type H = HtmlBuilder<Message>
 
 const stop = { propagation: "Stop" } as const
 
-/** `CopyableValue`: inline text that copies itself, tinted by the copy's outcome. */
+/** Inline text that copies itself, tinted by the copy's outcome. */
 export const copyableValue = (
 	h: H,
 	model: Model,
@@ -43,7 +43,7 @@ export const copyableValue = (
 	)
 }
 
-/** `SelectableValue`: selectable text with a trailing copy button for the whole value. */
+/** Selectable text with a trailing copy button for the whole value. */
 const selectableValue = (
 	h: H,
 	model: Model,
@@ -155,7 +155,7 @@ const commitShaValue = (h: H, id: string, value: string): Html =>
 		[value],
 	)
 
-/** The per-row hover verb (`AttributeFilterAction`): the `tag` badge as a button. */
+/** The per-row hover verb: the `tag` badge as a button. */
 export const attributeFilterAction = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ label: string; text: string; onClick: M; stopPropagation?: boolean }>,
@@ -191,7 +191,7 @@ export type RowContext = Readonly<{
 	hasCommitShaValues?: boolean
 }>
 
-/** `AttributeRow`: the key (copyable) and its value (JSON, commit SHA or selectable text), plus filters. */
+/** The key (copyable) and its value (JSON, commit SHA or selectable text), plus filters. */
 export const attributeRow = (
 	h: H,
 	context: RowContext,

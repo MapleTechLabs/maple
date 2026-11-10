@@ -29,6 +29,7 @@ import type { Model } from "./model"
 import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
+import * as CheckoutReturn from "../kit/checkout-return"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_parity"),
@@ -326,7 +327,11 @@ describe("settings page", () => {
 		}
 		const polled = pageUpdate(
 			returning,
-			Message.GotBillingMessage({ message: BillingMessage.ElapsedCheckoutPoll() }),
+			Message.GotBillingMessage({
+				message: BillingMessage.GotCheckoutReturnMessage({
+					message: CheckoutReturn.Message.ElapsedPoll(),
+				}),
+			}),
 		)
 		expect(names(polled.commands)).toContain("FetchSettingsCustomer")
 		expect(polled.outMessage).toBeUndefined()
@@ -373,7 +378,8 @@ describe("settings page", () => {
 		expect(billing?._tag === "Billing" && billing.model.checkoutReturn).toBe("Idle")
 		expect(settled.commands).toContainEqual(
 			expect.objectContaining({
-				args: { event: "plan_checkout_returned", props: { confirmed: true } },
+				name: "TrackCheckoutReturned",
+				args: { confirmed: true },
 			}),
 		)
 	})

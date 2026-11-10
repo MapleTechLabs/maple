@@ -1,4 +1,3 @@
-/** Output schemas for the traces and logs MCP tools. */
 import { Schema } from "effect"
 import { PlatformSummary } from "../cloud-platform"
 import { BoundaryDeploy, OutputPagination, OutputTimeRange } from "./shared"

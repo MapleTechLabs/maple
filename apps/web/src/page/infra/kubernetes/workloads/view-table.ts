@@ -1,4 +1,4 @@
-import { restartTone } from "../../../../components/infra/pod-restarts"
+import { restartTone } from "../pod-restarts"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,7 +13,7 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../../kit/data-table"
+} from "../../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { listRelativeTime } from "../../../kit/relative-time"
@@ -25,8 +25,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// `WorkloadTable` / `WorkloadTableLoading`.
 
 type H = HtmlBuilder<Message>
 
@@ -74,7 +72,7 @@ export const workloadTableLoading = (h: H): Html =>
 		]),
 	)
 
-/** `ReplicaCell`: ready against desired; a job counts completions and reads its failures. */
+/** Ready against desired; a job counts completions and reads its failures. */
 const replicaCell = (h: H, workload: WorkloadRow, kind: WorkloadKind): Html => {
 	const desired = workload.desiredReplicas
 	const ready = workload.readyReplicas

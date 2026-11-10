@@ -1,10 +1,10 @@
-import { clerkAuthCardAppearance } from "../../lib/clerk-appearance"
+import { clerkAuthCardAppearance } from "../../platform/clerk-appearance"
 import { Effect, Schema } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./index"
 
-// clerk-react's `<SignIn>` / `<SignUp>`: a `data-clerk-component` node that clerk-js mounts its
+// A `data-clerk-component` node that clerk-js mounts its
 // prebuilt card into (`mountSignIn` / `mountSignUp`), unmounted when the node goes. The task cards
 // (`mountTaskResetPassword` / `mountTaskSetupMFA`) finish a pending session, then go to `redirectUrlComplete`.
 
@@ -19,7 +19,7 @@ export const MountClerkCard = Mount.define("MountClerkCard", {
 			Effect.sync(() => {
 				const clerk = window.Clerk
 				if (clerk === undefined || !(element instanceof HTMLDivElement)) return
-				// `<SignIn appearance={clerkAuthCardAppearance}>`: the unboxed card AccountLayout expects.
+				// The unboxed card the auth layout expects.
 				const appearance = clerkAuthCardAppearance
 				const props = forceRedirectUrl === null ? { appearance } : { appearance, forceRedirectUrl }
 				const taskProps = { appearance, redirectUrlComplete: forceRedirectUrl ?? "/" }

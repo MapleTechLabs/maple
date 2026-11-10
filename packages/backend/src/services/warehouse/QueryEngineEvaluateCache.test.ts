@@ -3,7 +3,8 @@ import { ConfigProvider, Effect, Layer, Option, Ref, Schema, Array as Arr } from
 import { strict as assert } from "node:assert"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
-import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
+import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { type QueryEngineEvaluateRequest } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import {
 	makeQueryEngineEvaluate,
@@ -11,7 +12,6 @@ import {
 	type AlertEvaluateRequest,
 } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
@@ -20,6 +20,7 @@ import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import type { TenantContext } from "@maple/domain/http"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)

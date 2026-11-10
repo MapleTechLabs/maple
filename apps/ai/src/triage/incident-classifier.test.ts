@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/primitives"
 import { Effect, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"

@@ -3,8 +3,8 @@ import { Clock, Effect, Array as Arr } from "effect"
 import { loadServicesFacets } from "../../../../data/services-facets-probe"
 
 /**
- * `KnownServicesProvider`: the org's service names from the snapped 24 h services facets probe the
- * overview also runs (shared, so one request). A failure leaves table cells as plain text.
+ * The org's service names from the snapped 24 h services facets probe the overview also runs
+ * (shared, so one request). A failure leaves table cells as plain text.
  */
 export const loadKnownServices = Effect.gen(function* () {
 	const end = yield* Clock.currentTimeMillis

@@ -1,3 +1,6 @@
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -12,8 +15,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { McpServersSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { chartBucketSeconds } from "../../agent-sessions/tools-kit/model"
-import { ALL, facetValue, initFacetSelect } from "../../agent-sessions/tools-kit/toolbar"
+import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -27,8 +29,10 @@ import {
 	OpenMcpConventions,
 	ResolveWindow,
 } from "./command"
-import { type Facet, Message, type RequestMode } from "./message"
+import { type Facet, Message } from "./message"
 import { DEFAULT_MCP_PRESET, type McpView, type Model } from "./model"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
+import { TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -96,7 +100,7 @@ export const tabSearch = (search: Search): Search => ({
 })
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
-	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
+	chartBucketSecondsBetween(toEpochMs(window.startTime), toEpochMs(window.endTime))
 
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
@@ -279,14 +283,7 @@ export const init = (route: McpRoute, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(search, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(search, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -376,11 +373,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSession: ({ key, result }) => ({
 			model: { ...model, session: Keyed.accept(model.session, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -469,10 +462,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					return Option.getOrUndefined(
 						Option.map(
 							Option.filter(
-								Arr.findFirst(
-									["p50", "p90", "p95"] as const,
-									(candidate) => candidate === value,
-								),
+								Arr.findFirst(TOOL_PERCENTILES, (candidate) => candidate === value),
 								(percentile) => percentile !== (model.search.percentile ?? "p90"),
 							),
 							(percentile) => ({
@@ -509,25 +499,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: undefined,
 			),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOfView(model.view, {
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOfView(model.view, {
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)

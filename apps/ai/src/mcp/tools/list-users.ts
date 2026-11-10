@@ -4,7 +4,7 @@ import { ListUsersOutput } from "@maple/domain/mcp-outputs"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber } from "../lib/format"
 import type { UserChannel } from "@maple/domain/http"
@@ -60,7 +60,6 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 25, max: 100, noun: "users" }),
 			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 		}),
-		output: ListUsersOutput,
 		hints: { readOnly: true },
 		scopeFamily: "users",
 		phrases: ["Listing users"],

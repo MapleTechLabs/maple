@@ -1,4 +1,4 @@
-import { IngestRuleSpec } from "@maple/domain/ingest-rules"
+import { IngestRuleSpec, SPAN_KINDS, SPAN_STATUSES } from "@maple/domain/ingest-rules"
 import {
 	applyRules,
 	compileRules,
@@ -173,9 +173,6 @@ const safeJson = (value: unknown): string | undefined => Option.getOrUndefined(e
 
 const safeTraceId = (raw: string | undefined): string | undefined =>
 	Option.getOrUndefined(Result.getSuccess(Result.try(() => traceIdHex(raw, "traceId"))))
-
-const SPAN_KINDS = ["unspecified", "internal", "server", "client", "producer", "consumer"] as const
-const SPAN_STATUSES = ["unset", "ok", "error"] as const
 
 const isObject = (value: unknown): value is object => typeof value === "object" && value !== null
 const isTraceRequest = (value: unknown): value is TraceRequest =>

@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { RemoveDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import { toDashboardRow, withDashboardMutation } from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -17,7 +16,6 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 			dashboard_id: P.resourceId("dashboard", "Dashboard ID (ids from list_dashboards)"),
 			widget_id: P.text("ID of the widget to remove (get_dashboard lists them)"),
 		}),
-		output: RemoveDashboardWidgetOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Removing a widget"],
 		handler: Effect.fn("McpTool.removeDashboardWidget")(function* ({ dashboard_id, widget_id }) {

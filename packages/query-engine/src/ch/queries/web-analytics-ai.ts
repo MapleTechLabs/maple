@@ -9,7 +9,8 @@ import { type DateTime, Schema, Array as Arr } from "effect"
 import { param, from, compileFnCall, compileTypedFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { AI_PRODUCTS } from "@maple/domain/ai-traffic"
-import { AiCrawlerRequests, SessionReplays, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { replaysWhere, type WebAnalyticsFilters } from "./web-analytics"
 
 const stringArray = (values: ReadonlyArray<string>) =>
@@ -59,8 +60,6 @@ function isAiReferral(referrerHost: CH.Expr<string>, utmSource: CH.Expr<string>)
 	)
 }
 
-// AI referrals
-
 export interface WebAnalyticsAiReferralsOpts extends WebAnalyticsFilters {
 	readonly bucketSeconds?: number
 }
@@ -80,7 +79,7 @@ export function webAnalyticsAiReferralsQuery(
 	opts: WebAnalyticsAiReferralsOpts = {},
 ): CHQuery<ColumnDefs, WebAnalyticsAiReferralsOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.StartTime, bucketSeconds),
 			product: aiReferralProductExpr($.ReferrerHost, $.UtmSource),
@@ -93,9 +92,7 @@ export function webAnalyticsAiReferralsQuery(
 		.format("JSON")
 }
 
-// AI crawlers
-
-type CrawlerAccessor = ColumnAccessor<typeof AiCrawlerRequests.columns>
+type CrawlerAccessor = ColumnAccessor<typeof Datasources.aiCrawlerRequests.columns>
 
 /** Crawler filters: the time window plus the two URL filters a request carries. */
 export type WebAnalyticsAiCrawlerFilters = Pick<WebAnalyticsFilters, "host" | "pagePath">
@@ -129,7 +126,7 @@ export interface WebAnalyticsAiCrawlersOutput {
 export function webAnalyticsAiCrawlersQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
 ): CHQuery<ColumnDefs, WebAnalyticsAiCrawlersOutput> {
-	return from(AiCrawlerRequests)
+	return from(Datasources.aiCrawlerRequests)
 		.select(($) => ({
 			crawler: $.Crawler,
 			requests: CH.uniq($.TraceId),
@@ -171,7 +168,7 @@ export interface WebAnalyticsAiCrawlerFormatsOutput {
 export function webAnalyticsAiCrawlerFormatsQuery(
 	filters: WebAnalyticsAiCrawlerFilters = {},
 ): CHQuery<ColumnDefs, WebAnalyticsAiCrawlerFormatsOutput> {
-	return from(AiCrawlerRequests)
+	return from(Datasources.aiCrawlerRequests)
 		.select(($) => ({
 			format: aiContentFormatExpr($.Path),
 			requests: CH.uniq($.TraceId),
@@ -200,7 +197,7 @@ export interface WebAnalyticsAiCrawledPagesOutput {
 export function webAnalyticsAiCrawledPagesQuery(
 	opts: WebAnalyticsAiCrawledPagesOpts = {},
 ): CHQuery<ColumnDefs, WebAnalyticsAiCrawledPagesOutput> {
-	return from(AiCrawlerRequests)
+	return from(Datasources.aiCrawlerRequests)
 		.select(($) => ({
 			host: $.Host,
 			path: $.Path,

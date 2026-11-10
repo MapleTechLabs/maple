@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 
 /**
  * Feedback about Maple itself, written by an agent (a coding assistant over MCP, a script on

@@ -5,8 +5,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Select from "@maple/views/ui/select"
 
-// The variables manager dialog: a session of
-// drafts started from the saved variables each time it opens, one draft's form expanded at a time.
+// A session of drafts started from the saved variables each time it opens, one draft's form expanded
+// at a time.
 
 export type Variable = typeof DashboardVariableSchema.Type
 
@@ -16,7 +16,7 @@ export const Model = Schema.Struct({
 	editingIndex: Schema.NullOr(Schema.Number),
 	/** Opened on a board with no variables: one blank draft, its form open, and the intro panel. */
 	startedEmpty: Schema.Boolean,
-	/** The open form's controls: Base UI field state and the selects. */
+	/** The open form's controls: field state and the selects. */
 	name: Field.Model,
 	label: Field.Model,
 	defaultValue: Field.Model,
@@ -29,7 +29,14 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const FormField = Schema.Literals(["name", "label", "defaultValue", "options", "attributeKey", "metricNames"])
+export const FormField = Schema.Literals([
+	"name",
+	"label",
+	"defaultValue",
+	"options",
+	"attributeKey",
+	"metricNames",
+])
 export type FormField = typeof FormField.Type
 
 export const Message = defineMessageUnion({

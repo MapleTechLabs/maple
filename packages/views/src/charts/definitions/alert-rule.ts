@@ -1,7 +1,7 @@
-import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
-import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { focusCrosshair } from "../plot/plot-focus"
+import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
+import { bucketTimeScale } from "../plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { GHOST_KEY, SINGLE_KEY } from "@maple/web-data/alerts/chart-series"
@@ -23,7 +23,8 @@ type AlertRuleSpec = Extract<ChartSpec, { readonly _tag: "AlertRule" }>
 type SignalPoint = Record<string, unknown> & { t: number; at: Date }
 type Band = Readonly<{ x1: number; x2: number }>
 
-const PLOT_RIGHT = 12
+// Room for half of the last tick's label, which sits on the plot's right edge.
+const PLOT_RIGHT = 28
 const Y_AXIS_WIDTH = 72
 const isSignalType = Schema.is(AlertSignalType)
 

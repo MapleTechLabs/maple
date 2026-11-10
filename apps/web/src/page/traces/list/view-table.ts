@@ -1,3 +1,4 @@
+import { canWidenTimeRange } from "../../kit/time-controls"
 import { peekPosition } from "./peek"
 import { MountPeekRows } from "./command"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -20,7 +21,7 @@ import {
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenTimeRange, isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
+import { isFiltered, type TraceFilterChip, traceFilterChips } from "./derive"
 import { Message, type SortKey } from "./message"
 import type { Model } from "./model"
 import { allRows, DEFAULT_PRESET, hasNextPage, hiddenCount, MAX_RETAINED_TRACES } from "./update"
@@ -29,7 +30,7 @@ import { COUNT_ATTRIBUTE, VirtualizeTraces } from "./virtualize"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-/** `TRACE_COLUMNS`: shared by the table, the skeleton and the header. */
+/** Shared by the table, the skeleton and the header. */
 const COLUMNS = [
 	{ id: "traceId", header: "Trace ID", width: 100, skeleton: "w-16" },
 	{ id: "rootSpan", header: "Root span", skeleton: "w-40" },
@@ -133,7 +134,7 @@ const spacer = (h: HtmlBuilder<Message>, key: string, height: number): Html =>
 		h.Style({ height: `${height}px` }),
 	])
 
-/** `VirtualTableBody`: spacers around the rendered window, then the loading row. */
+/** Spacers around the rendered window, then the loading row. */
 const body = (h: HtmlBuilder<Message>, model: Model, timeZone: string, isMobile: boolean): Html => {
 	const rows = allRows(model)
 	const activeIndex = isMobile ? null : (peekPosition(model)?.index ?? null)

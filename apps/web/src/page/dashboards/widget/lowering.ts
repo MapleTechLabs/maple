@@ -48,9 +48,6 @@ import {
 } from "./lowering-product"
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 
-// The editor state read out of a stored widget and lowered back (`toInitialState`,
-// `buildWidgetDataSource`, `buildWidgetDisplay`, `validateQueries`, with each type's halves).
-
 export type Widget = DashboardDocument["widgets"][number]
 type Display = Widget["display"]
 type DataSource = Widget["dataSource"]
@@ -61,7 +58,7 @@ const panelOf = (state: Pick<EditorState, "visualization" | "chartId">): PanelTy
 export const isNote = (state: Pick<EditorState, "visualization" | "chartId">): boolean =>
 	panelOf(state) === "markdown"
 
-/** `isProductEventsFunnel`: fetched from its step definition, not its query set. */
+/** Fetched from its step definition, not its query set. */
 export const isProductEventsFunnel = (state: Pick<EditorState, "visualization" | "funnel">): boolean =>
 	state.visualization === "funnel" && state.funnel.source === "product_events"
 
@@ -108,7 +105,7 @@ const statAggregateOf = (standIn: RouteStandIn | null, stored: unknown): EditorS
 		? standIn.statAggregate
 		: toStatAggregate(stored)
 
-/** `toInitialState`, normalizing the (visualization, chartId) pair through the panel type. */
+/** Normalizes the (visualization, chartId) pair through the panel type. */
 export const toInitialState = (widget: Widget): EditorState => {
 	const querySet = dataSourceQuerySet(widget.dataSource)
 	const transform = dataSourceTransform(widget.dataSource)
@@ -208,7 +205,7 @@ export const queryCapabilitiesOf = (
 	}
 }
 
-/** `timeseriesDataSource`: the query set every query-driven type starts from. */
+/** The query set every query-driven type starts from. */
 const timeseriesOf = (state: EditorState) => {
 	const hidden = hiddenSeriesBaseNames(state.queries, state.formulas)
 	const sharedTransform = hidden.length > 0 ? { hideSeries: { baseNames: hidden } } : undefined
@@ -222,7 +219,7 @@ const timeseriesOf = (state: EditorState) => {
 	return { base, sharedTransform }
 }
 
-/** `breakdownDataSource`: one row per category; only the pie asks for its long tail. */
+/** One row per category; only the pie asks for its long tail. */
 const breakdownOf = (state: EditorState, defaultLimit?: number): DataSource => {
 	const { sharedTransform } = timeseriesOf(state)
 	return makeQueryDataSource({
@@ -280,7 +277,7 @@ const histogramOf = (state: EditorState): DataSource => {
 	})
 }
 
-/** `buildWidgetDataSource`: each type's `buildDataSource` over the shared base. */
+/** Each type's `buildDataSource` over the shared base. */
 export const buildDataSource = (state: EditorState): DataSource => {
 	switch (panelOf(state)) {
 		case "markdown":
@@ -465,7 +462,7 @@ const sparklineOf = (widget: Widget, state: EditorState, isSql: boolean): Displa
 	return stored?.dataSource === undefined ? undefined : { ...stored, enabled: true }
 }
 
-/** Each type's `buildDisplay` additions (`extendDisplay`); the sparkline re-runs builder queries, so SQL has none. */
+/** Each type's `buildDisplay` additions; the sparkline re-runs builder queries, so SQL has none. */
 const ownDisplayOf = (widget: Widget, state: EditorState, isSql: boolean): Partial<Display> => {
 	switch (panelOf(state)) {
 		case "markdown":
@@ -518,7 +515,7 @@ const ownDisplayOf = (widget: Widget, state: EditorState, isSql: boolean): Parti
 	}
 }
 
-/** `buildWidgetDisplay`: the shared base, then the panel type's own keys. */
+/** The shared base, then the panel type's own keys. */
 const displayOf = (widget: Widget, state: EditorState, isSql: boolean): Display => {
 	// A list owns its whole display: nothing of the previous type survives.
 	if (panelOf(state) === "list") return listDisplayOf(state)
@@ -557,7 +554,7 @@ export const buildDisplay = (widget: Widget, state: EditorState): Display => dis
 /** The display a Raw SQL source writes: no builder sparkline, no title derived from builder queries. */
 export const buildSqlDisplay = (widget: Widget, state: EditorState): Display => displayOf(widget, state, true)
 
-/** `validateQueries` for a query-builder panel: the message that blocks Apply, or `null`. */
+/** The message that blocks Apply for a query-builder panel, or `null`. */
 export const validationErrorOf = (state: EditorState): string | null => {
 	const panelType = panelOf(state)
 	if (panelType === "paths") return pathsValidationError(state.paths)

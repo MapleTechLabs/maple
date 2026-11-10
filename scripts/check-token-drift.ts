@@ -4,7 +4,7 @@
  *
  * packages/ui/src/styles/tokens.css is the single source of truth for the
  * shared design tokens (see DESIGN.md "Token source of truth"). This script
- * fails if apps/web, apps/landing or apps/local-ui re-declare any token name defined there —
+ * fails if apps/web, apps/landing or apps/local-ui re-declare any token name defined there:
  * the exact duplication that let the landing page drift out of sync with the
  * product. App-local tokens (web's --sh-*, landing's --bg-elevated family)
  * are fine because they aren't declared in the shared file.
@@ -72,9 +72,13 @@ const methodDrift = Object.entries(HTTP_METHOD_HEX).filter(
 	([method, hex]) => methodTokens.get(method) !== hex.toLowerCase(),
 )
 if (methodDrift.length > 0) {
-	console.error("--http-* tokens in tokens.css differ from HTTP_METHOD_HEX in packages/ui/src/lib/http.ts:\n")
+	console.error(
+		"--http-* tokens in tokens.css differ from HTTP_METHOD_HEX in packages/ui/src/lib/http.ts:\n",
+	)
 	for (const [method, hex] of methodDrift)
-		console.error(`  --http-${method.toLowerCase()}: ${methodTokens.get(method) ?? "missing"} (HTTP_METHOD_HEX: ${hex})`)
+		console.error(
+			`  --http-${method.toLowerCase()}: ${methodTokens.get(method) ?? "missing"} (HTTP_METHOD_HEX: ${hex})`,
+		)
 	process.exit(1)
 }
 

@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } fr
 import { OrgId, UserId } from "@maple/domain/http"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { convertPersesDashboardToPortable } from "./perses-dashboard-import"
 
 const trackedDbs: TestDb[] = []

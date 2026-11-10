@@ -1,20 +1,21 @@
+import { readClock } from "@maple/views/data/timing"
 import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../conversation/kit/known-services"
-import { Clock, Effect, type Result, Schema, Array as Arr, Option } from "effect"
+import { Effect, type Result, Schema, Array as Arr, Option } from "effect"
 import { Command, Mount } from "foldkit"
 import { load } from "foldkit/navigation"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { isAgentTarget } from "@maple/web-data/investigations/agent-handoff"
-import { writeClipboard } from "@maple/views/ui/copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { clickStream, factsOf, nodeLinkClick } from "../clicks"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
 import { AgentTargetSchema } from "./model"
 
-/** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
+/** The org's service names, read once a thread shows its scroller. */
 export const LoadKnownServices = Command.define("LoadInvestigationKnownServices", {
 	messages: [Message.CompletedLoadKnownServices],
 	execute: Effect.map(loadKnownServices, (services) => Message.CompletedLoadKnownServices({ services })),
@@ -36,12 +37,9 @@ export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
 const finish = <A, E, R, M>(
 	effect: Effect.Effect<A, E, R>,
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
-) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+) => effect.pipe(settleTo(toMessage))
 
-export const ReadInvestigationClock = Command.define("ReadInvestigationClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadInvestigationClock = readClock("ReadInvestigationClock", Message.ReadClock)
 
 export const SignalWindowSchema = Schema.Struct({
 	startTime: Schema.String,

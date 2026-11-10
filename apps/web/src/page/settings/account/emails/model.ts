@@ -5,8 +5,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as OtpField from "@maple/views/ui/otp-field"
 import { AccountEmail, AccountUser } from "../user"
 
-// The Email addresses tab.
-
 /** The add flow: create the address, then verify the emailed code on that address. */
 export const AddStep = Schema.Union([
 	Schema.TaggedStruct("Email", { value: Schema.String }),
@@ -35,7 +33,12 @@ export const Message = defineMessageUnion({
 	GotAddDialogMessage: { message: Dialog.Message },
 	ChangedEmail: { value: Schema.String },
 	SubmittedAdd: {},
-	CompletedCreate: { result: Schema.Result(Schema.Struct({ addressId: Schema.String, email: Schema.String }), Schema.String) },
+	CompletedCreate: {
+		result: Schema.Result(
+			Schema.Struct({ addressId: Schema.String, email: Schema.String }),
+			Schema.String,
+		),
+	},
 	GotCodeMessage: { message: OtpField.Message },
 	CompletedVerify: done,
 	CompletedPrepare: { addressId: Schema.String, email: Schema.String, ...done },

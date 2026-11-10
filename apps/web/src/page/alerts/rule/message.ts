@@ -1,3 +1,5 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	AlertCheckDocument,
 	AlertDeliveryEventDocument,
@@ -14,7 +16,6 @@ import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { V2AlertSilence } from "@maple/domain/http/v2"
 import * as SilenceDialog from "../silence-dialog/dialog"
@@ -23,9 +24,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { PreviewFailure } from "../shared/preview"
 import { CheckStatusFilter, ChecksResponse, SignalSource, StateFilter } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const rows = <S extends Schema.Top>(row: S) => ({ orgId: Schema.String, rows: Schema.Array(row) })
 
@@ -66,7 +64,7 @@ export const Message = defineMessageUnion({
 			LoadFailure,
 		),
 	},
-	/** `setExpanded(!isOpen)`: the header knows whether the panel is open (verdict-driven by default). */
+	/** The header knows whether the panel is open (verdict-driven by default). */
 	ClickedDiagnosisHeader: { isOpen: Schema.Boolean },
 	ClickedShowAllStages: {},
 	ClickedDiagnosisGroup: { groupKey: Schema.String },
@@ -81,9 +79,7 @@ export const Message = defineMessageUnion({
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	CompletedFetchSilences: {
 		key: Schema.String,

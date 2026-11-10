@@ -64,7 +64,6 @@ export class CancellationHomepageError extends Schema.TaggedError<CancellationHo
 	{ message: Schema.String },
 ) {}
 
-/** One line through `redactText`, at most 200 characters; null when empty. */
 const text = (value: string | null | undefined): string | null => {
 	const cleaned = redactText(Str.replaceAll(/\s+/g, " ")(Str.slice(0, 4 * TEXT_MAX)(value ?? "")), TEXT_MAX)
 	return cleaned === "" ? null : cleaned
@@ -83,7 +82,6 @@ export const billingOf = (profile: BillingProfile | null): Billing => ({
 	})),
 })
 
-/** Whether `domain` is one of `domains` or a subdomain of one. */
 const inDomains = (domains: ReadonlySet<string>, domain: string): boolean => {
 	const labels = Str.split(".")(domain)
 	return Arr.some(labels, (_, index) => domains.has(Arr.join(labels.slice(index), ".")))
@@ -272,7 +270,6 @@ export const peopleOf = (atMs: number, members: ReadonlyArray<MemberActivity>): 
 	}
 }
 
-/** Words of three letters or more, lowercase. */
 const wordsOf = (value: string): ReadonlyArray<string> =>
 	Arr.filter(Str.split(/[^\p{L}\p{N}]+/u)(Str.toLowerCase(value)), (word) => word.length >= 3)
 
@@ -319,7 +316,6 @@ export const memberNameWords = (
 export const holdsName = (value: string, nameWords: ReadonlySet<string>): boolean =>
 	Arr.some(wordsOf(value), (word) => nameWords.has(word))
 
-/** What is known of the members' names. */
 export interface MemberNames {
 	/** From `memberNameWords`. */
 	readonly words: ReadonlySet<string>

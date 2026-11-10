@@ -5,12 +5,12 @@
 import { Effect, Option, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
-import type { CoverageUnit, Finding } from "../schema"
+import type { CoverageUnit, Finding, Profile } from "../schema"
 import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
 import { type CarriedRecord, type Engine, type PriorRun, rereadPrompt, type TextAnswer } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
-export const minimumInvocations = (profile: "quick" | "standard" | "deep"): number =>
+export const minimumInvocations = (profile: Profile): number =>
 	// 4 baseline reconnaissance + 1 synthesis + 1 hunter + the profile's mandatory critics + 1 verifier.
 	4 + 1 + 1 + (profile === "quick" ? 1 : 2) + 1
 

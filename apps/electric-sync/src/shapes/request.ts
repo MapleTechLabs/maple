@@ -5,14 +5,8 @@ import {
 	type SubscriptionName,
 	SubscriptionNameSchema,
 	subscriptionScopeColumn,
-} from "./registry"
+} from "@maple/domain/electric-shapes"
 
-/**
- * A shape request that has passed validation: the shape is whitelisted, and if it
- * is a scoped shape it carries an acceptable scope value. `scopeValue` is present
- * only for scoped shapes — a stray `?scope=` on an org-wide shape is dropped here
- * rather than travelling on as something a later caller might act on.
- */
 /**
  * A WHERE predicate and the value it binds, as one thing.
  *
@@ -26,14 +20,12 @@ export interface ScopeBinding {
 	readonly value: string
 }
 
+/** A validated request: a whitelisted shape, and a scope only for a scoped shape (a stray `?scope=` is dropped). */
 export interface SyncRequest {
 	readonly shape: SubscriptionName
 	/**
-	 * The resolved scope binding, or `null` for an org-wide shape. Resolved here
-	 * and nowhere else: a scoped shape can only reach a caller *with* its column
-	 * and value paired up, so "scoped shape, no value" — which used to fall
-	 * through to the org-wide stream the scope exists to avoid — is now
-	 * unrepresentable rather than guarded against.
+	 * `null` for an org-wide shape. A scoped shape always arrives with its column and value paired,
+	 * so it can never fall through to the org-wide stream its scope exists to avoid.
 	 */
 	readonly scope: ScopeBinding | null
 	/** The raw client query, from which only the reserved cursor params are forwarded. */

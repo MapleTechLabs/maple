@@ -3,16 +3,16 @@ import { Clock, Duration, Effect, Layer, Option, Order, Array as Arr } from "eff
 import { TestClock } from "effect/testing"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { AlertDestinationId } from "@maple/domain/primitives"
+import { AlertDestinationId } from "@maple/primitives"
 import { WebhookAlertDestinationConfig } from "@maple/domain/http"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { MAX_SLOS_PER_ORG, SlosService } from "@maple/backend/services/slos/SlosService"
@@ -23,7 +23,9 @@ import {
 	asUserId,
 	createWebhookDestination,
 	makeLayer,
+	alertServices,
 } from "./alerts-service-test-support"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -69,6 +71,7 @@ const harness = (traffic: Traffic) => {
 	const testDb = createTestDb(trackedDbs)
 	const warehouse = sloWarehouse(traffic)
 	const slos = Layer.effect(SlosService, SlosService.make).pipe(
+		Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 		Layer.provide(Layer.mergeAll(testDb.layer, Layer.succeed(WarehouseQueryService, warehouse))),
 	)
 	return { testDb, layer: Layer.mergeAll(makeLayer(testDb, warehouse), slos) }
@@ -113,7 +116,7 @@ const notifiedBy = (badPerMille: number) => {
 	const { layer } = harness({ badPerMille })
 	return Effect.gen(function* () {
 		yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-		const alerts = yield* AlertsService
+		const alerts = yield* alertServices
 		const pager = yield* createNamedWebhook(alerts, "pager")
 		const tickets = yield* createNamedWebhook(alerts, "tickets")
 		const slos = yield* SlosService
@@ -146,7 +149,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer } = harness(traffic)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const slo = yield* createSlo(destination.id)
 			assert.isNotNull(slo.alertRuleId)
@@ -173,7 +176,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer } = harness(traffic)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
 			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
@@ -193,7 +196,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer } = harness(traffic)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
 			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.severity, "critical")
@@ -229,7 +232,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer } = harness({ badPerMille: 8 })
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
 			const opened = (yield* alerts.listIncidents(orgId)).incidents
@@ -242,7 +245,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer } = harness({ badPerMille: 1 })
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createSlo(undefined)
 			yield* alerts.runSchedulerTick()
 			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
@@ -253,7 +256,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 		const { layer, testDb } = harness({ badPerMille: 0 })
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const slos = yield* SlosService
 			const slo = yield* createSlo(undefined)
 			const ruleId = Option.getOrThrow(Option.fromNullOr(slo.alertRuleId))

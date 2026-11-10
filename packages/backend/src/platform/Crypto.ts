@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { Effect, Option } from "effect"
+import { Effect, Option, Result } from "effect"
 
 const IV_BYTES = 12
 const TAG_BYTES = 16
@@ -9,6 +9,16 @@ export interface EncryptedValue {
 	readonly iv: string
 	readonly tag: string
 }
+
+/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed and checked once with `Env`. */
+export const ingestKeyLookupHmacKey = <E>(
+	env: { readonly ingestKeyLookupHmacKey: Result.Result<string, string> },
+	onError: (message: string) => E,
+): Effect.Effect<string, E> =>
+	Result.match(env.ingestKeyLookupHmacKey, {
+		onSuccess: Effect.succeed,
+		onFailure: (message) => Effect.fail(onError(message)),
+	})
 
 /**
  * AES-256-GCM, the primitive under `SecretBox`. Stored secrets go through `SecretBox`, which

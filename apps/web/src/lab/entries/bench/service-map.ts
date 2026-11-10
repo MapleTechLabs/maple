@@ -6,7 +6,7 @@ import {
 	generateBenchGraph,
 	refreshBenchMetrics,
 } from "@maple/views/fixtures/service-map-bench-fixture"
-import type { DeclutterFocus } from "@maple/ui/components/service-map/service-map-declutter"
+import type { DeclutterFocus } from "@maple/views/service-map/graph/service-map-declutter"
 import { cn } from "@maple/ui/lib/utils"
 import { Effect, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Subscription, type Update } from "foldkit"
@@ -93,7 +93,7 @@ const initMap = (params: BenchParams) => {
 	return ServiceMap.init(source, { minTrafficPct: params.minTraffic > 0 ? params.minTraffic : 0, focus })
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, groups }) })`. */
+/** Push the group count into the URL. */
 const PushBenchGroups = Command.define("PushBenchGroups", {
 	args: { groups: Schema.Number },
 	messages: [Message.CompletedPushBenchUrl],

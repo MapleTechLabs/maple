@@ -1,16 +1,8 @@
 import { Effect } from "effect"
 
 /**
- * THE breach/recovery hysteresis shared by the two incident paths.
- *
- * `advanceAlertCounters` (user-configured rules) and `decideTransition` (the
- * zero-config anomaly detector) were the same mechanic spelled twice: breach on
- * N consecutive ticks to open, be healthy on M consecutive ticks to resolve.
- * The anomaly copy additionally guards re-opening with a cooldown.
- *
- * Every caller is a cron tick holding a Postgres row, so this folds one
- * observation into the row's counters with no runtime, fibers, or timers.
- * Wall time arrives as an argument because a tick knows `now`.
+ * Anomaly-detector hysteresis, folded once per cron tick: open on N breaching ticks, resolve on M
+ * healthy ones, re-open only after a cooldown. User rules use the tiered policy in `./tiers`.
  */
 
 export interface HysteresisConfig {

@@ -1,4 +1,3 @@
-/** Output schemas for the external data source MCP tools: list, search, describe and query. */
 import { Schema } from "effect"
 import {
 	CatalogEntryKind,

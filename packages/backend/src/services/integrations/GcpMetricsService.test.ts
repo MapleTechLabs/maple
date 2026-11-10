@@ -26,10 +26,10 @@ import {
 	insertTestSource,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
+import { SourceId } from "@maple/primitives"
 import type { OtlpMetricsPayload } from "./cloudflare-analytics/otlp"
 import { GcpMetricsService, MAX_PAGES_PER_METRIC, MAX_RESOURCE_PAGES, nextWindow } from "./GcpMetricsService"
 

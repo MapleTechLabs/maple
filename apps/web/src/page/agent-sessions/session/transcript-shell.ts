@@ -1,4 +1,4 @@
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { separator } from "@maple/views/ui/display"
@@ -6,8 +6,6 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import type { Message } from "./message"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-
-// The frame every transcript block shares: row, avatar and indent lanes.
 
 type H = HtmlBuilder<Message>
 
@@ -52,7 +50,7 @@ export const avatar = (h: H, name: IconName, className: string): Html =>
 		[icon(h, name, { size: 12 })],
 	)
 
-/** `Row`: indent lanes, the speaker slot (unless `flush`), and the body. */
+/** Indent lanes, the speaker slot (unless `flush`), and the body. */
 export const row = (
 	h: H,
 	options: Readonly<{
@@ -83,7 +81,7 @@ export const row = (
 	)
 }
 
-/** `InlineNote`: a dashed aside with a question mark. */
+/** A dashed aside with a question mark. */
 export const inlineNote = (h: H, children: ReadonlyArray<Html | string>, className?: string): Html =>
 	h.div(
 		[

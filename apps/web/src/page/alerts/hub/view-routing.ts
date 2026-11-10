@@ -27,9 +27,9 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { destinationProvider, providerLogo } from "../shared/providers"
-import { createHref } from "../shared/links"
+import { createHref } from "../../kit/alert-links"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { destinationMenuId } from "./update"
 import { chainsSection } from "./view-chains"
 import { relativeTime } from "../../kit/relative-time"
@@ -40,8 +40,7 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Array as Arr, Option } from "effect"
-
-// `AlertsRoutingTab` and `DestinationRow`: the hub's Routing tab.
+import { canManageAlerts } from "../../kit/session-grants"
 
 export const HEALTH_WINDOW = 20
 export const DESTINATION_ROW_GRID = "grid grid-cols-[minmax(0,1fr)_110px_140px_110px_auto] items-center gap-4"
@@ -117,11 +116,11 @@ const destinationsSection = (
 					emptyTitle(h, ["No destinations yet"]),
 					emptyDescription(h, [
 						"Add Slack, PagerDuty, or webhook destinations before creating alert rules.",
-						...(canManage(model) ? [] : [" Ask an org admin to add one."]),
+						...(canManageAlerts(model) ? [] : [" Ask an org admin to add one."]),
 					]),
 				]),
 				emptyActions(h, [
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								button(
 									h,
@@ -189,7 +188,7 @@ type RowInputs = Readonly<{
 	recent: ReadonlyArray<AlertDeliveryEventDocument>
 }>
 
-/** `DestinationRow`; the Model owns the menu, the test and delete pending state, the confirm dialog. */
+/** The Model owns the row's menu, the test and delete pending state, and the confirm dialog. */
 export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: RowInputs): Html => {
 	const { destination, recent } = row
 	const provider = destinationProvider(destination.type, destination.chatConnector ?? undefined)
@@ -282,7 +281,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							id: `destination-switch-${destination.id}`,
 							inputId: `destination-switch-input-${destination.id}`,
 							isChecked: destination.enabled,
-							isDisabled: !canManage(model),
+							isDisabled: !canManageAlerts(model),
 							ariaLabel: destination.enabled ? "Disable destination" : "Enable destination",
 							onToggle: Message.ClickedToggleDestination({ destinationId: destination.id }),
 						}),
@@ -291,7 +290,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							{
 								size: "sm",
 								variant: "outline",
-								isDisabled: !canManage(model),
+								isDisabled: !canManageAlerts(model),
 								isLoading: model.testingDestinationIds.includes(destination.id),
 								attributes: [
 									h.OnClick(
@@ -301,7 +300,7 @@ export const destinationRow = (h: H, model: Model, inputs: RoutingInputs, row: R
 							},
 							[icon(h, "CheckIcon"), "Test"],
 						),
-						...(canManage(model)
+						...(canManageAlerts(model)
 							? [
 									rowActionsMenu(h, {
 										slotId: menuId,
@@ -368,8 +367,6 @@ const deliveryStrip = (h: H, recent: ReadonlyArray<AlertDeliveryEventDocument>, 
 	)
 }
 
-// DELIVERY LOG
-
 const deliveryLog = (h: H, model: Model, inputs: RoutingInputs): Html =>
 	AsyncData.match(model.routingDeliveries.data, {
 		onIdle: () => logSkeleton(h),
@@ -404,7 +401,7 @@ const logTable = (
 					]),
 				]),
 				emptyActions(h, [
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								linkButton(h, { variant: "outline", size: "sm", href: createHref({}) }, [
 									"Create an alert rule",

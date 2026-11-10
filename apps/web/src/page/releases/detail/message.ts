@@ -1,3 +1,5 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { VcsCommitDetailResponse, VcsCommitRangeResponse } from "@maple/domain/http"
 import { V2ErrorIssue } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -6,12 +8,10 @@ import * as Overlays from "../overlays"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { RequestMode } from "../list/message"
 import { ReleasesData } from "../list/model"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
-import { Commit, CommitFailure } from "../../services/detail/model"
 import { ReleaseDetail } from "./model"
+import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -34,9 +34,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchMarkerCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	ClickedSeries: { series: Schema.Literals(["version", "others"]) },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
 	GotOverlaysMessage: { message: Overlays.Message },
 })

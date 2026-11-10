@@ -1,21 +1,22 @@
 import { cn } from "@maple/ui/lib/utils"
-import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "@maple/ui/styles/ui/avatar"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { kbdGroupStyles, kbdStyles } from "@maple/ui/styles/ui/kbd"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
+import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "./avatar.styles"
+import { badgeVariants } from "./badge.styles"
+import { kbdGroupStyles, kbdStyles } from "./kbd.styles"
+import { separatorStyles } from "./separator.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
-/** `<Kbd>`. */
+// Small display pieces: keyboard keys, badges, separators and avatars.
+
+/** A keyboard key. */
 export const kbd = <Message>(
 	h: HtmlBuilder<Message>,
 	className: string | undefined,
 	children: Children,
 ): Html => h.kbd([h.Class(cn(kbdStyles, className)), h.DataAttribute("slot", "kbd")], children)
 
-/** `<KbdGroup>`. */
 export const kbdGroup = <Message>(
 	h: HtmlBuilder<Message>,
 	className: string | undefined,
@@ -26,7 +27,7 @@ export type BadgeOptions<Message = never> = VariantProps<typeof badgeVariants> &
 	Readonly<{
 		className?: string
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
-		/** Renders the badge as a `<button>` (a removable filter chip). */
+		/** Renders the badge as a button (a removable filter chip). */
 		onClick?: Message
 		/** `h.OnClick` options for `onClick`, for a chip inside another click target. */
 		clickOptions?: ClickOptions
@@ -48,7 +49,7 @@ export const badgeClass = (
 		}),
 	)
 
-/** `<Badge>`: `badgeClass` on a span, or a button / link when `onClick` / `href` is set. */
+/** `badgeClass` on a span, or a button / link when `onClick` / `href` is set. */
 export const badge = <Message>(
 	h: HtmlBuilder<Message>,
 	options: BadgeOptions<Message>,
@@ -62,10 +63,13 @@ export const badge = <Message>(
 	if (options.href !== undefined) return h.a([...attributes, h.Href(options.href)], children)
 	return options.onClick === undefined
 		? h.span(attributes, children)
-		: h.button([h.Type("button"), ...attributes, h.OnClick(options.onClick, options.clickOptions)], children)
+		: h.button(
+				[h.Type("button"), ...attributes, h.OnClick(options.onClick, options.clickOptions)],
+				children,
+			)
 }
 
-/** `<Separator orientation>` (Base UI): a `role="separator"` div with its orientation attributes. */
+/** Base UI's Separator: a `role="separator"` div with its orientation attributes. */
 export const separator = <Message>(
 	h: HtmlBuilder<Message>,
 	orientation: "horizontal" | "vertical",
@@ -85,10 +89,10 @@ export const separator = <Message>(
 	)
 
 /**
- * `<Avatar><AvatarImage><AvatarFallback>`: the initials, with `imageUrl` (a Clerk avatar, an org
+ * An avatar: the initials, with `imageUrl` (a Clerk avatar, an org
  * logo) laid over them. Until it loads, or if it fails (`alt=""` draws nothing), the initials show;
  * once it loads they hide (`ui/avatar-image.ts`), so transparent logo pixels never show them;
- * assistive tech reads the image, named `imageLabel` (`AvatarImage alt`), as Base UI leaves it.
+ * assistive tech reads the image, named `imageLabel`, as Base UI leaves it.
  */
 export const avatarFallback = <Message>(
 	h: HtmlBuilder<Message>,

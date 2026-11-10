@@ -1,6 +1,7 @@
+import { readClock } from "@maple/views/data/timing"
 import { SecurityAuditFindingTriageStatus } from "@maple/domain/http"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
 import { listFindings, listTargets, updateFindingStatus } from "../kit/api"
@@ -8,10 +9,7 @@ import { Message } from "./model"
 
 // The finding page's reads and its one write. Names start with `SecurityApi` so the lab can drop them.
 
-export const ReadFindingClock = Command.define("ReadSecurityFindingClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadFindingClock = readClock("ReadSecurityFindingClock", Message.ReadClock)
 
 export const ReadFindingGrants = Command.define("ReadSecurityFindingGrants", {
 	messages: [Message.CompletedReadGrants],

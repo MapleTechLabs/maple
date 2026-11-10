@@ -3,7 +3,7 @@ import { Subscription } from "foldkit"
 import { pollTicks } from "../../../data/poll"
 import type { Resources } from "../../../platform/resources"
 import { definePage, type PageSubscriptionInput } from "../../contract"
-import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
+import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../kit/alert-collections"
 import { Message } from "./message"
 import { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -46,7 +46,7 @@ const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, R
 	),
 }))
 
-/** `/alerts/$ruleId`: one instance per rule; the tab and window are search. */
+/** `/alerts/rules/$ruleId`: one instance per rule; the tab and window are search. */
 export const page = definePage(
 	"AlertRule",
 	{ Model, Message },

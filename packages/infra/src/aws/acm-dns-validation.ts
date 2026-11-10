@@ -295,7 +295,7 @@ export const issueCertificateViaCloudflare = Effect.fn(function* ({
 
 /**
  * A certificate for an ALB in `region` (an ALB only takes one from its own region), validated
- * through Cloudflare. Returns the ISSUED ARN for the listener, or `undefined` with no hostname.
+ * through Cloudflare. Returns the ISSUED ARN for the listener.
  * `id` is the certificate's logical id and the prefix of the validation resources.
  */
 export const issueRegionalCertificate = Effect.fn(function* ({
@@ -305,11 +305,10 @@ export const issueRegionalCertificate = Effect.fn(function* ({
 	tags,
 }: {
 	id: string
-	hostname: string | undefined
+	hostname: string
 	region: AwsRegionName
 	tags: Record<string, string>
 }) {
-	if (hostname === undefined) return undefined
 	const certificate = yield* AWS.ACM.Certificate(id, {
 		domainName: hostname,
 		validationMethod: "DNS",

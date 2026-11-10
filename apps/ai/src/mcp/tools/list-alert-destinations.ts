@@ -2,9 +2,8 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema, Array as Arr } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { ListAlertDestinationsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { CurrentMcpTenant } from "../tenant"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ALERT_DESTINATION_TYPES } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -19,14 +18,13 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 			type: P.optionalOneOf(ALERT_DESTINATION_TYPES, "Only destinations of this type"),
 			enabled_only: P.optionalFlag("Only enabled destinations"),
 		}),
-		output: ListAlertDestinationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing alert destinations", "Checking alert destinations"],
 		handler: Effect.fn("McpTool.listAlertDestinations")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const alerts = yield* AlertsService
+			const destinationsService = yield* AlertDestinationsService
 
-			const result = yield* alerts
+			const result = yield* destinationsService
 				.listDestinations(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_alert_destinations")))
 

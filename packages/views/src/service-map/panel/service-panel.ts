@@ -1,16 +1,16 @@
-import { resolveDbNodeStyle } from "@maple/ui/components/service-map/service-map-db-style"
+import { resolveDbNodeStyle } from "../graph/service-map-db-style"
 import {
 	aggregateServiceOverviews,
 	CLOUDFLARE_COLOR,
 	dbNodeId,
 	getServiceMapNodeColor,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import type {
 	ServiceMapDbEdgeRow,
 	ServiceMapEdgeRow,
 	ServiceMapOverviewRow,
 	ServicePlatform,
-} from "@maple/ui/components/service-map/service-map-types"
+} from "../graph/service-map-types"
 import { EMPTY_VALUE, formatNumber, formatRate } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { separator } from "../../ui/display"

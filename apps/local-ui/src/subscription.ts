@@ -100,7 +100,7 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
 			dependenciesToStream: ({ hasMap }) => (hasMap ? mapReducedMotion : Stream.empty),
 		},
 	),
-	/** While the logs list shows rows (`useListNavigation`). */
+	/** While the logs list shows rows. */
 	logsNavigationKeys: entry(
 		{ hasLogRows: Schema.Boolean },
 		{

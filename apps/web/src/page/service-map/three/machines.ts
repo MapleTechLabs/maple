@@ -1,11 +1,6 @@
-import {
-	dim,
-	fade,
-	type InkPalette,
-	type MachineKind,
-} from "../../../components/service-map/three/appearance"
-import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
-import type { Node3D } from "../../../components/service-map/three/types"
+import { dim, fade, type InkPalette, type MachineKind } from "./appearance"
+import { health, HEALTH_COLOR, type SpatialView } from "./spatial-layout"
+import type { Node3D } from "./types"
 import * as THREE from "three"
 import { defaultBuilding } from "../factory/catalog"
 import { resolveMachineBadge } from "./badge-art"

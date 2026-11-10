@@ -9,8 +9,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { Effect } from "effect"
-import { listMcpTools } from "@/mcp/tool-catalog"
-import { renderToolDescriptorsModule } from "@/mcp/tool-descriptors-render"
+import { listMcpTools, renderToolDescriptorsModule } from "@/mcp/tool-descriptors-render"
 
 const OUTPUT = resolve(import.meta.dirname, "../src/mcp/tool-descriptors.generated.ts")
 

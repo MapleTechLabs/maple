@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { Result, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -20,7 +20,7 @@ import * as Mcp from "./mcp/update"
 import * as McpView from "./mcp/view"
 import { apiKeyRows } from "./subscription"
 
-// `/mcp`: the same `McpSection` as `/settings?tab=mcp`, standalone.
+// `/mcp`: the same MCP tab as `/settings?tab=mcp`, standalone.
 
 const Model = Schema.Struct({
 	nowMs: Schema.Number,
@@ -86,7 +86,7 @@ const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs,
 	]),
 )
 
-/** An MCP key creation preloads the `api_keys` shape (`useApiKeyMutationSync`). */
+/** An MCP key creation preloads the `api_keys` shape. */
 const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
 	apiKeys: entry(
 		{ orgId: Schema.String, isReading: Schema.Boolean },

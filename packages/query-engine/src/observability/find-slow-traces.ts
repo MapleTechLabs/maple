@@ -1,6 +1,6 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import { TraceId } from "@maple/domain"
-import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
+import type { TracesDurationStatsRow } from "../ch/pipe-rows"
 import { Schema } from "effect"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
@@ -49,7 +49,7 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 				},
 				{ profile: "list" },
 			),
-			executor.query<TracesDurationStatsOutput>(
+			executor.query<TracesDurationStatsRow>(
 				"traces_duration_stats",
 				{
 					start_time: input.timeRange.startTime,

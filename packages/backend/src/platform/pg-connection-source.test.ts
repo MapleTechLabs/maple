@@ -1,4 +1,4 @@
-import { MAPLE_DB_BINDING } from "@maple/infra/cloudflare"
+import { MAPLE_DB_BINDING } from "@maple/infra/worker-runtime"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { mapleDbConnectionFromEnv } from "./pg-connection-source"

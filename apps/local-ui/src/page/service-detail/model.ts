@@ -1,6 +1,5 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -29,7 +28,11 @@ export const OperationRow = Schema.Struct({
 export type OperationRow = typeof OperationRow.Type
 
 /** `SeriesPoint` (lib/chart-series.ts): one long-form (bucket, series, value) row. */
-export const SeriesPoint = Schema.Struct({ bucket: Schema.String, series: Schema.String, value: Schema.Number })
+export const SeriesPoint = Schema.Struct({
+	bucket: Schema.String,
+	series: Schema.String,
+	value: Schema.Number,
+})
 export type SeriesPoint = typeof SeriesPoint.Type
 
 /** `GoldenSignalRow` (lib/golden-signals.ts): one warehouse bucket of entry-span signals. */
@@ -56,8 +59,7 @@ export const Model = Schema.TaggedStruct("ServiceDetailPage", {
 	golden: KeyedSchema(Schema.Array(GoldenSignalRow), LoadFailure),
 	overviewUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	charts: Schema.Record(Schema.String, Chart.Model),
 })
 export type Model = typeof Model.Type

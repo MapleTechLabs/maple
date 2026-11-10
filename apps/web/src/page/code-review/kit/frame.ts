@@ -1,10 +1,13 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import { GithubIntegrationStatus, VcsRepositoryId } from "@maple/domain/http"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "@maple/views/ui/select"
@@ -15,9 +18,6 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 // workflow select, the window and Reload.
 
 export const ALL = "all"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const Frame = Schema.Struct({
 	repoSelect: Select.Model,
@@ -68,26 +68,10 @@ export type FrameReturn = Readonly<{
 	out: FrameOut | null
 }>
 
-// COMMANDS
-
-export const ResolveWindow = Command.define("ResolveCodeReviewWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [FrameMessage.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			FrameMessage.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand(
+	"ResolveCodeReviewWindow",
+	FrameMessage.CompletedResolveWindow,
+)
 
 export const FetchGithubStatus = Command.define("FetchCodeReviewGithubStatus", {
 	args: { key: Schema.String },
@@ -96,17 +80,7 @@ export const FetchGithubStatus = Command.define("FetchCodeReviewGithubStatus", {
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.githubStatus()
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => FrameMessage.CompletedFetchGithubStatus({ key, result })),
-		),
+		}).pipe(settleTo((result) => FrameMessage.CompletedFetchGithubStatus({ key, result }))),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteCodeReviewReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [FrameMessage.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), FrameMessage.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteCodeReviewReloadSpin", FrameMessage.CompletedReloadSpin)

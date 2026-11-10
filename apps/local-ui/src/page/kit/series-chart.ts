@@ -8,7 +8,7 @@ import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The series chart: the pivot, gap handling and the
-// loading / not-enough-data states the detail pages share, over `QueryBuilderLineChart`.
+// loading / not-enough-data states the detail pages share, drawn as a line chart.
 
 /** The tokens the line chart resolves; a page reads them with `ResolveThemeColors`. */
 export const SERIES_CHART_TOKENS = AreaChart.AREA_CHART_TOKENS

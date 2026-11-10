@@ -2,7 +2,7 @@ import type { TimeInput } from "@maple/ui/lib/time-format"
 import { timestamp, type TimestampFormat } from "@maple/views/ui/timestamp"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 
-// `RelativeTime`: `timestamp` with relative text. `nowMs` is the page's resolved clock.
+// A timestamp as relative text. `nowMs` is the page's resolved clock.
 
 export type RelativeTimeOptions = Readonly<{
 	value: TimeInput

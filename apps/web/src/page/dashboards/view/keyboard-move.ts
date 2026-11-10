@@ -7,8 +7,8 @@ import type { KeyboardMove, Model } from "./model"
 import { isEditing } from "./mode"
 import { Option, Array as Arr } from "effect"
 
-// `useGridInteraction`'s keyboard session: Space or Enter on a grip picks the tile up, arrows move
-// it a cell, Shift and arrows resize it, Space or Enter drops it, Escape puts it back.
+// The keyboard session: Space or Enter on a grip picks the tile up, arrows move it a cell, Shift and
+// arrows resize it, Space or Enter drops it, Escape puts it back.
 
 type Return = PageReturn<Model, Message>
 type KeyMessage = Extract<Message, { readonly _tag: "PressedGripKey" }>
@@ -23,7 +23,7 @@ const ARROWS = new Map<string, readonly [-1 | 0 | 1, -1 | 0 | 1]>([
 	["ArrowDown", [0, 1]],
 ])
 
-/** `growItem`: one cell wider or narrower, taller or shorter, within the item's limits. */
+/** One cell wider or narrower, taller or shorter, within the item's limits. */
 const growItem = (layout: Layout, id: string, [dw, dh]: readonly [number, number], cols: number): Layout => {
 	const found = Arr.findFirst(layout, (candidate) => candidate.i === id)
 	if (Option.isNone(found)) return layout
@@ -32,7 +32,7 @@ const growItem = (layout: Layout, id: string, [dw, dh]: readonly [number, number
 	return resizeItem(layout, id, size.w, size.h)
 }
 
-/** `endKeyboard`: a drop commits and announces where; a cancel puts the tile back. */
+/** A drop commits and announces where; a cancel puts the tile back. */
 export const endKeyboardMove = (
 	model: Model,
 	context: PageContext,

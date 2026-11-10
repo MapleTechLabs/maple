@@ -1,14 +1,16 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import type { FleetRead } from "../data"
 import {
@@ -19,7 +21,7 @@ import {
 	LoadStatus,
 	ResolveWindow,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -36,7 +38,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "awsIntegration.status", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "aws")
 
 /** The kinds that reported, in tab order; empty before the fleet read lands. */
 export const reportedKinds = (model: Model): ReadonlyArray<FleetRead["kind"]> =>

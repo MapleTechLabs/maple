@@ -74,7 +74,6 @@ const splitUrl = (url: string): { lead: string; trail: string } =>
 const isFailedRequest = (ev: EventRow): boolean =>
 	ev.type === "network" && (httpStatusTone(ev.netStatus) === "crit" || ev.netStatus === 0)
 
-/** `eventVisual`: the row's glyph, tone and its two text lanes. */
 const eventVisual = (ev: EventRow): { icon: IconName; tone: string; lead: string; trail: string } => {
 	switch (ev.type) {
 		case "navigation":
@@ -139,7 +138,7 @@ const railOf = stableSlice((model: Model) => ({
 }))
 type RailView = ReturnType<typeof railOf>
 
-/** `useClockAt`: a warehouse timestamp's clock offset in the recording. */
+/** A warehouse timestamp's clock offset in the recording. */
 const clockAt = (model: RailView, timestamp: string): string => {
 	const offset = realOffsetFrom(model.startTime, model.totalMs, timestamp)
 	return offset === undefined ? EMPTY_VALUE : formatClock(offset)

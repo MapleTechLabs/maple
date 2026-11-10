@@ -35,7 +35,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import {
 	Duration,
 	Effect,
@@ -47,7 +47,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
-import { SandboxClient } from "@maple/backend/sandbox/client"
+import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import {
 	VcsSourceService,
 	type RepositoryCheckout,
@@ -171,7 +171,6 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 		...(cause === undefined ? undefined : { cause }),
 	})
 
-/** The sandbox Worker's answer as the contract's events, or its failure. */
 export const toEvents = (
 	request: SandboxRequest,
 	response: SandboxExecResponse,
@@ -346,7 +345,6 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 		),
 })
 
-/** The port over the sandbox service binding and the org's connected repositories. */
 export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceService | SandboxClient> =
 	Layer.effect(
 		Sandbox,

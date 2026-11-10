@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Option, Ref, Result, Schema, Array as Arr, String as Str } from "effect"
-import { UpdateDashboardWidgetOutput } from "@maple/domain/mcp-outputs"
 import {
 	type DashboardWidget,
 	optionalJsonText,
@@ -17,7 +16,7 @@ import {
 	inspectWidgetsAfterMutation,
 	validationDoc,
 } from "../lib/inspect-widget"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -132,7 +131,6 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 				"New display.chartId (e.g. bar-chart, area-chart, line-chart); shorthand for switching a chart's style",
 			),
 		}),
-		output: UpdateDashboardWidgetOutput,
 		hints: { readOnly: false, destructive: true, idempotent: true },
 		phrases: ["Updating a widget"],
 		handler: Effect.fn("McpTool.updateDashboardWidget")(function* ({

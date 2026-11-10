@@ -43,13 +43,16 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { createIntegrationSource, publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import {
+	createIntegrationSource,
+	publicSourceId,
+} from "@maple/backend/services/integrations/integration-sources"
+import { SourceId } from "@maple/primitives"
 import { CloudflareAnalyticsService, hasAnalyticsScopes } from "./CloudflareAnalyticsService"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
@@ -1370,7 +1373,103 @@ describe("CloudflareAnalyticsService", () => {
 			// to reach the horizon. (The spent cap grew; pin it so the tick is one round again.)
 			yield* seedGrantCap(20)
 			yield* service.pollOrg(ORG)
-			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 60 * MIN)
+			// The backlogged window ends on the hour grid (09:50 -> 10:00), not a full hour later.
+			assert.strictEqual((yield* watermarksOf(ACCOUNT_ID)).workers, HORIZON - 110 * MIN)
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	/** Start of the first head zone window an account reads, with every row's stored settings set. */
+	const firstHeadZoneStart = (settingsJson: string | null, behindMs: number) =>
+		Effect.gen(function* () {
+			const { tracer, named } = recordSpans()
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedBehindAccount(ACCOUNT_ID, 1, behindMs)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ settingsJson })
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			const zoneHead = Arr.filter(
+				named("CloudflareAnalyticsService.pollDatasetChunk"),
+				(span) =>
+					span.attributes.get("maple.cloudflare.scope") === "zone" &&
+					span.attributes.get("maple.cloudflare.phase") === "head",
+			)
+			return Arr.map(zoneHead, (span) => span.attributes.get("maple.cloudflare.window.start"))[0]
+		})
+
+	it.effect("a head backlog past the 24h floor keeps draining while the plan still retains it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const threeDays = JSON.stringify({ enabled: true, notOlderThan: 3 * 86400, maxDuration: 3600 })
+		return Effect.gen(function* () {
+			// 25h behind is an hour past the backfill floor: that hour is read, not skipped.
+			const start = yield* firstHeadZoneStart(threeDays, 25 * 60 * MIN)
+			assert.strictEqual(start, "2026-07-01T10:50:00Z")
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("a head backlog with unknown retention still clamps to the 24h floor", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		return Effect.gen(function* () {
+			const start = yield* firstHeadZoneStart(null, 25 * 60 * MIN)
+			// BACKFILL_FLOOR: the hour past it is skipped.
+			assert.strictEqual(start, "2026-07-01T11:50:00Z")
+		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	it.effect("zones whose head watermarks drifted apart share one document again", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedBehindAccount(ACCOUNT_ID, 6, 2 * 60 * MIN)
+			// Half the zones sit one bucket ahead, as after a rate-limited chunk.
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(CloudflareAnalyticsState)
+						.set({ watermarkAt: HORIZON - 115 * MIN })
+						.where(($) => [
+							$.zoneId.in_(
+								`${ACCOUNT_ID}-zone-0`,
+								`${ACCOUNT_ID}-zone-1`,
+								`${ACCOUNT_ID}-zone-2`,
+							),
+						]),
+				),
+			)
+			const service = yield* CloudflareAnalyticsService
+			yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+
+			const zoneHead = Arr.filter(
+				named("CloudflareAnalyticsService.pollDatasetChunk"),
+				(span) => span.attributes.get("maple.cloudflare.scope") === "zone",
+			)
+			// Both groups end at 10:00; every later window carries all six zones in one document.
+			const startingAt = (iso: string) =>
+				Arr.map(
+					Arr.filter(
+						zoneHead,
+						(span) => span.attributes.get("maple.cloudflare.window.start") === iso,
+					),
+					(span) => span.attributes.get("maple.cloudflare.zone_count"),
+				)
+			assert.deepStrictEqual(startingAt("2026-07-02T10:00:00Z"), [6])
+			assert.deepStrictEqual(startingAt("2026-07-02T11:00:00Z"), [6])
+			assert.deepStrictEqual(
+				(yield* watermarksOf(ACCOUNT_ID)).http,
+				Arr.makeBy(6, () => HORIZON),
+			)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
 	})
 

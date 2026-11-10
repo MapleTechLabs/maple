@@ -1,4 +1,4 @@
-import { severityDot } from "../../errors/kit/severity"
+import { severityDot } from "../../kit/issue-severity"
 import { NARROW_TWO_COLUMNS, ROOMY_COLUMN, WIDE_COLUMN } from "../kit/layout"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -245,8 +245,6 @@ const kpis = (h: H, model: Model): Html => {
 	])
 }
 
-// TARGETS TABLE
-
 /** "3 high, 1 unverified": how many of a severity's count are estimates. */
 const countTitle = (
 	count: number,
@@ -475,8 +473,6 @@ const targetsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTa
 			),
 		]),
 	])
-
-// BOTTOM PANELS
 
 const findingHref = (finding: SecurityAuditFinding) =>
 	hrefOf(AppRoute.SecurityFinding({ targetId: finding.targetId, fingerprint: finding.fingerprint }))

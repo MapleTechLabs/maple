@@ -29,7 +29,7 @@ export interface ReadSpec<S extends Schema.Top> {
 	readonly key: RequestKey
 	readonly idleTtlMs: number
 	readonly schema: S
-	/** `useAtomRefresh`: read again even when a live entry exists. */
+	/** Read again even when a live entry exists. */
 	readonly refresh?: boolean
 }
 

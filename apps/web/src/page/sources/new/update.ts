@@ -1,6 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -12,7 +12,7 @@ import { sourceRetrieveKey, sourcesListKey } from "../kit/data"
 import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import {
 	CreateSource,
 	FetchCreatedSource,
@@ -21,12 +21,20 @@ import {
 	ScrollToTop,
 	WaitFirstDataPoll,
 } from "./command"
-import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
-import type { Message as IntegrationMessage } from "../../integrations/message"
-import type { Model as IntegrationModel } from "../../integrations/model"
-import * as Integrations from "../../integrations/update"
+import {
+	type DataIntegration,
+	initEmbedded,
+	isDataIntegration,
+	type Message as IntegrationMessage,
+	type Model as IntegrationModel,
+	canContinue,
+	type FlowSpec,
+	flowOf,
+	nextStage,
+	previousStage,
+} from "../../integrations/embed"
+import * as Integrations from "../../integrations/embed"
 import { Message } from "./message"
-import { canContinue, type FlowSpec, flowOf, nextStage, previousStage } from "../../integrations/flow"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -53,7 +61,7 @@ const withForm = (model: Model, platform: PushSourcePlatform | null): Model => (
 	isSaving: false,
 })
 
-/** The form's list read; `refresh` when it mounts again in the same visit (the atom was dropped). */
+/** The form's list read; `refresh` when it mounts again in the same visit (the cached list was dropped). */
 const readList = (model: Model, context: PageContext, refresh: boolean): Return => {
 	const key = sourcesListKey(context.orgId)
 	const next = refresh
@@ -189,7 +197,7 @@ export const flowSpecOf = (model: Model): FlowSpec | null =>
 export const isIntegrationConnected = (model: Model): boolean =>
 	(flowSpecOf(model)?.connected ?? null) !== null
 
-/** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */
+/** The polled source, else the one the create answered. */
 export const latestOf = (model: Model): V2Source | null =>
 	model.created === null
 		? null
@@ -238,7 +246,7 @@ const delegate = <Child, ChildMessage>(
 	wrap: (message: ChildMessage) => Message,
 ): Return => ({ model: set(step.model), commands: Command.mapMessages(step.commands ?? [], wrap) })
 
-/** Polls on while nothing has arrived, success or failure (`enabled: !receiving`). */
+/** Polls on while nothing has arrived, success or failure. */
 const pollUnlessReceiving = (step: Return): Return =>
 	step.model.created === null || isReceiving(step.model) || step.model.firstData.key === null
 		? step

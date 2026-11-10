@@ -1,16 +1,14 @@
 import type {
 	AlertDestinationId,
 	EscalationConfidence,
+	EscalationSkipReason as StoredEscalationSkipReason,
 	IssueEscalationPolicyRule,
 	IssueSeverity,
 } from "@maple/domain/http"
 import { Array as Arr, Option } from "effect"
 
-export type EscalationSkipReason =
-	| "policy_disabled"
-	| "no_destinations_for_severity"
-	| "below_min_confidence"
-	| "no_enabled_destinations"
+/** The policy's own skips; `issue_missing` is the processor's, never the policy's. */
+export type EscalationSkipReason = Exclude<StoredEscalationSkipReason, "issue_missing">
 
 export type EscalationPolicyDecision =
 	| {

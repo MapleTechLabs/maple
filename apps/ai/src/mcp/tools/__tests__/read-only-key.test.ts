@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
-import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
 const createdDbs: TestDb[] = []
@@ -27,7 +26,7 @@ const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>) => {
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
 		database,
 		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes)),
-		Layer.succeed(AlertsService, {
+		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () => Effect.succeed({ destinations: [] }),
 		} as never),
 	)

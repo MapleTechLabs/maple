@@ -141,8 +141,6 @@ const fold = <M, Msg>(
 const targetId = (id: string) => Schema.decodeSync(SecurityAuditTargetId)(id)
 const runId = (id: string) => Schema.decodeSync(SecurityAuditRunId)(id)
 
-// TABS
-
 type TabsStep = Step<TabsPage.Model, TabsPage.Message>
 const tabsUpdate = (model: TabsPage.Model, message: TabsPage.Message) =>
 	TabsUpdate.update(model, message, context)
@@ -241,8 +239,6 @@ const withDialog = (
 	extra: ReadonlyArray<(model: TabsPage.Model) => TabsPage.Message>,
 ): TabsStep => fold(step, tabsUpdate, [() => M.ClickedAddTarget(), ...extra])
 
-// RUN
-
 type RunStep = Step<RunPage.Model, RunPage.Message>
 const R = RunPage.Message
 
@@ -279,8 +275,6 @@ const run = (id: string, nowMs: number): RunStep => {
 		],
 	)
 }
-
-// FINDING
 
 type FindingStep = Step<FindingPage.Model, FindingPage.Message>
 const F = FindingPage.Message
@@ -334,8 +328,6 @@ const finding = (
 	)
 }
 
-// TELEMETRY
-
 type TelemetryStep = Step<TelemetryPage.Model, TelemetryPage.Message>
 const T = TelemetryPage.Message
 
@@ -356,8 +348,6 @@ const exposure = (nowMs: number, data: TelemetryPage.Exposure): TelemetryStep =>
 	telemetry(AppRoute.SecurityExposure(), nowMs, (model) =>
 		T.CompletedFetchExposure({ key: model.exposure.key ?? "", result: Result.succeed(data) }),
 	)
-
-// DEPENDENCIES
 
 type DependenciesStep = Step<DependenciesPage.Model, DependenciesPage.Message>
 const D = DependenciesPage.Message
@@ -407,8 +397,6 @@ const dependencies = (
 		],
 	)
 }
-
-// SCENARIOS
 
 export type Built =
 	| Readonly<{ _tag: "Tabs"; step: TabsStep }>

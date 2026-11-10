@@ -20,7 +20,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
-import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
+import { monitorHref, newMonitorHref } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatMs,
@@ -34,10 +34,10 @@ import {
 	targetLine,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
-import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../shared/uptime-view"
+} from "../../kit/uptime/derive"
+import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../../kit/uptime/view"
 import { Message } from "./message"
-import { canManage, type Model, type UptimeKindFilter } from "./model"
+import { type Model, type UptimeKindFilter } from "./model"
 import { monitorMenuId } from "./update"
 import {
 	groupMonitors,
@@ -50,8 +50,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { dividedList } from "@maple/views/ui/rule"
-
-// The hub's Uptime tab: the filters with the readout, and the monitor table.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -71,7 +70,6 @@ const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = 
 const isKindFilter = (value: string): value is UptimeKindFilter =>
 	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
-/** The empty org: what uptime checks are and the first one to add. */
 const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,
@@ -282,7 +280,7 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 						isPaused ? "–" : formatShare(uptimeShare(recent)),
 					]),
 					...latencyCells(h, monitor),
-					...(canManage(model) ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
+					...(canManageAlerts(model) ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
 				],
 			),
 		],
@@ -366,7 +364,7 @@ const loaded = (
 	nowMs: number,
 	pinnedNamespace: string | null,
 ): Html => {
-	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, canManage(model))
+	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, canManageAlerts(model))
 	const namespaces = AsyncData.getData(model.serviceNamespaces.data)
 	const monitors = scoped(all, namespaces, pinnedNamespace)
 	if (monitors.length === 0)

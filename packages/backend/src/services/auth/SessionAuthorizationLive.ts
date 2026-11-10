@@ -1,8 +1,8 @@
 import { HttpServerRequest } from "effect/http"
-import { API_KEY_PREFIX } from "@maple/db"
+import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Layer, String as Str } from "effect"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -15,7 +15,7 @@ import { getBearerToken } from "./bearer-token"
  * Authorization for the internal API: Clerk sessions only.
  *
  * The public `ApiAuthorizationLive` tries an API key first and falls back to a
- * session. This one inverts the posture — an API-key-shaped token is refused
+ * session. This one inverts the posture: an API-key-shaped token is refused
  * outright, because these endpoints are dashboard transport whose request and
  * response shapes change with the UI.
  *

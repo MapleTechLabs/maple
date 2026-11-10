@@ -1,7 +1,7 @@
 import { AsyncData } from "foldkit"
 import {
 	type InfraSurfaces,
-	type IntegrationFlags,
+	NO_INTEGRATIONS_CONNECTED,
 	probeOf,
 	resolveInfraSurfaces,
 } from "../../../data/infra-surfaces"
@@ -11,8 +11,6 @@ import type { PageContext } from "../../contract"
 import type { Model, SourceId, SourceSummary } from "./model"
 import { SOURCE_IDS } from "./model"
 import { Array as Arr } from "effect"
-
-// `SourceState` and `presentSources`.
 
 export type SourceState =
 	| { readonly status: "loading" }
@@ -40,20 +38,11 @@ const SOURCE_SURFACES = {
 	aws: ["aws"],
 } satisfies Readonly<{ [K in SourceId]: ReadonlyArray<NavSurface> }>
 
-const NOT_CONNECTED: IntegrationFlags = {
-	cloudflare: false,
-	railway: false,
-	planetscale: false,
-	gcp: false,
-	supabase: false,
-	aws: false,
-}
-
-/** `useInfraSurfaces(window)`: the page's probe (the last answer while a new window loads) and the shell's statuses. */
+/** The page's presence probe (the last answer while a new window loads) and the shell's statuses. */
 export const surfacesOf = (model: Model, context: PageContext): InfraSurfaces =>
 	resolveInfraSurfaces(
 		probeOf(model.presence.data),
-		context.infra?.integrations ?? NOT_CONNECTED,
+		context.infra?.integrations ?? NO_INTEGRATIONS_CONNECTED,
 		context.infra?.remembered,
 	)
 

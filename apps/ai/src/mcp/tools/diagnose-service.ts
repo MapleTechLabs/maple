@@ -1,11 +1,10 @@
 import type { McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, formatPercent, formatNumber, toSecondTimestamp, truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
-import { DiagnoseServiceOutput } from "@maple/domain/mcp-outputs"
 import { diagnoseService } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { serviceInfrastructure } from "../lib/infra"
@@ -13,6 +12,7 @@ import { kindTable } from "../lib/infra-render"
 import { warehouseErrorText } from "../lib/map-warehouse-error"
 import { servicePlatform } from "../lib/service-platform"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
+import { orFallback } from "../lib/fallback"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -43,7 +43,6 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 			environment: P.environment(),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: DiagnoseServiceOutput,
 		hints: { readOnly: true },
 		phrases: ["Diagnosing a service", "Checking a service's health"],
 		handler: Effect.fn("McpTool.diagnoseService")(function* (params) {
@@ -56,7 +55,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 				Effect.map(
 					(inventory) => new Set<string>(Arr.map(inventory.integrations, (i) => i.provider)),
 				),
-				Effect.orElseSucceed(() => new Set<string>()),
+				orFallback("connected integrations", () => new Set<string>()),
 			)
 
 			const [result, infrastructure, platform] = yield* Effect.all(

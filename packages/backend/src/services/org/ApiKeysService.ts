@@ -14,14 +14,15 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { API_KEY_PREFIX, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { API_KEY_PREFIX, generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, type ApiKeyRow } from "@maple/db/tables"
-import { Clock, Effect, Layer, Option, Redacted, Schema, Context, String as Str, Array as Arr } from "effect"
+import { Clock, Effect, Layer, Option, Schema, Context, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { Env } from "@maple/backend/platform/Env"
 import { revokeFamiliesForAccessKeys } from "@maple/backend/services/auth/mcp-oauth-family"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 
 export interface ResolvedApiKey {
 	readonly orgId: OrgId
@@ -204,8 +205,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "ApiKeysService", toPersistenceError)
 			const env = yield* Env
-			const hmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			const hmacKey = yield* ingestKeyLookupHmacKey(
+				env,
 				(message) => new ApiKeyPersistenceError({ message }),
 			)
 
@@ -693,10 +694,9 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			//     and Postgres writes no WAL tuple for a row it never touched. Without
 			//     it, isolate churn would put us straight back to a write per request.
 			//
-			// The Map is built per service instance rather than at module scope for the
-			// reason spelled out in ScrapeTargetsService — module scope would share one
-			// memo across every database in a process, which breaks tests that build a
-			// fresh PGlite per case.
+			// The Map is built per service instance rather than at module scope: module
+			// scope would share one memo across every database in a process, which breaks
+			// tests that build a fresh PGlite per case.
 			const LAST_USED_HEARTBEAT_MS = 5 * 60_000
 			const lastUsedTouchMemo = new Map<string, number>()
 

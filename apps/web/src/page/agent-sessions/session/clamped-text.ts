@@ -9,8 +9,6 @@ import { button } from "@maple/views/ui/button"
 import { type CodeActions, messageResponse } from "../../kit/message-response"
 import { typographyClass } from "@maple/views/ui/typography"
 
-// Clamped text and its first line: a body clamped with a "Show full" control.
-
 const CLAMP_CLASSES = {
 	6: "line-clamp-[6]",
 	8: "line-clamp-[8]",

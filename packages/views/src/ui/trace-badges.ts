@@ -1,7 +1,7 @@
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { cn } from "@maple/ui/lib/utils"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { copyableBadgeStyles } from "@maple/ui/styles/ui/copyable-badge"
+import { badgeVariants } from "./badge.styles"
+import { copyableBadgeStyles } from "./copyable-badge.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "./display"
 import { icon } from "./icon"
@@ -9,8 +9,7 @@ import { tooltipTrigger } from "./tooltip-host"
 import { serviceDot } from "./values"
 import { Array as Arr } from "effect"
 
-// Ports of `TraceIdBadge`, `TraceStatusBadge` (packages/ui/src/components/traces/trace-status-badge.tsx) and
-// `ServicePills` (packages/ui/src/components/service-pills.tsx).
+// A trace's id badge, status badge and service pills.
 
 /** The root's HTTP status toned by class (3xx keeps its own blue), else OK / Error. */
 export const traceStatusBadge = <M>(
@@ -19,11 +18,9 @@ export const traceStatusBadge = <M>(
 ): Html => {
 	const code = options.httpStatusCode
 	if (code === undefined || code === null) {
-		return badge(
-			h,
-			{ variant: options.hasError ? "crit" : "ok", className: options.className },
-			[options.hasError ? "Error" : "OK"],
-		)
+		return badge(h, { variant: options.hasError ? "crit" : "ok", className: options.className }, [
+			options.hasError ? "Error" : "OK",
+		])
 	}
 	const tone = httpStatusTone(code)
 	// 3xx has no status tone: it keeps its own blue on the neutral chip.
@@ -73,7 +70,7 @@ export const servicePills = <M>(
 				],
 			)
 
-/** `TraceIdBadge` (`CopyableBadge` + id glyph); `onCopy` is the page's copy of the id. */
+/** A copyable badge with the id glyph; `onCopy` is the page's copy of the id. */
 export const traceIdBadge = <M>(
 	h: HtmlBuilder<M>,
 	traceId: string,

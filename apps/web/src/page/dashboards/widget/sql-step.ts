@@ -6,8 +6,6 @@ import type { Model } from "./model"
 import { isRunnableSql, type RawSqlState } from "./raw-sql"
 import { planPreview, type Return } from "./update"
 
-// `RawSqlEditorPanel`'s steps: typing, the bucket, the chips inserted at the caret, Run preview.
-
 export const SQL_TEXTAREA_ID = "widget-editor-sql"
 
 /** The macro or variable chip inserted at the caret, replacing any selection. */

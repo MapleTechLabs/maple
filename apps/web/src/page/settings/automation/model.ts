@@ -13,8 +13,6 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 
-// `AutomationSection` and `EscalationPolicySection` (apps/web/src/components/settings/).
-
 export const ConfidenceChoice = Schema.Literals(["any", "low", "medium", "high"])
 export type ConfidenceChoice = typeof ConfidenceChoice.Type
 
@@ -48,7 +46,7 @@ export const Model = Schema.Struct({
 	revision: Schema.Number,
 	isSaving: Schema.Boolean,
 	confidenceSelects: Schema.Record(Schema.String, Select.Model),
-	/** `useAlertDestinationsList()`, `null` until the shape answers. */
+	/** The alert destinations, `null` until the shape answers. */
 	destinations: Schema.NullOr(Schema.Array(AlertDestinationDocument)),
 	brokenLogos: Schema.Array(Schema.String),
 	severitySelect: Select.Model,

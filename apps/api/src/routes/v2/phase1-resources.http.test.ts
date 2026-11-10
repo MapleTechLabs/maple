@@ -12,7 +12,7 @@ import {
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	ActorDocument,
 	ActorId,
@@ -55,8 +55,8 @@ import {
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
-import { WarehouseResponseLimitError } from "@maple/query-engine/execution"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { WarehouseResponseLimitError, compiledQueryOf } from "@maple/query-engine/execution"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues } from "@maple/db/tables"
@@ -78,15 +78,20 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
+	Phase1ResourceStubsLayer,
+	WarehouseServiceStubLayer,
 } from "./v2-test-support"
-import { compiledQueryOf } from "@maple/query-engine/execution"
+import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { ReplayBlobStore } from "@maple/backend/services/session-replays/ReplayBlobStore"
+import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
+import { HttpV2InvestigationsLive } from "./investigations.http"
+import { HttpV2AnomaliesLive } from "./anomalies.http"
+import { HttpV2OrganizationLive } from "./organization.http"
+import { HttpV2ErrorIssuesLive } from "./error-issues.http"
+import { HttpV2SessionReplaysLive } from "./session-replays.http"
+import { HttpV2UsersLive } from "./users.http"
 
 /**
  * End-to-end HTTP tests for the Phase-1 remainder v2 groups (investigations,
@@ -400,7 +405,7 @@ const makeHarness = (
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 
 	// Functional stubs for the groups under test — provided first so they win
-	// over the inert stubs in ConfigResourceServiceStubsLayer.
+	// over the inert stubs in Phase1ResourceStubsLayer.
 	let lastIssueListCall: {
 		readonly orgId: string
 		readonly options: Record<string, unknown>
@@ -655,14 +660,35 @@ const makeHarness = (
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.anomalies,
+			MapleApiV2.groups.errorIssues,
+			MapleApiV2.groups.investigations,
+			MapleApiV2.groups.organization,
+			MapleApiV2.groups.sessionReplays,
+			MapleApiV2.groups.users,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2InvestigationsLive,
+				HttpV2AnomaliesLive,
+				HttpV2OrganizationLive,
+				HttpV2ErrorIssuesLive,
+				HttpV2SessionReplaysLive.pipe(
+					Layer.provide(
+						Layer.effect(SessionReplayReadService, SessionReplayReadService.make).pipe(
+							Layer.provide(ReplayBlobStore.layer),
+						),
+					),
+				),
+				HttpV2UsersLive.pipe(Layer.provide(Layer.effect(UsersReadService, UsersReadService.make))),
+			),
+		),
 		Layer.provide(functionalStubs),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
+		Layer.provide(Layer.merge(Phase1ResourceStubsLayer, WarehouseServiceStubLayer)),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

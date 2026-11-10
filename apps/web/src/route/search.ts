@@ -17,10 +17,11 @@ import {
 	PrReviewSeverity,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { PushSourcePlatform } from "@maple/domain/primitives"
+import { PushSourcePlatform } from "@maple/primitives"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { VARIABLE_PARAM_PREFIX } from "../lib/dashboard-controls/search-params"
-import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../lib/errors/hub-params"
+import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
+import { VARIABLE_PARAM_PREFIX } from "./dashboard-controls"
+import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
 
 /**
  * A string as a link wrote it. The search format reads an unquoted `404`, `true` or `null` as
@@ -53,7 +54,6 @@ export const OptionalStringArrayParam = Schema.optional(
 const BooleanParam = Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam]))
 const NumberParam = Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam]))
 
-// Time range
 export const TimeRangeSearchFields = {
 	startTime: StringParam,
 	endTime: StringParam,
@@ -78,10 +78,6 @@ export const dashboardViewParamsSchema = {
 	to: Schema.optional(Schema.Unknown),
 }
 
-// Agent tool analytics and search
-const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
-const TOOL_PERCENTILES = ["p50", "p90", "p95"] as const
-
 const ToolAnalyticsSearchFields = {
 	metric: Schema.optional(Schema.Literals(TOOL_METRICS)),
 	percentile: Schema.optional(Schema.Literals(TOOL_PERCENTILES)),
@@ -96,7 +92,6 @@ const ToolAnalyticsSearchFields = {
 	variant: StringParam,
 }
 
-// apps/web/src/components/analytics/filters.ts
 const analyticsFilterSearchFields = {
 	host: StringParam,
 	pagePath: StringParam,
@@ -114,7 +109,6 @@ const analyticsFilterSearchFields = {
 	eventName: StringParam,
 }
 
-// Code review
 const CodeReviewSearchFields = {
 	repo: Schema.optional(VcsRepositoryId),
 	author: StringParam,
@@ -169,7 +163,7 @@ const CodeReviewCiSearchFields = {
 	result: Schema.optional(CiRunResult),
 }
 
-// apps/web/src/components/infra/cloudflare/filters.ts + list-model.ts
+// The Cloudflare pages' search: `page/infra-integrations/cloudflare/filters.ts` reads the filters.
 const cloudflareFilterSearchFields = {
 	hosts: OptionalStringArrayParam,
 	cacheStatuses: OptionalStringArrayParam,
@@ -182,12 +176,11 @@ const cloudflareFilterSearchFields = {
 	deviceTypes: OptionalStringArrayParam,
 }
 
-const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
-const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
-const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
-const ZONE_TABS = ["traffic", "dns", "security"] as const
+export const CLOUDFLARE_VIEWS = ["zones", "workers", "queues"] as const
+export const ZONE_SCOPES = ["serving5xx", "mostly4xx", "lowVolume"] as const
+export const WORKER_SCOPES = ["erroring", "slow", "cpuHeavy"] as const
+export const ZONE_TABS = ["traffic", "dns", "security"] as const
 
-// PlanetScale filters
 const planetscaleFilterSearchFields = {
 	branches: OptionalStringArrayParam,
 	branchStates: OptionalStringArrayParam,
@@ -233,8 +226,8 @@ export const legacySettingsTabValues = [
 	"developer",
 ] as const
 
-const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
-const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
+export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
+export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
 const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
@@ -245,8 +238,6 @@ export const ErrorIssuesSearch = Schema.Struct({
 	workflowState: Schema.optional(Schema.Unknown),
 	severity: Schema.optional(Schema.Unknown),
 })
-
-// Top-level routes
 
 export const HomeSearch = Schema.Struct({
 	environment: StringParam,
@@ -310,7 +301,6 @@ export const ServiceMapSearch = Schema.Struct({
 export const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
 	checkout: Schema.optional(Schema.Literal("complete")),
-	// audit-log-filters.ts `AuditLogSearchFields`
 	range: StringParam,
 	since: StringParam,
 	until: StringParam,
@@ -340,8 +330,6 @@ export const SignUpSearch = Schema.Struct({
 export const UnsubscribeSearch = Schema.Struct({
 	token: StringParam,
 })
-
-// Detail routes
 
 export const AgentSessionSearch = Schema.Struct({
 	t: StringParam,
@@ -388,6 +376,9 @@ export const AlertsScheduleNewSearch = Schema.Struct({
 })
 
 export const AlertsScheduleSearch = Schema.Struct({})
+
+/** `/alerts/escalation-chains/new` and `/:chainId`. */
+export const AlertsEscalationChainSearch = Schema.Struct({})
 
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
@@ -494,8 +485,6 @@ export const TraceSearch = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["waterfall", "timeline", "flow"])),
 })
 
-// List routes
-
 export const AgentSessionsSearch = Schema.Struct({
 	vendors: OptionalStringArrayParam,
 	services: OptionalStringArrayParam,
@@ -520,8 +509,23 @@ export const AgentSessionsSearch = Schema.Struct({
 	sortDir: Schema.optional(AiSessionSortDir),
 })
 
-export const AlertsSearch = Schema.Struct({
-	tab: StringParam,
+/** The Alerts hub's sections past the Inbox, each at `/alerts/<section>`. */
+export const AlertsSection = Schema.Literals([
+	"rules",
+	"uptime",
+	"slos",
+	"silences",
+	"maintenance",
+	"on-call",
+	"routing",
+])
+export type AlertsSection = typeof AlertsSection.Type
+
+/** A hub section: the Inbox at `/alerts`, the rest at `/alerts/<section>`. */
+export const AlertsTab = Schema.Union([Schema.Literal("inbox"), AlertsSection])
+export type AlertsTab = typeof AlertsTab.Type
+
+const alertsHubSearchFields = {
 	serviceName: StringParam,
 	status: StringParam,
 	/** The Inbox narrowed to one kind of incident: "anomaly" lists anomalies alone. */
@@ -530,7 +534,15 @@ export const AlertsSearch = Schema.Struct({
 	anomalyStatus: StringParam,
 	/** The Silences tab narrowed to one maintenance window's occurrences (`mw_…`). */
 	window: StringParam,
-})
+	/** The open side panel (`SHEET_PARAM`): "silence" is the new-silence form. */
+	sheet: StringParam,
+}
+
+/** `/alerts` and `/alerts/<section>`: the filters every section shares. */
+export const AlertsHubSearch = Schema.Struct(alertsHubSearchFields)
+
+/** `/alerts`: a legacy `tab` redirects to its section's own path. */
+export const AlertsSearch = Schema.Struct({ tab: StringParam, ...alertsHubSearchFields })
 
 export const AnalyticsSearch = Schema.Struct({
 	...analyticsFilterSearchFields,
@@ -583,6 +595,19 @@ export const InvestigationsSearch = Schema.Struct({
 	q: StringParam,
 })
 
+/** A where-clause attribute predicate (`/traces` and `/logs` advanced filters). */
+const attributeFilterParamFields = {
+	key: Schema.String,
+	value: Schema.String,
+	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
+	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+}
+
+const AttributeFilterParam = Schema.Struct({
+	...attributeFilterParamFields,
+	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
+})
+
 export const LogsSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	severities: OptionalStringArrayParam,
@@ -595,6 +620,10 @@ export const LogsSearch = Schema.Struct({
 	excludedDeploymentEnvs: OptionalStringArrayParam,
 	excludedNamespaces: OptionalStringArrayParam,
 	attrs: OptionalStringArrayParam,
+	/** The advanced filter's clause; the facet params it sets are synced into their own params. */
+	whereClause: StringParam,
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterParam)),
 	columns: OptionalStringArrayParam,
 	search: StringParam,
 	traceId: StringParam,
@@ -673,18 +702,6 @@ export const ServicesSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-const attributeFilterParamFields = {
-	key: Schema.String,
-	value: Schema.String,
-	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
-	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
-}
-
-const AttributeFilterParam = Schema.Struct({
-	...attributeFilterParamFields,
-	or: Schema.optional(Schema.Array(Schema.Struct(attributeFilterParamFields))),
-})
-
 export const TracesSearch = Schema.Struct({
 	services: OptionalStringArrayParam,
 	spanNames: OptionalStringArrayParam,
@@ -719,8 +736,6 @@ export const TracesSearch = Schema.Struct({
 	sortDir: SortDirParam,
 	...TimeRangeSearchFields,
 })
-
-// Nested detail routes
 
 export const AgentSessionToolSearch = Schema.Struct({
 	...ToolAnalyticsSearchFields,
@@ -763,8 +778,6 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 export const InfraSupabaseProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
-
-// Nested list routes
 
 /** `/mcp-servers`, a server, its tool page and its sessions share one search: the time range and the toolbar. */
 export const McpServersSearch = Schema.Struct({
@@ -840,7 +853,6 @@ export const InfraHostsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-// Redirects to /infra/kubernetes/pods carrying search.
 export const InfraKubernetesSearch = Schema.Struct(TimeRangeSearchFields)
 
 export const InfraPlanetscaleSearch = Schema.Struct({
@@ -855,8 +867,6 @@ export const InfraRailwaySearch = Schema.Struct({
 export const InfraSupabaseSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
-
-// Deeper routes
 
 export const DashboardWidgetSearch = Schema.StructWithRest(Schema.Struct(dashboardViewParamsSchema), [
 	variableSearchRest,
@@ -962,7 +972,6 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	workloadName: Schema.String,
 })
 
-// Security Center
 export const SecurityFindingsSearch = Schema.Struct({
 	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
 	/** A severity, or the unscored leads: the tiles' one filter. */

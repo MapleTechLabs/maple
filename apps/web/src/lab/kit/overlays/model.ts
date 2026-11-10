@@ -34,7 +34,7 @@ export const Model = Schema.Struct({
 	toasts: Toast.Model,
 	tooltip: Tooltip.Model,
 	dropdownMenu: Menu.Model,
-	/** `KitDropdownMenu`'s checkbox and radio items (`defaultChecked`, `defaultValue`). */
+	/** The dropdown menu's checkbox and radio items. */
 	menuSettings: Schema.Struct({
 		showAttributes: Schema.Boolean,
 		wrapLines: Schema.Boolean,

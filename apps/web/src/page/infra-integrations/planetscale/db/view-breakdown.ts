@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../branch-selection"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -6,24 +6,17 @@ import { pressable } from "@maple/views/ui/pressable"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	MISSING,
-	utilizationClass,
-} from "../../../../components/infra/planetscale/metrics"
-import { formatWholePercent } from "../../../../components/infra/format"
+import { lagClass, MISSING, utilizationClass } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
+import { formatWholePercent } from "../../../infra/kit/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `PlanetScaleBranchBreakdownPanel`.
 
 type H = HtmlBuilder<Message>
 
@@ -85,11 +78,10 @@ interface Row {
 	readonly isOther: boolean
 }
 
-/** `relativeRatio`. */
 const relativeRatio = (value: number, max: number): number =>
 	max > 0 && Number.isFinite(value) ? Math.max(0, value) / max : 0
 
-/** `shareBar`: the row's background filled to its share. */
+/** The row's background filled to its share. */
 export const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefined => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined

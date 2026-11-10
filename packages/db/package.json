@@ -3,7 +3,6 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		".": "./src/index.ts",
 		"./client": "./src/client.ts",
 		"./migrate": "./src/migrate.ts",
 		"./pglite": "./src/pglite.ts",
@@ -27,6 +26,7 @@
 		"@electric-sql/pglite": "^0.5.15",
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/security-audit": "workspace:*",
 		"effect": "catalog:effect",
 		"pg": "^8.23.1"

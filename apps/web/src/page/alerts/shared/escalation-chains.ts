@@ -5,19 +5,17 @@ import type {
 	OnCallScheduleId,
 	UserId,
 } from "@maple/domain/http"
-import type {
-	V2AlertIncidentEscalation,
-	V2EscalationChain,
-	V2EscalationChainCreateParams,
+import {
+	EscalationChainPublicId,
+	type V2AlertIncidentEscalation,
+	type V2EscalationChain,
+	type V2EscalationChainCreateParams,
 } from "@maple/domain/http/v2"
 import { formatAlertTimeNear } from "@maple/web-data/alerts/form-utils"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
-
-// Escalation chain reads and writes as Effects the pages' Commands wrap, and how a chain and an
-// incident's run read in one line.
 
 /** An org holds at most 100 chains, one v2 page. */
 export const CHAIN_LIST_LIMIT = 100
@@ -30,6 +28,12 @@ export const listEscalationChains = Effect.gen(function* () {
 	const page = yield* client.escalationChains.list({ query: { limit: CHAIN_LIST_LIMIT } })
 	return page.data
 }).pipe(Effect.mapError(toLoadFailure))
+
+export const retrieveEscalationChain = (id: EscalationChainId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.escalationChains.retrieve({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
 
 /** Creates a chain, or replaces `editingId`'s fields with the form's. */
 export const saveEscalationChain = (
@@ -52,7 +56,6 @@ export const deleteEscalationChain = (id: EscalationChainId) =>
 		yield* client.escalationChains.delete({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-/** The incident's latest escalation run, from its v2 document. */
 export const retrieveIncidentEscalation = (id: AlertIncidentId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -60,9 +63,21 @@ export const retrieveIncidentEscalation = (id: AlertIncidentId) =>
 		return incident.escalation
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const routingTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "routing" } }))
+export const routingTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "routing", search: {} }))
 
-// SUMMARY
+const encodeChainId = Schema.encodeSync(EscalationChainPublicId)
+const decodeChainId = Schema.decodeUnknownOption(EscalationChainPublicId)
+
+/** The `esc_…` id in a URL as the internal id. */
+export const chainIdFromUrl = (raw: string): Option.Option<EscalationChainId> => decodeChainId(raw)
+
+export const chainHref = (id: EscalationChainId): string =>
+	hrefOf(AppRoute.AlertsEscalationChain({ chainId: encodeChainId(id), search: {} }))
+
+export const newChainHref = (): string => hrefOf(AppRoute.AlertsEscalationChainNew({ search: {} }))
+
+/** 404 on a read or a write: the chain was deleted elsewhere. */
+export const CHAIN_NOT_FOUND_CODE = "escalation_chain_not_found"
 
 /** `10m`, `1h`, `1h 30m`, `1d`. */
 export const formatWait = (minutes: number): string => {
@@ -97,8 +112,18 @@ export type TargetNames = Readonly<{
  * One line for a chain: "Slack #alerts-api, then PagerDuty after 10m, then email after 15m;
  * repeats twice". Each step waits for an ack before the next, so a step's delay is the one before it.
  */
+export type ChainOutline = Readonly<{
+	steps: ReadonlyArray<
+		Readonly<{
+			targets: ReadonlyArray<V2EscalationChain["steps"][number]["targets"][number]>
+			wait_minutes: number
+		}>
+	>
+	repeat_count: number
+}>
+
 export const chainSummary = (
-	chain: Pick<V2EscalationChain, "steps" | "repeat_count">,
+	chain: ChainOutline,
 	nameOf: (id: AlertDestinationId) => string,
 	people: TargetNames = {},
 ): string => {
@@ -120,8 +145,6 @@ export const chainSummary = (
 	})
 	return `${Arr.join(parts, ", ")}${repeatPhrase(chain.repeat_count)}`
 }
-
-// INCIDENT RUN
 
 export type RunState = "escalating" | "paused" | "finished"
 

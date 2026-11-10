@@ -1,4 +1,4 @@
-import { mapPalette } from "../../../components/service-map/three/appearance"
+import { mapPalette } from "./appearance"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"

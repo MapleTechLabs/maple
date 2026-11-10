@@ -3,7 +3,7 @@ import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { MapleDbConnection, SandboxFetcher } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -11,7 +11,7 @@ import {
 	type PgConnectionScopeApi,
 	withPgConnectionScopeOf,
 } from "@maple/backend/platform/pg-connection-scope"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -20,7 +20,7 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { buildIsolateHandler } from "../worker/http"
 import { McpToolExecutorLoader } from "./executor-loader"
 import { McpLive } from "./app"
-import { listMcpTools } from "./tool-catalog"
+import { listMcpTools } from "./tool-descriptors-render"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -94,6 +94,7 @@ const isolate = async () => {
 			Option.some({ connectionString: "postgres://unused.invalid/maple", attributes: {} }),
 		),
 		Env.layer.pipe(Layer.provide(testConfig)),
+		SandboxFetcher.none,
 	)
 	const routes = McpLive.pipe(
 		Layer.provideMerge(McpToolExecutorLoader.layer),

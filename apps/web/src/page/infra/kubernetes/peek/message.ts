@@ -1,26 +1,28 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
-import { SeriesResult } from "../../kit/series"
+import { SeriesResult } from "../../../kit/series"
 import { fetchPodSeries, fetchPodSummary, PodSeriesInput, PodSummary, PodSummaryInput } from "../pod-data"
 
 export const Step = Schema.Literals([1, -1])
 export type Step = typeof Step.Type
 
 export const Message = defineMessageUnion({
-	CompletedFetchSummary: { podKey: Schema.String, key: Schema.String, result: Schema.Result(PodSummary, LoadFailure) },
+	CompletedFetchSummary: {
+		podKey: Schema.String,
+		key: Schema.String,
+		result: Schema.Result(PodSummary, LoadFailure),
+	},
 	CompletedFetchSeries: { id: Schema.String, key: Schema.String, result: SeriesResult },
 	ClickedStep: { step: Step },
 	/** `MountPeekKeys`: ↓/J forward, ↑/K back. */
 	PressedStepKey: { step: Step },
 	ClickedRetrySummary: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { id: Schema.String, message: Chart.Message },
 	GotDialogMessage: { message: Dialog.Message },
 })
@@ -37,7 +39,9 @@ export const FetchPeekSummary = Command.define("FetchInfraPodPeekSummary", {
 	args: { podKey: Schema.String, key: Schema.String, input: PodSummaryInput },
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ podKey, key, input }) =>
-		Effect.map(fetchPodSummary(input), (result) => Message.CompletedFetchSummary({ podKey, key, result })),
+		Effect.map(fetchPodSummary(input), (result) =>
+			Message.CompletedFetchSummary({ podKey, key, result }),
+		),
 })
 
 export const FetchPeekSeries = Command.define("FetchInfraPodPeekSeries", {

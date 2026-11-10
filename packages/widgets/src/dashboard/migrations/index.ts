@@ -7,8 +7,8 @@ export type { DashboardMigration } from "./types"
 
 /**
  * Ordered chain, one entry per version step. `migrations.test.ts` asserts the
- * chain is contiguous and terminates at `CURRENT_DASHBOARD_SCHEMA_VERSION`, so a
- * step added out of order fails there rather than silently skipping a document.
+ * chain is contiguous from 1, so a step added out of order fails there rather
+ * than silently skipping a document. It ends at 2; see `migrateToLatest`.
  */
 export const DASHBOARD_MIGRATIONS: ReadonlyArray<DashboardMigration> = [v1ToV2]
 
@@ -31,7 +31,7 @@ export const detectSchemaVersion = (document: unknown): DashboardSchemaVersion =
 
 /**
  * Walks the chain from the document's declared version to the current one and
- * stamps the result. Never throws — see invariant 3 above.
+ * stamps the result. Never throws: see invariant 3 on `DashboardMigration`.
  */
 export const migrateToLatest = (document: unknown): Record<string, unknown> => {
 	if (!isPlainObject(document)) return { schemaVersion: CURRENT_DASHBOARD_SCHEMA_VERSION }

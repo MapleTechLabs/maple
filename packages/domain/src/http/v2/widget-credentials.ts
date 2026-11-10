@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyPersistenceError } from "../api-keys"
-import { OrgId } from "../../primitives"
+import { OrgId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"

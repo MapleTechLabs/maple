@@ -1,6 +1,6 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { rowHealth, type RowRules } from "../../../../components/infra/gcp/list-model"
-import { gcpWorkloadId, gcpWorkloadSearch } from "../../../../components/infra/gcp/tabs"
+import { rowHealth, type RowRules } from "../list-model"
+import { gcpWorkloadId, gcpWorkloadSearch } from "../tabs"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,7 +8,7 @@ import * as Chart from "@maple/views/charts/chart"
 import * as Sparkline from "@maple/views/charts/sparkline"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
-import { ROW_LINK_CLASS } from "../../../infra/kit/data-table"
+import { ROW_LINK_CLASS } from "../../../kit/data-table"
 import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
 import { Message } from "./model"
@@ -18,8 +18,6 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str } from "effect"
-
-// The shared parts of the Google Cloud list rows.
 
 export type H = HtmlBuilder<Message>
 
@@ -59,7 +57,7 @@ type RowBase = Readonly<{
 	engine?: string | undefined
 }>
 
-/** `WorkloadRow`: the health dot, the service glyph, the name with its sub-line, then the cells. */
+/** The health dot, the service glyph, the name with its sub-line, then the cells. */
 export const workloadRow = <R extends RowBase, S extends string>(
 	h: H,
 	options: Readonly<{
@@ -107,7 +105,7 @@ export const workloadRow = <R extends RowBase, S extends string>(
 
 const CHART_MODEL = Chart.init()
 
-/** `Spark`: a monotone `PlotSparkline`, or the reserved box under two values. */
+/** A monotone sparkline, or the reserved box under two values. */
 export const spark = (
 	h: H,
 	ctx: RowsContext,
@@ -144,7 +142,6 @@ export const spark = (
 					],
 				)
 
-/** `VolumeCell`: a count and its sparkline. */
 /** "880K" over "880.0K": a trailing ".0" carries nothing, so the column drops it. */
 const formatVolume = (value: number): string => Str.replace(/\.0(?=[KMBT]$)/, "")(formatNumber(value))
 

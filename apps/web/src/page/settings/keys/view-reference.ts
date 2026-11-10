@@ -1,11 +1,11 @@
-import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../platform/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { collapsible } from "@maple/views/ui/collapsible"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
-import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { linkButton } from "@maple/views/ui/button"
@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
-
-// `ApiReference` and `OAuthPointer`.
 
 type H = HtmlBuilder<Message>
 

@@ -5,7 +5,7 @@
  * with the org's public key, so it is metered and routed like any other telemetry.
  */
 import type { WorkflowJobJob, WorkflowRunJob } from "@maple/domain/http"
-import { type OrgId, UserId } from "@maple/domain/primitives"
+import { type OrgId, UserId } from "@maple/primitives"
 import { VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Clock, Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
@@ -17,7 +17,7 @@ import {
 	type WorkflowEventSinkApi,
 } from "@maple/backend/services/integrations/vcs/WorkflowEventSink"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { isSourcePaused, stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import { isSourcePaused, stampedSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import {
 	type IngestSendError,

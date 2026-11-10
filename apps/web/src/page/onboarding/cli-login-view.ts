@@ -17,7 +17,6 @@ const otpConfig = (model: Model): OtpField.OtpFieldViewConfig<Message> => ({
 	size: "lg",
 })
 
-/** The code entry: `<Label>`, the eight-slot `<OTPField>` and its hint, then the error. */
 const entry = (h: H, model: Model): Html => {
 	const config = otpConfig(model)
 	const slot = (index: number) =>

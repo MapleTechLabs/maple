@@ -13,7 +13,7 @@ export type PinnedDashboardRow = typeof PinnedDashboardRow.Type
 const byUpdatedDesc = Order.flip(Order.mapInput(Order.String, (row: PinnedDashboardRow) => row.updated_at))
 
 /**
- * `useDashboardsRead` for the Pinned group: a live query over the org's `dashboards` collection,
+ * The Pinned group's read: a live query over the org's `dashboards` collection,
  * newest first. The collection is the one the dashboards pages read, so the shape is requested once.
  */
 export const pinnedDashboardRows = <Message>(

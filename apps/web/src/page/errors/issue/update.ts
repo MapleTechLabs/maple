@@ -1,10 +1,14 @@
-import { type ErrorIssueId, ErrorIssuePullRequestId, type IssueSeverity } from "@maple/domain/http"
-import { Option, Result, Schema, String as Str, Array as Arr } from "effect"
+import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
+import { Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -41,7 +45,7 @@ import {
 	pullRequestsOf,
 	type Search,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import { overflowStep } from "./overflow"
 import {
@@ -63,36 +67,15 @@ import {
 	severityConfirmStep,
 	startWrite,
 } from "./writes"
+import { isIssueSeverity } from "../../kit/issue-severity"
 
 const decodePullRequestId = Schema.decodeUnknownOption(ErrorIssuePullRequestId)
 
 export type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
-type Step = Readonly<{ patch: Partial<Model>; commands: ReadonlyArray<Cmd> }>
+type Step = KitStep<Model, Message>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
-
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.ReadMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Cmd,
-): Step =>
-	Option.match(Keyed.requestFor(slot, key, mode), {
-		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
-	})
-
-const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	Arr.reduce<(typeof steps)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
-		steps,
-		{ model, commands: [] },
-		(acc, step) => {
-			const next = step(acc.model)
-			return { model: { ...acc.model, ...next.patch }, commands: [...acc.commands, ...next.commands] }
-		},
-	)
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -170,7 +153,7 @@ const loadedReads =
 			? NO_STEP
 			: keyed(
 					model.githubStatus,
-					requestKey(context.orgId, "integrations.githubStatus", {}),
+					integrationStatusKey(context.orgId, "github"),
 					"Load",
 					(next) => ({ githubStatus: next }),
 					(k) => FetchGithubStatus({ key: k }),
@@ -234,8 +217,6 @@ const syncSelects = (model: Model): Model =>
 		}),
 	})
 
-// ENTRY POINTS
-
 export const init = (
 	route: { readonly issueId: ErrorIssueId; readonly search: Search },
 	context: PageContext,
@@ -286,17 +267,13 @@ export const init = (
 		refreshVersion: 0,
 		isReloading: false,
 	}
-	const reads = applySteps(model, issueReads(context)(model))
+	const reads = runSteps(model, issueReads(context)(model))
 	return {
 		model: reads.model,
 		commands: [
 			resolveCommand(model.search, context, "Load"),
 			...(reads.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -349,16 +326,13 @@ const selectStep = (
 	return { ...picked, commands: [...(stepped.commands ?? []), ...(picked.commands ?? [])] }
 }
 
-const isSeverity = (value: string): value is IssueSeverity =>
-	value === "critical" || value === "high" || value === "medium" || value === "low"
-
-/** The reads a write invalidates (`invalidateKeys`): the detail, affected users, timeline, escalations, PRs, verifications. */
+/** The reads a write invalidates: the detail, affected users, timeline, escalations, PRs, verifications. */
 const refreshAfterWrite =
 	(context: PageContext) =>
 	(model: Model): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
 		const key = (operation: string) => requestKey(context.orgId, operation, model.issueId)
 		const issueId = model.issueId
-		const result = applySteps(model, [
+		const result = runSteps(model, [
 			...(model.window === null
 				? []
 				: [
@@ -412,22 +386,19 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
-			applySteps({ ...model, window, nowMs }, [
+			runSteps({ ...model, window, nowMs }, [
 				detailStep(context, window, mode),
 				affectedUsersStep(context, window, mode),
 			]),
 		CompletedFetchDetail: ({ key, result }) =>
-			applySteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
+			runSteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
 				loadedReads(context),
 				vcsStep(context),
 			]),
 		MountedRightRail: () =>
 			model.isRightRailMounted
 				? { model }
-				: applySteps({ ...model, isRightRailMounted: true }, [
-						loadedReads(context),
-						vcsStep(context),
-					]),
+				: runSteps({ ...model, isRightRailMounted: true }, [loadedReads(context), vcsStep(context)]),
 		CompletedFetchEvents: ({ key, result }) => ({
 			model: { ...model, events: Keyed.accept(model.events, key, result) },
 		}),
@@ -438,7 +409,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, investigations: Keyed.accept(model.investigations, key, result) },
 		}),
 		CompletedFetchPullRequests: ({ key, result }) =>
-			applySteps({ ...model, pullRequests: Keyed.accept(model.pullRequests, key, result) }, [
+			runSteps({ ...model, pullRequests: Keyed.accept(model.pullRequests, key, result) }, [
 				vcsStep(context),
 			]),
 		CompletedFetchVerifications: ({ key, result }) => ({
@@ -451,7 +422,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, anomalies: Keyed.accept(model.anomalies, key, result) },
 		}),
 		CompletedFetchGithubStatus: ({ key, result }) =>
-			applySteps({ ...model, githubStatus: Keyed.accept(model.githubStatus, key, result) }, [
+			runSteps({ ...model, githubStatus: Keyed.accept(model.githubStatus, key, result) }, [
 				vcsStep(context),
 			]),
 		CompletedFetchVcsPullRequests: ({ key, result }) => ({
@@ -460,11 +431,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		UpdatedDestinations: ({ orgId, destinations }) =>
 			orgId === context.orgId ? { model: { ...model, destinations } } : { model },
 		TickedLeaseClock: ({ nowMs }) => ({ model: { ...model, leaseNowMs: nowMs } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -480,7 +447,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetry: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [
+				: runSteps(model, [
 						detailStep(context, model.window, "Supersede"),
 						affectedUsersStep(context, model.window, "Supersede"),
 					]),
@@ -532,7 +499,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				(severitySelect) => ({ severitySelect }),
 				(next) => Message.GotSeveritySelectMessage({ message: next }),
-				(m, value) => pickedSeverity(m, isSeverity(value) ? value : null),
+				(m, value) => pickedSeverity(m, isIssueSeverity(value) ? value : null),
 			),
 		ClickedClaim: () => startWrite(model, { _tag: "Claim" }),
 		ClickedUnmerge: () => startWrite(model, { _tag: "Unmerge" }),
@@ -556,7 +523,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedAttach: () => openAttach(model),
 		ClickedShowEarlier: () => ({ model: { ...model, isShowingEarlier: true } }),
-		// `onValueChange`: the picked repository's pull requests, with the search cleared.
+		// The picked repository's pull requests, with the search cleared.
 		GotRepositorySelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
@@ -565,14 +532,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(repositorySelect) => ({ repositorySelect }),
 				(next) => Message.GotRepositorySelectMessage({ message: next }),
 				(picked, value) =>
-					applySteps({ ...clearedAttach(picked), attachRepository: value }, [vcsStep(context)]),
+					runSteps({ ...clearedAttach(picked), attachRepository: value }, [vcsStep(context)]),
 			),
 		GotAttachDialogMessage: ({ message: inner }) => attachDialogStep(model, inner),
 		GotAttachComboboxMessage: ({ message: inner }) => attachComboboxStep(model, inner),
 		ChangedAttachDraft: ({ value }) => ({ model: { ...model, attachDraft: value } }),
 		SubmittedAttach: () => submittedAttach(model),
 		ClickedRetryEvents: () =>
-			applySteps(model, [
+			runSteps(model, [
 				(m) =>
 					keyed(
 						m.events,
@@ -699,7 +666,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				// The create invalidates `investigations`, so the linked-investigation read goes again.
 				onSuccess: (id) => ({
-					...applySteps({ ...model, isStartingInvestigation: false }, [
+					...runSteps({ ...model, isStartingInvestigation: false }, [
 						(m) =>
 							keyed(
 								m.investigations,

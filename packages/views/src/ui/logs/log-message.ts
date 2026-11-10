@@ -1,4 +1,4 @@
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { stripAnsi } from "@maple/ui/lib/strip-ansi"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"

@@ -26,8 +26,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `RulesFields` and `AttributeRows`.
-
 export type RulesViewConfig<P> = Readonly<{
 	model: Model
 	toParentMessage: (message: Message) => P
@@ -37,7 +35,7 @@ export type RulesViewConfig<P> = Readonly<{
 	clock: Readonly<{ nowMs: number; timeZone: string }> | null
 }>
 
-/** A Base UI field outside a form: never dirty, touched or focused in a capture. */
+/** A field outside a form: never dirty, touched or focused in a capture. */
 const STATIC: FieldState = {
 	isInvalid: false,
 	isDirty: false,

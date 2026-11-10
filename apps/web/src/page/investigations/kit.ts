@@ -12,8 +12,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// The investigation status badge and confidence meter.
-
 type InvestigationStatus = V2Investigation["status"]
 type Confidence = NonNullable<V2Investigation["confidence"]>
 
@@ -25,7 +23,6 @@ export const STATUS = {
 	failed: { label: "Failed", tone: "crit" },
 } as const satisfies Record<InvestigationStatus, { label: string; tone: Exclude<Tone, "info" | "neutral"> }>
 
-/** `InvestigationStatusBadge`. */
 export const statusBadge = <M>(h: HtmlBuilder<M>, status: InvestigationStatus, className?: string): Html =>
 	badge(h, { variant: STATUS[status].tone, className }, [STATUS[status].label])
 
@@ -53,7 +50,7 @@ const KIND_ICON = {
 export const investigationKindLabel = (subject: V2Investigation["subject"]): string =>
 	KIND_LABEL[investigationKindKey(subject)]
 
-/** `InvestigationKindMarker`: kind, and the user glyph when a person started it. */
+/** Kind, and the user glyph when a person started it. */
 export const kindMarker = <M>(
 	h: HtmlBuilder<M>,
 	subject: V2Investigation["subject"],
@@ -86,7 +83,6 @@ export const CONFIDENCE_TONE = {
 const FILLED = { high: 3, medium: 2, low: 1 } as const satisfies Record<Confidence, number>
 const BAR_HEIGHT = ["h-1.5", "h-2", "h-2.5"] as const
 
-/** `ConfidenceMeter`: ascending bars and the word. */
 export const confidenceMeter = <M>(
 	h: HtmlBuilder<M>,
 	confidence: Confidence | null,
@@ -128,7 +124,7 @@ export const confidenceMeter = <M>(
 	)
 }
 
-/** `InvestigateBar`: one field, one verb; `accent` on the first-run hero. */
+/** One field, one verb; `accent` on the first-run hero. */
 export const investigateBar = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

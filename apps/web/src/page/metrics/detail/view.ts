@@ -16,7 +16,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { CatalogSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { metricTypeLabel } from "../shared"
+import { metricTypeLabel } from "@maple/views/ui/metric-type"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
@@ -72,7 +72,6 @@ const noData = (h: H, metricName: string): Html =>
 		h.span([h.Class("mt-3")], [docsLink(h, "metrics")]),
 	])
 
-/** `MetricDetailContent`. */
 const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html => {
 	const draft = draftOf(model, summary)
 	return vstack(h, { gap: "4" }, [

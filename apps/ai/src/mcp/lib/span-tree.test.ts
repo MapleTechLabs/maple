@@ -26,7 +26,6 @@ function span(
 	}
 }
 
-/** Collect every spanId present in a pruned tree. */
 function ids(roots: ReadonlyArray<SpanNode>): Set<string> {
 	const out = new Set<string>()
 	const walk = (n: SpanNode) => {

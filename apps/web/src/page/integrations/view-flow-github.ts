@@ -6,7 +6,7 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import {
 	type CheckRow,
 	flowColumns,
@@ -30,8 +30,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 
 type H = HtmlBuilder<Message>
 

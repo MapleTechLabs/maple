@@ -13,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
-/** `HeadLabel`: a non-sortable column header styled as an eyebrow. */
+/** A non-sortable column header styled as an eyebrow. */
 export const headLabel = (
 	h: H,
 	children: ReadonlyArray<Html | string>,
@@ -21,7 +21,7 @@ export const headLabel = (
 	attributes: ReadonlyArray<Attribute<Message>> = [],
 ): Html => tableHead(h, children, cn(eyebrowVariants(), "h-8", className), attributes)
 
-/** `SortColumnHead`: right-aligned by default, `aria-sort` on the active column. */
+/** Right-aligned by default, `aria-sort` on the active column. */
 export const sortColumnHead = (
 	h: H,
 	options: Readonly<{

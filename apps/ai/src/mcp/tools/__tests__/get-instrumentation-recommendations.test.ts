@@ -1,5 +1,5 @@
 // Pure-helper tests for the get_instrumentation_recommendations MCP tool.
-// Detection/reconcile logic is covered by packages/domain/src/recommendations.test.ts;
+// Detection/reconcile logic is covered by packages/backend/src/services/errors/recommendations.test.ts;
 // here we only guard the tool's severity mapping and coverage-gap derivation.
 
 import { describe, expect, it } from "vitest"

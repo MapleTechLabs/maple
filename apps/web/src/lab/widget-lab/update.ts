@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Clock, Effect, Option, Array as Arr } from "effect"
 import { Command, Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -45,11 +46,7 @@ export const init = (flags: WidgetLabFlags): Return => {
 				Command.mapMessage((message) => Message.GotShellMessage({ message })),
 			),
 			ReadClock(),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -60,7 +57,7 @@ const foldToasts = foldLabToasts<Model, Message>((message) => Message.GotToastMe
 export const menuIdOf = (slot: string) => `widget-lab-menu-${slot}`
 export const detailsIdOf = (slot: string) => `widget-lab-details-${slot}`
 
-/** `useSortState` with `resettable`, as the dashboard's tables sort. */
+/** A resettable sort, as the dashboard's tables sort. */
 const nextSort = (model: Model, slot: string, field: string, isText: boolean) => {
 	const current = model.tableSorts[slot] ?? { key: null, dir: "desc" as const }
 	return current.key === field
@@ -86,11 +83,7 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		CompletedReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ slot, message: inner }) => {
 			const next = Chart.update(model.charts[slot] ?? Chart.init(), inner)
 			return {

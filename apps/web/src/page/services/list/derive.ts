@@ -5,11 +5,12 @@ import {
 	deriveServiceHealthFromCauses,
 	type LatencyBaselineSignal,
 	type ServiceHealth,
-	type ServiceHealthCause,
-} from "../../../components/dashboard/service-health"
-import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
+} from "../../kit/service-health-rollup"
+import { Array as Arr, String as Str, Order } from "effect"
 import type { ServicesSearch } from "../../../route/search"
-import type { IncidentCause, ServiceRow } from "./model"
+import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
+import { isResolvableSha } from "../../kit/commit-card"
+import type { ServiceRow } from "./model"
 
 // Pure derivations of the services table and its health summary.
 
@@ -28,59 +29,19 @@ export type HealthSummary = Readonly<{
 	counts: Readonly<Record<ServiceHealth, number>>
 }>
 
-/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, like `Date.parse`. */
-export const isoMs = (iso: string): number =>
-	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
-
-// copied: anomaly-format.ts (`isStaleOpenIncident`, `anomalyAffectsServiceHealth`); that module holds icons.
-const ANOMALY_STALE_AFTER_MS = 60 * 60 * 1000
-const anomalyAffectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
-	const lastTriggeredMs = isoMs(row.last_triggered_at)
-	const isStale = !Number.isFinite(lastTriggeredMs) || nowMs - lastTriggeredMs > ANOMALY_STALE_AFTER_MS
-	return row.signal_type !== "error_spike" && !isStale
-}
-
-/** `useServiceHealthSummary`: alert incidents by service name, open anomalies by service and environment. */
+/** Alert incidents by service name, open anomalies by service and environment. */
 export const healthSummary = (
 	overview: ReadonlyArray<ServiceRow>,
-	incidents: ReadonlyArray<IncidentCause>,
+	incidents: ReadonlyArray<HealthIncident>,
 	anomalies: ReadonlyArray<V2AnomalyServiceCount>,
 	nowMs: number,
 ): HealthSummary => {
-	const alertCauses = new Map<string, Array<ServiceHealthCause>>()
-	Arr.forEach(
-		Arr.filter(
-			incidents,
-			(incident) =>
-				incident.status === "open" && incident.groupKey !== null && incident.groupKey !== "",
-		),
-		(incident) => {
-			const key = incident.groupKey ?? ""
-			alertCauses.set(key, [
-				...(alertCauses.get(key) ?? []),
-				{ severity: incident.severity, label: "Alert firing" },
-			])
-		},
-	)
-	const anomalyCauses = new Map<string, Array<ServiceHealthCause>>()
-	Arr.forEach(
-		Arr.filter(anomalies, (row) => anomalyAffectsHealth(row, nowMs)),
-		(row) => {
-			const key = serviceHealthRowKey(row.service_name, row.deployment_env || "unknown")
-			anomalyCauses.set(key, [
-				...(anomalyCauses.get(key) ?? []),
-				{ severity: row.severity, label: "Anomaly" },
-			])
-		},
-	)
+	const causesOf = serviceHealthCauses(incidents, anomalies, nowMs, { dropEmptyGroupKey: true })
 	const byRow = new Map<string, ServiceHealth>()
 	const counts = { healthy: 0, degraded: 0, unhealthy: 0 }
 	Arr.forEach(overview, (service) => {
 		const key = serviceHealthRowKey(service.serviceName, service.environment)
-		const health = deriveServiceHealthFromCauses([
-			...(alertCauses.get(service.serviceName) ?? []),
-			...(anomalyCauses.get(key) ?? []),
-		])
+		const health = deriveServiceHealthFromCauses(causesOf(service.serviceName, service.environment))
 		byRow.set(key, health)
 		counts[health] += 1
 	})
@@ -180,8 +141,6 @@ export const groupServices = (services: ReadonlyArray<ServiceRow>, mode: GroupBy
 			)
 		: [[NO_NAMESPACE, groupByEnvironment(services)]]
 
-// DEPLOY CELL
-
 const MIN_DEPLOY_COMPARE_SPANS = 50
 const ROLLOUT_MIN_SHARE_PCT = 5
 
@@ -194,7 +153,7 @@ export type DeployInfo = Readonly<{
 	errorsSince: boolean
 }>
 
-/** `deriveDeployInfo`: the newest commit, a mid-rollout split, and errors up since the deploy. */
+/** The newest commit, a mid-rollout split, and errors up since the deploy. */
 export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefined => {
 	const real = Arr.filter(
 		commits,
@@ -234,9 +193,6 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 	return { sha: latest.commitSha, firstSeen: latest.firstSeen, rollout, errorsSince }
 }
 
-const FULL_SHA = /^[0-9a-f]{40}$/i
-export const isResolvableSha = (sha: string): boolean => FULL_SHA.test(sha)
-
 /** `commitsQueryKey`: the deduped, sorted resolvable shas of the rows on screen; "" means no request. */
 export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
 	Arr.join(
@@ -256,8 +212,6 @@ export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
 		),
 		",",
 	)
-
-// LATENCY BASELINE
 
 const MIN_BASELINE_SPANS = 100
 

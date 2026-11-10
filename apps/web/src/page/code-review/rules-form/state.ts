@@ -6,8 +6,6 @@ import {
 } from "@maple/domain/http"
 import { Schema, Array as Arr, String as Str, Option } from "effect"
 
-// The review rules form state and its conversions.
-
 export const INSTRUCTIONS_MAX = 4_000
 const IGNORE_PATH_MAX = 200
 export const DAILY_LIMIT_MAX = 500

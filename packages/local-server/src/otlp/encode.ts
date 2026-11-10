@@ -3,9 +3,8 @@
  * `apps/ingest/src/telemetry.rs` (`encode_traces` / `encode_logs` /
  * `encode_metrics` and their helpers), specialized for the local write path:
  *
- *   - Sampling is disabled (keep every span; no `SampleRate` injection, no
- *     attribute mappings) — matches `encode_local_*` which call the core
- *     encoders with `SamplingPolicy::default()` and `&[]` mappings.
+ *   - Sampling is disabled: every span is kept, with no `SampleRate` injection
+ *     and no attribute mappings.
  *   - The OrgId is NOT part of the NDJSON; it is injected by the INSERT
  *     statement, so no org field is emitted here.
  *
@@ -50,8 +49,6 @@ export interface KeyValue {
 	key?: string
 	value?: AnyValue
 }
-
-// Value / format helpers (ports of the Rust functions of the same name)
 
 /**
  * Port of Rust `bytes_hex`: base64-decode the field to bytes; if empty or all
@@ -418,8 +415,6 @@ function severityNumberToText(n: number | undefined): string {
 	return ""
 }
 
-// Shared numeric coercions
-
 /** UInt32 flags field — present as a number after `defaults: true`. */
 function asUint32(value: number | string | undefined): number {
 	if (value === undefined || value === null) {
@@ -514,8 +509,6 @@ function numberPointValue(
 	return 0
 }
 
-// Exemplars (port of Rust `encode_exemplars`)
-
 export interface Exemplar {
 	traceId?: string
 	spanId?: string
@@ -554,8 +547,6 @@ function encodeExemplars(exemplars: Exemplar[] | undefined): EncodedExemplars {
 	return out
 }
 
-// NDJSON assembly
-
 function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): EncodedBatch[] {
 	const batches: EncodedBatch[] = []
 	// Match the Rust BTreeMap ordering (datasource name) for deterministic output.
@@ -576,8 +567,6 @@ function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): Encode
 	}
 	return batches
 }
-
-// Traces
 
 export interface TraceRequest {
 	resourceSpans?: ResourceSpans[]
@@ -679,8 +668,6 @@ export function encodeTraces(req: unknown): EncodedBatch[] {
 	return toBatches(byDatasource)
 }
 
-// Logs
-
 export interface LogsRequest {
 	resourceLogs?: ResourceLogs[]
 }
@@ -759,8 +746,6 @@ function isNonZeroNano(value: string | number | undefined): boolean {
 	}
 	return true
 }
-
-// Metrics
 
 export interface MetricsRequest {
 	resourceMetrics?: ResourceMetrics[]

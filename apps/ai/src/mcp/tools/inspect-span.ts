@@ -1,6 +1,7 @@
 import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -11,10 +12,7 @@ import { detectPlatform, type PlatformSummary } from "@maple/domain/cloud-platfo
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { spanDetail, type SpanDetailResult } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
-import {
-	readAiSessionSpans,
-	resolveAiSessionWindow,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { padSessionWindow } from "@maple/agent-sessions"
 
 /** What to do about a trace whose spans no read can carry. */
@@ -176,7 +174,6 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				description: "Max characters per captured message or payload (AI spans only)",
 			}),
 		}),
-		output: InspectSpanOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a span", "Reading span details"],
 		handler: Effect.fn("McpTool.inspectSpan")(function* ({
@@ -309,6 +306,8 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 
 const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as const, reason })
 
+const DECODE_LOOKAHEAD_MS = 24 * 60 * 60_000
+
 /**
  * The span's trace, read as agent spans and decoded. The decode is an add-on:
  * the raw attributes above it already answer the question, so a failure of
@@ -317,7 +316,7 @@ const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as cons
  * The read is keyed on the trace and always bounded: `traces` is partitioned
  * by day, so an unbounded lookup seeks every partition. A caller
  * that passed `timestamp` has already named an instant inside the trace, and
- * the pad around it is the one the page reads a session's row with — wide
+ * the pad around it is the one the page reads a session's row with, wide
  * enough that a tool span at the other end of the trace is still inside the
  * window rather than falling out of it and rendering as "not captured".
  * Without a timestamp the trace's own bounds are resolved first, which is the
@@ -325,8 +324,6 @@ const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as cons
  * labels the read; it is the `trace:<id>` form the session model uses for a
  * vendor that exposed no session key.
  */
-const DECODE_LOOKAHEAD_MS = 24 * 60 * 60_000
-
 const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 	function* (opts: {
 		readonly traceId: string
@@ -336,18 +333,19 @@ const decodeAiSpan = Effect.fn("McpInspectSpan.decodeAiSpan")(
 	}) {
 		const tenant = yield* CurrentMcpTenant
 		const sessionId = `trace:${opts.traceId}`
+		const reads = yield* AiSessionReadService
 		// With a timestamp the trace's bounds are not resolved: the read looks back
 		// an hour and ahead a day, where a tool's result lands after the call that
 		// made it; a trace longer than that pages, and the answer says so.
 		const window =
 			opts.timestampMs === undefined
-				? (yield* resolveAiSessionWindow(tenant, sessionId)).window
+				? (yield* reads.resolveWindow(tenant, sessionId)).window
 				: padSessionWindow(opts.timestampMs, opts.timestampMs + DECODE_LOOKAHEAD_MS)
 		// No bounds at all: the trace carries nothing the AI reads can key on, so
 		// the raw attributes below are the whole answer.
 		if (window === undefined) return undefined
 
-		const page = yield* readAiSessionSpans(
+		const page = yield* reads.spans(
 			tenant,
 			new GetAiSessionSpansRequest({
 				sessionId,

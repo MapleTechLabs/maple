@@ -5,9 +5,9 @@
  * need approval?" — and could not express the two other things Maple wants: a tool an agent should
  * never even *see* (a read-only sub-agent), and a tool an agent may run without asking.
  *
- * Lives in `@maple/domain` rather than `apps/api` because the obvious next step is per-org rulesets
- * stored in Postgres and edited in settings, which the web client has to decode. It has no
- * `apps/api` dependency; the *agent registry* — prompts, model choices — stays server-side.
+ * Lives in `@maple/domain` rather than `apps/ai` because the obvious next step is per-org rulesets
+ * stored in Postgres and edited in settings, which the web client has to decode. The agent
+ * registry (prompts, model choices) stays server-side.
  *
  * ## One match dimension, not two
  *

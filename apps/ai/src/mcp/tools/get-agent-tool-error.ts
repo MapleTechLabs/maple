@@ -1,15 +1,11 @@
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import {
-	readAiToolErrorDetail,
-	readAiToolErrorSamples,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import {
 	AI_TOOL_ERROR_SESSION_MAX_CHARS,
 	AI_TOOLS_SELECTION_MAX_CHARS,
 	AiToolErrorDetailRequest,
 	AiToolErrorSamplesRequest,
 } from "@maple/domain/http"
-import { GetAgentToolErrorOutput } from "@maple/domain/mcp-outputs"
 import {
 	AI_TOOL_ERROR_PAYLOAD_MAX,
 	AI_TOOL_ERROR_SESSIONS_LIMIT,
@@ -33,7 +29,7 @@ import {
 	selectionRequest,
 } from "../lib/agent-tool-analytics"
 import { paddedWindowArgs } from "../lib/agent-sessions"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, tableCell } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { stringifyJson } from "../lib/json"
@@ -82,7 +78,6 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				description: "Characters kept of each argument and result block",
 			}),
 		}),
-		output: GetAgentToolErrorOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting an agent tool error"],
 		handler: Effect.fn("McpTool.getAgentToolError")(function* (params) {
@@ -108,6 +103,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			const payloadChars = params.payload_chars
 			const selection = agentToolSelection(params, tool)
 			const tenant = yield* CurrentMcpTenant
+			const reads = yield* AiSessionReadService
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.tools.tool": tool,
@@ -124,8 +120,8 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			}
 			const [detail, samples] = yield* Effect.all(
 				[
-					readAiToolErrorDetail(tenant, new AiToolErrorDetailRequest(scope)),
-					readAiToolErrorSamples(
+					reads.toolErrorDetail(tenant, new AiToolErrorDetailRequest(scope)),
+					reads.toolErrorSamples(
 						tenant,
 						new AiToolErrorSamplesRequest({
 							...scope,

@@ -121,7 +121,7 @@ type Box = (typeof LayoutWrite.Type)["layouts"][number]
 const isMoved = (layout: Layout, box: Box) =>
 	box.x !== layout.x || box.y !== layout.y || box.w !== layout.w || box.h !== layout.h
 
-/** `onLayoutCommit`: the moved boxes applied to the board; an unchanged widget keeps its object. */
+/** The moved boxes applied to the board; an unchanged widget keeps its object. */
 const withLayouts = (model: BenchModel, layouts: ReadonlyArray<Box>): BenchModel => {
 	const document = model.board.document
 	if (document === null) return model
@@ -197,7 +197,7 @@ const BARS = Array.from({ length: 140 }, (_, index) => index)
 /** `memo(BenchTile)`: one slot per tile and mount; a widget that kept its object skips. */
 const lazyTile = createKeyedLazy()
 
-/** `BenchTile`: a header with the drag grip and ~140 bars in place of a chart. */
+/** A header with the drag grip and ~140 bars in place of a chart. */
 const benchTile = (h: HtmlBuilder<Message>, widget: Widget): Html => {
 	// The bench's render counter, read by the harness.
 	performance.mark(TILE_RENDER_MARK)
@@ -239,7 +239,7 @@ const benchTile = (h: HtmlBuilder<Message>, widget: Widget): Html => {
 	)
 }
 
-/** The board, remounted with its key: `<DashboardGrid key={mountKey}>`. */
+/** The board, remounted when its key changes. */
 const boardView = Submodel.defineView<Model, Message, { mountKey: number }>((model, inputs, h) =>
 	model.document === null
 		? h.div([], [])

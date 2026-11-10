@@ -54,7 +54,7 @@ import { DailySpendService } from "@maple/backend/services/billing/DailySpendSer
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 // Pull the `invoices` array off a raw expanded `getOrCreateCustomer` response.
 // Exported for tests. Autumn omits the key for a customer with no invoices, so
@@ -75,8 +75,7 @@ export const decodeInvoices = (
  * subscriptions — there's still usage to show.
  *
  * Deliberately NOT clamped to now: the chart's job is to show where this cycle is
- * headed, so the axis has to reach the day the bill closes. Clamping belongs to
- * the warehouse read (DailySpendService), not to the window itself.
+ * headed, so the axis has to reach the day the bill closes.
  */
 export const resolveCycleWindow = (
 	customer: BillingCustomer,
@@ -307,7 +306,11 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 								dailySpend.get(tenant, cycle),
 								Effect.forEach(
 									members,
-									(member) => dailySpend.get(systemTenant(member.orgId), cycle),
+									(member) =>
+										dailySpend.get(
+											systemTenant(member.orgId, ALERTING_SYSTEM_USER_ID),
+											cycle,
+										),
 									{
 										concurrency: 4,
 									},
@@ -418,9 +421,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						// normally still gets the event (the fiber finishes long before
 						// the response is written) while a stalled one is interrupted at
 						// the response instead of holding the user. Losing it there costs
-						// nothing durable — `plan_events.ts` is explicit that this emit is
-						// the low-latency COMPLEMENT and the `billing.updated` webhook is
-						// the authoritative `plan_started`.
+						// nothing durable: this emit is the low-latency COMPLEMENT and the
+						// `billing.updated` webhook is the authoritative `plan_started`.
 						yield* forkRequestScoped(
 							emitPlanStartedFromAttach(productEvents, {
 								orgId: tenant.orgId,
@@ -559,7 +561,12 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							"maple.billing.member_count": members.length,
 						})
 						const orgs = yield* Effect.forEach(
-							[tenant, ...Arr.map(members, (member) => systemTenant(member.orgId))],
+							[
+								tenant,
+								...Arr.map(members, (member) =>
+									systemTenant(member.orgId, ALERTING_SYSTEM_USER_ID),
+								),
+							],
 							(orgTenant) =>
 								dailySpend
 									.get(orgTenant, cycle)

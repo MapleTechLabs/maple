@@ -130,7 +130,7 @@ export const fetchTracePage = (
 		? spanScopedPage(filters, bounds, cursor, apiBase)
 		: rootScopedPage(filters, bounds, cursor, apiBase)
 
-/** `getNextPageParam`: only a full page asks for another. */
+/** Only a full page asks for another. */
 export const nextCursor = (page: ReadonlyArray<TraceRow>): TraceCursor | undefined => {
 	const last = page.length === PAGE_SIZE ? page[page.length - 1] : undefined
 	return last ? { timestamp: last.startTime, traceId: last.traceId } : undefined

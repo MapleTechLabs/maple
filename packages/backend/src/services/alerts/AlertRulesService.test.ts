@@ -10,7 +10,7 @@ import {
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { msToDate } from "@maple/backend/platform/time"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import { AlertRulesService } from "./AlertRulesService"
 

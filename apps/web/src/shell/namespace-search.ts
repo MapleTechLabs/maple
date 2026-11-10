@@ -3,7 +3,7 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
 import { typography } from "@maple/views/ui/typography"
 
-/** `NamespaceScopeList`'s search: it only earns its row once the list is this long. */
+/** The namespace list's search: it only earns its row once the list is this long. */
 export const SEARCH_THRESHOLD = 8
 
 export const hasNamespaceSearch = (observed: ReadonlyArray<string>): boolean =>

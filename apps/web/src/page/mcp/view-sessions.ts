@@ -21,14 +21,13 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import {
 	attr,
 	clientIcon,
 	durationMeterCell,
-	formatClock,
 	headingNote,
 	kindTag,
 	lastSeenCell,
@@ -43,6 +42,7 @@ import {
 import { Array as Arr, Order } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { formatClock } from "../kit/timezone-zones"
 
 // `/mcp-servers/:service/sessions` and one session: a server's requests grouped by `mcp.session.id`,
 // each session its requests in order, linked to the Agent Session whose trace made them.
@@ -77,11 +77,11 @@ const failedCell = <M>(h: HtmlBuilder<M>, errors: number): Html =>
 
 const USER_CELL = "hidden w-36 shrink-0 truncate font-mono text-xs @min-[950px]/panel:block"
 
-/** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
 /** Who a session's row names: `user.name`/`user.email`, else the id, else `anonymous`. */
 export const sessionUserLabel = (user: string | null, userName: string | null): string =>
 	userName ?? user ?? "anonymous"
 
+/** Who the session belongs to: their name, else their id, linked to their user page; else nobody named. */
 const userCell = <M>(
 	h: HtmlBuilder<M>,
 	user: string | null,
@@ -179,7 +179,6 @@ const partialCoverage = <M>(h: HtmlBuilder<M>, data: McpSessionsResponse): Reado
 			]
 }
 
-/** The median of the listed sessions' lengths; `undefined` for none. */
 export const medianLengthMs = (sessions: ReadonlyArray<McpSessionItem>): number | undefined => {
 	const lengths = Arr.sort(
 		Arr.map(sessions, (row) => row.lastSeenMs - row.firstSeenMs),
@@ -244,7 +243,7 @@ const sessionsOverview = <M>(
 	]
 }
 
-/** `McpSessionsBody`: the sessions list under the server header. */
+/** The sessions list under the server header. */
 export const sessionsBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpSessionsResponse,
@@ -454,7 +453,9 @@ const agentSessionsPanel = <M>(
 										size: 12,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									typography(h, { tone: "foreground", mono: true, truncate: true }, [entry.sessionId]),
+									typography(h, { tone: "foreground", mono: true, truncate: true }, [
+										entry.sessionId,
+									]),
 									typography(
 										h,
 										{ size: "2xs", tone: "subtle", numeric: true, className: "shrink-0" },
@@ -622,7 +623,7 @@ const sessionStats = <M>(h: HtmlBuilder<M>, data: McpSessionResponse): Html => {
 	])
 }
 
-/** `McpSessionBody`: one session under its header. */
+/** One session under its header. */
 export const sessionBody = <M>(
 	h: HtmlBuilder<M>,
 	data: McpSessionResponse,

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { AiSessionDetailsItem, AiSessionSortKey } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -9,10 +10,6 @@ import { SignalPresences } from "@maple/views/data/signal-presence"
 import { DetectedModel } from "../kit/detected-models"
 import { VirtualWindow } from "../kit/virtualize"
 import { Distributions, Facets, RangeKey, SessionsPage } from "./model"
-
-/** `Load` on entry; `Refresh` from Reload (re-resolve the week, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The rail's counted list filters, by their URL param. */
 export const ListFacet = Schema.Literals(["vendors", "services", "environments", "models", "agents", "tools"])

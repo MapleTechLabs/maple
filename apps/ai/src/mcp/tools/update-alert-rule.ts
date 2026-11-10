@@ -1,8 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
-import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
@@ -129,7 +128,6 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	current: AlertRuleDocument,
 	params: typeof UpdateAlertRuleParameters.Type,
 ) {
-	// Merge notification template fields onto the existing template (null-safe).
 	const touchesTemplate = params.notification_title !== undefined || params.notification_body !== undefined
 	const title = params.notification_title ?? current.notificationTemplate?.title ?? undefined
 	const body = params.notification_body ?? current.notificationTemplate?.body ?? undefined
@@ -256,7 +254,6 @@ const mergeThresholds = (
 	)
 }
 
-/** Sets the chain on the only tier, or on the critical one of two; `undefined` keeps every tier's. */
 /**
  * Sets or detaches a tier's chain. A named tier changes only that tier; without one, an id sets the
  * critical (or only) tier and "none" detaches every tier.
@@ -344,7 +341,6 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			"Ids from list_alert_rules and list_alert_destinations.",
 		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
-		output: UpdateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an alert rule"],
 		handler: Effect.fn("McpTool.updateAlertRule")(function* (params) {

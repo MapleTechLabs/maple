@@ -1,4 +1,4 @@
-import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -9,7 +9,7 @@ import {
 	percentileRows,
 	untracedExceptions,
 	workerOutcomeTotals,
-} from "../../../../components/infra/cloudflare/worker-signals"
+} from "../worker-signals"
 import {
 	EMPTY_VALUE,
 	formatErrorRate,
@@ -38,8 +38,8 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { pageTime } from "../../../kit/page-time"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { WorkerDetail } from "../data"
 import { MountLinkedCursor } from "./command"
@@ -50,14 +50,11 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Order } from "effect"
 
-// `WorkerDetailPage` and its parts.
-
 type H = HtmlBuilder<Message>
 
 /** The failure and Durable Object strips name `--severity-fatal` and `--chart-2` too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--severity-fatal", "--chart-2"]
 
-/** `CloudflareWorkerHeader`. */
 const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
@@ -104,7 +101,7 @@ const figure = (h: H, value: string, caption: string, className?: string): Html 
 		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
 	])
 
-/** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
+/** Failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
 		[h.Class("@container rounded-md border border-severity-error-a4")],
@@ -195,7 +192,7 @@ const summary = (
 			]),
 ]
 
-/** `buildStrips`: invocations, failures, CPU and duration, then Durable Objects when bound. */
+/** Invocations, failures, CPU and duration, then Durable Objects when bound. */
 const buildStrips = (h: H, detail: WorkerDetail, data: PageData): ReadonlyArray<StripSeries> => {
 	const { row } = data
 	const totals = workerOutcomeTotals(detail.outcomeBuckets)
@@ -318,7 +315,7 @@ const signals = (
 			}),
 	})
 
-/** `CloudflareWorkerOutcomes`: how each invocation ended, per Cloudflare. */
+/** How each invocation ended, per Cloudflare. */
 const outcomes = (h: H, detail: WorkerDetail): Html => {
 	const totals = workerOutcomeTotals(detail.outcomeBuckets)
 	return panel(h, {}, [
@@ -388,7 +385,6 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	])
 }
 
-/** `CloudflareWorkerRail`. */
 const rail = (h: H, data: PageData, timeZone: string): Html => {
 	const { row, traced } = data
 	const deploys = Arr.map(data.markers, (marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
@@ -505,7 +501,7 @@ const body = (
 	})
 }
 
-/** `WorkerDetailPage` below the top bar; the lab's has no time controls. */
+/** Below the top bar; the lab's has no time controls. */
 export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true): Html => {
 	const data = pageOf(model)
 	const theme = model.themeColors

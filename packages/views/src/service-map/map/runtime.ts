@@ -1,9 +1,8 @@
-import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
+import type { ServicePlatform } from "../graph/service-map-types"
 import type { IconName } from "../../ui/icon"
 import { String as Str } from "effect"
 
-// copied: packages/ui/src/components/service-map/service-map-runtime.ts with the icon as a name
-// (the original imports React icon components); the 3D mark paths stay in the original.
+// Runtime glyphs for the service map, with the icon as a name.
 
 export interface RuntimeGlyph {
 	readonly icon: IconName | null

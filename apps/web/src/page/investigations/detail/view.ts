@@ -1,11 +1,14 @@
 import {
 	type InvestigationStatus,
-	type IssueSeverity,
 	MANUAL_INVESTIGATION_TRANSITIONS,
 	RESTARTABLE_INVESTIGATION_STATUSES,
 } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
+import {
+	investigationHeadline,
+	investigationScope,
+	investigationSeverity,
+} from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
 import {
 	Message as ConversationMessageUnion,
@@ -31,7 +34,7 @@ import { dashboardPage, pageScrollArea } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { investigationKindLabel, statusBadge } from "../kit"
 import { breadcrumbLabel, type Tab, tabOf, traceTips } from "./derive"
 import { Message } from "./message"
@@ -51,17 +54,11 @@ import { handoffButton } from "./view-handoff"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
-
 type H = HtmlBuilder<Message>
-
-/** Only the four canonical severities render as a badge. */
-const asIssueSeverity = (value: string | null | undefined): IssueSeverity | null =>
-	value === "critical" || value === "high" || value === "medium" || value === "low" ? value : null
 
 const titleContent = (h: H, investigation: V2Investigation): Html => {
 	const scope = investigationScope(investigation)
-	const severity = asIssueSeverity(investigation.severity ?? investigation.snapshot.severity)
+	const severity = investigationSeverity(investigation)
 	return detailTitle(h, {
 		kind: ["Investigation", investigationKindLabel(investigation.subject)],
 		title: [investigationHeadline(investigation)],
@@ -83,7 +80,7 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 	})
 }
 
-/** `InvestigationActions`: the status's primary verb, and the overflow menu. */
+/** The status's primary verb, and the overflow menu. */
 const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
@@ -172,7 +169,7 @@ const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
 	{ value: "transcript", label: "Transcript" },
 ]
 
-/** `InvestigationTabs`: links, so the open tab is in the URL; Evidence only when there is some. */
+/** Links, so the open tab is in the URL; Evidence only when there is some. */
 const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	const evidenceCount = investigation.report?.evidence.length ?? 0
 	return linkTabStrip(
@@ -225,7 +222,7 @@ const documentTab = (
 	]
 }
 
-/** `InvestigationLead`: what a thread with no turns says, read off the subject's own status. */
+/** What a thread with no turns says, read off the subject's own status. */
 const investigationLead = (h: H, investigation: V2Investigation): Html =>
 	investigation.status === "investigating"
 		? emptyNotice(
@@ -245,7 +242,7 @@ const investigationLead = (h: H, investigation: V2Investigation): Html =>
 					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
 				)
 
-/** `ChatConversation mode="investigation"`: the thread, led by the report until its own turn lands. */
+/** The thread, led by the report until its own turn lands. */
 const conversationTab = (
 	h: H,
 	model: Model,

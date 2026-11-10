@@ -22,6 +22,8 @@ import { readTextWithin } from "@maple/safe-fetch"
 import { Env } from "@maple/backend/platform/Env"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
+import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
+import { parseRetryAfterSeconds } from "../../../vendor-retry"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
 
@@ -162,20 +164,10 @@ const isOk = (response: HttpClientResponse.HttpClientResponse): boolean =>
 // Seconds until the budget returns, per GitHub's guidance: prefer `retry-after`,
 // else wait until the rate-limit reset (epoch seconds), else a conservative minute.
 const rateLimitWaitSeconds = (response: HttpClientResponse.HttpClientResponse, nowMs: number): number => {
-	const retryAfter = response.headers["retry-after"]
-	if (retryAfter !== undefined) {
-		const secs = Number(retryAfter)
-		if (Number.isFinite(secs) && secs >= 0) return secs
-		// `retry-after` may be an HTTP-date instead of delta-seconds.
-		const dateMs = timestampMs(retryAfter)
-		if (Number.isFinite(dateMs)) return Math.max(0, Math.ceil((dateMs - nowMs) / 1000))
-	}
-	const reset = response.headers["x-ratelimit-reset"]
-	if (reset !== undefined) {
-		const resetSec = Number(reset)
-		if (Number.isFinite(resetSec)) return Math.max(0, Math.ceil(resetSec - nowMs / 1000))
-	}
-	return 60
+	const resetSec = Number(response.headers["x-ratelimit-reset"] ?? Number.NaN)
+	return Option.getOrElse(parseRetryAfterSeconds(response.headers["retry-after"], nowMs), () =>
+		Number.isFinite(resetSec) ? Math.max(0, Math.ceil(resetSec - nowMs / 1000)) : 60,
+	)
 }
 
 const GithubInstallationTokenResponse = Schema.Struct({
@@ -259,7 +251,7 @@ const GithubApiCommitUser = Schema.Struct({
 })
 
 const GithubApiCommitSchema = Schema.Struct({
-	sha: GitCommitSha, // validated at decode — the 40-hex shape lives in the brand
+	sha: GitCommitSha,
 	html_url: Schema.String,
 	commit: Schema.Struct({
 		message: Schema.String,
@@ -289,7 +281,7 @@ const GithubApiCommitList = Schema.Array(GithubApiCommitSchema)
 
 const GithubApiBranchSchema = Schema.Struct({
 	name: Schema.String,
-	commit: Schema.Struct({ sha: GitCommitSha }), // 40-hex validated by the brand
+	commit: Schema.Struct({ sha: GitCommitSha }),
 })
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
@@ -659,40 +651,6 @@ const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentL
 const decodeCodeSearch = Schema.decodeUnknownEffect(GithubCodeSearchResponseSchema)
 const decodeContentFile = Schema.decodeUnknownEffect(GithubContentFileSchema)
 
-const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("base64url")
-const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
-
-const derLength = (length: number): Buffer =>
-	length < 0x80
-		? Buffer.from([length])
-		: length < 0x100
-			? Buffer.from([0x81, length])
-			: length < 0x10000
-				? Buffer.from([0x82, length >> 8, length & 0xff])
-				: Buffer.from([0x83, length >> 16, (length >> 8) & 0xff, length & 0xff])
-
-const derNode = (tag: number, content: Buffer): Buffer =>
-	Buffer.concat([Buffer.from([tag]), derLength(content.length), content])
-
-// INTEGER 0 (version) + AlgorithmIdentifier { rsaEncryption, NULL }.
-const PKCS8_RSA_PREFIX = Buffer.from("020100300d06092a864886f70d0101010500", "hex")
-
-/**
- * GitHub hands out PKCS#1 keys (`BEGIN RSA PRIVATE KEY`) but WebCrypto only imports PKCS#8,
- * so a PKCS#1 body is wrapped in a PKCS#8 PrivateKeyInfo.
- */
-export const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const body = Str.replace(
-		/\s+/g,
-		"",
-	)(Str.replace(/-----END[^-]+-----/g, "")(Str.replace(/-----BEGIN[^-]+-----/g, "")(pem)))
-	const der = Buffer.from(body, "base64")
-	const buf = Str.includes("BEGIN RSA PRIVATE KEY")(pem)
-		? derNode(0x30, Buffer.concat([PKCS8_RSA_PREFIX, derNode(0x04, der)]))
-		: der
-	return new Uint8Array(buf).buffer
-}
-
 /** GitHub answers 401 to a revoked or expired token; some endpoints answer 403 "Bad credentials". */
 const rejectsCredentials = (response: HttpClientResponse.HttpClientResponse) =>
 	response.status === 401
@@ -840,36 +798,32 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			const importSigningKey = (pem: string) =>
 				Effect.tryPromise({
-					try: () =>
-						crypto.subtle.importKey(
-							"pkcs8",
-							pemToPkcs8(pem),
-							{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-							false,
-							["sign"],
-						),
+					try: () => crypto.subtle.importKey("pkcs8", pemToPkcs8(pem), RS256, false, ["sign"]),
 					catch: (cause) =>
 						new GithubAppError({ message: "Failed to import GitHub App private key", cause }),
 				})
 
 			const mintAppJwt = Effect.fn("GithubAppClient.mintAppJwt")(function* (config: ResolvedAppConfig) {
 				const nowSec = Math.floor((yield* Clock.currentTimeMillis) / 1000)
-				const headerJson = yield* encodeJsonBody({ alg: "RS256", typ: "JWT" }, "App JWT header")
-				const header = base64UrlString(headerJson)
-				// iat back-dated 60s for clock skew; exp ≤ 10min per GitHub's limit.
-				const payloadJson = yield* encodeJsonBody(
-					{ iat: nowSec - 60, exp: nowSec + 540, iss: config.appId },
-					"App JWT payload",
-				)
-				const payload = base64UrlString(payloadJson)
-				const signingInput = `${header}.${payload}`
 				const key = yield* importSigningKey(config.privateKeyPem)
-				const signature = yield* Effect.tryPromise({
-					try: () =>
-						crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signingInput)),
-					catch: (cause) => new GithubAppError({ message: "JWT signing failed", cause }),
-				})
-				return `${signingInput}.${base64UrlBytes(signature)}`
+				// iat back-dated 60s for clock skew; exp under 10min per GitHub's limit.
+				return yield* signJwt(
+					key,
+					RS256,
+					{ alg: "RS256", typ: "JWT" },
+					{ iat: nowSec - 60, exp: nowSec + 540, iss: config.appId },
+				).pipe(
+					Effect.mapError(
+						(error) =>
+							new GithubAppError({
+								message:
+									error.reason === "encode"
+										? "Failed to encode App JWT"
+										: "JWT signing failed",
+								cause: error.cause,
+							}),
+					),
+				)
 			})
 
 			const failure = (
@@ -1361,7 +1315,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				}
 				const send = (init: GithubRequestInit) =>
 					rateLimitedFetch(tracedFetch(url, init, `${context} failed`))
-				// A DELETE sends no body, which `JSON.stringify(undefined)` used to express.
 				if (body === undefined) return send({ method, headers })
 				return encodeJsonBody(body, context).pipe(
 					Effect.flatMap((encoded) => send({ method, headers, body: encoded })),
@@ -2562,7 +2515,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// The two calls below prove the user owns the installation they're connecting.
 
-			// Trade the callback `code` for a short-lived user token.
 			const exchangeUserOAuthCode = Effect.fn("GithubAppClient.exchangeUserOAuthCode")(function* (
 				code: string,
 			) {

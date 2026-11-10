@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { typography } from "./typography"
 
@@ -5,5 +6,13 @@ import { typography } from "./typography"
 // of truncating lines that fills the rest of the row.
 
 /** The label's lines (the name, then an email, a region or a namespace). */
-export const identityLabel = <M>(h: HtmlBuilder<M>, lines: ReadonlyArray<Html | string>): Html =>
-	typography(h, { size: "sm", as: "div", className: "grid flex-1 text-left leading-tight" }, lines)
+export const identityLabel = <M>(
+	h: HtmlBuilder<M>,
+	lines: ReadonlyArray<Html | string>,
+	className?: string,
+): Html =>
+	typography(
+		h,
+		{ size: "sm", as: "div", className: cn("grid flex-1 text-left leading-tight", className) },
+		lines,
+	)

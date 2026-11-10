@@ -132,16 +132,9 @@ import {
 	unionAll,
 	type CHUnionQuery,
 	type ColumnAccessor,
-	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
-import {
-	AiTraceIndex,
-	Traces,
-	exactDateTime64,
-	inTraces,
-	orgIdParam,
-	paramTraceWindow,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -222,7 +215,7 @@ const WINDOW_PAD_SECONDS = 86_400
 const hasSessionId = (attrs: CH.Expr<Record<string, string>>, get: CH.Expr<string>) =>
 	CH.mapContains(attrs, SESSION_ID_ATTR).and(get.neq(""))
 
-/** Not in the builder's function set; same local helper `tracesDetailQuery` uses. */
+/** Not in the builder's function set; same local helper `traceListQuery` uses. */
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("fromUnixTimestamp64Nano", nanos)
 
@@ -517,7 +510,7 @@ const MAX_NAMES_PER_TRACE = 20
  * model call that restates the calls beneath it cannot be undone one row at a
  * time — see `traceUsageColumns`.
  */
-type IndexColumns = ColumnAccessor<typeof AiTraceIndex.columns>
+type IndexColumns = ColumnAccessor<typeof Datasources.aiTraceIndex.columns>
 
 /** What ranks a trace's session, per trace: its key, its extent and the two
  *  measures the session filters and sorts read. All `aiSessionRankQuery`
@@ -550,7 +543,7 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 		list !== undefined && list.length > 0 ? list : undefined
 	const search = opts.search === undefined ? undefined : Str.trim(opts.search) || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(select)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -980,7 +973,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 
 	// Per trace: every span of a page trace, session-bearing or not, inside the
 	// page's padded window.
-	const perTrace = from(Traces)
+	const perTrace = from(Datasources.traces)
 		.select(($) => {
 			return {
 				traceId: $.TraceId,
@@ -999,7 +992,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 				// single long span reports a duration of 0, and every other session
 				// under-reports by exactly the last-starting span's duration, which
 				// is invisible because it always looks like plausible jitter. Same
-				// idiom as `tracesDetailQuery`.
+				// idiom as `traceListQuery`.
 				traceEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
 			}
 		})
@@ -1136,8 +1129,6 @@ export function mergeAiSessionDetails(
 	return [...merged.values()]
 }
 
-// List facets (UNION ALL — one branch per index dimension)
-
 export interface AiSessionFacetsOutput {
 	readonly name: string
 	readonly count: number
@@ -1178,9 +1169,9 @@ export type AiSessionFacetType = "vendor" | "service" | "environment" | "model" 
 export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 	const facet = (
 		facetType: AiSessionFacetType,
-		name: ($: ColumnAccessor<typeof AiTraceIndex.columns>) => CH.Expr<string>,
+		name: ($: ColumnAccessor<typeof Datasources.aiTraceIndex.columns>) => CH.Expr<string>,
 	) => {
-		const perTrace = from(AiTraceIndex)
+		const perTrace = from(Datasources.aiTraceIndex)
 			.select(($) => ({
 				traceId: $.TraceId,
 				// Over EVERY span of the trace, not only those carrying the value:
@@ -1224,8 +1215,6 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 		facet("tool", ($) => $.ToolName),
 	).format("JSON")
 }
-
-// Range distributions (the sidebar's histograms and percentile presets)
 
 /** The session measures the list's range filters read, by the name the list row gives each. */
 export type AiSessionDistributionMeasure = "durationMs" | "cost" | "totalTokens" | "llmCalls" | "toolCalls"
@@ -1329,8 +1318,6 @@ export function aiSessionDistributionsQuery() {
 		.format("JSON")
 }
 
-// Session window resolution (id → bounds)
-
 export interface AiSessionWindowOutput {
 	/** Warehouse datetime literals, already padded — feed them straight back in. */
 	readonly startTime: string
@@ -1357,7 +1344,7 @@ export interface AiSessionWindowOutput {
  * must read `spanCount` to tell an unknown session from a real one.
  */
 export function aiSessionWindowQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
@@ -1388,7 +1375,7 @@ export function aiSessionWindowQuery() {
  * the two are interchangeable to a caller holding only an id.
  */
 export function aiTraceWindowQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
@@ -1418,21 +1405,7 @@ export interface AiTraceSpansOpts extends AiSessionSpansOpts {
 	readonly traceIds?: readonly string[]
 }
 
-export interface AiSessionSpansOutput {
-	readonly traceId: string
-	readonly spanId: string
-	readonly parentSpanId: string
-	readonly spanName: string
-	readonly spanKind: string
-	readonly serviceName: string
-	readonly durationMs: number
-	readonly statusCode: string
-	readonly statusMessage: string
-	readonly timestamp: string
-	readonly spanAttributes: Record<string, string>
-}
-
-export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutput> = Schema.Struct({
+export const aiSessionSpansRowSchema = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	parentSpanId: Schema.String,
@@ -1448,6 +1421,8 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	// observability path, which reads maps already serialized to a string.
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
+
+export type AiSessionSpansOutput = typeof aiSessionSpansRowSchema.Type
 
 /**
  * A span's attribute map cut down to what `mapAiSpan` reads. Measured on
@@ -1467,7 +1442,7 @@ export const aiSpanAttributes = (
 
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
  *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
-const spanProjection = ($: ColumnAccessor<typeof Traces.columns>) => ({
+const spanProjection = ($: ColumnAccessor<typeof Datasources.traces.columns>) => ({
 	traceId: $.TraceId,
 	spanId: $.SpanId,
 	parentSpanId: $.ParentSpanId,
@@ -1519,7 +1494,7 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	const sessionTraceIds = sessionTraceIdsSubquery()
 
 	return (
-		from(Traces)
+		from(Datasources.traces)
 			.select(spanProjection)
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
@@ -1539,12 +1514,12 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	)
 }
 
-type SpanColumns = ColumnAccessor<typeof Traces.columns>
+type SpanColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 /** The traces carrying the session id, within the window — the detection half
  *  of every session-keyed read. */
 const sessionTraceIdsSubquery = () =>
-	from(Traces)
+	from(Datasources.traces)
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1594,7 +1569,7 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 	const limit = opts.limit ?? AI_SESSION_SPANS_MAX_SPANS
 	const traceIds = opts.traceIds
 
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(spanProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1609,51 +1584,6 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 		.orderBy(["timestamp", "asc"], ["spanId", "asc"])
 		.limit(limit)
 		.format("JSON")
-}
-
-// ---------------------------------------------------------------------------
-// Session summary — the whole session's totals, computed where the spans are
-// ---------------------------------------------------------------------------
-
-/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
-export interface AiSessionTotalsOutput {
-	readonly traceCount: number
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
-}
-
-export interface AiSessionSummaryOutput {
-	readonly turnKey: string
-	readonly conversationId: string
-	readonly traceIds: readonly string[]
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
 }
 
 const summaryMeasures = {
@@ -1674,17 +1604,22 @@ const summaryMeasures = {
 	agentNames: Schema.Array(Schema.String),
 }
 
-export const aiSessionSummaryRowSchema: CompiledQueryRowSchema<AiSessionSummaryOutput> = Schema.Struct({
+export const aiSessionSummaryRowSchema = Schema.Struct({
 	turnKey: Schema.String,
 	conversationId: Schema.String,
 	traceIds: Schema.Array(Schema.String),
 	...summaryMeasures,
 })
 
-export const aiSessionTotalsRowSchema: CompiledQueryRowSchema<AiSessionTotalsOutput> = Schema.Struct({
+export type AiSessionSummaryOutput = typeof aiSessionSummaryRowSchema.Type
+
+export const aiSessionTotalsRowSchema = Schema.Struct({
 	traceCount: CHNumber,
 	...summaryMeasures,
 })
+
+/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
+export type AiSessionTotalsOutput = typeof aiSessionTotalsRowSchema.Type
 
 /** Distinct values one turn row keeps of an open-ended dimension. */
 const SUMMARY_ARRAY_CAP = 50
@@ -1796,7 +1731,7 @@ const totalsProjection = ($: SpanColumns) => {
  * span read — required, bounding both levels.
  */
 export function aiSessionSummaryQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1812,7 +1747,7 @@ export function aiSessionSummaryQuery() {
 
 /** The summary of a `trace:` session — {@link aiTraceSpansQuery}'s shape. */
 export function aiTraceSummaryQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1828,7 +1763,7 @@ export function aiTraceSummaryQuery() {
 
 /** The whole session's measures in one row — {@link aiSessionSummaryQuery} ungrouped. */
 export function aiSessionTotalsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1841,7 +1776,7 @@ export function aiSessionTotalsQuery() {
 
 /** The whole `trace:` session's measures in one row. */
 export function aiTraceTotalsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1858,7 +1793,7 @@ export function aiTraceTotalsQuery() {
  * page would not show as a session links nowhere.
  */
 export function aiSessionsOfTracesQuery(traceIds: readonly string[]) {
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

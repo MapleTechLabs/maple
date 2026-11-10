@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/dependency-scan"
 import { GitCommitSha, VcsRepositoryId } from "@maple/domain/http/vcs"
 import { AdvisorySeverity, PackageEcosystem } from "@maple/domain/package-advisories"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // Dependency vulnerability scans. No FKs (house style): the store enforces the links and always

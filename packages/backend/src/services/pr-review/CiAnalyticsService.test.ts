@@ -1,13 +1,19 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, RoleName, UserId, VcsInstallationId, VcsRepositoryId } from "@maple/domain/http"
+import {
+	OrgId,
+	RoleName,
+	UserId,
+	VcsInstallationId,
+	VcsRepositoryId,
+	type TenantContext,
+} from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { CI_MAX_SPAN_MS, CiAnalyticsService } from "./CiAnalyticsService"

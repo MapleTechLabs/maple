@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
-import { AlertRuleId } from "@maple/domain/primitives"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
+import { AlertRuleId } from "@maple/primitives"
 import { Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
@@ -10,8 +10,6 @@ import { PageOutMessage, type PageReturn } from "../../contract"
 import { CopyText } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-
-// The issue overflow menu: copies, and the alert rule for alert issues.
 
 const decodeRuleId = Schema.decodeUnknownOption(AlertRuleId)
 const ruleIdOf = (issue: ErrorIssueDocument) => Option.getOrNull(decodeRuleId(issue.sourceRef?.ruleId))

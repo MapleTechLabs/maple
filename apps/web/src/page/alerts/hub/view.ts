@@ -15,13 +15,13 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { navShell, type NavShellCount, type NavShellSection } from "../../kit/nav-shell"
 import type { BreadcrumbEntry } from "../../../shell"
-import { alertsHref, createHref } from "../shared/links"
+import type { AlertsTab } from "../../../route/search"
+import { alertsHref, createHref } from "../../kit/alert-links"
+import { newScheduleHref } from "../shared/oncall-schedules"
 import { newSloHref } from "../shared/slo-commands"
-import { newMonitorHref } from "../shared/uptime-commands"
+import { newMonitorHref } from "../../kit/uptime/commands"
 import {
-	type AlertsTab,
 	anomalyOverviewOf,
 	destinationsOf,
 	isAboutService,
@@ -29,18 +29,17 @@ import {
 	resolveIncidentStatus,
 	resolveSignal,
 	resolveStatus,
-	resolveTab,
+	silenceSuggestionsOf,
 } from "./derive"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { alertsEmptyState } from "./view-empty"
 import { anomalyInbox, inboxFilters } from "./view-anomalies"
-import { inboxTab, unacknowledgedCount } from "./view-inbox"
+import { inboxTab } from "./view-inbox"
 import { routingTab } from "./view-routing"
 import * as DestinationDialogView from "../destination/view"
-import * as ChainDialogView from "../escalation-dialog/view"
 import { deleteChainDialog } from "./view-chains"
-import { CHAIN_DIALOG_ID, WINDOW_DIALOG_ID } from "./update"
+import { WINDOW_DIALOG_ID } from "./update"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { silencesTab } from "./view-silences"
 import { deleteWindowDialog, hasWindows, maintenanceTab } from "./view-maintenance"
@@ -48,17 +47,10 @@ import * as WindowDialogView from "../maintenance-dialog/view"
 import { rulesTab } from "./view-rules"
 import { deleteMonitorDialog, uptimeTab } from "./view-uptime"
 import { slosTab } from "./view-slos"
-import {
-	deleteScheduleDialog,
-	hasSchedules,
-	newScheduleButton,
-	oncallTab,
-	whoIsOnCallStrip,
-} from "./view-oncall"
+import { deleteScheduleDialog, hasSchedules, oncallTab, whoIsOnCallStrip } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-// `AlertsPage` and `AlertsHub`: the `/alerts` page and the rail of its sections.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -69,111 +61,17 @@ const TAB_LABEL = {
 	slos: "SLOs",
 	silences: "Silences",
 	maintenance: "Maintenance",
-	oncall: "On-call",
+	"on-call": "On-call",
 	routing: "Routing",
 } as const satisfies Record<AlertsTab, string>
 
-type RailRow = Readonly<{ tab: AlertsTab; icon: IconName }>
-
-const RAIL: ReadonlyArray<Readonly<{ id: string; title: string; rows: ReadonlyArray<RailRow> }>> = [
-	{ id: "triage", title: "Triage", rows: [{ tab: "inbox", icon: "BellIcon" }] },
-	{
-		id: "monitors",
-		title: "Monitors",
-		rows: [
-			{ tab: "rules", icon: "ChartLineIcon" },
-			{ tab: "uptime", icon: "GlobeIcon" },
-			{ tab: "slos", icon: "GaugeIcon" },
-		],
-	},
-	{
-		id: "quiet",
-		title: "Quiet",
-		rows: [
-			{ tab: "silences", icon: "BellSlashIcon" },
-			{ tab: "maintenance", icon: "CalendarIcon" },
-		],
-	},
-	{
-		id: "response",
-		title: "Response",
-		rows: [
-			{ tab: "oncall", icon: "UsersIcon" },
-			{ tab: "routing", icon: "BranchForkIcon" },
-		],
-	},
-]
-
 const HUB_SKELETON_ROWS = ["h-14 w-1/2", "h-40 w-full", "h-48 w-full"]
 
-/** `Alerts › <section>`: the rail's active row names the page. */
+/** `Alerts › <section>`: the sidebar's current sub-item names the page. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
 	{ label: "Alerts", href: alertsHref({}) },
-	{ label: TAB_LABEL[resolveTab(model.search.tab)] },
+	{ label: TAB_LABEL[model.tab] },
 ]
-
-const countOf = (
-	model: Model,
-	overview: Option.Option<AlertsOverviewReady>,
-	tab: AlertsTab,
-): number | undefined => {
-	const lengthOf = <A>(rows: Option.Option<ReadonlyArray<A>>) =>
-		Option.getOrUndefined(Option.map(rows, Arr.length))
-	switch (tab) {
-		case "uptime":
-			return lengthOf(AsyncData.getData(model.monitors.data))
-		case "slos":
-			return lengthOf(AsyncData.getData(model.slos.data))
-		case "oncall":
-			return lengthOf(AsyncData.getData(model.schedules.data))
-		case "inbox":
-			return Option.getOrUndefined(
-				Option.map(overview, (data) => unacknowledgedCount(data.openIncidents)),
-			)
-		case "rules":
-			return Option.getOrUndefined(Option.map(overview, (data) => data.rules.length))
-		case "silences":
-		case "maintenance":
-		case "routing":
-			return undefined
-	}
-}
-
-/** The section rail in `dashboardPage`'s side slot, which folds into a sheet below `lg`. */
-const rail = (h: H, model: Model, overview: Option.Option<AlertsOverviewReady>, active: AlertsTab): Html =>
-	navShell<Message, never>(
-		h,
-		Arr.map(RAIL, (section): NavShellSection<never> => ({
-			id: section.id,
-			title: section.title,
-			items: Arr.map(section.rows, (row) => {
-				const count = countOf(model, overview, row.tab)
-				const tone: NavShellCount["tone"] = row.tab === "inbox" ? "error" : "muted"
-				return {
-					kind: "link",
-					id: row.tab,
-					label: TAB_LABEL[row.tab],
-					icon: row.icon,
-					count: count !== undefined && count > 0 ? { value: count, tone } : undefined,
-					// The Anomalies view belongs to the Inbox: other sections drop its filters.
-					href: alertsHref(
-						row.tab === "inbox"
-							? { ...model.search, tab: row.tab }
-							: {
-									...model.search,
-									tab: row.tab,
-									signal: undefined,
-									anomalyStatus: undefined,
-									window: undefined,
-								},
-					),
-				}
-			}),
-		})),
-		active,
-		(tab) => tab,
-		"Alerts sections",
-	)
 
 /** A "New rule" menu row: icon, label and one line of what it watches. */
 const newRuleItem = (
@@ -195,26 +93,18 @@ const newRuleItem = (
 	],
 })
 
-/** The split create button: its main part makes the section's own kind (an uptime check on Uptime, an SLO
- * on SLOs, else a telemetry rule), the chevron offers every kind. */
-const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
+/** The Inbox's and Rules' split create button: a telemetry rule, and behind the chevron every kind. */
+const newRuleButton = (h: H, model: Model): Html => {
 	const serviceName = model.search.serviceName
-	// Uptime checks and SLOs are admin-only to create; members keep the telemetry rule.
-	const lead =
-		canManage(model) && tab === "uptime"
-			? { href: newMonitorHref({ serviceName }), label: "New check" }
-			: canManage(model) && tab === "slos"
-				? { href: newSloHref({ serviceName }), label: "New SLO" }
-				: { href: createHref({ serviceName }), label: "New rule" }
 	return hstack(h, { align: "center" }, [
 		linkButton(
 			h,
 			{
 				size: "sm",
-				href: lead.href,
+				href: createHref({ serviceName }),
 				className: splitButtonClass("lead"),
 			},
-			[icon(h, "PlusIcon"), lead.label],
+			[icon(h, "PlusIcon"), "New rule"],
 		),
 		h.submodel({
 			slotId: model.newRuleMenu.id,
@@ -237,7 +127,7 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 						"Route what Maple's anomaly detector finds for some services, environments or signals.",
 					),
 					// Uptime monitors are admin-only to create; the API refuses members too.
-					...(canManage(model)
+					...(canManageAlerts(model)
 						? [
 								newRuleItem(
 									h,
@@ -279,52 +169,69 @@ const newRuleButton = (h: H, model: Model, tab: AlertsTab): Html => {
 	])
 }
 
-// Destinations are a Routing concern, so "New destination" only shows on that tab.
-const headerActions = (h: H, model: Model, tab: AlertsTab): Html =>
-	hstack(h, { gap: "2" }, [
-		...(canManage(model) && tab === "silences"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedNewSilence())],
-						},
-						[icon(h, "BellSlashIcon"), "New silence"],
-					),
-				]
-			: []),
-		...(canManage(model) && tab === "maintenance" && hasWindows(model)
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: model.nowMs === null,
-							attributes: [h.OnClick(Message.ClickedNewWindow())],
-						},
-						[icon(h, "CalendarIcon"), "New window"],
-					),
-				]
-			: []),
-		...(canManage(model) && tab === "oncall" && hasSchedules(model) ? [newScheduleButton(h)] : []),
-		...(canManage(model) && tab === "routing"
-			? [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							attributes: [h.OnClick(Message.ClickedNewDestination())],
-						},
-						[icon(h, "PlusIcon"), "New destination"],
-					),
-				]
-			: []),
-		newRuleButton(h, model, tab),
-	])
+const hasRows = <A>(rows: Option.Option<ReadonlyArray<A>>): boolean =>
+	Option.exists(rows, (list) => list.length > 0)
+
+const primaryLink = (h: H, href: string, label: string): Html =>
+	linkButton(h, { size: "sm", href }, [icon(h, "PlusIcon"), label])
+
+const primaryButton = (h: H, onClick: Message, label: string, isDisabled = false): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(onClick)] }, [icon(h, "PlusIcon"), label])
+
+/**
+ * The first-run empty state fills the section: no rules yet, and on the Inbox nothing else to list
+ * (an org with only monitors or SLOs has no visible rules but may have incidents to show).
+ */
+const isFirstRun = (model: Model, data: AlertsOverviewReady, tab: "inbox" | "rules"): boolean => {
+	if (data.rules.length > 0) return false
+	if (tab === "rules") return true
+	return (
+		resolveSignal(model.search.signal) === null &&
+		!Arr.some(data.openIncidents, (incident) => isManagedSignalType(incident.signalType)) &&
+		!Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+	)
+}
+
+/**
+ * The header's one primary action: what the open section lists. A section whose empty state
+ * already offers it shows none until it has rows, and a viewer who can't create it sees none.
+ */
+const headerActions = (
+	h: H,
+	model: Model,
+	tab: AlertsTab,
+	overview: Option.Option<AlertsOverviewReady>,
+): Html | undefined => {
+	if (tab === "inbox" || tab === "rules")
+		// The first-run empty state offers the templates and "Start from scratch" to who can create.
+		return canManageAlerts(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
+			? undefined
+			: newRuleButton(h, model)
+	if (!canManageAlerts(model)) return undefined
+	const serviceName = model.search.serviceName
+	switch (tab) {
+		case "uptime":
+			return hasRows(AsyncData.getData(model.monitors.data))
+				? primaryLink(h, newMonitorHref({ serviceName }), "New monitor")
+				: undefined
+		case "slos":
+			return hasRows(AsyncData.getData(model.slos.data))
+				? primaryLink(h, newSloHref({ serviceName }), "New SLO")
+				: undefined
+		case "silences":
+			return primaryButton(h, Message.ClickedNewSilence(), "New silence")
+		case "maintenance":
+			return hasWindows(model)
+				? primaryButton(h, Message.ClickedNewWindow(), "New window", model.nowMs === null)
+				: undefined
+		case "on-call":
+			return hasSchedules(model) ? primaryLink(h, newScheduleHref(), "New schedule") : undefined
+		case "routing":
+			return destinationsOf(model).length > 0
+				? primaryButton(h, Message.ClickedNewDestination(), "Add destination")
+				: undefined
+	}
+}
 
 /** `SyncUnavailable`: the rules or incidents stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({
@@ -362,15 +269,11 @@ const hubBody = (
 		onSome: (data) => {
 			const destinations = destinationsOf(model)
 			const emptyState = alertsEmptyState(h, {
-				canEdit: canManage(model),
+				canEdit: canManageAlerts(model),
 				hasDestinations: destinations.length > 0,
 				serviceName: model.search.serviceName,
-				onAddDestination: canManage(model) ? Message.ClickedNewDestination() : undefined,
+				onAddDestination: canManageAlerts(model) ? Message.ClickedNewDestination() : undefined,
 			})
-			// An org with only monitors or SLOs has no visible rules but may have open incidents to show.
-			const hasManagedIncidents = Arr.some(data.openIncidents, (incident) =>
-				isManagedSignalType(incident.signalType),
-			)
 			const acknowledge = {
 				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
 					Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
@@ -378,14 +281,14 @@ const hubBody = (
 			}
 			if (tab === "inbox") {
 				const signal = resolveSignal(model.search.signal)
-				const hasAnomalies = Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
 				// A team can set up on-call before its first rule, so the strip shows on the empty inbox too.
-				if (data.rules.length === 0 && !hasManagedIncidents && !hasAnomalies && signal === null)
+				if (isFirstRun(model, data, "inbox"))
 					return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), emptyState])
 				const filters = inboxFilters(h, {
 					signal,
 					status: resolveIncidentStatus(model.search.anomalyStatus),
 					serviceName: model.search.serviceName,
+					hasAnomalies: Arr.some(data.incidents, (incident) => incident.signalType === "anomaly"),
 					// Counted under the same service filter the list applies.
 					openAnomalies: Arr.filter(
 						data.openIncidents,
@@ -407,7 +310,7 @@ const hubBody = (
 									}),
 							})
 						: inboxTab(h, data, acknowledge)
-				return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), filters, body])
+				return h.div([h.Class("space-y-6")], [...whoIsOnCallStrip(h, model), ...filters, body])
 			}
 			return rulesTab(h, model, {
 				data,
@@ -440,7 +343,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
-	const tab = resolveTab(model.search.tab)
+	const tab = model.tab
 	const overview = overviewOf(model)
 	return h.div(
 		[h.Class("contents")],
@@ -449,10 +352,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: TAB_LABEL[tab],
-					actions: headerActions(h, model, tab),
-					filters: rail(h, model, overview, tab),
-					filtersLabel: "Alerts",
-					filtersWidth: "w-56",
+					actions: headerActions(h, model, tab, overview),
 				},
 				[
 					tab === "routing"
@@ -469,7 +369,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									? silencesTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
 									: tab === "maintenance"
 										? maintenanceTab(h, model, model.nowMs ?? 0, inputs.context.timeZone)
-										: tab === "oncall"
+										: tab === "on-call"
 											? oncallTab(h, model, model.nowMs ?? 0)
 											: hubBody(h, model, overview, tab),
 				],
@@ -479,19 +379,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			deleteChainDialog(h, model),
 			deleteScheduleDialog(h, model),
 			deleteWindowDialog(h, model),
-			h.submodel({
-				slotId: CHAIN_DIALOG_ID,
-				model: model.chainDialog,
-				view: ChainDialogView.view,
-				viewInputs: {
-					id: CHAIN_DIALOG_ID,
-					destinations: model.destinations,
-					members: model.members,
-					// `null` until the schedules load (or after a failed read): names read neutrally.
-					schedules: Option.getOrNull(AsyncData.getData(model.schedules.data)),
-				},
-				toParentMessage: (message) => Message.GotChainDialogMessage({ message }),
-			}),
 			h.submodel({
 				slotId: "alerts-destination",
 				model: model.destinationDialog,
@@ -503,7 +390,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				slotId: "alerts-silence",
 				model: model.silenceDialog,
 				view: SilenceDialogView.view,
-				viewInputs: { id: "alerts-silence" },
+				viewInputs: { id: "alerts-silence", suggestions: silenceSuggestionsOf(model) },
 				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
 			}),
 			h.submodel({

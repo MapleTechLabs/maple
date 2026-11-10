@@ -25,10 +25,10 @@ import {
 	type UsersGroupItem,
 	type UsersGroupsRequest,
 	type UsersListRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { Array as Arr, Clock, DateTime, Effect, Option, Order, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	isMissingUserActivityChannels,
@@ -349,7 +349,6 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	return new UsersListResponse({ users, ...(next !== undefined && { next }) })
 })
 
-/** Groups the group view lists at most. */
 const GROUPS_LIMIT = 200
 
 /** The directory grouped by `identify()` group, over the list's filters; the ungrouped row last. */
@@ -477,8 +476,6 @@ export const readUsersFacets = Effect.fn("UsersReads.facets")(function* (
 	})
 })
 
-// --- one user (`/users/$userId`) ----------------------------------------------------------------
-
 /** Replay sessions, product events and MCP sessions one user page lists at most, each. */
 const USER_LIST_LIMIT = 100
 const USER_EVENTS_LIMIT = 200
@@ -498,10 +495,10 @@ const WARN_SEVERITY = 13
 /** Characters of a log body a timeline row keeps. */
 const LOG_TITLE_LENGTH = 200
 
-/** The MCP servers in scope: every one when unscoped, else those that emitted under the namespace. */
 /** MCP servers one user page reads sessions from at most. */
 const MCP_SESSION_SERVERS_LIMIT = 20
 
+/** The MCP servers in scope: every one when unscoped, else those that emitted under the namespace. */
 export const mcpServersInScope = (scope: CH.UsersScope): ReadonlyArray<string> =>
 	scope.namespaces.length === 0
 		? scope.mcpServices
@@ -651,7 +648,6 @@ export const mergeActivity = (
 		limit,
 	)
 
-/** Newest first, by the moment a timeline row happened. */
 const NEWEST_FIRST = Order.flip(Order.mapInput(Order.Number, (item: { atMs: number }) => item.atMs))
 
 /** The issues the user hit; `None` where errors carry no user id. */
@@ -947,8 +943,6 @@ const deviceOf = (browser: string, os: string): string =>
 		" · ",
 	)
 
-// --- one user's spans and logs: rollup slices first, then a raw read pruned to them --------------
-
 /** The services and window a user's raw rows can be in, as the raw reads take them. */
 export type SliceWindow = Readonly<{
 	serviceNames: ReadonlyArray<string>
@@ -979,7 +973,6 @@ export const sliceWindow = (
 	}
 }
 
-/** The services with requests, and their request hours. */
 export const requestHours = (
 	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
 ): ReadonlyArray<ServiceHours> =>
@@ -992,7 +985,6 @@ export const requestHours = (
 		}),
 	)
 
-/** The services with log lines, and their log hours. */
 export const logHours = (slices: ReadonlyArray<CH.UserActivitySliceOutput>): ReadonlyArray<ServiceHours> =>
 	Arr.map(
 		Arr.filter(slices, (slice) => slice.logCount > 0),

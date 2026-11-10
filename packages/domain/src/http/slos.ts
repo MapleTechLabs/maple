@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { SloId } from "../primitives"
+import { SloId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class SloNotFoundError extends HttpTaggedError<SloNotFoundError>()(

@@ -16,7 +16,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { RESEAL_TARGETS } from "./reseal-targets"
 import { SecretResealService } from "./SecretResealService"
 

@@ -1,8 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
-import { SandboxTimeoutError } from "@maple/backend/sandbox/contract"
+import { SandboxTimeoutError } from "@maple/backend/services/sandbox/contract"
 import { REPO_SANDBOX_IMPLEMENTATION } from "@maple/backend/services/sandbox/repo-mount"
 import {
 	RepoSandboxService,
@@ -20,7 +20,7 @@ import {
 } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId as OrgIdSchema } from "@maple/domain/http"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import type { SecurityAuditTargetId, SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import {
 	type AgentInvocation,

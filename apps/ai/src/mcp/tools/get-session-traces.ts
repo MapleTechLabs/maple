@@ -1,9 +1,9 @@
 import { DateTime, Effect, Schema, Array as Arr } from "effect"
-import { GetSessionTracesOutput } from "@maple/domain/mcp-outputs"
 import { getSessionTraces } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -18,7 +18,6 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			session_id: P.text("The session id to read (from search_sessions)"),
 			limit: P.limit({ default: 50, max: 100, noun: "traces" }),
 		}),
-		output: GetSessionTracesOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading session traces"],
 		handler: Effect.fn("McpTool.getSessionTraces")(function* ({ session_id, limit }) {
@@ -41,8 +40,9 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			}
 			yield* Effect.annotateCurrentSpan("result.traceCount", traces.length)
 
-			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers
-			// (see the facets handler in session-replay.http.ts); coerce every numeric at the edge.
+			// ClickHouse serializes integer aggregates as JSON strings while Tinybird returns numbers (see
+			// the facets handler in `apps/api/src/routes/internal/session-replays.http.ts`); coerce every
+			// numeric at the edge.
 			return {
 				session: {
 					sessionId: session.sessionId,

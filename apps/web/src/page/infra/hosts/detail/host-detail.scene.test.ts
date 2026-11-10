@@ -4,7 +4,7 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { Message } from "./message"
 import type { HostSummary, Model } from "./model"

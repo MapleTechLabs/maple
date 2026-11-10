@@ -2,10 +2,10 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { formatWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -54,7 +54,6 @@ const volumeSpec = (
 
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
-/** `CursorPlot` with `ariaLabel="Log volume by severity"` in its 120px strip. */
 const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "logs-volume",
@@ -69,8 +68,6 @@ const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((
 			),
 	}),
 )
-
-// EMPTY STRIP
 
 const EMPTY_STRIP_TICKS = 5
 const EMPTY_STRIP_BARS = 64
@@ -90,13 +87,7 @@ const EMPTY_STRIP_BARS_STACKED = Array.from({ length: EMPTY_STRIP_BARS }, (_, i)
 	]
 })
 
-const epochOf = (warehouseTime: string): number =>
-	Option.match(DateTime.make(warehouseDateTimeToIso(warehouseTime)), {
-		onNone: () => Number.NaN,
-		onSome: DateTime.toEpochMillis,
-	})
-
-/** `EmptyVolumeStrip`: the strip's height and gutter kept, the window and severities named. */
+/** The strip's height and gutter kept, the window and severities named. */
 const emptyStrip = (
 	h: HtmlBuilder<Message>,
 	window: Readonly<{ startTime: string; endTime: string }>,
@@ -104,8 +95,8 @@ const emptyStrip = (
 	timeZone: string,
 	locale: string,
 ): Html => {
-	const startMs = epochOf(window.startTime)
-	const rangeMs = Math.max(0, epochOf(window.endTime) - startMs)
+	const startMs = parseWarehouseDateTime(window.startTime)
+	const rangeMs = Math.max(0, parseWarehouseDateTime(window.endTime) - startMs)
 	const axisContext = { rangeMs, bucketSeconds, timeZone, locale }
 	const ticks = Array.from({ length: EMPTY_STRIP_TICKS }, (_, i) => ({
 		label: formatBucketLabel(

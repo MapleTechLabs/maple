@@ -1,6 +1,6 @@
 import { Option, Array as Arr } from "effect"
 import { assert, describe, expect, it } from "vitest"
-import { StatusPageComponentId, StatusPageId } from "./primitives"
+import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import {
 	applyOverlay,
 	contrastRatio,

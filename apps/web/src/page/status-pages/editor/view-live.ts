@@ -1,6 +1,6 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../platform/api-base-url"
 import { button, linkButton } from "@maple/views/ui/button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"

@@ -64,7 +64,7 @@ export type SpanPopoverInputs = Readonly<{
 	timeZone: string
 }>
 
-/** `SpanExpansion`: the title and tab strip are fixed chrome; only the payload under them scrolls. */
+/** The title and tab strip are fixed chrome; only the payload under them scrolls. */
 const expansion = (
 	h: H,
 	model: Model,
@@ -176,7 +176,7 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 		view: Tooltip.view,
 		toParentMessage: (message: Tooltip.Message) => Message.GotCloseTooltipMessage({ message }),
 		viewInputs: {
-			// `IconButton`'s tooltip: its label, in the icon-button popup layout.
+			// The label, in the icon-button popup layout.
 			toContent: () => ["Close span detail"],
 			layout: "icon-button",
 			toView: ({ trigger, portal }) =>
@@ -228,7 +228,7 @@ const tabStrip = (h: H, active: SpanDetailTab, messageCount: number, toolCount: 
 	ToggleGroup.view(h, {
 		model: ToggleGroup.init({ label: "Span detail", values: [active] }),
 		toParentMessage: (message) =>
-			// Clicking the pressed tab empties the group in Base UI; the tab stays put.
+			// Clicking the pressed tab reports no value; the tab stays put.
 			Message.PickedSpanTab({
 				tab:
 					message._tag === "ClickedItem" && isSpanTab(message.value) && message.value !== active

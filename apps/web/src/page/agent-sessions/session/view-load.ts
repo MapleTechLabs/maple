@@ -12,8 +12,6 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The session load indicator: how far a large session has loaded.
-
 type H = HtmlBuilder<Message>
 
 /** A later page of a large session failed; what already loaded stays on screen. */

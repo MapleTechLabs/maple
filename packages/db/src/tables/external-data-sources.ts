@@ -9,7 +9,7 @@ import {
 	DataSourceStatus,
 	ExternalDataSourceId,
 } from "@maple/domain/data-sources"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // A system an org connects so Maple can query it in place: a database or an API. Nothing is
@@ -52,7 +52,6 @@ export const ExternalDataSources = PG.table("external_data_sources", {
 })
 
 export type ExternalDataSourceRow = PG.SelectRowOf<typeof ExternalDataSources>
-export type ExternalDataSourceInsert = PG.InsertRowOf<typeof ExternalDataSources>
 
 // One table, view or API resource of a source, captured from the source (or the driver) and
 // curated by admins. A refresh rewrites `fields`, `kind`, `row_estimate` and the detected time
@@ -93,4 +92,3 @@ export const ExternalDataSourceCatalogEntries = PG.table("external_data_source_c
 })
 
 export type ExternalDataSourceCatalogEntryRow = PG.SelectRowOf<typeof ExternalDataSourceCatalogEntries>
-export type ExternalDataSourceCatalogEntryInsert = PG.InsertRowOf<typeof ExternalDataSourceCatalogEntries>

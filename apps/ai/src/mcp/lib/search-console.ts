@@ -17,7 +17,7 @@ import {
 	McpUnavailableError,
 } from "../tools/types"
 import { warehouseReadToMcpHandlers } from "./map-warehouse-error"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 
 const DAY_MS = 86_400_000
 /** The importer runs on the 15-minute alerting cron. */

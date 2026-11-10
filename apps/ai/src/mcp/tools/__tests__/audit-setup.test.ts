@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { mapleToolCatalog } from "../registry"
-import { AuditSetupOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, AuditSetupOutput } from "@maple/domain/mcp-outputs"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
 import type { AuditCheckResult, SetupAuditReport } from "@maple/domain/setup-audit"
 import { renderToolDoc, type ToolDoc } from "../../lib/tool-doc"
@@ -18,7 +18,7 @@ import type { McpToolRegistrar } from "../types"
 let render: ((output: typeof AuditSetupOutput.Encoded) => ToolDoc) | undefined
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
-		render = (output) => spec.render(Schema.decodeSync(spec.output)(output))
+		render = (output) => spec.render(Schema.decodeSync(McpToolOutputs[spec.name])(output))
 	},
 }
 registerAuditSetupTool(registrar)

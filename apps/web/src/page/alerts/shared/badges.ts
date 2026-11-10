@@ -5,22 +5,18 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { statusDot } from "@maple/views/ui/status-dot"
 
-// The alert severity and status badges.
-
 const TONE_BY_SEVERITY = new Map<AlertSeverity, "warn" | "crit">([
 	["warning", "warn"],
 	["critical", "crit"],
 ])
-const LABEL_BY_SEVERITY = new Map<AlertSeverity, string>([
-	["warning", "Warning"],
-	["critical", "Critical"],
-])
+export const ALERT_SEVERITY_LABEL = {
+	warning: "Warning",
+	critical: "Critical",
+} as const satisfies Record<AlertSeverity, string>
 
 export const severityBadge = <M>(h: HtmlBuilder<M>, severity: AlertSeverity, className?: string): Html => {
 	const tone = TONE_BY_SEVERITY.get(severity) ?? "warn"
-	return badge(h, { variant: tone, className }, [
-		LABEL_BY_SEVERITY.get(severity) ?? severity,
-	])
+	return badge(h, { variant: tone, className }, [ALERT_SEVERITY_LABEL[severity]])
 }
 
 export type AlertStatusState =

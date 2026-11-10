@@ -2,7 +2,7 @@ import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../data/time-range"
 
 // The last screen, "You're live": what the org's own first day of data already shows, read once.
@@ -52,19 +52,16 @@ export const LoadLiveFindings = Command.define("LoadOnboardingLiveFindings", {
 	execute: ({ timeZone }) =>
 		currentWindow({ preset: "24h", snap: false, timeZone }).pipe(
 			Effect.flatMap((window) => getServiceOverview({ data: window })),
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					findingsOf(
-						Arr.map(response.data, (row) => ({
-							serviceName: String(row.serviceName),
-							p95LatencyMs: row.p95LatencyMs,
-							errorRate: row.errorRate,
-						})),
-					),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => LiveMessage.LoadedFindings({ result })),
+			Effect.map((response) =>
+				findingsOf(
+					Arr.map(response.data, (row) => ({
+						serviceName: String(row.serviceName),
+						p95LatencyMs: row.p95LatencyMs,
+						errorRate: row.errorRate,
+					})),
+				),
+			),
+			settleTo((result) => LiveMessage.LoadedFindings({ result })),
 		),
 })
 

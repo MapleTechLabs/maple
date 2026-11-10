@@ -14,7 +14,7 @@ import {
 	StatusPageUpdateSource,
 	UptimeMonitorId,
 	UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, StatusPageTheme } from "@maple/domain/status-page"
 import { UptimeMonitors } from "./uptime"
 

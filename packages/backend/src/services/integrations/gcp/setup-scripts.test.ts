@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
-import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
+import { GcpConnectorId, GcpLogRuntime, GcpProjectId, GcpResourceNumber } from "@maple/primitives"
 import {
 	gcpLogFilter,
 	renderGcpCleanupScript,

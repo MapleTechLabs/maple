@@ -22,9 +22,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 
-// The attach pull request dialog: pick a pull request
-// of the connected repository (a Select picks it when the org has several), or paste a link.
-
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
 
@@ -49,7 +46,7 @@ export const githubOf = (model: Model) => {
 	return { isConnected: status?.state === "connected", repository, repositories }
 }
 
-/** `resolveTypedReference`: `#123`, `123` (with a repository) or a full PR URL. */
+/** `#123`, `123` (with a repository) or a full PR URL. */
 export const typedPullRequestUrl = (draft: string, repository: string | null): string | null => {
 	const trimmed = Str.trim(draft)
 	if (trimmed.length === 0) return null
@@ -98,7 +95,7 @@ export const clearedAttach = (model: Model): Model => ({
 	attachCombobox: Combobox.init(model.attachCombobox.id, "single"),
 })
 
-/** `close`: what was typed and the picked repository are cleared whichever way the dialog closes. */
+/** What was typed and the picked repository are cleared whichever way the dialog closes. */
 export const attachDialogStep = (model: Model, message: Dialog.Message): Return => {
 	const step = Dialog.update(model.attachDialog, message)
 	const lifted = liftDialog(model, step)
@@ -125,7 +122,7 @@ export const attachComboboxStep = (model: Model, message: Combobox.Message): Ret
 		Message.GotAttachComboboxMessage({ message: inner }),
 	)
 	if (step.outMessage?._tag !== "ChangedValue") return { model: next, commands }
-	// `value={null}`: the pick attaches, the input keeps what was typed.
+	// The pick attaches; the input keeps what was typed.
 	const picked = attach({ ...next, attachDraft: model.attachDraft }, step.outMessage.value)
 	return { ...picked, commands: [...commands, ...(picked.commands ?? [])] }
 }

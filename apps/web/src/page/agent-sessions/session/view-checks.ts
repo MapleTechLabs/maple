@@ -23,7 +23,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The session checks: the verdict, what needs attention, the rest.
 // Headlines and actions are sentences, so they read in the prose face; codes and values stay mono.
 
 type H = HtmlBuilder<Message>
@@ -209,7 +208,7 @@ const checkFact = (h: H, check: SessionCheck): Html =>
 		],
 	)
 
-/** `Disclosure`: Passed / Not checked, open on a clean session until the reader chooses. */
+/** Passed / Not checked, open on a clean session until the reader chooses. */
 const disclosure = (
 	h: H,
 	options: Readonly<{

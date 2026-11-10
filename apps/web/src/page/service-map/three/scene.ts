@@ -1,7 +1,7 @@
 import type { WorldCell, WorldEntity } from "@maple/domain/http"
-import { mapPalette } from "../../../components/service-map/three/appearance"
-import type { District, SpatialView } from "../../../components/service-map/three/spatial-layout"
-import type { Topology3D } from "../../../components/service-map/three/types"
+import { mapPalette } from "./appearance"
+import type { District, SpatialView } from "./spatial-layout"
+import type { Topology3D } from "./types"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { type CameraCommand, cameraRig, type Size } from "./camera"
@@ -65,7 +65,7 @@ interface Pop {
 
 const noPop = (): Pop | null => null
 
-/** R3F's default orthographic camera, framed to the canvas size as `updateCamera` does. */
+/** An orthographic camera framed to the canvas size: one unit is one pixel at zoom 1. */
 const fitFrustum = (camera: THREE.OrthographicCamera, { width, height }: Size) => {
 	camera.left = width / -2
 	camera.right = width / 2
@@ -97,7 +97,7 @@ const aim = (camera: THREE.Camera, event: ToolPointer, size: Size): THREE.Raycas
 	return raycaster
 }
 
-/** Raycasts the machines (R3F's event objects), nearest first; ids from `userData.pickId`. */
+/** Raycasts the machines, nearest first; ids from `userData.pickId`. */
 const pick = (
 	camera: THREE.Camera,
 	machines: THREE.Object3D,
@@ -222,10 +222,6 @@ const measure = (element: Element): Size => {
 	return { width, height }
 }
 
-/**
- * Starts the scene on `canvas` (inside R3F's two wrapper divs, under `[data-scene-root]`, which
- * holds the labels). `onSelect` gets a machine click, or `null` for a miss.
- */
 export interface SceneEvents {
 	/** A machine click, or `null` for a miss. */
 	readonly onSelect: (id: string | null) => void
@@ -233,6 +229,7 @@ export interface SceneEvents {
 	readonly onMove: (id: string, cell: WorldCell) => void
 }
 
+/** Starts the scene on `canvas`, inside two wrapper divs under the `[data-scene-root]` that holds the labels. */
 export function startScene(
 	canvas: HTMLCanvasElement,
 	initial: SceneInput,

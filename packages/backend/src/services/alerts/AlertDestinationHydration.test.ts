@@ -8,7 +8,7 @@ import type { EncryptedValue } from "@maple/backend/platform/Crypto"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { hydrateDestinationRow, type DestinationSecretConfig } from "./AlertDestinationHydration"
 
 /*

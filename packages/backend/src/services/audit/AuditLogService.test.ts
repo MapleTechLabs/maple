@@ -3,7 +3,7 @@ import { AfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -452,9 +452,6 @@ describe("AuditLogService.layerMemory", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
-	// The credential and the surface are the two facts a mutation handler cannot
-	// re-derive, and getting them wrong is what made API-key and MCP actions read
-	// back as dashboard sessions.
 	it.effect("leaves out access entries before the limit, so changes behind many reads still list", () =>
 		Effect.gen(function* () {
 			const audit = yield* AuditLogService
@@ -540,6 +537,9 @@ describe("AuditLogService.layerMemory", () => {
 		}),
 	)
 
+	// The credential and the surface are the two facts a mutation handler cannot
+	// re-derive, and getting them wrong is what made API-key and MCP actions read
+	// back as dashboard sessions.
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,

@@ -1,7 +1,6 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
@@ -9,8 +8,6 @@ import { InfraRailwayServiceSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { TracedService } from "../../kit/traced"
 import { RailwayServiceRow, RailwayServiceTimeseriesRow } from "../model"
-
-// `/infra/railway/$serviceId`.
 
 export const Model = Schema.Struct({
 	serviceId: Schema.String,
@@ -22,8 +19,7 @@ export const Model = Schema.Struct({
 	/** The window's traced services: the one named like this service is its "traced as". */
 	traced: KeyedSchema(Schema.Array(TracedService), LoadFailure),
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema, String as Str } from "effect"
-import { ApiKeyId } from "../../primitives"
+import { ApiKeyId } from "@maple/primitives"
 import { decodePublicId, encodePublicId, PublicId, PublicIdPrefixes } from "./public-id"
 
 const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e"

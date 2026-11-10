@@ -1,21 +1,17 @@
-import { V2AnomalyServiceCount } from "@maple/domain/http/v2"
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
-import { CommitDetail, CommitFailure } from "../../kit/commit-card"
+import { CommitCardMessages } from "../../kit/commit-card"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { IncidentCause, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { HealthMessages } from "../../kit/service-health"
+import { LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
 
 /** The URL's facet filters, by their include param. */
 export const Facet = Schema.Literals(["environments", "namespaces", "commitShas"])
@@ -47,15 +43,11 @@ export const Message = defineMessageUnion({
 	CompletedFetchSparklines: result(Sparklines),
 	CompletedFetchFacets: result(ServicesFacets),
 	CompletedFetchBaseline: result(Schema.Array(LatencyBaseline)),
-	CompletedFetchAnomalies: result(Schema.Array(V2AnomalyServiceCount)),
 	CompletedFetchCommitMessages: result(Schema.Record(Schema.String, Schema.String)),
 	PaintedTable: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	UpdatedIncidents: { orgId: Schema.String, incidents: Schema.Array(IncidentCause) },
-	FailedLoadIncidents: { orgId: Schema.String },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...HealthMessages,
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetryFacets: {},
@@ -75,9 +67,7 @@ export const Message = defineMessageUnion({
 	GotSparklineMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRowTooltipMessage: { tooltip: RowTooltip, message: Tooltip.Message },
-	GotCommitCardMessage: { message: HoverCard.Message },
-	ElapsedCommitArm: { sha: Schema.String, generation: Schema.Number },
-	CompletedFetchCommitDetail: { sha: Schema.String, result: Schema.Result(CommitDetail, CommitFailure) },
+	...CommitCardMessages,
 	ClickedCopyCommitSha: { sha: Schema.String, serviceName: Schema.String, environment: Schema.String },
 	/** The SHA write landed; the row opens with its toast now that the outcome is known. */
 	CompletedCopyCommitSha: { rowUrl: Schema.String, isCopied: Schema.Boolean },

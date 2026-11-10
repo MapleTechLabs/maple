@@ -56,7 +56,7 @@ import {
 	type PrReviewSkipReason,
 	type PrReviewTestSignal,
 } from "@maple/domain/http"
-import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
+import { OrgId, SourceId, UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	Clock,

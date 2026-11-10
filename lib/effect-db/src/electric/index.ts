@@ -1,7 +1,5 @@
-// Re-export useful types from the underlying clients
 export type { Row } from "@electric-sql/client"
 export type { Txid } from "@tanstack/electric-db-collection"
-// Core collection creation
 export {
 	COLLECTION_SYNC_FAILED_EVENT,
 	type CollectionStatus,
@@ -10,7 +8,6 @@ export {
 	effectElectricCollectionOptions,
 	type EffectElectricCollectionUtils,
 } from "./collection"
-// Errors
 export {
 	AwaitTxIdError,
 	DeleteError,
@@ -20,7 +17,6 @@ export {
 	TxIdTimeoutError,
 	UpdateError,
 } from "./errors"
-// Types
 export type {
 	BackoffConfig,
 	EffectDeleteHandler,

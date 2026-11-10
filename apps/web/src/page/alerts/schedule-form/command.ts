@@ -2,11 +2,11 @@ import { OnCallScheduleId } from "@maple/domain/http"
 import { V2OnCallScheduleCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readGrants } from "../../../data/session-tenant"
 import { browserZone, readSupportedTimeZones } from "../../../platform/time-zone"
-import { retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
+import { listOverrides, retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
 import { listOrgMembers } from "../shared/org-members"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** The browser's zone (a new schedule's default), the clock and the zones to pick from. */
 export const ReadScheduleFormDefaults = Command.define("ReadScheduleFormDefaults", {
@@ -27,6 +27,17 @@ export const FetchExistingSchedule = Command.define("FetchScheduleFormSchedule",
 		),
 })
 
+/** The edited schedule's overrides that have not ended, for the preview. */
+export const FetchScheduleFormOverrides = Command.define("FetchScheduleFormOverrides", {
+	args: { key: Schema.String, scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedFetchOverrides],
+	execute: ({ key, scheduleId }) =>
+		listOverrides(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchOverrides({ key, result })),
+		),
+})
+
 export const FetchScheduleFormMembers = Command.define("FetchScheduleFormMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: listOrgMembers.pipe(
@@ -35,12 +46,10 @@ export const FetchScheduleFormMembers = Command.define("FetchScheduleFormMembers
 	),
 })
 
-export const FetchScheduleFormSession = Command.define("FetchScheduleFormSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ orgId, grants })),
-})
+export const FetchScheduleFormSession = fetchSessionGrants(
+	"FetchScheduleFormSession",
+	Message.CompletedFetchSession,
+)
 
 export const SaveSchedule = Command.define("SaveOnCallSchedule", {
 	args: { editingId: Schema.NullOr(OnCallScheduleId), payload: V2OnCallScheduleCreateParams },

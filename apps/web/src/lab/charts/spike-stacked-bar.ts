@@ -1,4 +1,4 @@
-import { muteColor } from "@maple/ui/components/plot/color-scale"
+import { muteColor } from "@maple/views/charts/oklch"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import {
 	STACKED_BAR_PARTIAL_ROWS,
@@ -20,7 +20,7 @@ import type { SpikeSpec } from "./spike-spec"
 import { STACK_TOKEN_BY_SERVICE } from "./spike-timeseries-tokens"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// `StackedBarSpike`, `StackedBarLegendSpike` and `StackedBarSceneLegendSpike`, definition half.
+// The stacked bar spikes' definitions: plain, with a DOM legend, and with the scene legend.
 
 type Point = ChartPoint<StackedBarSpikeRow, ChartValue, number>
 
@@ -30,7 +30,7 @@ const SOLID_DASHARRAY = "0"
 const isIncomplete = (spec: SpikeSpec): boolean => spec.arm === "stacked-bar-incomplete-tanstack"
 const rowsOf = (spec: SpikeSpec) => (isIncomplete(spec) ? STACKED_BAR_PARTIAL_ROWS : STACKED_BAR_SPIKE_ROWS)
 
-/** `useServiceColor`, with the legend arm's emphasis applied (`emphasisedColorFor`). */
+/** The service colour, with the legend arm's emphasis applied. */
 const colorForOf = (spec: SpikeSpec) => {
 	const base = (service: string): string =>
 		spec.colors[STACK_TOKEN_BY_SERVICE.get(service) ?? "--chart-1"] ?? ""
@@ -104,7 +104,6 @@ const bucketTooltip =
 			})
 		})
 
-/** `StackedBarFigure`. */
 export const buildStackedBarSpike = (spec: SpikeSpec): BuiltChart<StackedBarSpikeRow, ChartValue, number> => {
 	const rows = rowsOf(spec)
 	const incomplete = isIncomplete(spec)
@@ -142,7 +141,7 @@ export const buildStackedBarSpike = (spec: SpikeSpec): BuiltChart<StackedBarSpik
 	}
 }
 
-/** `StackedBarSceneLegendSpike`: the library's own legend, which can only hide a band. */
+/** The library's own legend, which can only hide a band. */
 export const buildStackedBarSceneSpike =
 	(onToggle: (key: string, keys: ReadonlyArray<string>) => void) =>
 	(spec: SpikeSpec): BuiltChart<StackedBarSpikeRow, ChartValue, number> => {

@@ -1,6 +1,6 @@
 import type { Html } from "foldkit/html"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
+import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "../../kit/uptime/form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"
@@ -8,9 +8,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { destinationPicker } from "../../kit/destination-picker"
 
-// The TCP, DNS and heartbeat sections, and the Service and Notify sections every kind shares.
-
-const isRecordType = (value: string): value is typeof RecordType.Type =>
+const isRecordType = (value: string): value is RecordType =>
 	Arr.some(RecordType.literals, (type) => type === value)
 const isUnit = (value: string): value is typeof EveryUnit.Type =>
 	Arr.some(EveryUnit.literals, (unit) => unit === value)

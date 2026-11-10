@@ -8,11 +8,12 @@ import type { DateTime } from "effect"
 import { param, from } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
-import { ScannerRequests, ServiceRuntimesHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 import { Array as Arr } from "effect"
 
-type ScannerAccessor = ColumnAccessor<typeof ScannerRequests.columns>
+type ScannerAccessor = ColumnAccessor<typeof Datasources.scannerRequests.columns>
 
 function scannerWhere($: ScannerAccessor) {
 	return [
@@ -40,7 +41,7 @@ export const SCANNER_SIGNATURES_MAX_ROWS = 5000
 
 /** Requests per probe signature and service. Bounded: a few dozen signatures per service. */
 export function scannerSignaturesQuery(): CHQuery<ColumnDefs, ScannerSignaturesOutput> {
-	return from(ScannerRequests)
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			signature: $.Signature,
 			service: $.ServiceName,
@@ -76,7 +77,7 @@ export interface ScannerExposedOutput {
 export function scannerExposedQuery(
 	opts: ScannerExposedOpts = {},
 ): CHQuery<ColumnDefs, ScannerExposedOutput> {
-	return from(ScannerRequests)
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			service: $.ServiceName,
 			host: $.Host,
@@ -119,7 +120,7 @@ export interface ScannerSourcesOutput {
 export function scannerSourcesQuery(
 	opts: ScannerSourcesOpts = {},
 ): CHQuery<ColumnDefs, ScannerSourcesOutput> {
-	return from(ScannerRequests)
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			clientAddress: $.ClientAddress,
 			requests: CH.uniq($.TraceId),
@@ -153,7 +154,7 @@ export function scannerTimelineQuery(
 	opts: ScannerTimelineOpts = {},
 ): CHQuery<ColumnDefs, ScannerTimelineOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
-	return from(ScannerRequests)
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, bucketSeconds),
 			requests: CH.uniq($.TraceId),
@@ -183,7 +184,7 @@ export interface RuntimeVersionsOutput {
 /** Each service's runtime and SDK versions seen in the window, one row per combination. */
 export function runtimeVersionsQuery(): CHQuery<ColumnDefs, RuntimeVersionsOutput> {
 	return (
-		from(ServiceRuntimesHourly)
+		from(Datasources.serviceRuntimesHourly)
 			.select(($) => ({
 				service: $.ServiceName,
 				environment: $.DeploymentEnv,

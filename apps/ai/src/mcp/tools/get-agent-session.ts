@@ -9,7 +9,7 @@ import {
 } from "@maple/agent-sessions"
 import { GetAgentSessionOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, formatNumber, tableCell, truncate } from "../lib/format"
 import {
 	loadAgentSessionSpans,
@@ -64,7 +64,6 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			).check(Schema.isMinLength(1)),
 			...sessionWindowParams,
 		}),
-		output: GetAgentSessionOutput,
 		hints: { readOnly: true },
 		phrases: ["Opening an agent session"],
 		handler: Effect.fn("McpTool.getAgentSession")(

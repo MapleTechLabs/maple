@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -11,9 +11,9 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { switchControl } from "@maple/views/ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { heroChip } from "../../kit/hero-chip"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
 import {
@@ -23,15 +23,13 @@ import {
 } from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
+import { kubernetesViewTabs, pickTimeSearch } from "../../../kit/view-tabs"
 import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-// `WorkloadDetailPage` and `WorkloadDetailChart`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<WorkloadSummary>

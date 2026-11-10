@@ -1,4 +1,6 @@
-import { Option, Result, Array as Arr, Record as Rec } from "effect"
+import { pickerStep } from "../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -27,7 +29,7 @@ import {
 } from "./command"
 import { emptyWindow } from "../kit/virtualize"
 import { draftOf, nextCursor } from "./derive"
-import { Message, type Range, type RequestMode } from "./message"
+import { Message, type Range } from "./message"
 import type { Model, Pagination, ReplaysPage, Search } from "./model"
 import {
 	addedRowTag,
@@ -39,6 +41,7 @@ import {
 	toggledTag,
 	withRange,
 } from "./search-edits"
+import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -56,10 +59,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 
 const freshPagination = (key: string | null, generation: number): Pagination => ({
 	key,
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
+	...freshLaterPages(generation),
 })
 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
@@ -91,7 +91,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
-/** `use-infinite-replays`: a server repeating an earlier cursor would loop, so paging stops. */
+/** A server repeating an earlier cursor would loop, so paging stops. */
 const isRepeatedCursor = (model: Model, page: ReplaysPage): boolean =>
 	page.hasMore &&
 	page.nextCursor !== null &&
@@ -113,7 +113,7 @@ const fetchNext = (model: Model): Return => {
 	)
 		return { model }
 	return {
-		model: { ...model, pagination: { ...pagination, isFetching: true } },
+		model: { ...model, pagination: fetchingNext(pagination) },
 		commands: [
 			FetchNextPage({
 				key: pagination.key,
@@ -135,8 +135,6 @@ export const navigate = (model: Model, search: Search): Return => ({
 })
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Replays({ search }))
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const { search } = route
@@ -175,8 +173,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	}
 }
 
-/** A new search: inputs keyed on the URL value (text filters, the toolbar search) resync. */
-/** The route loader warms the first page and the facets (`listReplaysResultAtom`, `replaysFacetsResultAtom`). */
+/** The route loader warms the first page and the facets. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -192,6 +189,7 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 	return pickCommands(requestAll(model, context, window, "Load"), [FetchFirstPage.name, FetchFacets.name])
 }
 
+/** A new search: inputs keyed on the URL value (text filters, the toolbar search) resync. */
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
@@ -266,19 +264,16 @@ const changedQuery = (model: Model, value: string): Return => {
 }
 
 const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
-		timePicker: next.model,
-	})
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -298,19 +293,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: {
 						model: {
 							...model,
-							pagination: Result.match(result, {
-								onSuccess: (page) => ({
-									...model.pagination,
-									pages: [...model.pagination.pages, page],
-									isFetching: false,
-									isStopped: isRepeatedCursor(model, page),
-								}),
-								onFailure: () => ({
-									...model.pagination,
-									isFetching: false,
-									isStopped: true,
-								}),
-							}),
+							pagination: appendedPage(model.pagination, result, (page) =>
+								isRepeatedCursor(model, page),
+							),
 						},
 					},
 		CompletedFetchFacets: ({ key, result }) => ({

@@ -7,7 +7,7 @@ import {
 	type SpanToolCall,
 	spanTtftMs,
 } from "@maple/agent-sessions"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -25,7 +25,7 @@ import { attributesSection } from "@maple/views/traces/span-panel/attributes"
 import { copyableValue } from "@maple/views/traces/span-panel/copy"
 import { errorSection } from "@maple/views/traces/span-panel/error-section"
 import { spanLogs } from "@maple/views/traces/span-panel/view-tabs"
-import { docsUrl } from "../../../lib/docs"
+import { docsUrl } from "../../kit/docs"
 import { Message as SessionMessage, type Message } from "./message"
 import type { Model } from "./model"
 import { payloadCard } from "./span-popover-messages"
@@ -34,13 +34,12 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
-// The span expansion's Tool calls, Details and Logs tabs.
 // Details and Logs draw the trace span panel's parts over the popover's own `PanelState`.
 
 type H = HtmlBuilder<Message>
 type P = HtmlBuilder<PanelMessage>
 
-/** One invocation as one card: the call and its result drawn together by `ToolIo`. */
+/** One invocation as one card: the call and its result drawn together. */
 const toolCallCard = (
 	h: H,
 	model: Model,
@@ -100,8 +99,7 @@ const failureBanner = <M>(b: HtmlBuilder<M>, span: AiSessionSpan): Html => {
 	const errorType = span.genAi.errorType
 	const responseStatus = span.genAi.responseStatus
 	const hasErrorType = errorType !== undefined && errorType !== ""
-	const pill = (text: string) =>
-		badge(b, { pill: true, size: "xs", mono: true, variant: "crit" }, [text])
+	const pill = (text: string) => badge(b, { pill: true, size: "xs", mono: true, variant: "crit" }, [text])
 	return b.div(
 		[
 			b.Class(
@@ -226,7 +224,7 @@ const resourceAttributesView = Submodel.defineView<PanelState, PanelMessage, Pan
 		}),
 )
 
-/** `LogsSection`: the trace panel's span logs, read once the tab is open. */
+/** The trace panel's span logs, read once the tab is open. */
 const logsView = Submodel.defineView<PanelState, PanelMessage, PanelInputs>((state, { timeZone }, p) =>
 	p.div(
 		[p.Class("overflow-hidden rounded-md border border-border-subtle")],

@@ -11,12 +11,7 @@ import {
 } from "../test-support"
 import { ElectricSyncRouter } from "./shape.http"
 
-/**
- * The handler's own behaviour, with the upstream and the session both replaced by
- * stubs. Everything here was unreachable while `makeResolveTenant` and the real
- * `fetch` were welded into the route — including, most importantly, any request
- * that actually succeeds.
- */
+/** The handler's own behaviour, with the upstream and the session both replaced by stubs. */
 const routes = (options: {
 	readonly calls?: Array<ElectricCall>
 	readonly respond?: () => ReturnType<Parameters<typeof recordingElectricClient>[0]["respond"]>
@@ -49,12 +44,7 @@ describe("shape route: a served shape", () => {
 		}),
 	)
 
-	/**
-	 * The point of the whole proxy, asserted end to end for the first time: the org
-	 * the *bearer* resolved to is the org the upstream request is scoped by. Every
-	 * previous test could only pass a literal orgId into the URL builder, which
-	 * proves the builder works and nothing about the wiring.
-	 */
+	/** The point of the whole proxy: the org the bearer resolved to is the org the upstream is scoped by. */
 	it.effect("scopes the upstream call to the org the session resolved to", () =>
 		Effect.gen(function* () {
 			const calls: Array<ElectricCall> = []
@@ -146,12 +136,7 @@ describe("shape route: rejections", () => {
 		}),
 	)
 
-	/**
-	 * Request validation now runs ahead of the configuration gate, so a 400 means
-	 * 400 regardless of how this deploy is configured. Previously an unknown shape
-	 * on an unconfigured deploy answered 503, which said "sync is off" about a
-	 * request that was never valid in the first place.
-	 */
+	/** Validation runs ahead of the configuration gate: "sync is off" is never the answer to an invalid request. */
 	it.effect("400s an unknown shape even when sync is not configured", () =>
 		Effect.gen(function* () {
 			const { status } = yield* syncRequest(

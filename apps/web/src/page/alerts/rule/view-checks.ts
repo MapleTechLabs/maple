@@ -3,7 +3,7 @@ import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -25,8 +25,6 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `ChecksPanel` and `CheckDelta`: the rule's recent checks.
 
 type H = HtmlBuilder<Message>
 

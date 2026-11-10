@@ -1,7 +1,7 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { Command, type Update } from "foldkit"
-import { initConfigure } from "../../page/integrations/gcp-configure"
-import type { ConfigureModel } from "../../page/integrations/gcp-configure-schema"
+import { initConfigure } from "../../page/infra-integrations/gcp/integration/gcp-configure"
+import type { ConfigureModel } from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import type { Resources } from "../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -132,7 +132,7 @@ const isMethodState = (state: LabState): boolean => state === "method" || state 
 const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const pinned = model.pinnedScripts
 	if (pinned !== null && isFixtureNoop(message)) return { model }
-	// `MethodLab`: Back is a `noop`, Continue closes.
+	// Back is a `noop`, Continue closes.
 	if (isMethodState(model.state) && message._tag === "ClickedGcpRunEdit") return { model }
 	if (isMethodState(model.state) && message._tag === "ClickedGcpMethodContinue")
 		return hubMessage(model, IntegrationsMessage.ClosedGcpConfigure())

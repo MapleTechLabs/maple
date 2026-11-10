@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
 import { ONBOARDING_REWARD_WINDOW_MS } from "@maple/domain/onboarding-checklist"
 import { CLAIM_LEASE_MS } from "@maple/backend/services/org/OnboardingChecklistService"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
@@ -12,8 +12,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+} from "@maple/backend/testing/test-pglite"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"

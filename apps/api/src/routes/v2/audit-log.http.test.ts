@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import type { AuditLogEntry } from "@maple/backend/services/audit/audit-event"
 import { actorAvatarUrl, actorDisplayName, type ActorProfile } from "./audit-log.http"
 

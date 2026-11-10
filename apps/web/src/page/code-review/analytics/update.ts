@@ -1,3 +1,5 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -9,7 +11,7 @@ import type { CodeReviewSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
-import { type FrameMessage, type FrameOut, type FrameReturn, type RequestMode } from "../kit/frame"
+import { type FrameOut, type FrameReturn } from "../kit/frame"
 import {
 	type Carried,
 	frameRetained,
@@ -17,6 +19,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
@@ -28,10 +31,9 @@ import type { PresetValue } from "../../kit/time-controls"
 type Return = PageReturn<Model, Message>
 type Search = typeof CodeReviewSearch.Type
 
-/** `CODE_REVIEW_DEFAULT_PRESET`: reviews are slow-moving, a month has something in it. */
+/** Reviews are slow-moving, so a month has something in it. */
 export const DEFAULT_PRESET: PresetValue = "1mo"
 const FRAME_ID = "code-review-analytics"
-
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReview({ search }))
 
@@ -67,14 +69,13 @@ const request = (model: Model, context: PageContext, window: TimeWindow, mode: R
 	return { model: { ...model, ...step.patch }, commands: step.commands }
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message: FrameMessage) =>
-		Message.GotFrameMessage({ message }),
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
 	)
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
 
 const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => {
 	switch (out._tag) {
@@ -90,8 +91,6 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 			return request(model, context, out.window, out.mode)
 	}
 }
-
-// ENTRY POINTS
 
 export const init = (
 	route: { readonly search: Search },
@@ -115,14 +114,7 @@ export const init = (
 	const lifted = liftFrame(model, frame, context)
 	return {
 		...lifted,
-		commands: [
-			...(lifted.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [...(lifted.commands ?? []), LoadChartRuntime()],
 	}
 }
 
@@ -201,11 +193,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 	})
 
 /** What this tab hands the next one. */

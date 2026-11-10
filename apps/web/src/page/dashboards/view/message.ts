@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -23,7 +23,7 @@ const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
-	/** The live board sat loading past the timeout (`useCollectionLoadFailed`). */
+	/** The live board sat loading past the timeout. */
 	TimedOutLiveDashboard: { orgId: Schema.String },
 	CompletedFetchDashboardFallback: {
 		dashboardId: Schema.String,
@@ -44,9 +44,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
 	GotShareMessage: { message: ShareMessage },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	/** "Reload page" on a chart tile whose chart code failed to load. */
 	ClickedReloadPage: {},
 	ReloadedPage: {},
@@ -55,7 +53,7 @@ export const Message = defineMessageUnion({
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRefreshMenuMessage: { message: Menu.Message },
 	ClickedReload: {},
-	/** `useIntervalRefresh`: one auto-refresh tick, fanned out to every tile like a Reload. */
+	/** One auto-refresh tick, fanned out to every tile like a Reload. */
 	TickedAutoRefresh: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedToggleEdit: {},
@@ -101,7 +99,7 @@ export const Message = defineMessageUnion({
 	ReleasedPointer: {},
 	/** `pointercancel` or Escape: the gesture ends where it began. */
 	CancelledPointer: {},
-	/** A key on a grip (`DashboardGrid`'s keydown): Space or Enter picks up and drops, arrows move. */
+	/** A key on a grip: Space or Enter picks up and drops, arrows move. */
 	PressedGripKey: {
 		widgetId: Schema.String,
 		label: Schema.String,

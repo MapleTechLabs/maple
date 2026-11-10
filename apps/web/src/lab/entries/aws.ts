@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AwsMetricStream } from "@maple/domain/aws"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
-import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
+import { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { Effect, Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"

@@ -13,7 +13,7 @@ import { sectionHeading } from "../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// The body of `RecommendationDetailPage`: Summary, ChangeBreakdown, CautionCallout and the fix block.
+// The recommendation page's body: summary, change breakdown, caution callout and the fix block.
 
 type H = HtmlBuilder<Message>
 

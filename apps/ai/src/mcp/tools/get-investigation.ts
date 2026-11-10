@@ -4,7 +4,7 @@ import type { InvestigationDocument, InvestigationSubject } from "@maple/domain/
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetInvestigationOutput } from "@maple/domain/mcp-outputs"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
@@ -185,7 +185,6 @@ export function registerGetInvestigationTool(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: { id: "investigation_id" },
-		output: GetInvestigationOutput,
 		hints: { readOnly: true },
 		// The same gate as `GET /v2/investigations/:id`: a scoped key needs `investigations:read`.
 		scopeFamily: "investigations",

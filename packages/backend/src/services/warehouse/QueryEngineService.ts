@@ -1,18 +1,16 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
-import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/query-engine"
-import type { QueryEngineTimeoutError } from "@maple/domain/http"
+import { computeBucketSeconds, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/domain/query-engine"
+import type { QueryEngineTimeoutError, TenantContext } from "@maple/domain/http"
 import {
 	buildCacheKey,
 	buildDirectRouteCacheKey,
 	cacheTtlForQueryKind,
-	computeBucketSeconds,
 	makeQueryEngineEvaluate,
 	makeQueryEngineEvaluateSeries,
 	makeQueryEngineExecute,
-	msToTinybirdDateTime,
 	resolveDirectRouteCachePolicy,
-	toEpochMs,
 	withTimeout,
 	type BucketGroupObs,
 	type GroupedAlertObservation,
@@ -23,7 +21,6 @@ import {
 	type QueryEngineRouteError,
 	type TimeRangeBounds,
 } from "@maple/query-engine/runtime"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import {
 	isTimeBucketQueryCachePolicy,
@@ -132,7 +129,10 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				const resolvedBucketSeconds =
 					bucketSeconds ??
 					request.query.bucketSeconds ??
-					computeBucketSeconds(toEpochMs(request.startTime), toEpochMs(request.endTime))
+					computeBucketSeconds(
+						parseWarehouseDateTime(request.startTime),
+						parseWarehouseDateTime(request.endTime),
+					)
 				if (request.query.source === "product_events") {
 					return migrated(
 						"time-buckets",
@@ -277,8 +277,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 							new QueryEngineExecuteRequest({
 								...request,
 								query: pinnedQuery,
-								startTime: msToTinybirdDateTime(startMs),
-								endTime: msToTinybirdDateTime(endMs),
+								startTime: formatWarehouseDateTime(startMs),
+								endTime: formatWarehouseDateTime(endMs),
 							}),
 						).pipe(
 							Effect.map((response) =>
@@ -344,8 +344,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						if (!bucketCache.enabled) return yield* useBlobPath("bucket_cache_disabled")
 						if (request.query.kind !== "timeseries") return yield* useBlobPath("not_timeseries")
 
-						const startEpochMs = toEpochMs(request.startTime)
-						const endEpochMs = toEpochMs(request.endTime)
+						const startEpochMs = parseWarehouseDateTime(request.startTime)
+						const endEpochMs = parseWarehouseDateTime(request.endTime)
 						if (
 							Number.isNaN(startEpochMs) ||
 							Number.isNaN(endEpochMs) ||
@@ -432,8 +432,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						// times in 36.
 						//
 						// Hoisting it does not merely reorder the two reads, it removes the
-						// second: `resolveCachedSettings` keeps an isolate-level memo, so
-						// the call inside `compute` now answers from memory.
+						// second: `resolveRuntimeConfig` keeps an isolate-level memo
+						// (`runtimeConfigMemo`), so the call inside `compute` now answers from memory.
 						//
 						// `warmRoute` swallows its own failures — this is a warm, not a
 						// gate. A genuine config failure still surfaces from `compute`,
@@ -468,14 +468,13 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 
 			// `withTimeout` INSIDE the span, not outside it. `Effect.timeoutOrElse` is
 			// `raceFirst(self, flatMap(sleep, orElse))`, so `orElse` runs as a sibling
-			// of `self` — with the wrapping the other way round, the `query.timeout`
+			// of `self`: with the wrapping the other way round, the `query.timeout`
 			// attribute it sets landed on whatever span was current at the call site.
-			// These two are plain arrows with no `Effect.fn` of their own, so that was
-			// `AlertsService.evaluateRule` (AlertsService.ts:1613, :2988, :3008): a 30s
-			// query-engine ceiling tagged on an alerting span, invisible to any
-			// dashboard scoped to query-engine spans. This ordering also lets the span
-			// record the `QueryEngineTimeoutError` (504, so `Error` status) instead of
-			// closing interrupt-only as `Ok` — which is the point of marking timeouts.
+			// This is a plain arrow with no `Effect.fn` of its own, so that was an
+			// `AlertsService` span: a 30s query-engine ceiling tagged on an alerting span,
+			// invisible to any dashboard scoped to query-engine spans. This ordering also
+			// lets the span record the `QueryEngineTimeoutError` (504, so `Error` status)
+			// instead of closing interrupt-only as `Ok`, which is the point of marking timeouts.
 			const evaluateSeries = (tenant: TenantContext, request: AlertEvaluateRequest) =>
 				withTimeout(evaluateSeriesImpl(tenant, request)).pipe(
 					Effect.withSpan("QueryEngineService.evaluateSeries", {

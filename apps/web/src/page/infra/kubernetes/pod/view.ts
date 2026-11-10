@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -7,9 +7,9 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { heroChip } from "../../kit/hero-chip"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
 import {
@@ -18,7 +18,7 @@ import {
 	resourceAttributesCardSkeleton,
 } from "../../kit/resource-attributes"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { POD_METRIC_LABELS, type PodMetric, type PodSummary } from "../pod-data"
 import { podContainerRestarts, podRestartsStat } from "../pod-restarts-view"
 import { Message } from "./message"
@@ -26,8 +26,6 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
-
-// `PodDetailPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<PodSummary>

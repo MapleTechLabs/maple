@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { gcpConnectorResourceNames, gcpSetupPlan, type GcpSetupPlanInput } from "./gcp"
-import { GcpConnectorId, GcpProjectId } from "./primitives"
+import { GcpConnectorId, GcpProjectId } from "@maple/primitives"
 
 const connectorId = Schema.decodeSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
 

@@ -1,16 +1,11 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import {
-	readAiToolErrors,
-	readAiToolsBreakdowns,
-	readAiToolsTotals,
-} from "@maple/backend/services/ai-sessions/ai-session-reads"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import {
 	AiToolErrorsRequest,
 	AiToolsBreakdownsRequest,
 	AiToolsTotalsRequest,
 	type AiToolsAggregate,
 } from "@maple/domain/http"
-import { GetAgentToolsOverviewOutput } from "@maple/domain/mcp-outputs"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { McpToolRegistrar } from "./types"
 import {
@@ -29,7 +24,7 @@ import {
 	selectionRequest,
 	TREND_BUCKETS,
 } from "../lib/agent-tool-analytics"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDelta, formatNumber, formatPointsDelta, percentOf, tableCell, truncate } from "../lib/format"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
@@ -80,7 +75,6 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 			tool: agentToolTextParam("Only this tool (exact `gen_ai.tool.name`). Omit to compare every tool"),
 			...agentToolSelectionParams,
 		}),
-		output: GetAgentToolsOverviewOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking agent tool usage"],
 		handler: Effect.fn("McpTool.getAgentToolsOverview")(function* (params) {
@@ -93,34 +87,37 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 				tool === undefined ? undefined : { tool, bucketSeconds: trendBucketSeconds(startMs, endMs) }
 			const selection = agentToolSelection(params, tool)
 			const tenant = yield* CurrentMcpTenant
+			const reads = yield* AiSessionReadService
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.ai.tools.tool": tool ?? "all" })
 
 			const scope = { startTime: st, endTime: et, ...selectionRequest(selection) }
 			const [totals, breakdowns, errorGroups] = yield* Effect.all(
 				[
-					readAiToolsTotals(
+					reads.toolsTotals(
 						tenant,
 						new AiToolsTotalsRequest({ ...scope, periods: ["current", "previous", "window"] }),
 					),
 					// Every tool, to compare or pick from: a selected tool's read is about that tool.
 					selected === undefined
-						? readAiToolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope)).pipe(
-								Effect.map((response) => response.tools),
-							)
+						? reads
+								.toolsBreakdowns(tenant, new AiToolsBreakdownsRequest(scope))
+								.pipe(Effect.map((response) => response.tools))
 						: Effect.undefined,
 					// The groups are fingerprints of ONE tool's failures, and "every tool's groups" is a
 					// list with no question behind it.
 					selected === undefined
 						? Effect.undefined
-						: readAiToolErrors(
-								tenant,
-								new AiToolErrorsRequest({
-									...scope,
-									tool: selected.tool,
-									bucketSeconds: selected.bucketSeconds,
-									limit: ERROR_GROUPS_MAX,
-								}),
-							).pipe(Effect.map((response) => response.data)),
+						: reads
+								.toolErrors(
+									tenant,
+									new AiToolErrorsRequest({
+										...scope,
+										tool: selected.tool,
+										bucketSeconds: selected.bucketSeconds,
+										limit: ERROR_GROUPS_MAX,
+									}),
+								)
+								.pipe(Effect.map((response) => response.data)),
 				],
 				{ concurrency: 3 },
 			).pipe(Effect.catchTags(warehouseReadToMcpHandlers("get_agent_tools_overview")))

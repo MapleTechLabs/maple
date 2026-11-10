@@ -6,6 +6,7 @@ import type { HandoffInput } from "@maple/web-data/investigations/agent-handoff"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { AppRoute, hrefOf } from "../../../route"
 import { Option, Array as Arr, String as Str, Order } from "effect"
+import type { INVESTIGATION_TABS } from "../../../route/search"
 import type { Model, OverviewRow } from "./model"
 
 export const investigationOf = (model: Model): Option.Option<V2Investigation> =>
@@ -24,7 +25,7 @@ export const handoffInputOf = (
 	focus,
 })
 
-export type Tab = "overview" | "evidence" | "chat" | "transcript"
+export type Tab = (typeof INVESTIGATION_TABS)[number]
 export const tabOf = (model: Model): Tab => model.search.tab ?? "overview"
 
 /** `breadcrumbLabel`: the first line, clamped to 64 characters. */
@@ -91,7 +92,6 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 	}
 }
 
-/** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
 	Option.getOrNull(
@@ -130,7 +130,7 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 		),
 	)
 
-/** `openActionIndex`: only a real non-negative integer opens the panel. */
+/** Only a real non-negative integer opens the panel. */
 export const openActionIndexOf = (model: Model): number | null => {
 	const action = model.search.action
 	return typeof action === "number" && Number.isInteger(action) && action >= 0 ? action : null

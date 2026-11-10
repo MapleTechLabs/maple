@@ -1,4 +1,4 @@
-import { gcpWorkloadName } from "../../../../components/infra/gcp/tabs"
+import { gcpWorkloadName } from "../tabs"
 import { definePage } from "../../../contract"
 import { Message, Model } from "./model"
 import { contextChanged, init, keysOf, routeChanged, update } from "./update"

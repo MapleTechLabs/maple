@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { ChatConnectorId, PostgresTransactionId, UserId } from "../../primitives"
+import { ChatConnectorId, PostgresTransactionId, UserId } from "@maple/primitives"
 import {
 	AlertDeliveryAuthError,
 	AlertDeliveryError,

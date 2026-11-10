@@ -8,11 +8,11 @@ import {
 	OrgId,
 	ScrapeTargetId,
 } from "@maple/domain/http"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import type { ScrapeTargetRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ScraperInternalRouter } from "./scraper-internal.http"

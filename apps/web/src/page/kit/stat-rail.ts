@@ -1,13 +1,13 @@
-import { SPARK_COLOR, VALUE_TONE } from "../../components/infra/severity-tokens"
+import { SPARK_COLOR, VALUE_TONE } from "./severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "@maple/views/ui/list-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
 
-// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
+// A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 
@@ -52,7 +52,7 @@ export type StatRailItemOptions<M> = Readonly<{
 	action?: Html
 	subline?: Html | string
 	compact?: boolean
-	/** The trailing `MiniBars` (last 28 values), toned like the value unless `sparkColor` says. */
+	/** The trailing mini bars (last 28 values), toned like the value unless `sparkColor` says. */
 	spark?: ReadonlyArray<number>
 	sparkColor?: string
 	/** Makes the tile a button, which then honours `isSelected` and `isDisabled`. */

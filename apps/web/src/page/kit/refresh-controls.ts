@@ -1,4 +1,4 @@
-import { REFRESH_INTERVAL_OPTIONS } from "../../lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS } from "../../route/dashboard-controls"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -9,8 +9,8 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { refreshButton } from "@maple/views/ui/refresh-button"
 import { Array as Arr } from "effect"
 
-// `RefreshControls`: Reload joined to the
-// auto-refresh cadence menu. The caller owns the menu Model and what a picked cadence does.
+// Reload joined to the auto-refresh cadence menu. The caller owns the menu Model and what a picked
+// cadence does.
 
 /** `formatRefreshInterval`: `0` is off. */
 export const formatRefreshInterval = (seconds: number): string =>

@@ -9,7 +9,7 @@ import {
 	type MobilePushEnvironment,
 	type ResolvedMobileDevicePreferences,
 } from "@maple/domain/http"
-import { MobileDeviceId, type OrgId, type UserId } from "@maple/domain/primitives"
+import { MobileDeviceId, type OrgId, type UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"

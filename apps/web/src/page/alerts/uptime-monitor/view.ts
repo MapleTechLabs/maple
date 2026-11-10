@@ -1,4 +1,4 @@
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,16 +13,16 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { incidentHref } from "../shared/links"
-import { editMonitorHref, traceHref, uptimeTabHref } from "../shared/uptime-commands"
+import { incidentHref } from "../../kit/alert-links"
+import { editMonitorHref, traceHref, uptimeTabHref } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatEvery,
 	KIND_LABEL,
 	requestLine,
 	type UptimeMonitor,
-} from "../shared/uptime-derive"
-import { uptimeStatusChip } from "../shared/uptime-view"
+} from "../../kit/uptime/derive"
+import { uptimeStatusChip } from "../../kit/uptime/view"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { monitorOf } from "./update"
@@ -42,8 +42,6 @@ import {
 } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-
-// `/alerts/uptime/$monitorId`: the header, the incident block when down, then the panels.
 
 type H = HtmlBuilder<Message>
 

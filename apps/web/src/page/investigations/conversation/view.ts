@@ -29,8 +29,6 @@ import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// One conversation: transcript, notices, composer.
-
 /** The area and bar plots' colours, read once for every chart fence. */
 const CHART_TOKENS = [...new Set([...AREA_CHART_TOKENS, ...BAR_CHART_TOKENS])]
 
@@ -43,15 +41,15 @@ export type ConversationViewOptions<M> = Readonly<{
 	/** The host's empty state for a fresh conversation. */
 	emptyState: () => Html
 	scrollerMount: TranscriptHost<M>["scrollerMount"]
-	/** The org's service names (`KnownServicesProvider`): table cells that name one link to it. */
+	/** The org's service names: table cells that name one link to it. */
 	knownServices: ReadonlySet<string>
 	/** The clock a chart's in-flight bucket is judged against. */
 	nowMs: number
-	/** An investigation thread's report card, drawn ahead of its turns (`fallbackDiagnosis`). */
+	/** An investigation thread's report card, drawn ahead of its turns. */
 	fallback?: Html
 	/** The subject's starter prompts above the composer of an empty thread. */
 	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
-	/** `DiagnosisReportCard` for a `submit_diagnosis` turn; without it the turn draws nothing. */
+	/** The report card for a `submit_diagnosis` turn; without it the turn draws nothing. */
 	diagnosisCard?: (report: AiTriageResult) => Html
 }>
 
@@ -130,7 +128,6 @@ const loadingSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		skeleton(h, "h-3 w-1/3"),
 	])
 
-/** `EmptyNotice`: an eyebrow and a sentence, centred where the thread will be. */
 export const emptyNotice = <M>(h: HtmlBuilder<M>, title: string, body: string): Html =>
 	vstack(h, { gap: "2", align: "center", justify: "center", className: "text-center" }, [
 		eyebrow(
@@ -210,7 +207,7 @@ const transcriptHostOf = <M>(
 	...cardsOf(h, model, options),
 })
 
-/** `diagnosisMessageId`: a thread with a `submit_diagnosis` turn offers the way back to it. */
+/** A thread with a `submit_diagnosis` turn offers the way back to it. */
 const jumpOf = <M>(model: Model, options: ConversationViewOptions<M>): Pick<TranscriptHost<M>, "jump"> => {
 	const messageId = findDiagnosisMessageId(model.messages)
 	return messageId === undefined

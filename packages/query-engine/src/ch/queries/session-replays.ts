@@ -32,16 +32,8 @@ import {
 } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_LIVE_WINDOW_SECONDS, type SessionTag } from "@maple/domain/query-engine"
-import {
-	ProductEvents,
-	SessionReplays,
-	SessionReplayEvents,
-	Traces,
-	inTraces,
-	orgIdParam,
-	utcSecondsParam,
-	utcTraceWindow,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { inTraces, orgIdParam, utcSecondsParam, utcTraceWindow } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import { sessionQualityExpr, sessionTagFacet, taggedSessionIds } from "./session-tags"
 import { ROOT_SPAN_ATTR_KEYS, type FacetOutput } from "./query-helpers"
@@ -59,7 +51,6 @@ function has<T>(array: CH.Expr<ReadonlyArray<T>>, element: CH.Expr<T>): CH.Condi
 	return compileFnCallCond("has", array, element)
 }
 
-// length(array) — element count.
 function arrayLength<T>(array: CH.Expr<ReadonlyArray<T>>): CH.Expr<number> {
 	return CH.compileTypedFnCall("length", T.uint64.schema, array)
 }
@@ -111,7 +102,7 @@ function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<n
 // began just before `endTime` and reached the page after it is missed. For the
 // usual "last N" windows `endTime` is now, so nothing is.
 function pageVisitSessions(pagePath: string) {
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({ SessionId: $.SessionId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -127,7 +118,7 @@ function pageVisitSessions(pagePath: string) {
 // finalized rows inside the subquery.
 function tagFilter(
 	tags: ReadonlyArray<SessionTag> | undefined,
-	$: ColumnAccessor<typeof SessionReplays.columns>,
+	$: ColumnAccessor<typeof Datasources.sessionReplays.columns>,
 ): CH.Condition | undefined {
 	if (tags === undefined || tags.length === 0) return undefined
 	return inSubquery(
@@ -139,8 +130,6 @@ function tagFilter(
 		]),
 	)
 }
-
-// List query
 
 export interface SessionReplaysListOpts {
 	serviceName?: string
@@ -276,7 +265,7 @@ export interface SessionReplaysListOutput {
 // The finalized per-session rows before any post-aggregate predicate. The
 // duration, active-time and event paths wrap it as the `s` subquery.
 function sessionReplaysListBase(opts: SessionReplaysListOpts) {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			startTime: argMax($.StartTime, $.Version),
@@ -514,8 +503,6 @@ export function sessionReplaysListQuery(
 		.format("JSON")
 }
 
-// List facets (UNION ALL — browser / device / country / service + error count)
-//
 // Populates the replays filter sidebar. Counts use uniq(SessionId) so the two
 // ReplacingMergeTree rows per session (Version 1 + 2) don't double-count. Each
 // dimension's own equality filter is excluded from its branch so the currently
@@ -558,7 +545,7 @@ export function sessionReplaysFacetsQuery(
 	opts: SessionReplaysFacetsOpts,
 ): CHUnionQuery<SessionReplaysFacetsOutput> {
 	const baseWhere = (
-		$: ColumnAccessor<typeof SessionReplays.columns>,
+		$: ColumnAccessor<typeof Datasources.sessionReplays.columns>,
 		exclude?: SessionFacetKey,
 	): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(orgIdParam),
@@ -586,10 +573,10 @@ export function sessionReplaysFacetsQuery(
 
 	const makeFacet = (
 		facetType: SessionFacetKey,
-		column: ($: ColumnAccessor<typeof SessionReplays.columns>) => CH.Expr<string>,
+		column: ($: ColumnAccessor<typeof Datasources.sessionReplays.columns>) => CH.Expr<string>,
 		limit = 50,
 	) =>
-		from(SessionReplays)
+		from(Datasources.sessionReplays)
 			.select(($) => ({
 				name: column($),
 				count: CH.uniq($.SessionId),
@@ -607,7 +594,7 @@ export function sessionReplaysFacetsQuery(
 	// sessions that *started* in the window, which is the population the list and
 	// the other facets describe. 200 rather than 50 because the sidebar searches
 	// this list client-side, and paths are the one long-tailed dimension here.
-	const pageFacet = from(ProductEvents)
+	const pageFacet = from(Datasources.productEvents)
 		.select(($) => ({
 			name: $.PagePath,
 			count: CH.uniq($.SessionId),
@@ -621,7 +608,7 @@ export function sessionReplaysFacetsQuery(
 			$.PagePath.neq(""),
 			inSubquery(
 				$.SessionId,
-				from(SessionReplays)
+				from(Datasources.sessionReplays)
 					.select(($$) => ({ SessionId: $$.SessionId }))
 					.where(($$) => baseWhere($$, "page")),
 			),
@@ -642,10 +629,10 @@ export function sessionReplaysFacetsQuery(
 	// above. NULL durations (in-progress sessions) fail the predicate and drop
 	// out, matching how the list query treats them. The count is uniq(SessionId)
 	// rather than count() so un-merged duplicate v2 rows can't inflate a bucket.
-	const bucketFloorMs = ($: ColumnAccessor<typeof SessionReplays.columns>): CH.Expr<number> =>
+	const bucketFloorMs = ($: ColumnAccessor<typeof Datasources.sessionReplays.columns>): CH.Expr<number> =>
 		CH.round_(pow(2, floor_(log2(greatestNonNull($.DurationMs, 1000).div(1000)).mul(2)).div(2)).mul(1000))
 
-	const durationHistogram = from(SessionReplays)
+	const durationHistogram = from(Datasources.sessionReplays)
 		.select(($) => ({
 			name: CH.toString_(CH.toUInt64(bucketFloorMs($))),
 			count: CH.uniq($.SessionId),
@@ -665,7 +652,7 @@ export function sessionReplaysFacetsQuery(
 	// milliseconds anyway. ifNotFinite guards the empty-window case, where
 	// quantile returns nan and the cast would otherwise throw.
 	const durationStat = (label: string, q: number) =>
-		from(SessionReplays)
+		from(Datasources.sessionReplays)
 			.select(($) => ({
 				name: CH.lit(label),
 				count: CH.toUInt64(ifNotFinite(CH.round_(CH.quantile(q)(assumeNotNull($.DurationMs))), 0)),
@@ -678,7 +665,7 @@ export function sessionReplaysFacetsQuery(
 	// window, so "50 sessions" sat next to "2,018 with errors" as if the two were
 	// comparable. Both branches carry every active filter, so the header always
 	// describes the same population as the list under it.
-	const totalSessions = from(SessionReplays)
+	const totalSessions = from(Datasources.sessionReplays)
 		.select(($) => ({
 			name: CH.lit("total"),
 			count: CH.uniq($.SessionId),
@@ -696,7 +683,7 @@ export function sessionReplaysFacetsQuery(
 	// sessions which finished in the last five minutes — bounded, and every one
 	// of them was live moments ago. Excluding them exactly would need argMax
 	// dedup, which no other branch of this flat UNION does.
-	const liveSessions = from(SessionReplays)
+	const liveSessions = from(Datasources.sessionReplays)
 		.select(($) => ({
 			name: CH.lit("live"),
 			count: CH.uniqIf(
@@ -732,7 +719,7 @@ export function sessionReplaysFacetsQuery(
 		liveSessions,
 		// Distinct sessions with at least one recorded error (drives the "Has
 		// errors" toggle count). Its own hasErrors filter is omitted here.
-		from(SessionReplays)
+		from(Datasources.sessionReplays)
 			.select(($) => ({
 				name: CH.lit("error"),
 				count: CH.uniq($.SessionId),
@@ -761,8 +748,6 @@ export function sessionReplaysFacetsQuery(
 	).format("JSON")
 }
 
-// Single session detail
-//
 // (OrgId, SessionId) is the full sort-key prefix, so this is an O(log N)
 // lookup. Dedup the ReplacingMergeTree versions by taking the highest Version.
 //
@@ -798,7 +783,7 @@ export interface SessionReplayDetailOutput {
 }
 
 export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			version: $.Version,
 			sessionId: $.SessionId,
@@ -853,8 +838,6 @@ export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 		.format("JSON")
 }
 
-// Chunk reads for one session (ordered for playback)
-//
 // Two builders, deliberately split: `sessionReplayChunkIndexQuery` returns the
 // timeline without payloads, and `sessionReplayEventsQuery` returns payloads for
 // a bounded chunk range. Playback fetches the index once, then pulls ranges on
@@ -904,7 +887,7 @@ export interface SessionReplayChunkIndexOutput {
  * this stays milliseconds even on a session whose payload is hundreds of MB.
  */
 export function sessionReplayChunkIndexQuery(opts: SessionReplayChunkIndexOpts = {}) {
-	return from(SessionReplayEvents)
+	return from(Datasources.sessionReplayEvents)
 		.select(($) => ({
 			chunkSeq: $.ChunkSeq,
 			timestamp: $.Timestamp,
@@ -952,7 +935,7 @@ export interface SessionReplayEventsOutput {
 }
 
 export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
-	const query = from(SessionReplayEvents)
+	const query = from(Datasources.sessionReplayEvents)
 		.select(($) => ({
 			chunkSeq: $.ChunkSeq,
 			timestamp: $.Timestamp,
@@ -978,8 +961,6 @@ export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 	return (opts.offset === undefined ? limited : limited.offset(opts.offset)).format("JSON")
 }
 
-// Reverse correlation: sessions that observed a given trace id
-
 export interface SessionsForTraceOpts {
 	traceId: string
 	limit?: number
@@ -993,7 +974,7 @@ export interface SessionsForTraceOutput {
 }
 
 export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			startTime: argMax($.StartTime, $.Version),
@@ -1012,8 +993,6 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 		.format("JSON")
 }
 
-// Per-trace summaries for a session's correlated traces
-//
 // One row per TraceId, used to draw a single bar per trace on the session
 // replay timeline (the expandable span lanes fetch full spans on demand via
 // spanHierarchyQuery). Reads `traces` seeked through `trace_index`; the
@@ -1065,7 +1044,7 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 			? utcTraceWindow(opts.startTime, opts.endTime)
 			: undefined
 
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const isRoot = $.ParentSpanId.eq("")
 			// Root span duration is the canonical "trace duration" elsewhere in the

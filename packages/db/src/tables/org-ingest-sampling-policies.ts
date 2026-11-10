@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 export const OrgIngestSamplingPolicies = PG.table("org_ingest_sampling_policies", {
 	columns: {
@@ -13,6 +13,3 @@ export const OrgIngestSamplingPolicies = PG.table("org_ingest_sampling_policies"
 	primaryKey: ["orgId"],
 	tenantColumn: "orgId",
 })
-
-export type OrgIngestSamplingPolicyRow = PG.SelectRowOf<typeof OrgIngestSamplingPolicies>
-export type OrgIngestSamplingPolicyInsert = PG.InsertRowOf<typeof OrgIngestSamplingPolicies>

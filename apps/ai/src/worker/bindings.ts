@@ -9,10 +9,9 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { AuditEventsQueue, MapleDb, parseMapleDeployment } from "@maple/infra/cloudflare"
+import { AuditEventsQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
+import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { dischargeRuntimeContext } from "@maple/backend/platform/alchemy-runtime"
-import { Stage } from "alchemy/Stage"
 import { Context, Effect, Layer, Option } from "effect"
 import { securityAuditWorkflowControl } from "../security-audit/workflow-control"
 import { isWorkersAiBinding, viaGateway, WorkersAiGateway } from "../platform/WorkersAiHttpClient"
@@ -97,23 +96,17 @@ const AiGateway = Cloudflare.AI.Gateway("maple-api-ai")
 
 /**
  * Bind the gateway and resolve it to a Workers AI binding whose calls carry the gateway id.
- *
- * prd only: dev has no local emulation of it, and the account caps gateways at 20, so a gateway
- * per preview would exhaust it. The stage is known only at plan time; in the isolate the binding
- * is either on the env or not, and the others read none and call Workers AI directly.
+ * prd only: dev has no local emulation of it, and the account caps gateways at 20. Elsewhere
+ * nothing is bound and the graph calls Workers AI directly.
  */
-const bindWorkersAiGateway = Effect.gen(function* () {
-	if (!globalThis.__ALCHEMY_RUNTIME__) {
-		const stage = yield* Stage
-		if (parseMapleDeployment(stage).stage.kind !== "prd") return Option.none()
-	}
-	const client = yield* Cloudflare.AI.QueryGateway(AiGateway)
-	if (!globalThis.__ALCHEMY_RUNTIME__) return Option.none()
-	const raw = yield* dischargeRuntimeContext(client.raw)
-	if (!isWorkersAiBinding(raw)) return Option.none()
-	const id = yield* dischargeRuntimeContext(client.id)
-	return Option.some(viaGateway(raw, id))
-})
+const bindWorkersAiGateway = prdOnlyBinding(Cloudflare.AI.QueryGateway(AiGateway), (client) =>
+	Effect.gen(function* () {
+		const raw = yield* dischargeRuntimeContext(client.raw)
+		if (!isWorkersAiBinding(raw)) return Option.none()
+		const id = yield* dischargeRuntimeContext(client.id)
+		return Option.some(viaGateway(raw, id))
+	}),
+)
 
 /**
  * The gateway binding as a service, for the fetch graph's ports and the chat Durable Object's
@@ -123,7 +116,6 @@ export const WorkersAiGatewayLive = Layer.effect(WorkersAiGateway, bindWorkersAi
 	Layer.provide(Cloudflare.AI.QueryGatewayBinding),
 )
 
-/** The binding layers the init needs. */
 export const AiBindingsLive = Layer.mergeAll(
 	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Workers.RateLimitBinding,

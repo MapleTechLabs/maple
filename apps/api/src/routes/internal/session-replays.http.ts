@@ -4,13 +4,11 @@ import {
 	MapleInternalApi,
 	ReplaysFacetsResponse,
 	SessionTraceSummariesResponse,
-	TraceId,
 } from "@maple/domain/http"
-import { DateTime, Effect, Option, Schema, Array as Arr } from "effect"
+import { DateTime, Effect, Option, Array as Arr } from "effect"
 import { parseUtc } from "@maple/query-engine"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
-
-const decodeTraceId = Schema.decodeSync(TraceId)
+import { decodeTraceId } from "../warehouse-ids"
 
 /** An optional, already validated window bound as a `DateTime.Utc`. */
 const optionalUtc = (value: string | undefined) =>

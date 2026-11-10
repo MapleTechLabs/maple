@@ -6,10 +6,9 @@ import type { DashboardRow } from "@maple/web-data/collections/dashboards"
 import type { Collection } from "@tanstack/db"
 import { PageOutMessage } from "../../contract"
 
-// The dashboard mutations over the org collection:
-// writes go through the collection's optimistic update, so live queries show them at once.
+// Writes go through the collection's optimistic update, so live queries show them at once.
 
-/** `getErrorMessage`'s fallback when no failure in the chain carries a message. */
+/** The fallback when no failure in the chain carries a message. */
 export const PERSISTENCE_UNAVAILABLE = "Dashboard persistence is temporarily unavailable"
 
 /** A document's fields as a plain object: what an updater spreads and returns. */
@@ -47,7 +46,7 @@ const causeOf = (value: unknown): Option.Option<object> =>
 		? Option.fromNullishOr(value.cause)
 		: Option.none()
 
-/** `messageFromErrorChain`: the most specific message down the `cause` chain. */
+/** The most specific message down the `cause` chain. */
 export const errorMessageOf = (error: unknown, depth = 0): string => {
 	if (depth > 5) return PERSISTENCE_UNAVAILABLE
 	const nested = Option.map(causeOf(error), (inner) => errorMessageOf(inner, depth + 1))
@@ -81,11 +80,11 @@ const readFrom = (collection: DashboardsWriter, id: string) =>
 			}),
 	)
 
-/** `readDashboard`: the decoded document the collection holds (optimistic state included). */
+/** The decoded document the collection holds (optimistic state included). */
 export const readDocument = (orgId: string, id: string) =>
 	Effect.flatMap(dashboardsOf(orgId), (collection) => readFrom(collection, id))
 
-/** `isTxidAwaitTimeout`: the write reached the server, only this tab's sync-back timed out. */
+/** The write reached the server, only this tab's sync-back timed out. */
 const isTxidAwaitTimeout = (error: unknown, depth = 0): boolean => {
 	if (depth > 5 || typeof error !== "object" || error === null) return false
 	if ("name" in error && error.name === "TimeoutWaitingForTxIdError") return true
@@ -99,8 +98,7 @@ export const WriteSync = Schema.Literals(["Synced", "Behind"])
 export type WriteSync = typeof WriteSync.Type
 
 /**
- * The toast `applyMutationError` raises for a txid timeout: the edit reached the server, but the
- * optimistic copy rolled back. "Reconnect" is the root's `retryOrgCollections`.
+ * The toast for a txid timeout: the edit reached the server, but the optimistic copy rolled back.
  */
 export const behindToastContent = {
 	type: "warning",
@@ -170,7 +168,6 @@ const writeOnce = (
 ) =>
 	Effect.gen(function* () {
 		const current = yield* readFrom(collection, id)
-		// The updaters' `updatedAt` timestamp.
 		const now = yield* DateTime.now
 		const nowIso = IsoDateTimeString.make(DateTime.formatIso(now))
 		const updated = updater(current, nowIso)
@@ -190,10 +187,9 @@ const writeOnce = (
 	})
 
 /**
- * `mutateDocumentIn`: apply `updater` to the current document and write it through the collection.
- * The document is JSON round-tripped first so no present-`undefined` key reaches the PATCH encode.
- * A 409 (someone else saved first) waits for their version to sync, then re-applies `updater`
- * on top of it once; a second conflict, or no sync in time, is a `DashboardConflictError`.
+ * Applies `updater` to the current document (JSON round-tripped first, so no present-`undefined` key
+ * reaches the PATCH encode). A 409 waits for the other save to sync, then re-applies `updater` once;
+ * a second conflict, or no sync in time, is a `DashboardConflictError`.
  */
 export const mutateDocumentIn = (
 	collection: DashboardsWriter,
@@ -245,7 +241,7 @@ export const mutateDashboard = (
 	updater: (document: DashboardDocument, nowIso: IsoDateTimeString) => DocumentFields,
 ) => Effect.flatMap(dashboardsOf(orgId), (collection) => mutateDocumentIn(collection, id, updater))
 
-/** `deleteDashboard`: the collection's optimistic delete. */
+/** The collection's optimistic delete. */
 export const deleteDashboard = (orgId: string, id: string) =>
 	Effect.gen(function* () {
 		const collection = yield* dashboardsOf(orgId)
@@ -254,7 +250,7 @@ export const deleteDashboard = (orgId: string, id: string) =>
 		return yield* settled(() => transaction.when("settled"))
 	})
 
-/** `collection.utils.awaitTxId(txid).catch(() => undefined)` after a create. */
+/** Waits for a create's txid on the shape stream; a failure is ignored. */
 export const awaitTxid = (orgId: string, txid: string | undefined) =>
 	txid === undefined
 		? Effect.void

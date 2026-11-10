@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { getError, stubOrgMembersService } from "./alerts-service-test-support"
 import { OnCallSchedulesService } from "./OnCallSchedulesService"

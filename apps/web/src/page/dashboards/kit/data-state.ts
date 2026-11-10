@@ -10,8 +10,6 @@ import {
 	type WidgetGate,
 } from "./widget-data"
 
-// `WidgetDataState`, as `widget-data.ts` derives it.
-
 type Widget = DashboardDocument["widgets"][number]
 
 export type WidgetError = Readonly<{
@@ -95,6 +93,6 @@ const ready = (raw: unknown, widget: Widget): WidgetDataState => {
 	return state
 }
 
-/** `dataState.status === "error"` drawn as the muted empty frame. */
+/** An error that means no data, drawn as the muted empty frame. */
 export const isEmptyError = (state: WidgetDataState): boolean =>
 	state._tag === "Error" && (state.kind === "empty" || state.message === NO_DATA)

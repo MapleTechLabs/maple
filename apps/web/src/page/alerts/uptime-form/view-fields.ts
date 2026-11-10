@@ -18,20 +18,17 @@ import {
 	HttpMethod,
 	INTERVALS,
 	type TextField,
-} from "./form"
+} from "../../kit/uptime/form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The form's inputs and the HTTP and schedule sections.
-
 export type H = HtmlBuilder<Message>
 
 const changed = (field: TextField) => (value: string) => Message.ChangedText({ field, value })
 
-/** A labelled text input bound to one form field. */
 export const textField = (
 	h: H,
 	options: Readonly<{
@@ -83,7 +80,6 @@ export const textField = (
 	)
 }
 
-/** A labelled native select. */
 export const selectField = (
 	h: H,
 	options: Readonly<{
@@ -139,7 +135,7 @@ export const nameSection = (h: H, model: Model, placeholder: string): Html =>
 		}),
 	])
 
-const isMethod = (value: string): value is typeof HttpMethod.Type =>
+const isMethod = (value: string): value is HttpMethod =>
 	Arr.some(HttpMethod.literals, (method) => method === value)
 const isAssertionType = (value: string): value is AssertionType =>
 	Arr.some(AssertionType.literals, (type) => type === value)

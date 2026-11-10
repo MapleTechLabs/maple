@@ -5,7 +5,7 @@ import { relativeTime } from "../../kit/relative-time"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { HEALTH_TONE } from "../../../components/dashboard/service-health"
+import { HEALTH_TONE } from "../../kit/service-health-rollup"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -35,7 +35,6 @@ import {
 	hasActiveServiceFilters,
 	type HealthSummary,
 	healthOf,
-	isResolvableSha,
 	NO_NAMESPACE,
 	resolveGroupBy,
 	type ServiceHealth,
@@ -49,6 +48,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { stripClass } from "@maple/views/ui/rule"
+import { isResolvableSha } from "../../kit/commit-card"
 
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
@@ -354,7 +354,7 @@ const serviceRow = (
 	)
 }
 
-/** `serviceDetailSearch`: the row's environment plus the list's window. */
+/** The row's environment plus the list's window. */
 const serviceHref = (model: Model, service: ServiceRow): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -704,7 +704,6 @@ const SKELETON_COLUMNS = [
 	{ header: "Last deploy", headClassName: "w-[18%]", skeleton: "w-24" },
 ]
 
-/** `LoadingState`. */
 export const loadingState = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("space-y-4")],

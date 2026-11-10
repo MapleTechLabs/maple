@@ -9,8 +9,6 @@ import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `VariableForm` and `QuerySourceFields`: the expanded draft's controls.
-
 type H = HtmlBuilder<Message>
 
 const grid = (h: H, children: ReadonlyArray<Html>): Html =>

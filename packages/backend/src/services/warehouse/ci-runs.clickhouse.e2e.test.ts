@@ -11,7 +11,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_ci_runs_e2e")
 const ORG_ID = "org_ci_runs_e2e"

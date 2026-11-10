@@ -19,8 +19,8 @@ import { shownMarkdown } from "./transcript-rows"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The span expansion's Messages tab. Its local state (open,
-// raw) lives in the page's `openRows` under the popover's key prefix, reset when the span changes.
+// The Messages tab's local state (open, raw) lives in the page's `openRows` under the popover's key
+// prefix, reset when the span changes.
 
 type H = HtmlBuilder<Message>
 
@@ -75,7 +75,7 @@ const panelBody = (
 	})
 }
 
-/** `PayloadCard`: a tool call or result inside a message, its body behind a json/raw switch. */
+/** A tool call or result inside a message, its body behind a json/raw switch. */
 export const payloadCard = (
 	h: H,
 	model: Model,

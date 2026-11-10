@@ -1,5 +1,6 @@
+import { canWidenTimeRange } from "../../../kit/time-controls"
 import { formatSeconds } from "@maple/views/lib/infra-chart-units"
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { formatBytes, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -12,8 +13,8 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../kit/hero-chip"
-import * as Frame from "../../kit/frame"
-import { k8sChart } from "../../kit/k8s-chart"
+import * as Frame from "../../../kit/time-frame"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { pageHeroParts } from "../../kit/page-parts"
 import {
@@ -27,8 +28,6 @@ import type { ContainerMetric, ContainerSummary, Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-// `ContainerDetailPage` and `ContainerDetailChart`.
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<ContainerSummary>
@@ -101,7 +100,7 @@ const noData = (h: H, model: Model): Html =>
 			],
 		),
 		hstack(h, { gap: "2", justify: "center", wrap: true }, [
-			...(Frame.canWidenTimeRange(model.search, DEFAULT_PRESET)
+			...(canWidenTimeRange(model.search, DEFAULT_PRESET)
 				? [
 						button(
 							h,

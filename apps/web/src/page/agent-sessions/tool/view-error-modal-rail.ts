@@ -1,5 +1,5 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { unwrapToolErrorText, type VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
+import { unwrapToolErrorText, type VariantDifference } from "../../kit/tools/tool-error-display"
 import { sessionRowId } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -19,8 +19,6 @@ import type { ModalInputs } from "./view-error-modal"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// The rail of `ToolErrorModal`: the variants a group folded, where it happens, which sessions hit it.
 
 type H = HtmlBuilder<Message>
 type BreakdownRow = ErrorDetail["breakdown"][number]

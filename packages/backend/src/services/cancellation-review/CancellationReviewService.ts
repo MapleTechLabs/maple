@@ -58,7 +58,7 @@ import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { AUDIT_ACCESS_ACTION_SUFFIXES, AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { decodeUpstream, ensureOk, subscriptionsOf } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -224,9 +224,9 @@ interface Destination {
 	) => Effect.Effect<boolean, Schema.SchemaError | SupportChannelUnavailableError | ChatOutboundError>
 }
 
-/** The upstream's own words, so the log says why and not only where. */
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+/** The upstream's own words, so the log says why and not only where. */
 const failedAt =
 	(step: CancellationReviewError["step"], message: string) =>
 	(cause: unknown): CancellationReviewError =>
@@ -386,7 +386,7 @@ export class CancellationReviewService extends Context.Service<
 		const readIngest = (orgId: OrgId, atMs: number) => {
 			const window = ingestWindow(atMs)
 			return dailySpend
-				.get(systemTenant(orgId), { ...window, nowMs: atMs })
+				.get(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), { ...window, nowMs: atMs })
 				.pipe(Effect.map((response) => summarizeIngest(response.days, atMs)))
 		}
 
@@ -412,7 +412,7 @@ export class CancellationReviewService extends Context.Service<
 			const window = visitsWindow(atMs)
 			const pageViews = (groupIds: ReadonlyArray<string> | undefined, bucketSeconds: number) =>
 				warehouse.compiledQuery(
-					systemTenant(ownOrgId),
+					systemTenant(ownOrgId, ALERTING_SYSTEM_USER_ID),
 					CH.compile(
 						CH.productEventsTimeseriesQuery({
 							metric: "users",
@@ -458,7 +458,7 @@ export class CancellationReviewService extends Context.Service<
 			ownOrgId: OrgId | null,
 		) {
 			if (ownOrgId === null) return null
-			const tenant = systemTenant(ownOrgId)
+			const tenant = systemTenant(ownOrgId, ALERTING_SYSTEM_USER_ID)
 			const rows = yield* warehouse.compiledQuery(
 				tenant,
 				// Read a few extra, to still show `SESSIONS_SHOWN` once bots are dropped.

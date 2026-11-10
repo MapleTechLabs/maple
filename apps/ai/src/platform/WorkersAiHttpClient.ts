@@ -197,12 +197,12 @@ const stripNativeTrailer = (body: ReadableStream<unknown>): ReadableStream<Uint8
 	)
 }
 
-/**
- * The model a Workers AI REST `.../ai/run/{model}` URL names, for the native (non-OpenAI) models
- * such as the Clef decision model. Undefined for any other URL.
- */
 const RUN_MARKER = "/ai/run/"
 
+/**
+ * The model a Workers AI REST `.../ai/run/{model}` URL names, for the native (non-OpenAI) models
+ * such as the Clef decision model. None for any other URL.
+ */
 const workersAiRunModel = (url: string): Option.Option<string> =>
 	pathnameOf(url).pipe(
 		Option.filter(

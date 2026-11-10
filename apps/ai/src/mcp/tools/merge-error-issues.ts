@@ -1,9 +1,8 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Option, Schema, Array as Arr } from "effect"
-import { MergeErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { MAX_ISSUE_MERGE_SOURCES } from "@maple/domain/http"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -20,7 +19,6 @@ export function registerMergeErrorIssuesTool(server: McpToolRegistrar) {
 			issue_id: issueIdParam("The issue to keep, from list_error_issues"),
 			merge_issue_ids: P.list(`Issue IDs to fold into it, at most ${MAX_ISSUE_MERGE_SOURCES}`),
 		}),
-		output: MergeErrorIssuesOutput,
 		// Unmerge hands fingerprints back but not the closed incidents or cleared leases.
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Merging duplicate issues"],

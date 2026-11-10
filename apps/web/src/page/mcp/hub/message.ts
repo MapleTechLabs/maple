@@ -1,7 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import * as Select from "@maple/views/ui/select"
@@ -9,9 +10,6 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { McpMetric } from "../view-server"
 import { OverviewData, ServersData, SessionData, SessionsData, ToolData } from "./model"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const Facet = Schema.Literals(["client", "kind"])
 export type Facet = typeof Facet.Type
@@ -28,9 +26,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchTool: result(ToolData),
 	CompletedFetchSessions: result(SessionsData),
 	CompletedFetchSession: result(SessionData),
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},

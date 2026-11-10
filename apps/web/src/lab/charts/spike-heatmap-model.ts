@@ -1,9 +1,9 @@
-import { heatmapSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { heatmapSampleData } from "@maple/views/charts/series/sample-data"
 import { Array as Arr } from "effect"
 
-// `HeatmapSpike`'s model: empty rows and columns
-// pruned, the holes listed, the colour domain and the cell geometry. Pure, so the lab page can
-// render the "hidden" footer without loading the chart library.
+// The heatmap spike's model: empty rows and columns pruned, the holes listed, the colour domain
+// and the cell geometry. Pure, so the lab page can render the "hidden" footer without loading the
+// chart library.
 
 export interface HeatmapSpikeRow {
 	readonly x: string
@@ -49,7 +49,6 @@ const domainOf = (rows: ReadonlyArray<HeatmapSpikeRow>): readonly [number, numbe
 	return min === max ? [min, min + 1] : [min, max]
 }
 
-/** `buildModel`. */
 export const heatmapSpikeModel = (rows: ReadonlyArray<HeatmapSpikeRow>): HeatmapSpikeModel => {
 	const present = new Set(Arr.map(rows, (row) => cellKey(row.x, row.y)))
 	const allX = uniqueInOrder(Arr.map(rows, (row) => row.x))

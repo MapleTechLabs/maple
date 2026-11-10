@@ -3,10 +3,10 @@ import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@m
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { settingsSections } from "./section"
+import { settingsSections } from "../../kit/settings-section"
 import { vstack } from "@maple/views/ui/stack"
 
-// `AccountSectionSkeleton`: what a settings or account section shows while its Clerk resource loads.
+// What a settings or account section shows while its Clerk resource loads.
 
 export const accountSectionSkeleton = <M>(h: HtmlBuilder<M>, children?: ReadonlyArray<Html>): Html =>
 	settingsSections(h, [

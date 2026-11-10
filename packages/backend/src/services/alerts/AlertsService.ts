@@ -14,7 +14,6 @@ import {
 	alertIntervalsFitting,
 	alertQueryLimits,
 	alertRuleIntervalMinutes,
-	CompiledAlertQueryPlan,
 	nextSlowerAlertInterval,
 	ENGINE_UNGROUPED_GROUP_KEY,
 	formatWarehouseDateTime,
@@ -23,14 +22,12 @@ import {
 	warehouseDateTime64,
 	parseWarehouseDateTime,
 } from "@maple/query-engine"
+import { CompiledAlertQueryPlan } from "@maple/domain/query-engine"
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertEvaluationErrorKind,
-	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	type AlertDeliveryFailure,
-	AlertDeliveryRejectedError,
-	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
 	AlertDestinationDocument,
 	AlertDestinationStoredConfigInvalidError,
@@ -118,7 +115,6 @@ import {
 	Redacted,
 	Ref,
 	Schema,
-	Semaphore,
 	Stream,
 	Context,
 	String as Str,
@@ -141,10 +137,13 @@ import {
 import { simulateFiringSpans } from "./alert-firing-spans"
 import {
 	evaluationErrorKind,
+	hasUpstreamStatus,
+	isQueryEngineTimeout,
 	isQueryLimitFailure,
+	isWarehouseQuotaExceeded,
 	SLOWDOWN_AFTER_LIMIT_FAILURES,
 } from "./alert-evaluation-errors"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { formatComparator, signalCarriesDetail } from "./alert-formatting"
 import { escalationChainFor, ruleAtSeverity, tierRoutedUpTo } from "./alert-thresholds"
@@ -177,7 +176,7 @@ import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngin
 import { withAlertEvaluationScope, type GroupedAlertObservation } from "@maple/query-engine/runtime"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-series"
-import { systemTenant } from "./system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
@@ -185,10 +184,13 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
 import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
-import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
-import { alertDestinationKeyringFromEnv, makeAlertDestinationDelivery } from "./AlertDestinationDelivery"
-import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
-import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
+import {
+	alertDestinationKeyringFromEnv,
+	isAlertDeliveryFailure,
+	makeAlertDestinationDelivery,
+} from "./AlertDestinationDelivery"
+import { AlertReadModelsService } from "./AlertReadModelsService"
+import { makeAlertRulePersistence } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
@@ -440,10 +442,6 @@ const TRIAGE_START_CONCURRENCY = 8
 const LIVE_ACTIVITY_CHECK_HISTORY = 30
 const DELIVERY_LEASE_TTL_MS = 30_000
 
-/* -------------------------------------------------------------------------- */
-/*  Schemas for stored JSON formats                                           */
-/* -------------------------------------------------------------------------- */
-
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertIncidentEventIdSync = Schema.decodeUnknownSync(AlertIncidentEventId)
@@ -509,13 +507,6 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
 	)
 
-/** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
-const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
-	Schema.is(AlertDeliveryError)(error) ||
-	Schema.is(AlertDeliveryAuthError)(error) ||
-	Schema.is(AlertDeliveryTargetMissingError)(error) ||
-	Schema.is(AlertDeliveryRejectedError)(error)
-
 // Deliveries claimed per batch. The drain takes batches until the queue is
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
 const DELIVERY_DRAIN_LIMIT = 50
@@ -551,10 +542,8 @@ const parseDeliveryPayload = (
 		Effect.mapError((cause) => makeValidationError("Stored delivery payload is invalid", [], cause)),
 	)
 
-// Formatting helpers imported from AlertDeliveryDispatch
-
-export interface AlertsServiceApi
-	extends AlertDestinationsServiceApi, AlertReadModelsServiceApi, AlertRulesServiceApi {
+/** The alert operations that span rules, destinations and evaluation; the rest live on the narrow services. */
+export interface AlertsServiceApi {
 	readonly updateRule: (
 		orgId: OrgId,
 		userId: UserId,
@@ -636,9 +625,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const destinations = yield* AlertDestinationsService
 			const readModels = yield* AlertReadModelsService
-			const rules = yield* AlertRulesService
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
@@ -676,10 +663,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				buildPayload,
 				sendImmediateNotification,
 			} = destinationDelivery
-			// Optional: present only inside a Worker isolate. Used to kick off the
-			// AI triage Workflow for issues created from freshly opened incidents.
-			const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-			const chatSessions = Option.getOrUndefined(chatSessionsOption)
+			// Starts the investigation for issues created from freshly opened incidents.
+			const starter = yield* InvestigationStarter
 			const now = runtime.now
 			const makeUuid = () => runtime.makeUuid()
 			const workerId = makeUuid()
@@ -972,7 +957,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const dayMs = 24 * 60 * 60_000
 				return yield* probeLiveness({
 					warehouse,
-					tenant: systemTenant(orgId),
+					tenant: systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					serviceNames,
 					environments: normalized.environments,
 					windowStartMs: timestamp - windowMs,
@@ -1189,7 +1174,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
 				const observations: ReadonlyArray<GroupedAlertObservation> = yield* queryEngine.evaluate(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					{
 						startTime: formatWarehouseDateTime(startMs),
 						endTime: formatWarehouseDateTime(endMs),
@@ -1508,14 +1493,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						rule.signalType === "anomaly" ||
 						(!anySent && !withPayload)
 							? null
-							: yield* loadChartSeries(warehouse, systemTenant(orgId), {
-									orgId,
-									ruleId: rule.id,
-									groupKey: incident.groupKey,
-									comparator: rule.comparator,
-									threshold: rule.threshold,
-									...window,
-								})
+							: yield* loadChartSeries(
+									warehouse,
+									systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+									{
+										orgId,
+										ruleId: rule.id,
+										groupKey: incident.groupKey,
+										comparator: rule.comparator,
+										threshold: rule.threshold,
+										...window,
+									},
+								)
 
 					// The image URL rides with the series it describes: both pin the
 					// same window, so a retry an hour later renders the same picture
@@ -1809,10 +1798,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const newNormalized = yield* normalizeRule(orgId, request)
 				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
 
-				// Resolve stale incidents caused by the configuration change
-
 				if (oldNormalized.enabled && !newNormalized.enabled) {
-					// Rule was disabled — resolve all open incidents
 					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, {
 						resolveAll: true,
 					})
@@ -1980,7 +1966,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 				const startedAt = yield* now
 				const exit = yield* Effect.exit(
-					queryEngine.evaluate(systemTenant(orgId), {
+					queryEngine.evaluate(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), {
 						startTime: formatWarehouseDateTime(endMs - rule.windowMinutes * 60_000),
 						endTime: formatWarehouseDateTime(endMs),
 						source,
@@ -1994,7 +1980,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							onNone: () => "other" as const,
 							// The engine's own 30s ceiling is a query that did not finish either.
 							onSome: (error) =>
-								error._tag === "@maple/http/errors/QueryEngineTimeoutError"
+								isQueryEngineTimeout(error)
 									? ("query_too_slow" as const)
 									: evaluationErrorKind(error),
 						})
@@ -2147,13 +2133,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						serviceRules,
 						({ groupKey, rule }) =>
 							Effect.gen(function* () {
-								const observations = yield* queryEngine.evaluateSeries(systemTenant(orgId), {
-									startTime: formatWarehouseDateTime(startMs),
-									endTime: formatWarehouseDateTime(queryEndMs),
-									source: yield* planEvaluateSource(rule.compiledPlan, rule),
-									reducer: rule.compiledPlan.reducer,
-									sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
-								})
+								const observations = yield* queryEngine.evaluateSeries(
+									systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+									{
+										startTime: formatWarehouseDateTime(startMs),
+										endTime: formatWarehouseDateTime(queryEndMs),
+										source: yield* planEvaluateSource(rule.compiledPlan, rule),
+										reducer: rule.compiledPlan.reducer,
+										sampleCountStrategy: rule.compiledPlan.sampleCountStrategy,
+									},
+								)
 								for (const obs of observations) {
 									record(groupKey, parseWarehouseDateTime(obs.bucket), {
 										value: obs.value,
@@ -2172,7 +2161,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							: normalized,
 					)
 					const charted = yield* queryEngine
-						.evaluateSeries(systemTenant(orgId), {
+						.evaluateSeries(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), {
 							startTime: formatWarehouseDateTime(startMs),
 							endTime: formatWarehouseDateTime(queryEndMs),
 							source,
@@ -2928,7 +2917,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					return recordFailedAttempt(
 						row,
 						failure,
-						countable && !failure.retryable && isProviderDeliveryFailure(error),
+						countable && !failure.retryable && isAlertDeliveryFailure(error),
 					)
 				}
 
@@ -3249,20 +3238,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				pending: ReadonlyArray<MaybeEnqueueTriageInput>,
 			) {
 				yield* Effect.annotateCurrentSpan("maple.alerting.triages_pending", pending.length)
-				// One admission permit per org keeps the daily quota exact under concurrency.
-				const admissionEntries = yield* Effect.forEach(
-					Arr.dedupe(Arr.map(pending, (triage) => triage.orgId)),
-					(orgId) => Effect.map(Semaphore.make(1), (admission) => [orgId, admission] as const),
-				)
-				const admissions = new Map(admissionEntries)
+				// The starter's per-org admission lock keeps the daily quota exact under concurrency.
 				yield* Effect.forEach(
 					pending,
 					(triage) =>
-						maybeEnqueueTriage({
-							...triage,
-							chatSessions,
-							admission: admissions.get(triage.orgId),
-						}).pipe(Effect.provideService(Database, database)),
+						maybeEnqueueTriage(triage).pipe(
+							Effect.provideService(Database, database),
+							Effect.provideService(InvestigationStarter, starter),
+						),
 					{ concurrency: TRIAGE_START_CONCURRENCY, discard: true },
 				)
 			})
@@ -4238,10 +4221,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				if (!staged) yield* Ref.update(pendingChecks, Chunk.append(checkRow))
 			})
 
-			/* -------------------------------------------------------------------------- */
-			/*  Stale incident resolution                                               */
-			/* -------------------------------------------------------------------------- */
-
 			const computeStaleGroupKeys = (
 				oldRule: NormalizedRule,
 				newRule: NormalizedRule,
@@ -4776,8 +4755,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const [first, ...rest] = claimed
 						if (first === undefined) return claimed
 
-						// Matches the `Effect.ignore` this call carried when it was a
-						// separate execute.
 						yield* db
 							.run(
 								PG.update(AlertRules)
@@ -5141,19 +5118,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					Record.toEntries(Arr.groupBy(checks, (check) => check.OrgId)),
 					([orgId, rows]) =>
 						// Not metered to Autumn: internal bookkeeping rows, not customer telemetry.
-						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", rows).pipe(
-							Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
-							Effect.andThen(Ref.update(written, (n) => n + rows.length)),
-							Effect.catchCause((cause) =>
-								Effect.logWarning("Dropped alert_checks audit rows").pipe(
-									Effect.annotateLogs({
-										orgId,
-										rowCount: rows.length,
-										cause: summarizeCause(cause),
-									}),
+						warehouse
+							.ingest(
+								systemTenant(decodeOrgIdSync(orgId), ALERTING_SYSTEM_USER_ID),
+								"alert_checks",
+								rows,
+							)
+							.pipe(
+								Effect.timeout(ALERT_CHECK_INGEST_TIMEOUT),
+								Effect.andThen(Ref.update(written, (n) => n + rows.length)),
+								Effect.catchCause((cause) =>
+									Effect.logWarning("Dropped alert_checks audit rows").pipe(
+										Effect.annotateLogs({
+											orgId,
+											rowCount: rows.length,
+											cause: summarizeCause(cause),
+										}),
+									),
 								),
 							),
-						),
 					{ concurrency: ALERT_CHECK_INGEST_CONCURRENCY, discard: true },
 				).pipe(
 					Effect.timeout(ALERT_CHECK_INGEST_BUDGET),
@@ -5701,7 +5684,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// above only deletes incident-backed rows. Zero rows touched in
 						// steady state, so the Electric shape stays quiet.
 						//
-						// Applied set-based after the loop (see `flushSelfHeal`). Safe to
+						// Applied set-based after the loop (see `flushRuleStateHousekeeping`). Safe to
 						// defer: it is scoped to this rule and this rule's own writes are
 						// already done, so end-of-tick is the same state it would have seen
 						// here.
@@ -5789,15 +5772,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											"pipeName" in error
 												? {
 														pipe: error.pipeName,
-														...(error._tag ===
-														"@maple/http/errors/WarehouseQuotaExceededError"
+														...(isWarehouseQuotaExceeded(error)
 															? {
 																	quotaSetting: error.setting,
 																}
 															: undefined),
-														...(error._tag ===
-															"@maple/http/errors/WarehouseUpstreamError" ||
-														error._tag === "@maple/http/errors/WarehouseAuthError"
+														...(hasUpstreamStatus(error)
 															? {
 																	upstreamStatus: error.upstreamStatus,
 																}
@@ -5988,7 +5968,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					),
 				)
 
-				// Resolve stale incidents for disabled rules
 				const sweepDisabledRules = Effect.gen(function* () {
 					const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
 						db.run(
@@ -6245,6 +6224,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				lane: AlertSchedulerLane = "standard",
 			) {
 				const tickStart = yield* now
+				// The standard lane runs every minute, so it alone also advances escalations, drains
+				// deliveries (on its own 20s budget) and pages members; the long-query lane only evaluates.
+				const ownsQueues = lane === "standard"
 				const checkIngest = yield* Ref.make(Option.none<Fiber.Fiber<number>>())
 				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane, checkIngest))
 				// The alert_checks ingest runs beside the drain and is joined even when the drain fails,
@@ -6252,14 +6234,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const joinCheckIngest = Effect.flatMap(Ref.get(checkIngest), (fiber) =>
 					Option.match(fiber, { onNone: () => Effect.succeed(0), onSome: Fiber.join }),
 				)
-				// The standard lane also advances escalation chains, after evaluation (which may have
-				// resolved an incident) and before the drain (which then sends the step this tick).
-				if (lane === "standard") {
+				// Escalations advance after evaluation (which may have resolved an incident) and before
+				// the drain (which then sends the step this tick).
+				if (ownsQueues) {
 					yield* advanceEscalations().pipe(isolate("Escalation advance failed", {}))
 				}
-				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
 				const delivery = yield* Effect.exit(
-					lane === "standard"
+					ownsQueues
 						? processQueuedDeliveries()
 						: Effect.succeed({ processedCount: 0, failureCount: 0 }),
 				)
@@ -6269,7 +6250,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					alertChecksDroppedCount,
 				)
 				// People an escalation step paged, after the destinations the same step queued.
-				if (lane === "standard") {
+				if (ownsQueues) {
 					yield* memberNotifier.drain.pipe(isolate("Escalation member paging failed", {}))
 				}
 				const deliveryResult = yield* delivery
@@ -6286,33 +6267,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// `AlertsService.of(...)` can't be used here — referencing the class inside
 			// its own `make` is a TS2506 circular base-expression error.
-			return {
-				listDestinations: destinations.listDestinations,
-				createDestination: destinations.createDestination,
-				updateDestination: destinations.updateDestination,
-				deleteDestination: destinations.deleteDestination,
-				listTelegramChats: destinations.listTelegramChats,
-				testDestination: destinations.testDestination,
-				listRules: rules.listRules,
-				createRule: rules.createRule,
-				updateRule,
-				deleteRule: rules.deleteRule,
-				testRule,
-				previewRule,
-				listIncidents: readModels.listIncidents,
-				getIncident: readModels.getIncident,
-				listIncidentEscalations: readModels.listIncidentEscalations,
-				listRuleChecks: readModels.listRuleChecks,
-				summarizeRuleChecks: readModels.summarizeRuleChecks,
-				listDeliveryEvents: readModels.listDeliveryEvents,
-				runSchedulerTick,
-			} satisfies AlertsServiceApi
+			return { updateRule, testRule, previewRule, runSchedulerTick } satisfies AlertsServiceApi
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
+				InvestigationStarter.layer,
 				AlertMemberNotifier.layer,
 				OrgMembersService.layer,
 				ChatAlertPoster.layer,
@@ -6322,9 +6284,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				WarehouseQueryService.layer,
 				EmailService.layer,
 				QueryEngineService.layer,
-				AlertDestinationsService.layer,
 				AlertReadModelsService.layer,
-				AlertRulesService.layer,
 				UptimeAlertSource.layer,
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,

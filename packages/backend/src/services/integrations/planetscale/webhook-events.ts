@@ -9,8 +9,8 @@ import {
 	type SignalProjector,
 	type SignalSourceAdapter,
 } from "@maple/eventing-core"
-import type { IssueSeverity, OrgId, WorkflowState } from "@maple/domain/http"
-import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
+import type { IssueSeverity, OrgId, PlanetScaleEventCategory, WorkflowState } from "@maple/domain/http"
+import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -32,7 +32,7 @@ import { applyIssueReopen, issueReopenFor } from "@maple/backend/services/errors
  * PlanetScale webhook event handling: signature verification, payload decode,
  * event → action classification, and the issue-hub upsert for events that
  * warrant triage (OOM restarts, storage thresholds, anomalies). Mirrors
- * `lib/issue-hub.ts` (alert incidents → kind="alert" issues) but standalone,
+ * `services/errors/issue-hub.ts` (alert incidents → kind="alert" issues) but standalone,
  * with kind="integration" and the `planetscale:{database}:{event}` fingerprint
  * so repeated firings dedupe into one issue that re-opens.
  */
@@ -317,14 +317,9 @@ export const planetScaleWebhookPayloadFromEvent = (
 		),
 	)
 
-// ---------------------------------------------------------------------------
-// Classification
-// ---------------------------------------------------------------------------
-/** Where an event belongs on the timeline. Mirrored by the web vocabulary table. */
-export type PlanetScaleEventCategory = "deploy_request" | "branch" | "database" | "cluster" | "keyspace"
-
 export interface PlanetScaleTimelineSpec {
-	readonly category: PlanetScaleEventCategory
+	/** Where the event belongs on the timeline. Mirrored by the web vocabulary table. */
+	readonly category: typeof PlanetScaleEventCategory.Type
 	/** Normalized lifecycle state; null when the event isn't a state transition. */
 	readonly state: string | null
 	readonly title: (payload: PlanetScaleWebhookPayload) => string
@@ -521,7 +516,7 @@ export interface InsertPlanetScaleEventInput {
 	readonly orgId: OrgId
 	readonly databaseName: string
 	readonly branchName: string
-	readonly category: PlanetScaleEventCategory
+	readonly category: typeof PlanetScaleEventCategory.Type
 	readonly eventType: string
 	readonly state: string | null
 	readonly externalId: string
@@ -586,8 +581,6 @@ export const insertPlanetScaleEvent: (
 		}),
 	)
 })
-
-// Issue upsert (kind="integration")
 
 const SYSTEM_INTEGRATIONS_AGENT_NAME = "system-integrations"
 

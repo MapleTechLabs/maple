@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { SessionTag } from "@maple/domain/query-engine"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -9,9 +10,6 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { VirtualWindow } from "../kit/virtualize"
 import { ReplaysFacets, ReplaysPage } from "./model"
 import { HistogramMessage } from "@maple/views/ui/filters/range-histogram"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 /** The single-value sidebar facets, by their URL param. */
 export const Facet = Schema.Literals(["service", "browser", "country", "deviceType", "group", "page"])

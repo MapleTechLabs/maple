@@ -16,7 +16,7 @@ import { presenceOf } from "@maple/views/data/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { METRIC_TYPE_COLORS } from "../shared"
+import { METRIC_TYPE_COLORS } from "@maple/views/ui/metric-type"
 import { toEntries } from "./derive"
 import { type BrowseView, Message } from "./message"
 import type { Model, SummaryRow } from "./model"
@@ -28,7 +28,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
 // The window carried across pages is the root's (`route/session-time-range.ts`).
-// TODO(session-range): `sessionTimeRangeSearchMiddleware` (the window carried across pages) is not ported.
 
 type H = HtmlBuilder<Message>
 
@@ -47,7 +46,7 @@ const TYPE_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(TYPE_ITEMS, (item) => (
 	item: { value: item.value, label: item.label },
 }))
 
-/** `MetricsTypeFilter`'s menu rows: the counts live in the menu (decoration; a failed summary hides them). */
+/** The type filter's menu rows: the counts live in the menu (decoration; a failed summary hides them). */
 const typeItem =
 	(h: H, summary: Option.Option<ReadonlyArray<SummaryRow>>) =>
 	(option: SelectOption): ReadonlyArray<Html | string> => {
@@ -92,7 +91,7 @@ const typeItem =
 		]
 	}
 
-/** `ToolbarSearch` (debounced) over `SearchInput`. */
+/** The debounced toolbar search. */
 const toolbarSearch = (h: H, model: Model): Html =>
 	searchInput(h, {
 		id: "metrics-search",

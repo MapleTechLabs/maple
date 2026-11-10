@@ -1,8 +1,8 @@
 import * as Policy from "@maple/domain/policy"
-import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../../../components/settings/org-membership"
+import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../kit/org-membership"
 import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import type {
 	ClerkInvitationResource,
 	ClerkMembershipResource,
@@ -20,7 +20,7 @@ import { canManage, type InvitationRow, type MemberRow, Message, type Model, Org
 
 type Return = PageReturn<Model, Message>
 
-/** Clerk's default page size for `useOrganization`'s infinite lists. */
+/** Clerk's default page size for its paginated lists. */
 const PAGE_SIZE = 10
 
 const settleClerk =
@@ -86,18 +86,14 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => {
-					const userId = window.Clerk?.user?.id ?? null
-					return {
-						rows: Array.map(result.data, (member) => memberRow(member, userId)),
-						total: result.total_count,
-					}
-				},
-				onFailure: toLoadFailure,
+			Effect.map((result) => {
+				const userId = window.Clerk?.user?.id ?? null
+				return {
+					rows: Array.map(result.data, (member) => memberRow(member, userId)),
+					total: result.total_count,
+				}
 			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMembers({ page, generation, result })),
+			settleTo((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
 })
 
@@ -107,15 +103,11 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => ({
-					rows: Array.map(result.data, invitationRow),
-					total: result.total_count,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvitations({ page, generation, result })),
+			Effect.map((result) => ({
+				rows: Array.map(result.data, invitationRow),
+				total: result.total_count,
+			})),
+			settleTo((result) => Message.CompletedFetchInvitations({ page, generation, result })),
 		),
 })
 
@@ -299,7 +291,7 @@ const liftRevoke = lift("revokeDialog", (message) => Message.GotRevokeDialogMess
 const stopPaging = <A extends { readonly isFetchingMore: boolean }, E>(data: AsyncData.AsyncData<A, E>) =>
 	AsyncData.map(data, (list) => ({ ...list, isFetchingMore: false }))
 
-/** `memberships.revalidate()`: the list reads again from its first page, dropping older answers. */
+/** The list reads again from its first page, dropping older answers. */
 const revalidateMembers = (model: Model): Return => {
 	const members = stopPaging(model.members)
 	const generation = model.membersGeneration + 1

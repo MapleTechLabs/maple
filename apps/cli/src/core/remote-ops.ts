@@ -21,7 +21,7 @@ import type {
 	SpanNode,
 	SpanResult,
 } from "@maple/query-engine/observability"
-import type { ListMetricsOutput } from "@maple/domain/tinybird"
+import type { ListMetricsRow as ListMetricsOutput } from "@maple/query-engine/ch"
 import { CliNotFoundError } from "../lib/errors"
 import type { Range } from "./time"
 import { type MapleV2Client, toV2Window, unsupportedInRemote } from "./v2-client"

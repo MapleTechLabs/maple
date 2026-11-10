@@ -10,7 +10,7 @@ import {
 	IngestAttributeMappingId,
 	IngestMappingOperation,
 	IngestMappingSourceContext,
-} from "../../primitives"
+} from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"

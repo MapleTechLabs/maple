@@ -5,7 +5,7 @@ import {
 	IngestMappingSourceContext,
 	IsoDateTimeString,
 	RoleName,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class IngestAttributeMapping extends Schema.Class<IngestAttributeMapping>("IngestAttributeMapping")({

@@ -147,8 +147,6 @@ export const published = (
 	})
 }
 
-// BREAK-GLASS
-
 export const breakGlassDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => {
 	const lifted = liftDialog(
 		model,
@@ -240,8 +238,6 @@ export const updateTokenCopy = (model: Model, message: CopyButton.Message): Retu
 		),
 	}
 }
-
-// DELETE
 
 export const deletePageDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
 	liftDialog(

@@ -1,5 +1,5 @@
 import { encodeOrgScopedKey } from "@maple/web-data/lib/cache-key"
-import { Option, String as Str } from "effect"
+import { Option, Schema, String as Str } from "effect"
 
 /**
  * The identity of one data request: org, operation and input
@@ -18,3 +18,6 @@ export const orgOfKey = (key: RequestKey): string =>
 		0,
 		Option.getOrElse(Str.indexOf("\u0000")(key), () => -1),
 	)(key)
+
+/** Any value as JSON text: the stable string a key, a cache id or an equality check compares. */
+export const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))

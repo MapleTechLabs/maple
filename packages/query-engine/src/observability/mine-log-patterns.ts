@@ -1,8 +1,8 @@
 import { Effect, Array as Arr } from "effect"
-import type { ListLogsOutput } from "@maple/domain/tinybird"
+import type { ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { MineLogPatternsInput, LogPattern } from "./types"
-import { TemplateMiner, TemplateMinerConfig } from "../drain"
+import { type MaskingInstructionConfig, TemplateMiner, TemplateMinerConfig } from "../drain"
 import { rowText } from "../row-text"
 
 const DEFAULT_SAMPLE_SIZE = 10_000
@@ -15,17 +15,21 @@ export interface ClusterableLogRow {
 	readonly serviceName?: unknown
 }
 
+/**
+ * Maple's Drain masks; a template shows each as `<maskWith>`. Order matters: IPs and UUIDs first,
+ * then generic numbers, so a UUID isn't masked by the numeric token.
+ */
+export const LOG_TEMPLATE_MASKS: ReadonlyArray<MaskingInstructionConfig> = [
+	{ pattern: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", maskWith: "uuid" },
+	{ pattern: "\\d+\\.\\d+\\.\\d+\\.\\d+", maskWith: "ip" },
+	{ pattern: "0x[0-9a-fA-F]+", maskWith: "hex" },
+	{ pattern: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", maskWith: "email" },
+]
+
 /** A Drain miner with Maple's masking: every pattern tool clusters with the same rules. */
 export const makeLogTemplateMiner = (): TemplateMiner => {
 	const config = new TemplateMinerConfig()
-	// Common variable patterns. Order matters — IPs and UUIDs first, then
-	// generic numbers, so a UUID isn't masked by the numeric token.
-	config.maskingInstructions = [
-		{ pattern: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", maskWith: "uuid" },
-		{ pattern: "\\d+\\.\\d+\\.\\d+\\.\\d+", maskWith: "ip" },
-		{ pattern: "0x[0-9a-fA-F]+", maskWith: "hex" },
-		{ pattern: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}", maskWith: "email" },
-	]
+	config.maskingInstructions = [...LOG_TEMPLATE_MASKS]
 	return new TemplateMiner(config)
 }
 
@@ -114,7 +118,7 @@ export const mineLogPatterns = Effect.fn("Observability.mineLogPatterns")(functi
 		...(input.traceId && { trace_id: input.traceId }),
 	} satisfies Record<string, unknown>
 
-	const result = yield* executor.query<ListLogsOutput>(
+	const result = yield* executor.query<ListLogsRow>(
 		"list_logs",
 		{
 			start_time: input.timeRange.startTime,

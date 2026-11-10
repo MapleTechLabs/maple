@@ -35,8 +35,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `DashboardList`: the dashboards as rows.
-
 type H = HtmlBuilder<Message>
 
 const SORT_LABELS = {
@@ -52,7 +50,7 @@ const SCOPE_OPTIONS = [
 	{ value: "favorites", label: "Favorites" },
 ] as const
 
-/** `DisabledReason` around a disabled control: a `contents` tooltip trigger. */
+/** A disabled control wrapped in a `contents` tooltip trigger. */
 const disabledReason = (h: H, child: Html): Html =>
 	h.div(
 		[
@@ -63,7 +61,7 @@ const disabledReason = (h: H, child: Html): Html =>
 		[child],
 	)
 
-/** `TagFilterMenu`: disabled with its reason while no dashboard carries a tag. */
+/** Disabled with its reason while no dashboard carries a tag. */
 const tagFilter = (h: H, model: Model, allTags: ReadonlyArray<string>): Html =>
 	allTags.length === 0
 		? disabledReason(
@@ -178,7 +176,7 @@ const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> 
 	},
 ]
 
-/** `RowActionsMenu`: the kebab trigger; only the active row holds live menu state. */
+/** The kebab trigger; only the active row holds live menu state. */
 const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	const menu = model.rowMenuId === dashboard.id ? model.rowMenu : Menu.init(rowMenuIdOf(dashboard.id))
 	return rowActionsMenu(h, {
@@ -193,7 +191,7 @@ const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 
 type RowContext = Readonly<{ model: Model; nowMs: number; timeZone: string }>
 
-/** `DashboardRow`: one link for the whole row, then the star and the kebab above it. */
+/** One link for the whole row, then the star and the kebab above it. */
 const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFavorite: boolean): Html => {
 	const isEmpty = dashboard.widgetCount === 0
 	const widgets = `${dashboard.widgetCount} ${pluralize(dashboard.widgetCount, "widget")}`
@@ -333,7 +331,7 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 	)
 }
 
-/** `CreateRow`: pinned below the list so a filter can never make it read as a result. */
+/** Pinned below the list so a filter can never make it read as a result. */
 const createRow = (h: H, isReadOnly: boolean): Html =>
 	cardButton(
 		h,
@@ -367,7 +365,7 @@ const createRow = (h: H, isReadOnly: boolean): Html =>
 		],
 	)
 
-/** `FirstRunEmpty`: templates lead, a blank canvas second. */
+/** Templates lead, a blank canvas second. */
 const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 	empty(
 		h,
@@ -399,7 +397,7 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 		"py-16",
 	)
 
-/** `FilteredEmpty` for a search or tag filter that hid every dashboard. */
+/** A search or tag filter hid every dashboard. */
 const nothingMatched = (h: H, model: Model): Html => {
 	const query = Str.trim(queryOf(model.search))
 	const isSearching = query.length > 0
@@ -562,7 +560,6 @@ const GHOST_ROWS = [
 	{ name: "w-28", description: "w-88", reads: "w-16" },
 ] as const
 
-/** `DashboardListSkeleton`. */
 export const listSkeleton = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading dashboards")],

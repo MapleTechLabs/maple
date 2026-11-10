@@ -1,10 +1,8 @@
 import type { WidgetDisplayConfigSchema } from "@maple/domain/http"
-import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { funnelDropoffSampleData, pathsSampleData } from "@maple/views/charts/series/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 import { CHART_GALLERY, sampleDataOf } from "../../page/dashboards/kit/chart-registry"
 import { Array as Arr, String as Str } from "effect"
-
-// Copied from apps/web/src/lab/widget-lab/scenarios.ts; the registry is `CHART_GALLERY` here.
 
 type WidgetDisplayConfig = typeof WidgetDisplayConfigSchema.Type
 
@@ -62,8 +60,6 @@ const rangeErrorState: WidgetDataState = {
 }
 
 const ready = <T>(data: T): WidgetDataState => ({ status: "ready", data })
-
-// Stat
 
 export const statScenarios: WidgetScenario[] = [
 	{
@@ -178,8 +174,6 @@ export const statScenarios: WidgetScenario[] = [
 		display: { title: "Active spans", unit: "number" },
 	},
 ]
-
-// Gauge
 
 // Percent unit treats values as 0-1 ratios (0.42 → "42%").
 const gaugeThresholds = [
@@ -820,8 +814,6 @@ export const stressScenarios: ChartScenario[] = [
 	},
 ]
 
-// Table
-
 const serviceRows = [
 	{ service: "api-gateway", p99: 245, throughput: 1820, errorRate: 0.4 },
 	{ service: "user-service", p99: 132, throughput: 980, errorRate: 1.2 },
@@ -975,8 +967,6 @@ export const tableScenarios: WidgetScenario[] = [
 	},
 ]
 
-// List
-
 const traceRows = [
 	{
 		traceId: "8c1a4f2b7e9d3c5a6b8d9e0f1a2b3c4d",
@@ -1119,8 +1109,6 @@ export const listScenarios: WidgetScenario[] = [
 	},
 ]
 
-// Pie
-
 const pieFew = [
 	{ name: "api-gateway", value: 4820 },
 	{ name: "user-service", value: 3210 },
@@ -1191,8 +1179,6 @@ export const pieScenarios: WidgetScenario[] = [
 		display: { title: "Traffic by service" },
 	},
 ]
-
-// Funnel
 
 const funnelStages = [
 	{ name: "Visited", value: 4820 },
@@ -1304,8 +1290,6 @@ export const funnelScenarios: WidgetScenario[] = [
 	},
 ]
 
-// Horizontal bar (ranked)
-
 /**
  * The case that motivated the panel: the top rows are near-identical, which a
  * funnel labels "100% / 100% / 100% / 100%". As shares of the total they read
@@ -1318,8 +1302,6 @@ const hbarTopOperations = [
 	{ name: "ArtifactCache.get", value: 39_000_000 },
 	{ name: "SessionStore.load", value: 14_600_000 },
 ]
-
-// Funnel drop-off view
 
 export const funnelDropoffScenarios: WidgetScenario[] = [
 	{
@@ -1376,8 +1358,6 @@ export const funnelDropoffScenarios: WidgetScenario[] = [
 		display: { title: "Drop-off", unit: "number", funnel: { variant: "dropoff" } },
 	},
 ]
-
-// Paths
 
 export const pathsScenarios: WidgetScenario[] = [
 	{
@@ -1545,8 +1525,6 @@ export const hbarScenarios: WidgetScenario[] = [
 	},
 ]
 
-// Histogram
-
 const bellCurve = [
 	{ name: "0-50", value: 8 },
 	{ name: "50-100", value: 34 },
@@ -1638,8 +1616,6 @@ export const histogramScenarios: WidgetScenario[] = [
 		display: { title: "Trace duration" },
 	},
 ]
-
-// Heatmap
 
 const hours = ["00", "03", "06", "09", "12", "15", "18", "21"]
 const buckets = ["0-50ms", "50-100ms", "100-200ms", "200-500ms", "500ms+"]
@@ -1740,8 +1716,6 @@ export const heatmapScenarios: WidgetScenario[] = [
 		display: { title: "Latency × hour" },
 	},
 ]
-
-// Markdown
 
 export const markdownScenarios: WidgetScenario[] = [
 	{

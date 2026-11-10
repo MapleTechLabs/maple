@@ -1,6 +1,6 @@
 import type * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
-import { dischargeRuntimeContext } from "./alchemy-runtime"
+import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { type QueueProducer, QueueSendError } from "./bindings"
 
 /**

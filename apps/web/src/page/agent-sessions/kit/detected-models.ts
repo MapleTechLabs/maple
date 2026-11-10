@@ -1,5 +1,5 @@
 import { AiModelBrandColor, DetectAiModelsRequest } from "@maple/domain/http"
-import { shortTarget } from "../../../lib/agent-sessions/span-filters"
+import { shortTarget } from "./span-filters"
 import { Effect, Option, Schema, Array as Arr, String as Str, Record as Rec, Order } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -63,7 +63,7 @@ export const modelTitle = (detected: DetectedModel): string =>
 const decodeModels = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
 const encodeModels = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
-/** The batch for one key; a failure leaves the models unresolved, like the atom's `orElse`. */
+/** The batch for one key; a failure leaves the models unresolved. */
 export const detectModels = (key: string) =>
 	Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient

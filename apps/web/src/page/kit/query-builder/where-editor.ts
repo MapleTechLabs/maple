@@ -1,8 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "./where-clause-highlight"
 import { Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,11 +17,13 @@ export type WhereEditorAutocomplete<M> = Readonly<{
 	/** The field's spec; its `expression` is the editor's `value`. */
 	spec: WhereFieldSpec
 	toMessage: (message: WhereFieldMessage) => M
+	/** Inside a dialog: the list moves to `<body>` so the popup's transform does not offset it. */
+	isPortaled?: boolean
 }>
 
 /**
- * `WhereClauseEditor`: the textarea under its
- * highlight overlay, and with `autocomplete` its suggestion list. Enter never inserts a newline.
+ * The where-clause textarea under its highlight overlay, and with `autocomplete` its suggestion
+ * list. Enter never inserts a newline.
  */
 export type WhereEditorOptions<M> = Readonly<
 	{
@@ -33,7 +32,7 @@ export type WhereEditorOptions<M> = Readonly<
 		ariaLabel: string
 		placeholder: string
 		rows?: number
-		/** `className`: the wrapper's, after `relative`. */
+		/** The wrapper's, after `relative`. */
 		className?: string
 		textareaClassName: string
 		onInput: (value: string) => M
@@ -49,6 +48,7 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 	if (ac === undefined) {
 		const onEnter = options.onEnter
 		return {
+			isOpen: false,
 			onKey: (key: string) =>
 				key === "Enter" && onEnter !== undefined ? Option.some(onEnter) : Option.none<M>(),
 			mounts: [],
@@ -60,6 +60,7 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 	const autocomplete = autocompleteOf(ac.fields, fieldId, ac.spec)
 	const isOpen = isOpenOf(caret, autocomplete)
 	return {
+		isOpen,
 		onKey: whereKeyHandler<M>(isOpen, {
 			enter: toMessage(WhereFieldMessage.PressedEnter({ fieldId })),
 			move: (step) => toMessage(WhereFieldMessage.MovedSuggestion({ fieldId, step })),
@@ -75,9 +76,14 @@ const suggestionsOf = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>) => 
 						anchor: caret.anchor,
 						onApply: (index) =>
 							toMessage(WhereFieldMessage.AppliedSuggestion({ fieldId, index })),
+						isPortaled: ac.isPortaled,
 						keepFocus: h.OnMount(
 							Mount.mapMessage(
-								MountWhereFieldListbox({ fieldId, textareaId: ac.spec.textareaId }),
+								MountWhereFieldListbox({
+									fieldId,
+									textareaId: ac.spec.textareaId,
+									isPortaled: ac.isPortaled === true,
+								}),
 								toMessage,
 							),
 						),
@@ -102,6 +108,7 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 				defaultValue: options.value,
 				attributes: [
 					h.AriaLabel(options.ariaLabel),
+					h.AriaExpanded(suggestions.isOpen),
 					h.Placeholder(options.placeholder),
 					h.Rows(options.rows ?? 2),
 					h.OnInput(options.onInput),
@@ -127,6 +134,7 @@ export const highlightOverlay = <M>(
 		: [
 				h.div(
 					[
+						h.Key("where-highlight"),
 						h.AriaHidden(true),
 						h.Class(
 							cn(

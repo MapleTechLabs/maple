@@ -35,6 +35,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Predicate, Schema, Array as Arr, String as Str } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { WORKER_COMPATIBILITY_DATE } from "@maple/infra/worker-build"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -382,7 +383,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 			main: "./worker.js",
 			find_additional_modules: true,
 			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
-			compatibility_date: "2026-10-01",
+			compatibility_date: WORKER_COMPATIBILITY_DATE,
 		}),
 	)
 	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")

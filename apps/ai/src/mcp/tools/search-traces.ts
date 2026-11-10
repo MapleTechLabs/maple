@@ -1,12 +1,12 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
 import { resolveAttributeScope } from "../lib/attribute-scope"
 import { emptyResultHints } from "../lib/empty-result-hints"
@@ -53,7 +53,6 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "traces" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: SearchTracesOutput,
 		hints: { readOnly: true },
 		phrases: ["Searching traces", "Looking through traces"],
 		handler: Effect.fn("McpTool.searchTraces")(function* (params) {

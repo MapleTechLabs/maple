@@ -2,10 +2,8 @@
 /**
  * Wire-level proof that OpenRouter calls are attributed and tagged.
  *
- * `LLMClient.prepare` is deliberately not used here: it returns the *protocol* body, which is built
- * before `http.body` is overlaid onto it, so it cannot see the tags at all. The only place the tags
- * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
- * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
+ * The only place the tags and the attribution headers exist together is the outgoing HTTP request,
+ * so the test swaps `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
@@ -51,10 +49,10 @@ interface CapturedRequest {
 }
 
 /**
- * Run one `LLM.generate` against a fetch that records the request instead of sending it.
+ * Run one `LanguageModel.generateText` against a fetch that records the request instead of sending it.
  *
- * `resolve` picks which resolver builds the model, because the lens stage differs from triage in its
- * defaults and the only honest way to check a default is to watch what leaves.
+ * `resolve` picks which resolver builds the model, because the review model differs from triage in
+ * its defaults and the only honest way to check a default is to watch what leaves.
  */
 const captureRequest = (
 	env: LlmSettings,
@@ -214,7 +212,7 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 })
 
 describe("reasoning effort", () => {
-	it.live("sends no reasoning field for triage unless one is configured", () =>
+	it.live("sends no reasoning field for triage", () =>
 		Effect.gen(function* () {
 			// This resolver serves chat, AI triage and the validator at once. Adding the knob must not
 			// retune three stages as a side effect.
@@ -224,11 +222,10 @@ describe("reasoning effort", () => {
 		}),
 	)
 
-	it.live("sends the configured triage effort", () =>
+	it.live("sends the security audit's high effort", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(
-				{ ...openRouterEnv, MAPLE_TRIAGE_REASONING_EFFORT: "high" },
-				tags,
+			const captured = yield* captureRequest(openRouterEnv, tags, (env, callTags) =>
+				resolveSecurityAuditModel(env, "discovery", callTags),
 			)
 
 			expect(captured.body).toMatchObject({ reasoning: { effort: "high" } })
@@ -309,11 +306,6 @@ describe("resolveReviewModel", () => {
 			expect(overridden.body.model).toBe("anthropic/claude-sonnet-5")
 		}),
 	)
-
-	it("reads its window from the table, never the triage overrides", () => {
-		const model = resolveReviewModel({ ...openRouterEnv, MAPLE_TRIAGE_MODEL_CONTEXT: "64000" })
-		expect(model.limits.context).toBe(1_000_000)
-	})
 
 	it("runs on the organization's pick ahead of the deployment override", () => {
 		const env = { ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "anthropic/claude-sonnet-5" }
@@ -411,31 +403,6 @@ describe("resolveTriageModel — context limits", () => {
 		})
 
 		expect(model.limits.context).toBe(128_000)
-	})
-
-	it("lets the environment override the table", () => {
-		const model = resolveTriageModel({
-			...openRouterEnv,
-			MAPLE_TRIAGE_MODEL_CONTEXT: "64000",
-			MAPLE_TRIAGE_MODEL_OUTPUT: "4000",
-		})
-
-		expect(model.limits.context).toBe(64_000)
-		expect(model.limits.output).toBe(4_000)
-	})
-
-	it("ignores an unparseable or nonsensical override rather than trusting it", () => {
-		// A zero or negative window would make every turn look overflowed on its first step.
-		// Model named for the same reason as above — the assertion is that the bad override is
-		// discarded in favour of the TABLE, not that the default happens to be this model.
-		for (const bad of ["", "not-a-number", "0", "-5", "1.5"]) {
-			const model = resolveTriageModel({
-				...openRouterEnv,
-				MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
-				MAPLE_TRIAGE_MODEL_CONTEXT: bad,
-			})
-			expect(model.limits.context).toBe(1_050_000)
-		}
 	})
 })
 

@@ -5,8 +5,6 @@
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
-	ApplyStatusPageConfigOutput,
-	GetStatusPageOutput,
 	StatusPageIncidentMutationOutput,
 	type StatusPageDetail,
 	type StatusPageIncidentRow,
@@ -31,7 +29,7 @@ import {
 	type StatusPageComponentId,
 	type StatusPageId,
 	type StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { isActiveIncident, overallStatus, pageFreshness } from "@maple/domain/status-page"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -43,7 +41,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -352,10 +350,7 @@ const renderPageList = (pages: ReadonlyArray<typeof StatusPageRow.Type>) => ({
 	),
 })
 
-const renderPageDetail = (
-	page: typeof StatusPageDetail.Type,
-	config: StatusPageConfig | undefined,
-) => ({
+const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPageConfig | undefined) => ({
 	title: `Status page: ${page.name}`,
 	notices: [
 		// No suggested call: every follow-up needs a public message only the user can word.
@@ -482,7 +477,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				"true adds the editable config document (needs `page`). Same document as GET /v2/status_pages/{id}/config",
 			),
 		}),
-		output: GetStatusPageOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Reading status pages"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
@@ -543,7 +537,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 			publish: publishParameter,
 		}),
-		output: StatusPageIncidentMutationOutput,
 		hints: MUTATION_HINTS,
 		phrases: ["Posting a status page update"],
 		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
@@ -681,7 +674,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		rejectUnknownKeys: true,
-		output: ApplyStatusPageConfigOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
 		phrases: ["Applying a status page config"],
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
@@ -704,7 +696,6 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				})
 				.pipe(Effect.mapError(toMcpError(tool)))
 			const audit = yield* AuditLogService
-			// Nothing written, nothing to audit.
 			if (hasStatusPageConfigChanges(changes)) {
 				const actor = yield* CurrentAuditActor
 				yield* audit.record({

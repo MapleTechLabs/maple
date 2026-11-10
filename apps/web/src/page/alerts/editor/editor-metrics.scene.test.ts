@@ -6,12 +6,9 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
-import { CaretMessage } from "../../kit/where-autocomplete"
-import { WhereFieldMessage } from "../../kit/where-field"
-import { MountWhereFieldCaret } from "../../kit/where-field-command"
 import type { PageContext } from "../../contract"
 import * as QueryPanel from "../../kit/query-builder/panel"
-import { NOW, ORG } from "../shared/test-rows"
+import { NOW, ORG } from "../../kit/alert-test-rows"
 import { init } from "./init"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -26,17 +23,10 @@ const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const view = withViewInputs(pageView, { context })()
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const DRAFT_ID = "6f1c2e3a-0000-4000-8000-000000000001"
-/** The page's mounts: the theme, the closed templates dialog and the where editor's caret. */
+/** The page's mounts: the theme and the closed templates dialog (the where clause opens as rows, no caret). */
 const mounted = () => [
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 	Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
-	// Resolved with the query panel's message: the page's submodel wraps it.
-	Mount.resolve<string, QueryPanel.Message>(
-		MountWhereFieldCaret,
-		QueryPanel.Message.GotWhereField({
-			message: WhereFieldMessage.GotCaret({ fieldId: DRAFT_ID, message: CaretMessage.BlurredEditor() }),
-		}),
-	),
 ]
 const comboMounted = () => Mount.resolve(Combobox.MountCombobox, Combobox.Message.CompletedMountCombobox())
 

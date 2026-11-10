@@ -1,3 +1,4 @@
+import { reloadSpin, readClock } from "@maple/views/data/timing"
 import {
 	DashboardDocument,
 	DashboardId,
@@ -6,7 +7,7 @@ import {
 	DashboardVariableSchema,
 	TimeRangeSchema,
 } from "@maple/domain/http"
-import { Clock, Duration, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Queue, Random, Result, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
 import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource } from "@maple/widgets/dashboard"
@@ -28,14 +29,11 @@ import { deriveDefaultWidgetTitle } from "../widget/drafts"
 import { Message } from "./message"
 import { LayoutChange } from "./model"
 import { ShareMessage } from "./share"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
 
-export const ReadClock = Command.define("ReadDashboardClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadDashboardClock", Message.CompletedReadClock)
 
 /** The chart code failed to load: a fresh page load is the only way to fetch it again. */
 export const ReloadPage = Command.define("ReloadDashboardPage", {
@@ -53,7 +51,7 @@ const widgetEndpointAttribute = (endpoint: string) => ({
 	"maple.dashboard.widget.endpoint": getWidgetServerFunction(endpoint) === undefined ? "unknown" : endpoint,
 })
 
-/** `widgetFetchAtom`: one fetch per request key, however many tiles share it. */
+/** One fetch per request key, however many tiles share it. */
 export const FetchWidget = Command.define("FetchDashboardWidget", {
 	args: {
 		key: Schema.String,
@@ -73,7 +71,7 @@ export const FetchWidget = Command.define("FetchDashboardWidget", {
 		),
 })
 
-/** A query variable's option list for the window (`variableOptionsAtomFamily`). */
+/** A query variable's option list for the window. */
 export const FetchVariableOptions = Command.define("FetchDashboardVariableOptions", {
 	args: {
 		name: Schema.String,
@@ -92,7 +90,7 @@ export const FetchVariableOptions = Command.define("FetchDashboardVariableOption
 
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
-/** `dashboardSharesAtom`: loaded means every widget menu offers "Embed chart". */
+/** Loaded means every widget menu offers "Embed chart". */
 export const FetchShares = Command.define("FetchDashboardShares", {
 	args: { dashboardId: Schema.String, seq: Schema.Number },
 	messages: [Message.GotShareMessage],
@@ -108,21 +106,13 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 					: [{ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }],
 			)
 		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				Message.GotShareMessage({ message: ShareMessage.CompletedFetchShares({ seq, result }) }),
 			),
 		),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteDashboardReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteDashboardReloadSpin", Message.CompletedReloadSpin)
 
 const toWriteMessage = <E, R>(effect: Effect.Effect<WriteSync, E, R>) =>
 	effect.pipe(
@@ -133,7 +123,7 @@ const toWriteMessage = <E, R>(effect: Effect.Effect<WriteSync, E, R>) =>
 
 const Target = { orgId: Schema.String, dashboardId: Schema.String }
 
-/** `updateDashboardTimeRange`: the picked range becomes the board's saved range. */
+/** The picked range becomes the board's saved range. */
 export const SaveTimeRange = Command.define("SaveDashboardTimeRange", {
 	args: { ...Target, timeRange: TimeRangeSchema },
 	messages: [Message.CompletedWrite],
@@ -147,7 +137,6 @@ export const SaveTimeRange = Command.define("SaveDashboardTimeRange", {
 		),
 })
 
-/** `updateDashboard(id, { name })` from the inline title. */
 export const RenameDashboard = Command.define("RenameDashboard", {
 	args: { ...Target, name: Schema.String },
 	messages: [Message.CompletedWrite],
@@ -172,7 +161,7 @@ export const RemoveWidget = Command.define("RemoveDashboardWidget", {
 		),
 })
 
-/** `cloneWidget`: the id is `generateId`'s, read here because it is the clock and `Math.random`. */
+/** The id is minted here because it reads the clock and `Math.random`. */
 export const CloneWidget = Command.define("CloneDashboardWidget", {
 	args: { ...Target, widgetId: Schema.String },
 	messages: [Message.CompletedWrite],
@@ -189,7 +178,7 @@ export const CloneWidget = Command.define("CloneDashboardWidget", {
 		}),
 })
 
-/** `updateWidgetLayouts`: one commit per finished drag or resize, only the changed boxes. */
+/** One commit per finished drag or resize, only the changed boxes. */
 export const UpdateWidgetLayouts = Command.define("UpdateDashboardWidgetLayouts", {
 	args: { ...Target, generation: Schema.Number, layouts: Schema.Array(LayoutChange) },
 	messages: [Message.CompletedLayoutWrite],
@@ -219,8 +208,6 @@ export const ExportDashboard = Command.define("ExportDashboardJson", {
 		),
 })
 
-// MOUNTS
-
 const HandleMessage = Schema.Union([
 	Message.PressedGrip,
 	Message.PressedResizeHandle,
@@ -244,9 +231,8 @@ const GRIP = ".widget-drag-handle"
 const GRIP_KEYS = new Set([" ", "Enter", "Escape", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"])
 
 /**
- * `DashboardGrid`'s `onPointerDown`, `onKeyDown` and `onBlur`. A primary press on a grip or resize
- * corner starts a gesture, default prevented so it neither selects text nor moves focus. Keys on a
- * grip drive the keyboard move; which keys it takes depends on whether a tile is picked up.
+ * A primary press on a grip or resize corner starts a gesture, default prevented so it neither selects
+ * text nor moves focus. Grip keys drive the keyboard move, by whether a tile is picked up.
  */
 export const WatchGridHandles = Mount.defineStream("WatchDashboardGridHandles", {
 	messages: [Message.PressedGrip, Message.PressedResizeHandle, Message.PressedGripKey, Message.BlurredGrip],
@@ -324,7 +310,7 @@ export const WatchGridHandles = Mount.defineStream("WatchDashboardGridHandles", 
 		),
 })
 
-/** `useContainerWidth`: the sections container's width in whole px, before first paint. */
+/** The sections container's width in whole px, before first paint. */
 export const MeasureGrid = Mount.defineStream("MeasureDashboardGrid", {
 	messages: [Message.MeasuredGrid],
 	execute: ({ element }) =>
@@ -353,15 +339,15 @@ export const MeasureGrid = Mount.defineStream("MeasureDashboardGrid", {
 
 const WIDTH_STEP_PX = 100
 
-/** `quantizeWidthPx`: the tile width on a 100 px grid, so a resize does not re-key every fetch. */
+/** The tile width on a 100 px grid, so a resize does not re-key every fetch. */
 const quantizeWidthPx = (widthPx: number): number | undefined =>
 	!Number.isFinite(widthPx) || widthPx <= 0
 		? undefined
 		: Math.max(WIDTH_STEP_PX, Math.floor(widthPx / WIDTH_STEP_PX) * WIDTH_STEP_PX)
 
 /**
- * `useInViewportSticky` + `useMeasuredWidthPx` on a tile's root: its quantized width now and on
- * every resize, that it came within 200 px of the viewport for 200 ms, and that it left again.
+ * A tile's quantized width now and on every resize, that it came within 200 px of the viewport for
+ * 200 ms, and that it left again.
  */
 export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 	args: { widgetId: Schema.String },
@@ -416,7 +402,7 @@ export const WatchWidget = Mount.defineStream("WatchDashboardWidget", {
 		),
 })
 
-/** `updateDashboardRefreshInterval`: in edit mode the picked cadence is the board's default. */
+/** In edit mode the picked cadence is the board's default. */
 export const SaveRefreshInterval = Command.define("SaveDashboardRefreshInterval", {
 	args: { ...Target, refreshIntervalSeconds: DashboardRefreshIntervalSeconds },
 	messages: [Message.CompletedWrite],
@@ -450,7 +436,7 @@ const pickedWidget = (pick: { readonly presetId: string | null; readonly chartId
 	}
 }
 
-/** `addWidget` from the picker: a new id, the type's default size, the next free slot. */
+/** A new id, the type's default size, the next free slot. */
 export const AddWidget = Command.define("AddDashboardWidget", {
 	args: {
 		...Target,
@@ -481,7 +467,7 @@ export const AddWidget = Command.define("AddDashboardWidget", {
 		}),
 })
 
-/** `autoLayoutWidgets`: every container re-flowed; an empty board is left as it is. */
+/** Every container re-flowed; an empty board is left as it is. */
 export const AutoLayout = Command.define("AutoLayoutDashboard", {
 	args: Target,
 	messages: [Message.CompletedWrite],
@@ -499,7 +485,6 @@ export const AutoLayout = Command.define("AutoLayoutDashboard", {
 		),
 })
 
-/** The toolbar's Tags: `updateDashboard(id, { tags })`. */
 export const SaveTags = Command.define("SaveDashboardViewTags", {
 	args: { ...Target, tags: Schema.Array(Schema.String) },
 	messages: [Message.CompletedWrite],
@@ -513,7 +498,6 @@ export const SaveTags = Command.define("SaveDashboardViewTags", {
 		),
 })
 
-/** `VariablesManagerDialog`'s save: `updateDashboardVariables(id, variables)`. */
 export const SaveVariables = Command.define("SaveDashboardVariables", {
 	args: { ...Target, variables: Schema.Array(DashboardVariableSchema) },
 	messages: [Message.CompletedWrite],
@@ -531,7 +515,6 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 const idsNeeded = (edit: SectionEdit): number =>
 	edit._tag === "AddSection" ? 2 : edit._tag === "AddTab" ? 1 : 0
 
-/** A group or tab write (`DashboardActionsProvider`'s section actions). */
 export const EditSections = Command.define("EditDashboardSections", {
 	args: { ...Target, edit: SectionEdit },
 	messages: [Message.CompletedWrite],

@@ -1,5 +1,5 @@
 import { getMetricsAggregations } from "@maple/query-engine/query-builder"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as ComboboxView from "@maple/views/ui/combobox-view"
@@ -14,12 +14,13 @@ import { QUERY_BUILDER_SPACE_AGGREGATIONS } from "@maple/query-model"
 import { groupBySelectionOf, type QueryDraft } from "./draft"
 import { Message, metricPickerIdOf, type Model } from "./panel"
 import { type MetricOption, metricValueOf } from "./metric-options"
-import { panelSelect, textInput, whereClauseEditor } from "./parts"
+import { panelSelect } from "./panel-select"
+import { textInput, whereClauseEditor } from "./parts"
 import { Array as Arr, Schema, String as Str, Option } from "effect"
 
-// `MetricsBody`: the metric picker, the where clause, and the two aggregation stages:
-// each series reduced within the interval, then the series combined by any number of fields.
-// The where editor's values are scoped to the picked metric (`useMetricScopedAutocomplete`).
+// A metrics query's body: the metric picker, the where clause, and the two aggregation stages: each
+// series reduced within the interval, then the series combined by any number of fields. The where
+// editor's values are scoped to the picked metric.
 
 /** A metric's own keys: data-point labels and resource attributes. */
 export const MetricKeysSchema = Schema.Struct({
@@ -74,7 +75,7 @@ const picker = (
 		viewInputs: {
 			items: Arr.map(listed, (option) => option.value),
 			placeholder: "Search metrics…",
-			// `MetricOptionsEmpty` replaces the list only when nothing is listed.
+			// The empty message replaces the list only when nothing is listed.
 			emptyText:
 				listed.length > 0
 					? ""

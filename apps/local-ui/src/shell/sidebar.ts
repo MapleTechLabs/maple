@@ -25,7 +25,7 @@ import { localLockup } from "./lockup"
 import { activeSection, NAV_GROUPS } from "./nav"
 import { Array as Arr } from "effect"
 
-/** `AppSidebar`'s children, shared by the desktop rail and the mobile sheet. */
+/** The sidebar's children, shared by the desktop rail and the mobile sheet. */
 const sidebarRegions = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -84,11 +84,11 @@ const sidebarRegions = (
 	]
 }
 
-/** `AppSidebar` above `md`; `linkQuery` is the context every section link carries (range, service filter). */
+/** The sidebar above `md`; `linkQuery` is the context every section link carries (range, service filter). */
 export const appSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
 	sidebarDesktop(h, model.isSidebarOpen ? "expanded" : "collapsed", sidebarRegions(h, model, linkQuery))
 
-/** `<Sidebar>` below `md`: the same children in the kit's left sheet. */
+/** The sidebar below `md`: the same children in the kit's left sheet. */
 export const mobileSidebar = (h: HtmlBuilder<Message>, model: Model, linkQuery: URLSearchParams): Html =>
 	sidebarMobile(
 		h,

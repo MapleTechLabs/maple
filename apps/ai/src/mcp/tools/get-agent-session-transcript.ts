@@ -15,7 +15,7 @@ import {
 import type { AiSessionSpan } from "@maple/domain/http"
 import { AgentTranscriptRow, GetAgentSessionTranscriptOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, tableCell, truncate } from "../lib/format"
 import {
 	clipPayload,
@@ -426,7 +426,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 			limit: P.limit({ default: 120, max: 500, noun: "steps" }),
 			offset: P.offset({ max: 50_000 }),
 		}),
-		output: GetAgentSessionTranscriptOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading an agent session"],
 		handler: Effect.fn("McpTool.getAgentSessionTranscript")(
@@ -550,10 +549,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 		render: (output) => renderTranscript(output),
 	})
 }
-
-/* -------------------------------------------------------------------------- */
-/* Rendering                                                                  */
-/* -------------------------------------------------------------------------- */
 
 const at = (row: Row): string => (row.offsetMs === undefined ? "" : `[${offsetLabel(row.offsetMs)}] `)
 const indent = (row: Row): string => Str.repeat(row.depth)("  ")

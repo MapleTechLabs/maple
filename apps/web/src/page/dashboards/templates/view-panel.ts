@@ -4,7 +4,7 @@ import type { VariableValues } from "@maple/query-engine"
 import { pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { CANONICAL_COLS, colsForWidth } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
+import { CANONICAL_COLS, colsForWidth } from "../kit/grid-breakpoints"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -38,8 +38,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `TemplateDetailPanel` and `TemplateLivePreview`: a template's details and live preview.
-
 type H = HtmlBuilder<Message>
 
 const IDLE: FieldState = {
@@ -56,7 +54,7 @@ const paramIds = (key: string): FieldIds => ({
 	error: `template-param-${key}-error`,
 })
 
-/** `PanelRestState`: nothing selected yet. */
+/** Nothing selected yet. */
 export const panelRestState = (h: H): Html =>
 	empty(
 		h,
@@ -86,7 +84,7 @@ type PreviewWidget = DashboardDocument["widgets"][number]
 const heightFor = (widget: PreviewWidget): number =>
 	Math.max(widget.layout.h * ROW_HEIGHT, MIN_HEIGHT.get(widget.visualization) ?? MIN_HEIGHT_DEFAULT)
 
-/** `PreviewSkeleton`: a row of stats over a pair of charts at their real heights. */
+/** A row of stats over a pair of charts at their real heights. */
 const previewSkeleton = (h: H): Html => {
 	const statHeight = `${MIN_HEIGHT.get("stat") ?? 0}px`
 	return h.div(
@@ -100,7 +98,7 @@ const previewSkeleton = (h: H): Html => {
 	)
 }
 
-/** `TemplateLivePreview`: the template's widgets drawn over the org's own data. */
+/** The template's widgets drawn over the org's own data. */
 const livePreview = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.match(model.preview.data, {
 		// A required parameter still empty holds the preview back: say what it waits on.
@@ -198,7 +196,7 @@ const previewBody = (h: H, model: Model, timeZone: string, variables: VariableVa
 	])
 }
 
-/** `RequirementBlock`: what the org needs before the widgets fill in. */
+/** What the org needs before the widgets fill in. */
 const requirementBlock = (
 	h: H,
 	template: V2DashboardTemplate,
@@ -383,10 +381,17 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 			? [
 					button(
 						h,
-						{ size: "sm", isDisabled: missing.length > 0, isLoading: model.isCreating, attributes: [h.OnClick(create)] },
+						{
+							size: "sm",
+							isDisabled: missing.length > 0,
+							isLoading: model.isCreating,
+							attributes: [h.OnClick(create)],
+						},
 						[
 							"Create dashboard",
-							icon(h, "ArrowRightIcon", { attributes: [h.DataAttribute("icon", "inline-end")] }),
+							icon(h, "ArrowRightIcon", {
+								attributes: [h.DataAttribute("icon", "inline-end")],
+							}),
 						],
 					),
 				]
@@ -410,7 +415,6 @@ const createRow = (h: H, model: Model, template: V2DashboardTemplate, isReady: b
 	})
 }
 
-/** `TemplateDetailPanel`. */
 export const detailPanel = (
 	h: H,
 	model: Model,

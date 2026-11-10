@@ -1,13 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { applySectionEdit, SectionEdit } from "./section-edit"
-import { EditSections, FetchWidget, UpdateWidgetLayouts } from "./command"
+import { EditSections, UpdateWidgetLayouts } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { init, update } from "./update"
 import { canvasGridOf } from "./grid"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -174,20 +174,6 @@ describe("dashboard groups", () => {
 		).model
 		expect(opened.pickerTarget).toEqual({ sectionId: "s1", tabId: "a" })
 		expect(pageUpdate(opened, Message.ClickedAddWidget()).model.pickerTarget).toBeNull()
-	})
-
-	test("a stat's sparkline series is asked for only once the stat has its value", () => {
-		const route = { dashboardId: "dash_grouped", search: {} }
-		const model = routeChanged(ready(), route, context).model
-		const revealed = pageUpdate(model, Message.RevealedWidget({ widgetId: "root" }))
-		expect(names(revealed.commands)).toEqual([FetchWidget.name])
-		expect(revealed.model.widgets.root?.sparkGate ?? null).toBeNull()
-		const key = Rec.keys(revealed.model.requests)[0] ?? ""
-		const answered = pageUpdate(
-			revealed.model,
-			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [] }) }),
-		)
-		expect(answered.model.requests[key]).toBeDefined()
 	})
 
 	test("deleting a tab moves its widgets to the first remaining tab, below what it holds", () => {

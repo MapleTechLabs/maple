@@ -1,12 +1,14 @@
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import { getUserLogs, getUserOverview, getUserTraces, listUserGroups } from "@maple/web-data/warehouse/users"
-import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
+import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
 import { resolveUsersWindow } from "../window"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { GroupStatsData, LogsData, OverviewData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
@@ -77,11 +79,7 @@ export const FetchOverview = Command.define("FetchUserOverview", {
 					activity: activity.activity,
 				},
 			})),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchOverview({ key, result }))),
 })
 
 /** The user's group over the window and the org pin: its users and their totals, for the rail. */
@@ -106,11 +104,7 @@ export const FetchGroupStats = Command.define("FetchUserGroupStats", {
 					),
 				}),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchGroupStats({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchGroupStats({ key, result }))),
 })
 
 export const FetchTraces = Command.define("FetchUserTraces", {
@@ -120,11 +114,7 @@ export const FetchTraces = Command.define("FetchUserTraces", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.userTraces, schema: TracesData },
 			Effect.map(getUserTraces({ data }), (response): TracesData => ({ traces: response.traces })),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTraces({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchTraces({ key, result }))),
 })
 
 export const FetchLogs = Command.define("FetchUserLogs", {
@@ -134,16 +124,7 @@ export const FetchLogs = Command.define("FetchUserLogs", {
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.userLogs, schema: LogsData },
 			Effect.map(getUserLogs({ data }), (response): LogsData => ({ logs: response.logs })),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchLogs({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchLogs({ key, result }))),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteUserReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteUserReloadSpin", Message.CompletedReloadSpin)

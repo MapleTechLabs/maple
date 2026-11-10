@@ -4,12 +4,7 @@
  * the REST routes, since a monitor makes Maple request an operator-chosen host on a schedule.
  */
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import {
-	DeleteUptimeMonitorOutput,
-	ListUptimeMonitorsOutput,
-	UptimeMonitorMutationOutput,
-	type UptimeMonitorRow,
-} from "@maple/domain/mcp-outputs"
+import { type UptimeMonitorRow } from "@maple/domain/mcp-outputs"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import {
 	UptimeIntervalSeconds,
@@ -17,12 +12,12 @@ import {
 	UptimeMonitorStatus,
 	type AlertDestinationId,
 	type OrgId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
 import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
@@ -261,7 +256,6 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			service: P.service("Only monitors linked to this service (exact `service.name`)"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListUptimeMonitorsOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		phrases: ["Checking uptime monitors"],
 		handler: Effect.fn("McpTool.listUptimeMonitors")(function* (params) {
@@ -363,7 +357,6 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
-		output: UptimeMonitorMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		phrases: ["Adding an uptime monitor"],
 		handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
@@ -422,7 +415,6 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
-		output: UptimeMonitorMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Updating an uptime monitor"],
 		handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
@@ -479,7 +471,6 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			monitor: P.text("The monitor's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteUptimeMonitorOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an uptime monitor"],
 		handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {

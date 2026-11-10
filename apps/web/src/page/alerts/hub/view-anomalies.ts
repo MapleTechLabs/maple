@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument } from "@maple/domain/http"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
@@ -20,12 +20,9 @@ import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { listToolbar } from "../../kit/list-toolbar"
 import { severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
-import { isoMs } from "../shared/time"
+import { incidentHref } from "../../kit/alert-links"
 import { inboxTab, type InboxAcknowledge } from "./view-inbox"
 import { Message, type InboxSignal, type IncidentStatusFilter } from "./message"
-
-// The Inbox's signal view: anomaly incidents alone, open, resolved or both (what `/anomalies` was).
 
 type H = HtmlBuilder<Message>
 
@@ -38,8 +35,24 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: IncidentStatusFilter; label: string
 	{ value: "all", label: "All" },
 ]
 
-/** The Inbox's filter row: the Anomalies view toggle and, inside it, the status and service. */
+/**
+ * The Inbox's filter row: the Anomalies view toggle and, inside it, the status and service. An
+ * org with no anomaly in the window has no row at all, and a zero count is left off the toggle.
+ */
 export const inboxFilters = (
+	h: H,
+	options: Readonly<{
+		signal: InboxSignal
+		status: IncidentStatusFilter
+		serviceName: string | undefined
+		openAnomalies: number
+		/** Any anomaly incident on hand, open or resolved: the view has something to show. */
+		hasAnomalies: boolean
+	}>,
+): ReadonlyArray<Html> =>
+	options.signal !== "anomaly" && !options.hasAnomalies ? [] : [inboxFilterRow(h, options)]
+
+const inboxFilterRow = (
 	h: H,
 	options: Readonly<{
 		signal: InboxSignal
@@ -58,7 +71,7 @@ export const inboxFilters = (
 					onClick: Message.ClickedInboxSignal({
 						signal: options.signal === "anomaly" ? null : "anomaly",
 					}),
-					count: String(options.openAnomalies),
+					...(options.openAnomalies > 0 ? { count: String(options.openAnomalies) } : undefined),
 				},
 				["Anomalies"],
 			),
@@ -106,7 +119,7 @@ const anomaliesEmpty = (h: H, status: IncidentStatusFilter, serviceName: string 
 
 const byResolvedDesc = Order.flip(
 	Order.mapInput(Order.Number, (incident: AlertIncidentDocument) =>
-		isoMs(incident.resolvedAt ?? incident.lastTriggeredAt),
+		toEpochMs(incident.resolvedAt ?? incident.lastTriggeredAt),
 	),
 )
 
@@ -133,7 +146,7 @@ const resolvedRow = (h: H, incident: AlertIncidentDocument, now: number): Html =
 			],
 		),
 		typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-			incident.resolvedAt === null ? "" : formatRelativeFrom(isoMs(incident.resolvedAt), now),
+			incident.resolvedAt === null ? "" : formatRelativeFrom(toEpochMs(incident.resolvedAt), now),
 		]),
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt),

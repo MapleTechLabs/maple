@@ -15,14 +15,9 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import {
-	chartBucketSeconds,
-	DEFAULT_TOOL_PRESET,
-	type ToolSeriesPoint,
-	type TotalsResult,
-} from "../tools-kit/model"
-import { scopeRow } from "../tools-kit/scope-row"
-import { facetSelect, toolFilterToolbar } from "../tools-kit/toolbar"
+import { DEFAULT_TOOL_PRESET, type ToolSeriesPoint, type TotalsResult } from "../../kit/tools/model"
+import { scopeRow } from "../../kit/tools/scope-row"
+import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import { SESSIONS_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -33,6 +28,7 @@ import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalView from "./view-error-modal"
 import { sessionsPanel } from "./view-sessions"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type H = HtmlBuilder<Message>
 
@@ -187,7 +183,7 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, 
 						value.data,
 						range.startMs,
 						range.endMs,
-						chartBucketSeconds(range.startMs, range.endMs),
+						chartBucketSecondsBetween(range.startMs, range.endMs),
 					)
 				: value.data,
 	})
@@ -230,7 +226,7 @@ const loadedView = (h: H, model: Model, totals: TotalsResult, timeZone: string, 
 	])
 }
 
-/** `ErrorModal`: mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
+/** Mounted from the row, so a stale `?error=` the window no longer holds opens nothing. */
 const errorModalView = (
 	h: H,
 	model: Model,
@@ -276,7 +272,7 @@ const loadingView = (h: H): Html =>
 		skeleton(h, "h-64"),
 	])
 
-/** `ResultView` over the totals read; the lab draws it without the route's time controls. */
+/** The page over the totals read; the lab draws it without the route's time controls. */
 export const toolDetailBody = (
 	h: H,
 	model: Model,

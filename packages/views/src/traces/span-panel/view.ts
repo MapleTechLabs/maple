@@ -38,7 +38,7 @@ type H = HtmlBuilder<Message>
 
 const epochOf = (value: string): number => new Date(warehouseDateTimeToIso(value)).getTime()
 
-/** `SpanPositionBar`: the span's window inside the trace's wall-clock track. */
+/** The span's window inside the trace's wall-clock track. */
 const positionBar = (h: H, model: Model, color: string): Html | null => {
 	const offsetMs = epochOf(model.span.startTime) - epochOf(model.traceStartTime)
 	const total = model.totalDurationMs
@@ -200,7 +200,7 @@ const loadedOr = (
 export const resourceAttributesOf = (model: Model): Readonly<Record<string, string>> =>
 	loadedOr(model, (detail) => detail.resourceAttributes, model.span.resourceAttributes)
 
-/** The root `<SpanDetailPanel />` as the page's ResizablePanel holds it. */
+/** The span panel's root, as the page's resizable panel holds it. */
 export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inputs, h) => {
 	const { span } = model
 	const serviceColor = getServiceColor(span.serviceName)

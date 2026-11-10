@@ -1,6 +1,6 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { type FrameworkId, sdkSnippets } from "../../components/quick-start/sdk-snippets"
+import { type FrameworkId, sdkSnippets } from "./sdk-snippets"
 import { NO_KEYS, promptKey, serverKey, type SetupKeys, setupBlocks } from "./guided-setup"
 
 const KEYS = { privateKey: "maple_sk_secret", publicKey: "maple_pk_public" }

@@ -22,7 +22,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
@@ -1159,8 +1159,8 @@ describe("deployRequestTimelineRows", () => {
 
 describe("PlanetScaleService pagination truncation", () => {
 	/**
-	 * Serve `total` synthetic items 100 per page so `fetchAllPages` sees ten
-	 * FULL pages and stops at its ceiling with no short page — a truncated
+	 * Serve `total` synthetic items 100 per page so `collectPages` sees ten
+	 * FULL pages and stops at its ceiling with no short page: a truncated
 	 * listing. Everything else behaves like `stubApi`.
 	 */
 	const stubTruncated = (options: {

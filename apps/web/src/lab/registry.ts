@@ -65,7 +65,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:
-			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence dialog (`?state=`).",
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel empty, picking a time and filled in (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -89,7 +89,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/escalation",
 		title: "Escalation chains",
 		description:
-			"The Routing tab's escalation chains empty and populated, the chain dialog new, editing, invalid and failing, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+			"The Routing tab's escalation chains empty and populated, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation-editor",
+		title: "Escalation chain editor",
+		description:
+			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only and with a long chain (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -452,6 +460,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/condition-builder",
+		title: "Condition builder",
+		description:
+			"The query panel's where clause as field, operator and value rows: empty, populated, a clause the rows can't show, and text mode.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/rule-editor",
+		title: "Rule editor",
+		description:
+			"The alert rule editor over fixture rows: a saved error rate rule (?variant=populated), a blank new rule (new) and a scoped anomaly rule (anomaly). ?theme=light|dark.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/time-range",
 		title: "Time range picker",
 		description:
@@ -504,6 +528,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Kit: navigation",
 		description:
 			"The sidebar expanded and collapsed with groups, badges and sub menus, resizable panels and the navigation menu.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/shell",
+		title: "Shell states",
+		description:
+			"The real sidebar with foldable groups and the on-call pill's three states, and a right sheet held in ?sheet= with a demo form.",
 		kind: "lab",
 		session: "none",
 	},

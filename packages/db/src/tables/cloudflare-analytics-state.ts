@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /** Why a connection sits out polling: ingest refused its metrics, or its first GraphQL call was rate limited. */

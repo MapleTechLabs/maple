@@ -1,4 +1,4 @@
-import type { GcpInfraNotice } from "../../../../components/infra/gcp/tabs"
+import type { GcpInfraNotice } from "../tabs"
 import type { Html } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -7,8 +7,6 @@ import { icon } from "@maple/views/ui/icon"
 import { spinner } from "@maple/views/ui/spinner"
 import { gcpMessage } from "../gcp-message"
 import type { H } from "./view-rows"
-
-// `GcpNotice`: what the connections say, above the lists.
 
 const integration = (h: H, label: string): Html =>
 	alertAction(h, [

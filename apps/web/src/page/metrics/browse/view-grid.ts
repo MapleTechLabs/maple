@@ -10,7 +10,8 @@ import { badge } from "@maple/views/ui/display"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { METRIC_TYPE_COLORS, metricTypeBadge, SPARKLINE_METRIC_TYPES } from "../shared"
+import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/views/ui/metric-type"
+import { SPARKLINE_METRIC_TYPES } from "../shared"
 import {
 	entryKey,
 	gridPages,
@@ -25,8 +26,6 @@ import { Message } from "./message"
 import type { Model, SparklinePoint } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// The metric preview grid and its cards.
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +44,7 @@ type PageSparklines = Readonly<{
 	failedTypes: ReadonlySet<string>
 }>
 
-/** `usePageSparklines`: one query per metric type on the page, folded into points by metric. */
+/** One query per metric type on the page, folded into points by metric. */
 const pageSparklines = (
 	model: Model,
 	orgId: string,

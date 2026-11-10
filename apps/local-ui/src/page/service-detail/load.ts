@@ -37,7 +37,7 @@ export const topSpanNames = (model: Model): ReadonlyArray<string> =>
 
 /**
  * Requests every query whose key the window, the overview's first-seen time or the top operations
- * changed. `forced` refetches those slots in place, as `invalidateQueries` or a Retry does;
+ * changed. `forced` refetches those slots in place, as a refresh or a Retry does;
  * `revalidated` fetches slots showing a stale cached answer, whose fetch has not started.
  */
 export const load = (
@@ -73,7 +73,7 @@ export const load = (
 					: requestKeepingFailure(slot, keys[name], forced.includes(name) ? "Refresh" : "Load")
 			const overview = requested(model.overview, "overview")
 			const operations = requested(model.operations, "operations")
-			// `skipToken` while no operation is known: nothing to chart.
+			// No operation known yet: nothing to chart.
 			const timeseries =
 				spanNames.length === 0 ? Option.none() : requested(model.timeseries, "timeseries")
 			const golden = requested(model.golden, "golden")

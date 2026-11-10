@@ -1,6 +1,6 @@
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { beltInk, dim, fade, type InkPalette } from "../../../components/service-map/three/appearance"
-import { beltGeometry, type FactoryLink } from "../../../components/service-map/three/factory-routing"
+import { beltInk, dim, fade, type InkPalette } from "./appearance"
+import { beltGeometry, type FactoryLink } from "./factory-routing"
 import * as THREE from "three"
 import {
 	type Child,

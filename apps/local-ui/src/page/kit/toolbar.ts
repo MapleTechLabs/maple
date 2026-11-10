@@ -1,5 +1,6 @@
 import { TIME_RANGES } from "../../lib/time"
 import { formatNumber } from "@maple/ui/lib/format"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { icon } from "@maple/views/ui/icon"
@@ -12,7 +13,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// packages/ui/src/components/toolbar.tsx.
+// The page toolbar: stats, refresh, time range and search.
 
 type Children = ReadonlyArray<Html | null>
 const present = (children: Children): ReadonlyArray<Html> => Arr.filter(children, (child) => child !== null)
@@ -63,7 +64,7 @@ export const toolbarStat = <M>(
 	)
 
 /**
- * apps/local-ui's `RefreshButton`: the "New data" pill once the server took telemetry after the
+ * The "New data" pill once the server took telemetry after the
  * list loaded, then the shared reload button, disabled and spinning while the refresh runs.
  */
 export const refreshButton = <M>(
@@ -94,19 +95,7 @@ export const refreshButton = <M>(
 		}),
 	])
 
-const RANGE_LABELS: ReadonlyMap<string, string> = new Map([
-	["5m", "Last 5 minutes"],
-	["15m", "Last 15 minutes"],
-	["30m", "Last 30 minutes"],
-	["1h", "Last 1 hour"],
-	["6h", "Last 6 hours"],
-	["12h", "Last 12 hours"],
-	["24h", "Last 24 hours"],
-	["7d", "Last 7 days"],
-	["30d", "Last 30 days"],
-])
-
-/** `TimeRangeSelect` bound to local mode's presets. */
+/** A time range select bound to local mode's presets. */
 export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (next: string) => M): Html =>
 	hstack(h, { gap: "1.5" }, [
 		icon(h, "ClockIcon", {
@@ -120,9 +109,7 @@ export const timeRangeSelect = <M>(h: HtmlBuilder<M>, value: string, onChange: (
 				defaultValue: value,
 				attributes: [h.AriaLabel("Time range"), h.OnChange(onChange)],
 			},
-			Arr.map(TIME_RANGES, (range) =>
-				nativeOption(range.key, RANGE_LABELS.get(range.key) ?? range.label),
-			),
+			Arr.map(TIME_RANGES, (range) => nativeOption(range.key, presetLabel(range.key))),
 		),
 	])
 

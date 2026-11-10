@@ -27,7 +27,6 @@ const answered = (model: Model, reviews: number, authors: ReadonlyArray<string> 
 		}),
 	).model
 
-/** Search changed: the page re-resolves its window, then reads. */
 /** A filter change reads under the kept window; it does not resolve the window again. */
 const navigated = (model: Model, search: Search) => routeChanged(model, { search }, context)
 

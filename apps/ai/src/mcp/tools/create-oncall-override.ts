@@ -2,9 +2,8 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import { OnCallOverrideCreateRequest } from "@maple/domain/http"
-import { OnCallOverrideMutationOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	createOverrideErrors,
 	deleteScheduleErrors,
@@ -34,7 +33,6 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 			starts_at: timestamp("When the cover starts"),
 			ends_at: timestamp("When the cover ends"),
 		}),
-		output: OnCallOverrideMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating an on-call override"],
 		handler: Effect.fn("McpTool.createOnCallOverride")(function* (params) {

@@ -15,8 +15,10 @@ const HEIGHT = 28
 /** Keeps the stroke inside the box at the extremes. */
 const PAD = 2
 
-/** Each unbroken run of points as `[x, y]` in a 100 x 28 box, x by timestamp across the window. */
-/** `floor` pins the bottom of the scale (0 for a share or a count), so noise stays small. */
+/**
+ * Each unbroken run of points as `[x, y]` in a 100 x 28 box, x by timestamp across the window.
+ * `floor` pins the bottom of the scale (0 for a share or a count), so noise stays small.
+ */
 export const sparkSegments = (
 	points: ReadonlyArray<SparkPoint>,
 	window: SparkWindow,

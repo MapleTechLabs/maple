@@ -16,8 +16,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The transcript's people and prompts: `UserBlock`, `SystemBlock`, `ThinkingBlock`.
-
 type H = HtmlBuilder<Message>
 
 /** The rendered/raw switch of a message row, keyed `${rowKey}:raw`. */

@@ -373,7 +373,7 @@ one product. Observability is one lens of it, with its
 - **Context.** One `pr_context` call: commits, what people and other bots already said (the App's
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
-  related files, in parallel (`apps/ai/src/chat/review-fanout.ts`). Each group of up to 12 files
+  related files, in parallel (`apps/ai/src/chat/review/fanout.ts`). Each group of up to 12 files
   runs a child `pr-review-worker` agent through `@yielded/agent/subagent` `Subagent`: the parent's
   own read-only toolkit (the grant is exactly those tools, depth one), 100 calls and 4 minutes
   each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
@@ -472,9 +472,8 @@ name fails the test until the cases it touches are re-snapshotted.
 ### Learning from feedback
 
 - Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
-  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small` unless
-  `MAPLE_EMBEDDING_MODEL` says otherwise) into `pr_review_finding_embeddings`, keyed by finding and
-  stamped with the model. Vectors from different models are never compared.
+  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small`) into
+  `pr_review_finding_embeddings`, keyed by finding and stamped with the model. Vectors from different models are never compared.
 - A stored finding is negative when dismissed or when 👎 outnumber 👍; positive when 👍 outnumber
   👎 or a later head fixed it; otherwise it does not vote.
 - In `submit_review`, after ignored paths, lenses and repeats, each new finding is compared with the

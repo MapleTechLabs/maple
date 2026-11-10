@@ -6,8 +6,8 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `@maple/backend/sandbox/contract` has its own
- * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
+ * The `SandboxRun*` names are deliberate: `@maple/backend/services/sandbox/contract` has its own
+ * `SandboxExited` and friends, and both sets meet in `CloudflareRepoSandbox`. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -89,11 +89,6 @@ export const SANDBOX_CHECKOUT_GRACE_MINUTES = 15
 /** Bounded so a container's diagnostic can never overflow the agent contract's own limits. */
 const BoundedMessage = Schema.String.check(Schema.isMaxLength(4 * 1024))
 
-/**
- * How the sandbox obtains the repository. `cloneUrl` carries a short-lived,
- * repository-scoped credential and is used once; `remoteUrl` replaces it in the
- * checkout's git config immediately afterwards, so no token is left on disk.
- */
 /** A commit, as the only thing the sandbox will check out. */
 export const SandboxCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/u))
 

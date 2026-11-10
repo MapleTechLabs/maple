@@ -1,34 +1,19 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { getMetricSparklines, getMetricsSummary, listMetrics } from "@maple/web-data/warehouse/metrics"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { settleTo, settled } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveMetricsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveMetricsWindow", Message.CompletedResolveWindow)
 
 const MetricType = Schema.Literals(QUERY_BUILDER_METRIC_TYPES)
 
-/** `listMetricsResultAtom`'s input: what the grid and the table send. */
+/** The metrics list input: what the grid and the table send. */
 export const ListInput = Schema.Struct({
 	search: Schema.optional(Schema.String),
 	metricType: Schema.optional(MetricType),
@@ -40,8 +25,8 @@ export type ListInput = typeof ListInput.Type
 
 const fetchList = (input: ListInput) =>
 	listMetrics({ data: input }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.data),
+		settled,
 	)
 
 export const FetchCatalog = Command.define("FetchMetricsCatalog", {
@@ -63,9 +48,8 @@ export const FetchSummary = Command.define("FetchMetricsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, window }) =>
 		getMetricsSummary({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -82,27 +66,20 @@ export const FetchSparklines = Command.define("FetchMetricSparklines", {
 	messages: [Message.CompletedFetchSparklines],
 	execute: ({ slot, key, input }) =>
 		getMetricSparklines({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSparklines({ slot, key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSparklines({ slot, key, result })),
 		),
 })
 
-/** `ToolbarSearch`'s `useDebouncedCallback(..., 300)`. */
+/** The toolbar search's debounce. */
 export const DebounceSearch = Command.define("DebounceMetricsSearch", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.CompletedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.CompletedSearchDebounce({ generation })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteMetricsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMetricsReloadSpin", Message.CompletedReloadSpin)
 
 export const LoadSignalPresence = Command.define("LoadMetricsSignalPresence", {
 	args: { orgId: Schema.String },

@@ -19,6 +19,7 @@ import {
 	ScrapeTargetUpstreamError,
 	ScrapeTargetValidationError,
 	type CreateScrapeTargetRequest,
+	type ScrapeResultReport,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
@@ -49,7 +50,7 @@ import { sealSecret, secretKeyringFromEnv, type SecretKeyring } from "@maple/bac
 import { scrapeTargetCredentialsSlot } from "@maple/backend/platform/secret-slots"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { msToSqlTimestamp } from "@maple/backend/platform/time"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -79,21 +80,16 @@ import {
 	type PollOutcome,
 	pollReportDue,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import type { MapleDb } from "@maple/db/client"
-import { scrapeResource } from "@maple/domain/integration-inventory"
-import type { SourceId } from "@maple/domain/primitives"
+import { scrapeResource } from "./integration-inventory"
+import type { SourceId } from "@maple/primitives"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
 
-/** One scrape attempt as reported by the scraper loop or a manual probe. */
-export interface ScrapeResultReport {
-	readonly targetId: ScrapeTargetId
-	readonly scrapedAt: number
-	readonly error: string | null
-	readonly subTargetKey?: string | null
-}
+/** One scrape attempt as reported by the scraper loop or a manual probe: what the row converges on. */
+export type ScrapeResult = Pick<ScrapeResultReport, "targetId" | "scrapedAt" | "error" | "subTargetKey">
 
 /**
  * Row state one target converges on after applying its results in order.
@@ -109,7 +105,7 @@ export interface ScrapeTargetSummary {
 
 const applyScrapeResult = (
 	previous: ScrapeTargetSummary | undefined,
-	result: ScrapeResultReport,
+	result: ScrapeResult,
 ): ScrapeTargetSummary => {
 	// Discovered sub-targets roll up: any branch failure surfaces branch-prefixed.
 	// Per-branch health stays visible in check history via the per-branch `instance`.
@@ -134,7 +130,7 @@ const applyScrapeResult = (
  * old per-result writes cost ~95k UPDATEs a day to persist ~8k outcomes.
  */
 export const summarizeScrapeResults = (
-	results: ReadonlyArray<ScrapeResultReport>,
+	results: ReadonlyArray<ScrapeResult>,
 ): ReadonlyMap<ScrapeTargetId, ScrapeTargetSummary> =>
 	new Map(
 		Arr.map(
@@ -284,10 +280,10 @@ export interface ScrapeTargetsServiceApi {
 /** A probe parses at most this much of a target's body; the scraper itself reads up to 32 MiB. */
 const PROBE_MAX_BODY_BYTES = 4 * 1024 * 1024
 
-const toPersistenceError = (error: unknown) =>
-	new ScrapeTargetPersistenceError({
-		message: error instanceof Error ? error.message : "Scrape target persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	ScrapeTargetPersistenceError,
+	"Scrape target persistence failed",
+)
 
 const toEncryptionError = (message: string) => new ScrapeTargetEncryptionError({ message })
 

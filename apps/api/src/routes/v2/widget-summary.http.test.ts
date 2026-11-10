@@ -8,12 +8,12 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { QueryEngineExecuteResponse } from "@maple/query-engine"
+import { QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -29,14 +29,9 @@ import {
 } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { HttpV2WidgetSummaryLive } from "./widget-summary.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const createdDbs: TestDb[] = []
@@ -170,8 +165,7 @@ const makeHarness = (options: {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	// Provided ahead of `ConfigResourceServiceStubsLayer`, whose issue read
-	// models all `die` — this suite is the one that actually calls them.
+	// Functional issue read models: this suite is the one that actually calls them.
 	const readsLive = Layer.mergeAll(
 		Layer.succeed(WarehouseQueryService, options.warehouse ?? warehouseStub),
 		Layer.succeed(QueryEngineService, options.queryEngine ?? seriesEngine),
@@ -188,13 +182,14 @@ const makeHarness = (options: {
 		} as ErrorIssueReadModelsService),
 	)
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.widgetSummary)).pipe(
+		Layer.provide(
+			HttpV2WidgetSummaryLive.pipe(
+				Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make)),
+			),
+		),
 		Layer.provide(readsLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

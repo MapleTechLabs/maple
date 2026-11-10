@@ -35,9 +35,9 @@ only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CL
   of the scroll area, status or Back on the left, buttons on the right, primary last. The settings
   `saveBar` is an `actionBar` that shows while edits are unsaved. A hand-built sticky bottom bar is
   flagged (`maple/no-handrolled-kit-look`).
-- A side sheet's width is its `size`, picked by what it holds: `default` a form or filters,
-  `detail` a peek at one item, `wide` a log, review or guide, `full` a trace waterfall. Never a
-  `max-w-*` in its className (`maple/sheet-size`).
+- A side sheet's width is its `size`, picked by what it holds: `default` a filter list or a few
+  fields, `detail` a peek at one item, `form` a create or edit form, `wide` a log, review or guide,
+  `full` a trace waterfall. Never a `max-w-*` in its className (`maple/sheet-size`).
 
 ## Type and spacing
 
@@ -89,7 +89,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   `surface-strong`.
 - A see-through surface is a token, never `bg-background/NN` or `bg-card/NN`
   (`maple/surface-translucency`): `surface-well` is an inset well on a card, `surface-float` (with
-  `backdrop-blur-sm`) a label over a chart, map or media, `scrim` the layer behind a dialog.
+  `backdrop-blur-sm`) a label over a chart, map or media, `scrim` the layer behind a dialog,
+  `scrim-panel` the lighter, unblurred one beside a side panel (the page stays readable).
 - Layers come from the z scale, never `z-[…]` (`maple/no-arbitrary-z`): `z-1`..`z-10` inside a
   surface, `z-50` dialogs and sheets, `z-55` popovers and tooltips, `z-60` toasts and nested lists.
   A popup takes a popup radius (`maple/popup-radius`).
@@ -97,7 +98,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 - Hover fills: a row, list item or chip hovers `bg-surface-sunken`, and a chip already on
   `surface-sunken` hovers `surface-strong`. A control (ghost button, toggle, tab, menu trigger)
   hovers `bg-accent`, and only the kit in `packages/ui` draws one. `hover:bg-muted` is never right
-  (`maple/surface-washes`).
+  (`maple/surface-washes`). A sidebar row hovers `bg-sidebar-accent/50`, half its selected tint:
+  the sidebar is already grey in the light theme, where a neutral wash does not show.
 - Hover outlines: a pickable card or chip hovers `border-border-strong`, a toned one its tone's
   `-a4` edge. `ring` is focus only, and `foreground` or a `/NN` tone is never a hover edge
   (`maple/hover-edge`).

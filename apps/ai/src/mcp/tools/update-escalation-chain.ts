@@ -1,9 +1,8 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, String as Str } from "effect"
 import { EscalationChainUpdateRequest } from "@maple/domain/http"
-import { EscalationChainMutationOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	chainBlocks,
 	invalidChainRequest,
@@ -33,7 +32,6 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			repeat_count: P.optionalNumber("Extra passes over the whole chain after the first, 0 to 5"),
 			description: P.optionalText('New notes, or "none" to clear them'),
 		}),
-		output: EscalationChainMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an escalation chain"],
 		handler: Effect.fn("McpTool.updateEscalationChain")(function* (params) {

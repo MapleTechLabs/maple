@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import * as C from "@maple/ui/styles/ui/combobox"
-import { inputControlChromeStyles, inputControlLayoutStyles } from "@maple/ui/styles/ui/input"
+import * as A from "./autocomplete.styles"
+import * as C from "./combobox.styles"
+import { inputControlChromeStyles, inputControlLayoutStyles } from "./input.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -145,7 +145,7 @@ export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		h.Value(model.mode === "multiple" ? "" : model.inputValue),
 	])
 
-/** combobox.tsx's item indicator: an inline round-capped check, not a pixel glyph. */
+/** The combobox item indicator: an inline round-capped check, not a pixel glyph. */
 export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
 	h.svg(
 		[
@@ -250,7 +250,7 @@ export type PopupOptions = Readonly<{
 		footer?: ReadonlyArray<Html>
 		sideOffset?: number
 	}>
-	/** `<ComboboxItem className>`. */
+	/** Classes per list item. */
 	itemClassName?: (value: string) => string | undefined
 	listClassName?: string
 	/** A custom `filter` already applied: `items` are the matches, empty means "no match". */
@@ -390,8 +390,11 @@ export type ChipsViewInputs = Readonly<{
 	ariaLabelledBy?: string
 	ariaDescribedBy?: string
 	placeholder: string
-	emptyText: string
+	/** The Empty line. Left out, a list with no item to show stays closed instead of opening on nothing. */
+	emptyText?: string
 	className?: string
+	/** `<ComboboxChipsInput size>`: the field is as tall as a control of that size. */
+	size?: "sm" | "default"
 	/**
 	 * `MultiSelectCombobox disabled`: the field stays mounted, dimmed and inert, so cards holding
 	 * several conditionally disabled pickers never reflow.
@@ -461,7 +464,10 @@ const chip = (
 /** `<Combobox multiple>` with `ComboboxChips`: chips for the selection, then the chips input. */
 export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((model, inputs, h) => {
 	const chipsSelector = `[data-slot=combobox-chips]:has(> #${inputId(model.id)})`
-	const isOpen = isMounted(model.isOpen, model.animation)
+	const listed = inputs.isUnfiltered === true ? inputs.items : visibleItems(model, inputs.items)
+	// No Empty line and no item: the field reads closed, whatever opened it.
+	const hasList = inputs.emptyText !== undefined || listed.length > 0
+	const isOpen = hasList && isMounted(model.isOpen, model.animation)
 	const isDisabled = inputs.isDisabled ?? false
 	const chips = h.div(
 		[
@@ -485,12 +491,19 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 			}),
 			...(isOpen ? [dismissButton(h)] : []),
 			h.input([
-				h.Class(cn(C.comboboxChipsInputStyles, C.comboboxChipsInputDefaultStyles)),
-				h.DataAttribute("size", "default"),
+				h.Class(
+					cn(
+						C.comboboxChipsInputStyles,
+						inputs.size === "sm"
+							? C.comboboxChipsInputSmStyles
+							: C.comboboxChipsInputDefaultStyles,
+					),
+				),
+				h.DataAttribute("size", inputs.size ?? "default"),
 				...(isDisabled ? [h.Disabled(true)] : []),
 				...inputAttributes(
 					h,
-					model,
+					hasList ? model : { ...model, isOpen: false },
 					{
 						slot: "combobox-chips-input",
 						ariaLabel: inputs.ariaLabel,
@@ -513,7 +526,7 @@ export const chipsView = Submodel.defineView<Model, Message, ChipsViewInputs>((m
 					listPopup(h, model, {
 						slot: "combobox",
 						items: inputs.items,
-						emptyText: inputs.emptyText,
+						emptyText: inputs.emptyText ?? "",
 						anchorSelector: chipsSelector,
 						isUnfiltered: inputs.isUnfiltered,
 						renderItem: (value: string) => inputs.renderItem?.(h, value) ?? [value],
@@ -530,7 +543,6 @@ export type SingleViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	startAddon?: Html
-	/** `<ComboboxInput size>`. */
 	size?: "sm" | "default"
 	/** `<ComboboxInput showTrigger={false}>` drops the chevron button. */
 	showTrigger?: boolean
@@ -547,7 +559,7 @@ export type SingleViewInputs = Readonly<{
 	 * toolbar combobox, whose Base UI positioner resolves no input group and falls back to the input.
 	 */
 	anchorsInput?: boolean
-	/** `<ComboboxInput className>`: lands on the input-control span. */
+	/** Lands on the input-control span. */
 	className?: string
 	/** Wraps the input group (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html
@@ -657,7 +669,7 @@ export const view = Submodel.defineView<Model, Message, SingleViewInputs>((model
 	}),
 )
 
-/** `ComboboxTrigger` with its chevron. */
+/** The trigger button with its chevron. */
 const triggerButton = (h: H, model: Model, size: "sm" | "default"): Html =>
 	h.button(
 		[

@@ -3,7 +3,7 @@ import {
 	getPerformanceHints,
 	hasSlowHints,
 	slowHintsSummary,
-} from "../../lib/query-builder/performance-hints"
+} from "../../page/dashboards/widget/performance-hints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AsyncData } from "foldkit"
 import { Option, Array as Arr } from "effect"
@@ -22,7 +22,7 @@ import { Message, type Model } from "./model"
 import { fieldEyebrow, labSelect } from "./view-controls"
 import { addOnSections } from "./view-add-ons"
 
-// One query card of `QueryBuilderLabInner`.
+// One query card of the lab.
 
 type H = HtmlBuilder<Message>
 

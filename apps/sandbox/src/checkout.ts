@@ -74,7 +74,6 @@ export interface SandboxContainer {
 	readonly backupMirror?: Effect.Effect<void>
 }
 
-/** A commit's checkout directory. */
 export const checkoutDir = (sha: string): string => `${SANDBOX_WORKSPACE_ROOT}/${sha}`
 
 /** Where a commit's background clone records its pid, exit code and stderr. */

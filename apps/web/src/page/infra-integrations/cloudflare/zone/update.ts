@@ -1,10 +1,13 @@
-import { toggleFilterValue } from "../../../../components/infra/cloudflare/filters"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { toggleFilterValue } from "../filters"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -14,7 +17,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { nextSort } from "../../../kit/table-sort"
 import {
@@ -32,7 +35,7 @@ import {
 } from "./command"
 import type { TopTraffic } from "../data"
 import { dimensionOf, filtersOf, inputsOf, needsBreakdown } from "./derive"
-import { type FilterKey, Message, type Model, type RequestMode } from "./model"
+import { type FilterKey, Message, type Model } from "./model"
 import { String as Str } from "effect"
 
 type Return = PageReturn<Model, Message>
@@ -62,7 +65,6 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 
 const warehouseTimeToMs = (value: string) => new Date(`${Str.replace(" ", "T")(value)}Z`).getTime()
 
-/** Every read the page shows right now, keyed like the atoms. */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }
@@ -129,7 +131,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	return { model: { ...base, breakdown, liveTraffic }, commands }
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "cloudflare")
 const usageKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareUsage", {})
 
 export const init = (route: Route, context: PageContext): Return => {
@@ -175,11 +177,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -198,7 +196,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model, context: PageContext): Return => sync(model, context, "Load")
 
-/** `onToggleFilter`: one value in or out of a multi-select filter; `pathContains` is not toggled. */
+/** One value in or out of a multi-select filter; `pathContains` is not toggled. */
 const toggled = (model: Model, key: FilterKey, value: string): Return => {
 	if (key === "pathContains") return { model }
 	const next = toggleFilterValue(filtersOf(model)[key], value)
@@ -246,11 +244,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchLiveTraffic: ({ key, result }) => ({
 			model: { ...model, liveTraffic: Keyed.accept(model.liveTraffic, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		AttachedLinkedCursor: () => ({ model }),
 		TickedIngestPoll: ({ nowMs }) => ({
 			model: { ...model, nowMs },

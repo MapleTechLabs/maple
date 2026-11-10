@@ -6,12 +6,13 @@
 import {
 	ApiWorker,
 	MapleStack,
+	mapleSiteProps,
+	prdOrigin,
 	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
-	resolveWorkerName,
-	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
-import { plainFrom, selfObservabilityEnv } from "@maple/infra/env"
+import { siteBuildMemo } from "@maple/infra/worker-build"
+import { commitSha, plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Schema } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
@@ -20,14 +21,12 @@ import { WORKER_FIRST_PATHS } from "./worker-first.ts"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-// `memo.include` also hashes the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-const MEMO_INCLUDE = ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"]
-
 const props = Effect.gen(function* () {
-	const { stage, region, domains, urls } = yield* MapleStack
+	const stack = yield* MapleStack
+	const { stage, region, domains, urls, profile } = stack
 	const api = yield* ApiWorker
 	return {
-		name: resolveWorkerName("web", stage, region),
+		...mapleSiteProps("web", stack),
 		rootDir: new URL("..", import.meta.url).pathname,
 		main: "src/worker-entry.ts",
 		assets: {
@@ -38,8 +37,7 @@ const props = Effect.gen(function* () {
 			// App routes and hashed assets are served here, not worker-first, so their headers are too.
 			headers: ASSET_HEADER_RULES,
 		},
-		memo: { include: MEMO_INCLUDE, lockfile: true },
-		placement: resolveWorkerPlacement(region),
+		memo: siteBuildMemo(),
 		workersDev: true,
 		domain: domains.web,
 		env: {
@@ -58,11 +56,11 @@ const props = Effect.gen(function* () {
 			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys.
 			VITE_MAPLE_SELF_INGEST_URL:
 				stage.kind === "pr"
-					? yield* plainFrom(["VITE_INGEST_URL"], "https://ingest.maple.dev")
+					? yield* plainFrom(["VITE_INGEST_URL"], prdOrigin("ingest"))
 					: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
 			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
-			...(stage.kind === "pr" && domains.electric === undefined
+			...(stage.kind === "pr" && !profile.deploys.electric
 				? { VITE_ELECTRIC_SYNC_DISABLED: "1" }
 				: undefined),
 			// The status Worker's origin for public page links; empty hides them (prd has no domain yet).
@@ -85,7 +83,7 @@ const props = Effect.gen(function* () {
 			// Browser telemetry's `deployment.environment.name`, matching the Worker's (`pr-<n>` on previews).
 			VITE_MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 			// Stamped onto browser telemetry as `vcs.ref.head.revision` / `service.version`.
-			VITE_COMMIT_SHA: yield* plainFrom(["VITE_COMMIT_SHA", "COMMIT_SHA", "GITHUB_SHA"], ""),
+			VITE_COMMIT_SHA: yield* commitSha("VITE_COMMIT_SHA"),
 		},
 	}
 }).pipe(

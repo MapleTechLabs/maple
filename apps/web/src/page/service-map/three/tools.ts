@@ -1,11 +1,11 @@
-import { DRAG_TOLERANCE } from "../../../components/service-map/three/scene-input"
+import { DRAG_TOLERANCE } from "./scene-input"
 import type * as THREE from "three"
 import type { Size } from "./camera"
 import type { DuckClick } from "./critters"
 import type { Vec3 } from "./kit"
 
 // Pointer tools: the scene forwards canvas pointer events to the active tool, which reads the
-// world through `ToolContext`. Selection is a tool; customize mode will add placement tools.
+// world through `ToolContext`. Selection is one tool; customize mode's move (`move-tool.ts`) is another.
 
 /** The pointer fields a tool reads; DOM pointer and mouse events satisfy it. */
 export type ToolPointer = Pick<
@@ -48,7 +48,7 @@ export interface Tool {
 }
 
 /**
- * R3F's click semantics: a miss within 2 px (and the canvas's own 5 px check) clears the
+ * Click semantics: a miss within 2 px (and the canvas's own 5 px check) clears the
  * selection; a machine click must start on that machine and travel at most DRAG_TOLERANCE.
  */
 export const selectTool = (): Tool => {

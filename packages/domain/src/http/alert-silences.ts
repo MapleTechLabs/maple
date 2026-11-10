@@ -5,7 +5,7 @@ import {
 	AlertSilenceId,
 	IsoDateTimeString,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 import { UNGROUPED_GROUP_KEY, type AlertGroupBy } from "./alerts"
 

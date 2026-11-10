@@ -11,17 +11,15 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { createHref, incidentHref, ruleHref } from "../shared/links"
+import { createHref, incidentHref, ruleHref } from "../../kit/alert-links"
 import { routingTabHref, runView } from "../shared/escalation-chains"
 import { textLink } from "@maple/views/ui/text-link"
 import type { Tone } from "@maple/ui/lib/tone"
-import { isoMs } from "../shared/time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
-
-// `IncidentRail`: the incident detail's side rail.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const GROUP_ROW_LIMIT = 8
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -225,9 +223,9 @@ const ruleSection = <M>(
 	ruleIncidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 ): Html => {
-	const recent = Arr.filter(ruleIncidents, (i) => now - isoMs(i.firstTriggeredAt) <= 30 * DAY_MS)
+	const recent = Arr.filter(ruleIncidents, (i) => now - toEpochMs(i.firstTriggeredAt) <= 30 * DAY_MS)
 	const durations = Arr.flatMap(recent, (i) =>
-		i.resolvedAt != null ? [isoMs(i.resolvedAt) - isoMs(i.firstTriggeredAt)] : [],
+		i.resolvedAt != null ? [toEpochMs(i.resolvedAt) - toEpochMs(i.firstTriggeredAt)] : [],
 	).sort((a, b) => a - b)
 	const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)] : undefined
 	const scope = Arr.filter(
@@ -301,7 +299,7 @@ const RUN_TONE = { escalating: "warn", paused: "neutral", finished: "neutral" } 
 	Tone
 >
 
-/** `EscalationSection`: the chain paging this incident, where it stands, and when it pages next. */
+/** The chain paging this incident, where it stands, and when it pages next. */
 export const escalationSection = <M>(
 	h: HtmlBuilder<M>,
 	run: V2AlertIncidentEscalation,

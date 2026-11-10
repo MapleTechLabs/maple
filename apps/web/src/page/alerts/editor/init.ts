@@ -1,4 +1,3 @@
-import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -67,6 +66,10 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		isSaving: false,
 		kindNotice: null,
 		isNotesOpen: false,
+		expandedCards: [],
+		isBreachWindowOpen: false,
+		hasAttemptedSave: false,
+		touchedFields: [],
 		tagSuggestions: [],
 		isSqlCollapsed: false,
 		isMessageTemplateOpen: false,
@@ -93,10 +96,6 @@ export const init = (route: CreateRoute, _context: PageContext): PageReturn<Mode
 		ReadEditorGrants(),
 		FetchEditorConnectors(),
 		FetchEditorChains(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
+		LoadChartRuntime(),
 	],
 })

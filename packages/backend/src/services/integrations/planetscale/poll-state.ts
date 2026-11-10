@@ -6,10 +6,11 @@
 import { randomUUID } from "node:crypto"
 import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable } from "../lease"
 import { PlanetscalePollState } from "@maple/db/tables"
 import { Clock, Duration, Effect, Array as Arr } from "effect"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
 /** The metrics API poller's org-wide row (`databaseId` ""), whose watermark is its last window. */
 export const PLANETSCALE_METRICS_DATASET = "metrics"
@@ -17,10 +18,10 @@ export const PLANETSCALE_METRICS_DATASET = "metrics"
 /** Tick-overlap lease. */
 const LEASE_MS = Duration.toMillis(Duration.minutes(4))
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale poll state persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale poll state persistence failed",
+)
 
 export const makePlanetScalePollState = (database: DatabaseApi, service: string) => {
 	const dbExecute = makeDbExecute(database, service, toPersistenceError)
@@ -75,7 +76,7 @@ export const makePlanetScalePollState = (database: DatabaseApi, service: string)
 			db.run(
 				PG.update(PlanetscalePollState)
 					.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
-					.where(($) => [$.id.eq(existing.id), PG.or($.leaseUntil.isNull(), $.leaseUntil.lt(now))])
+					.where(($) => [$.id.eq(existing.id), leaseClaimable($.leaseUntil, now)])
 					.returning("id"),
 			),
 		)

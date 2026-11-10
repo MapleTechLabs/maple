@@ -1,8 +1,7 @@
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { String as Str } from "effect"
 
-// Copied from packages/ui/src/components/charts/histogram/query-builder-histogram-chart.tsx (a React
-// module). Shared by the definition (tick labels) and the view (tooltip heading).
+// Histogram bin label formatting. Shared by the definition (tick labels) and the view (tooltip heading).
 
 /** Index of the dash separating a bin label's two bounds, or -1 ("-50--20" -> 3). */
 const splitBoundsAt = (name: string): number => {
@@ -24,6 +23,5 @@ export const binLowerBoundLabel = (name: string): string => {
 export const formatBound = (value: number, unit: string | null): string =>
 	unit !== null && Str.startsWith("duration_")(unit) ? formatValueByUnit(value, unit) : formatNumber(value)
 
-/** `formatInterval` of the histogram spike. */
 export const formatInterval = (from: number, to: number): string =>
 	`${formatNumber(from)} – ${formatNumber(to)}`

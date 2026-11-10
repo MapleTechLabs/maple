@@ -39,7 +39,12 @@ export {
 } from "./error-detail"
 export { diagnoseService } from "./diagnose-service"
 export { searchLogs } from "./search-logs"
-export { mineLogPatterns, clusterLogPatterns, type ClusterableLogRow } from "./mine-log-patterns"
+export {
+	mineLogPatterns,
+	clusterLogPatterns,
+	LOG_TEMPLATE_MASKS,
+	type ClusterableLogRow,
+} from "./mine-log-patterns"
 export { compareLogPatterns, diffLogPatterns } from "./compare-log-patterns"
 export { compareOperations, diffOperations } from "./compare-operations"
 export { exploreAttributeKeys, exploreAttributeValues } from "./explore-attributes"

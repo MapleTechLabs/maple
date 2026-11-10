@@ -1,19 +1,19 @@
-import { Schema, Array as Arr, String as Str } from "effect"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
+import { podKey } from "../pod-restarts"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import type { SortDir } from "../../../kit/table-sort"
-import { excludedValue, type FacetLists, onlyValue, toggledValue } from "../../kit/facets"
-import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../../kit/facets"
+import * as Frame from "../../../kit/time-frame"
+import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
 import * as InstallModal from "../../kit/install-modal"
-import { applySteps, keyed, type Step } from "../../kit/requests"
-import { pickTimeSearch } from "../../kit/view-tabs"
+import { applySteps, keyed, type Step } from "../../../kit/keyed-step"
+import { pickTimeSearch } from "../../../kit/view-tabs"
 import * as PeekMessage from "../peek/message"
 import * as PeekUpdate from "../peek/update"
 import { PAGE_RESTARTS_LIMIT, type PodsInput } from "../pod-data"
@@ -21,8 +21,6 @@ import type { PodSortKey } from "../pod-table"
 import { DebounceSearch, FetchFacets, FetchPods, FetchRestarts, FetchSummary, PAGE_SIZE } from "./command"
 import { type Facet, Message } from "./message"
 import type { Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 export type Search = Model["search"]
@@ -110,7 +108,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const podsStep: RequestStep = (model, context, window, mode) => {
@@ -153,7 +151,7 @@ const syncPeek = (context: PageContext, result: Return): Return => {
 	}
 }
 
-/** The restarts of the page on screen, once it has rows (`PodTableWithRestarts` mounts with them). */
+/** The restarts of the page on screen, once it has rows. */
 const followPods =
 	(context: PageContext) =>
 	(result: Return): Return =>
@@ -184,7 +182,7 @@ const followRestarts = (context: PageContext, result: Return): Return => {
 	}
 }
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const summaryInput = {
@@ -217,16 +215,8 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	}),
 })
 
-const withFacet = (search: Search, facet: Facet, lists: FacetLists): Search => ({
-	...search,
-	[facet]: lists.selected,
-	[EXCLUDED_OF[facet]]: lists.excluded,
-})
-
-const listsOf = (search: Search, facet: Facet): FacetLists => ({
-	selected: search[facet],
-	excluded: search[EXCLUDED_OF[facet]],
-})
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const liftInstall = (model: Model, result: InstallModal.Return): Return => ({
 	model: { ...model, install: result.model },
@@ -311,13 +301,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					})
 		},
 		ToggledFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, toggledValue(listsOf(model.search, facet), name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, onlyValue(name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
 			navigate(
 				model,
-				withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name)),
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
 			),
 		ClickedClearFilters: () => navigate(model, pickTimeSearch(model.search)),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),

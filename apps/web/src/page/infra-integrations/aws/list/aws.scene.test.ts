@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AwsMetricStream } from "@maple/domain/aws"
 import { Timestamp, type V2AwsConnection, type V2AwsIntegration } from "@maple/domain/http/v2"
-import { AwsAccountId, AwsConnectionId } from "@maple/domain/primitives"
+import { AwsAccountId, AwsConnectionId } from "@maple/primitives"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { fromString } from "foldkit/url"
 import { expect as expectView, given, role, scene, selector, text, withViewInputs } from "foldkit/scene"

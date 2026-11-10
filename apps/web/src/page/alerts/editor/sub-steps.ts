@@ -13,45 +13,40 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { isProtectedDefault } from "./derive"
 import {
+	BREACH_MODE_SELECT_ID,
 	chainSelectIdOf,
+	KIND_SELECT_ID,
 	NO_CHAIN,
+	setBreachMode,
 	setBuiltinSignal,
 	setChips,
 	setSeverity,
 	setTierChain,
 } from "./form-steps"
-import { AUTO_INTERVAL, intervalRadioValue } from "./interval"
-import { Message } from "./message"
+import { AUTO_INTERVAL, INTERVAL_SELECT_ID } from "./interval"
+import { Message, SignalKind } from "./message"
 import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
 import { ReadEditorClock } from "./command"
 import { planMetrics } from "./plan"
-import { editForm, type Return } from "./steps"
-
-// The child Submodels the form is built from: selects, chip pickers, the query panel, the chart,
-// and the preview's own lookback picker.
+import { editForm, type Return, switchKindStep } from "./steps"
 
 const decodeComparator = Schema.decodeUnknownOption(AlertComparator)
 const decodeReducer = Schema.decodeUnknownOption(QueryEngineAlertReducer)
 const decodeSignal = Schema.decodeUnknownOption(AlertSignalType)
 const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 const decodeChainId = Schema.decodeUnknownOption(EscalationChainId)
+const decodeKind = Schema.decodeUnknownOption(SignalKind)
 
-/** The radio groups: built-in signal, severity and check interval; their value is the form's. */
+/** The radio groups: built-in signal and severity; their value is the form's. */
 export const radioStep = (
 	model: Model,
 	context: PageContext,
-	group: "signal" | "severity" | "interval",
+	group: "signal" | "severity",
 	message: RadioGroup.Message,
 ): Return => {
 	const current =
-		model.form === null
-			? null
-			: group === "signal"
-				? model.form.signalType
-				: group === "severity"
-					? model.form.severity
-					: intervalRadioValue(model.form.evaluationIntervalMinutes)
+		model.form === null ? null : group === "signal" ? model.form.signalType : model.form.severity
 	const next = RadioGroup.update(RadioGroup.init(current ?? undefined), message)
 	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
 		Message.GotRadioMessage({ group, message: inner }),
@@ -59,9 +54,6 @@ export const radioStep = (
 	const value = next.model.maybeValue
 	if (value._tag === "None" || value.value === current) return { model, commands }
 	const edited = editForm(model, context, (form) => {
-		if (group === "interval") {
-			return { ...form, evaluationIntervalMinutes: value.value === AUTO_INTERVAL ? "" : value.value }
-		}
 		if (group === "signal") {
 			const signal = decodeSignal(value.value)
 			return signal._tag === "Some" ? setBuiltinSignal(form, signal.value) : form
@@ -91,7 +83,24 @@ export const selectStep = (
 	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
 	const value = next.outMessage.value
+	if (id === KIND_SELECT_ID) {
+		const kind = decodeKind(value)
+		return kind._tag === "Some"
+			? withCommands(switchKindStep(lifted, context, kind.value), commands)
+			: { model: lifted, commands }
+	}
+	if (id === BREACH_MODE_SELECT_ID) {
+		return withCommands(
+			editForm({ ...lifted, isBreachWindowOpen: value === "window" }, context, (form) =>
+				setBreachMode(form, value),
+			),
+			commands,
+		)
+	}
 	const edited = editForm(lifted, context, (form) => {
+		if (id === INTERVAL_SELECT_ID) {
+			return { ...form, evaluationIntervalMinutes: value === AUTO_INTERVAL ? "" : value }
+		}
 		const tier =
 			id === chainSelectIdOf("warning")
 				? "warning"

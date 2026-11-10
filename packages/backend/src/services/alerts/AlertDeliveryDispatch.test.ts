@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,

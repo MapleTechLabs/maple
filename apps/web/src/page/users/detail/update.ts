@@ -1,3 +1,5 @@
+import { pickerStep } from "../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -20,7 +22,7 @@ import {
 	FetchTraces,
 	ResolveWindow,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Search } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -57,10 +59,6 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): 
 		timeZone: context.timeZone,
 	})
 
-/**
- * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
- * their tab is open, so a page view never scans rows it does not show.
- */
 /** The group the loaded profile names, so a reload can refresh its card beside the overview. */
 const loadedGroupId = (model: Model): string | null =>
 	Option.match(AsyncData.getData(model.profile.data), {
@@ -75,6 +73,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	return { model: group.model, commands: [...(step.commands ?? []), ...(group.commands ?? [])] }
 }
 
+/**
+ * The overview (profile, activity and issues) always; the Traces and Logs tabs' reads only while
+ * their tab is open, so a page view never scans rows it does not show.
+ */
 const requestReads = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const inputs = detailInputs(model.userId, model.search, window, context.pinnedNamespace)
 	const tab = tabOf(model.search)
@@ -143,8 +145,6 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-// ENTRY POINTS
-
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {
 		userId: route.userId,
@@ -205,22 +205,16 @@ export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
 
 const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted: Return = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (m) =>
-			Message.GotTimePickerMessage({ message: m }),
-		),
-	}
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>

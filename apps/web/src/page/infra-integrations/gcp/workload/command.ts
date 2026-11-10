@@ -1,6 +1,8 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { resolveWindow, TimeWindow } from "../../../../data/time-range"
+import { TimeWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import {
 	CloudSqlInput,
@@ -16,26 +18,9 @@ import {
 	StatementSpansInput,
 	TimeseriesInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
-export const ResolveWindow = Command.define("ResolveGcpWorkloadWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveGcpWorkloadWindow", Message.CompletedResolveWindow)
 
 export const FetchTimeseries = Command.define("FetchGcpWorkloadTimeseries", {
 	args: { key: Schema.String, input: TimeseriesInput },
@@ -102,14 +87,9 @@ export const FetchFleet = Command.define("FetchGcpWorkloadFleet", {
 		Effect.map(loadFleet(window), (result) => Message.CompletedFetchFleet({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteGcpWorkloadReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteGcpWorkloadReloadSpin", Message.CompletedReloadSpin)
 
-/** `useLinkedCursor` on a group of charts. */
+/** One cursor shared by a group of charts. */
 export const MountLinkedCursor = Mount.defineStream("MountGcpLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

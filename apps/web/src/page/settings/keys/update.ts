@@ -44,8 +44,6 @@ export const init = (
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-// CHILDREN
-
 const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, revokeDialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -115,7 +113,7 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows, isLoadFailed: false } }),
 		FailedLoadApiKeys: () => ({ model: { ...model, isLoadFailed: true } }),
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections. The failure
+		// A stopped shape syncs again only on fresh collections. The failure
 		// stays up until the sync answers, so an auto-retry probe does not flash the skeleton.
 		ClickedRetryLoad: () => ({
 			model,

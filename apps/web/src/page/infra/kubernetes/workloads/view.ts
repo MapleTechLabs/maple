@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../kit/format"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
@@ -24,13 +24,13 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { fleetBand } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
 import {
 	type Model,
@@ -41,8 +41,6 @@ import {
 } from "./model"
 import { DEFAULT_PRESET, filtersOf, kindOf } from "./update"
 import { workloadTable, workloadTableLoading } from "./view-table"
-
-// `WorkloadsPage` and `WorkloadsFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 
@@ -107,7 +105,7 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
-/** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
+/** The sidebar's presence probe: any Kubernetes surface means the chart is in. */
 const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
 	Arr.some(
 		presence,

@@ -4,6 +4,6 @@ import type { Model } from "./model"
 export const isWriteBlocked = (model: Model): boolean =>
 	model.persistenceError !== null || model.snapshot._tag === "Shown"
 
-/** `mode`: edit only from the URL, never while writes are unavailable or a version is previewed. */
+/** Edit only from the URL, never while writes are unavailable or a version is previewed. */
 export const isEditing = (model: Model): boolean =>
 	model.search.mode === "edit" && !isWriteBlocked(model) && model.history.previewed === null

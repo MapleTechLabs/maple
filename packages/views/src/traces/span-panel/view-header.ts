@@ -20,7 +20,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The panel's header, summary stats, cache and platform blocks (`SpanDetailPanel`).
+// The span panel's header, summary stats, cache and platform blocks.
 
 type H = HtmlBuilder<Message>
 

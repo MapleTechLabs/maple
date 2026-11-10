@@ -1,4 +1,4 @@
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Effect } from "effect"
 import type { OrganizationServiceApi } from "@maple/backend/services/org/OrganizationService"
 

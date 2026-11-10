@@ -13,9 +13,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBoxClass } from "@maple/views/ui/bordered-box"
 import { Array as Arr } from "effect"
 
-// `RailwayFleetBand` and `RailwayFleetBandLoading`.
-
-/** `FLEET_BAND_BOXED`: a band standing alone on a page body. */
+/** A band standing alone on a page body. */
 export const FLEET_BAND_BOXED = borderedBoxClass({ overflow: "hidden" })
 
 const STRIP_SLICES = 6

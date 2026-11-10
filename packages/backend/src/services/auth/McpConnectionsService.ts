@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { McpOAuthClients, McpOAuthRefreshTokens, type McpOAuthRefreshTokenRow } from "@maple/db/tables"
 import { McpConnectionNotFoundError, McpConnectionPersistenceError } from "@maple/domain/http"
-import { McpConnectionId, type OrgId, type UserId } from "@maple/domain/primitives"
+import { McpConnectionId, type OrgId, type UserId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"

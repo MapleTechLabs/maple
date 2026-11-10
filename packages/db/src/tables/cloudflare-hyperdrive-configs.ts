@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 /**
  * The org's Cloudflare Hyperdrive config inventory, refreshed by the analytics
@@ -38,4 +38,3 @@ export const CloudflareHyperdriveConfigs = PG.table("cloudflare_hyperdrive_confi
 })
 
 export type CloudflareHyperdriveConfigRow = PG.SelectRowOf<typeof CloudflareHyperdriveConfigs>
-export type CloudflareHyperdriveConfigInsert = PG.InsertRowOf<typeof CloudflareHyperdriveConfigs>

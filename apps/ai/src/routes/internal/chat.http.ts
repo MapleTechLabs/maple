@@ -9,11 +9,7 @@ import {
 	MapleAiApi,
 } from "@maple/domain/http"
 import { Effect, Option, Array as Arr } from "effect"
-import {
-	encodeChatTurnTenant,
-	investigationIdFromChatSessionId,
-	orgIdFromChatSessionId,
-} from "@maple/domain/chat-session"
+import { encodeChatTurnTenant, chatSessionKind, orgIdFromChatSessionId } from "@maple/domain/chat-session"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 
@@ -53,7 +49,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 			// Another org's conversation reads as missing: confirming it exists is itself a leak.
 			if (orgIdFromChatSessionId(sessionId) !== tenant.orgId) return yield* notFound
 			// Bot threads settle through their connector; the dashboard only decides investigations'.
-			if (investigationIdFromChatSessionId(sessionId) === undefined) return yield* notFound
+			if (chatSessionKind(sessionId).mode !== "investigate") return yield* notFound
 
 			const stub = (yield* ChatSessions).session(sessionId)
 

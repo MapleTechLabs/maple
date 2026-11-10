@@ -3,6 +3,12 @@
 
 import { Option, Record, Schema, Array as Arr, String as Str } from "effect"
 
+/**
+ * The pooled tail of a Cloudflare infra breakdown: the poller's per-window top-N tail and the API's
+ * fold past the chart's series limit share it, so the legend carries one "everything else" series.
+ */
+export const CLOUDFLARE_BREAKDOWN_OTHER_KEY = "other"
+
 export const CloudflareWorkerSummary = Schema.TaggedStruct("cloudflare", {
 	scriptName: Schema.optionalKey(Schema.String),
 	scriptVersion: Schema.optionalKey(Schema.String),

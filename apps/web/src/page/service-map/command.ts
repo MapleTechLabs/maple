@@ -1,4 +1,5 @@
-import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import { formatWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import {
 	getPlanetScaleBranchStats,
@@ -7,31 +8,30 @@ import {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
-import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { loadServicesFacets } from "../../data/services-facets-probe"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../data/time-range"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
-import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
+import {
+	readStored,
+	saveStoredLayout,
+	saveStoredPrefs,
+	Stored,
+	type StoredKeys,
+} from "@maple/views/service-map/map/state"
 import { loadSignalPresences } from "../kit/signal-presence"
 import { ApplyWorldOpsRequest, WorldOp } from "@maple/domain/http"
 import { Applied, type BatchOutcome, Conflicted, Rejected } from "./factory/edits"
-import { Message, RequestMode } from "./message"
-import {
-	BranchStats,
-	CloudflareStats,
-	DbSummary,
-	MapBundle,
-	PlanetScaleStats,
-	Stored as StoredSchema,
-} from "./model"
+import { Message } from "./message"
+import { BranchStats, CloudflareStats, DbSummary, MapBundle, PlanetScaleStats } from "./model"
 
 const FACETS_RANGE_MS = 24 * 60 * 60 * 1000
 
 /**
- * `useEffectiveTimeRange` (snapped on entry, against the real clock after a Reload) and the
- * environment dropdown's fixed 24 h `facetsRange`, snapped to the cache grid, at one clock read.
+ * The map's window (snapped on entry, against the real clock after a Reload) and the
+ * environment dropdown's fixed 24 h facets window, snapped to the cache grid, at one clock read.
  */
 export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 	args: {
@@ -57,51 +57,29 @@ export const ResolveWindow = Command.define("ResolveServiceMapWindow", {
 		),
 })
 
-// STORAGE (`serviceMapLayoutAtomFamily`, `serviceMapViewPrefsAtomFamily`: `Atom.kvs` JSON per org)
-
-const layoutKey = (orgId: string) => `maple.service-map.layout.${orgId}`
-const prefsKey = (orgId: string) => `maple.service-map.view-prefs.${orgId}`
-
-const LayoutJson = Schema.fromJsonString(Schema.Struct({ snapshots: Schema.Array(Snapshot) }))
-const PrefsJson = Schema.fromJsonString(ViewPrefs)
-
-/** Undecodable entries fall back to the defaults, as the atoms do. */
-const readJson = <A>(key: string, schema: Schema.Decoder<A>): Option.Option<A> =>
-	Option.flatMap(readLocalStorage(key), (raw) => Schema.decodeOption(schema)(raw))
+const storedKeys = (orgId: string): StoredKeys => ({
+	layout: `maple.service-map.layout.${orgId}`,
+	prefs: `maple.service-map.view-prefs.${orgId}`,
+})
 
 export const ReadStored = Command.define("ReadServiceMapStored", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedReadStored],
 	execute: ({ orgId }) =>
-		Effect.sync(() =>
-			Message.CompletedReadStored({
-				stored: {
-					prefs: Option.getOrElse(readJson(prefsKey(orgId), PrefsJson), () => ({
-						minTrafficPct: 0,
-						collapsedNamespaces: [],
-					})),
-					snapshots: Option.match(readJson(layoutKey(orgId), LayoutJson), {
-						onNone: () => [],
-						onSome: (layout) => layout.snapshots,
-					}),
-				},
-			}),
-		),
+		Effect.sync(() => Message.CompletedReadStored({ stored: readStored(storedKeys(orgId)) })),
 })
 
 export const SaveStored = Command.define("SaveServiceMapStored", {
-	args: { orgId: Schema.String, stored: StoredSchema },
+	args: { orgId: Schema.String, stored: Stored },
 	messages: [Message.CompletedSaveStored],
 	execute: ({ orgId, stored }) =>
-		Effect.gen(function* () {
-			const prefs = yield* Schema.encodeEffect(PrefsJson)(stored.prefs)
-			const layout = yield* Schema.encodeEffect(LayoutJson)({ snapshots: stored.snapshots })
-			writeLocalStorage(prefsKey(orgId), prefs)
-			writeLocalStorage(layoutKey(orgId), layout)
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedSaveStored())),
+		Effect.all([
+			saveStoredPrefs(storedKeys(orgId), stored.prefs),
+			saveStoredLayout(storedKeys(orgId), stored.snapshots),
+		]).pipe(Effect.as(Message.CompletedSaveStored())),
 })
 
-// FETCHES (each carries its request key back so `update` drops a superseded answer, S6)
+// Each fetch carries its request key back so `update` drops a superseded answer.
 
 /** `GetServiceMapInput`: the window, scoped to one environment unless "All environments". */
 export const MapInput = Schema.Struct({
@@ -112,17 +90,13 @@ export const MapInput = Schema.Struct({
 export type MapInput = typeof MapInput.Type
 
 export const FetchFacets = Command.define("FetchServiceMapFacets", {
-	/** `refresh`: Reload and Try again revalidate past the read cache (`useAtomRefresh`). */
+	/** Reload and Try again revalidate past the read cache. */
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { key, refresh }).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ data }) => Arr.map(data.environments, (environment) => environment.name),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map(({ data }) => Arr.map(data.environments, (environment) => environment.name)),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -131,9 +105,8 @@ export const FetchBundle = Command.define("FetchServiceMapBundle", {
 	messages: [Message.CompletedFetchBundle],
 	execute: ({ key, input }) =>
 		getServiceMapBundle({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (bundle) => new MapBundle(bundle), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBundle({ key, result })),
+			Effect.map((bundle) => new MapBundle(bundle)),
+			settleTo((result) => Message.CompletedFetchBundle({ key, result })),
 		),
 })
 
@@ -142,9 +115,8 @@ export const FetchCloudflare = Command.define("FetchServiceMapCloudflare", {
 	messages: [Message.CompletedFetchCloudflare],
 	execute: ({ key, window }) =>
 		getServiceMapCloudflare({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (stats) => new CloudflareStats(stats), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCloudflare({ key, result })),
+			Effect.map((stats) => new CloudflareStats(stats)),
+			settleTo((result) => Message.CompletedFetchCloudflare({ key, result })),
 		),
 })
 
@@ -153,13 +125,11 @@ export const FetchPlanetScaleStats = Command.define("FetchServiceMapPlanetScale"
 	messages: [Message.CompletedFetchPlanetScaleStats],
 	execute: ({ key, window }) =>
 		getServiceMapPlanetScale({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (stats) => new PlanetScaleStats(stats), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPlanetScaleStats({ key, result })),
+			Effect.map((stats) => new PlanetScaleStats(stats)),
+			settleTo((result) => Message.CompletedFetchPlanetScaleStats({ key, result })),
 		),
 })
 
-/** `retainedQueryV2("planetscaleIntegration", "databases")`, keyed like the map does. */
 export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInventory", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchPlanetScaleInventory],
@@ -177,14 +147,9 @@ export const FetchPlanetScaleInventory = Command.define("FetchPlanetScaleInvento
 					ready: branch.ready,
 				})),
 			}))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPlanetScaleInventory({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPlanetScaleInventory({ key, result }))),
 })
 
-/** `retainedInternalQuery("integrations", "cloudflareHyperdrives")`. */
 export const FetchHyperdrives = Command.define("FetchCloudflareHyperdrives", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchHyperdrives],
@@ -201,11 +166,7 @@ export const FetchHyperdrives = Command.define("FetchCloudflareHyperdrives", {
 				originDatabase: config.originDatabase,
 				originUser: config.originUser,
 			}))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchHyperdrives({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchHyperdrives({ key, result }))),
 })
 
 /** `getServiceDbQuerySummary`'s input as the database panel builds it. */
@@ -225,9 +186,8 @@ export const FetchDbSummary = Command.define("FetchServiceDbQuerySummary", {
 	messages: [Message.CompletedFetchDbSummary],
 	execute: ({ key, input }) =>
 		getServiceDbQuerySummary({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (summary) => new DbSummary(summary), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDbSummary({ key, result })),
+			Effect.map((summary) => new DbSummary(summary)),
+			settleTo((result) => Message.CompletedFetchDbSummary({ key, result })),
 		),
 })
 
@@ -243,9 +203,8 @@ export const FetchBranchStats = Command.define("FetchPlanetScaleBranchStats", {
 	messages: [Message.CompletedFetchBranchStats],
 	execute: ({ key, input }) =>
 		getPlanetScaleBranchStats({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (stats) => new BranchStats(stats), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBranchStats({ key, result })),
+			Effect.map((stats) => new BranchStats(stats)),
+			settleTo((result) => Message.CompletedFetchBranchStats({ key, result })),
 		),
 })
 
@@ -256,13 +215,7 @@ export const LoadSignalPresence = Command.define("LoadServiceMapSignalPresence",
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteServiceMapReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteServiceMapReloadSpin", Message.CompletedReloadSpin)
 
 /** The org's shared factory world, for the 3D viewport. */
 export const LoadWorld = Command.define("LoadServiceMapWorld", {
@@ -270,9 +223,7 @@ export const LoadWorld = Command.define("LoadServiceMapWorld", {
 	messages: [Message.CompletedLoadWorld],
 	execute: ({ orgId }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) => client.serviceMapWorld.get()).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadWorld({ orgId, result })),
+			settleTo((result) => Message.CompletedLoadWorld({ orgId, result })),
 		),
 })
 
@@ -299,8 +250,6 @@ export const SaveWorld = Command.define("SaveServiceMapWorld", {
 						}),
 					),
 			}),
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedSaveWorld({ orgId, batch, result })),
+			settleTo((result) => Message.CompletedSaveWorld({ orgId, batch, result })),
 		),
 })

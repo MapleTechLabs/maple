@@ -2,7 +2,7 @@
  * The size a connected repository's provider reports, read before the sandbox clones anything, so
  * an oversized repository is refused at target creation and run start rather than after its clone.
  */
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Context, Effect, Layer, Option } from "effect"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 

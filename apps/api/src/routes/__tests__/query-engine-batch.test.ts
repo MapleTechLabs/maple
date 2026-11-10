@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import type { QueryEngineResult } from "@maple/query-engine"
+import type { QueryEngineResult } from "@maple/domain/query-engine"
 import { Clock, Effect } from "effect"
 import { QueryEngineExecutionError } from "@maple/domain/http"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"

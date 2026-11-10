@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/primitives"
 
 // One row per chat account a person has proved they control, bound to the Maple user they were
 // signed in as when they proved it. It is the whole answer to "who is this clicking a button":
@@ -13,8 +13,7 @@ import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/pr
 // discarded. Maple never acts on the platform as the person, only as the bot.
 //
 // `org_id` and `user_id` carry no foreign key: orgs and users live in Clerk, not Postgres. Org
-// deletion is handled by the explicit `ORG_SCOPED_TABLES` purge list in
-// `packages/backend/src/services/org/OrganizationService.ts`; this table must be listed there.
+// deletion purges every table with an `org_id` (`OrganizationService.ts`), this one included.
 
 export const ChatIdentities = PG.table("chat_identities", {
 	columns: {

@@ -10,8 +10,6 @@ import { portalToBody } from "./overlay/portal"
  * `toast-view.ts` renders the two "Notifications" regions every page has.
  */
 
-// MODEL
-
 export const ToastType = Schema.Literals(["default", "success", "error", "info", "warning", "loading"])
 export type ToastType = typeof ToastType.Type
 
@@ -56,8 +54,6 @@ export const titleId = (toastId: string): string => `${toastId}-title`
 export const descriptionId = (toastId: string): string => `${toastId}-description`
 const rootSelector = (toastId: string) => `[aria-labelledby="${CSS.escape(titleId(toastId))}"]`
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	CompletedPortalToasts: {},
 	CompletedToastEnter: { toastId: Schema.String },
@@ -74,8 +70,6 @@ export const Message = defineMessageUnion({
 	BlurredViewport: {},
 })
 export type Message = typeof Message.Type
-
-// COMMAND
 
 /** Drops `data-starting-style` once the toast has painted, so its enter transition runs. */
 export const WaitForToastPaint = Command.define("WaitForToastPaint", {
@@ -100,8 +94,6 @@ export const WaitForToastExit = Command.define("WaitForToastExit", {
 			Effect.as(Message.EndedToastTransition({ toastId })),
 		),
 })
-
-// MOUNT
 
 /** `Toast.Portal`: each region lives at the end of `<body>`. */
 export const PortalToasts = Mount.define("PortalToasts", {
@@ -139,8 +131,6 @@ export const MeasureToast = Mount.defineStream("MeasureToast", {
 			).pipe(Effect.andThen(Effect.never)),
 		),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 

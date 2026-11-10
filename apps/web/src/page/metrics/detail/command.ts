@@ -1,3 +1,6 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { encodeJson } from "@maple/views/data/request-key"
 import { MetricsQueryDraftSchema, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import {
 	getMetricAttributeKeys,
@@ -6,47 +9,25 @@ import {
 } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
-import { Clock, Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
+import { Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { settled } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { AutocompleteLookup } from "./model"
 import { autocompleteLookup } from "../../kit/autocomplete-lookups"
 import { caretEvents, placeCaret, WHERE_TEXTAREA_ID } from "./where-editor"
 import { listboxEvents } from "../../kit/where-autocomplete"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-export const ResolveWindow = Command.define("ResolveMetricWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
-
-const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(Effect.mapError(toLoadFailure), Effect.result)
+export const ResolveWindow = resolveWindowCommand("ResolveMetricWindow", Message.CompletedResolveWindow)
 
 export const FetchCatalog = Command.define("FetchMetricCatalog", {
 	args: { key: Schema.String, metricName: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchCatalog],
 	execute: ({ key, metricName, window }) =>
-		settle(
+		settled(
 			Effect.map(
 				listMetrics({
 					data: {
@@ -65,7 +46,7 @@ export const FetchAutocomplete = Command.define("FetchMetricAutocomplete", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedFetchAutocomplete],
 	execute: (args) =>
-		settle(autocompleteLookup(args.lookup, args.window)).pipe(
+		settled(autocompleteLookup(args.lookup, args.window)).pipe(
 			Effect.map((result) =>
 				Message.CompletedFetchAutocomplete({ key: args.key, lookup: args.lookup, result }),
 			),
@@ -84,7 +65,7 @@ export const FetchAttributeKeys = Command.define("FetchMetricAttributeKeys", {
 	args: { key: Schema.String, input: AttributeKeysInput },
 	messages: [Message.CompletedFetchAttributeKeys],
 	execute: ({ key, input }) =>
-		settle(Effect.map(getMetricAttributeKeys({ data: input }), (response) => response.data)).pipe(
+		settled(Effect.map(getMetricAttributeKeys({ data: input }), (response) => response.data)).pipe(
 			Effect.map((result) => Message.CompletedFetchAttributeKeys({ key, result })),
 		),
 })
@@ -100,7 +81,7 @@ export const FetchTimeseries = Command.define("FetchMetricTimeseries", {
 	args: { key: Schema.String, input: DraftInput },
 	messages: [Message.CompletedFetchTimeseries],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(
 				getQueryBuilderTimeseries({
 					data: {
@@ -118,7 +99,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 	args: { key: Schema.String, input: DraftInput },
 	messages: [Message.CompletedFetchBreakdown],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(
 				getQueryBuilderBreakdown({
 					data: {
@@ -127,7 +108,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 						queries: [{ ...input.query }],
 					},
 				}),
-				// `BreakdownBars`: names stringified, values numbers, blank names dropped.
+				// The breakdown bars: names stringified, values numbers, blank names dropped.
 				(response) =>
 					Arr.filter(
 						Arr.map(response.data, (row) => ({
@@ -140,7 +121,7 @@ export const FetchBreakdown = Command.define("FetchMetricBreakdown", {
 		).pipe(Effect.map((result) => Message.CompletedFetchBreakdown({ key, result }))),
 })
 
-/** `encodeAlertChartToSearchParam` (lib/alerts/widget-chart-param.ts imports `@/` modules) over `toBase64Url`. */
+/** Keeps the encoded `chart` param well under practical URL limits. */
 const MAX_ENCODED_LENGTH = 12_000
 const toBase64Url = (input: string): string =>
 	Str.replace(
@@ -154,7 +135,7 @@ const toBase64Url = (input: string): string =>
 	)
 
 /**
- * `MetricGraduationActions`' Create alert: the current query as a chart widget snapshot in the
+ * Create alert: the current query as a chart widget snapshot in the
  * `chart` param. Fresh ids, so it runs here rather than in `update`.
  */
 export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
@@ -185,7 +166,7 @@ export const BuildAlertLink = Command.define("BuildMetricAlertLink", {
 		}),
 })
 
-/** `MetricQueryControls`' where commit: 400 ms after the last keystroke. */
+/** The where commit: 400 ms after the last keystroke. */
 export const DebounceWhere = Command.define("DebounceMetricWhere", {
 	args: { generation: Schema.Number },
 	messages: [Message.CompletedWhereDebounce],
@@ -193,18 +174,13 @@ export const DebounceWhere = Command.define("DebounceMetricWhere", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.CompletedWhereDebounce({ generation })),
 })
 
-/** `CopyButton value={() => window.location.href}`: read when clicked. */
+/** The page URL for the copy button, read when clicked. */
 export const ReadLocation = Command.define("ReadMetricLocation", {
 	messages: [Message.ReadLocationHref],
 	execute: Effect.sync(() => Message.ReadLocationHref({ href: window.location.href })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteMetricReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMetricReloadSpin", Message.CompletedReloadSpin)
 
 /** The where textarea's caret, focus and blur, read off the native events. */
 export const MountWhereCaret = Mount.defineStream("MountMetricWhereCaret", {
@@ -237,12 +213,12 @@ export const AttributeValuesInput = Schema.Struct({
 	metricType: Schema.Literals(QUERY_BUILDER_METRIC_TYPES),
 })
 
-/** `getMetricAttributeValuesResultAtom`: the values offered after `attr.<key> =`. */
+/** The values offered after `attr.<key> =`. */
 export const FetchAttributeValues = Command.define("FetchMetricAttributeValues", {
 	args: { key: Schema.String, input: AttributeValuesInput },
 	messages: [Message.CompletedFetchAttributeValues],
 	execute: ({ key, input }) =>
-		settle(
+		settled(
 			Effect.map(getMetricAttributeValues({ data: input }), (response) =>
 				Arr.map(response.data, (row) => row.attributeValue),
 			),

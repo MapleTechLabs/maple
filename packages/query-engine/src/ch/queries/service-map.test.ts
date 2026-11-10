@@ -15,7 +15,7 @@ import {
 	servicePlatformsSQL,
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
-import { ServiceMapEdgesHourly } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_LAZY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
@@ -42,8 +42,6 @@ const baseParams = {
 	startTime: "2024-01-01 00:00:00",
 	endTime: "2024-01-02 00:00:00",
 }
-
-// serviceExternalEdgesSQL
 
 describe("serviceExternalEdgesSQL", () => {
 	it("derives tenant scope from its union branches, not from the anti-join", () => {
@@ -159,8 +157,6 @@ describe("serviceExternalEdgesSQL", () => {
 	)
 })
 
-// serviceMapResolutionsRollupSQL — companion of the edges rollup
-
 describe("serviceMapResolutionsRollupSQL", () => {
 	const hourParams = {
 		orgId: OrgId.make("org_1"),
@@ -184,8 +180,6 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		)
 	})
 })
-
-// serviceDependenciesForServiceQuery — service-scoped service↔service edges
 
 // The splice fragments `./rollup-splice` emits for the 10:15 → 12:30 window the
 // boundary tests use. Spelled out rather than imported: a test that derived them
@@ -303,7 +297,7 @@ describe("serviceMapEdgeJoinQuery", () => {
 		const selectClause = Str.slice(0, Option.getOrThrow(Str.indexOf("FROM (")(sql)))(sql)
 		const aliases = Arr.map(Arr.fromIterable(Str.matchAll(/ AS (\w+)/g)(selectClause)), (m) => m[1])
 
-		expect(new Set(aliases)).toEqual(new Set(Rec.keys(ServiceMapEdgesHourly.columns)))
+		expect(new Set(aliases)).toEqual(new Set(Rec.keys(Datasources.serviceMapEdgesHourly.columns)))
 	})
 
 	it("filters OrgId on both join sides, so the scope is derived", () => {
@@ -373,8 +367,6 @@ describe("serviceDependenciesForServiceQuery", () => {
 		expect(sql).toContain("SourceService = 'weird\\'service'")
 	})
 })
-
-// serviceDbEdgesForServiceQuery — service-scoped service↔database edges
 
 describe("serviceDbEdgesForServiceQuery", () => {
 	it.effect("decodes org-wide database edge rows with numeric strings from ClickHouse JSON", () =>
@@ -468,8 +460,6 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 	})
 })
-
-// serviceDbQuerySummarySQL / serviceDbQueryTimeseriesSQL / serviceDbTopQueriesSQL
 
 describe("service-map database query summaries", () => {
 	const params = {
@@ -785,8 +775,6 @@ describe("servicePlatformsSQL", () => {
 		}),
 	)
 })
-
-// serviceDbQuerySpansQuery
 
 describe("serviceDbQuerySpansQuery", () => {
 	const spans = () =>

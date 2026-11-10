@@ -25,12 +25,13 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
 import { utcHourFloor } from "./query-helpers"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
@@ -47,18 +48,7 @@ export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceWorkloadsOutput {
-	readonly serviceName: string
-	readonly workloadKind: "deployment" | "statefulset" | "daemonset" | "unknown"
-	readonly workloadName: string
-	readonly namespace: string
-	readonly clusterName: string
-	readonly podCount: number
-	readonly avgCpuLimitUtilization: number | null
-	readonly avgMemoryLimitUtilization: number | null
-}
-
-const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutput> = Schema.Struct({
+const ServiceWorkloadsOutputSchema = Schema.Struct({
 	serviceName: Schema.String,
 	workloadKind: Schema.Literals(["deployment", "statefulset", "daemonset", "unknown"]),
 	workloadName: Schema.String,
@@ -68,6 +58,8 @@ const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutpu
 	avgCpuLimitUtilization: Schema.NullOr(CHNumber),
 	avgMemoryLimitUtilization: Schema.NullOr(CHNumber),
 })
+
+export type ServiceWorkloadsOutput = typeof ServiceWorkloadsOutputSchema.Type
 
 // `IN ()` is invalid SQL, so an empty service list short-circuits to a
 // zero-row result with the right column shape.
@@ -107,7 +99,7 @@ export function serviceWorkloadsSQL(
 	// `k8s.cluster.name` is never tagged (the `k8sattributes` processor doesn't
 	// set it), so `K8sCluster` is always ''. The kubeletstats pod gauges DO carry
 	// it, so the metrics side below owns clusterName for both the JOIN and display.
-	const workloadIdentity = from(ServicePlatformsHourly)
+	const workloadIdentity = from(Datasources.servicePlatformsHourly)
 		.select(($) => {
 			const deployment = CH.max_($.K8sDeploymentName)
 			const statefulSet = CH.max_($.K8sStatefulSetName)
@@ -151,7 +143,7 @@ export function serviceWorkloadsSQL(
 	// gauges, which require CPU/memory limits to be set) drives uniq(pod.uid).
 	// The avgIf aggregates still read their own *_utilization rows from the same
 	// scan, returning 0/null when a cluster doesn't set the matching limit.
-	const workloadMetrics = from(MetricsGauge)
+	const workloadMetrics = from(Datasources.metricsGauge)
 		.select(($) => {
 			const deployment = $.ResourceAttributes.get("k8s.deployment.name")
 			const statefulSet = $.ResourceAttributes.get("k8s.statefulset.name")
@@ -241,36 +233,27 @@ export interface ServiceRuntimesOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceRuntimesOutput {
+const ServiceRuntimesOutputSchema = Schema.Struct({
 	/** The series' `service.name`; `tracedServiceOfRuntime` maps it to the traced service. */
-	readonly metricServiceName: string
-	readonly metricName: string
-	/** GCP project, AWS account or Cloudflare account. */
-	readonly account: string
-	readonly region: string
-	/** ECS cluster. */
-	readonly cluster: string
-	readonly railwayServiceId: string
-	readonly railwayEnvironmentId: string
-	readonly railwayEnvironmentName: string
-}
-
-const ServiceRuntimesOutputSchema: CompiledQueryRowSchema<ServiceRuntimesOutput> = Schema.Struct({
 	metricServiceName: Schema.String,
 	metricName: Schema.String,
+	/** GCP project, AWS account or Cloudflare account. */
 	account: Schema.String,
 	region: Schema.String,
+	/** ECS cluster. */
 	cluster: Schema.String,
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
 })
 
+export type ServiceRuntimesOutput = typeof ServiceRuntimesOutputSchema.Type
+
 export function serviceRuntimesSQL(
 	opts: ServiceRuntimesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
-	const query = from(MetricsGauge)
+	const query = from(Datasources.metricsGauge)
 		.select(($) => ({
 			metricServiceName: $.ServiceName,
 			metricName: $.MetricName,

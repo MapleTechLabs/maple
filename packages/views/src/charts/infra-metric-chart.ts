@@ -19,7 +19,7 @@ import { hstack } from "../ui/stack"
 
 // The infra metric chart: the spec
 // with every colour resolved, the header's series info, the linked-cursor marker and overlay, and the
-// `CursorPlot` box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
+// plot box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
 
 export const INFRA_METRIC_CHART_HEIGHT = 220
 /** The empty-chart message. */
@@ -130,7 +130,7 @@ export interface InfraMetricChartInputs {
 	readonly isWaiting?: boolean
 	/** The plot's height, and the empty state's (else it fills its plot area). */
 	readonly height?: number
-	/** The surrounding `ChartPlotArea`'s height (`useChartPlotHeight`). */
+	/** The surrounding `chartPlotArea`'s height. */
 	readonly plotAreaHeight?: number
 	readonly className?: string
 	/** The last-value strip above the plot (`header`). */
@@ -182,7 +182,7 @@ const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricCha
 	)
 }
 
-/** `InfraMetricChart` over a built spec. */
+/** The infra metric chart over a built spec. */
 export const view = Submodel.defineView<Model, Message, InfraMetricChartInputs>((model, inputs, h) =>
 	chartBody(h, model, inputs),
 )

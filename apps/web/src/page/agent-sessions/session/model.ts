@@ -25,8 +25,6 @@ export const ScrollRequest = Schema.Struct({
 	reveal: Schema.Boolean,
 })
 
-// `/agent-sessions/$sessionId`.
-
 export const SESSION_VIEWS = ["overview", "trace", "flow", "transcript"] as const
 export type SessionView = (typeof SESSION_VIEWS)[number]
 
@@ -111,19 +109,19 @@ export const Model = Schema.Struct({
 	/** The virtualizers' windows, reset when the view they belong to mounts again. */
 	waterfallWindow: VirtualWindow,
 	transcriptWindow: VirtualWindow,
-	/** The waterfall's keyboard span cursor (`useListNavigation`'s `focusedId`). */
+	/** The waterfall's keyboard span cursor. */
 	focusedSpanId: Schema.NullOr(Schema.String),
 	/** A scroll the open view's list should make; `landed` once its `?span=` landing was spent. */
 	scroll: Schema.NullOr(ScrollRequest),
 	landed: Schema.Boolean,
-	/** `SpanPopover`: open while the active view has a span selected (`?span=`). */
+	/** The span popover: open while the active view has a span selected (`?span=`). */
 	spanDialog: Dialog.Model,
 	/** The reader's tab choice, held across spans and views; `null` picks by content. */
 	spanTab: Schema.NullOr(SpanDetailTab),
 	/** The open span's lazy detail and logs reads, copies and disclosures, for `spanPanelId`. */
 	spanPanel: PanelState,
 	spanPanelId: Schema.NullOr(Schema.String),
-	/** The code block whose Copy shows its check (Streamdown holds it 2s), and the hold's generation. */
+	/** The code block whose Copy shows its check (held 2s), and the hold's generation. */
 	codeCopy: Schema.Struct({ code: Schema.NullOr(Schema.String), generation: Schema.Number }),
 	/** The popover's Close button tooltip, shown on keyboard focus (a pasted link focuses it). */
 	closeTooltip: Tooltip.Model,

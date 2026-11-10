@@ -3,7 +3,7 @@ import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { AuditSetupOutput } from "@maple/domain/mcp-outputs"
 import { PublicIdPrefixes, encodePublicId, type PublicIdPrefix } from "@maple/domain/http/v2"
 import { INTEGRATION_PROVIDERS } from "@maple/domain/integration-inventory"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
@@ -348,7 +348,6 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 				"Also list passing and skipped checks (default false: findings only)",
 			),
 		}),
-		output: AuditSetupOutput,
 		hints: { readOnly: true },
 		phrases: ["Auditing the setup", "Checking the telemetry setup"],
 		handler: Effect.fn("McpTool.auditSetup")(function* ({ include_passing }) {

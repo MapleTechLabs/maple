@@ -13,7 +13,8 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../datetime"
-import { ServiceEndpointDetailsHourly, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 import { httpEndpointCondition } from "./service-operations"
 
@@ -22,7 +23,7 @@ export interface ServiceEndpointDetailsScopeOpts {
 	readonly environments?: readonly string[]
 }
 
-type DetailColumns = ColumnAccessor<typeof ServiceEndpointDetailsHourly.columns>
+type DetailColumns = ColumnAccessor<typeof Datasources.serviceEndpointDetailsHourly.columns>
 
 const scopeConditions = ($: DetailColumns, opts: ServiceEndpointDetailsScopeOpts) => [
 	$.OrgId.eq(orgIdParam),
@@ -33,8 +34,6 @@ const scopeConditions = ($: DetailColumns, opts: ServiceEndpointDetailsScopeOpts
 		? CH.inList($.DeploymentEnv, opts.environments)
 		: undefined,
 ]
-
-// D. Status code x error.type breakdown
 
 export interface ServiceEndpointStatusBreakdownOpts extends ServiceEndpointDetailsScopeOpts {
 	/** One endpoint; omitted means every HTTP endpoint of the service. */
@@ -59,7 +58,7 @@ export const serviceEndpointStatusBreakdownRowSchema = Schema.Struct({
 })
 
 export function serviceEndpointStatusBreakdownQuery(opts: ServiceEndpointStatusBreakdownOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			spanName: $.SpanName,
 			httpStatusCode: $.HttpStatusCode,
@@ -78,8 +77,6 @@ export function serviceEndpointStatusBreakdownQuery(opts: ServiceEndpointStatusB
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// E1. One endpoint's distributions and top user agents
 
 /** Latency levels the detail panel draws; finalize-time, so any set reads the stored digests. */
 export const ENDPOINT_LATENCY_QUANTILE_LEVELS = [
@@ -121,7 +118,7 @@ const TOP_AGENTS_SQL = "arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(UserAg
 
 /** Always one row: no GROUP BY, so an endpoint with no traffic reads as zeros. */
 export function serviceEndpointDistributionQuery(opts: ServiceEndpointDetailOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			spanCount: CH.sum($.SpanCount),
 			latencyQuantilesMs: CH.rawExpr<ReadonlyArray<number>>(
@@ -150,8 +147,6 @@ export function serviceEndpointDistributionQuery(opts: ServiceEndpointDetailOpts
 		.where(($) => [...scopeConditions($, opts), $.SpanName.eq(opts.spanName)])
 		.format("JSON")
 }
-
-// E2. One endpoint's slowest requests
 
 export interface ServiceEndpointSlowestOpts extends ServiceEndpointDetailOpts {
 	readonly limit?: number
@@ -182,7 +177,7 @@ export const serviceEndpointSlowestRowSchema = Schema.Struct({
  * without reading a raw span. Two of them never come from the same hour and status.
  */
 export function serviceEndpointSlowestQuery(opts: ServiceEndpointSlowestOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			hour: $.Hour,
 			httpStatusCode: $.HttpStatusCode,

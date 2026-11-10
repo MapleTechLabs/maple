@@ -6,31 +6,26 @@
 import {
 	assetWorkerObservability,
 	MapleStack,
-	resolveWorkerName,
-	resolveWorkerPlacement,
+	mapleSiteProps,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
+import { siteBuildMemo } from "@maple/infra/worker-build"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 
 const props = Effect.gen(function* () {
-	const { stage, region, domains } = yield* MapleStack
+	const stack = yield* MapleStack
 	const destinations = yield* WorkersObservabilityDestinations
 	return {
-		name: resolveWorkerName("local-ui", stage, region),
+		...mapleSiteProps("local-ui", stack),
 		command: "bun run build",
 		cwd: new URL("..", import.meta.url).pathname,
 		outdir: "dist",
 		main: new URL("./worker-entry.ts", import.meta.url).href,
-		// Also hash the `@maple/*` sources; `lockfile` is restated because `include` drops it.
-		memo: {
-			include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
-			lockfile: true,
-		},
-		placement: resolveWorkerPlacement(region),
+		memo: siteBuildMemo(),
 		observability: assetWorkerObservability(destinations),
 		workersDev: true,
-		domain: domains.local,
+		domain: stack.domains.local,
 	}
 }).pipe(
 	// StaticSite requires `never` errors; a failure here is unreadable stack config.

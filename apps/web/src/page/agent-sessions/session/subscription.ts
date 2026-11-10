@@ -43,7 +43,7 @@ const isInteractiveTarget = (target: EventTarget | null): boolean =>
 	target instanceof HTMLElement &&
 	target.closest("button, a, [role='button'], [role='menuitem'], [role='option']") !== null
 
-/** The waterfall's `useListNavigation`: suspended while a dialog owns the keyboard. */
+/** The waterfall's keyboard cursor: suspended while a dialog owns the keyboard. */
 const spanKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
 	target: () => document,
 	type: "keydown",

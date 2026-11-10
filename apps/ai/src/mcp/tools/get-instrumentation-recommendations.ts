@@ -1,8 +1,7 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { formatNumber } from "../lib/format"
 import { Effect, Option, Schema, Array as Arr } from "effect"
-import { GetInstrumentationRecommendationsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { resolveTimeRange } from "../lib/time"
 import * as P from "../lib/params"
@@ -103,7 +102,6 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 				"Include the resource attribute coverage section (default true)",
 			),
 		}),
-		output: GetInstrumentationRecommendationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking instrumentation"],
 		handler: Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({

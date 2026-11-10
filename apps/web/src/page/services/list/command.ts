@@ -1,3 +1,4 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
 import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
 import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
@@ -5,29 +6,18 @@ import {
 	getServiceOverview,
 	type GetServiceOverviewInput,
 } from "@maple/web-data/warehouse/services"
-import {
-	Clock,
-	Duration,
-	Effect,
-	Queue,
-	Schema,
-	Stream,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-	Option,
-} from "effect"
+import { Effect, Queue, Schema, Stream, Array as Arr, Record as Rec } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
-import { writeClipboard } from "@maple/views/ui/copy-button"
-import { ARM_DELAY_MS, loadCommitDetail, readCommitDetails } from "../../kit/commit-card"
+import { TimeWindow } from "../../../data/time-range"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { commitCardCommands, firstLine, readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { loadAnomalyServiceCounts } from "../../../data/anomaly-service-counts"
+import { fetchAnomaliesCommand } from "../../kit/service-health"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ServiceRow, Sparklines } from "./model"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */
@@ -43,41 +33,21 @@ export const OverviewInput = Schema.Struct({
 })
 export type OverviewInput = typeof OverviewInput.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 const toWarehouseInput = (input: OverviewInput): GetServiceOverviewInput => ({
 	startTime: input.startTime,
 	endTime: input.endTime,
-	environments: mutable(input.environments),
-	namespaces: mutable(input.namespaces),
-	commitShas: mutable(input.commitShas),
-	excludedEnvironments: mutable(input.excludedEnvironments),
-	excludedNamespaces: mutable(input.excludedNamespaces),
-	excludedCommitShas: mutable(input.excludedCommitShas),
+	environments: input.environments,
+	namespaces: input.namespaces,
+	commitShas: input.commitShas,
+	excludedEnvironments: input.excludedEnvironments,
+	excludedNamespaces: input.excludedNamespaces,
+	excludedCommitShas: input.excludedCommitShas,
 })
 
-/** `useEffectiveTimeRange`: snapped on entry, re-resolved against the real clock on Reload. */
-export const ResolveWindow = Command.define("ResolveServicesWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+/** Snapped on entry, re-resolved against the real clock on Reload. */
+export const ResolveWindow = resolveWindowCommand("ResolveServicesWindow", Message.CompletedResolveWindow)
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
 export const FetchOverview = Command.define("FetchServiceOverview", {
 	args: { key: Schema.String, refresh: Schema.Boolean, input: OverviewInput },
@@ -89,11 +59,7 @@ export const FetchOverview = Command.define("FetchServiceOverview", {
 			Effect.map(getServiceOverview({ data: toWarehouseInput(input) }), (response) =>
 				Arr.filter(response.data, (row) => !isMapleService(row)),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchOverview({ key, result }))),
 })
 
 export const FetchSparklines = Command.define("FetchServiceSparklines", {
@@ -113,32 +79,21 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 					]),
 				),
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSparklines({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchSparklines({ key, result }))),
 })
 
-/** `getServicesFacetsResultAtom`: shared with the Overview through the facets probe. */
+/** Shared with the Overview through the facets probe. */
 export const FetchFacets = Command.define("FetchServicesFacets", {
 	args: { key: Schema.String, window: TimeWindow, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window, refresh }) =>
 		loadServicesFacets(window, { refresh, key }).pipe(
-			Effect.mapBoth({
-				onSuccess: ({ data }) => ({
-					environments: data.environments,
-					namespaces: Arr.filter(
-						data.namespaces,
-						(facet) => facet.name !== MAPLE_SERVICES_NAMESPACE,
-					),
-					commitShas: data.commitShas,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map(({ data }) => ({
+				environments: data.environments,
+				namespaces: Arr.filter(data.namespaces, (facet) => facet.name !== MAPLE_SERVICES_NAMESPACE),
+				commitShas: data.commitShas,
+			})),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -157,29 +112,21 @@ export const FetchBaseline = Command.define("FetchServiceHealthBaseline", {
 		getServiceHealthBaseline({
 			data: {
 				rangeStartTime: input.rangeStartTime,
-				environments: mutable(input.environments),
-				namespaces: mutable(input.namespaces),
+				environments: input.environments,
+				namespaces: input.namespaces,
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBaseline({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchBaseline({ key, result })),
 		),
 })
 
-/** `openAnomalyServiceCountsAtom`. */
-export const FetchAnomalies = Command.define("FetchOpenAnomalyServiceCounts", {
-	args: { key: Schema.String },
-	messages: [Message.CompletedFetchAnomalies],
-	execute: ({ key }) =>
-		loadAnomalyServiceCounts(key).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchAnomalies({ key, result })),
-		),
-})
+export const FetchAnomalies = fetchAnomaliesCommand(
+	"FetchOpenAnomalyServiceCounts",
+	Message.CompletedFetchAnomalies,
+)
 
-/** `commitsQueryAtom(shasKey)`: every deploy sha on screen in one request, first lines by sha. */
+/** Every deploy sha on screen in one request, first lines by sha. */
 export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 	args: { key: Schema.String, shas: Schema.String },
 	messages: [Message.CompletedFetchCommitMessages],
@@ -189,40 +136,14 @@ export const FetchCommitMessages = Command.define("FetchCommitMessages", {
 			return Rec.fromEntries(
 				Arr.map(response.commits, (commit) => [commit.sha, firstLine(commit.message)]),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCommitMessages({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchCommitMessages({ key, result }))),
 })
 
-/** `CommitShaHoverCard`'s arm timer: the lookup starts 20 ms into a hover, ahead of the card. */
-export const ArmCommitLookup = Command.define("ArmServicesCommitLookup", {
-	args: { sha: Schema.String, generation: Schema.Number },
-	messages: [Message.ElapsedCommitArm],
-	execute: ({ sha, generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(ARM_DELAY_MS)), Message.ElapsedCommitArm({ sha, generation })),
-})
-
-/** `commitQueryAtom(sha)`, for the hover card. */
-export const FetchCommitDetail = Command.define("FetchServicesCommitDetail", {
-	args: { key: Schema.String, sha: Schema.String },
-	messages: [Message.CompletedFetchCommitDetail],
-	execute: ({ key, sha }) =>
-		Effect.map(loadCommitDetail(key, sha), (result) =>
-			Message.CompletedFetchCommitDetail({ sha, result }),
-		),
-})
-
-// The first line of a commit message.
-const firstLine = (message: string): string => {
-	return Str.trim(
-		Option.match(Str.indexOf("\n")(message), {
-			onNone: () => message,
-			onSome: (index) => Str.slice(0, index)(message),
-		}),
-	)
-}
+/** The commit hover card's arm timer and its commit lookup. */
+export const CommitCard = commitCardCommands(
+	{ arm: "ArmServicesCommitLookup", fetch: "FetchServicesCommitDetail" },
+	{ elapsed: Message.ElapsedCommitArm, completed: Message.CompletedFetchCommitDetail },
+)
 
 /** Where a click in the table goes: a service link is the link's alone (the row ignores it). */
 export const tableLinkClick = (
@@ -273,7 +194,7 @@ export const LoadSignalPresence = Command.define("LoadSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `CopyableBadge`'s write for the commit SHA; the row navigation waits on it. */
+/** The commit SHA copy; the row navigation waits on it. */
 export const CopyCommitSha = Command.define("CopyServicesCommitSha", {
 	args: { sha: Schema.String, rowUrl: Schema.String },
 	messages: [Message.CompletedCopyCommitSha],

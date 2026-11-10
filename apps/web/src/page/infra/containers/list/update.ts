@@ -1,17 +1,17 @@
-import { Schema, String as Str } from "effect"
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
+import { String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import type { SortDir } from "../../../kit/table-sort"
-import { excludedValue, type FacetLists, onlyValue, toggledValue } from "../../kit/facets"
-import * as Frame from "../../kit/frame"
-import { liftFrame, resolveFrame, routeFrame } from "../../kit/frame-step"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../../kit/facets"
+import * as Frame from "../../../kit/time-frame"
+import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
 import * as InstallModal from "../../kit/install-modal"
-import { applySteps, keyed, type Step } from "../../kit/requests"
+import { applySteps, keyed, type Step } from "../../../kit/keyed-step"
 import {
 	type ContainersInput,
 	DebounceSearch,
@@ -22,8 +22,6 @@ import {
 } from "./command"
 import { type ContainerSortKey, type Facet, Message } from "./message"
 import type { Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type Return = PageReturn<Model, Message>
 export type Search = Model["search"]
@@ -46,7 +44,7 @@ export const EXCLUDED_OF = {
 	environments: "excludedEnvironments",
 } as const satisfies Record<Facet, string>
 
-/** The `ContainerFilters` the URL carries. */
+/** The container filters the URL carries. */
 export const filtersOf = (search: Search) => ({
 	containerNames: search.containerNames,
 	hostNames: search.hostNames,
@@ -68,7 +66,7 @@ export const sortOf = (search: Search) => {
 	return { sortBy, sortDir }
 }
 
-/** `useResettingPage`'s key: the page index survives only while this is unchanged. */
+/** The page index survives only while this key is unchanged. */
 const resetKeyOf = (model: Model) =>
 	encodeJson({
 		filters: filtersOf(model.search),
@@ -95,7 +93,7 @@ type RequestStep = (
 	model: Model,
 	context: PageContext,
 	window: TimeWindow,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 ) => Step<Model, Message>
 
 const containersStep: RequestStep = (model, context, window, mode) => {
@@ -119,7 +117,7 @@ const facetsStep: RequestStep = (model, context, window, mode) =>
 	)
 
 /** Every query the page reads, for the resolved window. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const summaryInput = {
@@ -149,17 +147,8 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-/** `onFilterChange` for one facet, both polarities. */
-const withFacet = (search: Search, facet: Facet, lists: FacetLists): Search => ({
-	...search,
-	[facet]: lists.selected,
-	[EXCLUDED_OF[facet]]: lists.excluded,
-})
-
-const listsOf = (search: Search, facet: Facet): FacetLists => ({
-	selected: search[facet],
-	excluded: search[EXCLUDED_OF[facet]],
-})
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -251,13 +240,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					})
 		},
 		ToggledFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, toggledValue(listsOf(model.search, facet), name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, withFacet(model.search, facet, onlyValue(name))),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
 			navigate(
 				model,
-				withFacet(model.search, facet, excludedValue(listsOf(model.search, facet), name)),
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
 			),
 		ClickedClearFilters: () => navigate(model, windowOnly(model.search)),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),

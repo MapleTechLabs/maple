@@ -3,22 +3,22 @@ import {
 	buildRuleTestParamsV2,
 	isRulePreviewReady,
 } from "@maple/web-data/alerts/form-utils"
-import { Result } from "effect"
+import { Array as Arr, Result } from "effect"
 import { PageOutMessage } from "../../contract"
-import { alertsHref } from "../shared/links"
-import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
+import { alertsHref } from "../../kit/alert-links"
+import { sentenceCardHeadingId } from "../../kit/sentence-card"
+import { FocusRuleCard, RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { isProtectedDefault, previewIdentityKey, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
-
-// The writes: Dry run and Send test (`runTest`), and Create / Save changes (`handleSave`).
+import { cardOfIssue, issueFieldId } from "./summary"
 
 const errorToast = (title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type: "error", title, description })
 
-/** `runTest`: a form that cannot be previewed yet says so instead of asking. */
+/** A form that cannot be previewed yet says so instead of asking. */
 export const runTest = (model: Model, isSending: boolean): Return => {
 	const form = model.form
 	if (form === null || model.isDryRunning || model.isSendingTest) return { model }
@@ -59,11 +59,24 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 	})
 }
 
-/** `handleSave`: the ready form as create (or update) params; success lands on `/alerts`. */
+/** The ready form as create (or update) params; success lands on `/alerts`. */
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }
-	if (saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model)).length > 0) return { model }
+	const issues = saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model))
+	const first = issues[0]
+	// A blocked save shows every field's error and lands on the first thing to fix.
+	if (first !== undefined) {
+		const card = cardOfIssue(first)
+		return {
+			model: {
+				...model,
+				hasAttemptedSave: true,
+				expandedCards: Arr.union(model.expandedCards, [card]),
+			},
+			commands: [FocusRuleCard({ id: issueFieldId(first) ?? sentenceCardHeadingId(card) })],
+		}
+	}
 	return {
 		model: { ...model, isSaving: true },
 		commands: [SaveRule({ ruleId: model.editingRuleId, payload: buildRuleCreateParamsV2(form) })],
@@ -79,7 +92,7 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 					? [TrackRuleCreated({ signal: model.form.signalType })]
 					: [],
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({}),
+				url: alertsHref({}, "rules"),
 				isReplace: false,
 				toast: {
 					type: "success",

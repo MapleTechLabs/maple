@@ -13,13 +13,10 @@ import type {
 	V2AlertSilenceMatchers,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Order, Array as Arr } from "effect"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { isoMs } from "./time"
-
-// Alert silences: the reads and writes the hub, rule and incident pages share, and how a page
-// tells which silence covers a rule or an incident.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const listByStatus = (status?: V2AlertSilence["status"]) =>
 	Effect.gen(function* () {
@@ -63,19 +60,41 @@ export const endSilence = (id: AlertSilenceId) =>
 		return yield* client.alertSilences.end({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
-export const startsAtMs = (silence: V2AlertSilence): number => isoMs(silence.starts_at)
-export const endsAtMs = (silence: V2AlertSilence): number => isoMs(silence.ends_at)
+export const startsAtMs = (silence: V2AlertSilence): number => toEpochMs(silence.starts_at)
+export const endsAtMs = (silence: V2AlertSilence): number => toEpochMs(silence.ends_at)
 
 /** Cancelled before it started: the API collapses its window to one instant. */
 export const isCancelledSilence = (silence: V2AlertSilence): boolean =>
 	startsAtMs(silence) === endsAtMs(silence)
 
-/** "15:00" today, "Nov 7, 09:00" on another day, in the viewer's zone. */
-export const formatSilenceTime = (ms: number, nowMs: number, timeZone: string): string => {
-	const time = formatTimeInTimezone(ms, { timeZone, withSeconds: false })
+/**
+ * "03:00 PM" today, "Nov 7, 09:00 AM" on another day, in the viewer's zone. `h23` reads "15:00",
+ * for a label beside the form's 24h time picker.
+ */
+export const formatSilenceTime = (
+	ms: number,
+	nowMs: number,
+	timeZone: string,
+	hourCycle?: "h12" | "h23",
+): string => {
+	const time = formatTimeInTimezone(ms, { timeZone, withSeconds: false, hourCycle })
 	return formatDateInTimezone(ms, { timeZone }) === formatDateInTimezone(nowMs, { timeZone })
 		? time
 		: `${formatDateInTimezone(ms, { timeZone, withYear: false })}, ${time}`
+}
+
+/** "15:00 to 16:00" today, "Nov 7, 15:00 to 16:00" on another day: the day is named once when both ends share it. */
+export const formatSilenceRange = (
+	startMs: number,
+	endMs: number,
+	nowMs: number,
+	timeZone: string,
+): string => {
+	const isOneDay = formatDateInTimezone(startMs, { timeZone }) === formatDateInTimezone(endMs, { timeZone })
+	const end = isOneDay
+		? formatTimeInTimezone(endMs, { timeZone, withSeconds: false })
+		: formatSilenceTime(endMs, nowMs, timeZone)
+	return `${formatSilenceTime(startMs, nowMs, timeZone)} to ${end}`
 }
 
 /** Where a silence stands at `nowMs`, from its window rather than the status it was read with. */

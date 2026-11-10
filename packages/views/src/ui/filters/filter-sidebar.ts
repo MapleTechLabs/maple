@@ -9,10 +9,10 @@ import { eyebrow } from "../eyebrow"
 import { scrollArea } from "../scroll-area"
 import { skeleton } from "../skeleton"
 
-// Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
+// The filter rail: its frame, header, groups, body, loading and error states.
 
 /**
- * `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. `isIdle` marks a rail
+ * The filter rail's frame: dims while a refetch runs over the facets it shows. `isIdle` marks a rail
  * with nothing to offer, so the inline rail (`filterRail`) gives its width back to the content.
  */
 export const filterSidebarFrame = <M>(
@@ -31,7 +31,7 @@ export const filterSidebarFrame = <M>(
 	)
 }
 
-/** `FilterSidebarHeader`; `onClear` shows "Clear all" when a filter is set. */
+/** The rail's header; `onClear` shows "Clear all" when a filter is set. */
 export const filterSidebarHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title?: string; onClear?: M }> = {},
@@ -81,7 +81,7 @@ export const filterSidebarGroupLabel = <M>(
 /** A rule between groups of sections inside the body. */
 export const filterSidebarDivider = <M>(h: HtmlBuilder<M>): Html => separator(h, "horizontal", "my-2")
 
-/** `FilterSidebarBody`: separator, the scrolling section list and its bottom fade. */
+/** Separator, the scrolling section list and its bottom fade. */
 export const filterSidebarBody = <M>(
 	h: HtmlBuilder<M>,
 	idPrefix: string,
@@ -111,7 +111,7 @@ export const filterSidebarBody = <M>(
 const OPTION_WIDTHS = ["w-[58%]", "w-[72%]", "w-[44%]", "w-[64%]", "w-[50%]"]
 const LABEL_WIDTHS = ["w-14", "w-20", "w-16", "w-12"]
 
-/** `FilterSidebarLoading`: shaped like the loaded rail so nothing jumps in. */
+/** Shaped like the loaded rail so nothing jumps in. */
 export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Html =>
 	filterSidebarFrame(h, {}, [
 		h.div(
@@ -156,7 +156,7 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 		),
 	])
 
-/** `FilterSidebarEmpty`: nothing to filter and no filter set. */
+/** Nothing to filter and no filter set. */
 export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 	filterSidebarFrame(h, { isIdle: true }, [
 		filterSidebarHeader(h),

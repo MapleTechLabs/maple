@@ -9,15 +9,8 @@ import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import {
-	MetricsSum,
-	MetricsGauge,
-	MetricsHistogram,
-	MetricsExpHistogram,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
@@ -50,8 +43,6 @@ export function wholeRangeEnd<Q>(
 ): CH.Condition | undefined {
 	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
 }
-
-// APDEX expressions
 
 /**
  * Build the standard APDEX aggregation expressions (satisfiedCount,
@@ -97,8 +88,6 @@ export function apdexExprs(
 	}
 }
 
-// Attribute map projection
-
 /**
  * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
  * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
@@ -138,8 +127,6 @@ export function buildProjectedMapExpr(
 	})
 	return CH.mapLiteral(...pairs)
 }
-
-// Traces base WHERE conditions
 
 interface TracesMatchModes {
 	serviceName?: "contains"
@@ -320,7 +307,7 @@ export function errorsOnlyCondition(
 }
 
 type TracesBaseWhereColumns = Pick<
-	typeof Traces.columns,
+	typeof Datasources.traces.columns,
 	| "OrgId"
 	| "Timestamp"
 	| "ServiceName"
@@ -472,8 +459,6 @@ export function tracesBaseWhereConditions(
 	return conditions
 }
 
-// ServiceOverviewSpans MV compatibility
-//
 // The service_overview_spans MV pre-filters traces at write time to
 // `SpanKind IN ('Server','Consumer') OR ParentSpanId = ''` and pre-extracts
 // `DeploymentEnv` / `CommitSha` from ResourceAttributes. It is ~20-100x cheaper
@@ -484,7 +469,6 @@ export function tracesBaseWhereConditions(
 // MV's column set. The MV lacks SpanName, SpanKind, ParentSpanId,
 // SpanAttributes, and ResourceAttributes.
 
-/** Returns true iff the opts + groupBy can be served by service_overview_spans_mv. */
 export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: readonly string[]): boolean {
 	// The MV is *lossy*: it stores only entry-point spans (Server/Consumer OR
 	// root). That set is equivalent to the raw table only when the query itself
@@ -515,7 +499,7 @@ export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: rea
  * and `canUseServiceOverviewMv` only routes rootOnly queries to it.
  */
 export function serviceOverviewWhereConditions(
-	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOverviewSpans.columns>,
 	opts: TracesBaseWhereOpts,
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
@@ -572,8 +556,6 @@ export function serviceOverviewWhereConditions(
 	return conditions
 }
 
-// TracesAggregatesHourly MV compatibility
-//
 // `traces_aggregates_hourly` is the generalized aggregating MV. Its dimensions
 // are (OrgId, Hour, ServiceName, SpanName, SpanKind, StatusCode, IsEntryPoint,
 // DeploymentEnv) and it stores sample-weighted -State columns (count, duration
@@ -623,7 +605,7 @@ export function canUseTracesAggregatesMv(
  * instead of overlapping or leaving a gap.
  */
 export function tracesAggregatesWhereConditions(
-	$: ColumnAccessor<typeof TracesAggregatesHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.tracesAggregatesHourly.columns>,
 	opts: TracesBaseWhereOpts,
 	hourBounds: { readonly gte: string; readonly lt: string },
 ): Array<CH.Condition | undefined> {
@@ -668,16 +650,14 @@ export function tracesAggregatesWhereConditions(
 	return conditions
 }
 
-// Metrics table lookup + SELECT factory
-
 const VALUE_TABLES = {
-	sum: MetricsSum,
-	gauge: MetricsGauge,
+	sum: Datasources.metricsSum,
+	gauge: Datasources.metricsGauge,
 } as const
 
 const HISTOGRAM_TABLES = {
-	histogram: MetricsHistogram,
-	exponential_histogram: MetricsExpHistogram,
+	histogram: Datasources.metricsHistogram,
+	exponential_histogram: Datasources.metricsExponentialHistogram,
 } as const
 
 export function resolveMetricTable(metricType: MetricType) {
@@ -691,10 +671,13 @@ export function resolveMetricTable(metricType: MetricType) {
  * For value tables (sum/gauge): operates on $.Value column.
  * For histogram tables: operates on $.Sum, $.Count, $.Min, $.Max columns.
  */
-export function metricsSelectExprs($: ColumnAccessor<typeof MetricsSum.columns>, isHistogram: boolean) {
+export function metricsSelectExprs(
+	$: ColumnAccessor<typeof Datasources.metricsSum.columns>,
+	isHistogram: boolean,
+) {
 	if (isHistogram) {
 		// SAFETY: `isHistogram` selects the histogram table whose accessor includes Count/Sum/Min/Max.
-		const $h = $ as unknown as ColumnAccessor<typeof MetricsHistogram.columns>
+		const $h = $ as unknown as ColumnAccessor<typeof Datasources.metricsHistogram.columns>
 		return {
 			avgValue: finiteOrZero(CH.sum($h.Sum).div(CH.sum($h.Count))),
 			// Min/Max are Nullable (OTel histograms may omit extrema), and min/max

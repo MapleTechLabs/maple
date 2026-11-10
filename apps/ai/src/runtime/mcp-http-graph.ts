@@ -13,6 +13,9 @@ import { Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { McpLive } from "../mcp/app"
-import { rawRoutes } from "./raw-routes"
+import { rawRoutes } from "@maple/backend/http/raw-routes"
+import type { AiPortsLayer } from "../worker/bindings"
 
-export const McpRoutes = rawRoutes(McpLive).pipe(Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)))
+export const McpRoutes = rawRoutes<Layer.Success<AiPortsLayer>>()(McpLive).pipe(
+	Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
+)

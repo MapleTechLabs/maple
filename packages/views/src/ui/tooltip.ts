@@ -1,11 +1,7 @@
 import * as Animation from "@foldkit/ui/animation"
-import { iconButtonTooltipStyles } from "@maple/ui/styles/ui/icon-button"
+import { iconButtonTooltipStyles } from "./icon-button.styles"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tooltipPopupStyles,
-	tooltipPositionerStyles,
-	tooltipViewportStyles,
-} from "@maple/ui/styles/ui/tooltip"
+import { tooltipPopupStyles, tooltipPositionerStyles, tooltipViewportStyles } from "./tooltip.styles"
 import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import {
@@ -27,8 +23,6 @@ import { isMounted, stateAttributes } from "./overlay/transition"
  * closes when it leaves (no close delay), on a press of the trigger and on Escape. One Model can
  * serve many triggers (a collapsed sidebar rail): `triggerId` is the one it is anchored to.
  */
-
-// MODEL
 
 export const Model = Schema.Struct({
 	...PopupState.fields,
@@ -70,8 +64,6 @@ export const init = (id: string, options: InitOptions = {}): Model => {
 	}
 }
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String },
 	LeftTrigger: {},
@@ -86,8 +78,6 @@ export const Message = defineMessageUnion({
 	GotAnimationMessage: { message: Animation.Message },
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 /** The open delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitOpenDelay = Command.define("WaitOpenDelay", {
@@ -156,8 +146,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			transition.foldAnimation(model, animationMessage),
 	})
 
-// MOUNT
-
 /** Portal and placement only: a tooltip neither marks the page nor moves focus. */
 export const MountTooltip = Mount.defineStream("MountTooltip", {
 	args: {
@@ -195,8 +183,6 @@ export const MountTooltip = Mount.defineStream("MountTooltip", {
 		),
 })
 
-// VIEW
-
 export type RenderInfo = Readonly<{
 	/** `<TooltipTrigger>`'s attributes for the trigger with this id (the default trigger without one). */
 	trigger: (id?: string) => ReadonlyArray<ChildAttribute>
@@ -210,7 +196,7 @@ export type ViewInputs = Readonly<{
 	toContent: (triggerId: string) => ReadonlyArray<Html | string>
 	/** Every trigger id `trigger(id)` is asked for; the default trigger alone without it. */
 	triggerIds?: ReadonlyArray<string>
-	/** `"icon-button"`: `IconButton`'s popup layout (its label beside a shortcut). */
+	/** `"icon-button"`: an icon button's popup layout (its label beside a shortcut). */
 	layout?: "icon-button"
 	className?: string
 }>

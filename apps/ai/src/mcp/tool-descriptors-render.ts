@@ -1,6 +1,7 @@
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { codeUnitAt, replaceWith } from "@maple/strings"
+import { loadRegistry } from "./tool-catalog"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -26,3 +27,34 @@ export const renderToolDescriptorsModule = (descriptors: ReadonlyArray<McpToolDe
 		],
 		"\n",
 	)
+
+const toolDescriptors = ({
+	inputSchemaOf,
+	mapleToolCatalogFor,
+	toOutputSchema,
+}: typeof import("./tools/registry")): ReadonlyArray<McpToolDescriptor> =>
+	Arr.map(mapleToolCatalogFor("mcp"), (definition) => ({
+		name: definition.name,
+		// Current spec reads the top-level `title`; Claude's directory and older clients read `annotations.title`.
+		title: definition.title,
+		description: definition.description,
+		inputSchema: inputSchemaOf(definition),
+		...(definition.outputSchema === undefined
+			? undefined
+			: { outputSchema: toOutputSchema(definition.outputSchema) }),
+		...(definition.hints === undefined
+			? undefined
+			: {
+					annotations: {
+						title: definition.title,
+						readOnlyHint: definition.hints.readOnly,
+						// The protocol defaults both of these to true; every Maple tool states them.
+						destructiveHint: !definition.hints.readOnly && definition.hints.destructive === true,
+						idempotentHint: definition.hints.readOnly || definition.hints.idempotent === true,
+						openWorldHint: definition.hints.openWorld === true,
+					},
+				}),
+	}))
+
+/** The public transport's `tools/list`, built from the registry; the generator writes it out. */
+export const listMcpTools = Effect.map(loadRegistry, toolDescriptors)

@@ -26,7 +26,10 @@ export const SessionRow = Schema.Struct({
 })
 export type SessionRow = typeof SessionRow.Type
 
-export const SessionPages = Schema.Struct({ pages: Schema.Array(Schema.Array(SessionRow)), hasNextPage: Schema.Boolean })
+export const SessionPages = Schema.Struct({
+	pages: Schema.Array(Schema.Array(SessionRow)),
+	hasNextPage: Schema.Boolean,
+})
 export type SessionPages = typeof SessionPages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
@@ -54,7 +57,7 @@ export const Model = Schema.TaggedStruct("SessionsPage", {
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,
-	/** `dataUpdatedAt` of the list, for the "New data" pill. */
+	/** When the list last loaded, for the "New data" pill. */
 	sessionsUpdatedAtMs: Schema.Number,
 	search: Draft,
 	sections: FilterSections.Model,

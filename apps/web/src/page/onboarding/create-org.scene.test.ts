@@ -15,7 +15,7 @@ import {
 	type,
 } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { currentRegion } from "../../lib/region"
+import { currentRegion } from "../../platform/region"
 import type { ClerkOrganization } from "../../platform/clerk"
 import {
 	CreateOrganization,

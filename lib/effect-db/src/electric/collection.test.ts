@@ -1,6 +1,6 @@
 import { FetchError } from "@electric-sql/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createBackoffOnError } from "./collection"
+import { COLLECTION_SYNC_FAILED_EVENT, createBackoffOnError } from "./collection"
 
 const config = {
 	initialDelayMs: 1,
@@ -22,6 +22,7 @@ describe("createBackoffOnError", () => {
 	afterEach(() => {
 		vi.useRealTimers()
 		vi.restoreAllMocks()
+		vi.unstubAllGlobals()
 	})
 
 	/** One onError call, with the backoff sleep run out. */
@@ -46,5 +47,18 @@ describe("createBackoffOnError", () => {
 		expect(await fail(onError)).toEqual({})
 		await vi.advanceTimersByTimeAsync(config.resetTimeoutMs)
 		expect(await fail(onError)).toEqual({})
+	})
+
+	it("reports an auth failure as a terminal sync failure for that collection", async () => {
+		const target = new EventTarget()
+		vi.stubGlobal("window", target)
+		const failed: Array<unknown> = []
+		target.addEventListener(COLLECTION_SYNC_FAILED_EVENT, (event) => {
+			if (event instanceof CustomEvent) failed.push(event.detail)
+		})
+		const onError = createBackoffOnError("alerts", config, undefined)
+		const unauthorized = new FetchError(401, "unauthorized", undefined, {}, "https://sync.test/v1/shape")
+		expect(await onError(unauthorized)).toBeUndefined()
+		expect(failed).toEqual([{ collectionId: "alerts" }])
 	})
 })

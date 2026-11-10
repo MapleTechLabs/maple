@@ -14,8 +14,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// Tool input and output, and its summary: one invocation, both halves, joined by a spine.
-
 type H = HtmlBuilder<Message>
 
 const IN_CLAMP: ClampLines = 8
@@ -244,7 +242,7 @@ const missingHalf = (h: H, label: string, note: string): Html =>
 		],
 	)
 
-/** `ToolIo`: both halves always drawn; one quiet line when neither was captured. */
+/** Both halves always drawn; one quiet line when neither was captured. */
 export const toolIo = (
 	h: H,
 	model: Model,

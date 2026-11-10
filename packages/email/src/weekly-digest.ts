@@ -29,7 +29,7 @@ import {
 } from "./weekly-digest-core"
 import { Array as Arr } from "effect"
 
-// Re-export the react-free core so existing importers keep working. New code
+// Re-export the markup-free core so existing importers keep working. New code
 // that only needs types/derivation should import "./weekly-digest-core"
 // directly and leave the compiled markup out of its module graph.
 export {
@@ -71,7 +71,6 @@ const STATUS_THEME: Record<
 	},
 } satisfies Record<DigestStatusLevel, { accent: string; bannerBg: string; pillBg: string; pillFg: string }>
 
-/** Empty string where the React tree rendered `null`. */
 function deltaPill(delta: Delta, invertColor = false): string {
 	const { arrow, value } = deltaParts(delta, invertColor)
 	const palette = deltaPalette(delta, invertColor)
@@ -171,10 +170,10 @@ function errorRow(error: DigestTopError, index: number, total: number): string {
  * same slice the row describes rather than the service's org-wide totals.
  *
  * Namespace is deliberately not in the URL: `/services/$serviceName` has no
- * `namespaces` search field, so the parameter would be silently dropped by
- * `validateSearch` and the link would read as scoped while showing
- * cross-namespace totals. Namespace scoping on that page is the global
- * namespace pin, not a URL param.
+ * `namespaces` search field (`ServiceSearch` in `apps/web/src/route/search.ts`),
+ * so the parameter would be silently dropped and the link would read as scoped
+ * while showing cross-namespace totals. Namespace scoping on that page is the
+ * global namespace pin, not a URL param.
  */
 function serviceUrl(baseUrl: string, service: DigestService): string {
 	const params = new URLSearchParams({ timePreset: "7d" })

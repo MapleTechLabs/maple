@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 import {
 	formatMapleDeployment,
@@ -6,11 +7,11 @@ import {
 	parseMapleDeployment,
 	parseMapleDeploymentEffect,
 	parseMapleStage,
+	parsePreviewResourceName,
 	resolveHyperdriveRefId,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
 	resolveRegionAppUrls,
-	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "./stage.ts"
@@ -84,6 +85,23 @@ describe("resolveWorkerName", () => {
 	})
 })
 
+describe("parsePreviewResourceName", () => {
+	it("reads back the base and PR number resolveWorkerName put into a preview's name", () => {
+		for (const base of ["api", "db", "replay-blobs", "electric-sync"]) {
+			expect(parsePreviewResourceName(resolveWorkerName(base, stage("pr-12")))).toStrictEqual(
+				Option.some({ base, prNumber: "12" }),
+			)
+		}
+	})
+
+	it("never matches a prd or dev-stage resource, so a sweep cannot delete one", () => {
+		expect(parsePreviewResourceName(resolveWorkerName("api", stage("prd")))).toStrictEqual(Option.none())
+		expect(parsePreviewResourceName(resolveWorkerName("api", stage("dev-pr-12")))).toStrictEqual(
+			Option.none(),
+		)
+	})
+})
+
 describe("resolveMapleDomains", () => {
 	it("gives a preview's status Worker its own hostname, and prd and dev none", () => {
 		expect(resolveMapleDomains({ stage: stage("pr-42"), region: "us" }).status).toBe(
@@ -144,11 +162,6 @@ describe("region-bound Cloudflare settings", () => {
 	it("places an unregioned stack with us and keeps eu apart", () => {
 		expect(resolveWorkerPlacement()).toEqual(resolveWorkerPlacement("us"))
 		expect(resolveWorkerPlacement("eu")).not.toEqual(resolveWorkerPlacement("us"))
-	})
-
-	it("pins EU storage to the eu jurisdiction and leaves us non-jurisdictional", () => {
-		expect(resolveStorageJurisdiction("eu")).toBe("eu")
-		expect(resolveStorageJurisdiction("us")).toBeUndefined()
 	})
 })
 

@@ -2,7 +2,7 @@ import type { ScrapeAuthType } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { docsUrl } from "../../lib/docs"
+import { docsUrl } from "../kit/docs"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -27,7 +27,7 @@ import {
 	integrationEmptyFooter,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -41,8 +41,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { textLink } from "@maple/views/ui/text-link"
 import { pressable } from "@maple/views/ui/pressable"
-
-// `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
+import { providerBrand } from "../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -63,7 +62,6 @@ export interface ScheduledStatus {
 	readonly tone: Tone
 }
 
-/** `scheduledStatusFromRollup`, with the page's clock. */
 export const statusFromRollup = (target: V2ScrapeTarget): ScheduledStatus => {
 	if (!target.enabled) return { label: "Disabled", detail: "Collector skips this target", tone: "neutral" }
 	if (target.last_scrape_error !== null)
@@ -336,7 +334,7 @@ const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, COPY.features),
 		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, { icon: "PrometheusIcon", accent: "#E6522C" }),
+			integrationEmptyMedia(h, providerBrand("prometheus")),
 			integrationEmptyHint(h, [COPY.emptyHint]),
 			addButton(h, integration),
 			docsLink(h, "prometheus"),
@@ -361,7 +359,6 @@ const placeholder = (h: H): Html =>
 		),
 	])
 
-/** `ScrapeTargetsSection`: the list, the selected target's details, and its dialogs. */
 /** `focusId`: a source's own target (`/sources/$id`), shown alone instead of the whole list. */
 export const scrapeTargetsSection = (
 	h: H,

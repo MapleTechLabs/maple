@@ -5,7 +5,7 @@ import { logsStreamToolbar } from "@maple/views/ui/logs/logs-stream-toolbar"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The logs table toolbar. Pinned columns live in `?columns`.
+// Pinned columns live in `?columns`.
 
 export const toolbar = (h: HtmlBuilder<Message>, model: Model): Html =>
 	logsStreamToolbar(h, {

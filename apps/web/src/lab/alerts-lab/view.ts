@@ -26,7 +26,6 @@ const ALERTS_TABS: ReadonlyArray<{ value: AlertsTab; label: string }> = [
 	{ value: "routing", label: "Routing" },
 ]
 
-/** `LabSection`. */
 export const section = <M>(
 	h: HtmlBuilder<M>,
 	id: string,
@@ -44,7 +43,7 @@ export const section = <M>(
 		],
 	)
 
-/** `AlertsFrame`: the `/alerts` header and tab strip around one tab's body, at a desktop width. */
+/** The `/alerts` header and tab strip around one tab's body, at a desktop width. */
 const alertsFrame = <M>(h: HtmlBuilder<M>, tab: AlertsTab, data: AlertsOverviewReady, child: Html): Html => {
 	const counts = new Map<AlertsTab, number>([
 		["inbox", data.openIncidents.length],

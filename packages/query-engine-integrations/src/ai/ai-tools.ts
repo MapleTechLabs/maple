@@ -78,15 +78,9 @@ import {
 } from "@maple-dev/effect-orm/clickhouse"
 import { AI_TOOLS_BREAKDOWN_MAX, AI_TOOLS_OTHER_SERIES_KEY, type AiToolsPeriod } from "@maple/domain/http"
 import { Array as Arr, type DateTime, Option, Schema, Record as Rec, String as Str } from "effect"
-import { QueryBuilderDefect, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
-import {
-	AiTraceIndex,
-	Traces,
-	exactDateTime64,
-	inTraces,
-	orgIdParam,
-	paramTraceWindow,
-} from "@maple/query-engine/ch/tables"
+import { QueryBuilderDefect } from "@maple-dev/effect-orm/clickhouse"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { aiToolCallPayload } from "./ai-integrations"
@@ -167,7 +161,7 @@ export const AI_TOOLS_BREAKDOWN_LIMIT = AI_TOOLS_BREAKDOWN_MAX
  * workflow node (or whose parent was never exported) still produces a row.
  */
 const parentModels = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex)
+	from(Datasources.aiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			SpanId: $.SpanId,
@@ -204,8 +198,8 @@ const parentModels = <W extends AiToolsWindow>(window: W) =>
  * none. Tool calls attributed this way are the vercel/unknown minority.
  *
  * `traceVendorId` and `traceAgentName` name the session the way the sessions
- * list does — the same `argMin` orderings as `aiSessionsListQuery`'s per-trace
- * level — for the failure modal, which links each failure to its session. The
+ * list does (the same `argMin` orderings as `aiSessionPageQuery`'s per-trace
+ * level), for the failure modal, which links each failure to its session. The
  * overview's aggregates never select them, and ClickHouse prunes unselected
  * columns of a derived table.
  *
@@ -214,7 +208,7 @@ const parentModels = <W extends AiToolsWindow>(window: W) =>
  * always passes it, so no tool call is lost to the join.
  */
 const traceFacts = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex)
+	from(Datasources.aiTraceIndex)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			rawSessionId: CH.max_($.SessionId),
@@ -277,7 +271,7 @@ interface ToolCallColumns {
 /** The index rows of the window with their trace's facts beside them — the half
  *  of {@link toolCalls} both its shapes share. */
 const toolCallIndex = <W extends AiToolsWindow>(window: W) =>
-	from(AiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
+	from(Datasources.aiTraceIndex).innerJoinQuery(traceFacts(window), "trace", (call, trace) =>
 		call.TraceId.eq(trace.TraceId),
 	)
 
@@ -348,7 +342,7 @@ const toolCalls = <W extends AiToolsWindow>(
 			.select(($) => columns($, $.trace.traceModel))
 			.where(($) => filters($, $.trace.traceModel))
 	}
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.leftJoinQuery(parentModels(window), "parent", (call, parent) =>
 			call.TraceId.eq(parent.TraceId).and(call.ParentSpanId.eq(parent.SpanId)),
 		)
@@ -474,24 +468,9 @@ export function aiToolsSeriesQuery(opts: AiToolsFilterOpts = {}) {
 const emptyWhenNoRows = (value: CH.Expr<DateTime.Utc>): CH.Expr<string> =>
 	CH.if_(CH.count().eq(0), CH.lit(""), CH.toString_(value))
 
-export interface AiToolsTotalsOutput {
-	readonly period: string
-	readonly calls: number
-	readonly sessions: number
-	readonly errors: number
-	readonly p50: number
-	readonly p90: number
-	readonly p95: number
-	/** Warehouse datetime of the first and last matched call, `''` for a period
-	 *  that matched nothing. Bounded by the read's window, so "first seen" means
-	 *  "first seen in this range". */
-	readonly firstSeen: string
-	readonly lastSeen: string
-}
-
 /** Counts are `CHNumber`: a gateway that refuses
  *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
-export const aiToolsTotalsRowSchema: CompiledQueryRowSchema<AiToolsTotalsOutput> = Schema.Struct({
+export const aiToolsTotalsRowSchema = Schema.Struct({
 	period: Schema.String,
 	calls: CHNumber,
 	sessions: CHNumber,
@@ -499,9 +478,14 @@ export const aiToolsTotalsRowSchema: CompiledQueryRowSchema<AiToolsTotalsOutput>
 	p50: CHNumber,
 	p90: CHNumber,
 	p95: CHNumber,
+	/** Warehouse datetime of the first and last matched call, `''` for a period
+	 *  that matched nothing. Bounded by the read's window, so "first seen" means
+	 *  "first seen in this range". */
 	firstSeen: Schema.String,
 	lastSeen: Schema.String,
 })
+
+export type AiToolsTotalsOutput = typeof aiToolsTotalsRowSchema.Type
 
 /**
  * Every period the tiles can ask for, which is what the overview asks for, and
@@ -573,24 +557,9 @@ export function aiToolsTotalsQuery(
 	return unionAll(first, ...rest).format("JSON")
 }
 
-export interface AiToolsBreakdownsOutput {
-	readonly key: string
-	readonly calls: number
-	readonly sessions: number
-	readonly errors: number
-	readonly p50: number
-	readonly p90: number
-	readonly p95: number
-	readonly lastSeen: string
-	/** The earliest call under this key IN THE WINDOW — what the page's "new"
-	 *  badge reads. A tool that predates the window reports the window's start,
-	 *  so the badge is a statement about this range and not about all time. */
-	readonly firstSeen: string
-}
-
 /** Same reason as the totals': the counts arrive quoted from a gateway that
  *  refuses the unquoting setting. */
-export const aiToolsBreakdownsRowSchema: CompiledQueryRowSchema<AiToolsBreakdownsOutput> = Schema.Struct({
+export const aiToolsBreakdownsRowSchema = Schema.Struct({
 	key: Schema.String,
 	calls: CHNumber,
 	sessions: CHNumber,
@@ -599,8 +568,13 @@ export const aiToolsBreakdownsRowSchema: CompiledQueryRowSchema<AiToolsBreakdown
 	p90: CHNumber,
 	p95: CHNumber,
 	lastSeen: Schema.String,
+	/** The earliest call under this key IN THE WINDOW — what the page's "new"
+	 *  badge reads. A tool that predates the window reports the window's start,
+	 *  so the badge is a statement about this range and not about all time. */
 	firstSeen: Schema.String,
 })
+
+export type AiToolsBreakdownsOutput = typeof aiToolsBreakdownsRowSchema.Type
 
 /**
  * The Tools table: every tool of the window, busiest first.
@@ -626,10 +600,8 @@ export function aiToolsBreakdownsQuery(opts: AiToolsFilterOpts = {}) {
 		.format("JSON")
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the failures of one tool
- *
- * Grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
+/*
+ * Tool failures are grouped by `ErrorFingerprint` (migration 0032): a hash of what the failure
  * SAYS — the failed call's result, else its status message — after the
  * redactions `error_events` fingerprints messages with. `error.type` is not the
  * key, because a vendor that reports every failure as `tool_error` would fold
@@ -703,6 +675,21 @@ const groupFilter = (opts: AiToolErrorsOpts, $: Pick<ToolCallColumns, "fingerpri
 const failingToolCalls = (opts: AiToolErrorsOpts, withParentModel?: boolean) =>
 	fromQuery(toolCalls({ ...opts, failingOnly: true }, "current", withParentModel), "failing_tool_calls")
 
+/** Counts are `CHNumber`: a gateway that refuses
+ *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
+export const aiToolErrorsRowSchema = Schema.Struct({
+	fingerprint: Schema.String,
+	errorType: Schema.String,
+	message: Schema.String,
+	calls: CHNumber,
+	sessions: CHNumber,
+	variants: CHNumber,
+	firstSeen: Schema.String,
+	lastSeen: Schema.String,
+	callsSince: CHNumber,
+	trend: Schema.Record(Schema.String, CHNumber),
+})
+
 /**
  * The Errors table: every group this tool failed with, most failed calls first.
  *
@@ -721,33 +708,7 @@ const failingToolCalls = (opts: AiToolErrorsOpts, withParentModel?: boolean) =>
  * `trend` is the group's failures per `bucketSeconds`, keyed by the same ISO
  * bucket the chart reads; a bucket with none is absent.
  */
-export interface AiToolErrorsOutput {
-	readonly fingerprint: string
-	readonly errorType: string
-	readonly message: string
-	readonly calls: number
-	readonly sessions: number
-	readonly variants: number
-	readonly firstSeen: string
-	readonly lastSeen: string
-	readonly callsSince: number
-	readonly trend: Readonly<Record<string, number>>
-}
-
-/** Counts are `CHNumber`: a gateway that refuses
- *  `output_format_json_quote_64bit_integers=0` sends them quoted. */
-export const aiToolErrorsRowSchema: CompiledQueryRowSchema<AiToolErrorsOutput> = Schema.Struct({
-	fingerprint: Schema.String,
-	errorType: Schema.String,
-	message: Schema.String,
-	calls: CHNumber,
-	sessions: CHNumber,
-	variants: CHNumber,
-	firstSeen: Schema.String,
-	lastSeen: Schema.String,
-	callsSince: CHNumber,
-	trend: Schema.Record(Schema.String, CHNumber),
-})
+export type AiToolErrorsOutput = typeof aiToolErrorsRowSchema.Type
 
 export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 	// Column names differ from the aliases below (`callErrorType`, `failureMessage`):
@@ -789,17 +750,7 @@ export function aiToolErrorsQuery(opts: AiToolErrorsOpts = {}) {
 	)
 }
 
-/** The modal's sessions list: which sessions hit this group, and how often. */
-export interface AiToolErrorSessionsOutput {
-	readonly sessionId: string
-	readonly vendorId: string
-	readonly agentName: string
-	readonly service: string
-	readonly hits: number
-	readonly lastSeen: string
-}
-
-export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSessionsOutput> = Schema.Struct({
+export const aiToolErrorSessionsRowSchema = Schema.Struct({
 	sessionId: Schema.String,
 	vendorId: Schema.String,
 	agentName: Schema.String,
@@ -807,6 +758,9 @@ export const aiToolErrorSessionsRowSchema: CompiledQueryRowSchema<AiToolErrorSes
 	hits: CHNumber,
 	lastSeen: Schema.String,
 })
+
+/** The modal's sessions list: which sessions hit this group, and how often. */
+export type AiToolErrorSessionsOutput = typeof aiToolErrorSessionsRowSchema.Type
 
 export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -825,18 +779,14 @@ export function aiToolErrorSessionsQuery(opts: AiToolErrorsOpts = {}) {
 		.format("JSON")
 }
 
-/** The raw messages one group folded — `[0]`, `[1]` and `[2]` of one missing key. */
-export interface AiToolErrorVariantsOutput {
-	readonly message: string
-	readonly calls: number
-	readonly lastSeen: string
-}
-
-export const aiToolErrorVariantsRowSchema: CompiledQueryRowSchema<AiToolErrorVariantsOutput> = Schema.Struct({
+export const aiToolErrorVariantsRowSchema = Schema.Struct({
 	message: Schema.String,
 	calls: CHNumber,
 	lastSeen: Schema.String,
 })
+
+/** The raw messages one group folded — `[0]`, `[1]` and `[2]` of one missing key. */
+export type AiToolErrorVariantsOutput = typeof aiToolErrorVariantsRowSchema.Type
 
 export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts)
@@ -852,23 +802,18 @@ export function aiToolErrorVariantsQuery(opts: AiToolErrorsOpts = {}) {
 		.format("JSON")
 }
 
+export const aiToolErrorBreakdownRowSchema = Schema.Struct({
+	model: Schema.String,
+	service: Schema.String,
+	calls: CHNumber,
+})
+
 /**
  * Where a group happens: its failed calls per model and service, as pairs. The
  * page folds them into one list per dimension — counts add, so the fold is
  * exact — which is one scan where two groupings would be two.
  */
-export interface AiToolErrorBreakdownOutput {
-	readonly model: string
-	readonly service: string
-	readonly calls: number
-}
-
-export const aiToolErrorBreakdownRowSchema: CompiledQueryRowSchema<AiToolErrorBreakdownOutput> =
-	Schema.Struct({
-		model: Schema.String,
-		service: Schema.String,
-		calls: CHNumber,
-	})
+export type AiToolErrorBreakdownOutput = typeof aiToolErrorBreakdownRowSchema.Type
 
 export function aiToolErrorBreakdownQuery(opts: AiToolErrorsOpts = {}) {
 	return failingToolCalls(opts, true)
@@ -884,6 +829,20 @@ export function aiToolErrorBreakdownQuery(opts: AiToolErrorsOpts = {}) {
 		.format("JSON")
 }
 
+export const aiToolErrorOccurrencesRowSchema = Schema.Struct({
+	timestamp: Schema.String,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	sessionId: Schema.String,
+	vendorId: Schema.String,
+	agentName: Schema.String,
+	model: Schema.String,
+	service: Schema.String,
+	errorType: Schema.String,
+	message: Schema.String,
+	durationNs: CHNumber,
+})
+
 /**
  * The modal's samples, step one: one page of a group's failed calls, newest
  * first.
@@ -892,34 +851,7 @@ export function aiToolErrorBreakdownQuery(opts: AiToolErrorsOpts = {}) {
  * was called with and what came back is {@link aiToolErrorPayloadsQuery}, which
  * this page's rows bound. A page of zero samples therefore runs no span read.
  */
-export interface AiToolErrorOccurrencesOutput {
-	readonly timestamp: string
-	readonly traceId: string
-	readonly spanId: string
-	readonly sessionId: string
-	readonly vendorId: string
-	readonly agentName: string
-	readonly model: string
-	readonly service: string
-	readonly errorType: string
-	readonly message: string
-	readonly durationNs: number
-}
-
-export const aiToolErrorOccurrencesRowSchema: CompiledQueryRowSchema<AiToolErrorOccurrencesOutput> =
-	Schema.Struct({
-		timestamp: Schema.String,
-		traceId: Schema.String,
-		spanId: Schema.String,
-		sessionId: Schema.String,
-		vendorId: Schema.String,
-		agentName: Schema.String,
-		model: Schema.String,
-		service: Schema.String,
-		errorType: Schema.String,
-		message: Schema.String,
-		durationNs: CHNumber,
-	})
+export type AiToolErrorOccurrencesOutput = typeof aiToolErrorOccurrencesRowSchema.Type
 
 export function aiToolErrorOccurrencesQuery(opts: AiToolErrorsOpts = {}) {
 	const before = opts.before
@@ -966,24 +898,18 @@ export interface AiToolErrorCallKey {
 	readonly spanId: string
 }
 
-export interface AiToolErrorPayloadsRow {
-	readonly traceId: string
-	readonly spanId: string
-	readonly statusCode: string
-	/** Each value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} characters. */
-	readonly spanAttributes: Record<string, string>
-	/** The true size in bytes of every value that was cut, by key. */
-	readonly cutAttributeBytes: Record<string, number>
-}
-
-export const aiToolErrorPayloadsRowSchema: CompiledQueryRowSchema<AiToolErrorPayloadsRow> = Schema.Struct({
+export const aiToolErrorPayloadsRowSchema = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	statusCode: Schema.String,
 	// A Map column arrives as a JSON object under FORMAT JSON.
+	/** Each value cut to {@link AI_TOOL_ERROR_ATTRIBUTE_MAX} characters. */
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
+	/** The true size in bytes of every value that was cut, by key. */
 	cutAttributeBytes: Schema.Record(Schema.String, CHNumber),
 })
+
+export type AiToolErrorPayloadsRow = typeof aiToolErrorPayloadsRowSchema.Type
 
 /** A span row's `(TraceId, SpanId)`, for the payload read's tuple `IN`. Raw
  *  because the DSL has no tuple; qualified because the occurrences' own keys are
@@ -1027,7 +953,7 @@ const cutAttributeBytes = (attributes: CH.Expr<Record<string, string>>): CH.Expr
  * that were, so a sample costs kilobytes on the wire rather than its whole span.
  */
 export function aiToolErrorPayloadsQuery(calls: Arr.NonEmptyReadonlyArray<AiToolErrorCallKey>) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1135,18 +1061,12 @@ export function aiToolErrorPayloadSlice(
 	}
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the header's description
- * -----------------------------------------------------------------------------------------------*/
-
-export interface AiToolDescriptionOutput {
+export const aiToolDescriptionRowSchema = Schema.Struct({
 	/** `''` where no call of the window stamped one. */
-	readonly description: string
-}
-
-export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptionOutput> = Schema.Struct({
 	description: Schema.String,
 })
+
+export type AiToolDescriptionOutput = typeof aiToolDescriptionRowSchema.Type
 
 /**
  * The latest non-empty description one tool stamped in the window.
@@ -1163,7 +1083,7 @@ export const aiToolDescriptionRowSchema: CompiledQueryRowSchema<AiToolDescriptio
  * a description is the tool's and not the selection's.
  */
 export function aiToolDescriptionQuery() {
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(($) => ({ description: CH.argMax($.ToolDescription, $.Timestamp) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

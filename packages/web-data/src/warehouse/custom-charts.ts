@@ -1,12 +1,11 @@
+import { formatWarehouseDateTime, resolveThroughput } from "@maple/query-engine"
 import {
 	QueryEngineExecuteRequest,
 	type MetricsMetric,
 	type QueryEngineExecuteResponse,
 	type QuerySpec,
 	type TracesMetric,
-	formatWarehouseDateTime,
-	resolveThroughput,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { Clock, Effect, Option, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import {
@@ -26,7 +25,7 @@ import {
 	ServiceNamespace,
 	SpanName,
 } from "@maple/domain/http"
-import { TraceId } from "@maple/domain"
+import { AttributeFilter, TraceId } from "@maple/domain"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -111,7 +110,6 @@ function querySpanMetricsCalls(params: {
 			return { data: [] as never[] }
 		}
 
-		// Transform grouped timeseries back to flat rows for compatibility
 		const data: Array<Record<string, unknown>> = []
 		for (const point of response.result.data) {
 			for (const [serviceName, value] of Rec.toEntries(point.series)) {
@@ -229,46 +227,26 @@ const SharedFiltersSchema = Schema.Struct({
 	severity: Schema.optional(Schema.String),
 	// Logs-source multi-select and its exclusions. The scalars above stay for the widget builder,
 	// which binds one value per field.
-	serviceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
-	severities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-	excludedServiceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
-	excludedSeverities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	// Logs-source only: the /logs volume chart scoped to one trace.
+	serviceNames: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceNames: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Logs-source only: the /logs volume chart scoped to one trace, and its substring env/namespace.
 	traceId: Schema.optional(TraceId),
+	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
+	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	metricName: Schema.optional(MetricName),
 	metricType: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	groupByAttributeKeys: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
 	groupByAttributeKey: Schema.optional(Schema.String),
-	attributeFilters: Schema.optional(
-		Schema.mutable(
-			Schema.Array(
-				Schema.Struct({
-					key: Schema.String,
-					value: Schema.optional(Schema.String),
-					mode: Schema.Literals(["equals", "exists"]),
-					negated: Schema.optional(Schema.Boolean),
-				}),
-			),
-		),
-	),
-	resourceAttributeFilters: Schema.optional(
-		Schema.mutable(
-			Schema.Array(
-				Schema.Struct({
-					key: Schema.String,
-					value: Schema.optional(Schema.String),
-					mode: Schema.Literals(["equals", "exists"]),
-					negated: Schema.optional(Schema.Boolean),
-				}),
-			),
-		),
-	),
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
 
 const CustomChartTimeSeriesInputSchema = Schema.Struct({
@@ -387,7 +365,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 				excludedEnvironments: data.filters?.excludedEnvironments,
 				excludedNamespaces: data.filters?.excludedNamespaces,
 				environments: data.filters?.environments,
+				deploymentEnvMatchMode: data.filters?.deploymentEnvMatchMode,
 				namespaces: data.filters?.namespaces,
+				namespaceMatchMode: data.filters?.namespaceMatchMode,
 				traceId: data.filters?.traceId,
 				attributeFilters: data.filters?.attributeFilters,
 				resourceAttributeFilters: data.filters?.resourceAttributeFilters,
@@ -627,7 +607,7 @@ const GetCustomChartServiceDetailInputSchema = Schema.Struct({
 	// Scopes the detail charts to a single deployment environment. Carries the
 	// service list's display value (incl. the synthetic `"unknown"`); the
 	// `"unknown" -> ""` remap to the raw warehouse value happens in `toEnvFilter`.
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 })
 
 type GetCustomChartServiceDetailInput = (typeof GetCustomChartServiceDetailInputSchema)["Encoded"]
@@ -692,12 +672,7 @@ function extractAllMetricsSeries(response: QueryEngineExecuteResponse): Map<stri
 	const map = new Map<string, AllMetricsPoint>()
 	if (response.result.kind !== "timeseries") return map
 	for (const point of response.result.data) {
-		// Normalize to ISO so this map's keys line up with `metricsMap` (which already
-		// `toIsoBucket`s its keys). Without this, the same time bucket lands under two
-		// different string keys in the merged `allBuckets` Set, producing duplicate
-		// points — one with traces data only, one with metrics throughput only — and
-		// the metrics-only duplicate (sorted after the raw key) overwrites the traces
-		// entry in `byBucket`, dropping latency/error-rate and stranding throughput.
+		// Normalize to ISO so one instant has one key, whichever spelling the warehouse sent.
 		map.set(toIsoBucket(point.bucket), {
 			count: point.series.count ?? 0,
 			errorRate: point.series.error_rate ?? 0,
@@ -942,8 +917,8 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 const GetOverviewTimeSeriesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 type GetOverviewTimeSeriesInput = (typeof GetOverviewTimeSeriesInputSchema)["Encoded"]
@@ -1014,12 +989,12 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 const GetCustomChartServiceSparklinesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	excludedCommitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 
 type GetCustomChartServiceSparklinesInput = (typeof GetCustomChartServiceSparklinesInputSchema)["Encoded"]
@@ -1156,10 +1131,10 @@ function aggregateSpanMetricsByBucket(
 const ThroughputRefinementShared = {
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	// The SpanMetrics calls MV can't be namespace-filtered, so a namespace scope
 	// skips the exact refinement the same way an environment scope does.
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	// The caller's sampling verdict, derived from the already-loaded primary
 	// chart. When false (or absent) the exact query is skipped — the estimate is
 	// already correct. Including it in the input makes it part of the atom key, so

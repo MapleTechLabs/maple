@@ -23,7 +23,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { encodePublicId } from "@maple/domain/http/v2"
-import { AlertIncidentId } from "@maple/domain/primitives"
+import { AlertIncidentId } from "@maple/primitives"
 import {
 	CreateAlertRuleOutput,
 	GetAlertRuleOutput,
@@ -37,10 +37,11 @@ import {
 } from "@maple/domain/mcp-outputs"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
 import { invalidRuleInput } from "../../lib/alert-rules"
@@ -282,6 +283,8 @@ const layer = (seen: Seen) =>
 							}),
 				)
 			},
+		} as never),
+		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () =>
 				Effect.succeed(
 					Schema.decodeSync(AlertDestinationsListResponse)({
@@ -492,7 +495,9 @@ describe("alert tools", () => {
 
 	it("list_alert_rules rejects an unknown severity against the parameter", async () => {
 		const result = await run("list_alert_rules", { severity: "sev1" })
-		expect(result._tag).toBe("Failure")
+		expect(result._tag === "Failure" ? result.failure.message : "").toContain(
+			'`severity`: Expected "warning" | "critical"',
+		)
 	})
 
 	it("list_alert_destinations renders destinations with their IDs", async () => {

@@ -1,4 +1,5 @@
 import { EdgeCacheService } from "@maple/cache"
+import { OsvVulnResponse } from "./osv-records"
 import { RuntimeAdvisoryRow } from "@maple/domain/http"
 import {
 	ADVISORY_SOURCES,
@@ -45,36 +46,8 @@ const MAX_READS = 24
 const MAX_VERSIONS = 96
 const CONCURRENCY = 16
 
-const OsvEvent = Schema.Struct({
-	introduced: Schema.optionalKey(Schema.String),
-	fixed: Schema.optionalKey(Schema.String),
-})
-
-const OsvQueryResponse = Schema.Struct({
-	vulns: Schema.optionalKey(
-		Schema.Array(
-			Schema.Struct({
-				id: Schema.String,
-				aliases: Schema.optionalKey(Schema.Array(Schema.String)),
-				summary: Schema.optionalKey(Schema.String),
-				details: Schema.optionalKey(Schema.String),
-				published: Schema.optionalKey(Schema.String),
-				database_specific: Schema.optionalKey(
-					Schema.Struct({ severity: Schema.optionalKey(Schema.String) }),
-				),
-				affected: Schema.optionalKey(
-					Schema.Array(
-						Schema.Struct({
-							ranges: Schema.optionalKey(
-								Schema.Array(Schema.Struct({ events: Schema.Array(OsvEvent) })),
-							),
-						}),
-					),
-				),
-			}),
-		),
-	),
-})
+// The `POST /v1/query` answer: a list of the same records `GET /v1/vulns/{id}` returns.
+const OsvQueryResponse = Schema.Struct({ vulns: Schema.optionalKey(Schema.Array(OsvVulnResponse)) })
 type OsvVuln = NonNullable<typeof OsvQueryResponse.Type.vulns>[number]
 
 /** `null` records a failed read. */

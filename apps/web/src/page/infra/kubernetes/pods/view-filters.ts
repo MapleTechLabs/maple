@@ -15,8 +15,6 @@ import { EXCLUDED_OF, filtersOf } from "./update"
 import { type Facet, Message } from "./message"
 import type { PodFacets, Model } from "./model"
 
-// `PodsFilterSidebarView`.
-
 type H = HtmlBuilder<Message>
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })

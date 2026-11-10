@@ -1,13 +1,13 @@
 import { formatNumber } from "@maple/domain/format"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { collapsiblePanelStyles } from "../collapsible.styles"
+import { eyebrowVariants } from "../eyebrow.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
 import * as Checkbox from "../checkbox"
 import { badge } from "../display"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badgeVariants } from "../badge.styles"
 import { emptyMessage } from "../empty"
 import { icon, iconColor, type IconName } from "../icon"
 import { label } from "../label"
@@ -16,16 +16,15 @@ import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
-// Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
-// `altClickExclude` Subscription reads it and presses the row's Exclude action (`data-alt-exclude`).
+// A filter rail section of checkbox values, searchable when long. Alt+click on a label toggles the
+// exclusion: `OnClick` carries no modifiers, so the root's `altClickExclude` Subscription reads it
+// and presses the row's Exclude action (`data-alt-exclude`).
 
 export type FilterOption = Readonly<{ name: string; count: number }>
 
 /** Matches rendered while searching; past this the answer is a longer search term. */
 const MAX_SEARCH_RESULTS = 50
 
-// copied: `visibleFilterOptions` (the React module also holds the components).
 const visibleFilterOptions = (input: {
 	readonly options: ReadonlyArray<FilterOption>
 	readonly selected: ReadonlyArray<string>
@@ -90,7 +89,7 @@ export type FilterSectionConfig<M> = Readonly<{
 	onToggle: (name: string) => M
 	onOnly?: (name: string) => M
 	onExclude?: (name: string) => M
-	/** `colorMap`: a swatch before the label (`serviceColorMap` for services). */
+	/** A swatch before the label (the service colour for services). */
 	colorOf?: (name: string) => string | undefined
 	/** `getOptionIcon`: a mark before the label (browser, device, vendor), tinted by `getOptionIconColor`. */
 	getOptionIcon?: (name: string) => IconName | undefined
@@ -101,11 +100,11 @@ export type FilterSectionConfig<M> = Readonly<{
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
-	/** `FilterDescription`: the info mark beside the title, this text in its tooltip. */
+	/** The info mark beside the title, this text in its tooltip. */
 	description?: string
 }>
 
-/** `FilterRowAction`: the `tag` badge as a button, transparent until the row is hovered. */
+/** The `tag` badge as a button, transparent until the row is hovered. */
 const rowAction = <M>(
 	h: HtmlBuilder<M>,
 	text: string,
@@ -153,7 +152,7 @@ const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boole
 		[formatNumber(option.count)],
 	)
 
-/** `FilterDescription`: the info mark beside a filter's title, its description in a tooltip. */
+/** The info mark beside a filter's title, its description in a tooltip. */
 export const filterDescriptionMark = <M>(h: HtmlBuilder<M>, title: string, description: string): Html =>
 	h.span(
 		[
@@ -409,11 +408,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 											[h.Class("space-y-1.5")],
 											[
 												...(visible.length === 0
-													? [
-															emptyMessage(h, { className: "py-2" }, [
-																"No matches",
-															]),
-														]
+													? [emptyMessage(h, { className: "py-2" }, ["No matches"])]
 													: Arr.map(visible, (option) =>
 															optionRow(h, config, option),
 														)),
@@ -482,7 +477,7 @@ const sectionSearch = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, sea
 		onClear: config.toSectionsMessage(SectionsMessage.ChangedSearch({ key: config.title, search: "" })),
 	})
 
-/** `SingleCheckboxFilter`: one checkbox with its label (and count). */
+/** One checkbox with its label (and count). */
 export const singleCheckboxFilter = <M>(
 	h: HtmlBuilder<M>,
 	config: Readonly<{ title: string; isChecked: boolean; onToggle: M; count?: number }>,

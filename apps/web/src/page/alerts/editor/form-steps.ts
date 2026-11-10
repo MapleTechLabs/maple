@@ -13,8 +13,6 @@ import { asFormState, fromFormState, type RuleForm } from "./form"
 import type { SignalKind, TextField, Tier } from "./message"
 import { Array as Arr, String as Str, Option } from "effect"
 
-// The form edits each control makes (the `onChange((c) => ...)` callbacks), as pure steps.
-
 export const setText = (form: RuleForm, field: TextField, value: string): RuleForm => ({
 	...form,
 	[field]: value,
@@ -27,11 +25,27 @@ export const setEscalationField = (
 ): RuleForm =>
 	form.escalation === null ? form : { ...form, escalation: { ...form.escalation, [field]: value } }
 
+/** How breaches are counted, a select inside the "Fire after" sentence. */
+export const BREACH_MODE_SELECT_ID = "rule-breach-mode"
+
+/** Breaches counted in a row (no window), or out of the last N checks, starting two past the count. */
+export const setBreachMode = (form: RuleForm, mode: string): RuleForm => {
+	if (mode !== "window") return { ...form, breachesOutOf: "" }
+	if (Str.trim(form.breachesOutOf).length > 0) return form
+	const required = Number(Str.trim(form.consecutiveBreachesRequired))
+	return {
+		...form,
+		breachesOutOf: Number.isInteger(required) && required > 0 ? String(required + 2) : "5",
+	}
+}
+
+/** The mode switch as a select, below `sm` where the four segments do not fit. */
+export const KIND_SELECT_ID = "rule-kind"
+
 /** A tier's escalation chain select, and its "None" value. */
 export const chainSelectIdOf = (tier: Tier): string => `rule-chain-${tier}`
 export const NO_CHAIN = "none"
 
-/** The escalation chain a tier starts, or none. */
 export const setTierChain = (form: RuleForm, tier: Tier, chainId: EscalationChainId | null): RuleForm =>
 	tier === "warning"
 		? { ...form, escalationChainId: chainId }
@@ -39,7 +53,7 @@ export const setTierChain = (form: RuleForm, tier: Tier, chainId: EscalationChai
 			? form
 			: { ...form, escalation: { ...form.escalation, escalationChainId: chainId } }
 
-/** `setKind`: the switch carries filters and the threshold's meaning, and may leave a notice. */
+/** The switch carries filters and the threshold's meaning, and may leave a notice. */
 export const switchKind = (form: RuleForm, kind: SignalKind): { form: RuleForm; notice: string | null } => {
 	const moved = switchSignalKind(asFormState(form), kind)
 	return { form: fromFormState(moved.form), notice: moved.notice }
@@ -98,7 +112,6 @@ export const setChips = (form: RuleForm, id: string, values: ReadonlyArray<strin
 	}
 }
 
-/** The tier's destination ids updated (`setIds`). */
 export const updateTierIds = (
 	form: RuleForm,
 	tier: Tier,
@@ -136,7 +149,7 @@ export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestin
 export const removeId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) =>
 	Arr.filter(ids, (existing) => existing !== id)
 
-/** `onPick`: templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in. */
+/** Templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in. */
 export const pickTemplate = (form: RuleForm, templateId: string): RuleForm => {
 	const template = Arr.findFirst(ALERT_TEMPLATES, (candidate) => candidate.id === templateId)
 	if (Option.isNone(template)) return form
@@ -144,11 +157,10 @@ export const pickTemplate = (form: RuleForm, templateId: string): RuleForm => {
 	return applied.signalType === "apdex" ? applied : switchKind(applied, "builder_query").form
 }
 
-// `TagInput`'s limits and `canonicalize`.
 const MAX_TAGS = 20
 const MAX_TAG_LENGTH = 32
 
-/** `commit`: the draft as a canonical tag, unless empty, already there, or over the limit. */
+/** The draft as a canonical tag, unless empty, already there, or over the limit. */
 export const commitTag = (form: RuleForm, raw: string): RuleForm => {
 	const tag = Str.slice(0, MAX_TAG_LENGTH)(Str.toLowerCase(Str.trim(raw)))
 	if (tag.length === 0 || form.tags.includes(tag) || form.tags.length >= MAX_TAGS) return form
@@ -160,7 +172,7 @@ export const removeTag = (form: RuleForm, tag: string): RuleForm => ({
 	tags: Arr.filter(form.tags, (existing) => existing !== tag),
 })
 
-/** `appendToBody`: a variable token after the body, space-separated. */
+/** A variable token after the body, space-separated. */
 export const appendVariable = (form: RuleForm, key: string): RuleForm => {
 	const token = `{{ ${key} }}`
 	return {

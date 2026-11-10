@@ -1,5 +1,5 @@
 import type { CatalogPlan } from "@maple/domain/http"
-import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
+import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../kit/billing/plans"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -259,7 +259,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 			}),
 )
 
-/** `CheckoutConfirmingPanel`: back from Stripe, before Autumn has the plan; the offer is withheld. */
+/** Back from Stripe, before Autumn has the plan; the offer is withheld. */
 const checkoutConfirming = (h: H): Html =>
 	panel(
 		h,
@@ -276,7 +276,7 @@ const checkoutConfirming = (h: H): Html =>
 		],
 	)
 
-/** `CheckoutTimedOutNotice`: the wait gave up, so a slow sync does not read as a failure. */
+/** The wait gave up, so a slow sync does not read as a failure. */
 const checkoutTimedOut = (h: H): Html =>
 	panel(
 		h,
@@ -295,7 +295,7 @@ const checkoutTimedOut = (h: H): Html =>
 const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
 
-/** `PlanCards`: the plans offered, then Enterprise as a peer card. */
+/** The plans offered, then Enterprise as a peer card. */
 export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId: string | null): Html => {
 	const totalCards = plans.length + 1
 	return h.div(

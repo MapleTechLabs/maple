@@ -153,7 +153,6 @@ const ROUTE_STAND_INS = {
 	markdown_static: fixed,
 } satisfies Record<WidgetDataSourceEndpoint, (route: RouteWidget) => RouteStandIn>
 
-/** `routeStandInOf`: the builder query that computes a route widget's metric, or `fixed`. */
 export const routeStandInOf = (route: RouteWidget): RouteStandIn =>
 	route.endpoint !== null && isWidgetDataSourceEndpoint(route.endpoint)
 		? ROUTE_STAND_INS[route.endpoint](route)

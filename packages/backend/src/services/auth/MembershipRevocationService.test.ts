@@ -7,7 +7,7 @@ import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "eff
 import { Env } from "@maple/backend/platform/Env"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 import { McpOAuthService } from "./McpOAuthService"

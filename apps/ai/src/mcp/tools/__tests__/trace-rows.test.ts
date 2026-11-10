@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import { Schema } from "effect"
 import { renderToolDoc } from "../../lib/tool-doc"
 import { registerSearchTracesTool } from "../search-traces"
@@ -10,7 +11,9 @@ import type { McpToolRegistrar } from "../types"
 const renders = new Map<string, (output: Schema.Json) => string>()
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
-		renders.set(spec.name, (output) => renderToolDoc(spec.render(Schema.decodeSync(spec.output)(output))))
+		renders.set(spec.name, (output) =>
+			renderToolDoc(spec.render(Schema.decodeUnknownSync(McpToolOutputs[spec.name])(output))),
+		)
 	},
 }
 registerSearchTracesTool(registrar)

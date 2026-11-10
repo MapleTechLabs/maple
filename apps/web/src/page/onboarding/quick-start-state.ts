@@ -1,12 +1,12 @@
-import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
+import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
+import { ONBOARDING_ROLE_IDS } from "./onboarding-role"
 import {
 	frameworkOf,
 	intentsOf,
 	STACK_LANGUAGE_IDS,
 	STACK_PLATFORM_IDS,
 	type StackAnswers as StackPicks,
-} from "../../lib/onboarding-stack"
+} from "./onboarding-stack"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 

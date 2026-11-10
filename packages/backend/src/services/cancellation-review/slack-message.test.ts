@@ -303,8 +303,10 @@ describe("buildCancellationMessage", () => {
 			buildCancellationMessage(report("pipeline-off")).blocks,
 			(block) => block.type === "table",
 		)
-		expect(table).toBeDefined()
-		for (const setting of (table?.column_settings ?? []) as ReadonlyArray<unknown>) {
+		const settings = table?.column_settings
+		const columns = Arr.isArray(settings) ? settings : []
+		expect(columns.length).toBeGreaterThan(0)
+		for (const setting of columns) {
 			expect(setting).toBeTypeOf("object")
 			expect(setting).not.toBeNull()
 		}

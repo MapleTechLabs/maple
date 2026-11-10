@@ -2,8 +2,6 @@ import { SLO_LATENCY_THRESHOLDS_MS, SloLatencyThresholdMs, SloWindowDays } from 
 import { AlertDestinationId } from "@maple/domain/http"
 import { Schema } from "effect"
 
-// The SLO form's draft: every field as the inputs hold it, strings until the payload is built.
-
 export const SliType = Schema.Literals(["availability", "latency"])
 export type SliType = typeof SliType.Type
 
@@ -26,8 +24,7 @@ export const WINDOW_DAYS = SloWindowDays.literals
 
 export const THRESHOLDS = SLO_LATENCY_THRESHOLDS_MS
 
-export const Tier = Schema.Literals(["critical", "warning"])
-export type Tier = typeof Tier.Type
+export { AlertSeverity as Tier } from "@maple/domain/http"
 
 export const Form = Schema.Struct({
 	name: Schema.String,

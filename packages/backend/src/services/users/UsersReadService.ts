@@ -3,10 +3,10 @@ import type {
 	UsersFacetsRequest,
 	UsersGroupsRequest,
 	UsersListRequest,
+	TenantContext,
 } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	readUserActivity,

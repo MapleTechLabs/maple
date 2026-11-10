@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { StatusPageCleanups, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
-import type { StatusPageId } from "@maple/domain/primitives"
+import type { StatusPageId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -52,7 +52,7 @@ export interface StatusPagePublisherApi {
 	) => Effect.Effect<void, StatusPagePublishDbError | StatusPageStoreError>
 }
 
-// Encoding a built snapshot cannot fail; a failure is a defect, as the old JSON.stringify was.
+// Encoding a built snapshot cannot fail, so a failure is a defect.
 const encodeJson = (value: unknown) =>
 	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(value).pipe(Effect.orDie)
 
@@ -62,7 +62,6 @@ const toHex = (buffer: ArrayBuffer) =>
 		"",
 	)
 
-/** SHA-256 hex of the text. */
 export const sha256Hex = (text: string) =>
 	Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).pipe(
 		Effect.map(toHex),

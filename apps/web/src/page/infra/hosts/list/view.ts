@@ -9,13 +9,13 @@ import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { FLEET_BAND_BOXED, fleetBandLoading } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { hostsViewTabs } from "../../kit/view-tabs"
+import { hostsViewTabs } from "../../../kit/view-tabs"
 import { HOST_LIST_LIMIT } from "./command"
 import { filterHosts } from "./derive"
 import { hostSummaryBand } from "./view-band"
@@ -25,11 +25,9 @@ import { DEFAULT_PRESET } from "./update"
 import { hostTable, hostTableLoading } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
 
-// `HostsPage` / `HostList`.
-
 type H = HtmlBuilder<Message>
 
-/** `HostRow` columns `useTableSort` reads by key. */
+/** The `HostRow` columns the table sorts by key. */
 export const HOST_SORT_ACCESSORS: SortAccessors<HostRow> = new Map<string, (row: HostRow) => string | number>(
 	[
 		["cpuPct", (row) => row.cpuPct],
@@ -118,23 +116,21 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: "Hosts",
-					description: "Every machine sending CPU, memory, disk and network metrics, busiest first.",
-					actions: hstack(h, { gap: "2", wrap: true },
-						[
-							button(
-								h,
-								{ size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] },
-								[icon(h, "PlusIcon"), "Add host"],
-							),
-							Frame.controls(
-								h,
-								model.frame,
-								{ search: model.search, defaultPreset: DEFAULT_PRESET },
-								toFrame,
-								AsyncData.isFailure(model.hosts.data),
-							),
-						],
-					),
+					description:
+						"Every machine sending CPU, memory, disk and network metrics, busiest first.",
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(openInstall)] }, [
+							icon(h, "PlusIcon"),
+							"Add host",
+						]),
+						Frame.controls(
+							h,
+							model.frame,
+							{ search: model.search, defaultPreset: DEFAULT_PRESET },
+							toFrame,
+							AsyncData.isFailure(model.hosts.data),
+						),
+					]),
 					tabs: hostsViewTabs(h, "hosts", model.search),
 					gap: "lg",
 				},

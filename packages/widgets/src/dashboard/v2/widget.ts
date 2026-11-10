@@ -13,9 +13,6 @@ const v2 = makeDashboardWidgetSchemas({
 	dataSource: WidgetDataSourceV2,
 })
 
-// `v2.display` is deliberately not exported. The unsuffixed
-// `WidgetDisplayConfigSchema` now points at v3, and nothing needs the v2 display
-// on its own — only the widget, which the backfill's "was this row already
-// readable?" check decodes against. An exported-but-unused schema is what knip
-// flags, and it would be a lie about what still has consumers.
+// `v2.display` is deliberately not exported: nothing needs the v2 display on its
+// own, and knip flags an exported-but-unused schema.
 export const DashboardWidgetV2 = v2.widget

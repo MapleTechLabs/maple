@@ -30,7 +30,7 @@ import {
 	InvestigationId,
 	OnCallOverrideId,
 	OnCallScheduleId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { WarehouseTimeInput, type WarehouseDateTime } from "@maple/query-engine"
 import { McpInvalidInputError } from "../tools/types"
 import { resolveWindow } from "./time"

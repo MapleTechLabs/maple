@@ -1,4 +1,5 @@
-import { Schema, Array as Arr } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr } from "effect"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import {
 	EMPTY_VALUE,
@@ -10,7 +11,7 @@ import {
 	pluralize,
 } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
-import { formatUtilizationPercent } from "../../../../components/infra/format"
+import { formatUtilizationPercent } from "../../../infra/kit/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -18,7 +19,7 @@ import { meter } from "@maple/views/ui/meter"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../kit/data-table"
 import { type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
 import type { TracedService } from "../../kit/traced"
 import {
@@ -38,8 +39,6 @@ import {
 import type { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // One kind's resource table and its loading state.
 

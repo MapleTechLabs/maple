@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { view as mapView } from "@maple/views/service-map/map/view"
 import { serviceMapLoading } from "@maple/views/service-map/map/loading"
@@ -28,7 +28,7 @@ const serviceHref =
 const tracesHref = (serviceName: string, range: string): string =>
 	hrefFor("/traces", new URLSearchParams({ scope: "spans", service: serviceName, range }))
 
-/** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
+/** A database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(h: HtmlBuilder<Message>, data: LocalServiceMapData, map: ServiceMap.Model, inputs: PageViewInputs) =>
 	(selectedId: string): Html => {

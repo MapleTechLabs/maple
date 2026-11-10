@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the distributable `maple` local binary — a single Bun-compiled
+# Build the distributable `maple` local binary: a single Bun-compiled
 # executable plus libchdb. No Rust/cargo involved.
 #
 # Pipeline:
@@ -12,7 +12,7 @@
 #      embedded; the OTLP encoders run in-process; chDB is reached via bun:ffi.
 #   5. Download libchdb (pinned in packages/local-server/libchdb.json) for the host
 #      platform and place it beside the binary. At runtime `maple` dlopens the
-#      sibling libchdb (resolved relative to its own path) — no rpath tricks.
+#      sibling libchdb (resolved relative to its own path), no rpath tricks.
 #   6. Restore the committed ui-embed.gen.ts stub so the tree stays clean.
 #
 # The distributable is a 2-file bundle: `maple` + `libchdb.so`. Keep them in the

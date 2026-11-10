@@ -1,12 +1,12 @@
 import type { McpToolRegistrar } from "./types"
-import { queryWarehouse, CurrentMcpTenant } from "../lib/query-warehouse"
+import { queryWarehouse } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { ListMetricsOutput } from "@maple/domain/mcp-outputs"
-import { MetricType } from "@maple/query-engine"
+import { MetricType } from "@maple/domain/query-engine"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })
 
@@ -40,7 +40,6 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 50, max: 500, noun: "metrics" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListMetricsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing metrics", "Looking up metrics"],
 		handler: Effect.fn("McpTool.listMetrics")(function* (params) {

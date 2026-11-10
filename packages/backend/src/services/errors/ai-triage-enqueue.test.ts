@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Clock, ConfigProvider, Effect, Layer, Schema, Semaphore, Array as Arr } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import {
 	AiTriageResult,
 	ErrorIssueId,
@@ -11,11 +11,12 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AiTriageSettings, ErrorIssueEvents, ErrorIssues, Investigations } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { maybeEnqueueTriage } from "./ai-triage-enqueue"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { type MaybeEnqueueTriageInput, maybeEnqueueTriage as enqueueTriage } from "./ai-triage-enqueue"
+import { InvestigationStarter } from "./InvestigationStarter"
 import { IncidentClassifier } from "./IncidentClassifier"
 
 const createdDbs: TestDb[] = []
@@ -42,6 +43,21 @@ const makeLayer = () => {
 	const testDb = createTestDb(createdDbs)
 	return testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 }
+
+/** The real starter over the test database, holding the session port the input names (or none). */
+const maybeEnqueueTriage = ({
+	chatSessions,
+	...input
+}: MaybeEnqueueTriageInput & { readonly chatSessions?: ChatSessionsApi | undefined }) =>
+	enqueueTriage(input).pipe(
+		Effect.provide(
+			InvestigationStarter.layer.pipe(
+				Layer.provide(
+					chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions),
+				),
+			),
+		),
+	)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_enqueue_test")
@@ -71,7 +87,7 @@ const baseInput = (incidentId: string, chatSessions?: ChatSessionsApi) => ({
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
-	context: { kind: "error" },
+	context: {},
 	chatSessions,
 })
 
@@ -135,7 +151,7 @@ const criticalInput = (chatSessions: ChatSessionsApi | undefined, incidentId: st
 	orgId: ORG,
 	incidentKind: "error" as const,
 	incidentId,
-	context: { kind: "error", severity: "critical", serviceName: "checkout-api" },
+	context: { severity: "critical" as const, serviceName: "checkout-api" },
 	chatSessions,
 })
 
@@ -177,7 +193,6 @@ const issueInput = (
 	incidentId,
 	issueId,
 	context: {
-		kind: "error",
 		reason: "first_seen",
 		serviceName: "maple-cli",
 		exceptionType: "@maple/cli/CheckpointCreateError",
@@ -311,11 +326,10 @@ describe("maybeEnqueueTriage", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("holds the daily cap when one org's starts run concurrently under one admission", () =>
+	it.effect("holds the daily cap when one org's starts run concurrently", () =>
 		Effect.gen(function* () {
 			yield* enableSettings
 			const chat = fakeChatSession()
-			const admission = yield* Semaphore.make(1)
 			// A classifier that yields, so every start has read the quota before any inserts.
 			const slowClassifier = Layer.succeed(IncidentClassifier, {
 				classify: () => Effect.yieldNow.pipe(Effect.repeat({ times: 5 }), Effect.as(null)),
@@ -331,7 +345,7 @@ describe("maybeEnqueueTriage", () => {
 			const results = yield* Effect.forEach(
 				["incident-1", "incident-2", "incident-3", "incident-4", "incident-5"],
 				(id) =>
-					maybeEnqueueTriage({ ...baseInput(id, chat.chatSessions), admission }).pipe(
+					maybeEnqueueTriage(baseInput(id, chat.chatSessions)).pipe(
 						Effect.provide(Layer.merge(slowClassifier, roundTrips)),
 					),
 				{ concurrency: "unbounded" },

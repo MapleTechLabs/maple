@@ -5,8 +5,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import * as LogDetail from "@maple/views/logs/log-sheet"
 
-// `/logs/$logId`: one log's shareable page.
-
 const LogKey = Schema.Struct({
 	timestamp: Schema.String,
 	serviceName: Schema.String,
@@ -16,9 +14,9 @@ const LogKey = Schema.Struct({
 
 export const Model = Schema.Struct({
 	logId: Schema.String,
-	/** `decodeLogKey(logId)`; `null` is the "link could not be decoded" state. */
+	/** `null` is the "link could not be decoded" state. */
 	key: Schema.NullOr(LogKey),
-	/** `getLogResultAtom`: `null` data is a log that aged out (not found). */
+	/** `null` data is a log that aged out (not found). */
 	log: KeyedSchema(Schema.NullOr(LogRecord), LoadFailure),
 	/** The sheet's panels in page mode. */
 	detail: LogDetail.Model,

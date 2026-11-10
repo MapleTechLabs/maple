@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { IngestRuleService } from "./IngestRuleService"
 
 const createdDbs: TestDb[] = []

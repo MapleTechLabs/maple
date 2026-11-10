@@ -1,3 +1,4 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { AlertDeliveryEventDocument, AlertRulePreviewResponse } from "@maple/domain/http"
 import {
 	V2AlertIncident,
@@ -19,7 +20,6 @@ import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewFailure } from "../shared/preview"
@@ -73,9 +73,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(V2AlertIncident, LoadFailure),
 	},
 	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	CompletedFetchSilences: {
 		key: Schema.String,

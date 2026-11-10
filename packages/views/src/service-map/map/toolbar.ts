@@ -15,10 +15,10 @@ import { serviceDot } from "../../ui/values"
 import type { ColorMode, Focus } from "./state"
 import { hstack } from "../../ui/stack"
 
-// `ServiceMapToolbar` (packages/ui `service-map/service-map-toolbar.tsx`): focus a service (or the
-// focus chip, depth and "Hide rest"), the traffic threshold, colour mode and Re-sort.
+// The service map toolbar: focus a service (or the focus chip, depth and "Hide rest"), the traffic
+// threshold, colour mode and Re-sort.
 
-/** `TRAFFIC_FILTER_STEPS`: discrete thresholds (% of the peak edge rate); 0 shows everything. */
+/** Discrete thresholds (% of the peak edge rate); 0 shows everything. */
 export const TRAFFIC_FILTER_STEPS = [0, 0.1, 1, 5] as const
 
 const trafficStepLabel = (pct: number): string => (pct === 0 ? "All traffic" : `> ${pct}% of peak`)

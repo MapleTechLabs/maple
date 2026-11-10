@@ -103,8 +103,6 @@ const assertRowsFit = (encode: () => ReturnType<typeof encodeTraces>) => {
 	}
 }
 
-// --- generators -------------------------------------------------------------
-
 /** A value of the wrong JSON type, where a sender got the shape wrong. */
 const wrongType = fc.oneof(
 	fc.constant(null),

@@ -4,8 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { String as Str, Option, Array as Arr } from "effect"
 
-// `GcpServiceIcon`: the service glyph as a tile, or a Cloud SQL instance's engine logo once the
-// inventory knows it.
+// The service glyph as a tile, or a Cloud SQL instance's engine logo once the inventory knows it.
 
 const SERVICE_ICON = {
 	cloudRun: "CloudRunIcon",

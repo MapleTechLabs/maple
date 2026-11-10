@@ -1,11 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	fieldDescriptionStyles,
-	fieldErrorStyles,
-	fieldLabelStyles,
-	fieldStyles,
-} from "@maple/ui/styles/ui/field"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { fieldDescriptionStyles, fieldErrorStyles, fieldLabelStyles, fieldStyles } from "./field.styles"
+import { eyebrowVariants } from "./eyebrow.styles"
 import { Schema, Array as Arr } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -19,8 +14,6 @@ export type { FieldState } from "./input"
  * An uncontrolled Base UI field's state (`defaultValue`): what it holds, whether it has focus
  * and whether it was ever blurred. `stateOf` derives the `data-*` state every part mirrors.
  */
-
-// MODEL
 
 export const Model = Schema.Struct({
 	initialValue: Schema.String,
@@ -45,16 +38,12 @@ export const stateOf = (model: Model, isInvalid: boolean): FieldState => ({
 	isTouched: model.isTouched,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ChangedValue: { value: Schema.String },
 	FocusedControl: {},
 	BlurredControl: {},
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -76,8 +65,6 @@ export const controlAttributes = <P>(
 	h.OnFocus(toParentMessage(Message.FocusedControl())),
 	h.OnBlur(toParentMessage(Message.BlurredControl())),
 ]
-
-// VIEW
 
 /** Base UI `Field.Root`. */
 export const field = <Message>(
@@ -147,14 +134,14 @@ const describedBy = (ids: FieldIds, state: FieldState): ReadonlyArray<string> =>
 	...(state.isInvalid ? [ids.error] : []),
 ]
 
-/** `<Input>` inside a Base UI field: the control wrapper and the labelled native input. */
+/** An input inside a Base UI field: the control wrapper and the labelled native input. */
 export const input = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{
 		ids: FieldIds
 		state: FieldState
 		attributes: ReadonlyArray<Attribute<Message>>
-		/** `<Input className>`: on the control wrapper, as @maple/ui puts it. */
+		/** Lands on the control wrapper. */
 		className?: string
 		/** Base UI's `disabled`: shown, not editable (a form whose save is in flight). */
 		isDisabled?: boolean

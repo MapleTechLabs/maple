@@ -11,8 +11,7 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 import { timeseriesLegend } from "./timeseries-legend"
 
-// Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
-// plot/timeseries.tsx) with a hidden, bottom or right legend.
+// The query-builder area chart with a hidden, bottom or right legend.
 // TODO(legend): the hoisted header legend is not ported.
 
 /** The tokens a chart's series and chrome can resolve to; a page reads them with `ResolveThemeColors`. */
@@ -41,14 +40,14 @@ export interface AreaChartInputs {
 	readonly showTooltip?: boolean
 	/** `visible` under the plot, `right` beside it; otherwise the legend hoists (nothing here). */
 	readonly legend?: "hidden" | "visible" | "right"
-	/** `QueryBuilderLineChart`: lines instead of bands. */
+	/** Lines instead of bands. */
 	readonly mark?: "area" | "line"
 	readonly stacked?: boolean
 	readonly curveType?: "linear" | "monotone"
 	readonly showPoints?: boolean
 	/** `seriesStats`: the visible legend is the Min/Max/Mean/Last table. */
 	readonly seriesStats?: boolean
-	/** Thresholds, log scale and soft bounds (`QueryBuilderAreaChart`'s cartesian props). */
+	/** Thresholds, log scale and soft bounds. */
 	readonly axis?: TimeseriesAxisSpec | undefined
 }
 
@@ -124,7 +123,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 					...(inputs.showPoints === undefined ? undefined : { showPoints: inputs.showPoints }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
 				}),
-				// A hoisting `TimeseriesLegend` renders nothing, but `PlotFrame` still gets an element.
+				// A hoisted legend renders nothing here, but the plot frame still gets an element.
 				legend,
 				legendPlacement: inputs.legend === "right" ? "right" : "bottom",
 				tooltipBody: (portal) =>

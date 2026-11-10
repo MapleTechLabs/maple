@@ -1,15 +1,18 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import {
 	CompleteReloadSpin,
@@ -21,7 +24,7 @@ import {
 	LoadUsage,
 	ResolveWindow,
 } from "./command"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -43,7 +46,6 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 const hrefOfSearch = (model: Model, search: Search) =>
 	hrefOf(AppRoute.InfraCloudflareWorker({ scriptName: model.scriptName, search }))
 
-/** Every read of the window, keyed like the atoms. */
 const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }
@@ -80,7 +82,7 @@ const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 	}
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "cloudflare")
 const usageKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareUsage", {})
 
 export const init = (route: Route, context: PageContext): Return => {
@@ -110,11 +112,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			resolveCommand(model, context, "Load"),
 			LoadStatus({ key: status, refresh: false }),
 			LoadUsage({ key: usage }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -122,7 +120,10 @@ export const init = (route: Route, context: PageContext): Return => {
 export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
 	if (hrefOfSearch(model, model.search) === hrefOfSearch(model, route.search)) return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
 		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, mode)),
@@ -154,11 +155,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchReleases: ({ key, result }) => ({
 			model: { ...model, releases: Keyed.accept(model.releases, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		AttachedLinkedCursor: () => ({ model }),
 		TickedIngestPoll: ({ nowMs }) => ({
 			model: { ...model, nowMs },

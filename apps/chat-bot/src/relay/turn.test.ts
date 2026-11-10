@@ -19,7 +19,7 @@ import {
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { type ChatSessionStub, chatSessionClientFromStub } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
+import { ChatConnectorId, OrgId, UserId } from "@maple/primitives"
 import {
 	chatActionControlId,
 	chatAlertAckControlId,
@@ -82,8 +82,6 @@ const mention: InboundMessage = {
 	text: "why is checkout slow?",
 	mentionsBot: true,
 }
-
-// ── The platform ─────────────────────────────────────────────────────────────
 
 interface Chat {
 	readonly outbound: ChatOutbound
@@ -174,8 +172,6 @@ const chat = (
 		},
 	}
 }
-
-// ── The chat session ─────────────────────────────────────────────────────────
 
 /** Through the real codec, so the frames on the wire are the ones the session would write. */
 const event = (seq: number, input: ChatEventInput): ChatEvent =>
@@ -269,8 +265,6 @@ const session = (
 		},
 	}
 }
-
-// ── The host ─────────────────────────────────────────────────────────────────
 
 interface Host {
 	readonly ports: RelayPorts
@@ -494,6 +488,11 @@ describe("relaying a mention", () => {
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
+			// A 10ms edit throttle would make the test clock step through 160k ticks to reach the timeout.
+			const outbound: ChatOutbound = {
+				...platform.outbound,
+				limits: { ...platform.outbound.limits, minEditInterval: Duration.seconds(1) },
+			}
 			// A connection that never closes: the session is still running the turn at the timeout.
 			const frames = new TextEncoder().encode(
 				"retry: 1000\n\n" +
@@ -515,7 +514,7 @@ describe("relaying a mention", () => {
 						new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(frames) }),
 					),
 			}
-			const deployment = host(platform.outbound, stub)
+			const deployment = host(outbound, stub)
 			const recorded: Array<string> = []
 			const handedOff: Array<string> = []
 			const ports: RelayPorts = {
@@ -528,7 +527,7 @@ describe("relaying a mention", () => {
 			// The stream is read off real promises: step both clocks until the streamed text is shown.
 			const shown = () => Arr.some(platform.calls, (call) => prose(call.blocks) === "Still digging")
 			yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1))).pipe(
-				Effect.andThen(TestClock.adjust("10 millis")),
+				Effect.andThen(TestClock.adjust("1 second")),
 				Effect.repeat({ until: shown, times: 500 }),
 			)
 			expect(shown()).toBe(true)
@@ -978,8 +977,6 @@ describe("relaying a message that mentioned nobody", () => {
 		}),
 	)
 })
-
-// ── Approvals ────────────────────────────────────────────────────────────────
 
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const CALL_ID = "call_9"

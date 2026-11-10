@@ -12,7 +12,7 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
-} from "../components/infra/overview/summaries"
+} from "../page/infra/overview/summaries"
 import { String as Str } from "effect"
 
 /**

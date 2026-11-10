@@ -18,7 +18,7 @@ import type { AlertRuleStateRow } from "../collections/alerts"
 import { comparatorLabels, formatSignalValue } from "./form-utils"
 import { isDefaultAnomalyRule } from "./anomaly-rule"
 import { isRuleRouted, staleThresholdMs } from "./rule-status"
-import { formatTimestampInTimezone } from "../lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 
 const evaluationCadence = (rule: AlertRuleDocument): string => {
 	const minutes = alertRuleIntervalMinutes(rule)
@@ -162,7 +162,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 
 	const stages: DiagnosisStage[] = []
 
-	/* 1 — Enabled */
 	stages.push(
 		rule.enabled
 			? {
@@ -182,7 +181,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 				},
 	)
 
-	/* 2 — Evaluated recently */
 	const stateEvaluatedAt = Arr.reduce(
 		Arr.filter(
 			Arr.map(states, (s) => parseMs(s.last_evaluated_at)),
@@ -236,7 +234,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	/* 3 — Query succeeded */
 	const errorState = Arr.findFirst(states, (s) => s.last_error != null)
 	const errorMessage = Option.match(errorState, {
 		onNone: () => rule.lastEvaluationError,
@@ -318,7 +315,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	/* 4 — Data found */
 	const latestState = states[0] ?? null
 	const latestCheck = Option.getOrNull(Arr.findFirst(groupChecks, (c) => c.status !== "error"))
 	const sampleCount = latestState?.last_sample_count ?? latestCheck?.sampleCount ?? null
@@ -381,7 +377,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	/* 5 — Threshold compared */
 	const lastValue = latestState?.last_value ?? latestCheck?.observedValue ?? null
 	const thresholdText = `${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)}${rule.thresholdUpper != null ? ` and ${formatSignalValue(rule.signalType, rule.thresholdUpper)}` : ""}`
 	const consecutiveBreaches = latestState?.consecutive_breaches ?? latestCheck?.consecutiveBreaches ?? 0
@@ -422,7 +417,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	/* 6 — Incident opened */
 	const groupIncidents =
 		input.selectedGroupKey != null
 			? Arr.filter(openIncidents, (i) => i.groupKey === input.selectedGroupKey || i.groupKey == null)
@@ -453,7 +447,6 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 		})
 	}
 
-	/* 7 — Notification delivered */
 	if (!isRuleRouted(rule)) {
 		stages.push({
 			id: "notification",

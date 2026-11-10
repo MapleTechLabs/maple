@@ -1,8 +1,7 @@
 import { AlertValidationError, GoogleChatAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { AlertsService } from "./AlertsService"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	adminRoles,
 	asOrgId,
@@ -11,6 +10,7 @@ import {
 	getError,
 	makeLayer,
 	makeWarehouseStub,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -27,7 +27,7 @@ describe("AlertsService: Google Chat destinations", () => {
 	it.effect("rejects a URL that is not a Google Chat webhook", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
 				alerts.createDestination(
 					asOrgId("org_gchat"),
@@ -60,7 +60,7 @@ describe("AlertsService: Google Chat destinations", () => {
 		}) as typeof fetch
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_gchat")
 			const userId = asUserId("user_gchat")
 			const destination = yield* alerts.createDestination(

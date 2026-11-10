@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { encodePublicId } from "@maple/domain/http/v2"
-import { MobileDeviceId, OrgId, UserId } from "@maple/domain/primitives"
+import { MobileDeviceId, OrgId, UserId } from "@maple/primitives"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import {
 	ApnsClient,

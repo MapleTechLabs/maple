@@ -1,16 +1,15 @@
-import { makeOnboardingTeamActions } from "../../components/onboarding/team-actions"
+import { makeOnboardingTeamActions } from "./team-actions"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { clerkTeamOrganization, clerkTry } from "../../platform/clerk"
 
-// `StepTeamConnected` / `StepTeam` (apps/web/src/components/onboarding): rename the workspace and
-// invite teammates through the Clerk organization, or the self-hosted notice.
+// The team step: rename the workspace and invite teammates through the Clerk organization, or the self-hosted notice.
 
 const Operation = Schema.Literals(["rename", "invite"])
 
 export const Team = Schema.Struct({
-	/** `!isLoaded || invitations.isLoading`: "Loading your workspace…". */
+	/** False until the workspace and its invitations are read ("Loading your workspace…"). */
 	isLoaded: Schema.Boolean,
 	name: Schema.String,
 	savedName: Schema.String,
@@ -59,7 +58,7 @@ export const TeamMessage = defineMessageUnion({
 })
 export type TeamMessage = typeof TeamMessage.Type
 
-/** `useOrganization({ invitations })`: the org's name and, for an admin, its pending invitations. */
+/** The org's name and, for an admin, its pending invitations. */
 export const LoadTeam = Command.define("LoadOnboardingTeam", {
 	messages: [TeamMessage.LoadedTeam],
 	execute: Effect.gen(function* () {

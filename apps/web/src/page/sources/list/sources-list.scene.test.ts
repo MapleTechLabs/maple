@@ -9,7 +9,7 @@ import {
 import { Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { SourceId } from "@maple/domain/primitives"
+import { SourceId } from "@maple/primitives"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { orderSources } from "../kit/shared"
 import { type PageContext, PageOutMessage } from "../../contract"
