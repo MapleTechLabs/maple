@@ -373,7 +373,7 @@ one product. Observability is one lens of it, with its
 - **Context.** One `pr_context` call: commits, what people and other bots already said (the App's
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
-  related files, in parallel (`apps/ai/src/chat/review-fanout.ts`). Each group of up to 12 files
+  related files, in parallel (`apps/ai/src/chat/review/fanout.ts`). Each group of up to 12 files
   runs a child `pr-review-worker` agent through `@yielded/agent/subagent` `Subagent`: the parent's
   own read-only toolkit (the grant is exactly those tools, depth one), 100 calls and 4 minutes
   each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
