@@ -19,6 +19,7 @@ import {
 	ScrapeTargetUpstreamError,
 	ScrapeTargetValidationError,
 	type CreateScrapeTargetRequest,
+	type ScrapeResultReport,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
@@ -91,13 +92,8 @@ import type { SourceId } from "@maple/domain/primitives"
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>
 type MutableScrapeTargetSet = { -readonly [K in keyof ScrapeTargetSet]: ScrapeTargetSet[K] }
 
-/** One scrape attempt as reported by the scraper loop or a manual probe. */
-export interface ScrapeResultReport {
-	readonly targetId: ScrapeTargetId
-	readonly scrapedAt: number
-	readonly error: string | null
-	readonly subTargetKey?: string | null
-}
+/** One scrape attempt as reported by the scraper loop or a manual probe: what the row converges on. */
+export type ScrapeResult = Pick<ScrapeResultReport, "targetId" | "scrapedAt" | "error" | "subTargetKey">
 
 /**
  * Row state one target converges on after applying its results in order.
@@ -113,7 +109,7 @@ export interface ScrapeTargetSummary {
 
 const applyScrapeResult = (
 	previous: ScrapeTargetSummary | undefined,
-	result: ScrapeResultReport,
+	result: ScrapeResult,
 ): ScrapeTargetSummary => {
 	// Discovered sub-targets roll up: any branch failure surfaces branch-prefixed.
 	// Per-branch health stays visible in check history via the per-branch `instance`.
@@ -138,7 +134,7 @@ const applyScrapeResult = (
  * old per-result writes cost ~95k UPDATEs a day to persist ~8k outcomes.
  */
 export const summarizeScrapeResults = (
-	results: ReadonlyArray<ScrapeResultReport>,
+	results: ReadonlyArray<ScrapeResult>,
 ): ReadonlyMap<ScrapeTargetId, ScrapeTargetSummary> =>
 	new Map(
 		Arr.map(

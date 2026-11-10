@@ -36,7 +36,6 @@ import {
 	SearchConsoleDisconnectResponse,
 	SearchConsoleIntegrationStatus,
 	SearchConsolePrimeResponse,
-	SearchConsoleSiteChoice,
 	SearchConsoleSiteStatus,
 	SearchConsoleStartConnectResponse,
 	SupabaseConnectResponse,
@@ -256,9 +255,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
-						return new SearchConsoleAvailableSitesResponse({
-							sites: Arr.map(sites, (site) => new SearchConsoleSiteChoice(site)),
-						})
+						return new SearchConsoleAvailableSitesResponse({ sites })
 					}),
 				)
 				.handle("searchConsoleSaveSites", ({ payload }) =>
