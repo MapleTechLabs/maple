@@ -11,6 +11,7 @@ import {
 import {
 	V2AwsIntegration,
 	V2ChatConnectorList,
+	V2DataSource,
 	V2GcpIntegration,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
@@ -32,6 +33,7 @@ import { AwsCardModel } from "./aws"
 import { SupabaseCardModel } from "./supabase"
 import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
+import { HubFilter } from "./catalog"
 
 // `/integrations`: the hub and every integration's page.
 
@@ -51,6 +53,8 @@ export const Statuses = Schema.Struct({
 	searchConsole: keyed(SearchConsoleIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),
+	/** The org's data sources, read only while the `dataSources` flag is on. */
+	dataSources: keyed(Schema.Array(V2DataSource)),
 })
 export type Statuses = typeof Statuses.Type
 
@@ -65,6 +69,8 @@ export const Model = Schema.Struct({
 	grants: Schema.Array(Policy.PermissionName),
 	/** The org's `dataSources` rollout flag, read with the session (the settings rail's tab). */
 	hasDataSources: Schema.Boolean,
+	/** The hub's capability filter. */
+	filter: HubFilter,
 	/** The OAuth popup flow of the page's integration (`IntegrationConnectProvider`). */
 	connect: ConnectModel,
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */

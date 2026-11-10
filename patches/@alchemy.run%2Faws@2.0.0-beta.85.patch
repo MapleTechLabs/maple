@@ -359,3 +359,75 @@ index bcd0d20..07480ac 100644
        targets: [...tgSpecs.values()].map((spec) => ({
          targetGroupArn: targetGroups.get(spec.key)!.targetGroupArn as unknown as string,
          containerPort: spec.forwardPort,
+diff --git a/src/IAM/Policy.ts b/src/IAM/Policy.ts
+--- a/src/IAM/Policy.ts
++++ b/src/IAM/Policy.ts
+@@ -497,6 +497,32 @@ export const PolicyProvider = () =>
+                 .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
+             }
+           }
++          // IAM refuses to delete a policy still attached to a role, user or group
++          // (DeleteConflictException), e.g. one whose role left state without being deleted.
++          const attached = yield* iam
++            .listEntitiesForPolicy({ PolicyArn: output.policyArn })
++            .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.undefined));
++          for (const role of attached?.PolicyRoles ?? []) {
++            if (role.RoleName) {
++              yield* iam
++                .detachRolePolicy({ RoleName: role.RoleName, PolicyArn: output.policyArn })
++                .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++            }
++          }
++          for (const user of attached?.PolicyUsers ?? []) {
++            if (user.UserName) {
++              yield* iam
++                .detachUserPolicy({ UserName: user.UserName, PolicyArn: output.policyArn })
++                .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++            }
++          }
++          for (const group of attached?.PolicyGroups ?? []) {
++            if (group.GroupName) {
++              yield* iam
++                .detachGroupPolicy({ GroupName: group.GroupName, PolicyArn: output.policyArn })
++                .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++            }
++          }
+           yield* iam
+             .deletePolicy({
+               PolicyArn: output.policyArn,
+diff --git a/lib/IAM/Policy.js b/lib/IAM/Policy.js
+--- a/lib/IAM/Policy.js
++++ b/lib/IAM/Policy.js
+@@ -331,6 +331,32 @@ export const PolicyProvider = () => Provider.effect(Policy, Effect.gen(function*
+                         .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
+                 }
+             }
++            // IAM refuses to delete a policy still attached to a role, user or group
++            // (DeleteConflictException), e.g. one whose role left state without being deleted.
++            const attached = yield* iam
++                .listEntitiesForPolicy({ PolicyArn: output.policyArn })
++                .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.undefined));
++            for (const role of attached?.PolicyRoles ?? []) {
++                if (role.RoleName) {
++                    yield* iam
++                        .detachRolePolicy({ RoleName: role.RoleName, PolicyArn: output.policyArn })
++                        .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++                }
++            }
++            for (const user of attached?.PolicyUsers ?? []) {
++                if (user.UserName) {
++                    yield* iam
++                        .detachUserPolicy({ UserName: user.UserName, PolicyArn: output.policyArn })
++                        .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++                }
++            }
++            for (const group of attached?.PolicyGroups ?? []) {
++                if (group.GroupName) {
++                    yield* iam
++                        .detachGroupPolicy({ GroupName: group.GroupName, PolicyArn: output.policyArn })
++                        .pipe(Effect.catchTag("NoSuchEntityException", () => Effect.void));
++                }
++            }
+             yield* iam
+                 .deletePolicy({
+                 PolicyArn: output.policyArn,

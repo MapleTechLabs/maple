@@ -399,6 +399,8 @@ describe("GET /v2/instrumentation/audit", () => {
 						spanNameCount: "12",
 						badStatusCodes: ["ERROR"],
 						badSpanKinds: [],
+						rootSpanNames: [],
+						rootSpanKinds: [],
 					},
 				],
 			}),

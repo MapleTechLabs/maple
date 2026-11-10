@@ -20,14 +20,13 @@ const GUIDES = new Map<string, { readonly label: string; readonly href: string }
 	["LOG-02", { label: "Read trace correlation guide", href: conventions("trace-correlation") }],
 	["LOG-03", { label: "Read logs guide", href: conventions("logs") }],
 	["LOG-04", { label: "Read severity levels guide", href: conventions("severity-levels") }],
-	["RES-06", { label: "Read service identity guide", href: conventions("service-identity") }],
+	["RES-06", { label: "Read version guide", href: conventions("deployment-and-version-tracking") }],
 	["RES-02", { label: "Read version guide", href: conventions("deployment-and-version-tracking") }],
 	["RES-03", { label: "Read environment guide", href: conventions("deployment-and-version-tracking") }],
 	["RES-04", { label: "Read source linking guide", href: conventions("deployment-and-version-tracking") }],
 	["RES-05", { label: "Read version guide", href: conventions("deployment-and-version-tracking") }],
 	["NAME-02", { label: "Read span naming guide", href: conventions("http-attributes") }],
 	["NAME-03", { label: "Read reserved namespace guide", href: conventions("reserved-namespace") }],
-	["PII-01", { label: "Read attribute conventions", href: docsUrl("otelConventions") }],
 	["MET-01", { label: "Read metrics guide", href: conventions("metrics") }],
 	["STAT-01", { label: "Read span status guide", href: conventions("span-status-codes") }],
 	["STAT-02", { label: "Read errors guide", href: conventions("errors-and-exceptions") }],
@@ -37,6 +36,10 @@ const GUIDES = new Map<string, { readonly label: string; readonly href: string }
 	["TRC-01", { label: "Read service map guide", href: conventions("1-service-to-service-edges") }],
 	["TRC-02", { label: "Read root span guide", href: docsUrl("missingRootSpans") }],
 	["TRC-03", { label: "Read sampling guide", href: docsUrl("samplingThroughput") }],
+	[
+		"TRC-04",
+		{ label: "Read upstream context guide", href: docsUrl("missingRootSpans", "context-from-upstream") },
+	],
 ])
 
 const INTEGRATION_FOR_CHECK = new Map<string, string>([
@@ -77,8 +80,13 @@ export const setupHealthAction = (check: Check): SetupHealthAction | null => {
 	switch (check.id) {
 		case "CFG-ALERT-01":
 		case "CFG-ALERT-04":
-		case "CFG-NOTIF-01":
 			return link("Open destinations", alertsTab("routing"))
+		// The policy has no settings screen and no route prefills the assistant, so it links to the
+		// destinations the policy should point at.
+		case "CFG-NOTIF-01":
+			return link("See alert destinations", alertsTab("routing"))
+		case "PII-01":
+			return link("Add an ingest rule", hrefOf(AppRoute.IngestRuleNew({ search: {} })))
 		case "CFG-ALERT-02":
 			return link("Create alert rule", hrefOf(AppRoute.AlertsCreate({ search: {} })))
 		case "CFG-ALERT-03":

@@ -103,6 +103,7 @@ export const LOCAL_SCHEMA_V49 = localSchemaIdentity(49)
 export const LOCAL_SCHEMA_V50 = localSchemaIdentity(50)
 export const LOCAL_SCHEMA_V51 = localSchemaIdentity(51)
 export const LOCAL_SCHEMA_V52 = localSchemaIdentity(52)
+export const LOCAL_SCHEMA_V53 = localSchemaIdentity(53)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,
