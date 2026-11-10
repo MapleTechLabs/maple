@@ -10,13 +10,9 @@ import { AwaitTxIdError, InvalidTxIdError, TxIdTimeoutError } from "./errors"
 import { convertDeleteHandler, convertInsertHandler, convertUpdateHandler } from "./handlers"
 import type { BackoffConfig, EffectElectricCollectionConfig } from "./types"
 
-// Re-export CollectionStatus from @tanstack/db
 export type { CollectionStatus } from "@tanstack/db"
 
-/**
- * Type for the ShapeStream onError handler.
- * Returns void to stop syncing, or an object to continue with modified params/headers.
- */
+/** Returns void to stop syncing, or an object to continue with modified params/headers. */
 type OnErrorHandler = NonNullable<SyncStreamOptions<unknown>["onError"]>
 
 /**
@@ -198,7 +194,6 @@ type InferSchemaOutput<T> = T extends StandardSchemaV1
 		: Record<string, unknown>
 	: Record<string, unknown>
 
-/** Effect-based Electric collection utilities. */
 export interface EffectElectricCollectionUtils extends ElectricCollectionUtils {
 	/** Waits for a transaction to reach this collection. */
 	readonly awaitTxIdEffect: (
@@ -213,7 +208,6 @@ type AnyEffectElectricCollectionConfig =
 	  })
 	| (EffectElectricCollectionConfig<any, any, any, any> & { runtime?: never })
 
-/** Creates Electric collection options with Effect-based handlers. */
 export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 	config: EffectElectricCollectionConfig<
 		InferSchemaOutput<T>,
@@ -360,10 +354,6 @@ export function effectElectricCollectionOptions(config: AnyEffectElectricCollect
 	}
 }
 
-/**
- * A collection created with Effect-native utilities.
- * Extends the base Collection with awaitTxIdEffect on utils.
- */
 export type EffectCollection<
 	T extends Row<unknown>,
 	TKey extends string | number = string | number,
@@ -372,8 +362,7 @@ export type EffectCollection<
 }
 
 /**
- * Creates a collection with Effect-native utilities.
- * Accepts an Effect Schema directly and converts to StandardSchemaV1 internally.
+ * Accepts an Effect Schema directly and converts it to StandardSchemaV1.
  *
  * @example
  * ```typescript
@@ -398,7 +387,6 @@ export function createEffectCollection<A extends Row<unknown>, TRuntime>(
 		runtime: ManagedRuntime.ManagedRuntime<TRuntime, unknown>
 	},
 ): EffectCollection<A> {
-	// Convert Effect Schema to StandardSchemaV1 internally.
 	// `Schema.Schema<A>` defaults `DecodingServices` to `unknown`, but the helper
 	// requires `Decoder<unknown, never>`. The Schemas we accept never carry real
 	// decoding services at runtime, so narrow via `Schema.Codec` to make the
