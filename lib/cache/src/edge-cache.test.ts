@@ -10,10 +10,7 @@ import {
 } from "./edge-cache"
 import { makeOutboundSlotsCell, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
 
-// A stand-in for whatever a caller caches. These tests used to reach for
-// `CachedPayload`, which tied a generic cache to a query type; the
-// property under test is that ANY `Schema.Class` survives the JSON round trip
-// as a real instance, so a local class states it directly.
+// Any `Schema.Class` must survive the JSON round trip as a real instance; a local class states that.
 class CachedPayload extends Schema.Class<CachedPayload>("CachedPayload")({
 	result: Schema.Struct({
 		kind: Schema.Literals(["timeseries"]),
@@ -308,9 +305,8 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 			assert.strictEqual(first.hit, false)
 			assert.instanceOf(first.value, CachedPayload)
 			assert.strictEqual(second.hit, true)
-			// The whole point of the fix: the cache HIT must give us back a real
-			// class instance, not a plain object — otherwise the HTTP API encoder
-			// rejects it with `Expected CachedPayload, got {...}`.
+			// A hit must be a real class instance, or the HTTP API encoder rejects it
+			// with `Expected CachedPayload, got {...}`.
 			assert.instanceOf(second.value, CachedPayload)
 			assert.strictEqual(second.value.result.kind, "timeseries")
 			if (second.value.result.kind === "timeseries") {
