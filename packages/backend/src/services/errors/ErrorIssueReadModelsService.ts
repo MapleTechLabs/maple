@@ -26,24 +26,14 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIncidents, type ErrorIncidentRow, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import {
-	Clock,
-	Context,
-	DateTime,
-	Effect,
-	Layer,
-	Match,
-	Option,
-	Schema,
-	Array as Arr,
-	String as Str,
-} from "effect"
+import { Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { isMissingErrorEventsUserId } from "@maple/backend/services/warehouse/missing-table"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { issueFingerprintHashes } from "./issue-fingerprints"
+import { severityRank } from "./issue-severity"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
@@ -95,26 +85,19 @@ const ownsAnyHash = ($: IssueColumns, orgId: OrgId, hashes: ReadonlyArray<string
 				),
 			)
 
-/** Shared SQL ordering expression for the UI's critical-first issue ordering. */
+/** The UI's critical-first issue order: 0 for critical through 3 for low, 4 for unset. */
+const severitySortRank = (severity: IssueSeverity | null): number => 4 - severityRank(severity)
+
+const SEVERITIES_BY_RANK: ReadonlyArray<IssueSeverity> = ["critical", "high", "medium", "low"]
+
+/** `severitySortRank` as SQL, for the cursor and the ORDER BY. */
 const issueSeverityOrder = ($: IssueColumns) =>
 	PG.caseWhen(
-		[
-			[$.severity.eq("critical"), PG.lit(0)],
-			[$.severity.eq("high"), PG.lit(1)],
-			[$.severity.eq("medium"), PG.lit(2)],
-			[$.severity.eq("low"), PG.lit(3)],
-		],
-		PG.lit(4),
-	)
-
-const severitySortRank = (severity: IssueSeverity | null): number =>
-	Match.value(severity).pipe(
-		Match.when("critical", () => 0),
-		Match.when("high", () => 1),
-		Match.when("medium", () => 2),
-		Match.when("low", () => 3),
-		Match.when(null, () => 4),
-		Match.exhaustive,
+		Arr.map(
+			SEVERITIES_BY_RANK,
+			(severity) => [$.severity.eq(severity), PG.lit(severitySortRank(severity))] as const,
+		),
+		PG.lit(severitySortRank(null)),
 	)
 
 export interface IssueListFilters {

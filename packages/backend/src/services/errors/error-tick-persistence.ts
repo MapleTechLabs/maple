@@ -31,6 +31,7 @@ import type {
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
 import { foldIssues } from "./issue-fold"
 import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
+import { regressedColumns } from "./issue-reopen"
 import { Array as Arr, Context, Effect, Order, Schema } from "effect"
 
 export interface ErrorTickScanRow {
@@ -670,16 +671,7 @@ export const applyRegressions = (
 		const reopened = yield* inChunks(issueIds, (chunk) =>
 			tx.run(
 				PG.update(ErrorIssues)
-					.set(($) => ({
-						workflowState: "regressed",
-						resolvedAt: null,
-						resolvedByActorId: null,
-						lastRegressedAt: input.windowEndMs,
-						regressionCount: $.regressionCount.add(1),
-						// A regression on an issue retention already archived must be seen.
-						archivedAt: null,
-						updatedAt: input.windowEndMs,
-					}))
+					.set(($) => regressedColumns($.regressionCount.add(1), input.windowEndMs))
 					.where(($) => [$.orgId.eq(input.orgId), $.id.in_(...chunk), $.workflowState.eq("done")])
 					.returning("id"),
 			),

@@ -1068,6 +1068,7 @@ const make: Effect.Effect<
 							$.orgId.eq(orgId),
 							$.workflowState.eq("wontfix"),
 							$.snoozeUntil.isNotNull(),
+							// Strict, unlike the `<=` every other snooze check uses (see `issueReopenFor`).
 							$.snoozeUntil.lt(nowMs),
 						]),
 				)

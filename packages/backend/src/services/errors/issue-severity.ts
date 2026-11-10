@@ -3,7 +3,7 @@
  * Every write is idempotent: deterministic runId-derived ids plus
  * onConflictDoNothing, or guarded UPDATEs.
  */
-import { createHash, randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import type { AiTriageResult, IssueSeverity } from "@maple/domain/http"
 import {
 	ActorId,
@@ -16,8 +16,9 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
+import { ensureAgentActorRow } from "./agent-actor-row"
 
 /**
  * effect-orm over the caller's client; inside `orm.transaction` the writes join
@@ -34,7 +35,6 @@ export class TriageActorMissingError extends Schema.TaggedError<TriageActorMissi
 	{ message: Schema.String, orgId: OrgId },
 ) {}
 
-const decodeActorId = Schema.decodeUnknownSync(ActorId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const decodeEscalationId = Schema.decodeUnknownSync(IssueEscalationId)
 
@@ -90,40 +90,18 @@ const ensureTriageAgentActor = (
 	timestamp: number,
 ): Effect.Effect<ActorId, MapleDbError | TriageActorMissingError> =>
 	Effect.gen(function* () {
-		const select = () =>
-			db.run(
-				PG.from(Actors)
-					.select()
-					.where(($) => [$.orgId.eq(orgId), $.type.eq("agent"), $.agentName.eq(TRIAGE_AGENT_NAME)])
-					.limit(1),
-			)
-		const existing = yield* select()
-		if (existing[0] !== undefined) return existing[0].id
-		yield* db.run(
-			PG.insertInto(Actors)
-				.values({
-					id: decodeActorId(randomUUID()),
-					orgId,
-					type: "agent",
-					userId: null,
-					agentName: TRIAGE_AGENT_NAME,
-					model: null,
-					capabilitiesJson: ["auto-triage"],
-					createdBy: null,
-					createdAt: timestamp,
-					lastActiveAt: timestamp,
-				})
-				.onConflictDoNothing(),
-		)
-		const after = yield* select()
-		const row = after[0]
-		if (row === undefined) {
+		const row = yield* ensureAgentActorRow(db, orgId, TRIAGE_AGENT_NAME, {
+			capabilities: ["auto-triage"],
+			createdBy: null,
+			timestamp,
+		})
+		if (Option.isNone(row)) {
 			return yield* new TriageActorMissingError({
 				message: "Failed to ensure maple-triage-agent actor row",
 				orgId,
 			})
 		}
-		return row.id
+		return row.value.id
 	})
 
 export interface ApplyTriageSeverityInput {
