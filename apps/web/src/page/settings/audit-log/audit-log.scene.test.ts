@@ -237,6 +237,20 @@ describe("audit log tab", () => {
 		expect(picked.model.customRange).toBeNull()
 	})
 
+	test("opening the custom range moves focus into the popover, so Escape still closes it", () => {
+		const search = { tab: "audit-log" } as const
+		const opened = update(
+			init(search).model,
+			Message.ResolvedCustomToday({
+				timeZone: "UTC",
+				today: { year: 2026, month: 11, day: 9 },
+				lastDay: { year: 2026, month: 11, day: 9 },
+			}),
+			search,
+		)
+		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toEqual(["FocusAuditDateRange"])
+	})
+
 	describe("an entry's detail", () => {
 		const search = { tab: "audit-log" } as const
 		const loadedWith = (searchFor: typeof SettingsSearch.Type) => {
