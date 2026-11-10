@@ -177,6 +177,7 @@ const valuePicker = (
 	model: Model,
 	query: QueryDraft,
 	row: ConditionRow,
+	index: number,
 	values: WhereClauseAutocompleteValues,
 ): ReadonlyArray<Html> => {
 	const id = conditionPickerId(query.id, row.id, "values")
@@ -191,7 +192,8 @@ const valuePicker = (
 	// the field is covered by it.
 	const items = isUnspellableTyped ? [] : isTypedNew ? [typed, ...suggestions] : suggestions
 	const emptyText = isUnspellableTyped ? UNSPELLABLE_NOTE : VALUE_HINT
-	const ariaLabel = `Value for ${rowFieldLabel(row, query.dataSource)}`
+	// Numbered like the field picker: two rows on one field are still two names.
+	const ariaLabel = `Value for condition ${index + 1}: ${rowFieldLabel(row, query.dataSource)}`
 	const toMessage = (message: Combobox.Message) =>
 		Message.GotConditionValues({ queryId: query.id, rowId: row.id, message })
 	const renderItem = (value: string): ReadonlyArray<Html | string> =>
@@ -263,7 +265,7 @@ const conditionRow = (
 		h,
 		{
 			size: "icon-xs",
-			label: `Remove condition: ${rowSummary(row, query.dataSource)}`,
+			label: `Remove condition ${index + 1}: ${rowSummary(row, query.dataSource)}`,
 			hasTooltip: false,
 			className: cn(REMOVE_CELL, "text-muted-foreground hover:text-foreground active:text-foreground"),
 			attributes: [h.OnClick(Message.ClickedRemoveCondition({ queryId: query.id, rowId: row.id }))],
@@ -295,7 +297,7 @@ const conditionRow = (
 			// As wide as the operator's words, not the select's default 9rem.
 			className: cn(OPERATOR_CELL, "min-w-16"),
 			// The label replaces the trigger's text for screen readers, so it carries the pick.
-			ariaLabel: `Operator for ${fieldLabel}: ${OPERATOR_LABEL[row.operator]}`,
+			ariaLabel: `Operator for condition ${index + 1}: ${fieldLabel} ${OPERATOR_LABEL[row.operator]}`,
 			alignItemWithTrigger: false,
 			toView: (parts) =>
 				layout([
@@ -306,7 +308,7 @@ const conditionRow = (
 								vstack(
 									h,
 									{ gap: "1", className: VALUES_CELL },
-									valuePicker(h, model, query, row, values),
+									valuePicker(h, model, query, row, index, values),
 								),
 							]),
 				]),

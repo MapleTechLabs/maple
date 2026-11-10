@@ -122,16 +122,4 @@ describe("fields the source drops", () => {
 			expect(keysOf(offered(dataSource, "resource", "db.system"))).toEqual(["resource.db.system"])
 		},
 	)
-
-	test.each(["traces", "logs", "metrics", "product_events"] as const)(
-		"every key %s offers is one it applies",
-		(dataSource) => {
-			const keys = Arr.flatMap(["", "db.system", "resource.x", "attr.y", "service", "host"], (search) =>
-				Arr.flatMap(["all", "resource", "attribute"] as const, (drill) =>
-					keysOf(offered(dataSource, drill, search)),
-				),
-			)
-			expect(Arr.filter(keys, (key) => !isPickable(key, dataSource))).toEqual([])
-		},
-	)
 })

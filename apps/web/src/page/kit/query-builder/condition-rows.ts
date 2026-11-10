@@ -56,10 +56,17 @@ type Part = Result.Result<Draft, UnshowableReason>
  * A bare value that is the rest of a mistyped operator: `key ==` reads as `key = "="` and
  * `key >=` as `key > "="`. Quoted (`key = "="`), the same value is one the user meant.
  */
-const isStrayOperator = (clause: ParsedClause, part: string): boolean =>
-	/^=|^[=!<>]+$/.test(clause.value) &&
-	!Str.includes(`"${clause.value}"`)(part) &&
-	!Str.includes(`'${clause.value}'`)(part)
+const looksLikeOperator = (value: string): boolean => /^=|^[=!<>]+$/.test(value)
+
+const timesIn = (text: string, needle: string): number => Str.split(needle)(text).length - 1
+
+/** Each clause with such a value needs its own quoted spelling in `part`: a sibling's does not vouch for it. */
+const hasStrayOperator = (clauses: ReadonlyArray<ParsedClause>, part: string): boolean =>
+	Arr.some(Arr.dedupe(Arr.map(clauses, (clause) => clause.value)), (value) => {
+		if (!looksLikeOperator(value)) return false
+		const quoted = timesIn(part, `"${value}"`) + timesIn(part, `'${value}'`)
+		return Arr.filter(clauses, (clause) => clause.value === value).length > quoted
+	})
 
 /**
  * One AND-ed part: a single clause, or an OR group whose members share key and an any-of
@@ -69,7 +76,7 @@ const readPart = (part: string, dataSource: QueryBuilderDataSource): Part => {
 	const parsed = parseWhereClause(part, { orGroups: true })
 	if (parsed.warnings.length > 0) return Result.fail("syntax")
 	const clauses = [...parsed.clauses, ...Arr.flatten(parsed.groups)]
-	if (Arr.some(clauses, (each) => isStrayOperator(each, part))) return Result.fail("syntax")
+	if (hasStrayOperator(clauses, part)) return Result.fail("syntax")
 	const [clause] = parsed.clauses
 	if (parsed.groups.length === 0 && parsed.clauses.length === 1 && clause !== undefined)
 		return Result.succeed(draftOf(clause))

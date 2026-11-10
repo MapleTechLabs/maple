@@ -64,7 +64,7 @@ const caretMounted = () =>
 
 describe("condition builder", () => {
 	test("a new row picks an attribute, then typed values, and prints an OR group", () => {
-		const value = role("combobox", { name: "Value for http.route" })
+		const value = role("combobox", { name: "Value for condition 1: http.route" })
 		scene(
 			{ update, view },
 			given(hosted("")),
@@ -86,7 +86,7 @@ describe("condition builder", () => {
 	})
 
 	test("the field picker drills into resource attributes", () => {
-		const value = role("combobox", { name: "Value for host.name" })
+		const value = role("combobox", { name: "Value for condition 2: host.name" })
 		scene(
 			{ update, view },
 			given(hosted('service.name = "checkout"')),
@@ -106,7 +106,7 @@ describe("condition builder", () => {
 		scene(
 			{ update, view },
 			given(hosted('service.name = "checkout"')),
-			click(role("combobox", { name: "Value for Service" })),
+			click(role("combobox", { name: "Value for condition 1: Service" })),
 			...pickerOpened(1),
 			click(role("option", { name: "api" })),
 			...pickerClosed("cond-q-c0-values", 2),
@@ -115,7 +115,7 @@ describe("condition builder", () => {
 	})
 
 	test("a value with both quote kinds is refused in the open list, and Enter keeps the clause", () => {
-		const value = role("combobox", { name: "Value for http.route" })
+		const value = role("combobox", { name: "Value for condition 1: http.route" })
 		scene(
 			{ update, view },
 			given(hosted('attr.http.route = "/cart"')),
@@ -130,7 +130,7 @@ describe("condition builder", () => {
 	})
 
 	test("either quote alone is offered as a value", () => {
-		const value = role("combobox", { name: "Value for http.route" })
+		const value = role("combobox", { name: "Value for condition 1: http.route" })
 		scene(
 			{ update, view },
 			given(hosted('attr.http.route = "/cart"')),
@@ -142,11 +142,24 @@ describe("condition builder", () => {
 		)
 	})
 
+	test("two rows on one field name their controls apart, by condition number", () => {
+		scene(
+			{ update, view },
+			given(hosted('attr.http.route = "/a" AND attr.http.route = "/b"')),
+			expectView(role("combobox", { name: "Value for condition 1: http.route" })).toExist(),
+			expectView(role("combobox", { name: "Value for condition 2: http.route" })).toExist(),
+			expectView(label("Remove condition 1: http.route is /a")).toExist(),
+			expectView(label("Remove condition 2: http.route is /b")).toExist(),
+			expectView(label("Operator for condition 1: http.route is")).toExist(),
+			expectView(label("Operator for condition 2: http.route is")).toExist(),
+		)
+	})
+
 	test("removing a row keeps the other clauses as the user wrote them", () => {
 		scene(
 			{ update, view },
 			given(hosted("service = checkout AND attr.http.route exists")),
-			click(label("Remove condition: http.route is set")),
+			click(label("Remove condition 2: http.route is set")),
 			expectView(text("service = checkout")).toExist(),
 		)
 	})
