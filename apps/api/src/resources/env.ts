@@ -70,6 +70,9 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
+		// Cancellation reports also go to this channel of the Hazel workspace Maple's own org linked.
+		optionalPlain("MAPLE_CANCELLATION_HAZEL_CHANNEL_ID"),
+		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
 		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),

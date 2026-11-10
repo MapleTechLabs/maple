@@ -3,6 +3,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
@@ -222,6 +223,9 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 					[icon(h, platformMeta(platform).icon, { size: 14 }), platformMeta(platform).label],
 				),
 			),
+			typography(h, { size: "xs" }, [
+				textLink(h, { href: hrefOf(AppRoute.Integrations({ search: {} })) }, ["All integrations →"]),
+			]),
 		],
 	)
 }

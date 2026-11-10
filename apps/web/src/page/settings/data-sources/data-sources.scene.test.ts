@@ -16,7 +16,7 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listSources } from "./command"
 import { clerkInstanceOf, draftErrors } from "./draft"
 import { Message, type Model } from "./model"
-import { init, update } from "./update"
+import { init, revisit, update } from "./update"
 import { view as tabView } from "./view"
 import { visibleErrors } from "./view-form"
 
@@ -63,6 +63,25 @@ const type = (field: "name" | "description" | "url" | "user" | "password" | "sec
 	Message.ChangedField({ field, value })
 
 describe("data sources tab", () => {
+	test("a link from Integrations opens one source's page, or a kind's connect form", () => {
+		const linked = init({ source: "6f1c2a4e-8d3b-4c7a-9e21-3b5d7f9a1c2e" })
+		expect(linked.model.screen).toEqual({ _tag: "Detail", id: "6f1c2a4e-8d3b-4c7a-9e21-3b5d7f9a1c2e" })
+		expect(names(linked.commands)).toContain("FetchDataSourceCatalog")
+		expect(init({ connect: "clerk" }).model.screen).toEqual({
+			_tag: "Form",
+			kind: "clerk",
+			editing: null,
+		})
+		expect(init({ source: "not-a-uuid" }).model.screen).toEqual({ _tag: "List" })
+	})
+
+	test("a return to the tab keeps the form the viewer left, link or not", () => {
+		const typed = step(init({ connect: "clerk" }).model, type("name", "clerk-prod"))
+		const back = revisit(typed)
+		expect(back.model.screen).toEqual({ _tag: "Form", kind: "clerk", editing: null })
+		expect(back.model.draft.name).toBe("clerk-prod")
+	})
+
 	test("reads the list on entry and shows the empty state's list when there is none", () => {
 		expect(names(init().commands)).toEqual(["FetchDataSources"])
 		const empty = loaded([])
