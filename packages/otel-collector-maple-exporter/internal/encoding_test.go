@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"math"
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -16,6 +17,10 @@ func TestFormatTimestampNano(t *testing.T) {
 		{"epoch_one_ns", 1, "1970-01-01 00:00:00.000000001"},
 		{"epoch_one_sec", 1_000_000_000, "1970-01-01 00:00:01.000000000"},
 		{"specific_moment", 1_704_067_200_123_456_789, "2024-01-01 00:00:00.123456789"},
+		{"int64_max", math.MaxInt64, "2262-04-11 23:47:16.854775807"},
+		// Past Int64 the value would wrap negative and fail the whole insert.
+		{"past_int64_max", math.MaxInt64 + 1, "1970-01-01 00:00:00.000000000"},
+		{"uint64_max", math.MaxUint64, "1970-01-01 00:00:00.000000000"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -39,6 +44,7 @@ func TestFormatDateTime(t *testing.T) {
 		{"zero", 0, "1970-01-01 00:00:00"},
 		{"end_of_year", 1_704_067_199_999_999_999, "2023-12-31 23:59:59"},
 		{"start_of_year", 1_704_067_200_000_000_000, "2024-01-01 00:00:00"},
+		{"past_int64_max", math.MaxInt64 + 1, "1970-01-01 00:00:00"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,8 +114,8 @@ func TestSeverityNumberToText(t *testing.T) {
 		{20, "ERROR"},
 		{21, "FATAL"},
 		{24, "FATAL"},
-		{0, "0"}, // out-of-band → numeric form
-		{25, "25"},
+		{0, ""}, // out-of-band is empty, as in the gateway's encoder
+		{25, ""},
 	}
 	for _, tc := range cases {
 		got := SeverityNumberToText(tc.n)
