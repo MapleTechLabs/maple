@@ -27,6 +27,7 @@ import {
 	String as Str,
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
 const IAM_SCOPE = "https://www.googleapis.com/auth/iam"
@@ -167,12 +168,6 @@ const ServiceAccountKey = Schema.Struct({
 	private_key_id: Schema.String,
 })
 const decodeServiceAccountKey = Schema.decodeUnknownEffect(Schema.fromJsonString(ServiceAccountKey))
-const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const der = Buffer.from(Str.replace(/\s+/g, "")(Str.replace(/-----[^-]+-----/g, "")(pem)), "base64")
-	return der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength)
-}
 
 /** `MAPLE_GCP_SERVICE_ACCOUNT_KEY`: the service account's key file, base64-encoded. */
 export const importServiceAccountKey = (encoded: Redacted.Redacted) =>
@@ -180,13 +175,7 @@ export const importServiceAccountKey = (encoded: Redacted.Redacted) =>
 		Effect.flatMap((key) =>
 			Effect.tryPromise({
 				try: () =>
-					crypto.subtle.importKey(
-						"pkcs8",
-						pemToPkcs8(key.private_key),
-						{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-						false,
-						["sign"],
-					),
+					crypto.subtle.importKey("pkcs8", pemToPkcs8(key.private_key), RS256, false, ["sign"]),
 				catch: () =>
 					new GcpApiError({
 						message: "MAPLE_GCP_SERVICE_ACCOUNT_KEY holds a private key that does not import",
@@ -211,9 +200,6 @@ export const importServiceAccountKey = (encoded: Redacted.Redacted) =>
 		),
 	)
 
-const base64Url = (value: string | ArrayBuffer) =>
-	(typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value)).toString("base64url")
-
 const decodeAccessToken = Schema.decodeUnknownEffect(
 	Schema.Struct({ access_token: Schema.RedactedFromValue(Schema.String) }),
 )
@@ -225,24 +211,26 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 	nowMs: number,
 ) {
 	const issuedAt = Math.floor(nowMs / 1000)
-	const signingInput = Arr.join(
-		Arr.map(
-			[
-				{ alg: "RS256", typ: "JWT", kid: signer.keyId },
-				{
-					iss: signer.clientEmail,
-					scope: IAM_SCOPE,
-					aud: TOKEN_URL,
-					iat: issuedAt,
-					exp: issuedAt + TOKEN_LIFETIME_SECONDS,
-				},
-			],
-			(part) => base64Url(encodeJsonSync(part)),
+	const assertion = yield* signJwt(
+		signer.key,
+		RS256,
+		{ alg: "RS256", typ: "JWT", kid: signer.keyId },
+		{
+			iss: signer.clientEmail,
+			scope: IAM_SCOPE,
+			aud: TOKEN_URL,
+			iat: issuedAt,
+			exp: issuedAt + TOKEN_LIFETIME_SECONDS,
+		},
+	).pipe(
+		Effect.mapError(
+			() =>
+				new GcpApiError({
+					message: "Signing Maple's Google OAuth assertion failed",
+					api: "Google OAuth",
+					kind: "invalid",
+				}),
 		),
-		".",
-	)
-	const signature = yield* Effect.promise(() =>
-		crypto.subtle.sign("RSASSA-PKCS1-v1_5", signer.key, new TextEncoder().encode(signingInput)),
 	)
 	const response = yield* call(
 		httpClient,
@@ -250,7 +238,7 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 		HttpClientRequest.post(TOKEN_URL).pipe(
 			HttpClientRequest.bodyUrlParams({
 				grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-				assertion: `${signingInput}.${base64Url(signature)}`,
+				assertion,
 			}),
 		),
 		decodeAccessToken,

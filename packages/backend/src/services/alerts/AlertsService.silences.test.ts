@@ -13,7 +13,7 @@ import {
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertIncidentAckService } from "./AlertIncidentAckService"
 import {
@@ -28,6 +28,7 @@ import {
 	makeWarehouseStub,
 	memberRoles,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -112,7 +113,7 @@ describe("alert silences", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			const created = yield* silence({ services: ["checkout"] })
 
@@ -131,7 +132,7 @@ describe("alert silences", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			yield* silence({ services: ["checkout"] }, 120)
 
@@ -147,7 +148,7 @@ describe("alert silences", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			yield* createRule(alerts)
 			const created = yield* silence({ services: ["checkout"] })
@@ -169,7 +170,7 @@ describe("alert silences", () => {
 		const { state, sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			yield* ticks(alerts, 2)
 			yield* silence({ services: ["checkout"] })
@@ -187,7 +188,7 @@ describe("alert silences", () => {
 		const { state, sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			yield* silence({ services: ["checkout"] })
 			yield* ticks(alerts, 2)
@@ -205,7 +206,7 @@ describe("alert silences", () => {
 		const { state, sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			yield* createRule(alerts)
 			const created = yield* silence({ services: ["checkout"] })
@@ -226,7 +227,7 @@ describe("alert silences", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			yield* silence({ services: ["payments"] })
 			yield* silence({ services: ["checkout"], environments: ["staging"] })
@@ -242,7 +243,7 @@ describe("alert silences", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			const rule = yield* createRule(alerts)
 			const now = yield* Clock.currentTimeMillis
@@ -279,7 +280,7 @@ describe("alert silences, pages in flight and reminders", () => {
 		const fetchImpl = (async () => new Response("down", { status: 503 })) as typeof fetch
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			yield* createRule(alerts)
 			yield* ticks(alerts, 2)
 			yield* silence({ services: ["checkout"] })
@@ -298,7 +299,7 @@ describe("alert silences, pages in flight and reminders", () => {
 		const { sent, layer } = setup()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			yield* createRule(alerts)
 			yield* ticks(alerts, 2)
@@ -340,7 +341,7 @@ describe("alert silences and acknowledgement", () => {
 		)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			const acks = yield* AlertIncidentAckService
 			yield* createRule(alerts)
@@ -377,7 +378,7 @@ describe("alert silences, acknowledgement and escalation", () => {
 		)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const silences = yield* AlertSilencesService
 			const acks = yield* AlertIncidentAckService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)

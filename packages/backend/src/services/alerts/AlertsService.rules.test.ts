@@ -21,7 +21,6 @@ import {
 	AlertRuleUpsertRequest,
 } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService } from "./AlertsService"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import {
 	cleanupTestDbs,
@@ -46,6 +45,7 @@ import {
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -62,7 +62,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const result = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_logs_test")
 				const userId = asUserId("user_logs_test")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -152,7 +152,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_builder_scope")
 			const userId = asUserId("user_builder_scope")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -211,7 +211,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const result = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_raw_sql_test")
 				const userId = asUserId("user_raw_sql_test")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -262,7 +262,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_builder_warning")
 			const userId = asUserId("user_builder_warning")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -321,7 +321,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_shape"),
 					asUserId("user_pd_shape"),
@@ -371,7 +371,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_invalid"),
 					asUserId("user_pd_invalid"),
@@ -407,7 +407,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fetchImpl = (async () => new Response("", { status: 202 })) as typeof fetch
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				asOrgId("org_pd_ok"),
 				asUserId("user_pd_ok"),
@@ -435,7 +435,7 @@ describe("AlertsService", () => {
 			throw new Error("network down")
 		}) as typeof fetch
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				asOrgId("org_pd_open"),
 				asUserId("user_pd_open"),
@@ -487,7 +487,7 @@ describe("AlertsService", () => {
 		})
 		const request = { type: "chat" as const, name: "Incidents", workspaceId, channelId: "channel-1" }
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const foreign = yield* alerts
 				.createDestination(
 					orgId,
@@ -548,7 +548,7 @@ describe("AlertsService", () => {
 			return new Response("", { status: 202 })
 		}) as typeof fetch
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_pd_update")
 			const userId = asUserId("user_pd_update")
 			const created = yield* alerts.createDestination(
@@ -583,7 +583,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<{ to: string; subject: string; html: string }> = []
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_email_dest")
 			const userId = asUserId("user_email_dest")
 			const destination = yield* alerts.createDestination(
@@ -629,7 +629,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.createDestination(
 					asOrgId("org_email_invalid"),
 					asUserId("user_email_invalid"),
@@ -660,7 +660,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<{ to: string; subject: string; html: string }> = []
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_email_update")
 			const userId = asUserId("user_email_update")
 			const created = yield* alerts.createDestination(
@@ -714,7 +714,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_logs_grouped")
 			const userId = asUserId("user_logs_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -798,7 +798,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_draft_grouped")
 			const userId = asUserId("user_draft_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -880,7 +880,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_ungrouped_heal")
 			const userId = asUserId("user_ungrouped_heal")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -962,7 +962,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_draft_group_change")
 			const userId = asUserId("user_draft_group_change")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1022,7 +1022,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const result = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_test_draft_grouped")
 				const userId = asUserId("user_test_draft_grouped")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1085,7 +1085,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_delete_guard")
 				const userId = asUserId("user_delete_guard")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1113,7 +1113,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.createDestination(
 					asOrgId("org_forbidden"),
 					asUserId("user_forbidden"),
@@ -1143,7 +1143,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_dedupe_destinations")
 			const userId = asUserId("user_dedupe_destinations")
 
@@ -1215,7 +1215,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_rule_tags")
 			const userId = asUserId("user_rule_tags")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1287,7 +1287,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_multi_svc")
 			const userId = asUserId("user_multi_svc")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1374,7 +1374,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_grouped")
 			const userId = asUserId("user_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)

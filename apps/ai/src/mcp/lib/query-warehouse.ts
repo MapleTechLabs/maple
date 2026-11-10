@@ -30,6 +30,3 @@ export const queryWarehouse = Effect.fn("McpWarehouse.queryWarehouse")(function*
 
 	return { data: response.data as T[] }
 })
-
-// TODO(untangle): drop once get-alert-rule.ts and list-alert-destinations.ts import "../tenant".
-export { CurrentMcpTenant } from "../tenant"

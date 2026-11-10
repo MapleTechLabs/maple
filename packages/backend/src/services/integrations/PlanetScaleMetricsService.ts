@@ -35,8 +35,9 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
@@ -66,7 +67,6 @@ const FIRST_WINDOW_MS = 10 * MINUTE_MS
 /** One request per branch per tick; a runaway org cannot spend the whole API allowance. */
 const MAX_BRANCHES_PER_ORG = 150
 const BRANCH_CONCURRENCY = 4
-const ORG_CONCURRENCY = 3
 
 const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-planetscale-metrics")
 
@@ -86,10 +86,10 @@ type OrgOutcome =
 	| { readonly _tag: "Skipped" }
 	| { readonly _tag: "Polled"; readonly branches: number; readonly rows: number; readonly failed: boolean }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale metrics persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale metrics persistence failed",
+)
 
 /** A managed target scraping with a stored service token: Prometheus already has the branch. */
 export const scrapesWithToken = (target: ScrapeTargetRow | null) =>
@@ -419,30 +419,12 @@ export class PlanetScaleMetricsService extends Context.Service<
 			// The lane's inventory and webhook sync already ran; leave room before its deadline.
 			const deadlineMs = (yield* Clock.currentTimeMillis) + POLL_BUDGET_MS
 			const connections = yield* dbExecute((db) => db.run(PG.from(PlanetscaleConnections).select()))
-			const outcomes = yield* Effect.forEach(
-				connections,
-				(connection) =>
-					pollOrg(connection, deadlineMs).pipe(
-						// A broken org must not stop the fleet.
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("PlanetScale metrics poll failed").pipe(
-										Effect.annotateLogs({
-											orgId: connection.orgId,
-											error: summarizeCause(cause),
-										}),
-										Effect.as<OrgOutcome>({
-											_tag: "Polled",
-											branches: 0,
-											rows: 0,
-											failed: true,
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
-			)
+			// A broken org must not stop the fleet.
+			const outcomes = yield* pollFleet(connections, (connection) => pollOrg(connection, deadlineMs), {
+				message: "PlanetScale metrics poll failed",
+				annotations: (connection) => ({ orgId: connection.orgId }),
+				fallback: (): OrgOutcome => ({ _tag: "Polled", branches: 0, rows: 0, failed: true }),
+			})
 			const polled = Arr.flatMap(outcomes, (outcome) => (outcome._tag === "Polled" ? [outcome] : []))
 			return {
 				orgs: connections.length,

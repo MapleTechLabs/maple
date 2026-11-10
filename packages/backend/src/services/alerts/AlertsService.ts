@@ -26,11 +26,8 @@ import {
 import {
 	AlertComparator as AlertComparatorSchema,
 	type AlertEvaluationErrorKind,
-	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	type AlertDeliveryFailure,
-	AlertDeliveryRejectedError,
-	AlertDeliveryTargetMissingError,
 	AlertDestinationDecryptionError,
 	AlertDestinationDocument,
 	AlertDestinationStoredConfigInvalidError,
@@ -185,10 +182,13 @@ import { LinearIssueTracker } from "./LinearIssueTracker"
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
 import { firstMatchingSilence, selectActiveSilences, type MatchedSilence } from "./alert-silence-store"
-import { AlertDestinationsService, type AlertDestinationsServiceApi } from "./AlertDestinationsService"
-import { makeAlertDestinationDelivery, parseAlertDestinationEncryptionKey } from "./AlertDestinationDelivery"
-import { AlertReadModelsService, type AlertReadModelsServiceApi } from "./AlertReadModelsService"
-import { AlertRulesService, makeAlertRulePersistence, type AlertRulesServiceApi } from "./AlertRulesService"
+import {
+	isAlertDeliveryFailure,
+	makeAlertDestinationDelivery,
+	parseAlertDestinationEncryptionKey,
+} from "./AlertDestinationDelivery"
+import { AlertReadModelsService } from "./AlertReadModelsService"
+import { makeAlertRulePersistence } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
@@ -509,13 +509,6 @@ const orderAlertRulesByLastClaim = <T extends { readonly id: string }>(
 		Order.mapInput(Order.Number, (row: T) => lastClaimedAt.get(row.id) ?? 0),
 	)
 
-/** The destination's provider refused the delivery, as opposed to Maple failing to send it. */
-const isProviderDeliveryFailure = (error: unknown): error is AlertDeliveryFailure =>
-	Schema.is(AlertDeliveryError)(error) ||
-	Schema.is(AlertDeliveryAuthError)(error) ||
-	Schema.is(AlertDeliveryTargetMissingError)(error) ||
-	Schema.is(AlertDeliveryRejectedError)(error)
-
 // Deliveries claimed per batch. The drain takes batches until the queue is
 // empty or DELIVERY_DRAIN_BUDGET_MS has passed; the rest wait for the next tick.
 const DELIVERY_DRAIN_LIMIT = 50
@@ -553,8 +546,8 @@ const parseDeliveryPayload = (
 
 // Formatting helpers imported from AlertDeliveryDispatch
 
-export interface AlertsServiceApi
-	extends AlertDestinationsServiceApi, AlertReadModelsServiceApi, AlertRulesServiceApi {
+/** The alert operations that span rules, destinations and evaluation; the rest live on the narrow services. */
+export interface AlertsServiceApi {
 	readonly updateRule: (
 		orgId: OrgId,
 		userId: UserId,
@@ -636,9 +629,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
-			const destinations = yield* AlertDestinationsService
 			const readModels = yield* AlertReadModelsService
-			const rules = yield* AlertRulesService
 			const queryEngine = yield* QueryEngineService
 			const warehouse = yield* WarehouseQueryService
 			const runtime = yield* AlertRuntime
@@ -2930,7 +2921,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					return recordFailedAttempt(
 						row,
 						failure,
-						countable && !failure.retryable && isProviderDeliveryFailure(error),
+						countable && !failure.retryable && isAlertDeliveryFailure(error),
 					)
 				}
 
@@ -6247,6 +6238,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				lane: AlertSchedulerLane = "standard",
 			) {
 				const tickStart = yield* now
+				// The standard lane runs every minute, so it alone also advances escalations, drains
+				// deliveries (on its own 20s budget) and pages members; the long-query lane only evaluates.
+				const ownsQueues = lane === "standard"
 				const checkIngest = yield* Ref.make(Option.none<Fiber.Fiber<number>>())
 				const evaluation = yield* Effect.exit(evaluateScheduledRules(lane, checkIngest))
 				// The alert_checks ingest runs beside the drain and is joined even when the drain fails,
@@ -6254,14 +6248,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const joinCheckIngest = Effect.flatMap(Ref.get(checkIngest), (fiber) =>
 					Option.match(fiber, { onNone: () => Effect.succeed(0), onSome: Fiber.join }),
 				)
-				// The standard lane also advances escalation chains, after evaluation (which may have
-				// resolved an incident) and before the drain (which then sends the step this tick).
-				if (lane === "standard") {
+				// Escalations advance after evaluation (which may have resolved an incident) and before
+				// the drain (which then sends the step this tick).
+				if (ownsQueues) {
 					yield* advanceEscalations().pipe(isolate("Escalation advance failed", {}))
 				}
-				// One lane drains: the standard lane runs every minute, and its drain has its own 20s budget.
 				const delivery = yield* Effect.exit(
-					lane === "standard"
+					ownsQueues
 						? processQueuedDeliveries()
 						: Effect.succeed({ processedCount: 0, failureCount: 0 }),
 				)
@@ -6271,7 +6264,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					alertChecksDroppedCount,
 				)
 				// People an escalation step paged, after the destinations the same step queued.
-				if (lane === "standard") {
+				if (ownsQueues) {
 					yield* memberNotifier.drain.pipe(isolate("Escalation member paging failed", {}))
 				}
 				const deliveryResult = yield* delivery
@@ -6288,27 +6281,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// `AlertsService.of(...)` can't be used here — referencing the class inside
 			// its own `make` is a TS2506 circular base-expression error.
-			return {
-				listDestinations: destinations.listDestinations,
-				createDestination: destinations.createDestination,
-				updateDestination: destinations.updateDestination,
-				deleteDestination: destinations.deleteDestination,
-				listTelegramChats: destinations.listTelegramChats,
-				testDestination: destinations.testDestination,
-				listRules: rules.listRules,
-				createRule: rules.createRule,
-				updateRule,
-				deleteRule: rules.deleteRule,
-				testRule,
-				previewRule,
-				listIncidents: readModels.listIncidents,
-				getIncident: readModels.getIncident,
-				listIncidentEscalations: readModels.listIncidentEscalations,
-				listRuleChecks: readModels.listRuleChecks,
-				summarizeRuleChecks: readModels.summarizeRuleChecks,
-				listDeliveryEvents: readModels.listDeliveryEvents,
-				runSchedulerTick,
-			} satisfies AlertsServiceApi
+			return { updateRule, testRule, previewRule, runSchedulerTick } satisfies AlertsServiceApi
 		}),
 	},
 ) {
@@ -6324,9 +6297,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				WarehouseQueryService.layer,
 				EmailService.layer,
 				QueryEngineService.layer,
-				AlertDestinationsService.layer,
 				AlertReadModelsService.layer,
-				AlertRulesService.layer,
 				UptimeAlertSource.layer,
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,

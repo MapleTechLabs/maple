@@ -19,6 +19,7 @@ import {
 } from "@maple/domain/http"
 import { pollStatus } from "./integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	RailwayConnections,
 	RailwayEnvironments,
@@ -27,7 +28,6 @@ import {
 } from "@maple/db/tables"
 import {
 	DateTime,
-	Cause,
 	Clock,
 	Context,
 	Duration,
@@ -44,7 +44,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
@@ -80,7 +80,6 @@ const DISCOVERY_TIMEOUT = Duration.seconds(60)
 const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
 const RATE_LIMIT_HOLD_MS = 15 * 60_000
 const BILLING_HOLD_MS = 60 * 60_000
-const ORG_CONCURRENCY = 3
 /**
  * Connect runs the first poll inline so the page has an hour of data when it loads, instead of
  * every environment sitting at "pending" until the next cron tick. What doesn't finish in time is
@@ -496,12 +495,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								PG.or(
-									$.leaseUntil.isNull(),
-									$.leaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-									$.leaseUntil.gt(now + 2 * BILLING_HOLD_MS),
-								),
+								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
+								leaseClaimable($.leaseUntil, now, 2 * BILLING_HOLD_MS),
 							])
 							.returning(),
 					),
@@ -520,7 +515,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: holdUntilMs, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								claimedUntil === null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+								leaseStillOurs($.leaseUntil, claimedUntil),
 							]),
 					),
 				)
@@ -822,29 +817,17 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.where(($) => [$.authFailedAt.isNull()]),
 					),
 				)
-				const summaries = yield* Effect.forEach(
-					connections,
-					(row) =>
-						pollOrg(decodeOrgId(row.orgId)).pipe(
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("railway org poll failed", {
-											orgId: row.orgId,
-											error: summarizeCause(cause),
-										}).pipe(
-											Effect.as<RailwayPollOrgSummary>({
-												orgId: decodeOrgId(row.orgId),
-												skipped: "org poll failed",
-												callsMade: 0,
-												rowsIngested: 0,
-												failures: 1,
-											}),
-										),
-							),
-						),
-					{ concurrency: ORG_CONCURRENCY },
-				)
+				const summaries = yield* pollFleet(connections, (row) => pollOrg(decodeOrgId(row.orgId)), {
+					message: "railway org poll failed",
+					annotations: (row) => ({ orgId: row.orgId }),
+					fallback: (row): RailwayPollOrgSummary => ({
+						orgId: decodeOrgId(row.orgId),
+						skipped: "org poll failed",
+						callsMade: 0,
+						rowsIngested: 0,
+						failures: 1,
+					}),
+				})
 				return {
 					orgs: connections.length,
 					rowsIngested: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.rowsIngested),
@@ -857,14 +840,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const pollNow = (orgId: OrgId) =>
 				pollOrg(orgId).pipe(
 					Effect.timeoutOption(POLL_NOW_TIMEOUT),
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.logWarning("railway on-demand poll failed", {
-									orgId,
-									error: summarizeCause(cause),
-								}),
-					),
+					isolatePollFailure("railway on-demand poll failed", { orgId }, undefined),
 					Effect.asVoid,
 				)
 

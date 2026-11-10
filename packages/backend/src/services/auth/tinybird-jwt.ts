@@ -1,6 +1,7 @@
-import { createHash, createHmac } from "node:crypto"
+import { createHash } from "node:crypto"
 import { escapeClickHouseString } from "@maple-dev/effect-orm/sql"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
+import { signHs256Jwt } from "@maple/backend/platform/jwt"
 
 // Tinybird per-org read JWT minting.
 //
@@ -39,11 +40,6 @@ export interface MintOrgReadJwtInput {
 	readonly rpsLimit?: number
 }
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-const base64url = (input: string | Buffer): string =>
-	(Buffer.isBuffer(input) ? input : Buffer.from(input, "utf8")).toString("base64url")
-
 /**
  * Tinybird groups JWT rate limits by `name`. Keep the bucket stable per org so
  * one noisy tenant cannot consume every org's allowance, while hashing the org
@@ -64,17 +60,15 @@ export function mintOrgReadJwt(input: MintOrgReadJwtInput): string {
 		filter: orgLiteral,
 	}))
 
-	const header = base64url(encodeJson({ alg: "HS256", typ: "JWT" }))
-	const payload = base64url(
-		encodeJson({
+	return signHs256Jwt(
+		input.signingKey,
+		{ alg: "HS256", typ: "JWT" },
+		{
 			workspace_id: input.workspaceId,
 			name: tokenNameForOrg(input.orgId),
 			exp: input.nowSeconds + input.ttlSeconds,
 			scopes,
 			...(!(input.rpsLimit === undefined) ? { limits: { rps: input.rpsLimit } } : undefined),
-		}),
+		},
 	)
-	const signingInput = `${header}.${payload}`
-	const signature = base64url(createHmac("sha256", input.signingKey).update(signingInput).digest())
-	return `${signingInput}.${signature}`
 }

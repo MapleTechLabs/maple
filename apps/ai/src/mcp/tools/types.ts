@@ -187,8 +187,6 @@ export interface McpToolSpec<
 	readonly title: string
 	readonly description: string
 	readonly parameters: P
-	/** TODO(untangle): remove once get-alert-rule.ts and list-alert-destinations.ts stop passing it. */
-	readonly output?: McpToolOutput<N>
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience

@@ -3,6 +3,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
@@ -55,6 +56,7 @@ import type { CurrentMcpTenant } from "../tenant"
  */
 export const McpRuntimeServicesLive = Layer.mergeAll(
 	AgentFeedbackService.layer,
+	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
 	AlertIncidentAckService.layer,
 	AlertIncidentPagesService.layer,

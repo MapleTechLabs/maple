@@ -1,21 +1,6 @@
+import { CF_METRIC } from "@maple/query-engine-integrations/cloudflare"
 import { assert, describe, it } from "@effect/vitest"
-import {
-	mapHttpGroups,
-	mapWorkersGroups,
-	MAX_HTTP_HOSTS,
-	METRIC_HTTP_BYTES,
-	METRIC_HTTP_EDGE_TTFB,
-	METRIC_HTTP_ORIGIN_DURATION,
-	METRIC_HTTP_REQUESTS,
-	METRIC_HTTP_VISITS,
-	METRIC_WORKER_CPU_TIME,
-	METRIC_WORKER_DURATION,
-	METRIC_WORKER_ERRORS,
-	METRIC_WORKER_REQUESTS,
-	METRIC_WORKER_SUBREQUESTS,
-	SCOPE_NAME,
-	statusClass,
-} from "./mapping"
+import { mapHttpGroups, mapWorkersGroups, MAX_HTTP_HOSTS, SCOPE_NAME, statusClass } from "./mapping"
 import {
 	mapDnsGroups,
 	mapDurableObjectsGroups,
@@ -23,25 +8,11 @@ import {
 	mapQueueBacklogGroups,
 	mapQueueConsumersGroups,
 	MAX_DNS_QUERY_NAMES,
-	METRIC_DNS_QUERIES,
-	METRIC_DO_ERRORS,
-	METRIC_DO_REQUESTS,
-	METRIC_DO_WALL_TIME,
-	METRIC_FIREWALL_EVENTS,
-	METRIC_QUEUE_BACKLOG_BYTES,
-	METRIC_QUEUE_BACKLOG_MESSAGES,
-	METRIC_QUEUE_CONSUMER_CONCURRENCY,
 } from "./mapping"
 import {
 	mapHttpDimensionGroups,
 	mapHttpPathGroups,
 	MAX_HTTP_PATHS,
-	METRIC_HTTP_BYTES_BY_COUNTRY,
-	METRIC_HTTP_BYTES_BY_PATH,
-	METRIC_HTTP_ERRORS_BY_PATH,
-	METRIC_HTTP_REQUESTS_BY_CLIENT,
-	METRIC_HTTP_REQUESTS_BY_COUNTRY,
-	METRIC_HTTP_REQUESTS_BY_PATH,
 	normalizePath,
 	normalizeProtocol,
 } from "./mapping"
@@ -106,7 +77,7 @@ describe("mapHttpGroups", () => {
 	it("scales the ABR count by sampleInterval and emits delta sums", () => {
 		const { sumRows } = mapHttpGroups(input)
 		const requests = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.requests),
 		)
 		assert.strictEqual(requests.value, 100)
 		assert.strictEqual(requests.aggregation_temporality, 1)
@@ -123,20 +94,18 @@ describe("mapHttpGroups", () => {
 		assert.strictEqual(requests.resource_attributes["cloudflare.zone.id"], "zone-1")
 		assert.strictEqual(requests.scope_name, SCOPE_NAME)
 
-		const bytes = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_BYTES),
-		)
+		const bytes = Option.getOrThrow(Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.bytes))
 		assert.strictEqual(bytes.value, 5000)
 		assert.strictEqual(bytes.metric_unit, "By")
 		const visits = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_VISITS),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.visits),
 		)
 		assert.strictEqual(visits.value, 8)
 	})
 
 	it("emits quantile gauges keyed by the quantile attribute", () => {
 		const { gaugeRows } = mapHttpGroups(input)
-		const ttfb = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_HTTP_EDGE_TTFB)
+		const ttfb = Arr.filter(gaugeRows, (row) => row.metric_name === CF_METRIC.edgeTtfb)
 		assert.strictEqual(ttfb.length, 3)
 		assert.deepStrictEqual(
 			Arr.map(ttfb, (row) => [row.metric_attributes.quantile, row.value]),
@@ -146,7 +115,7 @@ describe("mapHttpGroups", () => {
 				["0.99", 400],
 			],
 		)
-		const origin = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_HTTP_ORIGIN_DURATION)
+		const origin = Arr.filter(gaugeRows, (row) => row.metric_name === CF_METRIC.originDuration)
 		assert.strictEqual(origin.length, 3)
 		assert.strictEqual(origin[0].metric_unit, "ms")
 	})
@@ -166,7 +135,7 @@ describe("mapHttpGroups", () => {
 			},
 		}))
 		const { sumRows } = mapHttpGroups({ ...input, groups, latency: [] })
-		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS)
+		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === CF_METRIC.requests)
 		const emittedHosts = new Set(Arr.map(requestRows, (row) => row.metric_attributes["server.address"]))
 		assert.strictEqual(emittedHosts.size, MAX_HTTP_HOSTS + 1)
 		assert.isTrue(emittedHosts.has("other"))
@@ -240,9 +209,9 @@ describe("mapHttpPathGroups", () => {
 		})
 		assert.strictEqual(gaugeRows.length, 0)
 		const byMetric = new Map(Arr.map(sumRows, (row) => [row.metric_name, row]))
-		assert.strictEqual(byMetric.get(METRIC_HTTP_REQUESTS_BY_PATH)?.value, 100)
-		assert.strictEqual(byMetric.get(METRIC_HTTP_BYTES_BY_PATH)?.value, 5000)
-		assert.strictEqual(byMetric.get(METRIC_HTTP_ERRORS_BY_PATH)?.value, 20)
+		assert.strictEqual(byMetric.get(CF_METRIC.requestsByPath)?.value, 100)
+		assert.strictEqual(byMetric.get(CF_METRIC.bytesByPath)?.value, 5000)
+		assert.strictEqual(byMetric.get(CF_METRIC.errorsByPath)?.value, 20)
 		for (const row of sumRows) {
 			assert.strictEqual(row.metric_attributes["url.path"], "/api/users")
 			assert.strictEqual(row.service_name, "cloudflare/example.com")
@@ -253,7 +222,7 @@ describe("mapHttpPathGroups", () => {
 	it('keeps the top-N paths and folds the tail into "other"', () => {
 		const groups = Array.from({ length: MAX_HTTP_PATHS + 5 }, (_, i) => group(`/p${i}`, 100 - i))
 		const { sumRows } = mapHttpPathGroups({ ...base, groups, errors: [] })
-		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH)
+		const requestRows = Arr.filter(sumRows, (row) => row.metric_name === CF_METRIC.requestsByPath)
 		const paths = new Set(Arr.map(requestRows, (row) => row.metric_attributes["url.path"]))
 		assert.strictEqual(paths.size, MAX_HTTP_PATHS + 1)
 		assert.isTrue(paths.has("other"))
@@ -277,13 +246,13 @@ describe("mapHttpPathGroups", () => {
 			errors: [group("/rare", 1000)],
 		})
 		const errorRow = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_ERRORS_BY_PATH),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.errorsByPath),
 		)
 		assert.strictEqual(errorRow.metric_attributes["url.path"], "/rare")
 		// Ranking by combined weight pushes the lightest traffic path out instead.
 		const paths = new Set(
 			Arr.map(
-				Arr.filter(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_PATH),
+				Arr.filter(sumRows, (row) => row.metric_name === CF_METRIC.requestsByPath),
 				(row) => row.metric_attributes["url.path"],
 			),
 		)
@@ -317,10 +286,10 @@ describe("mapHttpDimensionGroups", () => {
 			clients: [],
 		})
 		const requests = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_REQUESTS_BY_COUNTRY),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.requestsByCountry),
 		)
 		const bytes = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_HTTP_BYTES_BY_COUNTRY),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.bytesByCountry),
 		)
 		assert.strictEqual(requests.value, 40)
 		assert.strictEqual(requests.metric_attributes["geo.country_iso_code"], "DE")
@@ -346,7 +315,7 @@ describe("mapHttpDimensionGroups", () => {
 		})
 		assert.strictEqual(sumRows.length, 1)
 		const row = sumRows[0]
-		assert.strictEqual(row.metric_name, METRIC_HTTP_REQUESTS_BY_CLIENT)
+		assert.strictEqual(row.metric_name, CF_METRIC.requestsByClient)
 		assert.strictEqual(row.timestamp, BUCKET_TS)
 		assert.deepStrictEqual(row.metric_attributes, {
 			"http.request.method": "POST",
@@ -396,14 +365,14 @@ describe("mapWorkersGroups", () => {
 	it("maps counters under cloudflare-worker/{script} with worker.status", () => {
 		const { sumRows } = mapWorkersGroups(input)
 		const requests = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_REQUESTS),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.workerRequests),
 		)
 		assert.strictEqual(requests.value, 42)
 		assert.strictEqual(requests.service_name, "cloudflare-worker/my-worker")
 		assert.deepStrictEqual(requests.metric_attributes, { "worker.status": "success" })
 		assert.strictEqual(requests.resource_attributes["cloudflare.account.id"], "acct-1")
 		const errors = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_ERRORS),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.workerErrors),
 		)
 		assert.strictEqual(errors.value, 2)
 	})
@@ -411,7 +380,7 @@ describe("mapWorkersGroups", () => {
 	it("emits subrequests as a sum with the same worker.status attributes", () => {
 		const { sumRows } = mapWorkersGroups(input)
 		const subrequests = Option.getOrThrow(
-			Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_WORKER_SUBREQUESTS),
+			Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.workerSubrequests),
 		)
 		assert.strictEqual(subrequests.value, 5)
 		assert.strictEqual(subrequests.service_name, "cloudflare-worker/my-worker")
@@ -444,7 +413,7 @@ describe("mapWorkersGroups", () => {
 
 	it("normalizes cpuTime µs→ms and duration s→ms", () => {
 		const { gaugeRows } = mapWorkersGroups(input)
-		const cpu = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_WORKER_CPU_TIME)
+		const cpu = Arr.filter(gaugeRows, (row) => row.metric_name === CF_METRIC.workerCpuTime)
 		assert.deepStrictEqual(
 			Arr.map(cpu, (row) => [row.metric_attributes.quantile, row.value]),
 			[
@@ -452,7 +421,7 @@ describe("mapWorkersGroups", () => {
 				["0.99", 9],
 			],
 		)
-		const duration = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_WORKER_DURATION)
+		const duration = Arr.filter(gaugeRows, (row) => row.metric_name === CF_METRIC.workerDuration)
 		assert.deepStrictEqual(
 			Arr.map(duration, (row) => [row.metric_attributes.quantile, row.value]),
 			[
@@ -486,7 +455,7 @@ describe("mapFirewallGroups", () => {
 		assert.strictEqual(gaugeRows.length, 0)
 		assert.strictEqual(sumRows.length, 1)
 		const row = sumRows[0]
-		assert.strictEqual(row.metric_name, METRIC_FIREWALL_EVENTS)
+		assert.strictEqual(row.metric_name, CF_METRIC.firewallEvents)
 		assert.strictEqual(row.value, 20)
 		assert.strictEqual(row.service_name, "cloudflare/example.com")
 		assert.deepStrictEqual(row.metric_attributes, {
@@ -518,7 +487,7 @@ describe("mapDnsGroups", () => {
 		const names = new Set(Arr.map(sumRows, (row) => row.metric_attributes["dns.query_name"]))
 		assert.strictEqual(names.size, MAX_DNS_QUERY_NAMES + 1)
 		assert.isTrue(names.has("other"))
-		assert.isTrue(Arr.every(sumRows, (row) => row.metric_name === METRIC_DNS_QUERIES))
+		assert.isTrue(Arr.every(sumRows, (row) => row.metric_name === CF_METRIC.dnsQueries))
 		assert.isTrue(Arr.every(sumRows, (row) => row.metric_attributes["dns.response_code"] === "NOERROR"))
 	})
 })
@@ -537,14 +506,14 @@ describe("queue + durable object mappers", () => {
 		})
 		assert.strictEqual(backlog.sumRows.length, 0)
 		const messages = Option.getOrThrow(
-			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === METRIC_QUEUE_BACKLOG_MESSAGES),
+			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === CF_METRIC.queueBacklogMessages),
 		)
 		// A drained queue (backlog 0) is a meaningful reading — gauges must not skip zeros.
 		assert.strictEqual(messages.value, 0)
 		assert.strictEqual(messages.service_name, "cloudflare-queue/queue-abc")
 		assert.strictEqual(messages.resource_attributes["cloudflare.queue.id"], "queue-abc")
 		const bytes = Option.getOrThrow(
-			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === METRIC_QUEUE_BACKLOG_BYTES),
+			Arr.findFirst(backlog.gaugeRows, (row) => row.metric_name === CF_METRIC.queueBacklogBytes),
 		)
 		assert.strictEqual(bytes.value, 1024)
 
@@ -558,7 +527,7 @@ describe("queue + durable object mappers", () => {
 				},
 			],
 		})
-		assert.strictEqual(consumers.gaugeRows[0].metric_name, METRIC_QUEUE_CONSUMER_CONCURRENCY)
+		assert.strictEqual(consumers.gaugeRows[0].metric_name, CF_METRIC.queueConsumerConcurrency)
 		assert.strictEqual(consumers.gaugeRows[0].value, 3)
 	})
 
@@ -582,14 +551,18 @@ describe("queue + durable object mappers", () => {
 		})
 		assert.isTrue(Arr.every(sumRows, (row) => row.service_name === "cloudflare-worker/my-worker"))
 		assert.strictEqual(
-			Option.getOrThrow(Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_DO_REQUESTS)).value,
+			Option.getOrThrow(
+				Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.durableObjectRequests),
+			).value,
 			10,
 		)
 		assert.strictEqual(
-			Option.getOrThrow(Arr.findFirst(sumRows, (row) => row.metric_name === METRIC_DO_ERRORS)).value,
+			Option.getOrThrow(
+				Arr.findFirst(sumRows, (row) => row.metric_name === CF_METRIC.durableObjectErrors),
+			).value,
 			1,
 		)
-		const wallTimes = Arr.filter(gaugeRows, (row) => row.metric_name === METRIC_DO_WALL_TIME)
+		const wallTimes = Arr.filter(gaugeRows, (row) => row.metric_name === CF_METRIC.durableObjectWallTime)
 		assert.deepStrictEqual(
 			Arr.map(wallTimes, (row) => [row.metric_attributes.quantile, row.value]),
 			[

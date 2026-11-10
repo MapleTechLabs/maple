@@ -32,42 +32,15 @@ import type {
 	WorkersGroupDefinition,
 } from "./queries"
 import { parseWarehouseDateTime } from "@maple/query-engine"
+import { CF_METRIC } from "@maple/query-engine-integrations/cloudflare"
 import { Array as Arr, Option, String as Str } from "effect"
 
 type Attrs = Record<string, string>
 
 export const SCOPE_NAME = "@maple/cloudflare-analytics"
 
-export const METRIC_HTTP_REQUESTS = "cloudflare.http.requests"
-export const METRIC_HTTP_BYTES = "cloudflare.http.bytes"
-export const METRIC_HTTP_VISITS = "cloudflare.http.visits"
-export const METRIC_HTTP_EDGE_TTFB = "cloudflare.http.edge.ttfb"
-export const METRIC_HTTP_ORIGIN_DURATION = "cloudflare.http.origin.duration"
-/**
- * Single-dimension breakdown families. Each carries exactly ONE dimension (plus, for `by_client`,
- * three mutually bounded ones) rather than widening the main `cloudflare.http.requests` cube —
- * see `httpPathsSelection` for why. Consequence for consumers: these are slices, not a cube, so
- * "top paths in Germany" is not answerable by joining them.
- */
-export const METRIC_HTTP_REQUESTS_BY_PATH = "cloudflare.http.requests.by_path"
-export const METRIC_HTTP_ERRORS_BY_PATH = "cloudflare.http.errors.by_path"
-export const METRIC_HTTP_BYTES_BY_PATH = "cloudflare.http.bytes.by_path"
-export const METRIC_HTTP_REQUESTS_BY_COUNTRY = "cloudflare.http.requests.by_country"
-export const METRIC_HTTP_BYTES_BY_COUNTRY = "cloudflare.http.bytes.by_country"
-export const METRIC_HTTP_REQUESTS_BY_CLIENT = "cloudflare.http.requests.by_client"
-export const METRIC_WORKER_REQUESTS = "cloudflare.worker.requests"
-export const METRIC_WORKER_ERRORS = "cloudflare.worker.errors"
-export const METRIC_WORKER_SUBREQUESTS = "cloudflare.worker.subrequests"
-export const METRIC_WORKER_CPU_TIME = "cloudflare.worker.cpu_time"
-export const METRIC_WORKER_DURATION = "cloudflare.worker.duration"
-export const METRIC_FIREWALL_EVENTS = "cloudflare.firewall.events"
-export const METRIC_DNS_QUERIES = "cloudflare.dns.queries"
-export const METRIC_QUEUE_BACKLOG_MESSAGES = "cloudflare.queue.backlog.messages"
-export const METRIC_QUEUE_BACKLOG_BYTES = "cloudflare.queue.backlog.bytes"
-export const METRIC_QUEUE_CONSUMER_CONCURRENCY = "cloudflare.queue.consumer.concurrency"
-export const METRIC_DO_REQUESTS = "cloudflare.durable_object.requests"
-export const METRIC_DO_ERRORS = "cloudflare.durable_object.errors"
-export const METRIC_DO_WALL_TIME = "cloudflare.durable_object.wall_time"
+// Metric names come from CF_METRIC, owned by the warehouse reader. The `*.by_*` families each carry
+// one dimension (see `httpPathsSelection`): slices, not a cube, so they cannot be joined.
 
 export type { MetricGaugeRow, MetricSumRow }
 
@@ -200,13 +173,13 @@ export const mapHttpGroups = (input: MapHttpGroupsInput): CloudflareMetricRows =
 		} satisfies Attrs
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[
-				METRIC_HTTP_REQUESTS,
+				CF_METRIC.requests,
 				"Edge HTTP requests (ABR-adjusted estimate)",
 				"{requests}",
 				abrCount(group.count, group.avg?.sampleInterval),
 			],
-			[METRIC_HTTP_BYTES, "Edge response bytes served", "By", group.sum?.edgeResponseBytes ?? 0],
-			[METRIC_HTTP_VISITS, "Edge visits (initial page loads)", "{visits}", group.sum?.visits ?? 0],
+			[CF_METRIC.bytes, "Edge response bytes served", "By", group.sum?.edgeResponseBytes ?? 0],
+			[CF_METRIC.visits, "Edge visits (initial page loads)", "{visits}", group.sum?.visits ?? 0],
 		]
 		for (const [metricName, description, unit, value] of counters) {
 			if (value <= 0) continue
@@ -239,7 +212,7 @@ export const mapHttpGroups = (input: MapHttpGroupsInput): CloudflareMetricRows =
 			gaugeRows.push(
 				baseRow({
 					bucket,
-					metricName: METRIC_HTTP_EDGE_TTFB,
+					metricName: CF_METRIC.edgeTtfb,
 					description: "Edge time to first byte",
 					unit: "ms",
 					attributes: { quantile },
@@ -259,7 +232,7 @@ export const mapHttpGroups = (input: MapHttpGroupsInput): CloudflareMetricRows =
 			gaugeRows.push(
 				baseRow({
 					bucket,
-					metricName: METRIC_HTTP_ORIGIN_DURATION,
+					metricName: CF_METRIC.originDuration,
 					description: "Origin response duration (uncached requests)",
 					unit: "ms",
 					attributes: { quantile },
@@ -351,14 +324,14 @@ export const mapHttpPathGroups = (input: MapHttpPathGroupsInput): CloudflareMetr
 	for (const group of input.groups) {
 		push(
 			group,
-			METRIC_HTTP_REQUESTS_BY_PATH,
+			CF_METRIC.requestsByPath,
 			"Edge HTTP requests by request path (top-N, ABR-adjusted estimate)",
 			"{requests}",
 			abrCount(group.count, group.avg?.sampleInterval),
 		)
 		push(
 			group,
-			METRIC_HTTP_BYTES_BY_PATH,
+			CF_METRIC.bytesByPath,
 			"Edge response bytes by request path (top-N)",
 			"By",
 			group.sum?.edgeResponseBytes ?? 0,
@@ -367,7 +340,7 @@ export const mapHttpPathGroups = (input: MapHttpPathGroupsInput): CloudflareMetr
 	for (const group of input.errors) {
 		push(
 			group,
-			METRIC_HTTP_ERRORS_BY_PATH,
+			CF_METRIC.errorsByPath,
 			"Edge 5xx responses by request path (top-N, ABR-adjusted estimate)",
 			"{requests}",
 			abrCount(group.count, group.avg?.sampleInterval),
@@ -407,13 +380,13 @@ export const mapHttpDimensionGroups = (input: MapHttpDimensionGroupsInput): Clou
 		} satisfies Attrs
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
 			[
-				METRIC_HTTP_REQUESTS_BY_COUNTRY,
+				CF_METRIC.requestsByCountry,
 				"Edge HTTP requests by client country (ABR-adjusted estimate)",
 				"{requests}",
 				abrCount(group.count, group.avg?.sampleInterval),
 			],
 			[
-				METRIC_HTTP_BYTES_BY_COUNTRY,
+				CF_METRIC.bytesByCountry,
 				"Edge response bytes by client country",
 				"By",
 				group.sum?.edgeResponseBytes ?? 0,
@@ -443,7 +416,7 @@ export const mapHttpDimensionGroups = (input: MapHttpDimensionGroupsInput): Clou
 		sumRows.push(
 			sumRow({
 				bucket: group.dimensions.datetimeFiveMinutes,
-				metricName: METRIC_HTTP_REQUESTS_BY_CLIENT,
+				metricName: CF_METRIC.requestsByClient,
 				description: "Edge HTTP requests by method, protocol and device (ABR-adjusted estimate)",
 				unit: "{requests}",
 				attributes: {
@@ -492,7 +465,7 @@ export const mapFirewallGroups = (input: MapFirewallGroupsInput): CloudflareMetr
 		sumRows.push(
 			sumRow({
 				bucket: group.dimensions.datetimeFiveMinutes,
-				metricName: METRIC_FIREWALL_EVENTS,
+				metricName: CF_METRIC.firewallEvents,
 				description: "Firewall/WAF security events (ABR-adjusted estimate)",
 				unit: "{events}",
 				attributes: {
@@ -538,7 +511,7 @@ export const mapDnsGroups = (input: MapDnsGroupsInput): CloudflareMetricRows => 
 		sumRows.push(
 			sumRow({
 				bucket: group.dimensions.datetimeFiveMinutes,
-				metricName: METRIC_DNS_QUERIES,
+				metricName: CF_METRIC.dnsQueries,
 				description: "Authoritative DNS queries (ABR-adjusted estimate)",
 				unit: "{queries}",
 				attributes: {
@@ -579,12 +552,12 @@ export const mapQueueBacklogGroups = (input: MapQueueBacklogGroupsInput): Cloudf
 		// meaningful reading (drained queue), so unlike counters it is NOT skipped.
 		const gauges: ReadonlyArray<readonly [string, string, string, number | null | undefined]> = [
 			[
-				METRIC_QUEUE_BACKLOG_MESSAGES,
+				CF_METRIC.queueBacklogMessages,
 				"Queue backlog depth (messages awaiting delivery)",
 				"{messages}",
 				group.avg?.messages,
 			],
-			[METRIC_QUEUE_BACKLOG_BYTES, "Queue backlog size", "By", group.avg?.bytes],
+			[CF_METRIC.queueBacklogBytes, "Queue backlog size", "By", group.avg?.bytes],
 		]
 		for (const [metricName, description, unit, value] of gauges) {
 			if (value == null) continue
@@ -620,7 +593,7 @@ export const mapQueueConsumersGroups = (input: MapQueueConsumersGroupsInput): Cl
 		gaugeRows.push(
 			baseRow({
 				bucket: group.dimensions.datetimeFiveMinutes,
-				metricName: METRIC_QUEUE_CONSUMER_CONCURRENCY,
+				metricName: CF_METRIC.queueConsumerConcurrency,
 				description: "Queue consumer concurrency",
 				unit: "{consumers}",
 				attributes: {},
@@ -658,8 +631,13 @@ export const mapDurableObjectsGroups = (input: MapDurableObjectsGroupsInput): Cl
 		} satisfies Attrs
 
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
-			[METRIC_DO_REQUESTS, "Durable Object requests", "{requests}", group.sum?.requests ?? 0],
-			[METRIC_DO_ERRORS, "Durable Object errors", "{errors}", group.sum?.errors ?? 0],
+			[
+				CF_METRIC.durableObjectRequests,
+				"Durable Object requests",
+				"{requests}",
+				group.sum?.requests ?? 0,
+			],
+			[CF_METRIC.durableObjectErrors, "Durable Object errors", "{errors}", group.sum?.errors ?? 0],
 		]
 		for (const [metricName, description, unit, value] of counters) {
 			if (value <= 0) continue
@@ -689,7 +667,7 @@ export const mapDurableObjectsGroups = (input: MapDurableObjectsGroupsInput): Cl
 			gaugeRows.push(
 				baseRow({
 					bucket,
-					metricName: METRIC_DO_WALL_TIME,
+					metricName: CF_METRIC.durableObjectWallTime,
 					description: "Durable Object wall time",
 					unit: "ms",
 					attributes: { quantile },
@@ -734,9 +712,9 @@ export const mapWorkersGroups = (input: MapWorkersGroupsInput): CloudflareMetric
 		const attributes: Attrs = { "worker.status": group.dimensions.status ?? "unknown" } satisfies Attrs
 
 		const counters: ReadonlyArray<readonly [string, string, string, number]> = [
-			[METRIC_WORKER_REQUESTS, "Worker invocations", "{requests}", group.sum?.requests ?? 0],
-			[METRIC_WORKER_ERRORS, "Worker invocation errors", "{errors}", group.sum?.errors ?? 0],
-			[METRIC_WORKER_SUBREQUESTS, "Worker subrequests", "{requests}", group.sum?.subrequests ?? 0],
+			[CF_METRIC.workerRequests, "Worker invocations", "{requests}", group.sum?.requests ?? 0],
+			[CF_METRIC.workerErrors, "Worker invocation errors", "{errors}", group.sum?.errors ?? 0],
+			[CF_METRIC.workerSubrequests, "Worker subrequests", "{requests}", group.sum?.subrequests ?? 0],
 		]
 		for (const [metricName, description, unit, value] of counters) {
 			if (value <= 0) continue
@@ -758,16 +736,16 @@ export const mapWorkersGroups = (input: MapWorkersGroupsInput): CloudflareMetric
 		if (!quantiles) continue
 		// cpuTime arrives in microseconds, duration in seconds — normalize both to ms.
 		const gauges: ReadonlyArray<readonly [string, string, string, number | null | undefined]> = [
-			[METRIC_WORKER_CPU_TIME, "Worker CPU time", "0.5", scale(quantiles.cpuTimeP50, 1 / 1000)],
-			[METRIC_WORKER_CPU_TIME, "Worker CPU time", "0.99", scale(quantiles.cpuTimeP99, 1 / 1000)],
+			[CF_METRIC.workerCpuTime, "Worker CPU time", "0.5", scale(quantiles.cpuTimeP50, 1 / 1000)],
+			[CF_METRIC.workerCpuTime, "Worker CPU time", "0.99", scale(quantiles.cpuTimeP99, 1 / 1000)],
 			[
-				METRIC_WORKER_DURATION,
+				CF_METRIC.workerDuration,
 				"Worker duration (wall time billed)",
 				"0.5",
 				scale(quantiles.durationP50, 1000),
 			],
 			[
-				METRIC_WORKER_DURATION,
+				CF_METRIC.workerDuration,
 				"Worker duration (wall time billed)",
 				"0.99",
 				scale(quantiles.durationP99, 1000),

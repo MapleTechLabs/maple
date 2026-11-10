@@ -13,6 +13,7 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { MobilePushEnvironment } from "@maple/domain/http"
 import { Env, type EnvConfig } from "./Env"
+import { ES256, ES256_SIGN, pemToPkcs8, signJwt } from "./jwt"
 
 /**
  * Apple Push Notification service, token-based (JWT / `.p8`) auth.
@@ -42,11 +43,6 @@ export interface ApnsAlert {
 	readonly subtitle?: string | undefined
 	readonly body: string
 }
-
-const encodeJwtPart = (part: Record<string, unknown>) =>
-	Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(part).pipe(
-		Effect.mapError((cause) => new ApnsError({ message: "Failed to encode APNs JWT", cause })),
-	)
 
 export interface ApnsPush {
 	readonly deviceToken: string
@@ -186,18 +182,6 @@ const UNREGISTERED_REASONS = new Set([
 
 const TOKEN_TTL_MS = 50 * 60 * 1000
 
-const base64UrlString = (value: string) => Buffer.from(value, "utf8").toString("base64url")
-const base64UrlBytes = (value: ArrayBuffer) => Buffer.from(value).toString("base64url")
-
-const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const body = Str.replace(
-		/\s+/g,
-		"",
-	)(Str.replace(/-----END[^-]+-----/g, "")(Str.replace(/-----BEGIN[^-]+-----/g, "")(pem)))
-	const buf = Buffer.from(body, "base64")
-	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-}
-
 interface ApnsConfig {
 	readonly teamId: string
 	readonly keyId: string
@@ -286,39 +270,33 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 			const signingKey = yield* Effect.cached(
 				Effect.tryPromise({
 					try: () =>
-						crypto.subtle.importKey(
-							"pkcs8",
-							pemToPkcs8(config.privateKeyPem),
-							{ name: "ECDSA", namedCurve: "P-256" },
-							false,
-							["sign"],
-						),
+						crypto.subtle.importKey("pkcs8", pemToPkcs8(config.privateKeyPem), ES256, false, [
+							"sign",
+						]),
 					catch: (cause) => new ApnsError({ message: "Failed to import APNs signing key", cause }),
 				}),
 			)
 
 			const mintToken = Effect.fn("ApnsClient.mintToken")(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
-				const headerJson = yield* encodeJwtPart({ alg: "ES256", kid: config.keyId })
-				const payloadJson = yield* encodeJwtPart({
-					iss: config.teamId,
-					iat: Math.floor(nowMs / 1000),
-				})
-				const header = base64UrlString(headerJson)
-				const payload = base64UrlString(payloadJson)
-				const signingInput = `${header}.${payload}`
-				// WebCrypto ECDSA emits the raw r||s form, which is exactly JWS ES256.
 				const key = yield* signingKey
-				const signature = yield* Effect.tryPromise({
-					try: () =>
-						crypto.subtle.sign(
-							{ name: "ECDSA", hash: "SHA-256" },
-							key,
-							new TextEncoder().encode(signingInput),
-						),
-					catch: (cause) => new ApnsError({ message: "APNs JWT signing failed", cause }),
-				})
-				return `${signingInput}.${base64UrlBytes(signature)}`
+				return yield* signJwt(
+					key,
+					ES256_SIGN,
+					{ alg: "ES256", kid: config.keyId },
+					{ iss: config.teamId, iat: Math.floor(nowMs / 1000) },
+				).pipe(
+					Effect.mapError(
+						(error) =>
+							new ApnsError({
+								message:
+									error.reason === "encode"
+										? "Failed to encode APNs JWT"
+										: "APNs JWT signing failed",
+								cause: error.cause,
+							}),
+					),
+				)
 			})
 
 			const currentToken = yield* makeSingleFlightTokenCache(TOKEN_TTL_MS, mintToken())

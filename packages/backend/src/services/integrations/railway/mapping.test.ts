@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import { mapRailwayMetrics, METRIC_CPU_USAGE, METRIC_MEMORY_USAGE, METRIC_NETWORK_IO } from "./mapping"
+import { RAILWAY_CPU_USAGE, RAILWAY_MEMORY_USAGE, RAILWAY_NETWORK_IO } from "@maple/query-engine-integrations"
+import { mapRailwayMetrics } from "./mapping"
 import { Array as Arr, Option } from "effect"
 
 const context = {
@@ -27,7 +28,7 @@ describe("mapRailwayMetrics", () => {
 		)
 		assert.strictEqual(rows.length, 1)
 		const row = rows[0]
-		assert.strictEqual(row.metric_name, METRIC_CPU_USAGE)
+		assert.strictEqual(row.metric_name, RAILWAY_CPU_USAGE)
 		assert.strictEqual(row.value, 0.25)
 		assert.strictEqual(row.service_name, "api")
 		assert.strictEqual(row.timestamp, "2026-10-03 12:00:00.000")
@@ -65,11 +66,13 @@ describe("mapRailwayMetrics", () => {
 			{ startMs: t0, endMs: t0 + 60_000 },
 		)
 		const memory = Option.getOrThrow(
-			Arr.findFirst(rows, (row) => row.metric_name === METRIC_MEMORY_USAGE),
+			Arr.findFirst(rows, (row) => row.metric_name === RAILWAY_MEMORY_USAGE),
 		)
 		assert.strictEqual(memory.value, 512 * 1024 ** 2)
 		assert.strictEqual(memory.metric_unit, "By")
-		const network = Option.getOrThrow(Arr.findFirst(rows, (row) => row.metric_name === METRIC_NETWORK_IO))
+		const network = Option.getOrThrow(
+			Arr.findFirst(rows, (row) => row.metric_name === RAILWAY_NETWORK_IO),
+		)
 		assert.deepStrictEqual(network.metric_attributes, { "network.io.direction": "transmit" })
 	})
 

@@ -35,7 +35,8 @@ import {
 	type VerifiedDpopProof,
 	verifyDpopProof,
 } from "./device/dpop-proof"
-import { base64url, EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
+import { base64url } from "@maple/backend/platform/jwt"
+import { EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
 
 /** Every ceiling is the server's: a registering client names a key and nothing else. */
 export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read"] as const

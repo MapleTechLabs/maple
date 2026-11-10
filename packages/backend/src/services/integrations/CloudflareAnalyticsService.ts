@@ -46,6 +46,7 @@ import {
 } from "@maple/domain/http"
 import * as CH from "@maple/query-engine/ch"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
@@ -56,7 +57,6 @@ import {
 } from "@maple/db/tables"
 import {
 	Array as Arr,
-	Cause,
 	Clock,
 	Context,
 	Effect,
@@ -156,6 +156,7 @@ import {
 } from "./cloudflare-analytics/queries"
 import * as Integrations from "@maple/query-engine-integrations"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { MapleDbError } from "@maple/db/client"
 
@@ -225,7 +226,6 @@ const INGEST_REFUSED_BACKOFF_STEPS_MS = [7 * 60_000, 15 * 60_000, 30 * 60_000, 6
 const SETTINGS_TTL_MS = 24 * 60 * 60_000
 /** Zone discovery (REST pagination) runs hourly; poll ticks in between reuse the state rows. */
 const DISCOVERY_TTL_MS = 60 * 60_000
-const ORG_CONCURRENCY = 3
 
 const MISSING_SCOPES_ERROR =
 	"Cloudflare connection lacks the analytics scopes — reconnect the integration to update permissions"
@@ -1548,15 +1548,8 @@ export class CloudflareAnalyticsService extends Context.Service<
 							$.accountId.eq(accountId),
 							$.dataset.eq(WORKERS_DATASET),
 							$.zoneId.eq(""),
-							PG.or(
-								$.leaseUntil.isNull(),
-								$.leaseUntil.lt(now),
-								// Corrupt-lease escape hatch: a live lease is always bounded by now+LEASE_MS,
-								// so anything beyond 2x that is impossible under normal operation (e.g. a
-								// clock jump or a crashed writer that left a bogus far-future value) and is
-								// safe to reclaim rather than let it wedge the org forever.
-								$.leaseUntil.gt(now + 2 * LEASE_MS),
-							),
+							// A live lease never exceeds now + LEASE_MS; one past 2x is corrupt and reclaimed.
+							leaseClaimable($.leaseUntil, now, 2 * LEASE_MS),
 							PG.or($.backoffUntil.isNull(), $.backoffUntil.lte(now)),
 						])
 						.returning(),
@@ -1590,7 +1583,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 							$.accountId.eq(accountId),
 							$.dataset.eq(WORKERS_DATASET),
 							$.zoneId.eq(""),
-							claimedUntil == null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+							leaseStillOurs($.leaseUntil, claimedUntil),
 						]),
 				),
 			)
@@ -3134,64 +3127,22 @@ export class CloudflareAnalyticsService extends Context.Service<
 				),
 			)
 			const capable = Arr.map([...capableOrgIds], (orgId) => ({ orgId }))
-			// Concurrent fan-out below — must be a Ref rather than a mutable closure variable.
-			const rowsIngestedRef = yield* Ref.make(0)
-			const failuresRef = yield* Ref.make(0)
-			// Every org's full summary, including skips — the outage that motivated this had 100%
+			// Every org's full summary, including skips: the outage that motivated this had 100%
 			// of ticks skip silently for 31 hours because nothing outside pollOrg ever looked at
-			// `summary.skipped`. Keeping the whole summary (not just counters) lets the rollup below
-			// name which orgs are stuck and why.
-			const summariesRef = yield* Ref.make<Array<PollOrgSummary>>([])
-			yield* Effect.forEach(
-				capable,
-				(row) =>
-					pollOrg(decodeOrgId(row.orgId)).pipe(
-						Effect.tap((summary) =>
-							Effect.all(
-								[
-									Ref.update(rowsIngestedRef, (count) => count + summary.rowsIngested),
-									Ref.update(failuresRef, (count) => count + summary.failures.length),
-									Ref.update(summariesRef, (list) => [...list, summary]),
-								],
-								{ discard: true },
-							),
-						),
-						// Isolate genuine per-org failures/defects so one bad org can't fail the
-						// whole tick. Interrupts (isolate teardown) are NOT per-org failures —
-						// re-raise them so the tick cancels promptly instead of logging a phantom
-						// failure and marching through the remaining orgs. (Same pattern as
-						// AnomalyDetectionService / ErrorsService.)
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("cloudflare-analytics org poll failed", {
-										orgId: row.orgId,
-										error: summarizeCause(cause),
-									}).pipe(
-										// A crashed org must still appear in the rollup — otherwise perOrg
-										// silently omits it, `skipped` undercounts, and the zero-rows warning
-										// below can't see a crash-storm at all.
-										Effect.andThen(
-											Ref.update(summariesRef, (list) => [
-												...list,
-												{
-													orgId: decodeOrgId(row.orgId),
-													skipped:
-														"org poll failed — see the warning log for the cause",
-													callsMade: 0,
-													rowsIngested: 0,
-													failures: [],
-												} satisfies PollOrgSummary,
-											]),
-										),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY, discard: true },
-			)
-			const rowsIngested = yield* Ref.get(rowsIngestedRef)
-			const failures = yield* Ref.get(failuresRef)
-			const summaries = yield* Ref.get(summariesRef)
+			// `summary.skipped`. A crashed org still appears, so the rollup below can see a crash-storm.
+			const summaries = yield* pollFleet(capable, (row) => pollOrg(decodeOrgId(row.orgId)), {
+				message: "cloudflare-analytics org poll failed",
+				annotations: (row) => ({ orgId: row.orgId }),
+				fallback: (row): PollOrgSummary => ({
+					orgId: decodeOrgId(row.orgId),
+					skipped: "org poll failed, see the warning log for the cause",
+					callsMade: 0,
+					rowsIngested: 0,
+					failures: [],
+				}),
+			})
+			const rowsIngested = Arr.reduce(summaries, 0, (sum, summary) => sum + summary.rowsIngested)
+			const failures = Arr.reduce(summaries, 0, (sum, summary) => sum + summary.failures.length)
 			const skipped = Arr.filter(summaries, (summary) => summary.skipped != null).length
 			const perOrg = Arr.map(summaries, (summary) => ({
 				orgId: summary.orgId,

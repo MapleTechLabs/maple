@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable } from "./lease"
 import { hashIngestKey, parseIngestKeyLookupHmacKey } from "../../platform/credential-tokens"
 import { AwsConnections, type AwsConnectionRow, Sources } from "@maple/db/tables"
 import {
@@ -30,12 +31,13 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Redacted, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
 import {
 	createIntegrationSource,
 	deleteSourcesOf,
@@ -252,7 +254,7 @@ interface CheckResult {
 }
 
 /** What one check means for the row and its source. */
-export const interpretCheck = (
+const interpretCheck = (
 	row: AwsConnectionRow,
 	result:
 		| {
@@ -355,7 +357,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 				persistence,
 			)
-			const ingestBaseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+			const ingestBase = ingestBaseUrl(env)
 
 			/** A new stream secret as the four columns that hold it. */
 			const mintStreamSecret = (connectionId: AwsConnectionId) =>
@@ -579,7 +581,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 						? null
 						: {
 								...row.metricStream,
-								endpoint: `${ingestBaseUrl}/v1/firehose/aws/${row.id}`,
+								endpoint: `${ingestBase}/v1/firehose/aws/${row.id}`,
 								accessKey: yield* streamAccessKey(row),
 							}
 				return yield* renderAwsSetup(row.id, row.accountId, plan, stream)
@@ -664,7 +666,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							.select(($) => ({ id: $.id, lastCheckedAt: $.lastCheckedAt }))
 							.where(($) => [
 								PG.or($.lastCheckedAt.isNull(), $.lastCheckedAt.lt(now - CHECK_INTERVAL_MS)),
-								PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+								leaseClaimable($.checkLeaseUntil, now),
 								PG.or(
 									$.s.pausedAt.isNull(),
 									PG.and($.s.pausedUntil.isNotNull(), $.s.pausedUntil.lte(now)),
@@ -692,7 +694,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 												$.id,
 												Arr.map(due, (row) => row.id),
 											),
-											PG.or($.checkLeaseUntil.isNull(), $.checkLeaseUntil.lt(now)),
+											leaseClaimable($.checkLeaseUntil, now),
 										])
 										.returning(),
 								),

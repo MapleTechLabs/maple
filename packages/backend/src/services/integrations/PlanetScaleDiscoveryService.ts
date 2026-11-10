@@ -111,7 +111,7 @@ const toUpstreamError = (message: string, status?: number) =>
 	new ScrapeTargetUpstreamError({ message, ...(!(status === undefined) ? { status } : undefined) })
 
 /** Convert one http_sd group into sub-targets, dropping SSRF-invalid hosts. */
-export const subTargetsFromGroup = (group: {
+const subTargetsFromGroup = (group: {
 	readonly targets: ReadonlyArray<string>
 	readonly labels?: Record<string, string> | undefined
 }): { readonly ok: Array<PlanetScaleSubTarget>; readonly dropped: Array<string> } => {

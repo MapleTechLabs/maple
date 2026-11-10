@@ -6,7 +6,6 @@ import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { type AlertDestinationId, AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
-import { AlertsService } from "./AlertsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -32,6 +31,7 @@ import {
 	asUserId,
 	adminRoles,
 	createWebhookDestination,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -164,7 +164,7 @@ describe("AlertsService uptime rules", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_down")
 			const userId = asUserId("user_uptime_down")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -215,7 +215,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_status_page")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -301,7 +301,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_backfill")
 			const { ruleId, monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -344,7 +344,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_backfill_isolated")
 			const seed = (name: string) =>
 				seedUptimeMonitor(testDb, {
@@ -386,7 +386,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_paused")
 			yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -434,7 +434,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_heartbeat")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -480,7 +480,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_heartbeat_page")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -529,7 +529,7 @@ describe("AlertsService uptime rules", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_uptime_generic")
 				const userId = asUserId("user_uptime_generic")
 				const request = new AlertRuleUpsertRequest({

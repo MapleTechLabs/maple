@@ -5,7 +5,6 @@ import {
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect } from "effect"
-import { AlertsService } from "./AlertsService"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	adminRoles,
@@ -15,6 +14,7 @@ import {
 	getError,
 	makeLayer,
 	makeWarehouseStub,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -62,7 +62,7 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 	it.effect("turns away a retired Office 365 connector URL with the reason", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
 				alerts.createDestination(
 					orgId,
@@ -85,7 +85,7 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
@@ -113,7 +113,7 @@ describe("AlertsService: incident.io destinations", () => {
 	it.effect("rejects a pasted URL in place of the alert source config id", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
 				alerts.createDestination(
 					orgId,
@@ -136,7 +136,7 @@ describe("AlertsService: incident.io destinations", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
@@ -196,7 +196,7 @@ describe("AlertsService: incident.io destinations", () => {
 		const testDb = createTestDb(trackedDbs)
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,

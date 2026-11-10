@@ -19,6 +19,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@maple/alerting-core": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
