@@ -156,6 +156,7 @@ export interface MachineSpec extends EntitySpec {
 export const machineSpecs = (
 	input: WorldInput,
 	paletteKey: string,
+	wind: () => number,
 	parts: WorldParts = sceneParts,
 ): ReadonlyArray<MachineSpec> => {
 	const { topology, view, selectedId, palette, flowing, buildings } = input
@@ -180,6 +181,7 @@ export const machineSpecs = (
 						selected,
 						palette,
 						running: flowing,
+						wind,
 						building,
 					}),
 			},
@@ -209,6 +211,8 @@ export const makeWorld = (parts: WorldParts = sceneParts): World => {
 	const root = group({}, [ground.root, transports.root, machines.root])
 	const homes = new Map<string, Vec3>()
 	const previews = new Map<string, Vec3>()
+	// The wind machines sway on. The world keeps it, so it outlives a rebuilt machine.
+	const wind = { seconds: 0, flowing: (): boolean => false }
 	const place = (id: string) => {
 		const object = machines.get(id)
 		const at = previews.get(id) ?? homes.get(id)
@@ -220,7 +224,8 @@ export const makeWorld = (parts: WorldParts = sceneParts): World => {
 			{ id: "ground", key: groundKey(input, paletteKey), build: (scope) => parts.ground(scope, input) },
 		])
 		transports.sync(transportSpecs(input, paletteKey, parts))
-		const specs = machineSpecs(input, paletteKey, parts)
+		wind.flowing = input.flowing
+		const specs = machineSpecs(input, paletteKey, () => wind.seconds, parts)
 		machines.sync(specs)
 		homes.clear()
 		Arr.forEach(specs, (spec) => homes.set(spec.id, spec.position))
@@ -241,6 +246,8 @@ export const makeWorld = (parts: WorldParts = sceneParts): World => {
 			place(id)
 		},
 		frame: (delta) => {
+			// Clamped, so the first frame after a pause or a hidden tab does not jump the wind.
+			if (wind.flowing()) wind.seconds += Math.min(delta, 0.05)
 			ground.frame(delta)
 			transports.frame(delta)
 			machines.frame(delta)
