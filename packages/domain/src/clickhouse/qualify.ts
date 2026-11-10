@@ -1,24 +1,12 @@
+import { isDatasourceDefinition } from "@maple-dev/effect-orm/tinybird"
 import { replaceWith } from "@maple/strings"
-/**
- * Source datasources that materialized views read from. Used by
- * `qualifyStatementForDatabase` to rewrite bare `FROM <name>` / `JOIN <name>`
- * references in MV bodies.
- */
-export const CLICKHOUSE_MV_SOURCE_TABLES: ReadonlyArray<string> = [
-	"traces",
-	"logs",
-	"metrics_sum",
-	"metrics_gauge",
-	"metrics_histogram",
-	"metrics_exponential_histogram",
-	"error_events",
-	"service_map_edges_hourly_ingest",
-	"service_overview_spans",
-	"service_operations_minutely",
-	"trace_list_mv",
-	"session_events",
-	"session_replays",
-]
+import { Array as Arr, Record as Rec } from "effect"
+import * as Datasources from "../tinybird/datasources"
+
+/** Every Maple-managed table; `qualifyStatementForDatabase` qualifies bare `FROM`/`JOIN` references to them. */
+const MANAGED_TABLES: ReadonlyArray<string> = Arr.flatMap(Rec.values(Datasources), (value: unknown) =>
+	isDatasourceDefinition(value) ? [value._name] : [],
+)
 
 /**
  * Rewrite a generated CREATE TABLE / CREATE MATERIALIZED VIEW statement to
@@ -48,7 +36,7 @@ export const qualifyStatementForDatabase = (stmt: string, database: string): str
 		(_match, p1 = "", view = "", mid = "", target = "") => `${p1}${ident(view)}${mid}${ident(target)}`,
 	)
 
-	for (const table of CLICKHOUSE_MV_SOURCE_TABLES) {
+	for (const table of MANAGED_TABLES) {
 		result = replaceWith(
 			result,
 			new RegExp(`(\\bFROM|\\bJOIN)\\s+${table}\\b`, "g"),

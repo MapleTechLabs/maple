@@ -29,7 +29,7 @@ export {
 	compileBackfillChunk,
 } from "./backfill"
 export { expandMigrationToSteps, expandBackfill, type ApplyStep, type ExecFn } from "./apply-plan"
-export { qualifyStatementForDatabase, CLICKHOUSE_MV_SOURCE_TABLES } from "./qualify"
+export { qualifyStatementForDatabase } from "./qualify"
 export * from "./bookkeeping"
 export {
 	computeSchemaDiff,
