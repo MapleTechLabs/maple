@@ -143,7 +143,10 @@ describe("ReplayBlobStore.hydrate", () => {
 			// Self-hosted and the Docker image of this API have no R2 at all. Every
 			// row there carries its payload inline, so hydration must pass through
 			// rather than erroring on a missing binding.
-			const chunks = [{ chunkSeq: 0, events }]
+			const chunks = [
+				{ chunkSeq: 0, events },
+				{ chunkSeq: 1, events: "" },
+			]
 			const result = yield* Effect.gen(function* () {
 				const store = yield* ReplayBlobStore
 				return yield* store.hydrate("org_1", "sess_1", chunks)

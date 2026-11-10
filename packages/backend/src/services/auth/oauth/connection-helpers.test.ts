@@ -101,7 +101,7 @@ const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHel
 			refreshTokenCiphertext: refreshEnc.ciphertext,
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
-			// Already expired — getValidConnectionToken must refresh.
+			// Already expired, so getValidConnectionToken must refresh.
 			expiresAt: (yield* Clock.currentTimeMillis) - 60_000,
 		})
 	})
@@ -131,7 +131,7 @@ describe("refreshAccessToken classification", () => {
 	it.live("a 400 invalid_client is an upstream failure and does NOT revoke the connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		// A rotated/misconfigured Maple client secret answers this for EVERY
-		// tenant at once — stamping revoked here would disconnect them all.
+		// tenant at once; stamping revoked here would disconnect them all.
 		const fetch = fetchLayer(() => jsonResponse({ error: "invalid_client" }, 400))
 		return Effect.gen(function* () {
 			const helpers = yield* makeHelpers()

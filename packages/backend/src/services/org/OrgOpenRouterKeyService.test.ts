@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -184,8 +184,8 @@ describe("OrgOpenRouterKeyService", () => {
 			world,
 			Effect.gen(function* () {
 				const keys = yield* OrgOpenRouterKeyService
-				const exit = yield* Effect.exit(keys.set(ORG, USER, "sk-ant-not-openrouter-key"))
-				assert.isTrue(Exit.isFailure(exit))
+				const error = yield* Effect.flip(keys.set(ORG, USER, "sk-ant-not-openrouter-key"))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
 				assert.deepStrictEqual(world.openRouterCalls, [])
 			}),
 		)

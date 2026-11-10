@@ -63,7 +63,6 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : `Digest persistence error: ${String(error)}`,
 	})
 
-/** Row shapes matching query engine output (camelCase from CH DSL) */
 interface ServiceOverviewRow {
 	serviceName: string
 	/** `serviceOverviewQuery` groups by (serviceName, environment) — both are part
@@ -156,7 +155,6 @@ const DIGEST_SERVICE_LIMIT = 10
 /** Rows in each breakdown table. */
 const DIGEST_BREAKDOWN_LIMIT = 10
 
-/** Sum `estimatedSpanCount` per environment across a whole window's rows. */
 function requestsByEnvironment(rows: ReadonlyArray<ServiceOverviewRow>): Map<string, number> {
 	const totals = new Map<string, number>()
 	for (const row of rows) {
@@ -564,7 +562,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					{ concurrency: 6 },
 				).pipe(Effect.mapError(warehouseFailure))
 
-			// Split UNION ALL'd rows by period discriminator
 			const curOverviewData = Arr.filter(overviewRows, (r) => r.period === "current")
 			const prevOverviewData = Arr.filter(overviewRows, (r) => r.period === "previous")
 
@@ -643,7 +640,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const totalErrors = Math.round(cur.count * cur.errorRate)
 			const prevTotalErrors = Math.round(prev.count * prev.errorRate)
 
-			// Data volume — split UNION ALL'd rows by period discriminator
 			const curUsageData = Arr.filter(usageRows, (r) => r.period === "current")
 			const prevUsageData = Arr.filter(usageRows, (r) => r.period === "previous")
 			const sumUsage = (data: ReadonlyArray<ServiceUsageRow>) => ({
@@ -884,7 +880,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 					Effect.mapBoth({
 						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
 						onSuccess: (page) => {
-							// Advance by the rows returned; stop on totalCount or an empty page.
 							const next = offset + page.data.length
 							const done = next >= page.totalCount || page.data.length === 0
 							return [page.data, done ? Option.none<number>() : Option.some(next)] as const

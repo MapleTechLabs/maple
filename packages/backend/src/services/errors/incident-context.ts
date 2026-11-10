@@ -3,8 +3,8 @@
  *
  * Every investigation surface used to hand the agent `JSON.stringify({ subject,
  * snapshot })` and nothing else. That is not a neutral choice: the two facts the
- * prompts open by demanding — "establish the exact incident interval" and "call
- * `error_detail` with the fingerprint" — were buried among a dozen sibling keys,
+ * prompts open by demanding ("establish the exact incident interval" and "call
+ * `error_detail` with the fingerprint") were buried among a dozen sibling keys,
  * in a blob whose most prominent fields are the display `facts` array. The model
  * routinely skipped both, then reported that it could not scope the query.
  *
@@ -12,10 +12,6 @@
  * fingerprint is printed under the exact parameter name the tool takes. The raw
  * JSON stays, last, because it is a complete record and something eventually
  * wants a field this renderer does not know about.
- *
- * One builder for all three call sites — the single-pass kickoff, the planner,
- * and every hypothesis lane — because a lane that saw a different framing of the
- * same incident than the planner did is a very expensive way to disagree.
  */
 import { Schema, Array as Arr } from "effect"
 import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"

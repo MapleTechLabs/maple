@@ -223,9 +223,9 @@ interface Destination {
 	) => Effect.Effect<boolean, Schema.SchemaError | SupportChannelUnavailableError | ChatOutboundError>
 }
 
-/** The upstream's own words, so the log says why and not only where. */
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
+/** The upstream's own words, so the log says why and not only where. */
 const failedAt =
 	(step: CancellationReviewError["step"], message: string) =>
 	(cause: unknown): CancellationReviewError =>

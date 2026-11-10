@@ -1,16 +1,7 @@
 /**
- * The writes that publish a diagnosis onto an investigation.
- *
- * Two callers reach this: `InvestigationService.submitDiagnosis` (the chat
- * agent's tool, on the single-pass path) and the fan-out workflow's `persist`
- * step (the validator's promoted cause). They must produce byte-identical
- * effects — the same status transition, the same severity application, the same
- * deterministically-keyed timeline event — or an investigation would mean
- * different things depending on which path produced it.
- *
- * Autumn metering deliberately stays with each caller: they reach the worker env
- * differently, and the token totals they have to report differ (one pass versus
- * a summed fan-out).
+ * The writes that publish a diagnosis onto an investigation, for
+ * `InvestigationService.submitDiagnosis`. Metering is not here: the chat turn
+ * runner charges the whole turn.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
@@ -231,16 +222,14 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
  * Owns its database call rather than taking a client: the write is one logical
  * operation, so the retry, the span and the persistence-error mapping belong
  * with it instead of being re-supplied by every caller. `Database` reaches the
- * invocation's connection through `PgConnectionScope`, so callers that already
- * hold one (the request path, the fan-out workflow's per-run scope) keep using
- * exactly that connection.
+ * invocation's connection through `PgConnectionScope`, so a caller that already
+ * holds one keeps using exactly that connection.
  *
  * Fails with the raw `DatabaseError` rather than a domain persistence error:
  * this write straddles two domains (it updates `investigations` and, when an
- * issue is linked, the error-issue tables), and its two callers map to
- * different persistence errors. Mapping here would force one of them to
- * re-wrap. The contention retry still applies — that lives in `makeDbExecute`,
- * not in the mapping.
+ * issue is linked, the error-issue tables), so the caller picks the mapping.
+ * The contention retry still applies: it lives in `makeDbExecute`, not in the
+ * mapping.
  */
 export const applyDiagnosisWrites: (
 	input: ApplyDiagnosisInput,
@@ -313,8 +302,8 @@ const writeInconclusive = (orm: MapleDb, input: ApplyInconclusiveInput) =>
 	)
 
 /**
- * Publish a partial result. See {@link applyInconclusiveWrites}' body above for
- * why the issue-side half is absent, and {@link applyDiagnosisWrites} for why
+ * Publish a partial result. See `writeInconclusive` above for why the
+ * issue-side half is absent, and {@link applyDiagnosisWrites} for why
  * this owns its database call.
  */
 export const applyInconclusiveWrites: (

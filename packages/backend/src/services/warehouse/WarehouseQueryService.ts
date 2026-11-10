@@ -41,7 +41,6 @@ import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/Ti
 // ClickHouse code/type, and a `reason` saying whether the database answered at
 // all. Response limits keep their own identity so they never enter the retry loop.
 
-// Re-export the executor types so existing import sites stay stable.
 export type { WarehouseQueryServiceApi, SqlQueryOptions }
 
 // `rowBytes` is the native client's per-row ceiling (16 MiB unless a caller
@@ -143,8 +142,8 @@ const createClickHouseSqlClient = (
 					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
 					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
 					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-					// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
-					// must never be reached — fail loudly instead of silently 500'ing.
+					// All ingest goes to Tinybird's Events API (the `ingest` route in
+					// `resolveRoute`), so this must never be reached: fail loudly instead of silently 500'ing.
 					Effect.fail(
 						new WarehouseDriverError({
 							reason: "config",

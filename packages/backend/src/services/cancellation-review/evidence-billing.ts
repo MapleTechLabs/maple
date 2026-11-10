@@ -21,7 +21,6 @@ import { DAY_MS } from "./snapshot"
 export const OTHER_SUBSCRIPTIONS_SHOWN = 10
 /** Invoices shown, newest first. */
 export const INVOICES_SHOWN = 12
-/** Charges older than this before the cancellation are not counted. */
 const CHARGE_WINDOW_MS = 180 * DAY_MS
 /** A Stripe cancellation this far from the reviewed one is another cancellation. */
 const SAME_CANCELLATION_MS = 2 * DAY_MS
@@ -318,7 +317,6 @@ export class CancellationBillingEvidenceReader extends Context.Service<
 			input: CancellationEvidenceInput,
 		) {
 			const { atMs, autumnCustomer, stripeCustomerId } = input
-			// Without a Stripe customer there is nothing in Stripe to read.
 			const fromStripe = <A, E>(span: string, read: (customerId: string) => Effect.Effect<A, E>) =>
 				stripeCustomerId === null ? Effect.succeed(null) : part(span, read(stripeCustomerId))
 			return yield* Effect.all(

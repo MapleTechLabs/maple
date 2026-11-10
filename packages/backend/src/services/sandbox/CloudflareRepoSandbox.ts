@@ -171,7 +171,6 @@ const spawnError = (command: string, message: string, cause?: unknown) =>
 		...(cause === undefined ? undefined : { cause }),
 	})
 
-/** The sandbox Worker's answer as the contract's events, or its failure. */
 export const toEvents = (
 	request: SandboxRequest,
 	response: SandboxExecResponse,
@@ -346,7 +345,6 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 		),
 })
 
-/** The port over the sandbox service binding and the org's connected repositories. */
 export const CloudflareRepoSandboxLive: Layer.Layer<Sandbox, never, VcsSourceService | SandboxClient> =
 	Layer.effect(
 		Sandbox,

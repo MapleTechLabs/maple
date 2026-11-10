@@ -5,17 +5,18 @@ import {
 	DEFAULT_MAX_RUNS_PER_DAY,
 	effectiveLimit,
 	evaluateInvestigationQuota,
-	RESERVED_PASS_FRACTION,
 	startOfUtcDay,
 } from "./investigation-quota"
 
 const NOW = Date.UTC(2026, 7, 9, 13, 30)
 const MIDNIGHT_TOMORROW = Date.UTC(2026, 7, 10)
 
-/** The pass ceiling an unclassified or low-severity start is judged against. */
-const ORDINARY_LIMIT = Math.floor(DEFAULT_MAX_PASSES_PER_DAY * (1 - RESERVED_PASS_FRACTION))
-/** The same, in runs. */
-const ORDINARY_RUNS = Math.floor(DEFAULT_MAX_RUNS_PER_DAY * (1 - RESERVED_PASS_FRACTION))
+/** Configured ceilings for the reserve tests, so the ordinary slices below are plain numbers. */
+const CEILINGS = { maxRunsPerDay: 250, maxPassesPerDay: 1000 }
+/** The pass ceiling an unclassified or low-severity start is judged against: 70% of 1000. */
+const ORDINARY_LIMIT = 700
+/** The same, in runs: 70% of 250, rounded down. */
+const ORDINARY_RUNS = 175
 
 const verdict = (input: {
 	runs: number
@@ -31,6 +32,13 @@ const verdict = (input: {
 		nowMs: NOW,
 		severity: input.severity,
 	})
+
+const reserved = (input: {
+	runs: number
+	passes: number
+	passCount: number
+	severity?: IssueSeverity | null
+}) => verdict({ ...input, limits: CEILINGS })
 
 describe("evaluateInvestigationQuota", () => {
 	it("allows a start below both ceilings", () => {
@@ -88,7 +96,7 @@ describe("evaluateInvestigationQuota", () => {
 		 * incidents that were never worth investigating.
 		 */
 		it("refuses a low-severity start once it would eat the reserve", () => {
-			expect(verdict({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 4, severity: "low" })).toEqual({
+			expect(reserved({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 4, severity: "low" })).toEqual({
 				kind: "exceeded",
 				dimension: "passes_reserved",
 				limit: ORDINARY_LIMIT,
@@ -98,14 +106,14 @@ describe("evaluateInvestigationQuota", () => {
 
 		it("admits a critical start from the same reserve", () => {
 			expect(
-				verdict({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 7, severity: "critical" }),
+				reserved({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 7, severity: "critical" }),
 			).toEqual({ kind: "allowed" })
 		})
 
 		it("admits high as well as critical", () => {
-			expect(verdict({ runs: 1, passes: ORDINARY_LIMIT + 50, passCount: 6, severity: "high" })).toEqual(
-				{ kind: "allowed" },
-			)
+			expect(
+				reserved({ runs: 1, passes: ORDINARY_LIMIT + 50, passCount: 6, severity: "high" }),
+			).toEqual({ kind: "allowed" })
 		})
 
 		/**
@@ -115,14 +123,14 @@ describe("evaluateInvestigationQuota", () => {
 		it("treats an unknown severity as ordinary, not as priority", () => {
 			for (const severity of [undefined, null] as const) {
 				expect(
-					verdict({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 4, severity }),
+					reserved({ runs: 1, passes: ORDINARY_LIMIT - 1, passCount: 4, severity }),
 				).toMatchObject({ kind: "exceeded", dimension: "passes_reserved" })
 			}
 		})
 
 		it("lets an ordinary start use the last slot below the reserve", () => {
 			expect(
-				verdict({ runs: 1, passes: ORDINARY_LIMIT - 4, passCount: 4, severity: "medium" }),
+				reserved({ runs: 1, passes: ORDINARY_LIMIT - 4, passCount: 4, severity: "medium" }),
 			).toEqual({ kind: "allowed" })
 		})
 
@@ -141,7 +149,7 @@ describe("evaluateInvestigationQuota", () => {
 		 * overnight on `medium` anomalies.
 		 */
 		it("refuses an ordinary start once it would eat the run reserve", () => {
-			expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "medium" })).toEqual({
+			expect(reserved({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "medium" })).toEqual({
 				kind: "exceeded",
 				dimension: "runs_reserved",
 				limit: ORDINARY_RUNS,
@@ -150,14 +158,14 @@ describe("evaluateInvestigationQuota", () => {
 		})
 
 		it("admits a critical start from the run reserve the same noise was refused from", () => {
-			expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "critical" })).toEqual({
+			expect(reserved({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "critical" })).toEqual({
 				kind: "allowed",
 			})
 		})
 
 		it("treats an unknown severity as ordinary against the run ceiling too", () => {
 			for (const severity of [undefined, null] as const) {
-				expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity })).toMatchObject({
+				expect(reserved({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity })).toMatchObject({
 					kind: "exceeded",
 					dimension: "runs_reserved",
 				})

@@ -181,7 +181,6 @@ export interface DependencyScanStoreApi {
 		readonly repositoryIds: ReadonlyArray<VcsRepositoryId>
 		readonly commitShas: ReadonlyArray<GitCommitSha>
 	}) => Effect.Effect<ReadonlyArray<DependencyScanRow>, DependencyScanPersistenceError>
-	/** The matches of several scans in one read. */
 	readonly matchesOfScans: (input: {
 		readonly orgId: OrgId
 		readonly scanIds: ReadonlyArray<DependencyScanId>

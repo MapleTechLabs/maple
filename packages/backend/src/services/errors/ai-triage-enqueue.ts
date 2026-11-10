@@ -197,12 +197,6 @@ export interface MaybeEnqueueTriageResult {
 	readonly priorInvestigationId?: InvestigationId
 }
 
-/**
- * Diagnoses on file for the same service, newest first, for the classifier to
- * recognise a flare-up of a known cause under a new fingerprint. The incident's
- * own issue is excluded: its history is the issue gate's business, judged
- * without a model.
- */
 /** Only what the classifier is shown; a stored report that drifted elsewhere still counts. */
 const decodePriorReport = Schema.decodeUnknownOption(
 	Schema.Struct({ headline: Schema.optional(Schema.String), summary: Schema.optional(Schema.String) }),
@@ -211,6 +205,12 @@ const decodePriorSnapshot = Schema.decodeUnknownOption(
 	Schema.Struct({ exceptionType: Schema.optional(Schema.NullOr(Schema.String)) }),
 )
 
+/**
+ * Diagnoses on file for the same service, newest first, for the classifier to
+ * recognise a flare-up of a known cause under a new fingerprint. The incident's
+ * own issue is excluded: its history is the issue gate's business, judged
+ * without a model.
+ */
 const selectPriorDiagnoses = (
 	orm: MapleDb,
 	orgId: OrgId,

@@ -307,6 +307,10 @@ describe("OrgIngestKeysService", () => {
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
+			assert.include(
+				Cause.pretty(Exit.isFailure(exit) ? exit.cause : Cause.empty),
+				"MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+			)
 		}),
 	)
 

@@ -78,7 +78,6 @@ export const SOURCE_HEALTH_COLUMNS = [
 	"pollResources",
 ] as const
 
-/** A source's health from its row and what its integration adds. */
 export const sourceRowHealth = (
 	row: Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>,
 	now: number,

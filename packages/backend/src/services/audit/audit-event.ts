@@ -177,7 +177,6 @@ export const StoredAuditLogEntry = Schema.Struct({
 
 export const decodeStoredAuditLogEntry = Schema.decodeUnknownEffect(StoredAuditLogEntry)
 
-/** A decoded warehouse row as an `AuditLogEntry`. */
 export const storedRowToEntry = (
 	orgId: OrgId,
 	row: Schema.Schema.Type<typeof StoredAuditLogEntry>,

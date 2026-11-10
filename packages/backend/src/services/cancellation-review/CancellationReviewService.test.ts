@@ -540,7 +540,6 @@ const review = (
 		return yield* CancellationReviewService.use((service) => service.review(input))
 	}).pipe(Effect.provide(makeLayer(world, testDb)))
 
-/** The step a review failed at. */
 const failedStep = (world: World, testDb: TestDb, input: CancellationToReview = job) =>
 	review(world, testDb, input).pipe(
 		Effect.flip,

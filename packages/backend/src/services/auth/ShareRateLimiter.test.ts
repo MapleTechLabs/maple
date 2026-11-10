@@ -116,5 +116,4 @@ describe("ShareRateLimiter", () => {
 	)
 })
 
-/** `n` indices, for issuing n requests. */
 const indices = (n: number): ReadonlyArray<number> => Array.from({ length: n }, (_, i) => i)

@@ -100,8 +100,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			// Untraced: this wraps a single `Database.execute`, which already emits its
 			// own client span. A named `Effect.fn` here only added a second span of
-			// byte-identical duration on a hot path — the exact noise CLAUDE.md warns
-			// against ("be careful adding spans to per-request hot paths").
+			// byte-identical duration on a hot path, the noise CLAUDE.md says to avoid.
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
 					db.run(

@@ -456,8 +456,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				)
 				const firstPage = yield* selectPage
 				const nowMs = yield* Clock.currentTimeMillis
-				// Sweep only when this page actually contains a timed-out run, then
-				// re-read so the caller sees the corrected status.
 				const rows = Arr.some(firstPage, (row) => isStale(row, nowMs))
 					? yield* failStaleInvestigations(orgId, nowMs).pipe(Effect.andThen(selectPage))
 					: firstPage
@@ -478,7 +476,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				if (!isStale(row, nowMs)) return yield* documentFor(orgId, row)
-				// This run timed out: settle it, then report the corrected status.
 				yield* failStaleInvestigations(orgId, nowMs)
 				const settled = yield* loadRow(orgId, id)
 				return yield* documentFor(orgId, settled ?? row)

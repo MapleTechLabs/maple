@@ -129,8 +129,6 @@ describe("describeCause", () => {
 	})
 })
 
-// PGlite-backed integration harness (fresh in-memory DB per test)
-
 const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -273,11 +271,6 @@ const makeErrorsLayer = (
 	).pipe(Layer.provideMerge(databaseLive))
 }
 
-/**
- * Layer variant for active-org gating tests. Lets a test force discovery to
- * FAIL (to exercise the fail-CLOSED path) and/or capture the cost `profile`
- * each query context was issued with.
- */
 /** The tick's service graph over one database, with the warehouse (and optionally the edge cache
  *  backend and the notification dispatcher) supplied by the test. */
 const makeTickLayerOver = (
@@ -339,6 +332,11 @@ const makeTickLayerOver = (
 	)
 }
 
+/**
+ * Layer variant for active-org gating tests. Lets a test force discovery to
+ * FAIL (to exercise the fail-CLOSED path) and/or capture the cost `profile`
+ * each query context was issued with.
+ */
 const makeGatingLayer = (opts: {
 	failDiscovery?: boolean
 	scanRows?: () => ReadonlyArray<Record<string, unknown>>
@@ -466,8 +464,6 @@ const seedIngestKeys = (orgIds: ReadonlyArray<string>) =>
 
 const seedIngestKey = (orgId: string) => seedIngestKeys([orgId])
 
-// countOpenIssuesByService
-
 describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 	it.effect("groups actionable error issues by service, excluding done/alert/archived", () =>
 		Effect.gen(function* () {
@@ -508,8 +504,6 @@ describe("ErrorIssueReadModelsService.countOpenIssuesByService", () => {
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 })
-
-// setSeverity
 
 describe("Error issue severity, policies, and read models", () => {
 	it.effect("sets a manual severity, records the event, and queues an escalation", () =>
@@ -892,10 +886,6 @@ describe("Error issue severity, policies, and read models", () => {
 	)
 })
 
-// runTick — the per-minute scheduled tick that turns warehouse error rows
-// into issues/incidents. The warehouse stub feeds synthetic scan rows; the
-// TestClock pins the tick window.
-
 const DAY_MS = 24 * 60 * 60 * 1000
 
 // Multiple of the one-minute cron phase * 60, so a tick at exactly this
@@ -903,8 +893,6 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const RETENTION_TICK_MS = 1_750_003_200_000
 // One tick later — the retention phase does not run.
 const TICK_MS = RETENTION_TICK_MS + 120_000
-
-/** Same format the tick itself sends to the warehouse ("YYYY-MM-DD HH:MM:SS", UTC). */
 
 /** Real error fingerprints are decimal UInt64 strings from ClickHouse. */
 const SCAN_FINGERPRINT = "12345678901234567890"
@@ -3264,8 +3252,6 @@ describe("ErrorsService.runTick", () => {
 	})
 })
 
-// Idle-cursor harness
-//
 // The stubs above answer discovery from the rows the scan returns and give the
 // recovery lookup one fixed answer. Here the warehouse holds error events and
 // answers discovery, the scan and the lookup from them by each query's own
@@ -3527,8 +3513,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 		Str.startsWith('UPDATE "error_tick_states" SET "processed_through"')(sql) &&
 		Str.includes("SKIP LOCKED")(sql)
 
-	// Boundaries
-
 	it.effect("parks a cursor only once it trails the parking point by a full window, with no lookup", () => {
 		const h = makeIdleTickHarness()
 		const AT_CUTOFF = asOrgId("org_at_cutoff")
@@ -3689,8 +3673,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 			}).pipe(Effect.provide(h.layer))
 		},
 	)
-
-	// Sequences over several ticks
 
 	it.effect("an idle org hops from error to error, each one scanned, then parks", () => {
 		const first = T - 3 * HOUR_MS
@@ -3946,8 +3928,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
-	// Who counts as idle
-
 	it.effect("an org holding issue state is replayed from a stale cursor, never parked or looked up", () => {
 		const h = makeIdleTickHarness()
 		return Effect.gen(function* () {
@@ -4069,8 +4049,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 			assert.isFalse(states.get(OTHER)?.bootstrapCompleted)
 		}).pipe(Effect.provide(h.layer))
 	})
-
-	// Claims and row locks
 
 	it.effect(
 		"a stale cursor under a live claim is left alone; once the claim lapses it is recovered",
@@ -4234,8 +4212,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 		},
 	)
 
-	// The lookup cap and statement chunking
-
 	it.effect(
 		"looks up at most 40 stale cursors a tick, four at a time, most recent first, the rest on the next",
 		() => {
@@ -4336,8 +4312,6 @@ describe("ErrorsService.runTick idle cursors", () => {
 			assert.lengthOf(h.callsTo(LOOKUP), 0)
 		}).pipe(Effect.provide(h.layer))
 	})
-
-	// Failures inside the step
 
 	for (const failure of [
 		{

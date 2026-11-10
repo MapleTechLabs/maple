@@ -126,7 +126,6 @@ const layerFor = (
 		readonly searchHits?: ReadonlyArray<string>
 		/** One hit per query listed here, with these snippets; a query not listed finds nothing. */
 		readonly searchSnippets?: Readonly<Record<string, ReadonlyArray<string>>>
-		/** The pull request's changed files. */
 		readonly prFiles?: ReadonlyArray<PullRequestFile>
 		/** Present: replies posted to the pull request's conversation are recorded here. */
 		readonly replies?: Array<string>

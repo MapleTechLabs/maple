@@ -647,7 +647,7 @@ describe("WarehouseQueryService.compiledQuery", () => {
 			const failure = getError(exit)
 			assert.instanceOf(failure, WarehouseScopeError)
 			assert.strictEqual(
-				(failure as { message?: string } | undefined)?.message,
+				failure.message,
 				"compiled query is not tenant-scoped: no top-level OrgId predicate (compiledQuery). " +
 					"Deliberate cross-tenant reads must declare .crossTenant() and run through crossOrgQuery.",
 			)
@@ -853,28 +853,24 @@ describe("createClickHouseSqlClient.insert is disabled (ClickHouse is read-only)
 		database: "default",
 	}
 
-	it("throws — ingest must use Tinybird, never ClickHouse — and issues no request", async () => {
-		let fetched = 0
-		const realFetch = globalThis.fetch
-		globalThis.fetch = (async () => {
-			fetched++
-			return new Response("", { status: 200 })
-		}) as typeof fetch
-
-		let thrown: unknown
-		try {
-			const client = makeClickHouseTestClient(chConfig)
-			await Effect.runPromise(client.insert("traces", [{ OrgId: "org_test", trace_id: "a" }]))
-		} catch (error) {
-			thrown = error
-		} finally {
-			globalThis.fetch = realFetch
-		}
-
-		assert.instanceOf(thrown, Error)
-		assert.match(thrown.message, /read-only|Tinybird/)
-		assert.strictEqual(fetched, 0)
-	})
+	it.effect("fails as a config error pointing at Tinybird and issues no request", () =>
+		Effect.gen(function* () {
+			let fetched = 0
+			const requestFetch: typeof fetch = async () => {
+				fetched++
+				return new Response("", { status: 200 })
+			}
+			const error = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, requestFetch).insert("traces", [
+					{ OrgId: "org_test", trace_id: "a" },
+				]),
+			)
+			assert.instanceOf(error, WarehouseDriverError)
+			assert.strictEqual(error.reason, "config")
+			assert.match(error.message, /read-only|Tinybird/)
+			assert.strictEqual(fetched, 0)
+		}),
+	)
 })
 
 describe("createTinybirdSqlClient.insert wire framing (the production insert path)", () => {
@@ -1191,34 +1187,31 @@ describe("BYO ClickHouse redirect refusal", () => {
 		database: "default",
 	}
 
-	it("refuses a 3xx from the query endpoint and never follows the Location", async () => {
-		const seen: RequestInit[] = []
-		const requestFetch: typeof fetch = async (_input, init) => {
-			seen.push(init ?? {})
-			return new Response("", { status: 307, headers: { location: "http://169.254.169.254/" } })
-		}
+	it.effect("refuses a 3xx from the query endpoint and never follows the Location", () =>
+		Effect.gen(function* () {
+			const seen: RequestInit[] = []
+			const requestFetch: typeof fetch = async (_input, init) => {
+				seen.push(init ?? {})
+				return new Response("", { status: 307, headers: { location: "http://169.254.169.254/" } })
+			}
 
-		const client = makeClickHouseTestClient(chConfig, requestFetch)
-		let thrown: unknown
-		try {
-			await Effect.runPromise(client.sql(parseStatement("SELECT 1"), undefined))
-		} catch (error) {
-			thrown = error
-		}
+			const driver = yield* Effect.flip(
+				makeClickHouseTestClient(chConfig, requestFetch).sql(parseStatement("SELECT 1"), undefined),
+			)
 
-		assert.instanceOf(thrown, WarehouseDriverError)
-		const driver = thrown
-		// A refused redirect is configuration, never an ordinary 4xx from the cluster.
-		assert.strictEqual(driver.reason, "config")
-		assert.strictEqual(driver.status, 307)
-		assert.match(driver.message, /redirect responses are not allowed \(307\)/)
-		// The Location is kept as context, so a refusal is diagnosable.
-		assert.instanceOf(driver.cause, ClickHouseHttp.ClickHouseRedirectError)
-		assert.strictEqual(driver.cause.location, "http://169.254.169.254/")
-		// Exactly one request, and it opted out of automatic redirect following.
-		assert.strictEqual(seen.length, 1)
-		assert.strictEqual(seen[0]?.redirect, "manual")
-	})
+			assert.instanceOf(driver, WarehouseDriverError)
+			// A refused redirect is configuration, never an ordinary 4xx from the cluster.
+			assert.strictEqual(driver.reason, "config")
+			assert.strictEqual(driver.status, 307)
+			assert.match(driver.message, /redirect responses are not allowed \(307\)/)
+			// The Location is kept as context, so a refusal is diagnosable.
+			assert.instanceOf(driver.cause, ClickHouseHttp.ClickHouseRedirectError)
+			assert.strictEqual(driver.cause.location, "http://169.254.169.254/")
+			// Exactly one request, and it opted out of automatic redirect following.
+			assert.strictEqual(seen.length, 1)
+			assert.strictEqual(seen[0]?.redirect, "manual")
+		}),
+	)
 
 	it.effect("decodes an ordinary 2xx response through the native client", () =>
 		Effect.gen(function* () {

@@ -9,7 +9,6 @@ export const AUTUMN_TRACK_PATH = "/v1/balances.track"
 /** Records one model's token usage against the org's AI credit system, priced by Autumn. */
 export const AUTUMN_TRACK_TOKENS_PATH = "/v1/balances.track_tokens"
 
-/** Where Autumn answers when `AUTUMN_API_URL` is unset. */
 export const DEFAULT_AUTUMN_API_URL = "https://api.useautumn.com"
 
 /**

@@ -567,7 +567,6 @@ export const readMcpTool = Effect.fn("McpReads.tool")(function* (
 	})
 })
 
-/** Sessions the list reads at most. */
 const SESSION_LIST_LIMIT = 200
 /** Requests the session page reads at most; one more tells it the session was cut. */
 const SESSION_REQUEST_LIMIT = 1_000
@@ -749,7 +748,6 @@ export const issuedSession = (row: IssuedRow): McpSessionItem => ({
 /** Session rows each listed MCP server contributes to one user's stitched read (a per-server cap). */
 const ONE_USER_ACTIVITY_LIMIT = 5_000
 
-/** A user's session on one MCP server. */
 export type ServerUserSession = McpSessionItem & Readonly<{ service: string }>
 
 /**

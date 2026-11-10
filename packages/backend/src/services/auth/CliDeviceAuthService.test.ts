@@ -60,7 +60,6 @@ describe("CliDeviceAuthService", () => {
 				),
 			)
 			expect(row?.kind).toBe("standard")
-			// The whole point of the fix: not null.
 			expect(row?.expires_at).not.toBe(null)
 			const ninetyDays = 90 * 24 * 60 * 60 * 1000
 			const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)

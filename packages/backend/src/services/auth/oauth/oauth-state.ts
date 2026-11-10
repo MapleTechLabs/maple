@@ -26,7 +26,6 @@ export interface ConsumeOAuthStateParams {
 /** How long a minted state redeems: one trip through the provider's consent screen. */
 export const OAUTH_STATE_TTL_MS = 10 * 60_000
 
-/** A fresh state nonce: 24 random bytes, base64url. */
 export const newOAuthState = Effect.sync(() => randomBytes(24).toString("base64url"))
 
 export interface SaveOAuthStateParams {

@@ -46,7 +46,6 @@ export const TELEMETRY_WINDOW_DAYS = 7
 /** How recently an issue must have occurred to count as open for the review. */
 const OPEN_ISSUE_WINDOW = Duration.days(14)
 
-/** A deployed version's first-seen time, decoded where the warehouse string enters. */
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const CATALOG_ISSUE_COLUMNS = [
@@ -108,7 +107,6 @@ export interface PrReviewTelemetryServiceApi {
 		start: DateTime.Utc,
 		end: DateTime.Utc,
 	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
-	/** Error issues first seen in these services since a moment. */
 	readonly issuesFirstSeenSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,

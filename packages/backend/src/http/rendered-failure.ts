@@ -8,7 +8,6 @@ export interface RenderedFailure {
 	readonly errorType: string
 	/** The log line: which of the four renderings this was. */
 	readonly summary: string
-	/** The failure's own message. */
 	readonly message: string
 	readonly status: number
 	readonly stack?: string | undefined

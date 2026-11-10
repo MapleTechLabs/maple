@@ -170,7 +170,7 @@ const inWorkspace = (relative: string | undefined): string =>
 		? REPO_MOUNT_TARGET
 		: `${REPO_MOUNT_TARGET}/${Str.replace(/^\/+/, "")(relative)}`
 
-/** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `rg` exits 1 on no match. */
+/** Fold the event stream into what a tool renders. Non-zero exits are results, not failures: `git grep` exits 1 on no match. */
 const drain = (
 	events: Stream.Stream<SandboxEvent, SandboxError>,
 ): Effect.Effect<SandboxCommandResult, SandboxError> =>

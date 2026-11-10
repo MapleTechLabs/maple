@@ -64,7 +64,6 @@ const resolveConfig = Effect.fn("SupabaseOAuthService.resolveConfig")(function* 
 	}
 })
 
-/** Failures involved in resolving a usable Supabase access token. */
 export type SupabaseAccessTokenError =
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError

@@ -304,7 +304,7 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		// tsconfig excludes `*.test.ts`, so only this job saw it.
 		//
 		// No trailing FORMAT: the client owns the output format (the executor's
-		// normalizeSqlForClient strips it on the real path).
+		// normalizeSqlForClickHouseClient strips it on the real path).
 		const result = await Effect.runPromise(
 			client.sql(parseStatement("SELECT toUInt64(42) AS wide, count() AS c FROM system.one")),
 		)

@@ -139,7 +139,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(url.searchParams.get("response_type"), "code")
 			assert.strictEqual(url.searchParams.get("state"), state)
 			assert.include(url.searchParams.get("scope") ?? "", "workers-observability.write")
-			// offline_access must be REQUESTED for Cloudflare to issue a refresh token — the grant
+			// offline_access must be REQUESTED for Cloudflare to issue a refresh token; the grant
 			// only makes it available. Without it the connection dies at the ~16h expiry.
 			assert.include(url.searchParams.get("scope") ?? "", "offline_access")
 			// PKCE: the authorize URL carries an S256 challenge and the verifier is persisted.
@@ -171,7 +171,7 @@ describe("CloudflareOAuthService", () => {
 			assert.strictEqual(url.searchParams.get("client_id"), "cf-client-id")
 			assert.strictEqual(url.searchParams.get("code_challenge_method"), "S256")
 		}).pipe(
-			// Only the client id is set — a Cloudflare public client carries no secret.
+			// Only the client id is set: a Cloudflare public client carries no secret.
 			Effect.provide(makeLayer(testDb, { CLOUDFLARE_OAUTH_CLIENT_ID: "cf-client-id" })),
 		)
 	})
@@ -257,7 +257,7 @@ describe("CloudflareOAuthService", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const service = yield* CloudflareOAuthService
-			// No state row was ever seeded — a forged/expired-and-purged callback.
+			// No state row was ever seeded: a forged/expired-and-purged callback.
 			const error = yield* service
 				.completeConnect("auth-code", "state-that-was-never-issued", initiatorA)
 				.pipe(Effect.flip)
@@ -527,7 +527,7 @@ describe("CloudflareOAuthService", () => {
 			const service = yield* CloudflareOAuthService
 			yield* connect(service)
 
-			// Reconnecting with a different grant REPLACES the account set — the old grant's
+			// Reconnecting with a different grant REPLACES the account set: the old grant's
 			// token is superseded, so its accounts must not linger as connected.
 			granted.current = [
 				{ id: "acc_2", name: "Beta LLC", type: "standard" },

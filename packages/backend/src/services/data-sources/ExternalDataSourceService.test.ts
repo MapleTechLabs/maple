@@ -262,7 +262,6 @@ describe("ExternalDataSourceService", () => {
 			})
 			expect(result).toMatchObject({ rows: [{ n: 3 }], executed: true, language: "sql:clickhouse" })
 			expect(world.seenSecrets).toEqual([SECRET, SECRET])
-			// Another org cannot see it at all.
 			expect(yield* service.list(OTHER_ORG, { agent: false })).toEqual([])
 		}).pipe(Effect.provide(makeLayer(world)))
 	})

@@ -25,7 +25,6 @@ import { type CancellationEvidenceInput, daysBeforeCancel } from "./evidence-inp
 import { DAY_MS, WINDOW_DAYS } from "./snapshot"
 
 export const SERVICES_SHOWN = 15
-/** Values shown per resource attribute. */
 export const RESOURCE_VALUES_SHOWN = 5
 /** Rows read for resource attributes: every value of the five keys, in practice. */
 const RESOURCE_ROWS_READ = 500

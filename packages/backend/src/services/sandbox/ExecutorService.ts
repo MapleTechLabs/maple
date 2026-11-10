@@ -51,7 +51,6 @@ export interface ExecutorCommand extends ExecutorCommandInput {
 }
 
 export interface ExecutorServiceApi {
-	/** Whether this deployment has an execution sandbox at all. */
 	readonly available: boolean
 	/** Prepares the run's executor and waits for it; answers what each lockfile's install did. */
 	readonly prepare: (
@@ -74,7 +73,6 @@ export interface ExecutorServiceApi {
 	readonly destroy: (runId: string) => Effect.Effect<void>
 }
 
-/** A run's executor is named by the run. */
 export const executorKey = (runId: string): string =>
 	Str.slice(0, 63)(`run-${Str.replace(/[^a-z0-9-]/gu, "-")(Str.toLowerCase(runId))}`)
 

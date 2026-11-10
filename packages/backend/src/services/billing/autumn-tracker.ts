@@ -291,7 +291,6 @@ export interface TrackFeatureUsageOptions {
 	readonly idempotencyKey: string
 }
 
-/** A plain track of `value` units on a metered feature. */
 export const trackFeatureUsage = Effect.fn("AutumnTracker.trackFeatureUsage")(function* ({
 	customerId,
 	featureId,

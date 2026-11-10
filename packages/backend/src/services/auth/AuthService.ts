@@ -65,8 +65,8 @@ export class AuthService extends Context.Service<AuthService, AuthServiceApi>()(
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
-			// Optional on purpose. Where it is absent — tests, and any runtime that
-			// has not wired it — `makeResolveTenant` rejects `x-maple-org-id`
+			// Optional on purpose. Where it is absent (tests, and any runtime that
+			// has not wired it), `makeResolveTenant` rejects `x-maple-org-id`
 			// outright rather than ignoring it, which is the safe half of the
 			// no-silent-ignore rule.
 			const membership = yield* Effect.serviceOption(OrgMembershipService)

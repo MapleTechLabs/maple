@@ -65,7 +65,6 @@ const healthyConfig: ConfigAuditInputs = {
 const spanKey = (key: string, usageCount = 100) => ({ scope: "span", key, usageCount })
 const resourceKey = (key: string, usageCount = 100) => ({ scope: "resource", key, usageCount })
 
-/** A fully healthy telemetry snapshot — every telemetry check passes against it. */
 /** Rootless rows as the query returns them: each carries the org-wide totals of all the rows. */
 const withOrgTotals = (
 	rows: ReadonlyArray<{
@@ -89,6 +88,7 @@ const withOrgTotals = (
 
 const healthyRule = Arr.getUnsafe(healthyConfig.alertRules, 0)
 
+/** A fully healthy telemetry snapshot: every telemetry check passes against it. */
 const healthyWarehouse: WarehouseAuditInputs = {
 	lookbackHours: 24,
 	logCorrelationHours: 6,
@@ -1401,8 +1401,6 @@ describe("integration checks", () => {
 		}
 	})
 })
-
-// Telemetry checks
 
 /** Runs the audit against a perturbed telemetry snapshot, with configuration left healthy. */
 const telemetry = (overrides: Partial<WarehouseAuditInputs>) =>

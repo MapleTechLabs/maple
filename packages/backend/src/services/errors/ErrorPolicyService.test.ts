@@ -193,7 +193,6 @@ describe("ErrorPolicyService", () => {
 			)
 
 			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorForbiddenError")
-			// And nothing was written.
 			assert.isNull(yield* policies.loadNotificationPolicyRow(ORG))
 		}).pipe(Effect.provide(makeLayer())),
 	)

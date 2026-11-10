@@ -452,9 +452,6 @@ describe("AuditLogService.layerMemory", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
-	// The credential and the surface are the two facts a mutation handler cannot
-	// re-derive, and getting them wrong is what made API-key and MCP actions read
-	// back as dashboard sessions.
 	it.effect("leaves out access entries before the limit, so changes behind many reads still list", () =>
 		Effect.gen(function* () {
 			const audit = yield* AuditLogService
@@ -540,6 +537,9 @@ describe("AuditLogService.layerMemory", () => {
 		}),
 	)
 
+	// The credential and the surface are the two facts a mutation handler cannot
+	// re-derive, and getting them wrong is what made API-key and MCP actions read
+	// back as dashboard sessions.
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,

@@ -32,9 +32,6 @@ class AuditQueueSendError extends Schema.TaggedError<AuditQueueSendError>()(
 	},
 ) {}
 
-/** Producer binding name; the paired `*_NAME` var drives consumer dispatch. */
-
-/** The warehouse datasource every audit entry lands in. */
 export const AUDIT_LOG_DATASOURCE = "audit_log"
 
 /**
@@ -125,7 +122,6 @@ export interface AuditLogServiceApi {
 	) => Effect.Effect<ReadonlyArray<AuditLogEntry>, AuditLogPersistenceError>
 }
 
-/** Build the queue event for one `record` call, stamping id and `occurredAt`. */
 const makeEvent = <A extends AuditAction>(input: AuditLogRecordInput<A>, nowMs: number) => {
 	const resource = auditResourceFields(input.action, input.resourceId)
 	return new AuditLogEvent({

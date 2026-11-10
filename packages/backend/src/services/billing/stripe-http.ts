@@ -24,13 +24,13 @@ import { STRIPE_API_VERSION } from "./stripe-api"
  * Autumn owns the subscription; the Stripe customer it links is where the
  * invoice's company name, address and tax IDs live, and Autumn's API has no
  * field for any of them (its "Stripe Sync" guide files cosmetic customer
- * updates under "do this in Stripe"). No `stripe` npm package: the five calls
- * below are ~100 lines of `HttpClient`, versus a dependency whose module graph
+ * updates under "do this in Stripe"). No `stripe` npm package: the calls below
+ * are a few lines of `HttpClient` each, versus a dependency whose module graph
  * would land in the worker for every request.
  *
- * Results are shaped exactly like `AutumnResult` — `{ statusCode, response }`
+ * Results are shaped exactly like `AutumnResult` (`{ statusCode, response }`
  * with a camelised 2xx body, or an Autumn-shaped `{ message, code, statusCode }`
- * rejection body — so `classifyAutumn` / `ensureOk` / `decodeUpstream` in
+ * rejection body), so `classifyAutumn` / `ensureOk` / `decodeUpstream` in
  * `autumn-client.ts` apply unchanged. Stripe nests its error as
  * `{ error: { type, code, message, param } }`; `errorResponse` flattens it.
  */
@@ -187,7 +187,7 @@ const callStripe = (
 const customerPath = (stripeCustomerId: string) => `/v1/customers/${encodeURIComponent(stripeCustomerId)}`
 
 /**
- * Stripe's customer + tax-ID routes, bound to the worker's credentials and one
+ * Stripe's customer, tax-ID, subscription and charge routes, bound to the worker's credentials and one
  * `HttpClient`. As with `AutumnClient`, every returned effect is `R = never`.
  */
 export class StripeClient extends Context.Service<StripeClient, StripeClientApi>()(

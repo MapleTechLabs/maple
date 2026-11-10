@@ -6,13 +6,11 @@ import type { BuildSpecResult } from "@maple/query-engine/query-builder"
 import { DASHBOARD_TEMPLATES } from "./index"
 import type { TemplateDefinition, TemplateParameterValues } from "./types"
 
-// "Templates never rot" guard (mirrors the widget-preset guard in
-// apps/web/src/components/dashboard-builder/widgets/widget-definitions.test.ts):
-// every query-builder-backed widget in every dashboard template must decode as
-// a valid query draft and lower to a QuerySpec with no warnings. The original
-// bug — the Node.js/JVM runtime templates using `p95_duration` on a metrics
-// query, which the engine rejects outright — shipped widgets that could never
-// render, and nothing caught it.
+// "Templates never rot" guard: every query-builder-backed widget in every
+// dashboard template must decode as a valid query draft and lower to a QuerySpec
+// with no warnings. The original bug (the Node.js/JVM runtime templates using
+// `p95_duration` on a metrics query, which the engine rejects outright) shipped
+// widgets that could never render, and nothing caught it.
 
 const decodeQueryDraft = Schema.decodeUnknownSync(QueryBuilderQueryDraftSchema)
 
@@ -41,7 +39,7 @@ function allParams(template: TemplateDefinition): TemplateParameterValues {
 // v3 replaced the `custom_query_builder_*` endpoint names with `kind: "query"`
 // plus a `resultShape`, so the spec builder is selected by shape.
 function specBuilderFor(
-	resultKind,
+	resultKind: string,
 ): ((query: Parameters<typeof buildTimeseriesQuerySpec>[0]) => BuildSpecResult) | null {
 	if (resultKind === "timeseries") return buildTimeseriesQuerySpec
 	if (resultKind === "breakdown") return buildBreakdownQuerySpec

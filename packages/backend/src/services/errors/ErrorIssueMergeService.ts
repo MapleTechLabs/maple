@@ -76,7 +76,6 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 				)
 			})
 
-		/** Why `source` cannot be merged into `target`, or none. */
 		const mergeProblem = (target: ErrorIssueRow, source: ErrorIssueRow): string | undefined => {
 			if (source.kind !== "error") return `${source.id} is an ${source.kind} issue`
 			if (source.mergedIntoIssueId !== null) return `${source.id} is already merged into another issue`

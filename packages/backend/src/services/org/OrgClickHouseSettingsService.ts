@@ -633,12 +633,6 @@ const decodeStatus = (raw: string | null | undefined): "connected" | "error" | n
 	return null
 }
 
-// We parse the bundled snapshot statements from the static migration snapshot.
-// Parsing is cheap, but the snapshot is also static across the process
-// lifetime so the service memoizes the result in a `Ref` (created in `make`)
-// to avoid re-parsing on every request without resorting to module-global
-// mutable state.
-
 const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
 	for (const stmt of clickHouseMigrations[0]?.statements ?? []) {
@@ -1019,18 +1013,6 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				return hadOverride
 			})
 
-		/**
-		 * Public form of `invalidateRuntimeConfigCache`, for the warehouse
-		 * executor's credential-rotation self-heal.
-		 *
-		 * `resolveCachedSettings` serves this config stale by design, so a BYO
-		 * ClickHouse password rotation keeps resolving to the retired credential
-		 * until the entry ages out. The executor calls this on `WarehouseAuthError`
-		 * and retries once. The returned boolean is the retry gate: `true` only
-		 * when a per-org override was actually dropped, so an auth failure against
-		 * the shared managed credential — where re-resolving cannot change the
-		 * answer — is not run twice.
-		 */
 		const invalidateRuntimeConfig = (orgId: OrgId): Effect.Effect<boolean> =>
 			invalidateRuntimeConfigCache(orgId)
 
@@ -1278,7 +1260,6 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
 			yield* requireAdmin(roles)
-			// Ensure BYO ClickHouse is configured before queuing a run.
 			yield* requireActiveRow(orgId)
 
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
