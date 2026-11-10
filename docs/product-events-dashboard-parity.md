@@ -181,8 +181,8 @@ hangs off the `QuerySpec` arms from phase 1.
   widened. `alert-signal-display.ts`: label "Event count" / "Sessions with events", unit `count`.
 - Web: `apps/web/src/lib/alerts/form-utils.ts` and `signal-and-threshold-section.tsx` accept the
   source; the where-clause editor gets the same scope as the dashboard panel.
-- Alert templates: one "Signups dropped" example under `alert-templates/` is enough to prove the
-  path; don't build a catalogue.
+- Alert templates: one "Signups dropped" example is enough to prove the path; don't build a
+  catalogue.
 
 ### Phase 5: agents and public surfaces
 

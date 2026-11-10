@@ -10,8 +10,7 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   administrative connection.
 - **Wrangler development:** Docker Postgres on port 5499 through Hyperdrive's
   `localConnectionString`.
-- **Non-Worker local entrypoints and tests:** embedded PGlite. `MAPLE_DB_URL` is a PGlite data
-  directory, or `memory://` for an ephemeral database. It is not a remote database URL.
+- **Tests and evals:** embedded PGlite, in memory.
 - **PR previews:** a Neon branch `pr-<n>` per preview, migrated by the deploy like prd's
   `main` and deleted on teardown, behind one Hyperdrive config (`docs/pr-previews.md`).
 
@@ -58,9 +57,6 @@ Start and migrate the Docker Postgres used by Wrangler:
 bun db:up
 bun db:migrate:local
 ```
-
-Persistent PGlite is created automatically for non-Worker local entrypoints under
-`apps/api/.data/pglite`. Set `MAPLE_DB_URL=memory://` when persistence is not wanted.
 
 ## Authoring migrations
 

@@ -184,7 +184,7 @@ export function resolveIdentity(config: {
 let warnedServiceName = false
 
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
-	// Plain JS callers and env-driven configs can pass nothing; every span would then be unattributed.
+	// Plain JS callers and env-driven configs can leave it out; every span would then be unattributed.
 	if (typeof config.serviceName !== "string" || config.serviceName.trim() === "") {
 		if (!warnedServiceName) {
 			warnedServiceName = true

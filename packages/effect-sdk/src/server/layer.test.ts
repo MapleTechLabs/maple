@@ -7,6 +7,8 @@ import { layer } from "./layer.js"
 interface ExportCall {
 	readonly url: string
 	readonly authorization: string | null
+	readonly sdk: string | null
+	readonly userAgent: string | null
 	readonly body: ExportBody
 }
 interface ExportBody {
@@ -36,6 +38,8 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 	calls.push({
 		url: request.url,
 		authorization: request.headers.get("authorization"),
+		sdk: request.headers.get("x-maple-sdk"),
+		userAgent: request.headers.get("user-agent"),
 		body: text ? JSON.parse(text) : {},
 	})
 	return new Response(null, { status: 200 })
@@ -140,6 +144,21 @@ describe("Maple.layer span options", () => {
 		expect(keys).toContain("service.name")
 		expect(keys).toContain("deployment.environment.name")
 		expect(Arr.map(exportedSpans(), (span) => span.name)).toEqual(["hello"])
+	})
+
+	it("names the SDK and its version on export requests, with or without an ingest key", async () => {
+		await run(
+			{ serviceName: "unit-test", endpoint: "https://collector.test" },
+			Effect.void.pipe(Effect.withSpan("hello")),
+		)
+
+		const traces = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => call.url === "https://collector.test/v1/traces"),
+		)
+		expect(traces.authorization).toBeNull()
+		expect(traces.sdk).toMatch(/^maple-effect-sdk-server\/\d+\.\d+\.\d+$/)
+		// The exporter keeps its own agent after ours.
+		expect(traces.userAgent).toMatch(/^maple-effect-sdk-server\/\d+\.\d+\.\d+ /)
 	})
 
 	// The signal layers share one memoized `layerFlusher`, so its flush drains them all.

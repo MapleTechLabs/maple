@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { StatusPagesDisabledError } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -128,5 +129,31 @@ describe("status pages list", () => {
 		expect(names(listUpdate(failed, Message.ClickedRetry()).commands)).toEqual([
 			"FetchStatusPageSummaries",
 		])
+	})
+
+	test("an org outside the rollout is told so, not shown a failed load", () => {
+		const model = entered()
+		const refused = listUpdate(
+			model,
+			Message.CompletedFetchPages({
+				key: model.pages.key ?? "",
+				result: Result.fail(
+					toLoadFailure(
+						new StatusPagesDisabledError({
+							message: "Status pages are not enabled for this organization.",
+						}),
+					),
+				),
+			}),
+		).model
+		scene(
+			{ update: listUpdate, view },
+			given(refused),
+			expectView(text("Status pages are not enabled")).toExist(),
+			expectView(text("Couldn't load status pages")).not.toExist(),
+			// Neither helps until the org is in the rollout.
+			expectView(role("button", { name: "Try again" })).not.toExist(),
+			expectView(role("link", { name: "Create a status page" })).not.toExist(),
+		)
 	})
 })

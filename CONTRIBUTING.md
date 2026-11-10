@@ -87,8 +87,8 @@ CLICKHOUSE_USER=maple
 CLICKHOUSE_PASSWORD=maple
 CLICKHOUSE_DATABASE=default
 
-# App database (`alchemy dev` binds MAPLE_DB to the docker Postgres on 5499)
-# MAPLE_DB_URL is intentionally blank for the Workers; see db:migrate:local below.
+# App database: nothing to set. `alchemy dev` binds MAPLE_DB to the docker Postgres on 5499;
+# see db:migrate:local below.
 
 # Auth — self-hosted mode (no Clerk account required)
 MAPLE_AUTH_MODE=self_hosted
@@ -270,18 +270,18 @@ Default health port: `3475`
 
 Loads `../../.env.local` via `bun --env-file`.
 
-### 5. AI chat and triage (in `apps/api`)
+### 5. AI chat and triage (`apps/ai`)
 
-`/chat` and `/investigations/*` are served by `apps/api` itself: the `ChatSession` Durable
-Object owns each transcript and the agent turn runs in-process on `@opencode-ai/ai` against the
-Workers AI `AI` binding. There is no second worker to start — but the chat routes only work
-when `apps/api` is running **under `alchemy dev`** (`bun dev api`), because a plain
-`bun` process has neither the Durable Object namespace nor the `AI` binding.
+`/chat` and `/investigations/*` are forwarded by `apps/api` to the `apps/ai` Worker over a service
+binding: the `ChatSession` Durable Object there owns each transcript and runs the agent turn.
+Run both under `alchemy dev` (`bun dev api ai`), because a plain `bun` process has no Durable
+Object namespace.
 
-The `AI` binding needs a Cloudflare account with Workers AI, through an alchemy profile
-(`bunx alchemy login`). Confirm the default model id in `apps/api/src/lib/Llm.ts` is still in
-the catalog — `cd apps/api && bunx wrangler ai models list`; a retired id returns `410`.
-Override it with `MAPLE_TRIAGE_MODEL`.
+The agent runs on OpenRouter by default and needs `OPENROUTER_API_KEY`. Set
+`MAPLE_LLM_PROVIDER=workers-ai` to run it on the Workers AI `AI` binding instead, which needs a
+Cloudflare account with Workers AI through an alchemy profile (`bunx alchemy login`). The default
+model ids live in `apps/ai/src/platform/Llm.ts`. Override them per provider with
+`MAPLE_TRIAGE_MODEL_OPENROUTER` or `MAPLE_TRIAGE_MODEL_WORKERS_AI`.
 
 > **`MAPLE_ORG_ID_OVERRIDE` breaks the investigation chat.** It pins every API request to
 > one org, but the browser addresses the session as `<clerk org>:<tab>`. With the
@@ -295,11 +295,11 @@ sets the opt-in for you; set it yourself when you run the API outside the dev st
 
 When an autonomous investigation fails to start, the `investigations.error` column names it:
 
-| `error` value                                                    | Cause                                                                               |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `agent_unavailable: …`                                           | `apps/api` isn't running under `alchemy dev`, so there is no `CHAT_SESSION` binding |
-| `start_failed: a turn is already running for this investigation` | The session is busy; retry                                                          |
-| `diagnosis_timeout: …`                                           | The turn ran but never called `submit_diagnosis` within 15 minutes                  |
+| `error` value                                                    | Cause                                                                              |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `agent_unavailable: …`                                           | No `ChatSession` binding: `apps/ai` isn't running under `alchemy dev` with the API |
+| `start_failed: a turn is already running for this investigation` | The session is busy; retry                                                         |
+| `diagnosis_timeout: …`                                           | The turn ran but never called `submit_diagnosis` within 15 minutes                 |
 
 ### All at once
 
@@ -332,7 +332,7 @@ Health checks:
 ## Tests and quality
 
 ```bash
-bun test
+bun run test   # Vitest via turbo, not `bun test`
 bun typecheck
 bun run format   # oxfmt + oxlint --fix
 ```

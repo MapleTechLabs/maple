@@ -60,10 +60,8 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	// Traces and logs
 	"searchTraces",
 	"getTrace",
-	"getSpan",
 	"searchLogs",
 	"queryLogTimeseries",
-	"getLog",
 	// Dashboards
 	"listDashboards",
 	"getDashboard",

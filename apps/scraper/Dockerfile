@@ -1,4 +1,4 @@
-# Local docker-compose build. Build context: repo root (workspace deps @maple/domain +
+# Source build for a local image. Build context: repo root (workspace deps @maple/domain +
 # @maple-dev/effect-sdk). Deploys use Dockerfile.prebuilt (apps/scraper/alchemy.run.ts).
 FROM oven/bun:1.4.4 AS runner
 WORKDIR /app

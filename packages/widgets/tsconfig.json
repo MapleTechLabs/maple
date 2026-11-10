@@ -1,5 +1,5 @@
 {
-	"include": ["**/*.ts", "**/*.tsx"],
+	"include": ["**/*.ts"],
 	"compilerOptions": {
 		"noUncheckedIndexedAccess": true,
 		"target": "ES2022",

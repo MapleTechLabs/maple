@@ -42,7 +42,7 @@ run = "bun dev"
 
 [tasks.build]
 description = "Build all packages/apps via turbo"
-run = "bun build"
+run = "bun run build"
 
 [tasks.test]
 description = "Run the test suite via turbo"

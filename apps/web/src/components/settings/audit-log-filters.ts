@@ -174,25 +174,6 @@ export function pickAuditLogSearch(search: AuditLogSearch): AuditLogSearchUpdate
 	return auditLogSearchFrom(parseAuditLogSearch(search))
 }
 
-/** The `since`/`until` bounds a range resolves to at `now`. */
-export function resolveAuditDateRange(
-	range: AuditDateRange,
-	now: number,
-): { readonly since: string | undefined; readonly until: string | undefined } {
-	if (range.kind === "custom") return { since: range.since, until: range.until }
-	const preset =
-		range.kind === "preset"
-			? Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === range.preset)
-			: Option.none()
-	return {
-		since: Option.match(preset, {
-			onNone: () => undefined,
-			onSome: (found) => new Date(now - found.ms).toISOString(),
-		}),
-		until: undefined,
-	}
-}
-
 export function hasAuditLogFilters(filters: AuditLogFilters): boolean {
 	return (
 		filters.range.kind !== "all" ||

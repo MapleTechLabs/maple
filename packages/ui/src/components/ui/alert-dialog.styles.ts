@@ -19,8 +19,6 @@ export const alertDialogFooterStyles =
 
 export const alertDialogFooterDefaultStyles = "border-t bg-surface-strong py-4"
 
-export const alertDialogFooterBareStyles = "pb-6"
-
 export const alertDialogTitleStyles = "font-heading font-semibold text-xl leading-none"
 
 export const alertDialogDescriptionStyles = "text-muted-foreground text-sm"
