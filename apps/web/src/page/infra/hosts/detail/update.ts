@@ -9,7 +9,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../../cont
 import * as Frame from "../../../kit/time-frame"
 import { WIDEN_TIME_PRESET } from "../../../kit/time-controls"
 import { liftFrame, resolveFrame, routeFrame } from "../../../kit/time-frame-step"
-import { applySteps, keyed, seriesSteps } from "../../../kit/requests"
+import { applySteps, keyed, seriesSteps } from "../../../kit/keyed-step"
 import { updateCopy } from "../../kit/resource-attributes"
 import { FetchSeries, FetchSummary, type SeriesInput } from "./command"
 import { type HostMetric, Message } from "./message"

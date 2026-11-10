@@ -1,3 +1,4 @@
+import { applySteps } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, String as Str } from "effect"
@@ -26,7 +27,6 @@ import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFo
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
-	applySteps,
 	bundleStep,
 	databaseSteps,
 	facetsStep,
@@ -117,10 +117,10 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 			? model.serviceTabs
 			: initServiceTabs()
 	const withTabs = { ...model, serviceTabs: tabs }
-	const database =
+	const database: Return =
 		previous !== undefined && Option.getOrNull(previous.selectedId) === Option.getOrNull(map.selectedId)
 			? { model: withTabs }
-			: applySteps(withTabs, databaseSteps(withTabs, context, "Load"))
+			: applySteps<Model, Message>(withTabs, databaseSteps(withTabs, context, "Load"))
 	const focusChanged = !sameFocus(map.focus, focusOf(model.search))
 	return {
 		model: database.model,
@@ -329,7 +329,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// The default environment can move once facets land (a confirmed no-production org).
 		CompletedFetchFacets: ({ key, result }) => {
 			const next = { ...model, facets: Keyed.accept(model.facets, key, result) }
-			const rekeyed = applySteps(next, [bundleStep(next, context, "Load")])
+			const rekeyed = applySteps<Model, Message>(next, [bundleStep(next, context, "Load")])
 			// Only a new environment re-asks; the same key keeps its answer, a failure included.
 			return rekeyed.model.bundle.key === model.bundle.key ? { model: next } : rekeyed
 		},
@@ -376,7 +376,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		ClickedRetryFacets: () => applySteps(model, [facetsStep(model, context, "Refresh")]),
+		ClickedRetryFacets: () => applySteps<Model, Message>(model, [facetsStep(model, context, "Refresh")]),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,

@@ -1,3 +1,4 @@
+import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
@@ -14,7 +15,6 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import type { Resources } from "../../../platform/resources"
 import {
 	type BaselineInput,
 	FetchAnomalies,
@@ -90,28 +90,7 @@ export const overviewInput = (
 		pinnedNamespace,
 	)
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
-
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ patch: {}, commands: [] }),
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-	})
-
-const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: Arr.reduce<Step, Model>(steps, model, (next, step) => ({ ...next, ...step.patch })),
-	commands: Arr.flatMap(steps, (step) => step.commands),
-})
+type Step = KitStep<Model, Message>
 
 const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Step =>
 	keyed(
@@ -130,7 +109,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		{ rangeStartTime: window.startTime, environments: model.search.environments },
 		context.pinnedNamespace,
 	)
-	return applySteps({ ...model, window }, [
+	return applySteps<Model, Message>({ ...model, window }, [
 		keyed(
 			model.overview,
 			requestKey(org, "getServiceOverview", { data: input }),
@@ -469,7 +448,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryFacets: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [facetsStep(model, context, model.window, "Refresh")]),
+				: applySteps<Model, Message>(model, [facetsStep(model, context, model.window, "Refresh")]),
 		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
 			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),

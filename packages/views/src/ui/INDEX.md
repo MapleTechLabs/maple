@@ -217,7 +217,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/issue-severity.ts` `severityRank`, `severityDot`, `severityBadge`, `severityIcon`: The severity badge's maps and marks.
 - `apps/web/src/page/kit/issue-workflow.ts` `workflowRingIcon`: `WorkflowRingIcon`: the state as a ring that fills as the work progresses.
 - `apps/web/src/page/kit/k8s-chart.ts` `k8sChart`: `K8sMetricChartView` and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend, in a `ChartCard`.
-- `apps/web/src/page/kit/keyed-step.ts` `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
+- `apps/web/src/page/kit/keyed-step.ts` `keyed`, `keyedSlot`, `applySteps`, `runSteps`, `seriesSteps`, `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
 - `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
@@ -240,7 +240,6 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: `RefreshControls`: Reload joined to the auto-refresh cadence menu.
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: `RelativeTime`: `timestamp` with relative text.
-- `apps/web/src/page/kit/requests.ts` `keyed`, `seriesSteps`, `applySteps`: The S8 request step (`Keyed.request` writes the slot and yields its fetch), shared by every infra page so each `update` lists its slots and nothing else.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: `useEffectiveTimeRange` + `useRefreshableAtomValue` for a page's `routeChanged`: the window is re-resolved only when its own fields moved, and only Reload revalidates unchanged...
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: `SettingsSaveBar`: pinned while a tab has unsaved edits.

@@ -1,3 +1,4 @@
+import { keyed as keyedStep, runSteps, type Step as KitStep } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { formatWarehouseDateTime, parseWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
@@ -92,39 +93,18 @@ export const usageInput = (window: TimeWindow): UsageInput => {
 
 // REQUESTS
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
+type Step = KitStep<Model, Message>
 
 const NONE: Step = { patch: {}, commands: [] }
 
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
+/** `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload. */
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
 	mode: Keyed.RequestMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	// `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload.
-	mode === "Load" && slot.key === key && AsyncData.isFailure(slot.data)
-		? NONE
-		: Option.match(Keyed.request(slot, key, mode), {
-				onNone: () => NONE,
-				onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-			})
-
-/** Steps run in order, each against the Model the previous ones patched. */
-const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>, prior?: Return): Return =>
-	Arr.reduce<(model: Model) => Step, Return>(steps, prior ?? { model }, (result, step) => {
-		const next = step(result.model)
-		return {
-			...result,
-			model: { ...result.model, ...next.patch },
-			commands: [...(result.commands ?? []), ...next.commands],
-		}
-	})
+): Step => keyedStep(slot, key, mode, write, fetch, { keepFailure: true })
 
 const environmentsInput = (model: Model) => {
 	const environments = environmentFilter(model)

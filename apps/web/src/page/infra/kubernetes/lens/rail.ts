@@ -10,7 +10,7 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { PageContext } from "../../../contract"
 import type { Resources } from "../../../../platform/resources"
-import { applySteps, keyed } from "../../../kit/requests"
+import { applySteps, keyed } from "../../../kit/keyed-step"
 
 // `useServiceLensRail` (components/infra/service-lens/use-service-lens-rail.ts): the services with
 // a Kubernetes workload, in two hops (the service overview's names, then `serviceWorkloads`).

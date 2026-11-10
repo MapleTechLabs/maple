@@ -9,7 +9,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import * as Frame from "../../kit/time-frame"
 import { liftFrame, resolveFrame, routeFrame } from "../../kit/time-frame-step"
 import * as InstallModal from "../kit/install-modal"
-import { seriesSteps } from "../../kit/requests"
+import { seriesSteps } from "../../kit/keyed-step"
 import { FetchPresence, FetchSource } from "./command"
 import { Message } from "./message"
 import type { Model, SourceReading } from "./model"

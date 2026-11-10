@@ -1,3 +1,4 @@
+import { chain } from "../../kit/keyed-step"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -164,15 +165,6 @@ const step = <A, E>(
 		onNone: () => [],
 		onSome: (next) => [{ patch: write(next), command: fetch() }],
 	})
-
-const chain = (first: Return, then: (model: Model) => Return): Return => {
-	const second = then(first.model)
-	return {
-		model: second.model,
-		commands: [...(first.commands ?? []), ...(second.commands ?? [])],
-		outMessage: second.outMessage ?? first.outMessage,
-	}
-}
 
 /** The header links, timeline events and product events read the loaded trace. */
 const followTrace = (model: Model, context: PageContext, trace: LoadedTrace): Return => {

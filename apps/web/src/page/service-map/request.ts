@@ -1,10 +1,8 @@
+import { applySteps, keyed, type Step as KitStep } from "../kit/keyed-step"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
-import type { Command } from "foldkit"
-import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import type { PageContext, PageReturn } from "../contract"
 import { PageOutMessage } from "../contract"
@@ -29,28 +27,7 @@ export type Return = PageReturn<Model, Message>
 
 // The page's requests: one `Keyed` slot per read (S6), and its navigation.
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
-
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ patch: {}, commands: [] }),
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-	})
-
-export const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: Arr.reduce<Step, Model>(steps, model, (next, step) => ({ ...next, ...step.patch })),
-	commands: Arr.flatMap(steps, (step) => step.commands),
-})
+type Step = KitStep<Model, Message>
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -200,7 +177,7 @@ export const databaseSteps = (model: Model, context: PageContext, mode: RequestM
 
 /** Every query the page reads for the resolved windows, keyed by its inputs. */
 export const requestAll = (model: Model, context: PageContext, mode: RequestMode): Return =>
-	applySteps(model, [
+	applySteps<Model, Message>(model, [
 		facetsStep(model, context, mode),
 		bundleStep(model, context, mode),
 		...overlaySteps(model, context, mode),

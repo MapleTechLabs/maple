@@ -1,3 +1,4 @@
+import { keyedSlot } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr, Record as Rec } from "effect"
@@ -57,7 +58,6 @@ import { AutocompleteLookup, type Model } from "./model"
 type Return = PageReturn<Model, Message>
 export type Search = typeof MetricSearch.Type
 type Route = { readonly metricName: string; readonly search: Search }
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for a metric. */
 export const DEFAULT_PRESET: PresetValue = "24h"
@@ -86,19 +86,6 @@ export const draftOf = (model: Model, summary: CatalogSummary) =>
 /** `MetricBreakdown`'s key: the URL's `bd`, else `service.name`. */
 export const breakdownKeyOf = (search: Search): string => search.bd ?? SERVICE_KEY
 
-type Step<A, E> = Readonly<{ slot: Keyed.Keyed<A, E>; commands: Commands }>
-
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step<A, E> =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ slot, commands: [] }),
-		onSome: (next) => ({ slot: next, commands: [fetch(key)] }),
-	})
-
 const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["tracesFacets", "getTracesFacets"],
 	["logsFacets", "getLogsFacets"],
@@ -116,7 +103,7 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 		const input = lookup === "productEventNames" ? { ...window, limit: 200 } : window
 		return {
 			lookup,
-			...keyed(
+			...keyedSlot(
 				Keyed.at(model.autocomplete, lookup),
 				requestKey(context.orgId, operation, { data: input }),
 				mode,
@@ -146,20 +133,20 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 		...window,
 		query: buildBreakdownDraft(draft, breakdownGroupBy(breakdownKeyOf(model.search))),
 	}
-	const attributeKeys = keyed(
+	const attributeKeys = keyedSlot(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
 		// The scoped keys are read with `useAtomValue`: Reload leaves them alone.
 		"Load",
 		(key) => FetchAttributeKeys({ key, input: keysInput }),
 	)
-	const timeseries = keyed(
+	const timeseries = keyedSlot(
 		model.timeseries,
 		requestKey(org, "getQueryBuilderTimeseries", { data: { ...window, queries: [chartInput.query] } }),
 		mode,
 		(key) => FetchTimeseries({ key, input: chartInput }),
 	)
-	const breakdown = keyed(
+	const breakdown = keyedSlot(
 		model.breakdown,
 		requestKey(org, "getQueryBuilderBreakdown", { data: { ...window, queries: [breakdownInput.query] } }),
 		mode,
@@ -178,7 +165,7 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 
 /** Every query the page reads for the resolved window. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
-	const catalog = keyed(
+	const catalog = keyedSlot(
 		model.catalog,
 		requestKey(context.orgId, "listMetrics", {
 			data: { search: model.metricName, ...window, limit: 1000 },

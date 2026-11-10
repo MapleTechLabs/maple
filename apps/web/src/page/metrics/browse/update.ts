@@ -1,3 +1,4 @@
+import { keyedSlot } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { toQueryBuilderMetricType } from "@maple/query-model"
@@ -7,7 +8,6 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { MetricsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
@@ -42,7 +42,6 @@ import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = typeof MetricsSearch.Type
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
 /** `DashboardPage`'s `defaultPreset` for `/metrics`. */
 export const DEFAULT_PRESET: PresetValue = "24h"
@@ -65,18 +64,6 @@ const listInput = (search: Search, window: TimeWindow, limit: number): ListInput
 	endTime: window.endTime,
 })
 
-/** One `Keyed.request`, its Model patch and fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Readonly<{ slot: Keyed.Keyed<A, E>; commands: Commands }> =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ slot, commands: [] }),
-		onSome: (next) => ({ slot: next, commands: [fetch(key)] }),
-	})
-
 /** The mounted grid pages' sparkline queries, one per metric type present on the page. */
 const requestSparklines = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const catalog = AsyncData.getData(model.catalog.data)
@@ -90,7 +77,7 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 			const metricNames = namesOfType(entries, metricType)
 			if (metricNames.length === 0) return []
 			const { key: slotKey, input } = sparklineRequest(context.orgId, window, metricType, metricNames)
-			const step = keyed(Keyed.at(model.sparklines, slotKey), slotKey, mode, (key) =>
+			const step = keyedSlot(Keyed.at(model.sparklines, slotKey), slotKey, mode, (key) =>
 				FetchSparklines({ slot: slotKey, key, input }),
 			)
 			return [{ slotKey, ...step }]
@@ -111,7 +98,7 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 /** Every query the page reads for the resolved window. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const org = context.orgId
-	const summary = keyed(
+	const summary = keyedSlot(
 		model.summary,
 		requestKey(org, "getMetricsSummary", { data: window }),
 		mode,
@@ -121,13 +108,13 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	const catalogInput = listInput(model.search, window, CATALOG_LIMIT)
 	const tableInput = listInput(model.search, window, Math.min(model.tableLimit + 1, TABLE_MAX_LIMIT))
 	const catalog = isGrid
-		? keyed(model.catalog, requestKey(org, "listMetrics", { data: catalogInput }), mode, (key) =>
+		? keyedSlot(model.catalog, requestKey(org, "listMetrics", { data: catalogInput }), mode, (key) =>
 				FetchCatalog({ key, input: catalogInput }),
 			)
 		: { slot: model.catalog, commands: [] }
 	const table = isGrid
 		? { slot: model.table, commands: [] }
-		: keyed(model.table, requestKey(org, "listMetrics", { data: tableInput }), mode, (key) =>
+		: keyedSlot(model.table, requestKey(org, "listMetrics", { data: tableInput }), mode, (key) =>
 				FetchTable({ key, input: tableInput }),
 			)
 	const next = requestSparklines(
