@@ -237,7 +237,10 @@ What each kind of Worker keeps beside the module:
 - **Queues** (`api`): `Cloudflare.Queues.consumeQueueMessages(queue, settings, handler)` in
   `impl`, under `Queues.EventSourceLive`, yields the `Consumer` resource at plan time and the
   listener at runtime (`src/worker/consumers.ts`, over the declarations in
-  `src/resources/queues.ts`).
+  `src/resources/queues.ts`). Renaming a consumer's id needs `renamedFrom({ fqn })` from
+  `alchemy/Rename` until every stage has deployed past it: alchemy then migrates the state
+  row and plans a noop. Without it, the delete of the old row removes the physical consumer
+  the new row had adopted.
 - **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
   instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event),
   so `maple-vcs-sync` and `maple-planetscale-webhooks` keep their own service names.
