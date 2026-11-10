@@ -1,4 +1,4 @@
-import type { ReplayEngine, ReplayEngineFactory } from "../../../components/replays/engine/replay-engine"
+import type { ReplayEngine, ReplayEngineFactory } from "../engine/replay-engine"
 import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"

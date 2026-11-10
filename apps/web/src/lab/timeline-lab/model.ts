@@ -2,9 +2,9 @@ import { TIMELINE_LAB_EVENTS, TIMELINE_LAB_MARKERS, TIMELINE_LAB_TRACE } from ".
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as SpanPanel from "@maple/views/traces/span-panel"
-import * as Timeline from "../../page/traces/detail/timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import { type SpanEvents, TraceData, toSpanNode } from "@maple/views/traces/trace-data"
-import * as Waterfall from "../../page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 

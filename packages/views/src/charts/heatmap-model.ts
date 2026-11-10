@@ -1,10 +1,10 @@
 import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { cellText } from "./series/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 
-// The model half of `QueryBuilderHeatmapChart` (packages/ui/src/components/charts/heatmap/
-// query-builder-heatmap-chart.tsx): points, the pruned grid, holes, ramp positions and labels.
+// The model half of `QueryBuilderHeatmapChart`: points, the pruned grid, holes, ramp positions
+// and labels.
 
 export interface HeatmapPoint {
 	readonly x: string

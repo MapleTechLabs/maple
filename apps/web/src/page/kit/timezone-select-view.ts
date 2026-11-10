@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as C from "@maple/ui/styles/ui/combobox"
+import * as C from "@maple/views/ui/combobox.styles"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"

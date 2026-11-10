@@ -9,7 +9,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { mapBuilderChartFailure } from "@maple/web-data/alerts/preview-failure"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { KeyedSchema } from "@maple/views/data/keyed"

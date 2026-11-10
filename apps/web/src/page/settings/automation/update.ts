@@ -15,7 +15,7 @@ import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import { SEVERITY_ORDER } from "../../errors/kit/severity"
+import { SEVERITY_ORDER } from "../../kit/issue-severity"
 import {
 	canManage,
 	ConfidenceChoice,

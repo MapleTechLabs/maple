@@ -1,4 +1,4 @@
-import { parseWhereClause } from "../../../lib/traces/advanced-filter-sync"
+import { parseWhereClause } from "../advanced-filter-sync"
 import {
 	tokenizeWhereClause,
 	WHERE_CLAUSE_TOKEN_COLOR,

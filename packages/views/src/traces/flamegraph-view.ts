@@ -25,7 +25,7 @@ import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 import { stripClass } from "../ui/rule"
 
-// The view of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
+// The view of `Flamegraph` and `FlamegraphMinimap`.
 
 const ROW_HEIGHT = 32
 const ROW_GAP = 2

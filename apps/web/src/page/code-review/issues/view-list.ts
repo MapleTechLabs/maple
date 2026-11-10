@@ -4,7 +4,7 @@ import {
 	FINDING_STATUS_LABELS,
 	SEVERITY_LABELS,
 	SEVERITY_TONE,
-} from "../../../components/code-review/code-review-format"
+} from "../kit/code-review-format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"

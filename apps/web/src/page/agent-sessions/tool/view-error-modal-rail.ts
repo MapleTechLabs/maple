@@ -1,5 +1,5 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { unwrapToolErrorText, type VariantDifference } from "../../../lib/agent-sessions/tool-error-display"
+import { unwrapToolErrorText, type VariantDifference } from "../../kit/tools/tool-error-display"
 import { sessionRowId } from "@maple/agent-sessions"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"

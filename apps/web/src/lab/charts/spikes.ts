@@ -1,4 +1,4 @@
-import { histogramSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { histogramSampleData } from "@maple/views/charts/series/sample-data"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -20,7 +20,7 @@ export interface PieSpikeRow {
 	readonly value: number
 }
 
-/** `MUTED_COLOR_AMOUNT` (plot-legend.tsx). */
+/** `MUTED_COLOR_AMOUNT`. */
 const MUTED_COLOR_AMOUNT = 0.78
 
 const SLICE_TOKENS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5"] as const

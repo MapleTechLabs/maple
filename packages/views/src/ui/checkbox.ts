@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { checkboxIconStyles, checkboxIndicatorStyles, checkboxStyles } from "@maple/ui/styles/ui/checkbox"
+import { checkboxIconStyles, checkboxIndicatorStyles, checkboxStyles } from "./checkbox.styles"
 import { Option, Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

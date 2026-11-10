@@ -16,7 +16,7 @@ import { itemContent, mediaCard } from "@maple/views/ui/item"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../kit/relative-time"
-import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { integrationIconPlate } from "../kit/integration-empty"
 import {
 	isMetricsPanelOpen,
 	isSavingMetricsOf,

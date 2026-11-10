@@ -1,4 +1,4 @@
-import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
+import type { FactoryLink } from "./factory-routing"
 import * as THREE from "three"
 import type { Running, Scope } from "./kit"
 import { String as Str } from "effect"

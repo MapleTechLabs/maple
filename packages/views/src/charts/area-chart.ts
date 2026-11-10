@@ -11,8 +11,7 @@ import { resolveColor, type ThemeColors } from "./theme-colors"
 import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 import { timeseriesLegend } from "./timeseries-legend"
 
-// Port of `QueryBuilderAreaChart` + `Timeseries.Frame` (packages/ui/src/components/charts/area/,
-// plot/timeseries.tsx) with a hidden, bottom or right legend.
+// `QueryBuilderAreaChart` + `Timeseries.Frame` with a hidden, bottom or right legend.
 // TODO(legend): the hoisted header legend is not ported.
 
 /** The tokens a chart's series and chrome can resolve to; a page reads them with `ResolveThemeColors`. */

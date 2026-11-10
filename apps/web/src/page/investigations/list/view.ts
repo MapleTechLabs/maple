@@ -9,7 +9,7 @@ import {
 	investigationScope,
 	investigationSeverity,
 } from "@maple/web-data/investigations/display"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { timestamp } from "@maple/views/ui/timestamp"
@@ -37,7 +37,7 @@ import { listRelativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { confidenceMeter, investigateBar, kindMarker, statusBadge } from "../kit"
 import { ROW_ATTRIBUTE } from "../clicks"
 import { MountInvestigationRows } from "./command"

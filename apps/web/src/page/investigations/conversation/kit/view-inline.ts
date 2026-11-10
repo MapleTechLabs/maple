@@ -10,7 +10,7 @@ import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { getSeverityColor } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
@@ -38,8 +38,7 @@ const cardClass = (interactive: boolean): string => cn(SHELL, interactive && LIN
 
 const chevron = <M>(h: HtmlBuilder<M>): Html =>
 	icon(h, "ChevronRightIcon", {
-		className:
-			"size-3.5 shrink-0 text-foreground-faint group-hover/inline:text-muted-foreground",
+		className: "size-3.5 shrink-0 text-foreground-faint group-hover/inline:text-muted-foreground",
 	})
 
 const metric = <M>(

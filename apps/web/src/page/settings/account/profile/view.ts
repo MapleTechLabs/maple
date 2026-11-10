@@ -7,10 +7,10 @@ import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { avatarFallback } from "@maple/views/ui/display"
 import { field, fieldLabel } from "@maple/views/ui/field"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
-import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { dangerRow, dangerZone } from "../../../kit/danger-zone"
 import { imageDropzone, typeToConfirmField } from "../../kit/image-dropzone"
-import { saveBar } from "../../kit/save-bar"
-import { settingsSection, settingsSections } from "../../kit/section"
+import { saveBar } from "../../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
 import { fieldIds, stateFor, textField } from "../fields"
 import type { AccountUser } from "../user"
 import { Message, type Model } from "./model"
@@ -102,10 +102,18 @@ const deleteSection = (h: H, user: AccountUser): ReadonlyArray<Html> =>
 				dangerZone(h, { id: "account-danger", description: [DANGER_DESCRIPTION] }, [
 					dangerRow(h, {
 						title: "Delete account",
-						description: ["Delete ", user.primaryEmail ?? "your account", " and sign out everywhere."],
+						description: [
+							"Delete ",
+							user.primaryEmail ?? "your account",
+							" and sign out everywhere.",
+						],
 						action: button(
 							h,
-							{ variant: "destructive", size: "sm", attributes: [h.OnClick(Message.ClickedDelete())] },
+							{
+								variant: "destructive",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedDelete())],
+							},
 							["Delete account"],
 						),
 					}),

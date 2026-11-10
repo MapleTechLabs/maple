@@ -1,8 +1,8 @@
 import { errorState } from "@maple/views/ui/error-state"
 import type { TimeFormat } from "../kit/local-time"
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import type { TraceData } from "@maple/views/traces/trace-data"
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 import { button } from "@maple/views/ui/button"
 import { httpSpanLabel } from "@maple/views/ui/http-span-label"
@@ -23,7 +23,7 @@ import * as LogSheet from "@maple/views/logs/log-sheet"
 import { sheetClock, traceHash } from "../kit/log-sheet"
 import { spanTooltip } from "./view-span-tooltip"
 import { FocusSpanPanel, TrackPointer } from "./command"
-import { findSpan } from "@maple/web/page/traces/detail/select"
+import { findSpanById } from "@maple/views/service-map/trace-flow/flow-graph"
 import { traceDetailLoading, traceNotFound } from "./view-states"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -162,7 +162,7 @@ const spanPanel = (h: H, panel: SpanPanel.Model, timeFormat: TimeFormat): Html =
 const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): ReadonlyArray<Html> => {
 	const hoveredId = model.timeline?.hoveredSpanId ?? null
 	if (trace === undefined || hoveredId === null || model.pointer === null) return []
-	const span = findSpan(trace.rootSpans, hoveredId)
+	const span = findSpanById(trace.rootSpans, hoveredId)
 	return span === undefined
 		? []
 		: [

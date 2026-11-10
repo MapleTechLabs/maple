@@ -19,7 +19,7 @@ import { dividedList } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { typography } from "@maple/views/ui/typography"
-import { adminOnlyNote, settingsSection } from "../kit/section"
+import { adminOnlyNote, settingsSection } from "../../kit/settings-section"
 import { Message } from "./model"
 import {
 	agentAccessShort,

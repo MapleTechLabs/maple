@@ -30,7 +30,7 @@ import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
 import {
 	type Model,

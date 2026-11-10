@@ -9,7 +9,7 @@ import {
 import { chartError, chartLoading, chartPlotArea } from "@maple/views/ui/chart-state"
 import { panel } from "@maple/views/ui/panel"
 import { hostSeriesSummary } from "../../infra/hosts/detail/view-panels"
-import { k8sChart } from "../../infra/kit/k8s-chart"
+import { k8sChart } from "../k8s-chart"
 import { Message, type Model } from "./model"
 import { chartIdOf } from "./update"
 import { Array as Arr, String as Str } from "effect"

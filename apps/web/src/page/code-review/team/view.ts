@@ -4,7 +4,7 @@ import {
 	type CodeReviewTeamTotals,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { formatSpan } from "../../../components/code-review/code-review-format"
+import { formatSpan } from "../kit/code-review-format"
 import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { cn } from "@maple/ui/lib/utils"

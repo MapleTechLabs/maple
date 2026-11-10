@@ -4,7 +4,7 @@ import type {
 	McpServersResponse,
 	McpToolResponse,
 } from "@maple/domain/http"
-import type { ToolSeriesPoint } from "../../agent-sessions/tools-kit/model"
+import type { ToolSeriesPoint } from "../../kit/tools/model"
 import type { McpCoverageRow, McpFailureKind, McpServerOverview, McpServerRow, McpToolDetail } from "../data"
 import { Array as Arr } from "effect"
 

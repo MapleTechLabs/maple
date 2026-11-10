@@ -1,4 +1,4 @@
-import { muteColor } from "@maple/ui/components/plot/color-scale"
+import { muteColor } from "@maple/views/charts/plot/color-scale"
 import { type ChartPoint, type ChartValue, defineChart } from "@tanstack/charts"
 import { type TreemapNode, treemap } from "@tanstack/charts/hierarchy/treemap"
 import { tooltip } from "@tanstack/charts/tooltip"

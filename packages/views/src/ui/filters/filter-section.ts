@@ -1,13 +1,13 @@
 import { formatNumber } from "@maple/domain/format"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { collapsiblePanelStyles } from "../collapsible.styles"
+import { eyebrowVariants } from "../eyebrow.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
 import * as Checkbox from "../checkbox"
 import { badge } from "../display"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
+import { badgeVariants } from "../badge.styles"
 import { emptyMessage } from "../empty"
 import { icon, iconColor, type IconName } from "../icon"
 import { label } from "../label"
@@ -16,16 +16,15 @@ import { searchInput } from "../search-input"
 import { tooltipTrigger } from "../tooltip-host"
 import { Array as Arr, Order, String as Str } from "effect"
 
-// Port of `FilterSection` / `SearchableFilterSection` (packages/ui/src/components/filters/filter-section.tsx).
-// Alt+click on a label toggles the exclusion: `OnClick` carries no modifiers, so the root's
-// `altClickExclude` Subscription reads it and presses the row's Exclude action (`data-alt-exclude`).
+// `FilterSection` / `SearchableFilterSection`. Alt+click on a label toggles the exclusion: `OnClick` carries
+// no modifiers, so the root's `altClickExclude` Subscription reads it and presses the row's Exclude action
+// (`data-alt-exclude`).
 
 export type FilterOption = Readonly<{ name: string; count: number }>
 
 /** Matches rendered while searching; past this the answer is a longer search term. */
 const MAX_SEARCH_RESULTS = 50
 
-// copied: `visibleFilterOptions` (the React module also holds the components).
 const visibleFilterOptions = (input: {
 	readonly options: ReadonlyArray<FilterOption>
 	readonly selected: ReadonlyArray<string>
@@ -409,11 +408,7 @@ export const filterSection = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<
 											[h.Class("space-y-1.5")],
 											[
 												...(visible.length === 0
-													? [
-															emptyMessage(h, { className: "py-2" }, [
-																"No matches",
-															]),
-														]
+													? [emptyMessage(h, { className: "py-2" }, ["No matches"])]
 													: Arr.map(visible, (option) =>
 															optionRow(h, config, option),
 														)),

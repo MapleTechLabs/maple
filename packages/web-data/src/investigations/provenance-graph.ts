@@ -23,7 +23,7 @@ import {
 	type ActionKind,
 	type ActionTarget,
 } from "./action-target"
-import { formatTimeInTimezone } from "../lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Array as Arr, Option, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------

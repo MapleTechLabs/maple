@@ -1,11 +1,11 @@
-import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "@maple/ui/styles/ui/row-actions-menu"
+import { rowActionsMenuContentStyles, rowActionsMenuIconStyles } from "./row-actions-menu.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
 import type * as Menu from "./menu"
 import * as MenuView from "./menu-view"
 
-// Port of `RowActionsMenu` (packages/ui/src/components/ui/row-actions-menu.tsx).
+// `RowActionsMenu`.
 
 export type RowActionsMenuOptions<M> = Readonly<{
 	/** The menu's slot and Model. */

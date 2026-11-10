@@ -1,4 +1,4 @@
-import { channelPickerView, resolveSearchQuery } from "../../../components/alerts/channel-search"
+import { channelPickerView, resolveSearchQuery } from "../shared/channel-search"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

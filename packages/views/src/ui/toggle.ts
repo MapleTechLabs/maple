@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
+import { toggleVariants } from "./toggle.styles"
 import { Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"

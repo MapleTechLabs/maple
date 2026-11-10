@@ -1,11 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	fieldDescriptionStyles,
-	fieldErrorStyles,
-	fieldLabelStyles,
-	fieldStyles,
-} from "@maple/ui/styles/ui/field"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { fieldDescriptionStyles, fieldErrorStyles, fieldLabelStyles, fieldStyles } from "./field.styles"
+import { eyebrowVariants } from "./eyebrow.styles"
 import { Schema, Array as Arr } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"

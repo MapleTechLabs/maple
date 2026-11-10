@@ -24,7 +24,7 @@ import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { activeFilterChips, applyBranchFilters } from "../filters"
 import {
 	BRANCH_ABSENCE_COPY,

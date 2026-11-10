@@ -18,8 +18,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `EmailMemberPicker`'s `MultiSelectCombobox` (packages/ui/src/components/multi-select-combobox.tsx)
-// in chips mode: each chip and row shows the member's avatar and name, never the user id.
+// `EmailMemberPicker`'s `MultiSelectCombobox` in chips mode: each chip and row shows the member's
+// avatar and name, never the user id.
 
 const IDLE: FieldState = {
 	isInvalid: false,

@@ -1,7 +1,7 @@
 import { SPARK_COLOR, VALUE_TONE } from "../../components/infra/severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "@maple/views/ui/list-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { skeleton } from "@maple/views/ui/skeleton"

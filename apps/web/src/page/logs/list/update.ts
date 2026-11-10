@@ -1,6 +1,6 @@
 import { shortId } from "@maple/ui/lib/ids"
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
-import { parseLogSearch } from "../../../lib/logs/log-search-query"
+import { parseLogSearch } from "./log-search-query"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"

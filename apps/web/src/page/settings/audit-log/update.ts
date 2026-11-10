@@ -10,7 +10,7 @@ import {
 	auditLogSearchFrom,
 	parseAuditLogSearch,
 	parseAuditLookup,
-} from "../../../components/settings/audit-log-filters"
+} from "../kit/audit-log-filters"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import * as CustomRange from "../../kit/custom-range"
 import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"

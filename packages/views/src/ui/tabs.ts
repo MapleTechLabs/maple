@@ -3,9 +3,9 @@ import { Command, Mount, type Update } from "foldkit"
 import * as Dom from "foldkit/dom"
 import { defineMessageUnion } from "foldkit/message"
 
-// Port of packages/ui/src/components/ui/tabs.tsx (Base UI Tabs, horizontal, manual activation):
-// arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Space select it.
-// The indicator rect is measured like Base UI's `TabsIndicator` and written as CSS variables.
+// Base UI Tabs, horizontal, manual activation: arrow keys and Home/End move the focused tab
+// (Base UI's highlight), click/Enter/Space select it. The indicator rect is measured like Base
+// UI's `TabsIndicator` and written as CSS variables.
 
 export const ActivationDirection = Schema.Literals(["none", "left", "right"])
 export type ActivationDirection = typeof ActivationDirection.Type

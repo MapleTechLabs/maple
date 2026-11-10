@@ -7,11 +7,11 @@ import {
 	rowsToAlertIncidentDocuments,
 	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { previewIssue, previewPayload, previewStateOf, type PreviewState } from "../shared/preview"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import type { RuleForm } from "./form"
 import type { Model, TraceFacets } from "./model"
 import { Array as Arr } from "effect"

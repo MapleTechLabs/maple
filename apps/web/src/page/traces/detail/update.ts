@@ -31,15 +31,15 @@ import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { splitLayout } from "./split"
-import * as Timeline from "./timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import { toSpanNode } from "@maple/views/traces/trace-data"
-import * as Waterfall from "./waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 type Route = { readonly traceId: string; readonly search: Model["search"] }
 
-/** `DEFAULT_COLOR_BY` (packages/ui/src/components/traces/color-by.ts). */
+/** `DEFAULT_COLOR_BY` (@maple/views/traces/color-by). */
 const DEFAULT_COLOR_BY = "service"
 
 export const viewOf = (model: Model): TraceView => model.search.view ?? "timeline"

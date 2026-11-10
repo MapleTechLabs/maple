@@ -21,7 +21,7 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import {
@@ -454,7 +454,9 @@ const agentSessionsPanel = <M>(
 										size: 12,
 										className: "shrink-0 text-muted-foreground",
 									}),
-									typography(h, { tone: "foreground", mono: true, truncate: true }, [entry.sessionId]),
+									typography(h, { tone: "foreground", mono: true, truncate: true }, [
+										entry.sessionId,
+									]),
 									typography(
 										h,
 										{ size: "2xs", tone: "subtle", numeric: true, className: "shrink-0" },

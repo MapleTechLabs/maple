@@ -16,7 +16,7 @@ import {
 	formatPercent,
 	pluralize,
 } from "@maple/ui/lib/format"
-import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
+import { OTHER_COLOR } from "@maple/ui/lib/colors"
 import { Array as Arr, Order, String as Str } from "effect"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */

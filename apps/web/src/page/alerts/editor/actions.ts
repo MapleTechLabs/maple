@@ -5,7 +5,7 @@ import {
 } from "@maple/web-data/alerts/form-utils"
 import { Result } from "effect"
 import { PageOutMessage } from "../../contract"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
 import { isProtectedDefault, previewIdentityKey, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"

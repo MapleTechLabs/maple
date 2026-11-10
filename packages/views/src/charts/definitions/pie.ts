@@ -1,5 +1,5 @@
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
-import { muteColor } from "@maple/ui/components/plot/color-scale"
+import { muteColor } from "../plot/color-scale"
 import { defineChart, type ChartFocusStrategy, type ChartPoint } from "@tanstack/charts"
 import {
 	focusGroupAngle,
@@ -17,8 +17,7 @@ import { ChartTooltip, type ChartSpec, type PieSliceRow } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, MUTED_COLOR_AMOUNT } from "./plot-constants"
 
-// Port of packages/ui/src/components/charts/pie/query-builder-pie-chart.tsx (definition half),
-// plus the lab pie figure.
+// The pie chart definition, plus the lab pie figure.
 
 type PieSlice = PieDatum<PieSliceRow>
 type PieSpec = Extract<ChartSpec, { readonly _tag: "Pie" }>

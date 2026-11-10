@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
+import { toggleVariants } from "./toggle.styles"
 import {
 	toggleGroupConnectedStyles,
 	toggleGroupHorizontalStyles,
 	toggleGroupStandaloneStyles,
 	toggleGroupStyles,
 	toggleGroupTrackStyles,
-} from "@maple/ui/styles/ui/toggle-group"
+} from "./toggle-group.styles"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

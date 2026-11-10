@@ -29,8 +29,8 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPagesHref } from "../shared/commands"
 import { selectionOf } from "../shared/preview"
-import { ORG } from "../../alerts/shared/test-rows"
-import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import { ORG } from "../../kit/alert-test-rows"
+import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 import {
 	component,
 	componentId,

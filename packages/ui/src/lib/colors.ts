@@ -4,6 +4,9 @@ import { codeUnitAt } from "@maple/strings"
  * Chart color Tailwind classes for depth-based coloring in visualizations.
  * Maps to Tailwind classes: bg-chart-1 through bg-chart-5
  */
+/** Neutral color for the aggregated "Other" bucket of a chart. */
+export const OTHER_COLOR = "var(--muted-foreground)"
+
 export const CHART_BG_CLASSES = [
 	"bg-chart-1",
 	"bg-chart-2",

@@ -1,4 +1,4 @@
-import { createSequentialColorScale } from "@maple/ui/components/plot/color-scale"
+import { createSequentialColorScale } from "../plot/color-scale"
 import { cell, defineChart, type ChartPoint } from "@tanstack/charts"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { tooltip } from "@tanstack/charts/tooltip"
@@ -6,8 +6,8 @@ import { Option } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 
-// The `definition` memo of `QueryBuilderHeatmapChart` (packages/ui/src/components/charts/heatmap/
-// query-builder-heatmap-chart.tsx): grout holes under the coloured cells, one hover cascade for both.
+// The `definition` memo of `QueryBuilderHeatmapChart`: grout holes under the coloured cells, one
+// hover cascade for both.
 
 type HeatmapSpec = Extract<ChartSpec, { readonly _tag: "Heatmap" }>
 type Slot = HeatmapSpec["cells"][number]
@@ -60,7 +60,11 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 					grid: false,
 					axis: {
 						line: false,
-						ticks: { size: 0, padding: 6, format: (value: string) => spec.yLabels[value] ?? value },
+						ticks: {
+							size: 0,
+							padding: 6,
+							format: (value: string) => spec.yLabels[value] ?? value,
+						},
 						tickLabels: { thin: { priority: "ends" } },
 					},
 				},
@@ -69,7 +73,13 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 			focus: "nearest",
 			focusRing: false,
 			tooltip: spec.showTooltip
-				? { use: tooltip, className: "maple-plot-tooltip", anchor: "point", placement: "top", offset: 6 }
+				? {
+						use: tooltip,
+						className: "maple-plot-tooltip",
+						anchor: "point",
+						placement: "top",
+						offset: 6,
+					}
 				: false,
 		}),
 		focusKeyOf: (point) => `${point.datum.x}\u0000${point.datum.y}`,

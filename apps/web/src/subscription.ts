@@ -19,7 +19,7 @@ import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
 import { staleBuildRecovery } from "./shell/version"
 import { pollTicks } from "./data/poll"
-import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
+import { collectionLoadFailed } from "./page/kit/collection-load"
 
 /** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
 const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({

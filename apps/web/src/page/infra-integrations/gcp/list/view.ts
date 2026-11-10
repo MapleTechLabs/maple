@@ -41,14 +41,14 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { integrationConnectCta } from "../../kit/integration-empty"
+import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { GCP_ACCENT } from "../../../integrations/catalog"
 import { heroFieldChip } from "../../../infra/kit/hero-chip"
-import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../kit/view-tabs"
 import { pageHeroParts, searchToolbar, headerActions } from "../../../infra/kit/page-parts"
 import type * as TimeRangePicker from "../../../kit/time-range-picker"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import {
 	cloudSqlInstancesOf,
 	metricsConnectors,

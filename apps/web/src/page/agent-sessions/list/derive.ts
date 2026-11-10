@@ -9,8 +9,7 @@ import type { Model, RangeKey, SessionRow } from "./model"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
-// copied: agent-sessions-filter-inputs.ts (it imports a hook type through `@/`) and the paging
-// arithmetic of `useInfiniteAiSessions`.
+// The list's filter inputs and paging arithmetic.
 
 export type Search = typeof AgentSessionsSearch.Type
 

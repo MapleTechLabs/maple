@@ -10,7 +10,7 @@ import { METRIC_LABELS, type PlanetScaleMetric } from "@maple/views/charts/plane
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { errorState } from "@maple/views/ui/error-state"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../../kit/chart-card"
 import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"

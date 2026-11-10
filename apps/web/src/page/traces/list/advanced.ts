@@ -3,7 +3,7 @@ import {
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
 } from "../../../lib/query-builder/where-clause-autocomplete"
-import { applyWhereClause, type TracesSearchLike } from "../../../lib/traces/advanced-filter-sync"
+import { applyWhereClause, type TracesSearchLike } from "../advanced-filter-sync"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"

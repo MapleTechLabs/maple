@@ -27,7 +27,7 @@ import {
 	toolTableFooter,
 	toolTableHead,
 	toolTableRow,
-} from "../agent-sessions/tools-kit/table"
+} from "../kit/tools/table"
 import { pinnedNamespaceNotice } from "../kit/pinned-namespace-notice"
 import { listRelativeTime } from "../kit/relative-time"
 import { statRail, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"

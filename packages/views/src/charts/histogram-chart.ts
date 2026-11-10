@@ -1,4 +1,4 @@
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { cellText } from "./series/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
@@ -12,8 +12,7 @@ import { hstack } from "../ui/stack"
 import { chartNoData } from "../ui/chart-frame"
 import { typography } from "../ui/typography"
 
-// Port of `QueryBuilderHistogramChart` (packages/ui/src/components/charts/histogram/
-// query-builder-histogram-chart.tsx), view half. Definitions are in ./definitions/histogram.ts.
+// `QueryBuilderHistogramChart`, view half. Definitions are in ./definitions/histogram.ts.
 
 export interface HistogramChartInputs {
 	readonly chartId: string

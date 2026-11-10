@@ -20,7 +20,7 @@ import {
 } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
-import { settingsSection, settingsSections } from "../../kit/section"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
 import { codeField } from "../code-field"
 import { textField } from "../fields"
 import type { AccountEmail, AccountUser } from "../user"

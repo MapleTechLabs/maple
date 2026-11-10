@@ -1,10 +1,5 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import {
-	type EndpointGroup,
-	type EndpointSort,
-	groupEndpoints,
-	leafLabel,
-} from "../../../components/services/endpoint-grouping"
+import { type EndpointGroup, type EndpointSort, groupEndpoints, leafLabel } from "./endpoint-grouping"
 import {
 	countLabel,
 	formatBytes,
@@ -317,9 +312,7 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-11 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected
-				? "bg-surface-strong"
-				: "hover:bg-surface-sunken active:bg-surface-sunken",
+			isSelected ? "bg-surface-strong" : "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)

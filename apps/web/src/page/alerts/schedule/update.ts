@@ -22,7 +22,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { canManage, type Model, type OverrideDraft } from "./model"
-import { isoMs, msIso } from "../shared/time"
+import { isoMs, msIso } from "../../kit/alert-time"
 
 type Return = PageReturn<Model, Message>
 type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>

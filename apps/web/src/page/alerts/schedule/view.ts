@@ -37,7 +37,7 @@ import {
 	readRangeOf,
 	scheduleOf,
 } from "./update"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import { dividedList } from "@maple/views/ui/rule"
 
 // `/alerts/schedules/$scheduleId`: who is on call now, the week's calendar (each layer and the
@@ -105,7 +105,7 @@ const timelineRows = (
 			bars: Arr.map(shifts.layers[index] ?? [], (shift, at) =>
 				barOf(model, schedule, shift, `layer-${index}-${at}`, false),
 			),
-				emptyText: "Not active in this period",
+			emptyText: "Not active in this period",
 		})),
 	),
 ]

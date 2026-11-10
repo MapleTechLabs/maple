@@ -13,7 +13,7 @@ import {
 	copyLabelActiveStyles,
 	copyLabelLayerStyles,
 	copyLabelStyles,
-} from "@maple/ui/styles/ui/copy-button"
+} from "./copy-button.styles"
 import { Duration, Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"

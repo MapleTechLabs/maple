@@ -20,7 +20,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
-import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
+import { monitorHref, newMonitorHref } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatMs,
@@ -34,8 +34,8 @@ import {
 	targetLine,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
-import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../shared/uptime-view"
+} from "../../kit/uptime/derive"
+import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../../kit/uptime/view"
 import { Message } from "./message"
 import { canManage, type Model, type UptimeKindFilter } from "./model"
 import { monitorMenuId } from "./update"

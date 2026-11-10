@@ -12,7 +12,7 @@ import {
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { metricStripLoading } from "../agent-sessions/tools-kit/metric-strip"
+import { metricStripLoading } from "../kit/tools/metric-strip"
 import { SEMCONV_MCP_URL } from "./view-kit"
 import { Array as Arr } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"

@@ -1,5 +1,5 @@
-import type { HyperdriveNodeInfo } from "@maple/ui/components/service-map/service-map-hyperdrive"
-import type { PlanetScaleNodeMetrics } from "@maple/ui/components/service-map/service-map-utils"
+import type { HyperdriveNodeInfo } from "@maple/views/service-map/graph/service-map-hyperdrive"
+import type { PlanetScaleNodeMetrics } from "@maple/views/service-map/graph/service-map-utils"
 import {
 	countLabel,
 	EMPTY_VALUE,

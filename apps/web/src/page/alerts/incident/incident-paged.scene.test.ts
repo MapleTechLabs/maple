@@ -5,7 +5,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { pagedEvents } from "../shared/oncall-test-fixtures"
-import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow } from "../shared/test-rows"
+import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"

@@ -10,10 +10,10 @@ import {
 	pathsSampleData,
 	pieSampleData,
 	throughputTimeSeriesData,
-} from "@maple/ui/components/charts/_shared/sample-data"
+} from "@maple/views/charts/series/sample-data"
 import { Array as Arr, Option } from "effect"
 
-// The id-to-category half of `chartRegistry` (packages/ui/src/components/charts/registry.ts), which
+// The id-to-category half of `chartRegistry`, which
 // also lazily imports every React chart. Also `toPanelType`.
 
 export type ChartCategory =

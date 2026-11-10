@@ -4,10 +4,9 @@ import * as Calendar from "foldkit/calendar"
 import * as Dom from "foldkit/dom"
 import { defineMessageUnion } from "foldkit/message"
 
-// Port of packages/ui/src/components/ui/calendar.tsx, single mode: react-day-picker's state as a
-// Submodel. The view is `calendar-view.ts`. @foldkit/ui's Calendar is an activedescendant grid
-// with a focusable table and ARIA rows that react-day-picker does not render, so the DOM is ours;
-// the date math is foldkit/calendar.
+// Single mode: react-day-picker's state as a Submodel. The view is `calendar-view.ts`.
+// @foldkit/ui's Calendar is an activedescendant grid with a focusable table and ARIA rows that
+// react-day-picker does not render, so the DOM is ours; the date math is foldkit/calendar.
 
 export const CalendarDate = Calendar.CalendarDate
 export type CalendarDate = Calendar.CalendarDate

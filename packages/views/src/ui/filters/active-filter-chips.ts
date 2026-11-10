@@ -5,7 +5,7 @@ import { icon } from "../icon"
 import { iconButton } from "../icon-button"
 import { Array as Arr } from "effect"
 
-// Port of `ActiveFilterChips` (packages/ui/src/components/filters/active-filter-chips.tsx).
+// `ActiveFilterChips`.
 
 const MAX_CHIP_VALUES = 3
 

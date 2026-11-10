@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../../../components/settings/org-membership"
+import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../kit/org-membership"
 import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"

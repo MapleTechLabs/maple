@@ -6,7 +6,7 @@ import {
 	scrollAreaViewportGutterStyles,
 	scrollAreaViewportStyles,
 	scrollBarStyles,
-} from "@maple/ui/styles/ui/scroll-area"
+} from "./scroll-area.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 

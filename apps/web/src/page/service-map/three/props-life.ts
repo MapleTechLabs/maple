@@ -1,4 +1,4 @@
-import type { MachineKind } from "../../../components/service-map/three/palette"
+import type { MachineKind } from "./palette"
 import { type Child, group, inkLines, type Scope, type Vec3 } from "./kit"
 import { breeze, inkParts, type MapleFinish, type Part, range, variant } from "./props-kit"
 import { Array as Arr } from "effect"

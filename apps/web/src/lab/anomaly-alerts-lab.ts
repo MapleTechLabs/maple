@@ -38,15 +38,7 @@ import {
 	defaultAnomalyRuleRow,
 	scopedAnomalyRuleRow,
 } from "../page/alerts/shared/anomaly-test-fixtures"
-import {
-	destinationRow,
-	incidentRow,
-	NOW,
-	ORG,
-	ruleId,
-	ruleRow,
-	stateRow,
-} from "../page/alerts/shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 

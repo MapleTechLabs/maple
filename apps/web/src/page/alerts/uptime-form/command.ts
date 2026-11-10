@@ -4,7 +4,7 @@ import { Command } from "foldkit"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
 import { readGrants } from "../../../data/session-tenant"
 import { recentServiceNames } from "../shared/services"
-import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../shared/uptime-commands"
+import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
 
 export const FetchExistingMonitor = Command.define("FetchUptimeFormMonitor", {

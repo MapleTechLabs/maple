@@ -1,8 +1,8 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as AlertDialogStyles from "@maple/ui/styles/ui/alert-dialog"
-import * as CommandStyles from "@maple/ui/styles/ui/command"
-import * as DialogStyles from "@maple/ui/styles/ui/dialog"
-import * as SheetStyles from "@maple/ui/styles/ui/sheet"
+import * as AlertDialogStyles from "./alert-dialog.styles"
+import * as CommandStyles from "./command.styles"
+import * as DialogStyles from "./dialog.styles"
+import * as SheetStyles from "./sheet.styles"
 import { Option } from "effect"
 import { Submodel } from "foldkit"
 import {
@@ -44,7 +44,7 @@ type Parts = Readonly<{
 const proseControls =
 	"[&_[data-slot=button]]:font-prose [&_[data-slot$='-close']]:font-prose [&_[data-slot$='-cancel']]:font-prose [&_[data-slot=label]]:font-prose [&_[data-slot=field-label]]:font-prose"
 
-// dialog.tsx `DialogPopup`, alert-dialog.tsx `AlertDialogPopup`, sheet.tsx `SheetPopup`, command.tsx
+// The popup, backdrop and viewport classes of each dialog kind.
 const partsOf = (
 	kind: Kind,
 	side: SheetSide,

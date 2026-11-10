@@ -7,7 +7,7 @@ import type { FlowEdgeData } from "./flow-graph"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
 
-// `TraceFlowEdge` (packages/ui `traces/flow-edge.tsx`).
+// `TraceFlowEdge`.
 
 const LABEL_SHARE_THRESHOLD = 0.05
 

@@ -5,7 +5,7 @@ import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Frame from "../../kit/frame"
-import { SeriesResult } from "../../kit/series"
+import { SeriesResult } from "../../../kit/series"
 import { HostSummary } from "./model"
 
 export const HostMetric = Schema.Literals(["cpu", "memory", "filesystem", "network", "load15"])

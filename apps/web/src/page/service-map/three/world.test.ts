@@ -1,5 +1,5 @@
-import { mapPalette } from "../../../components/service-map/three/appearance"
-import type { Edge3D, Node3D, Topology3D } from "../../../components/service-map/three/types"
+import { mapPalette } from "./appearance"
+import type { Edge3D, Node3D, Topology3D } from "./types"
 import * as THREE from "three"
 import { describe, expect, it } from "vitest"
 import { Array as Arr, Order } from "effect"

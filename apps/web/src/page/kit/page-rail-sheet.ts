@@ -3,7 +3,7 @@ import {
 	pageFilterSheetStyles,
 	pageRightSheetHeaderStyles,
 	pageRightSheetStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"

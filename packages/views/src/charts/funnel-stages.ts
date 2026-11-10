@@ -4,12 +4,12 @@ import {
 	cellText,
 	pickValueField,
 	toBreakdownRows,
-} from "@maple/ui/components/charts/_shared/breakdown-rows"
+} from "./series/breakdown-rows"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Array as Arr, Option, String as Str } from "effect"
 
-// The stage derivation of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/
-// query-builder-funnel-chart.tsx): rows folded into stages, grouped rows into one bar per group.
+// The stage derivation of `FunnelBarsChart`: rows folded into stages, grouped rows into one bar
+// per group.
 
 export interface StageGroup {
 	readonly name: string

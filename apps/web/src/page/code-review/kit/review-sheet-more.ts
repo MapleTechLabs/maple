@@ -1,5 +1,5 @@
 import type { CodeReviewDetail, PrReviewPostMerge, PrReviewTelemetry } from "@maple/domain/http"
-import { outcomeOf } from "../../../components/code-review/code-review-format"
+import { outcomeOf } from "./code-review-format"
 import { countLabel, formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"

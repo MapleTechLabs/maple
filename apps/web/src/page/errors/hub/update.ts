@@ -1,4 +1,4 @@
-import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
+import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
 import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
 import { Option, Schema, Array as Arr, String as Str } from "effect"

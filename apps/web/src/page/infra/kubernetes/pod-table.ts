@@ -21,13 +21,13 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../kit/data-table"
+} from "../../kit/data-table"
 import type { SortDir } from "../../kit/table-sort"
 import { meterRows } from "../kit/meter-rows"
 import { metaLine } from "../kit/meta-line"
 import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
-import type { TimeSearch } from "../kit/view-tabs"
+import type { TimeSearch } from "../../kit/view-tabs"
 import type { PodRow } from "./pod-data"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"

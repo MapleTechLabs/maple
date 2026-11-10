@@ -1,5 +1,5 @@
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

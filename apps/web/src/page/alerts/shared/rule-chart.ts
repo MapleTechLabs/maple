@@ -23,7 +23,7 @@ import {
 	type SignalSource,
 } from "@maple/web-data/alerts/chart-series"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -37,7 +37,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 

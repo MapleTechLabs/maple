@@ -6,7 +6,7 @@ import { Array as Arr } from "effect"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 
-// Port of `FixedMetricLegend` (packages/ui/src/components/plot/fixed-metrics.tsx).
+// `FixedMetricLegend`.
 
 /** `FixedMetricLegend`: the always-on swatch strip; items match the widget header legend. */
 export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<FixedMetricSeries>): Html =>

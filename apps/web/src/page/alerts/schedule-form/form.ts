@@ -18,7 +18,7 @@ import type {
 } from "@maple/domain/http/v2"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
-import { isoMs, msIso } from "../shared/time"
+import { isoMs, msIso } from "../../kit/alert-time"
 
 // The schedule form's draft: name, zone and up to five layers, each with its rotation and
 // restrictions, held as typed text and checked against the API's own schemas.

@@ -20,7 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { AppRoute, hrefOf } from "../../../../route"
-import { pickTimeSearch } from "../../../infra/kit/view-tabs"
+import { pickTimeSearch } from "../../../kit/view-tabs"
 
 // `RailwayServicePage`.
 

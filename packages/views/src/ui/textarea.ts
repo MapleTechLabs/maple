@@ -5,7 +5,7 @@ import {
 	textareaLgStyles,
 	textareaSmStyles,
 	textareaStyles,
-} from "@maple/ui/styles/ui/textarea"
+} from "./textarea.styles"
 import type { Html, HtmlBuilder, TextareaAttribute } from "foldkit/html"
 
 export type TextareaOptions<Message> = Readonly<{

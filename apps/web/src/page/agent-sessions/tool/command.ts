@@ -6,7 +6,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
-import { fetchTotals, Selection, toInput } from "../tools-kit/reads"
+import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
 import { Message, RequestMode } from "./message"
 
 /** Sessions the page lists: the most recent, not the busiest. */

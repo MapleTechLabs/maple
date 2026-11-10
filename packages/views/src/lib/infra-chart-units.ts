@@ -6,7 +6,7 @@
 
 // Framework-free: no `@/` imports. The zone-aware
 // `isoToLabel` default lives in `./chart-utils`.
-import { bucketDate } from "@maple/ui/components/plot/bucket-axis"
+import { bucketDate } from "../charts/plot/bucket-axis"
 import {
 	EMPTY_VALUE,
 	formatBytes,

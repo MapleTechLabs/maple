@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
-import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
-import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
+import { ENDPOINTS_LIMIT } from "./service-endpoints"
 import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Option, type Result, Array as Arr, Record as Rec, Order } from "effect"

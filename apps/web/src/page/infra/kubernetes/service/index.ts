@@ -1,5 +1,5 @@
 import { definePage } from "../../../contract"
-import { kubernetesBreadcrumbs } from "../../kit/view-tabs"
+import { kubernetesBreadcrumbs } from "../../../kit/view-tabs"
 import { Message } from "./message"
 import { Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -21,6 +21,10 @@ export const page = definePage(
 		contextChanged,
 		view,
 		breadcrumbs: (model) =>
-			kubernetesBreadcrumbs("services", model.search, model.serviceName === null ? [] : [{ label: model.serviceName }]),
+			kubernetesBreadcrumbs(
+				"services",
+				model.search,
+				model.serviceName === null ? [] : [{ label: model.serviceName }],
+			),
 	},
 )

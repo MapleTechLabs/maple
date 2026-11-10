@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
-import * as C from "@maple/ui/styles/ui/combobox"
-import { inputControlChromeStyles, inputControlLayoutStyles } from "@maple/ui/styles/ui/input"
+import * as A from "./autocomplete.styles"
+import * as C from "./combobox.styles"
+import { inputControlChromeStyles, inputControlLayoutStyles } from "./input.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -145,7 +145,7 @@ export const hiddenInput = <M>(h: HtmlBuilder<M>, model: Model): Html =>
 		h.Value(model.mode === "multiple" ? "" : model.inputValue),
 	])
 
-/** combobox.tsx's item indicator: an inline round-capped check, not a pixel glyph. */
+/** The combobox item indicator: an inline round-capped check, not a pixel glyph. */
 export const comboboxCheckIcon = <Message>(h: HtmlBuilder<Message>): Html =>
 	h.svg(
 		[

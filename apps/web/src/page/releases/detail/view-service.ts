@@ -1,11 +1,7 @@
 import type { ErrorIssueDocument, VcsCommitRangeResponse } from "@maple/domain/http"
 import { formatPercent } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import {
-	NEW_ISSUE_SLACK_MS,
-	shortReleaseLabel,
-	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
+import { NEW_ISSUE_SLACK_MS, shortReleaseLabel, type ReleaseServiceImpact } from "../release-model"
 import { errorIssueFromV2 } from "../../../lib/services/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"

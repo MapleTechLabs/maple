@@ -33,7 +33,7 @@ import {
 	typedFromMatchers,
 } from "../shared/matcher-fields"
 import { SaveRequest, saveMaintenanceWindow, WEEKDAYS } from "../shared/maintenance-windows"
-import { isoMs, msIso } from "../shared/time"
+import { isoMs, msIso } from "../../kit/alert-time"
 import { localInputOf } from "../schedule-form/form"
 import { parseLocalDateTime } from "../silence-dialog/dialog"
 

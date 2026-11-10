@@ -22,11 +22,11 @@ import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
 import { sectionCard } from "./view-panels"
 import { relativeTime } from "../../kit/relative-time"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
+// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys`.
 
 type H = HtmlBuilder<Message>
 

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { calendarChevronStyles, calendarClassNames, calendarStyles } from "@maple/ui/styles/ui/calendar"
-import { fieldLabelStyles, fieldStyles } from "@maple/ui/styles/ui/field"
+import { calendarChevronStyles, calendarClassNames, calendarStyles } from "@maple/views/ui/calendar.styles"
+import { fieldLabelStyles, fieldStyles } from "@maple/views/ui/field.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import * as Calendar from "foldkit/calendar"
 import type { Html, HtmlBuilder } from "foldkit/html"

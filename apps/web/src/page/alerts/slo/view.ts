@@ -19,7 +19,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
+import { incidentHref } from "../../kit/alert-links"
 import { editSloHref, SLO_NOT_FOUND_CODE, slosTabHref } from "../shared/slo-commands"
 import {
 	burnOf,

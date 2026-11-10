@@ -14,9 +14,9 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/model"
-import { volumeSparkCell } from "../tools-kit/spark"
-import { toolDetailLinkSearch } from "../tools-kit/model"
+import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../../kit/tools/model"
+import { volumeSparkCell } from "../../kit/tools/spark"
+import { toolDetailLinkSearch } from "../../kit/tools/model"
 import {
 	errorTone,
 	shareCell,
@@ -28,7 +28,7 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../tools-kit/table"
+} from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"

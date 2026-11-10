@@ -5,7 +5,7 @@ import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
 import { tooltipTrigger } from "./tooltip-host"
 
-// Port of `DetailRail` (packages/ui/src/components/detail-rail.tsx): Group, Row and Field.
+// `DetailRail`: Group, Row and Field.
 
 type Children = ReadonlyArray<Html | string>
 

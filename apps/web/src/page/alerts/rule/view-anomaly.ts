@@ -2,7 +2,7 @@ import type { AlertDestinationDocument, AlertIncidentDocument, AlertRuleDocument
 import { ANOMALY_SIGNAL_LABELS } from "@maple/web-data/alerts/anomaly-rule"
 import { formatAlertDuration } from "@maple/web-data/alerts/form-utils"
 import { incidentTitle } from "@maple/web-data/alerts/overview-derive"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Array as Arr, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { card, cardPanel } from "@maple/views/ui/card"
@@ -15,8 +15,8 @@ import { rowLink } from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
 import { alertStatusBadge, severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
-import { isoMs } from "../shared/time"
+import { incidentHref } from "../../kit/alert-links"
+import { isoMs } from "../../kit/alert-time"
 
 // An anomaly rule's Overview: the anomalies it paged on in the window, and its scope and routing.
 // It has no query to replay and no threshold, window or sample count of its own.

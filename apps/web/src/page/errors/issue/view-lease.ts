@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { actorChip } from "../kit/actor"
+import { actorChip } from "../../kit/issue-actor"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 

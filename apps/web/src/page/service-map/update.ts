@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"

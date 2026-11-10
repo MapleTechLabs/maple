@@ -4,7 +4,7 @@ import {
 	DEFAULT_LAYOUT_CONFIG,
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import {
 	Duration,
 	Effect,
@@ -47,10 +47,10 @@ import { namespaceBoxRects } from "./namespace-group"
 import * as Toolbar from "./toolbar"
 
 /**
- * `ServiceMapFlowCanvas` (packages/ui `service-map/service-map-canvas.tsx`) as a Submodel:
- * declutter (traffic, focus, collapsed namespaces), ELK layout in a worker with the synchronous
- * layout as a 2 s fallback, drags and camera per layout signature, selection with the detail
- * split, toolbar and legend. The host reads `focus`, the prefs and `snapshots` back to persist them.
+ * `ServiceMapFlowCanvas` as a Submodel: declutter (traffic, focus, collapsed namespaces), ELK layout
+ * in a worker with the synchronous layout as a 2 s fallback, drags and camera per layout signature,
+ * selection with the detail split, toolbar and legend. The host reads `focus`, the prefs and
+ * `snapshots` back to persist them.
  */
 
 export { ColorMode, Focus, Positions, Snapshot } from "./state"
@@ -157,7 +157,7 @@ export const RunElkLayout = Command.define("RunElkLayout", {
 	execute: ({ signature, graph, previous }) =>
 		Effect.tryPromise({
 			try: () =>
-				import("@maple/ui/components/service-map/service-map-elk").then((elk) =>
+				import("../graph/service-map-elk").then((elk) =>
 					elk.layoutServiceMapWithElk(
 						[...graph.nodes],
 						[...graph.edges],

@@ -8,8 +8,8 @@ import {
 	type LiveVersion,
 	type ReleaseHealth,
 	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
-import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+} from "../release-model"
+import { formatDateInTimezone, formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -24,7 +24,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str, Option, Order } from "effect"
 
-// `ReleasesLiveNow` and `ReleasesTimeline` (apps/web/src/components/releases/).
+// `ReleasesLiveNow` and `ReleasesTimeline`.
 
 type H = HtmlBuilder<Message>
 export type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

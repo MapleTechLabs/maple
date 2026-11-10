@@ -7,7 +7,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import * as Select from "@maple/views/ui/select"
 import type { PageContext } from "../../contract"
 import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
-import { destinationRow, NOW, ORG, ruleRow } from "../shared/test-rows"
+import { destinationRow, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { chainSelectIdOf } from "./form-steps"
 import { init } from "./init"
 import { Message, type Tier } from "./message"

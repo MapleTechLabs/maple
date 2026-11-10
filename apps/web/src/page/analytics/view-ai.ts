@@ -5,8 +5,8 @@ import {
 	summarizeCrawls,
 	summarizeReferrals,
 	totalReferrals,
-} from "../../components/analytics/ai/ai-traffic-model"
-import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
+} from "./ai-traffic-model"
+import { DEFAULT_TRAFFIC, hasActiveFilters } from "./filters"
 import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"

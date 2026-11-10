@@ -1,7 +1,7 @@
 import { formatPercent } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import type { ReleaseHealth } from "../../components/releases/release-model"
+import type { ReleaseHealth } from "./release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"

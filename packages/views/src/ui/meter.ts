@@ -9,11 +9,11 @@ import {
 	meterStyles,
 	segmentedBarSegmentStyles,
 	segmentedBarStyles,
-} from "@maple/ui/styles/ui/meter"
+} from "./meter.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
+// Meter, SegmentedBar and BackdropBar.
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
 const widthPercent = (fraction: number, minVisible: number): number =>

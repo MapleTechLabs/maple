@@ -1,5 +1,5 @@
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { NEW_ISSUE_SLACK_MS, previousSha } from "../../../components/releases/release-model"
+import { NEW_ISSUE_SLACK_MS, previousSha } from "../release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"
@@ -60,14 +60,15 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		() => FetchDeployReleases({
-			key,
-			refresh: mode === "Refresh",
-			startTime: window.startTime,
-			endTime: window.endTime,
-			environments,
-			namespaces,
-		}),
+		() =>
+			FetchDeployReleases({
+				key,
+				refresh: mode === "Refresh",
+				startTime: window.startTime,
+				endTime: window.endTime,
+				environments,
+				namespaces,
+			}),
 	)
 }
 
@@ -166,10 +167,14 @@ export const routeChanged = (model: Model, route: ReleaseRoute, context: PageCon
 	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -193,10 +198,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Overlays.update(model.overlays, inner, context.orgId)
 			return {
 				model: { ...model, overlays: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
+				commands: Command.mapMessages(next.commands ?? [], (overlay) =>
+					Message.GotOverlaysMessage({ message: overlay }),
+				),
 			}
 		},
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchCommit: ({ key, result }) => ({
 			model: { ...model, commit: Keyed.accept(model.commit, key, result) },
 		}),

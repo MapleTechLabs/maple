@@ -12,7 +12,7 @@ import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { severityBadge } from "../kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { signalStateChip } from "../kit/state-chip"
 import { DEFAULT_PRESET, headlineOf, type Search, type Tab } from "./derive"
 import { Message } from "./message"
@@ -72,24 +72,19 @@ export const headerTitle = (
 				}),
 				...(surge !== null && surge >= SURGE_THRESHOLD
 					? [
-							badge(
-								h,
-								{ variant: "crit", className: "tabular-nums" },
-								[icon(h, "ArrowTrendUpIcon", { size: 12 }), `Surging ${surge.toFixed(1)}x`],
-							),
+							badge(h, { variant: "crit", className: "tabular-nums" }, [
+								icon(h, "ArrowTrendUpIcon", { size: 12 }),
+								`Surging ${surge.toFixed(1)}x`,
+							]),
 						]
 					: []),
 				...(issue.regressionCount > 0 && !RESOLVED_STATES.has(issue.workflowState)
 					? [
-							badge(
-								h,
-								{ variant: "warn" },
-								[
-									issue.regressionCount === 1
-										? "1 regression"
-										: `${issue.regressionCount} regressions`,
-								],
-							),
+							badge(h, { variant: "warn" }, [
+								issue.regressionCount === 1
+									? "1 regression"
+									: `${issue.regressionCount} regressions`,
+							]),
 						]
 					: []),
 				...openAnomalyBadge(h, anomalies),

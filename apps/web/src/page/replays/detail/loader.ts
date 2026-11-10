@@ -1,4 +1,4 @@
-import { normalizeEvents } from "../../../components/replays/replay-events"
+import { normalizeEvents } from "../kit/replay-events"
 import { deriveRangeMeta, firstEventMs } from "../kit/replay-meta"
 import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData } from "foldkit"

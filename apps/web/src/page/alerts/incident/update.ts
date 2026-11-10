@@ -38,9 +38,9 @@ import {
 	SetIncidentAcknowledged,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
-import { UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"

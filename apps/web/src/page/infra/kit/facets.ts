@@ -1,5 +1,5 @@
 import { Array as Arr } from "effect"
-// The include/exclude arithmetic of a tri-state `FilterSection` (packages/ui/src/components/filters),
+// The include/exclude arithmetic of a tri-state `FilterSection`,
 // as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and
 // excluded. The page maps the result back onto its own search keys.
 

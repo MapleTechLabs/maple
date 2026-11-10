@@ -1,5 +1,5 @@
 import { Schema, Array as Arr, String as Str, Option } from "effect"
-import { attributeFilterOperator, formatAttributeClause } from "../../../lib/traces/advanced-filter-sync"
+import { attributeFilterOperator, formatAttributeClause } from "../advanced-filter-sync"
 import type { TracesSearch } from "../../../route/search"
 import type { Facet } from "./message"
 
@@ -8,8 +8,6 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 export type Search = typeof TracesSearch.Type
 type AttributeParam = "attributeFilters" | "resourceAttributeFilters"
 type AttributeEntry = NonNullable<Search["attributeFilters"]>[number]
-
-// copied: trace-filter-chips.ts (imports the route module for its search type).
 
 /** One facet in both polarities, as the sidebar spells it. */
 export const FACETS = [
@@ -127,7 +125,7 @@ export const hasSidebarFilters = (search: Search): boolean =>
 	(search.attributeFilters?.length ?? 0) > 0 ||
 	(search.resourceAttributeFilters?.length ?? 0) > 0
 
-// copied: `canWidenTimeRange` and `WIDEN_TIME_PRESET` (time-range-picker/search.ts imports `@/` types).
+// Whether the list can widen its time range, and the preset it widens to.
 export const WIDEN_TIME_PRESET = "7d"
 const WIDE_TIME_PRESETS = new Set([
 	"7d",

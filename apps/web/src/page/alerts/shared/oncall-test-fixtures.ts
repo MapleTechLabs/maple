@@ -10,7 +10,7 @@ import { UserId } from "@maple/domain/http"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
 import type { OrgMember } from "./org-members"
-import { isoMs, msIso } from "./time"
+import { isoMs, msIso } from "../../kit/alert-time"
 
 // On-call schedules, members, shifts and overrides for the scene tests and `/lab/oncall`. The
 // shifts come from a small wall-clock generator, so a DST week reads the way the API renders it.

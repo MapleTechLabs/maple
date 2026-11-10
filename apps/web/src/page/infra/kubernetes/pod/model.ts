@@ -5,7 +5,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesPodSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodMetric, PodSummary, RestartRows } from "../pod-data"
 
 // `/infra/kubernetes/pods/$podName`.

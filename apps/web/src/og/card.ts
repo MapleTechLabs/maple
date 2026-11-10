@@ -165,11 +165,11 @@ const columns = (rows: ReadonlyArray<Row>): readonly [ReadonlyArray<Row>, Readon
 /**
  * The Maple mark, as the card's only piece of artwork.
  *
- * Same single evenodd path as `packages/ui/src/components/icons/maple-mark.tsx`,
- * inlined rather than fetched: it is 1 KB, and an asset lookup that can fail is
- * a way for the brand to go missing from the one image the brand appears in.
- * The knockouts (the eyes, the notch by the trunk) need `fill-rule="evenodd"` —
- * without it the glyph fills solid and stops being a tree.
+ * Same single evenodd path as `MAPLE_MARK_PATH` (@maple/views/ui/icons.generated), inlined
+ * rather than fetched: it is 1 KB, and an asset lookup that can fail is a way for the
+ * brand to go missing from the one image the brand appears in. The knockouts (the eyes,
+ * the notch by the trunk) need `fill-rule="evenodd"` — without it the glyph fills solid
+ * and stops being a tree.
  *
  * Amber rather than `currentColor`: this is the brand lockup, not an icon
  * inheriting from a UI context.

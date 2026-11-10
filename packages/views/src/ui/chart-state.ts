@@ -4,8 +4,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { chartSkeleton, type ChartSkeletonVariant } from "./chart-skeleton"
 import { Array as Arr, Record as Rec } from "effect"
 
-// Port of `ChartLoading`, `ChartEmpty` and `ChartError` (packages/ui/src/components/charts/_shared/
-// chart-state.tsx), standalone (no `ChartPlotArea`): an explicit height, else the parent owns it.
+// `ChartLoading`, `ChartEmpty` and `ChartError`, standalone (no `ChartPlotArea`): an explicit
+// height, else the parent owns it.
 
 const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mono text-2xs"
 

@@ -1,7 +1,7 @@
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
 import { Array as Arr, String as Str } from "effect"
 
-// `createSequentialColorScale` (packages/ui/src/components/plot/color-scale.ts) without d3: the
+// `createSequentialColorScale` (./plot/color-scale.ts) without d3: the
 // view needs the ramp's colours for legends, and d3-scale stays behind the chart Mount (S2).
 // The OKLCH parsing and mixing are copied verbatim; d3's clamped sequential map is restated.
 

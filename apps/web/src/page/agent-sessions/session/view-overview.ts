@@ -4,7 +4,7 @@ import {
 	type SessionToolCall,
 	type SessionToolUsage,
 } from "@maple/agent-sessions"
-import { buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
+import { buildSessionAxis, type SessionAxis } from "../kit/session-axis"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -25,7 +25,7 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
-import { errorChip } from "../kit/error-chip"
+import { errorChip } from "../../kit/error-chip"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"

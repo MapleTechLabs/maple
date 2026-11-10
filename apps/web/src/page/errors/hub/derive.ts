@@ -1,6 +1,6 @@
 import type { ErrorIssueDocument, IssueKind, WorkflowState } from "@maple/domain/http"
 import { ERROR_ISSUE_SEARCH_MAX_LENGTH } from "@maple/domain/http/v2"
-import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "../../../lib/errors/hub-params"
+import { hubViewOf, type HubSort, type HubView, type SeverityFilter } from "./hub-params"
 import {
 	buildErrorSignals,
 	type ErrorSignal,
@@ -11,7 +11,7 @@ import { DateTime, Option, Array as Arr, String as Str, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { ErrorsSearch } from "../../../route/search"
-import { severityRank } from "../kit/severity"
+import { severityRank } from "../../kit/issue-severity"
 import type { ListQuery, WarehouseFilters } from "./command"
 import type { Model } from "./model"
 
@@ -102,8 +102,7 @@ export const uniqueIssues = (
 	return Arr.filter([...byId.values()], (issue) => viewCovers(view, issue.workflowState))
 }
 
-// copied: `KIND_LABEL`, `errorFilterChips` and `hasErrorFilters` (lib/errors/error-filter-chips.ts
-// types its input from the route module).
+// The error kind labels and the active filter chips.
 export const KIND_LABEL = {
 	error: "Exceptions",
 	alert: "Alert rules",

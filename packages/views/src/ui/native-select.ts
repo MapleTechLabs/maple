@@ -1,9 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	nativeSelectIconStyles,
-	nativeSelectStyles,
-	nativeSelectWrapperStyles,
-} from "@maple/ui/styles/ui/native-select"
+import { nativeSelectIconStyles, nativeSelectStyles, nativeSelectWrapperStyles } from "./native-select.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { Array as Arr } from "effect"

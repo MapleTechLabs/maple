@@ -11,7 +11,7 @@ import { renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isoMs } from "../../alerts/shared/time"
+import { isoMs } from "../../kit/alert-time"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to select it.

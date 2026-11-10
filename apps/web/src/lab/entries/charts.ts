@@ -1,5 +1,5 @@
-import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
-import { heatmapSampleData, pieSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { pickValueField, toBreakdownRows } from "@maple/views/charts/series/breakdown-rows"
+import { heatmapSampleData, pieSampleData } from "@maple/views/charts/series/sample-data"
 import {
 	STACKED_BAR_SPIKE_ROWS,
 	TIMESERIES_PARTIAL_ROWS,

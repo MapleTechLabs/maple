@@ -6,7 +6,7 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesNodeSearch } from "../../../../route/search"
 import * as Frame from "../../kit/frame"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodsPage } from "../pod-data"
 
 // `/infra/kubernetes/nodes/$nodeName`.
@@ -14,7 +14,13 @@ import { PodsPage } from "../pod-data"
 export const NodeSummary = NodeDetailSummaryResponse.fields.data
 export type NodeSummary = NodeDetailSummaryResponse["data"]
 
-export const NodeMetric = Schema.Literals(["cpu_usage", "cpu_utilization", "memory_usage", "memory_utilization", "uptime"])
+export const NodeMetric = Schema.Literals([
+	"cpu_usage",
+	"cpu_utilization",
+	"memory_usage",
+	"memory_utilization",
+	"uptime",
+])
 export type NodeMetric = typeof NodeMetric.Type
 
 export const Model = Schema.Struct({

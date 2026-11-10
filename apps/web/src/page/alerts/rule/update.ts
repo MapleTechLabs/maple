@@ -14,7 +14,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import {
 	CompleteRuleReloadSpin,
 	FetchBucketChecks,

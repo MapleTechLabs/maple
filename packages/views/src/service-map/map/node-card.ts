@@ -1,5 +1,5 @@
-import type { DbIconKey } from "@maple/ui/components/service-map/service-map-db-style"
-import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
+import type { DbIconKey } from "../graph/service-map-db-style"
+import type { ServicePlatform } from "../graph/service-map-types"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -12,7 +12,7 @@ import { eyebrow } from "../../ui/eyebrow"
 import { pressable } from "../../ui/pressable"
 import { vstack } from "../../ui/stack"
 
-// Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
+// Shared pieces of `ServiceMapNode`.
 
 export const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 

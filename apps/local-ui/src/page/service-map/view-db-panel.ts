@@ -1,4 +1,4 @@
-import { resolveDbNodeStyle, withAlpha } from "@maple/ui/components/service-map/service-map-db-style"
+import { resolveDbNodeStyle, withAlpha } from "@maple/views/service-map/graph/service-map-db-style"
 import { formatRate } from "@maple/ui/lib/format"
 import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import {

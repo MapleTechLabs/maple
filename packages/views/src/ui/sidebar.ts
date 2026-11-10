@@ -33,9 +33,9 @@ import {
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
 	sidebarWrapperStyles,
-} from "@maple/ui/styles/ui/sidebar"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
+} from "./sidebar.styles"
+import { ROW_LANE } from "./list-row.styles"
+import { separatorStyles } from "./separator.styles"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
@@ -43,7 +43,7 @@ import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
 import { String as Str } from "effect"
 
-// The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+// The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
 
 export type SidebarState = "expanded" | "collapsed"
 

@@ -7,8 +7,8 @@ import {
 } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
-import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { hasOnlyIntegerValues } from "./series/sparse-series"
+import { DASHED_Y_GRID } from "./plot/plot-grid"
 import {
 	integerTickValues,
 	linearYDomain,
@@ -16,7 +16,7 @@ import {
 	logYScale,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+} from "./plot/plot-scales"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import {
 	asFiniteNumber,
@@ -27,9 +27,8 @@ import {
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
-// normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
-// module also holds the React model hook and frame.
+// The React-free half of `Timeseries`: row normalisation, series keys and colour tokens, and
+// the shared x and y axes. Copied, as that module also holds the React model hook and frame.
 
 export const HARD_SERIES_LIMIT = 60
 export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK

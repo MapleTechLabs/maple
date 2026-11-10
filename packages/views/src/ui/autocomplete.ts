@@ -1,11 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
+import * as A from "./autocomplete.styles"
 import {
 	inputControlChromeStyles,
 	inputControlLayoutStyles,
 	inputLgStyles,
 	inputStyles,
-} from "@maple/ui/styles/ui/input"
+} from "./input.styles"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { inputId, Message, type Model } from "./combobox"
@@ -80,7 +80,8 @@ export const autocompleteField = <M>(
 						),
 					]
 				: []),
-			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
+			...((options.hasDismissButton ?? options.isInline !== true) &&
+			isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
 			h.span(
@@ -124,7 +125,9 @@ export const autocompleteField = <M>(
 							[
 								h.Type("button"),
 								h.AriaLabel("Clear"),
-								h.Class(cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles)),
+								h.Class(
+									cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles),
+								),
 								h.DataAttribute("slot", "autocomplete-clear"),
 								h.OnClick(options.onClear),
 							],

@@ -1,6 +1,7 @@
 import { Match, Option, pipe, Array as Arr, String as Str } from "effect"
 import { currentThenDeprecated, deprecatedThenCurrent } from "@maple/domain/semconv"
 import { normalizeSpanKind } from "./span-kind"
+import { TONE_TEXT } from "./tone"
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const
 type HttpMethod = (typeof HTTP_METHODS)[number]
@@ -214,4 +215,11 @@ export function httpStatusTone(code: number | null | undefined): "crit" | "warn"
 	if (code >= 500) return "crit"
 	if (code >= 400) return "warn"
 	return "neutral"
+}
+
+/** A status code's text class: the tone, else redirects muted and successes info. */
+export const httpStatusTextClass = (code: number): string => {
+	const tone = httpStatusTone(code)
+	if (tone !== "neutral") return TONE_TEXT[tone]
+	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
 }

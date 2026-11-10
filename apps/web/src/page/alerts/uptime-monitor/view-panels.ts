@@ -1,5 +1,5 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
-import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { bucketTimeScale } from "@maple/views/charts/plot/plot-scales"
 import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -23,12 +23,12 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel, panelHeader } from "@maple/views/ui/panel"
-import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
+import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatEvery,
@@ -41,10 +41,10 @@ import {
 	STATUS_TONE,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
+} from "../../kit/uptime/derive"
 import { Message } from "./message"
 import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
-import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
+import { CHECK_HEALTH_FILL, uptimePanelBody } from "../../kit/uptime/view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"

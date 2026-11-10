@@ -4,8 +4,8 @@ import {
 	spatialLayout,
 	type SpatialTopology,
 	type SpatialView,
-} from "../../components/service-map/three/spatial-layout"
-import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
+} from "./three/spatial-layout"
+import type { Edge3D, Node3DKind, Topology3D } from "./three/types"
 import type { BuildingType, WorldEntity } from "@maple/domain/http"
 import { Schema, Array as Arr, String as Str, Order } from "effect"
 import type { OccupancyWorld } from "./factory/occupancy"

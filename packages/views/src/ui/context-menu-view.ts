@@ -8,7 +8,7 @@ import {
 	contextMenuSubTriggerIconStyles,
 	contextMenuSubTriggerStyles,
 	contextMenuTriggerStyles,
-} from "@maple/ui/styles/ui/context-menu"
+} from "./context-menu.styles"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"

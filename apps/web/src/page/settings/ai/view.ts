@@ -1,12 +1,8 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	PASSES_PER_DAY_LIMITS,
-	parseDailyLimit,
-	RUNS_PER_DAY_LIMITS,
-} from "../../../components/settings/ai-triage-limits"
-import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
+import { PASSES_PER_DAY_LIMITS, parseDailyLimit, RUNS_PER_DAY_LIMITS } from "../kit/ai-triage-limits"
+import { limitsUpdate } from "../kit/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -33,8 +29,8 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
-import { saveBar } from "../kit/save-bar"
-import { settingsSection, settingsSections } from "../kit/section"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"

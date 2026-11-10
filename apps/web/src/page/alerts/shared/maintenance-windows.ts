@@ -9,13 +9,13 @@ import {
 	type V2MaintenanceSchedule,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages } from "../../../platform/read-all-pages"
-import { alertsHref } from "./links"
+import { alertsHref } from "../../kit/alert-links"
 import { formatSilenceTime } from "./silences"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 
 // Maintenance windows: the hub's reads and writes, and how a window's schedule reads in a row.
 

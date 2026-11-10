@@ -21,7 +21,7 @@ import {
 	defaultAnomalyRuleRow,
 	scopedAnomalyRuleRow,
 } from "../shared/anomaly-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, ruleMenuId, update } from "./update"

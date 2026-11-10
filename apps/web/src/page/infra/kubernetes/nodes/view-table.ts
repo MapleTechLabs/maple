@@ -15,7 +15,7 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../../kit/data-table"
+} from "../../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
 import { listRelativeTime } from "../../../kit/relative-time"

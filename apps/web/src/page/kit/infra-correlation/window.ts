@@ -1,6 +1,10 @@
-import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse, snapRangeForCache } from "@maple/query-engine"
+import {
+	formatWarehouseDateTime,
+	resolveRelativeRangeToWarehouse,
+	snapRangeForCache,
+} from "@maple/query-engine"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Clock, Effect, Option, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
@@ -19,12 +23,18 @@ export const anchoredWindow = (anchor: string, spanDurationMs: number): Option.O
 	if (Number.isNaN(anchorMs)) return Option.none()
 	return Option.some({
 		startTime: snapTimestamp(formatWarehouseDateTime(anchorMs - DEFAULT_PAD_MS)),
-		endTime: snapTimestamp(formatWarehouseDateTime(Math.trunc(anchorMs + spanDurationMs) + DEFAULT_PAD_MS)),
+		endTime: snapTimestamp(
+			formatWarehouseDateTime(Math.trunc(anchorMs + spanDurationMs) + DEFAULT_PAD_MS),
+		),
 	})
 }
 
 /** An unparseable anchor falls back to the last 30 minutes, snapped (it reads the clock). */
-const correlationWindow = (anchor: string, spanDurationMs: number, timeZone: string): Effect.Effect<TimeWindow> =>
+const correlationWindow = (
+	anchor: string,
+	spanDurationMs: number,
+	timeZone: string,
+): Effect.Effect<TimeWindow> =>
 	Option.match(anchoredWindow(anchor, spanDurationMs), {
 		onSome: Effect.succeed,
 		onNone: () =>

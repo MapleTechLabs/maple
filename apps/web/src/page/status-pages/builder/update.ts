@@ -11,7 +11,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
 import {
 	draftComponents,

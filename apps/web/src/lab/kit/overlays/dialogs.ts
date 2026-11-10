@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { inputControlChromeStyles, inputControlLayoutStyles, inputStyles } from "@maple/ui/styles/ui/input"
-import { labelStyles } from "@maple/ui/styles/ui/label"
+import { inputControlChromeStyles, inputControlLayoutStyles, inputStyles } from "@maple/views/ui/input.styles"
+import { labelStyles } from "@maple/views/ui/label.styles"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import type * as Dialog from "@maple/views/ui/dialog"

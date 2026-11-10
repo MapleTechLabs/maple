@@ -1,14 +1,9 @@
 import type { V2ApiKey } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { apiKeyRowPermissions } from "../../../components/settings/api-key-permissions"
-import {
-	KEY_TYPE_LABELS,
-	keyAccessSummary,
-	type KeyRow,
-	type KeyType,
-} from "../../../components/settings/keys-table"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { apiKeyRowPermissions } from "../kit/api-key-permissions"
+import { KEY_TYPE_LABELS, keyAccessSummary, type KeyRow, type KeyType } from "../kit/keys-table"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
@@ -18,7 +13,7 @@ import * as Menu from "@maple/views/ui/menu"
 import type * as MenuView from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { columnHead, dataTable } from "../../infra/kit/data-table"
+import { columnHead, dataTable } from "../../kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { Message } from "./message"
@@ -48,8 +43,7 @@ const COL = {
 	menu: "w-7 shrink-0",
 }
 
-const ROW_CLASS =
-	"flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"
+const ROW_CLASS = "flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"
 
 const typeBadge = (h: H, type: KeyType): Html =>
 	badge(h, { variant: TYPE_BADGE[type], size: "sm", mono: true }, [KEY_TYPE_LABELS[type]])

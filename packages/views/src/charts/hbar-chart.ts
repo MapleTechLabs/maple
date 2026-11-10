@@ -1,4 +1,4 @@
-import { pickValueField, toBreakdownRows } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { pickValueField, toBreakdownRows } from "./series/breakdown-rows"
 import { formatNumber, formatPercent, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,8 +12,8 @@ import { chartFrameClass, chartNoData } from "../ui/chart-frame"
 import { barFillClass } from "../ui/meter"
 import { hstack } from "../ui/stack"
 
-// Port of `QueryBuilderHbarChart` (packages/ui/src/components/charts/hbar/query-builder-hbar-chart.tsx):
-// ranked DOM bars sized from the measured card. The hovered row is the chart Model's `activeKey`.
+// `QueryBuilderHbarChart`: ranked DOM bars sized from the measured card. The hovered row is the chart
+// Model's `activeKey`.
 
 export interface HbarChartInputs {
 	readonly data: ReadonlyArray<Record<string, unknown>>

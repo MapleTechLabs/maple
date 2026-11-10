@@ -6,7 +6,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import * as Keyed from "@maple/views/data/keyed"
-import { isoMs } from "../page/alerts/shared/time"
+import { isoMs } from "../page/kit/alert-time"
 import type { PageContext } from "../page/contract"
 import { Message } from "../page/alerts/uptime-monitor/message"
 import {

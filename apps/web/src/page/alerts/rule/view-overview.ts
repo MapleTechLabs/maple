@@ -1,5 +1,5 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
-import { formatSql } from "../../../lib/sql-format"
+import { formatSql } from "../shared/sql-format"
 import { tokenizeSql } from "@maple/views/lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"

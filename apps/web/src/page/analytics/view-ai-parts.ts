@@ -5,7 +5,7 @@ import {
 	type AiReferralSummary,
 	productForCrawler,
 	purposeForCrawler,
-} from "../../components/analytics/ai/ai-traffic-model"
+} from "./ai-traffic-model"
 import { SPARK_COLOR } from "../../components/infra/severity-tokens"
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -17,7 +17,7 @@ import { miniBars } from "@maple/views/ui/mini-bars"
 import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { statFigure } from "@maple/views/ui/stat-figure"
-import { columnHead, dataTable } from "../infra/kit/data-table"
+import { columnHead, dataTable } from "../kit/data-table"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { AiCrawlers } from "./model"

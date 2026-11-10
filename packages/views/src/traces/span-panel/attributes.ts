@@ -15,7 +15,7 @@ import type { PanelState as Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "../../ui/stack"
 
-// `AttributesSection` / `AttributesTable` / `AttributeRow` (packages/ui/src/components/attributes)
+// `AttributesSection` / `AttributesTable` / `AttributeRow`
 // with filter actions and a value renderer that links commit SHAs.
 // TODO(json-highlight): an expanded JSON value renders plain; it should highlight like `CollapsibleJsonValue`.
 

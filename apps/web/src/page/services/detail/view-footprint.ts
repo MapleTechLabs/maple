@@ -21,7 +21,7 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
-import { pickTimeSearch } from "../../infra/kit/view-tabs"
+import { pickTimeSearch } from "../../kit/view-tabs"
 import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
 import { Message } from "./message"
@@ -32,7 +32,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
+// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip`.
 
 type H = HtmlBuilder<Message>
 

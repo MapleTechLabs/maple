@@ -10,7 +10,7 @@ import {
 	spanStartMs,
 	spanTokenBuckets,
 } from "@maple/agent-sessions"
-import { filterSpans, isDelegation, shortTarget } from "../../../lib/agent-sessions/span-filters"
+import { filterSpans, isDelegation, shortTarget } from "../kit/span-filters"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { Array as Arr, Option } from "effect"
 

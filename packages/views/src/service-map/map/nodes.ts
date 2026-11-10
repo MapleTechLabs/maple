@@ -1,12 +1,5 @@
-import {
-	resolveDbNodeStyle,
-	resolvePlanetScaleDbStyle,
-	withAlpha,
-} from "@maple/ui/components/service-map/service-map-db-style"
-import {
-	getServiceMapNodeColor,
-	type ServiceNodeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+import { resolveDbNodeStyle, resolvePlanetScaleDbStyle, withAlpha } from "../graph/service-map-db-style"
+import { getServiceMapNodeColor, type ServiceNodeData } from "../graph/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"

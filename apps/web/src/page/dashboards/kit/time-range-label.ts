@@ -1,5 +1,5 @@
 import type { TimeRange } from "@maple/widgets/dashboard"
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { pluralize } from "@maple/ui/lib/format"
 import { DateTime, Option } from "effect"
 import { presetLabel } from "../../kit/time-controls"

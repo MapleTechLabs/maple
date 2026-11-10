@@ -1,4 +1,4 @@
-import { ENDPOINTS_LIMIT, isTruncated } from "../../../components/services/service-endpoints"
+import { ENDPOINTS_LIMIT, isTruncated } from "./service-endpoints"
 import {
 	formatBytes,
 	formatBytesPerSecond,

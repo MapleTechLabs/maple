@@ -84,7 +84,7 @@ export const relabelQueries = (queries: ReadonlyArray<QueryDraft>): ReadonlyArra
 export const relabelFormulas = (formulas: ReadonlyArray<FormulaDraft>): ReadonlyArray<FormulaDraft> =>
 	Arr.map(formulas, (formula, index) => ({ ...formula, name: formulaLabel(index) }))
 
-// copied: the lab's own `GROUP_BY_OPTIONS` (not query-engine's, which lists other fields).
+// The lab's own `GROUP_BY_OPTIONS` (not query-engine's, which lists other fields).
 const GROUP_BY_OPTIONS = {
 	traces: ["service.name", "span.name", "status.code", "http.method", "none"],
 	logs: ["service.name", "severity", "none"],

@@ -1,6 +1,6 @@
 import type { Html } from "foldkit/html"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "./form"
+import { EveryUnit, GraceUnit, RecordType, ScheduleMode } from "../../kit/uptime/form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type H, nameSection, section, selectField, textField } from "./view-fields"

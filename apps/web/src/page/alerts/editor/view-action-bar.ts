@@ -8,7 +8,7 @@ import { button, linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { stableSlice } from "../../kit/stable-slice"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import type { AlertQueryTiming } from "@maple/domain/http"
 import { describeRuleCondition, isProtectedDefault, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
@@ -120,7 +120,13 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 			vstack(h, { gap: "0.5", shrink: true }, [
 				typography(
 					h,
-					{ size: "sm", tone: "foreground", truncate: true, as: "p", attributes: [h.Title(summary)] },
+					{
+						size: "sm",
+						tone: "foreground",
+						truncate: true,
+						as: "p",
+						attributes: [h.Title(summary)],
+					},
 					[summary],
 				),
 				validationSummary(h, model, issues),
@@ -131,7 +137,9 @@ const bar = (h: H, model: BarView, form: RuleForm, timing: AlertQueryTiming | nu
 				? []
 				: [
 						typography(h, { size: "xs", tone: "muted", className: "hidden sm:inline" }, [
-							changeCount === 0 ? "No changes" : `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
+							changeCount === 0
+								? "No changes"
+								: `${changeCount} unsaved ${pluralize(changeCount, "change")}`,
 						]),
 					]),
 			linkButton(h, { variant: "outline", size: "sm", href: alertsHref({}) }, ["Cancel"]),

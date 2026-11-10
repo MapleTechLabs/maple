@@ -19,7 +19,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { metricTypeBadge } from "../shared"
+import { metricTypeBadge } from "@maple/views/ui/metric-type"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -146,8 +146,7 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 							backdropBar(h, {
 								value: row.value,
 								max,
-								className:
-									"inset-y-0.5 left-0 bg-primary-a2 group-hover:bg-primary-a3",
+								className: "inset-y-0.5 left-0 bg-primary-a2 group-hover:bg-primary-a3",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {

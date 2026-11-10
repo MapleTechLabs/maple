@@ -30,7 +30,7 @@ import {
 	updateIncident,
 	updatePage,
 } from "../shared/commands"
-import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
+import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
 

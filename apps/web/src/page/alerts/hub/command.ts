@@ -30,7 +30,7 @@ import { deleteEscalationChain, listEscalationChains } from "../shared/escalatio
 import { deleteOnCallSchedule, listOnCallSchedules } from "../shared/oncall-schedules"
 import { listOrgMembers } from "../shared/org-members"
 import { listSloRows } from "../shared/slo-commands"
-import { deleteMonitor, listMonitors, setMonitorEnabled } from "../shared/uptime-commands"
+import { deleteMonitor, listMonitors, setMonitorEnabled } from "../../kit/uptime/commands"
 import { endSilence, listSilences } from "../shared/silences"
 import {
 	deleteMaintenanceWindow,

@@ -17,9 +17,9 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { navShell, type NavShellCount, type NavShellSection } from "../../kit/nav-shell"
 import type { BreadcrumbEntry } from "../../../shell"
-import { alertsHref, createHref } from "../shared/links"
+import { alertsHref, createHref } from "../../kit/alert-links"
 import { newSloHref } from "../shared/slo-commands"
-import { newMonitorHref } from "../shared/uptime-commands"
+import { newMonitorHref } from "../../kit/uptime/commands"
 import {
 	type AlertsTab,
 	anomalyOverviewOf,

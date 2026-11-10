@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { orgRoleKeys } from "../../../components/settings/org-membership"
+import { orgRoleKeys } from "../kit/org-membership"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"

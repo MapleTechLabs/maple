@@ -3,14 +3,14 @@ import {
 	formDialogFooterStartStyles,
 	formDialogFormStyles,
 	formDialogPanelStyles,
-} from "@maple/ui/styles/ui/form-dialog"
+} from "./form-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
 
-// Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel:
-// a real `<form>`, so Enter in a field submits. The parent owns the Model and the pending state.
+// `FormDialog` over the dialog Submodel: a real `<form>`, so Enter in a field submits. The
+// parent owns the Model and the pending state.
 
 export type FormDialogOptions<M> = Readonly<{
 	slotId: string
@@ -41,7 +41,10 @@ export const formDialogForm = <M>(
 	onSubmit: M | undefined,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	h.form([h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])], children)
+	h.form(
+		[h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])],
+		children,
+	)
 
 export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>): Html => {
 	const isPending = options.isPending ?? false

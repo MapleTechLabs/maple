@@ -15,7 +15,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
-import { listMonitors } from "../../alerts/shared/uptime-commands"
+import { listMonitors } from "../../kit/uptime/commands"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.

@@ -1,9 +1,4 @@
-import {
-	STACK_LANGUAGE_IDS,
-	STACK_PLATFORM_IDS,
-	type StackPlatform,
-	toggled,
-} from "../../lib/onboarding-stack"
+import { STACK_LANGUAGE_IDS, STACK_PLATFORM_IDS, type StackPlatform, toggled } from "./onboarding-stack"
 import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 import { MapleRegion } from "@maple/domain/organization-regions"
 import { currentRegion, regionAppUrl } from "../../lib/region"

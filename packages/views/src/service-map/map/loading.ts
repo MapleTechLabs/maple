@@ -1,10 +1,9 @@
-import "@maple/ui/components/service-map/service-map.css"
+import "../graph/service-map.css"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "../../ui/eyebrow"
 import { hstack, hstackClass, vstack } from "../../ui/stack"
 
-// `ServiceMapLoading` (packages/ui `service-map/service-map-loading.tsx`): a fixed ghost topology,
-// generated once since it carries no data.
+// `ServiceMapLoading`: a fixed ghost topology, generated once since it carries no data.
 
 export const serviceMapLoading = <Message>(h: HtmlBuilder<Message>): Html =>
 	vstack(

@@ -1,17 +1,17 @@
 import { cn } from "@maple/ui/lib/utils"
-import { alertDialogMediaStyles } from "@maple/ui/styles/ui/alert-dialog"
+import { alertDialogMediaStyles } from "./alert-dialog.styles"
 import {
 	confirmDialogIconDestructiveStyles,
 	confirmDialogMediaDestructiveStyles,
-} from "@maple/ui/styles/ui/confirm-dialog"
+} from "./confirm-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
 import { icon } from "./icon"
 
-// Port of `ConfirmDialog` (packages/ui/src/components/ui/confirm-dialog.tsx) over the alert-dialog
-// Submodel. The parent owns the Model (`Dialog.init(id, "alert-dialog")`) and the pending state.
+// `ConfirmDialog` over the alert-dialog Submodel. The parent owns the Model (`Dialog.init(id,
+// "alert-dialog")`) and the pending state.
 
 export type ConfirmDialogOptions<M> = Readonly<{
 	slotId: string

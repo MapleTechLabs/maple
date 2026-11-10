@@ -39,7 +39,7 @@ import {
 	shortSha,
 	upgradePlanOf,
 } from "./derive"
-import { SEVERITY_FILL } from "../../errors/kit/severity"
+import { SEVERITY_FILL } from "../../kit/issue-severity"
 import { Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"

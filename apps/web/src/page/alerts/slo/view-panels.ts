@@ -23,7 +23,7 @@ import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { severityBadge } from "../shared/badges"
-import { incidentHref } from "../shared/links"
+import { incidentHref } from "../../kit/alert-links"
 import {
 	burnOf,
 	burnTone,
@@ -46,7 +46,7 @@ import {
 	overspentText,
 } from "../shared/slo-derive"
 import { toneText } from "../shared/slo-view"
-import { isoMs } from "../shared/time"
+import { isoMs } from "../../kit/alert-time"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 

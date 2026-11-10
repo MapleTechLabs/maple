@@ -12,12 +12,12 @@ import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
-import { SEVERITY_TOKEN } from "../kit/severity"
+import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import type { ChartWindow } from "./derive"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 
-// `IssueOccurrencePanel` and `IssueOccurrenceChart` (components/errors/).
+// `IssueOccurrencePanel` and `IssueOccurrenceChart`.
 
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>

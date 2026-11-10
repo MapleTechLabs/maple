@@ -1,11 +1,7 @@
 import * as Animation from "@foldkit/ui/animation"
-import { iconButtonTooltipStyles } from "@maple/ui/styles/ui/icon-button"
+import { iconButtonTooltipStyles } from "./icon-button.styles"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tooltipPopupStyles,
-	tooltipPositionerStyles,
-	tooltipViewportStyles,
-} from "@maple/ui/styles/ui/tooltip"
+import { tooltipPopupStyles, tooltipPositionerStyles, tooltipViewportStyles } from "./tooltip.styles"
 import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import {

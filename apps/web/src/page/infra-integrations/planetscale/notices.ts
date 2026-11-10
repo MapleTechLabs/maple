@@ -18,7 +18,7 @@ import {
 	integrationEmptyFooter,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../kit/integration-empty"
+} from "../../kit/integration-empty"
 import { liveChecklist } from "../../kit/connect-flow"
 import { relativeTime } from "../../kit/relative-time"
 

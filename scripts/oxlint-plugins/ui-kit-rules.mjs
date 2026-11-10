@@ -190,7 +190,7 @@ const noKitStylesInPages = ratcheted("no-kit-styles-in-pages", {
 	collect: (_context, push) => ({
 		ImportDeclaration(node) {
 			const source = node.source.value
-			if (typeof source === "string" && source.startsWith("@maple/ui/styles/ui/"))
+			if (typeof source === "string" && /\.styles$/.test(source))
 				push(node, { source })
 		},
 	}),

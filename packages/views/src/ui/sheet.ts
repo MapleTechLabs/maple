@@ -9,12 +9,12 @@ import {
 	sheetTitleStyles,
 	sheetViewportLeftStyles,
 	sheetViewportStyles,
-} from "@maple/ui/styles/ui/sheet"
+} from "./sheet.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
 
-// `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
+// `<Sheet><SheetPopup side="left">` over Base UI Dialog.
 
 export type SheetOptions<Message> = Readonly<{
 	id: string

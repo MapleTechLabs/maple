@@ -20,7 +20,7 @@ import { heading } from "@maple/views/ui/heading"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { settingsSection } from "../../settings/kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { publicAddress, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
@@ -246,7 +246,9 @@ const footerBar = (h: H, model: Model): Html => {
 	const isReady = canSubmit(model)
 	return actionBar(h, {
 		label: "Publish",
-		leading: [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."])],
+		leading: [
+			typography(h, { size: "xs", tone: "muted", as: "p" }, ["Nothing is public until you publish."]),
+		],
 		actions: [
 			button(
 				h,

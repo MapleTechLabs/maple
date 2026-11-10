@@ -5,7 +5,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Frame from "../../kit/frame"
-import { SeriesResult } from "../../kit/series"
+import { SeriesResult } from "../../../kit/series"
 import {
 	fetchPodSeries,
 	fetchPodSummary,

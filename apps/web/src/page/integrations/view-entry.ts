@@ -1,7 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
-import { type IntegrationBrand, integrationIconPlate } from "../infra-integrations/kit/integration-empty"
+import { type IntegrationBrand, integrationIconPlate } from "../kit/integration-empty"
 import type { CatalogEntry } from "./catalog"
 
 /** The entry's mark at `size` (`<entry.icon size className />`). */

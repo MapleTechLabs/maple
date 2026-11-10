@@ -4,8 +4,8 @@ import type { Message, Model } from "./chart"
 import { ChartSpec } from "./chart-spec"
 import { plotFrame } from "./plot-frame"
 
-// Port of `Sparkline` (packages/ui/src/components/ui/gradient-chart.tsx) over `PlotSparkline`: no
-// axes, focus or tooltip, so the chart Model only satisfies the frame. Embed it with `h.submodel`.
+// `Sparkline` over `PlotSparkline`: no axes, focus or tooltip, so the chart Model only satisfies
+// the frame. Embed it with `h.submodel`.
 
 export interface SparklineInputs {
 	readonly chartId: string

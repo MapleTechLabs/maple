@@ -1,8 +1,8 @@
 import { AlertMaintenanceWindowId, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
 import type { V2AlertMaintenanceWindow, V2AlertSilence } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { msIso } from "./time"
-import { NOW, ruleId } from "./test-rows"
+import { msIso } from "../../kit/alert-time"
+import { NOW, ruleId } from "../../kit/alert-test-rows"
 
 // Maintenance windows and their silences for the scene tests and `/lab/maintenance`.
 // `NOW` is Thursday 2026-10-01 12:00 UTC.

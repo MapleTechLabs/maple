@@ -8,7 +8,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { AppRoute, hrefOf } from "../../../route"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
-import { actorAvatar } from "../kit/actor"
+import { actorAvatar } from "../../kit/issue-actor"
 import {
 	PICKER_HOTKEY,
 	type PickerKind,

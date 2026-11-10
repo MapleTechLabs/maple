@@ -1,10 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
-import {
-	isStaleOpenIncident,
-	RESOLVE_REASON_LABEL,
-	SEVERITY_TONE,
-	severityToneFor,
-} from "@maple/web-data/anomalies/format"
+import { isStaleOpenIncident, RESOLVE_REASON_LABEL } from "@maple/web-data/anomalies/format"
+import { SEVERITY_TONE, severityToneFor } from "@maple/views/lib/anomaly-display"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -21,12 +17,12 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { alertsHref } from "../../alerts/shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import { crumbOf, pageStateOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { detailTitleSkeleton } from "../../kit/detail-header"
-import { anomalySummary } from "../kit/evidence"
+import { anomalySummary } from "../../kit/anomaly-evidence"
 import { anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"

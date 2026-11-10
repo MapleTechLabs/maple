@@ -13,10 +13,10 @@ import type {
 	V2AlertSilenceMatchers,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Order, Array as Arr } from "effect"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { isoMs } from "./time"
+import { isoMs } from "../../kit/alert-time"
 
 // Alert silences: the reads and writes the hub, rule and incident pages share, and how a page
 // tells which silence covers a rule or an incident.

@@ -7,7 +7,7 @@ import { type ErrorSignal, densifySpark, surgeRatio } from "../../../lib/models/
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { SEVERITY_TEXT } from "../kit/severity"
+import { SEVERITY_TEXT } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"

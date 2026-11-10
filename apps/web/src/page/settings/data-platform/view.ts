@@ -12,7 +12,7 @@ import {
 	schemaApplyPlan,
 	type SchemaDiffStatus,
 	schemaDiffCounts,
-} from "../../../components/settings/schema-apply-plan"
+} from "../kit/schema-apply-plan"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -34,7 +34,7 @@ import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { settingsSection, settingsSections } from "../kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { type ConnectionField, Message, type Model, type Totals } from "./model"
 import { draftOf, isRunActive } from "./update"
 import { statusDot } from "@maple/views/ui/status-dot"

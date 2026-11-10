@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "@maple/ui/styles/ui/otp-field"
+import { otpFieldInputStyles, otpFieldSeparatorStyles, otpFieldStyles } from "./otp-field.styles"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"

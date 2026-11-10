@@ -1,7 +1,7 @@
 import { splitGenAiAttributes } from "@maple/ui/lib/gen-ai"
 import { groupAttributesByNamespace } from "@maple/ui/lib/log-attributes"
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { collapsiblePanelStyles } from "../collapsible.styles"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../display"
@@ -11,8 +11,8 @@ import { type AttributeSource, isOpen, Message, type Model } from "./attributes-
 import { searchInput } from "../search-input"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
-// Port of `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` (packages/ui/src/
-// components/attributes/attributes-table.tsx) and the log attributes panel.
+// `AttributesTable`, `AttributesSection`, `ResourceAttributesSection` and the log attributes
+// panel.
 
 type H = HtmlBuilder<Message>
 
@@ -105,8 +105,7 @@ const filterEntries = (
 	)
 }
 
-const title4 = (h: H, title: string) =>
-	h.h4([h.Class("text-xs font-medium text-foreground-soft")], [title])
+const title4 = (h: H, title: string) => h.h4([h.Class("text-xs font-medium text-foreground-soft")], [title])
 
 const noMatches = (h: H, title: string, query: string) =>
 	h.div(

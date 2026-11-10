@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { pageTitleStyles } from "@maple/ui/styles/ui/page-layout"
+import { pageTitleStyles } from "./page-layout.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /** `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box. */

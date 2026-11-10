@@ -1,5 +1,5 @@
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import * as Waterfall from "@maple/views/traces/waterfall"
+import * as Timeline from "@maple/views/traces/timeline"
 import { TraceData } from "@maple/views/traces/trace-data"
 import type { FlowGraph } from "@maple/views/service-map/trace-flow/trace-flow"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"

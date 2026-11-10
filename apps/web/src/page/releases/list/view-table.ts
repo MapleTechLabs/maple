@@ -9,7 +9,7 @@ import {
 	type ReleaseGroup,
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
+} from "../release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"

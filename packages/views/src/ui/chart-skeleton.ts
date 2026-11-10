@@ -12,8 +12,8 @@ import {
 } from "./chart-skeleton-shapes"
 import { Array as Arr } from "effect"
 
-// Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every
-// ghost shape. `ChartLoading` is in `chart-state.ts`; the newer ghosts are in `chart-skeleton-shapes.ts`.
+// `ChartSkeleton`, every ghost shape. `ChartLoading` is in `chart-state.ts`; the newer ghosts are in
+// `chart-skeleton-shapes.ts`.
 
 export type ChartSkeletonVariant =
 	| "line"

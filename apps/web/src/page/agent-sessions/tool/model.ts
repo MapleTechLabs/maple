@@ -10,7 +10,7 @@ import { AgentSessionToolSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
-import { ToolErrorRow, ToolSeries, TotalsResult } from "../tools-kit/model"
+import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
 
 // `/agent-sessions/tools/$toolName`.

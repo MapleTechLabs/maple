@@ -4,7 +4,7 @@ import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Dom } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { writeClipboard } from "../../kit/clipboard"
-import { Selection, toInput } from "../tools-kit/reads"
+import { Selection, toInput } from "../../kit/tools/reads"
 import { Message, type ModalKey } from "./error-modal-model"
 
 /** `aiToolErrorDetailResultAtom({ ...selection, fingerprint })`. */

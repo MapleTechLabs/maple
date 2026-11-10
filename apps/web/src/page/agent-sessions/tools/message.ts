@@ -9,7 +9,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
-import { ToolMetric, ToolSeries, TotalsResult } from "../tools-kit/model"
+import { ToolMetric, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import { Breakdowns } from "./model"
 
 export const RequestMode = Schema.Literals(["Load", "Refresh"])

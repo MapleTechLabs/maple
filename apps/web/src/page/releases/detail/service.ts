@@ -1,5 +1,5 @@
-import type { ReleaseServiceImpact } from "../../../components/releases/release-model"
-import { deriveReleaseImpacts } from "../../../components/releases/release-model"
+import type { ReleaseServiceImpact } from "../release-model"
+import { deriveReleaseImpacts } from "../release-model"
 import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"

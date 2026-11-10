@@ -52,7 +52,7 @@ export interface NavGroup {
 	readonly items: ReadonlyArray<NavItem>
 }
 
-/** `PLANETSCALE_COLOR` (packages/ui/src/components/service-map/service-map-db.tsx). */
+/** `PLANETSCALE_COLOR`. */
 const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 
 export const NAV_PREVIEW_MAX_GLYPHS = 7

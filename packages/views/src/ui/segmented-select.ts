@@ -1,11 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
-import { toggleVariants } from "@maple/ui/styles/ui/toggle"
+import { toggleVariants } from "./toggle.styles"
 import {
 	toggleGroupHorizontalStyles,
 	toggleGroupStandaloneStyles,
 	toggleGroupStyles,
 	toggleGroupTrackStyles,
-} from "@maple/ui/styles/ui/toggle-group"
+} from "./toggle-group.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { segmentItemHeight, togglePrimitive } from "./toggle"

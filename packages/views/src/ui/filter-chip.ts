@@ -5,7 +5,7 @@ import {
 	filterChipDotOffStyles,
 	filterChipPressedBorderStyles,
 	filterChipVariants,
-} from "@maple/ui/styles/ui/filter-chip"
+} from "./filter-chip.styles"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "./status-dot"
 import { togglePrimitive } from "./toggle"
