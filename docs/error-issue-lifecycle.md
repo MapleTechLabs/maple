@@ -221,9 +221,10 @@ loop in verification without a human ever seeing it.
 - **A pull request link is verified once.** GitHub reports `merged: true` on every event after the
   merge, so a later edit or a redelivery must not reopen a settled check. The guard is on the link
   row, so unlinking a PR and linking it again is a new link and verifies again.
-- **A verification row never waits forever.** The tick reads due rows longest overdue first. A row
-  whose issue or link is gone is settled as `abandoned`, and one whose occurrences cannot be read
-  has its window moved out 15 minutes, so neither can hold a slot in every tick's page.
+- **A verification row never waits forever.** The tick reads due rows least recently touched
+  first. A row whose issue or link is gone is settled as `abandoned`, and one whose occurrences
+  cannot be read goes to the back of the queue with its window unchanged, so neither can hold a
+  slot in every tick's page.
 - **Retention deletes an issue's children by issue id.** There are no FK cascades. Incidents,
   evaluator state, events, aliases, pull request links, verifications and escalations go with the
   issue. Investigations stay: each keys a chat session whose storage only `apps/ai` can release.
