@@ -24,11 +24,10 @@ export interface AiWorkerConnection {
 export const aiWorkerConnection: Effect.Effect<
 	Result.Result<AiWorkerConnection, string>,
 	never,
-	Env
+	Env | AiWorkerFetcher
 > = Effect.gen(function* () {
-	const fetcher = yield* Effect.serviceOption(AiWorkerFetcher)
+	const binding = yield* AiWorkerFetcher
 	const env = yield* Env
-	const binding = Option.flatten(fetcher)
 	const token = Option.map(env.INTERNAL_SERVICE_TOKEN, Redacted.value)
 	if (Option.isNone(binding)) return Result.fail("no AI_WORKER service binding on this deployment")
 	if (Option.isNone(token)) return Result.fail("INTERNAL_SERVICE_TOKEN is not configured")

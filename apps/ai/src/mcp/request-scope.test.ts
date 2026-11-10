@@ -3,7 +3,7 @@ import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { makeMaplePgliteDb } from "@maple/db/pglite"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { MapleDbConnection } from "@maple/backend/platform/bindings"
+import { MapleDbConnection, SandboxFetcher } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -94,6 +94,7 @@ const isolate = async () => {
 			Option.some({ connectionString: "postgres://unused.invalid/maple", attributes: {} }),
 		),
 		Env.layer.pipe(Layer.provide(testConfig)),
+		SandboxFetcher.none,
 	)
 	const routes = McpLive.pipe(
 		Layer.provideMerge(McpToolExecutorLoader.layer),

@@ -84,8 +84,7 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 	"@maple/backend/sandbox/SandboxClient",
 	{
 		make: Effect.gen(function* () {
-			const bindingOption = yield* Effect.serviceOption(SandboxFetcher)
-			const binding = Option.flatten(bindingOption)
+			const binding = yield* SandboxFetcher
 			const config = yield* Env
 			const token = Option.map(config.SANDBOX_INTERNAL_SERVICE_TOKEN, Redacted.value)
 

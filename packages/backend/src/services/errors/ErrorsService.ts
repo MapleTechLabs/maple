@@ -267,18 +267,13 @@ const make: Effect.Effect<
 	| ErrorIssueWorkflowService
 	| ErrorPolicyService
 	| InvestigationStarter
+	| IssueFixVerificationService
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const actorService = yield* ErrorActorsService
 	const workflow = yield* ErrorIssueWorkflowService
 	const policies = yield* ErrorPolicyService
-	// Optional on purpose. `propose_fix` works exactly as before without it — the
-	// `prUrl` still lands on the event payload — and gains a durable, watchable
-	// link when it is present. Requiring it would have forced the dependency
-	// through every partial stub of this service in the test suite to buy
-	// nothing: no caller wants a fix proposal to FAIL because a link could not
-	// be stored.
-	const fixVerification = yield* Effect.serviceOption(IssueFixVerificationService)
+	const fixVerification = yield* IssueFixVerificationService
 	const loadPolicyRow = policies.loadNotificationPolicyRow
 	const defaultPolicy = policies.defaultNotificationPolicy
 	const parsePolicyDestinations = policies.parseNotificationDestinationIds
@@ -730,8 +725,8 @@ const make: Effect.Effect<
 			// something to match on. A URL that is not a pull request, or a link that
 			// cannot be stored, is not worth failing a fix proposal over — the
 			// proposal itself already succeeded above.
-			if (request.prUrl !== undefined && Option.isSome(fixVerification)) {
-				yield* fixVerification.value
+			if (request.prUrl !== undefined) {
+				yield* fixVerification
 					.linkPullRequest(orgId, actorId, issueId, request.prUrl, "agent")
 					.pipe(
 						Effect.catch((error) =>
@@ -1465,7 +1460,7 @@ const make: Effect.Effect<
 		// Same membership predicate as `isRegression`, and deliberately scoped by a
 		// query rather than folded into `persistErrorTickWindow`: it must observe the
 		// committed window, and it touches only the handful of issues in `verifying`.
-		if (Option.isSome(fixVerification) && rows.length > 0) {
+		if (rows.length > 0) {
 			const verifyingIssues = yield* dbExecute((db) =>
 				db.run(
 					PG.from(ErrorIssues)
@@ -1482,7 +1477,7 @@ const make: Effect.Effect<
 					(issue) => {
 						const observed = versionsByFingerprint.get(issue.fingerprintHash)
 						if (observed === undefined) return Effect.void
-						return fixVerification.value
+						return fixVerification
 							.refuteOnPostMergeOccurrence(orgId, issue.id, observed, nowMs)
 							.pipe(
 								Effect.catch((error) =>

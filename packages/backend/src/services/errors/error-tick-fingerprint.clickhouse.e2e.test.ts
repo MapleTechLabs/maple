@@ -46,6 +46,16 @@ import { ErrorPolicyService } from "./ErrorPolicyService"
 import { ErrorsService } from "./ErrorsService"
 import { InvestigationService } from "./InvestigationService"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { ErrorIssuePullRequestInvalidError } from "@maple/domain/http"
+/** Fix-verification as far as the errors tick reaches it: nothing is linked, nothing is verifying. */
+const fixVerificationStub = Layer.mock(IssueFixVerificationService)({
+	linkPullRequest: (_orgId, _actorId, _issueId, url) =>
+		Effect.fail(
+			new ErrorIssuePullRequestInvalidError({ message: "Not linked in this suite", rawUrl: url }),
+		),
+	refuteOnPostMergeOccurrence: () => Effect.succeed(false),
+})
 
 const ORG = Schema.decodeSync(OrgId)("org_error_tick_fingerprint_e2e")
 const asIssueId = Schema.decodeSync(ErrorIssueId)
@@ -183,6 +193,7 @@ const makeTickLayer = (database: string) => {
 	)
 	return Layer.effect(ErrorsService, ErrorsService.make).pipe(
 		Layer.provide(InvestigationStarter.layer),
+		Layer.provide(fixVerificationStub),
 		Layer.provide(envLive),
 		Layer.provide(databaseLive),
 		Layer.provide(warehouseLive),

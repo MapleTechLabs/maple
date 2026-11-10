@@ -15,6 +15,7 @@ import { IssueFixVerificationService } from "@maple/backend/services/errors/Issu
 import { fixVerificationPullRequestHandler } from "@maple/backend/services/errors/pull-request-sink-live"
 import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
+import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
 import {
 	PullRequestChecklistSinkLive,
@@ -68,7 +69,8 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(CiTraceSinkLive),
 	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
 	Layer.provide(DependencyScanSinkLive),
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+	// No embedder here: the review's feedback filter runs where the review agent does.
+	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive, FindingEmbedder.none)),
 )
 
 export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide(EventBaseLive))

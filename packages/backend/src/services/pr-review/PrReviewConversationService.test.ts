@@ -28,7 +28,9 @@ import {
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { FindingEmbedder } from "./FindingEmbedder"
 import { PrReviewService } from "./PrReviewService"
+import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import { applyEdits, editablePath, PrReviewConversationService } from "./PrReviewConversationService"
 
 const trackedDbs: TestDb[] = []
@@ -171,7 +173,22 @@ const layerFor = (
 			abort: async () => undefined,
 		})),
 	)
-	const base = Layer.mergeAll(testRepoLayer(testDb), registry, testDb.layer, workerEnv)
+	const base = Layer.mergeAll(
+		testRepoLayer(testDb),
+		registry,
+		testDb.layer,
+		workerEnv,
+		FindingEmbedder.none,
+		Layer.succeed(PrReviewTelemetryService, {
+			analyze: () => Effect.undefined,
+			commitTimes: () => Effect.succeed(new Map()),
+			deploymentsSince: () => Effect.succeed([]),
+			operationsIn: () => Effect.succeed([]),
+			issueCountsIn: () => Effect.succeed(new Map()),
+			issuesFirstSeenSince: () => Effect.succeed([]),
+			attributeKeysIn: () => Effect.succeed(new Set()),
+		}),
+	)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
 		Layer.provideMerge(base),

@@ -2,7 +2,7 @@
  * The port the review's feedback filter embeds finding text through. The model behind it is wired
  * in `apps/ai/src/platform/Llm.ts`; where it is absent the filter is off and every finding posts.
  */
-import { Context, type Effect, Schema } from "effect"
+import { Context, type Effect, Layer, Option, Schema } from "effect"
 
 export class PrReviewEmbeddingError extends Schema.TaggedError<PrReviewEmbeddingError>()(
 	"@maple/backend/services/pr-review/PrReviewEmbeddingError",
@@ -22,6 +22,9 @@ export interface FindingEmbedderApi {
 	) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, PrReviewEmbeddingError>
 }
 
-export class FindingEmbedder extends Context.Service<FindingEmbedder, FindingEmbedderApi>()(
+/** The embedder, or none where no model is configured: then the feedback filter is off. */
+export class FindingEmbedder extends Context.Service<FindingEmbedder, Option.Option<FindingEmbedderApi>>()(
 	"@maple/backend/services/pr-review/FindingEmbedder",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}

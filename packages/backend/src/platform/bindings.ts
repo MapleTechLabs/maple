@@ -9,7 +9,7 @@
  */
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Context, type Effect, type Option, Schema } from "effect"
+import { Context, type Effect, Layer, Option, Schema } from "effect"
 
 // ── Queues ───────────────────────────────────────────────────────────────────
 
@@ -205,19 +205,26 @@ export interface EmailSenderClient {
 /** The `send_email` binding, or `None` on a stage that does not bind it (everything but prd). */
 export class EmailSender extends Context.Service<EmailSender, Option.Option<EmailSenderClient>>()(
 	"@maple/backend/platform/EmailSender",
-) {}
+) {
+	/** A host without the binding: email is off. */
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 // ── Service bindings to other Maple Workers ─────────────────────────────────
 
 /** maple-ai, which serves `/mcp`, the chat surface and incident triage. `None` where the Worker does not bind it. */
 export class AiWorkerFetcher extends Context.Service<AiWorkerFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/AiWorkerFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The repository sandbox Worker. `None` on a deployment that did not provision one. */
 export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/SandboxFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The Worker Loader that runs the agents' `run_code` programs in Dynamic Workers. `None` where unbound. */
 export class CodeLoader extends Context.Service<CodeLoader, Option.Option<WorkerLoader>>()(

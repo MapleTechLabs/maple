@@ -1,4 +1,5 @@
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { EmailSender } from "@maple/backend/platform/bindings"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
@@ -104,6 +105,8 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 		),
 	),
 	Layer.provide(FetchHttpClient.layer),
+	// maple-ai binds no `send_email`: the alert services' email is off here.
+	Layer.provide(EmailSender.none),
 )
 
 /**
