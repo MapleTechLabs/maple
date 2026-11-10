@@ -24,5 +24,7 @@ export const Message = defineMessageUnion({
 	GotDestinationMenuMessage: { tier: Tier, message: Menu.Message },
 	ClickedSave: {},
 	CompletedSave: { result: LoadOutcome(V2Slo) },
+	/** `trackProduct("slo_created")` was handed to the session SDK. */
+	CompletedTrackCreated: {},
 })
 export type Message = typeof Message.Type

@@ -327,6 +327,9 @@ describe("alerts hub", () => {
 			}),
 		)
 		expect(succeeded.model.acknowledgingIncidentIds).toEqual([])
+		// Only an acknowledgement that landed is the product event.
+		expect(names(succeeded.commands)).toContain("TrackHubIncidentAcknowledged")
+		expect(names(failed.commands)).not.toContain("TrackHubIncidentAcknowledged")
 		scene(
 			{ update: pageUpdate, view },
 			given(succeeded.model),

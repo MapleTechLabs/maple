@@ -114,7 +114,9 @@ export const Message = defineMessageUnion({
 	GotInviteEmailMessage: { message: Field.Message },
 	GotInviteRoleMessage: { message: Select.Message },
 	SubmittedInvite: {},
-	CompletedInvite: { email: Schema.String, ...done(Schema.Void) },
+	CompletedInvite: { email: Schema.String, role: OrgRole, ...done(Schema.Void) },
+	/** `trackProduct("member_invited")` was handed to the session SDK. */
+	CompletedTrackMemberInvited: {},
 	GotRoleSelectMessage: { memberId: Schema.String, message: Select.Message },
 	ClickedCancelRole: {},
 	ClickedConfirmRole: {},

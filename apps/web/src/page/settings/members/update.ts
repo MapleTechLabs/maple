@@ -9,6 +9,7 @@ import type {
 	ClerkOrganizationResource,
 } from "../../../platform/clerk"
 import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { trackProduct } from "../../../data/analytics"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
@@ -166,8 +167,16 @@ const InviteMember = Command.define("InviteClerkMember", {
 					organization.inviteMember({ emailAddress: email, role }),
 				),
 			),
-			settleClerk((result) => Message.CompletedInvite({ email, result })),
+			settleClerk((result) => Message.CompletedInvite({ email, role, result })),
 		),
+})
+
+/** A sent invitation is the `member_invited` product event. */
+const TrackMemberInvited = Command.define("TrackMemberInvited", {
+	args: { role: OrgRole },
+	messages: [Message.CompletedTrackMemberInvited],
+	execute: ({ role }) =>
+		trackProduct("member_invited", { role }).pipe(Effect.as(Message.CompletedTrackMemberInvited())),
 })
 
 const ChangeRole = Command.define("ChangeClerkMemberRole", {
@@ -524,7 +533,7 @@ export const update = (model: Model, message: Message): Return =>
 				commands: [InviteMember({ email, role: inviteRoleOf(model) })],
 			}
 		},
-		CompletedInvite: ({ email, result }) =>
+		CompletedInvite: ({ email, role, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const reset = {
@@ -537,7 +546,11 @@ export const update = (model: Model, message: Message): Return =>
 					const refreshed = revalidateInvitations(closed.model)
 					return {
 						model: refreshed.model,
-						commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+						commands: [
+							...(closed.commands ?? []),
+							...(refreshed.commands ?? []),
+							TrackMemberInvited({ role }),
+						],
 						outMessage: toast("success", `Invitation sent to ${email}`),
 					}
 				},
@@ -546,6 +559,7 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", error),
 				}),
 			}),
+		CompletedTrackMemberInvited: () => ({ model }),
 		GotRoleSelectMessage: ({ memberId, message: child }) =>
 			Option.match(
 				Option.flatMap(AsyncData.getData(model.members), (data) =>

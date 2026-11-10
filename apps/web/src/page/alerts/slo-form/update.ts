@@ -8,7 +8,13 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { pickedDestination } from "../../kit/destination-picker"
 import { sloHref, sloIdFromUrl } from "../shared/slo-commands"
-import { FetchExistingSlo, FetchSloFormServices, FetchSloFormSession, SaveSloDraft } from "./command"
+import {
+	FetchExistingSlo,
+	FetchSloFormServices,
+	FetchSloFormSession,
+	SaveSloDraft,
+	TrackSloCreated,
+} from "./command"
 import { formFromSlo, formIssues, wirePayload } from "./derive"
 import { emptyForm, type Form, type Tier } from "./form"
 import { Message } from "./message"
@@ -132,6 +138,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onSuccess: (slo): Return => ({
 					model: { ...model, isSaving: false },
+					commands: model.editingId === null ? [TrackSloCreated()] : [],
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: sloHref(slo.id),
 						isReplace: true,
@@ -145,4 +152,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				// Inline beside the action bar, never a toast over its buttons.
 				onFailure: (saveFailure): Return => ({ model: { ...model, isSaving: false, saveFailure } }),
 			}),
+		CompletedTrackCreated: () => ({ model }),
 	})

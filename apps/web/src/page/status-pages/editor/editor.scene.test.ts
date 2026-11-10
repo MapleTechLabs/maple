@@ -462,6 +462,7 @@ describe("the page as the editor", () => {
 				name: "AddStatusPageComponents",
 				args: { components: [{ name: monitor.name, monitor_id: monitor.id }] },
 			},
+			{ name: "TrackStatusPageEditorMonitorCreated", args: { kind: monitor.kind } },
 		])
 		const closed = pageUpdate(adding, Message.ClickedClosePanel()).model
 		expect(names(pageUpdate(closed, created).commands)).not.toContain("AddStatusPageComponents")

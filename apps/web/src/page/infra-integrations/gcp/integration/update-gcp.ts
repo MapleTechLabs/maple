@@ -30,6 +30,7 @@ import { disconnectSpec } from "../../../integrations/disconnect"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import type { ConfigureTarget } from "./gcp-schema"
+import { TrackDisconnected } from "../../../integrations/command"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
 type Return = PageReturn<Model, Message>
@@ -274,6 +275,7 @@ export const completedDisconnect = (
 		(next) => requestStatus(next, context, "gcp", "Supersede"),
 		// The band's resource inventory is a read of its own.
 		(next) => refreshInventory(next),
+		(next) => ({ model: next, commands: [TrackDisconnected({ provider: "gcp" })] }),
 	])
 }
 

@@ -81,6 +81,8 @@ export const Message = defineMessageUnion({
 		acknowledged: Schema.Boolean,
 		result: LoadOutcome(V2AlertIncident),
 	},
+	/** `trackProduct("alert_incident_acknowledged")` was handed to the session SDK. */
+	CompletedTrackAcknowledged: {},
 	ClickedToggleDestination: { destinationId: AlertDestinationId },
 	CompletedUpdateDestination: { destinationId: AlertDestinationId, result: LoadOutcome(Schema.Void) },
 	ClickedTestDestination: { destinationId: AlertDestinationId },

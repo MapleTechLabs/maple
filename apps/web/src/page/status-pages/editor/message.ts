@@ -76,6 +76,8 @@ export const Message = defineMessageUnion({
 	ClickedAddComponent: {},
 	GotAddPickerMessage: { message: PickerMessage },
 	CompletedCreateMonitor: { session: Schema.Number, result: LoadOutcome(V2UptimeMonitor) },
+	/** `trackProduct("uptime_monitor_created")` was handed to the session SDK. */
+	CompletedTrackMonitorCreated: {},
 	ClickedSubmitAdd: {},
 	CompletedAddComponents: {
 		session: Schema.Number,

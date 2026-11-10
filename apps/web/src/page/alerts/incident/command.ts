@@ -11,6 +11,7 @@ import { listMonitors } from "../../kit/uptime/commands"
 import { retrieveIncidentEscalation } from "../shared/escalation-chains"
 import { listActiveSilences } from "../shared/silences"
 import { readGrants } from "../../../data/session-tenant"
+import { trackProduct } from "../../../data/analytics"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
@@ -64,6 +65,14 @@ export const SetIncidentAcknowledged = Command.define("SetAlertIncidentAcknowled
 			Effect.result,
 			Effect.map((result) => Message.CompletedSetAcknowledged({ acknowledged, result })),
 		),
+})
+
+/** An acknowledgement that landed is the `alert_incident_acknowledged` product event. */
+export const TrackAcknowledged = Command.define("TrackIncidentAcknowledged", {
+	messages: [Message.CompletedTrackAcknowledged],
+	execute: trackProduct("alert_incident_acknowledged").pipe(
+		Effect.as(Message.CompletedTrackAcknowledged()),
+	),
 })
 
 /** `investigations.list({ incident_kind: "alert", incident_id, limit: 1 })`: the incident's one. */

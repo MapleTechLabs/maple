@@ -21,6 +21,7 @@ import {
 	FetchIncidentActivity,
 	FetchIncidentEscalation,
 	SetIncidentAcknowledged,
+	TrackAcknowledged,
 } from "./command"
 import {
 	encodePublicId,
@@ -551,6 +552,7 @@ describe("alert incident", () => {
 					result: Result.succeed(ackedIncident(ackedAt)),
 				}),
 			),
+			Command.resolve(TrackAcknowledged, Message.CompletedTrackAcknowledged()),
 			// The patched row's ack moved the history's key, so the history is read again and drawn.
 			Command.resolve(
 				FetchIncidentActivity,
@@ -623,6 +625,9 @@ describe("alert incident", () => {
 			title: "Couldn't acknowledge the incident",
 		})
 		expect(failed.model.isUpdatingAcknowledgement).toBe(false)
+		// Only an acknowledgement that landed is the product event.
+		expect(names(done.commands)).toContain("TrackIncidentAcknowledged")
+		expect(names(failed.commands)).not.toContain("TrackIncidentAcknowledged")
 	})
 
 	test("a resolved incident offers no acknowledge button", () => {
