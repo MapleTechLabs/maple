@@ -85,7 +85,7 @@ import {
 	reportPoll,
 } from "@maple/backend/services/org/integration-sources"
 import type { MapleDb } from "@maple/db/client"
-import { scrapeResource } from "@maple/domain/integration-inventory"
+import { scrapeResource } from "./integration-inventory"
 import type { SourceId } from "@maple/domain/primitives"
 
 type ScrapeTargetSet = PG.UpdateSetOf<typeof ScrapeTargets>

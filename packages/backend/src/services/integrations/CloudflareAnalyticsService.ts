@@ -83,7 +83,7 @@ import {
 	type CloudflareZone,
 } from "@maple/backend/services/integrations/CloudflareApi"
 import type { SourceId, UserId } from "@maple/domain/primitives"
-import { pollStatus } from "@maple/domain/integration-inventory"
+import { pollStatus } from "./integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"

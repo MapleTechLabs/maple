@@ -1,8 +1,8 @@
 import { Array as Arr, String as Str } from "effect"
-import { SEMCONV_RENAME_ROWS } from "./semconv"
+import { SEMCONV_RENAME_ROWS } from "@maple/domain/semconv"
 // Detects "messed up" span attribute keys in an org's telemetry and turns them into
 // recommended ingest attribute mappings. Pure and dependency-free so it runs identically in the
-// API reconcile loop (apps/api) and in unit tests, and so its types feed the HTTP layer.
+// API reconcile loop (RecommendationIssueService) and in unit tests.
 //
 // The renames come from the shared semconv table (`./semconv`), span-scoped only: the ingest
 // mapping engine writes span target keys and cannot rename resource attributes.

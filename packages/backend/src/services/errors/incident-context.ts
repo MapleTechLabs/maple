@@ -18,7 +18,7 @@
  * same incident than the planner did is a very expensive way to disagree.
  */
 import { Schema, Array as Arr } from "effect"
-import type { InvestigationSubject, InvestigationSubjectSnapshot } from "./http"
+import type { InvestigationSubject, InvestigationSubjectSnapshot } from "@maple/domain/http"
 
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 

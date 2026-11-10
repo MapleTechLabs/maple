@@ -12,7 +12,7 @@ import {
 	VcsInstallations,
 } from "@maple/db/tables"
 import { AWS_METRICS_OFF, AWS_NO_DELIVERY, awsStreamState } from "@maple/domain/aws"
-import { scrapeStaleAfterMs } from "@maple/domain/integration-inventory"
+import { scrapeStaleAfterMs } from "../integrations/integration-inventory"
 import type { SourceResourceCount } from "@maple/domain/source-health"
 import { SourcePublicId } from "@maple/domain/http/v2"
 import type { OrgId, PullSourcePlatform, SourceId } from "@maple/domain/primitives"

@@ -16,11 +16,8 @@ import {
 	VcsInstallations,
 	VcsRepositories,
 } from "@maple/db/tables"
-import {
-	buildIntegrationInventory,
-	type IntegrationInventory,
-	withSourceHealth,
-} from "@maple/domain/integration-inventory"
+import type { IntegrationInventory } from "@maple/domain/integration-inventory"
+import { buildIntegrationInventory, withSourceHealth } from "./integration-inventory"
 import type { OrgId } from "@maple/domain/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

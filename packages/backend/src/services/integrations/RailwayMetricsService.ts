@@ -17,7 +17,7 @@ import {
 	RailwayIntegrationStatus,
 	UserId,
 } from "@maple/domain/http"
-import { pollStatus } from "@maple/domain/integration-inventory"
+import { pollStatus } from "./integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	RailwayConnections,
