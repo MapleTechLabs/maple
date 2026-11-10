@@ -110,6 +110,7 @@ export const tinybirdEnv: Config.Config<WorkerEnv> = merge(
 /** Ingest-key envelope encryption + lookup HMAC. Required wherever ingest keys are read. */
 export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 	requireSecretEntry("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+	optionalSecret("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
 	requireSecretEntry("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 )
 

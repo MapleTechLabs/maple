@@ -260,8 +260,8 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 					})
 				}
 
-				const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
-				const refreshEnc = yield* oauth.encryptValue(refreshToken)
+				const accessEnc = yield* oauth.sealAccessToken(orgId, tokenResponse.access_token)
+				const refreshEnc = yield* oauth.sealRefreshToken(orgId, refreshToken)
 				const currentTime = yield* Clock.currentTimeMillis
 				const expiresAt =
 					tokenResponse.expires_in === undefined
@@ -332,7 +332,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				) {
 					return false
 				}
-				const refreshToken = yield* oauth.decryptValue({
+				const refreshToken = yield* oauth.openRefreshToken(row.orgId, {
 					ciphertext: row.refreshTokenCiphertext,
 					iv: row.refreshTokenIv,
 					tag: row.refreshTokenTag,

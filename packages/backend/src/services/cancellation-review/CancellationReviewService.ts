@@ -54,7 +54,7 @@ import {
 } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -264,10 +264,7 @@ export class CancellationReviewService extends Context.Service<
 		const chatConnectors = yield* ChatConnectorRegistry
 		// An Option rather than failing the layer: a bad key costs only the Hazel report, and the
 		// services that seal chat credentials refuse to boot on one first.
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) => message,
-		).pipe(Effect.option)
+		const keyring = yield* secretKeyringFromEnv(env, (message) => message).pipe(Effect.option)
 
 		const clerkOrgUrl = (orgId: string) =>
 			Option.match(env.MAPLE_CLERK_DASHBOARD_URL, {
@@ -699,7 +696,7 @@ export class CancellationReviewService extends Context.Service<
 			const channelId = env.MAPLE_CANCELLATION_HAZEL_CHANNEL_ID
 			if (Option.isNone(channelId)) return null
 			const ownOrgId = Option.flatMap(env.MAPLE_INTERNAL_ORG_ID, Schema.decodeUnknownOption(OrgId))
-			if (Option.isNone(ownOrgId) || Option.isNone(encryptionKey)) {
+			if (Option.isNone(ownOrgId) || Option.isNone(keyring)) {
 				yield* Effect.logWarning(
 					"cancellation reviews have a Hazel channel but no MAPLE_INTERNAL_ORG_ID or usable encryption key; nothing is posted to Hazel",
 				)
@@ -722,7 +719,7 @@ export class CancellationReviewService extends Context.Service<
 							chatConnectors,
 							ownOrgId.value,
 							linked.id,
-							encryptionKey.value,
+							keyring.value,
 						)
 			if (Option.isNone(workspace)) {
 				yield* Effect.logWarning(

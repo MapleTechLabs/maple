@@ -29,20 +29,10 @@ import {
 	type PlanetScaleConnectionRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
-import {
-	Clock,
-	Context,
-	Duration,
-	Effect,
-	Layer,
-	Option,
-	Redacted,
-	Schema,
-	String as Str,
-	Array as Arr,
-} from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { planetScaleWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -194,8 +184,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const discovery = yield* PlanetScaleDiscoveryService
 		const webhooks = yield* PlanetScaleWebhookService
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new IntegrationsPersistenceError({ message }),
 		)
 		const apiBase = Str.replace(/\/$/, "")(env.MAPLE_PLANETSCALE_API_BASE_URL)
@@ -555,9 +545,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// The secret is minted once and retained across organization rebindings.
 				const encryptedWebhookSecret =
 					existing === null
-						? yield* encryptAes256Gcm(
+						? yield* sealSecret(
+								keyring,
+								planetScaleWebhookSecretSlot,
+								{ orgId, id: connectionId },
 								randomBytes(32).toString("hex"),
-								encryptionKey,
 								() =>
 									new IntegrationsPersistenceError({
 										message: "Failed to encrypt PlanetScale webhook secret",
@@ -849,13 +841,15 @@ export class PlanetScaleConnectionService extends Context.Service<
 			) {
 				return { configured: false, path: null, secret: null }
 			}
-			const secret = yield* decryptAes256Gcm(
+			const secret = yield* openSecret(
+				keyring,
+				planetScaleWebhookSecretSlot,
+				{ orgId: connection.orgId, id: connection.id },
 				{
 					ciphertext: connection.webhookSecretCiphertext,
 					iv: connection.webhookSecretIv,
 					tag: connection.webhookSecretTag,
 				},
-				encryptionKey,
 				() =>
 					new IntegrationsPersistenceError({
 						message: "Failed to decrypt PlanetScale webhook secret",

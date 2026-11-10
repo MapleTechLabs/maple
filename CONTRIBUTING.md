@@ -239,6 +239,7 @@ port and keep `VITE_*` / `MAPLE_INGEST_PUBLIC_URL` consistent.
 | `INGEST_WRITE_MODE`                | recommended    | `forward` for ClickHouse stack (default `tinybird`)                     |
 | `MAPLE_INTERNAL_ORG_ID`            | yes            | Org the gateway files its OWN telemetry under; no default               |
 | `MAPLE_INGEST_KEY_ENCRYPTION_KEY`  | yes\*          | \*Required for postgres key store / ClickHouse direct path              |
+| `MAPLE_INGEST_KEY_DECRYPTION_KEYS` | no             | Older keys kept for decryption during a rotation; same value as API     |
 | `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY` | yes            | Same value as API                                                       |
 | `MAPLE_SELF_HOSTED_MODE`           | recommended    | `single_tenant` → static key store (no DB)                              |
 | `MAPLE_ORG_ID_OVERRIDE`            | with static    | Must match `MAPLE_DEFAULT_ORG_ID`                                       |

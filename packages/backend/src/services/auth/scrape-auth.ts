@@ -1,6 +1,7 @@
 import { ScrapeTargetEncryptionError } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
-import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { openSecret, type SecretKeyring } from "@maple/backend/platform/SecretBox"
+import { scrapeTargetCredentialsSlot } from "@maple/backend/platform/secret-slots"
 
 /**
  * Credential shapes and Authorization-header construction shared by
@@ -26,6 +27,8 @@ export const TokenCredentialsSchema = Schema.Struct({
 })
 
 export interface ScrapeAuthRowLike {
+	readonly id: string
+	readonly orgId: string
 	readonly authType: string
 	readonly authCredentialsCiphertext: string | null
 	readonly authCredentialsIv: string | null
@@ -41,7 +44,7 @@ const decodeCredentials = <S extends Schema.Top>(schema: S, credentialsJson: str
 
 export const buildScrapeAuthHeaders = Effect.fn("ScrapeAuth.buildScrapeAuthHeaders")(function* (
 	row: ScrapeAuthRowLike,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 ) {
 	const headers: Record<string, string> = {}
 	if (
@@ -53,13 +56,15 @@ export const buildScrapeAuthHeaders = Effect.fn("ScrapeAuth.buildScrapeAuthHeade
 		return headers
 	}
 
-	const credentialsJson = yield* decryptAes256Gcm(
+	const credentialsJson = yield* openSecret(
+		keyring,
+		scrapeTargetCredentialsSlot,
+		{ orgId: row.orgId, id: row.id },
 		{
 			ciphertext: row.authCredentialsCiphertext,
 			iv: row.authCredentialsIv,
 			tag: row.authCredentialsTag,
 		},
-		encryptionKey,
 		() => toEncryptionError("Failed to decrypt auth credentials"),
 	)
 

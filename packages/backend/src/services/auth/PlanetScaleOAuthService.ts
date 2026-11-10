@@ -480,8 +480,8 @@ export class PlanetScaleOAuthService extends Context.Service<
 				PlanetScale.getCurrentUser({}),
 			).pipe(Effect.flatMap(decodeConsumed(CurrentUserSchema, "the current user")), Effect.option)
 
-			const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
-			const refreshEnc = yield* oauth.encryptValue(tokenResponse.refresh_token)
+			const accessEnc = yield* oauth.sealAccessToken(orgId, tokenResponse.access_token)
+			const refreshEnc = yield* oauth.sealRefreshToken(orgId, tokenResponse.refresh_token)
 			const currentTime = yield* Clock.currentTimeMillis
 			const expiresAt =
 				tokenResponse.expires_in != null ? currentTime + tokenResponse.expires_in * 1000 : null
