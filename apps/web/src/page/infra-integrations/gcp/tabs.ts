@@ -47,8 +47,6 @@ export interface GcpColumn {
 	readonly value: (read: GcpMetricReader) => number | undefined
 	/** For an `errorRate`: how many events it is the share of. */
 	readonly events?: (read: GcpMetricReader) => number
-	/** A counter summed over the range; every other column is an average over it. */
-	readonly total?: boolean
 }
 
 export function formatGcpValue(format: GcpColumnFormat, value: number | undefined): string {
@@ -90,7 +88,6 @@ const total = (
 	label,
 	format,
 	value: (read) => read.total(metric, attributeValue),
-	total: true,
 })
 
 type Read = (read: GcpMetricReader) => number
