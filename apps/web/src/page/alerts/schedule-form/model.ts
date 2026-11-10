@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OnCallScheduleId } from "@maple/domain/http"
-import { V2OnCallSchedule } from "@maple/domain/http/v2"
+import { V2OnCallOverride, V2OnCallSchedule } from "@maple/domain/http/v2"
 import { Array as Arr, Order, Schema, String as Str } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -19,6 +19,8 @@ export const Model = Schema.Struct({
 	editingId: Schema.NullOr(OnCallScheduleId),
 	/** The edited schedule's read; the form fills from it once. */
 	existing: KeyedSchema(V2OnCallSchedule, LoadFailure),
+	/** The edited schedule's overrides, which the preview layers over the draft; a new one has none. */
+	overrides: KeyedSchema(Schema.Array(V2OnCallOverride), LoadFailure),
 	form: Form,
 	/** The browser's zone and clock arrived: a new form starts from them. */
 	isReady: Schema.Boolean,

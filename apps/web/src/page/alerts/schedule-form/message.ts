@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OnCallWeekday, UserId } from "@maple/domain/http"
-import { V2OnCallSchedule } from "@maple/domain/http/v2"
+import { V2OnCallOverride, V2OnCallSchedule } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -23,6 +23,8 @@ export const Message = defineMessageUnion({
 	ReadDefaults: { timeZone: Schema.String, nowMs: Schema.Number, zones: Schema.Array(Schema.String) },
 	CompletedFetchExisting: { key: Schema.String, result: outcome(V2OnCallSchedule) },
 	ClickedRetryExisting: {},
+	CompletedFetchOverrides: { key: Schema.String, result: outcome(Schema.Array(V2OnCallOverride)) },
+	ClickedRetryOverrides: {},
 	CompletedFetchMembers: { result: Schema.Result(Schema.Array(OrgMember), Schema.String) },
 	CompletedFetchSession: { orgId: Schema.String, grants: Schema.Array(Policy.PermissionName) },
 	ChangedName: { value: Schema.String },

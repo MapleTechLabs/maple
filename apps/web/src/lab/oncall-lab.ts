@@ -57,6 +57,7 @@ export const LabState = Schema.Literals([
 	"editor-covered",
 	"editor-gaps",
 	"editor-early",
+	"editor-override",
 	"editor-edit",
 	"editor-invalid",
 	"editor-error",
@@ -196,7 +197,7 @@ const addPerson = (index: number) =>
 	})
 
 const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> => {
-	const isEdit = state === "editor-edit" || state === "editor-error"
+	const isEdit = state === "editor-edit" || state === "editor-error" || state === "editor-override"
 	const start = FormUpdate.init(
 		{ _tag: "AlertsScheduleNew", search: isEdit ? { scheduleId: schedulePublicId(1) } : {} },
 		CONTEXT,
@@ -214,6 +215,10 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 					FormMessage.Message.CompletedFetchExisting({
 						key: start.model.existing.key ?? "",
 						result: Result.succeed(checkoutSchedule(ONCALL_NOW)),
+					}),
+					FormMessage.Message.CompletedFetchOverrides({
+						key: start.model.overrides.key ?? "",
+						result: Result.succeed(checkoutOverrides(ONCALL_NOW)),
 					}),
 				]
 			: []),
@@ -285,7 +290,14 @@ const formFor = (state: LabState): Step<FormModel.Model, FormMessage.Message> =>
 										]
 									: []),
 							]
-						: []
+						: state === "editor-override"
+							? [
+									// One weeknights layer, so the saved overrides sit over real gaps.
+									FormMessage.Message.ClickedRemoveLayer({ key: "l2" }),
+									FormMessage.Message.ClickedRemoveLayer({ key: "l1" }),
+									FormMessage.Message.ClickedAddRestriction({ key: "l0" }),
+								]
+							: []
 	return fold(start, [...base, ...extra], formStep)
 }
 

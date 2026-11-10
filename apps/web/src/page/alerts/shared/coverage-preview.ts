@@ -10,6 +10,7 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { shiftTimeline, type TimelineBar, type TimelineRow } from "@maple/views/ui/shift-timeline"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { formatShiftEdge } from "./oncall-schedules"
 import { gapRangeText, gapSummary, isUncovered, type Interval } from "./schedule-coverage"
@@ -58,8 +59,15 @@ export type PreviewLane = Readonly<{
 	emptyText: string
 }>
 
-/** A plain-language line over the timeline: `warn` changes what is covered, `info` only explains. */
-export type PreviewNote = Readonly<{ tone: "info" | "warn"; text: string }>
+/**
+ * A plain-language line over the timeline: `warn` changes what is covered, `info` only explains.
+ * `action` is a link after the text ("Try again").
+ */
+export type PreviewNote<M = never> = Readonly<{
+	tone: "info" | "warn"
+	text: string
+	action?: Readonly<{ label: string; onClick: M; isDisabled?: boolean }>
+}>
 
 export type CoveragePreviewOptions<M> = Readonly<{
 	/** Prefixes the gap bars' ids, unique on the page. */
@@ -84,7 +92,7 @@ export type CoveragePreviewOptions<M> = Readonly<{
 	isPreviousDisabled?: boolean
 	/** A final shift's bar action (the detail page's "cover with an override"). */
 	onFinalShift?: (shift: PreviewShift) => Option.Option<M>
-	notes?: ReadonlyArray<PreviewNote>
+	notes?: ReadonlyArray<PreviewNote<M>>
 	/** A line under the header. The axis names the zone, so this does not. */
 	note?: string | undefined
 	/** Drawn in place of the summary and timeline while their data loads; the header stays. */
@@ -231,7 +239,7 @@ const gapSummaryView = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>
 	return vstack(h, { gap: "1.5", attributes: [h.DataAttribute("slot", "coverage-summary")] }, body)
 }
 
-const noteView = <M>(h: HtmlBuilder<M>, note: PreviewNote): Html =>
+const noteView = <M>(h: HtmlBuilder<M>, note: PreviewNote<M>): Html =>
 	hstack(h, { gap: "1.5", align: "start", attributes: [h.Key(note.text)] }, [
 		h.span(
 			[
@@ -242,7 +250,19 @@ const noteView = <M>(h: HtmlBuilder<M>, note: PreviewNote): Html =>
 			],
 			[icon(h, note.tone === "warn" ? "CircleWarningIcon" : "CircleInfoIcon", { size: 14 })],
 		),
-		typography(h, { size: "xs", tone: "muted", as: "p" }, [note.text]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			note.text,
+			...(note.action === undefined
+				? []
+				: [
+						" ",
+						textLink(
+							h,
+							{ onClick: note.action.onClick, isDisabled: note.action.isDisabled ?? false },
+							[note.action.label],
+						),
+					]),
+		]),
 	])
 
 const controls = <M>(h: HtmlBuilder<M>, options: CoveragePreviewOptions<M>): Html =>

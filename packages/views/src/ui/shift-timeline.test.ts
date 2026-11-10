@@ -56,6 +56,12 @@ describe("shift timeline layout", () => {
 		)
 	})
 
+	test("each day carries its full name, month included, across a month's end", () => {
+		const from = Date.parse("2026-11-28T23:00:00.000Z") // Sun 29 Nov, 00:00 in Berlin
+		const days = timelineDays(from, from + 3 * 24 * HOUR, "Europe/Berlin")
+		expect(Arr.map(days, (day) => day.label)).toEqual(["Sun 29 Nov", "Mon 30 Nov", "Tue 1 Dec"])
+	})
+
 	test("Saturdays and Sundays are marked as the weekend, on the zone's own days", () => {
 		const from = Date.parse("2026-11-12T23:00:00.000Z") // Fri 13 Nov, 00:00 in Berlin
 		const days = timelineDays(from, from + 4 * 24 * HOUR, "Europe/Berlin")

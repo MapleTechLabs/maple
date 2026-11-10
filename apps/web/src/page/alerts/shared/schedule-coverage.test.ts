@@ -257,6 +257,9 @@ describe("gapSummary", () => {
 	it("formats durations", () => {
 		expect(durationText(90 * 60_000)).toBe("1h 30m")
 		expect(durationText(76 * HOUR)).toBe("3d 4h")
+		// From a day up the minutes are left out, not rounded into the hours.
+		expect(durationText(58 * HOUR + 30 * 60_000)).toBe("2d 10h")
+		expect(durationText(23 * HOUR + 30 * 60_000)).toBe("23h 30m")
 	})
 })
 

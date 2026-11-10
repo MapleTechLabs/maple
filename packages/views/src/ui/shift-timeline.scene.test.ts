@@ -1,4 +1,4 @@
-import { expect as expectView, given, role, scene, text } from "foldkit/scene"
+import { expect as expectView, given, role, scene, text, within } from "foldkit/scene"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { describe, test } from "vitest"
@@ -122,6 +122,15 @@ describe("shift timeline", () => {
 				"0",
 			),
 			expectView(role("img", { name: "Ben, Mon" })).toHaveAttr("tabIndex", "-1"),
+		)
+	})
+
+	test("every day of the header is named in full, however its drawn label is shortened", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(within(role("columnheader", { name: "Shifts" }), text("Mon 9 Nov"))).toExist(),
+			expectView(within(role("columnheader", { name: "Shifts" }), text("Sun 15 Nov"))).toExist(),
 		)
 	})
 })

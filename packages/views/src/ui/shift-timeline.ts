@@ -47,6 +47,8 @@ export type TimelineDay = Readonly<{
 	endMs: number
 	weekday: string
 	dayOfMonth: number
+	/** The day in full ("Tue 10 Nov"): its name wherever the drawn label is shortened or hidden. */
+	label: string
 	leftPct: number
 	widthPct: number
 	isWeekend: boolean
@@ -57,6 +59,14 @@ const weekdayOf = (ms: number, timeZone: string): string => {
 	const cached = weekdayFormatters.get(timeZone)
 	const formatter = cached ?? new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" })
 	if (cached === undefined) weekdayFormatters.set(timeZone, formatter)
+	return formatter.format(ms)
+}
+
+const monthFormatters = new Map<string, Intl.DateTimeFormat>()
+const monthOf = (ms: number, timeZone: string): string => {
+	const cached = monthFormatters.get(timeZone)
+	const formatter = cached ?? new Intl.DateTimeFormat("en-US", { timeZone, month: "short" })
+	if (cached === undefined) monthFormatters.set(timeZone, formatter)
 	return formatter.format(ms)
 }
 
@@ -92,15 +102,20 @@ export const timelineDays = (fromMs: number, toMs: number, timeZone: string): Re
 	return Arr.flatMap(Arr.range(0, count), (offset): ReadonlyArray<TimelineDay> => {
 		const startMs = zonedDayStart(fromMs, timeZone, offset)
 		const endMs = zonedDayStart(fromMs, timeZone, offset + 1)
+		// The day's first instant inside the range names it.
+		const atMs = Math.max(startMs, fromMs)
+		const weekday = weekdayOf(atMs, timeZone)
+		const dayOfMonth = zonedDateParts(atMs, timeZone).day
 		return Option.match(placeBar(fromMs, toMs, startMs, endMs), {
 			onNone: () => [],
 			onSome: (place) => [
 				{
 					startMs,
 					endMs,
-					weekday: weekdayOf(Math.max(startMs, fromMs), timeZone),
-					isWeekend: WEEKEND.has(weekdayOf(Math.max(startMs, fromMs), timeZone)),
-					dayOfMonth: zonedDateParts(Math.max(startMs, fromMs), timeZone).day,
+					weekday,
+					isWeekend: WEEKEND.has(weekday),
+					dayOfMonth,
+					label: `${weekday} ${dayOfMonth} ${monthOf(atMs, timeZone)}`,
 					...place,
 				},
 			],
@@ -314,6 +329,8 @@ export const shiftTimeline = <M>(
 							h.Style({ left: `${day.leftPct}%`, width: `${day.widthPct}%` }),
 						],
 						[
+							// Read out in full; the two drawn forms below shorten or hide it by the day's width.
+							h.span([h.Class("sr-only")], [day.label]),
 							// "Tue 10" where a day is wide enough, else the weekday's letter over the date.
 							typography(
 								h,
@@ -323,6 +340,7 @@ export const shiftTimeline = <M>(
 									numeric: true,
 									truncate: true,
 									className: "hidden px-1.5 py-1.5 @min-[3.5rem]:block",
+									attributes: [h.AriaHidden(true)],
 								},
 								[`${day.weekday} ${day.dayOfMonth}`],
 							),

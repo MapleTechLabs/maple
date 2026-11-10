@@ -6,6 +6,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import {
+	checkoutOverrides,
 	checkoutSchedule,
 	memberId,
 	ONCALL_NOW,
@@ -50,6 +51,24 @@ const ready = (search: { scheduleId?: string } = {}) => {
 }
 
 const memberNameOf = (index: number) => oncallMembers[index]?.name ?? ""
+
+/** The saved checkout schedule cut down to one weeknights layer, so its days and weekends are gaps. */
+const weeknightsOnly = (model: Model) =>
+	run(model, [
+		Message.ClickedRemoveLayer({ key: "l2" }),
+		Message.ClickedRemoveLayer({ key: "l1" }),
+		Message.ClickedAddRestriction({ key: "l0" }),
+	])
+
+const overridesFailure = {
+	_tag: "@maple/http/errors/AlertPersistenceError",
+	type: "api_error",
+	code: "persistence_error",
+	title: "Couldn't read",
+	message: "Couldn't read the overrides",
+	retryable: false,
+	recovery: "retry",
+} as const
 
 const addPerson = (key: string, index: number) =>
 	Message.GotParticipantMenuMessage({
@@ -423,6 +442,106 @@ describe("schedule form", () => {
 				expectView(text("17 Nov to 23 Nov")).toExist(),
 			)
 			expect(run(later, [Message.ClickedPreviewToday()]).previewWeekOffset).toBe(0)
+		})
+	})
+
+	describe("overrides in the preview of a saved schedule", () => {
+		test("an edit reads the schedule's overrides; a new schedule asks for none", () => {
+			expect(names(init({ _tag: "AlertsScheduleNew", search: {} }, context).commands)).not.toContain(
+				"FetchScheduleFormOverrides",
+			)
+			expect(
+				names(
+					init({ _tag: "AlertsScheduleNew", search: { scheduleId: schedulePublicId(1) } }, context)
+						.commands,
+				),
+			).toContain("FetchScheduleFormOverrides")
+			// A new schedule's preview does not wait on anything.
+			scene(
+				{ update: pageUpdate, view },
+				given(run(ready(), [addPerson("l0", 0)])),
+				expectView(text("Covered for the next 14 days")).toExist(),
+			)
+		})
+
+		test("until the overrides land the timeline is a skeleton and nothing is said about gaps", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(weeknightsOnly(ready({ scheduleId: schedulePublicId(1) }))),
+				expectView(text("Coverage preview")).toExist(),
+				expectView(role("rowheader", { name: /Final schedule/u })).not.toExist(),
+				expectView(text(/gaps? in the next/u)).not.toExist(),
+				expectView(text(/^Covered/u)).not.toExist(),
+				expectView(text(/^Nobody is on call/u)).not.toExist(),
+			)
+		})
+
+		test("an override covering part of a gap fills it, as it does when paging", () => {
+			const editing = weeknightsOnly(ready({ scheduleId: schedulePublicId(1) }))
+			// Dana Kim covers Fri 13 Nov 12:00 to Sat 14 Nov 12:00, over the Friday and weekend gaps.
+			const loaded = run(editing, [
+				Message.CompletedFetchOverrides({
+					key: editing.overrides.key ?? "",
+					result: Result.succeed(checkoutOverrides(ONCALL_NOW)),
+				}),
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded),
+				expectView(
+					role("img", { name: "Override: Dana Kim, Fri 13 Nov, 12:00 to Sat 14 Nov, 12:00" }),
+				).toExist(),
+				expectView(role("button", { name: "Fri 13 Nov 08:00 to 12:00" })).toExist(),
+				expectView(role("button", { name: "Fri 13 Nov 08:00 to 18:00" })).not.toExist(),
+				expectView(role("button", { name: "Sat 14 Nov 12:00 to Mon 16 Nov 18:00" })).toExist(),
+				// The first weekend is partly covered now, so the second is the longest gap.
+				expectView(
+					text(
+						"10 gaps in the next 14 days, longest 2d 10h (Sat 21 Nov 08:00 to Mon 23 Nov 18:00)",
+					),
+				).toExist(),
+				expectView(text(/Overrides are not shown/u)).not.toExist(),
+				expectView(text(/Overrides could not be loaded/u)).not.toExist(),
+			)
+		})
+
+		test("a failed overrides read previews without them, says so and offers another try", () => {
+			const editing = weeknightsOnly(ready({ scheduleId: schedulePublicId(1) }))
+			const failed = run(editing, [
+				Message.CompletedFetchOverrides({
+					key: editing.overrides.key ?? "",
+					result: Result.fail(overridesFailure),
+				}),
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(failed),
+				expectView(text(/Overrides could not be loaded, so gaps may be filled\./u)).toExist(),
+				expectView(role("button", { name: "Try again" })).not.toBeDisabled(),
+				expectView(role("button", { name: "Fri 13 Nov 08:00 to 18:00" })).toExist(),
+				expectView(role("img", { name: /^Override:/u })).not.toExist(),
+			)
+			const retried = pageUpdate(failed, Message.ClickedRetryOverrides())
+			expect(names(retried.commands)).toEqual(["FetchScheduleFormOverrides"])
+			// The note stays up while the retry is out, with its link off.
+			scene(
+				{ update: pageUpdate, view },
+				given(retried.model),
+				expectView(text(/Overrides could not be loaded/u)).toExist(),
+				expectView(role("button", { name: "Try again" })).toBeDisabled(),
+			)
+			const recovered = run(retried.model, [
+				Message.CompletedFetchOverrides({
+					key: retried.model.overrides.key ?? "",
+					result: Result.succeed(checkoutOverrides(ONCALL_NOW)),
+				}),
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(recovered),
+				expectView(text(/Overrides could not be loaded/u)).not.toExist(),
+				expectView(role("button", { name: "Fri 13 Nov 08:00 to 12:00" })).toExist(),
+			)
 		})
 	})
 })

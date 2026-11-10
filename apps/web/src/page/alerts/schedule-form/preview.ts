@@ -1,7 +1,10 @@
 import type { OnCallShift } from "@maple/alerting-core/oncall"
-import { OnCallTimeZone } from "@maple/domain/http"
+import { OnCallOverride, OnCallTimeZone } from "@maple/domain/http"
+import type { V2OnCallOverride } from "@maple/domain/http/v2"
+import { skeleton } from "@maple/views/ui/skeleton"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
+import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import {
 	coveragePreview,
@@ -11,6 +14,7 @@ import {
 } from "../shared/coverage-preview"
 import { memberName, type OrgMember } from "../shared/org-members"
 import { draftCoverage, layerOnCallAt, previewLayerOf, previewRange } from "../shared/schedule-coverage"
+import { isoMs } from "../shared/time"
 import { layerStartMs, type LayerDraft } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -57,6 +61,39 @@ export const previewNotes = (inputs: PreviewInputs): ReadonlyArray<PreviewNote> 
 	})
 }
 
+const decodeOverride = Schema.decodeUnknownResult(OnCallOverride)
+
+/** The API's overrides as the engine reads them; one it cannot read (a bad instant) is left out. */
+export const engineOverrides = (overrides: ReadonlyArray<V2OnCallOverride>): ReadonlyArray<OnCallOverride> =>
+	Arr.filterMap(overrides, (override) =>
+		decodeOverride({
+			id: override.id,
+			userId: override.user_id,
+			startsAt: isoMs(override.starts_at),
+			endsAt: isoMs(override.ends_at),
+			createdAt: isoMs(override.created_at),
+		}),
+	)
+
+/**
+ * Where the edited schedule's overrides stand: `ready` (a new schedule has none), `loading`
+ * (nothing can be said about gaps yet), or `failed` / `retrying` (the preview goes on without them).
+ */
+export type OverridesState = "ready" | "loading" | "failed" | "retrying"
+
+const NO_OVERRIDES: ReadonlyArray<V2OnCallOverride> = []
+
+export const overridesStateOf = (model: Pick<Model, "editingId" | "overrides">): OverridesState =>
+	model.editingId === null
+		? "ready"
+		: AsyncData.isFailure(model.overrides.data)
+			? model.overrides.retrying === true
+				? "retrying"
+				: "failed"
+			: Option.isSome(AsyncData.getData(model.overrides.data))
+				? "ready"
+				: "loading"
+
 const asPreview = (shift: OnCallShift): PreviewShift => ({
 	userId: shift.userId,
 	startMs: shift.startMs,
@@ -73,10 +110,33 @@ const render = (
 	weekOffset: number,
 	rangeDays: RangeDays,
 	isNew: boolean,
+	overrides: ReadonlyArray<V2OnCallOverride>,
+	overridesState: OverridesState,
 ): Html => {
 	const timeZone = isZone(zone) ? zone : "UTC"
 	const range = previewRange(nowMs, timeZone, weekOffset, Number(rangeDays))
-	const coverage = draftCoverage({ timeZone: zone, layers }, [], range.startMs, range.endMs, nowMs)
+	// Overrides beat every layer when paging, so the preview layers them over the draft too.
+	const coverage = draftCoverage(
+		{ timeZone: zone, layers },
+		engineOverrides(overrides),
+		range.startMs,
+		range.endMs,
+		nowMs,
+	)
+	const overridesNote: ReadonlyArray<PreviewNote<Message>> =
+		overridesState === "failed" || overridesState === "retrying"
+			? [
+					{
+						tone: "info",
+						text: "Overrides could not be loaded, so gaps may be filled.",
+						action: {
+							label: "Try again",
+							onClick: Message.ClickedRetryOverrides(),
+							isDisabled: overridesState === "retrying",
+						},
+					},
+				]
+			: []
 	return coveragePreview(h, {
 		scope: PREVIEW_SCOPE,
 		title: "Coverage preview",
@@ -108,8 +168,9 @@ const render = (
 		onFocusGap: (index) => Message.ClickedPreviewGap({ index }),
 		// A draft has no past to look back on.
 		isPreviousDisabled: weekOffset <= 0,
-		notes: previewNotes({ timeZone: zone, layers, members, nowMs, isNew }),
-		note: isNew ? undefined : "Overrides are not shown here.",
+		notes: [...overridesNote, ...previewNotes({ timeZone: zone, layers, members, nowMs, isNew })],
+		// Until the overrides land nothing can be said about gaps: one may cover them.
+		placeholder: overridesState === "loading" ? skeleton(h, "h-40 w-full") : undefined,
 	})
 }
 
@@ -117,7 +178,7 @@ const slot = createLazy()
 
 const MINUTE_MS = 60_000
 
-/** Redrawn only when the zone, the layers, the members, the minute or the range change, not on every key. */
+/** Redrawn only when the zone, layers, members, overrides, minute or range change, not on every key. */
 export const schedulePreview = (h: HtmlBuilder<Message>, model: Model): Html =>
 	slot(render, [
 		h,
@@ -128,4 +189,6 @@ export const schedulePreview = (h: HtmlBuilder<Message>, model: Model): Html =>
 		model.previewWeekOffset,
 		model.previewRange,
 		model.editingId === null,
+		Option.getOrElse(AsyncData.getData(model.overrides.data), () => NO_OVERRIDES),
+		overridesStateOf(model),
 	])

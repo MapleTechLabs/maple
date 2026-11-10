@@ -1,4 +1,4 @@
-import { UserId } from "@maple/domain/http"
+import { type OnCallScheduleId, UserId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -12,6 +12,7 @@ import { scheduleHref, scheduleIdFromUrl } from "../shared/oncall-schedules"
 import {
 	FetchExistingSchedule,
 	FetchScheduleFormMembers,
+	FetchScheduleFormOverrides,
 	FetchScheduleFormSession,
 	ReadScheduleFormDefaults,
 	SaveSchedule,
@@ -41,6 +42,18 @@ export const PREVIEW_SCOPE = "schedule-preview"
 
 export const participantMenuId = (layerKey: string) => `schedule-form-people-${layerKey}`
 
+/** Reads the edited schedule's overrides (again), for the preview. */
+const requestOverrides = (model: Model, context: PageContext, scheduleId: OnCallScheduleId) => {
+	const overrides = Keyed.supersede(
+		model.overrides,
+		requestKey(context.orgId, "oncallSchedules.listOverrides", { id: scheduleId }),
+	)
+	return {
+		model: { ...model, overrides },
+		commands: [FetchScheduleFormOverrides({ key: overrides.key, scheduleId })],
+	}
+}
+
 export const init = (route: FormRoute, context: PageContext): Return => {
 	const editingId = Option.getOrNull(
 		Option.flatMap(Option.fromNullishOr(route.search.scheduleId), scheduleIdFromUrl),
@@ -49,6 +62,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		search: route.search,
 		editingId,
 		existing: Keyed.idle(),
+		overrides: Keyed.idle(),
 		form: emptyForm("UTC", 0),
 		isReady: false,
 		nowMs: 0,
@@ -70,13 +84,19 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		FetchScheduleFormMembers(),
 		FetchScheduleFormSession({ orgId: context.orgId }),
 	]
+	// A new schedule has no overrides, so nothing is read for it.
 	if (editingId === null) return { model, commands: common }
+	const overrides = requestOverrides(model, context, editingId)
 	const key = requestKey(context.orgId, "oncallSchedules.retrieve", { id: editingId })
 	return Option.match(Keyed.request(model.existing, key, "Load"), {
-		onNone: () => ({ model, commands: common }),
+		onNone: () => ({ model: overrides.model, commands: [...common, ...overrides.commands] }),
 		onSome: (existing) => ({
-			model: { ...model, existing },
-			commands: [...common, FetchExistingSchedule({ key, scheduleId: editingId })],
+			model: { ...overrides.model, existing },
+			commands: [
+				...common,
+				FetchExistingSchedule({ key, scheduleId: editingId }),
+				...overrides.commands,
+			],
 		}),
 	})
 }
@@ -269,6 +289,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				commands: [FetchExistingSchedule({ key: existing.key, scheduleId: editingId })],
 			}
 		},
+		CompletedFetchOverrides: ({ key, result }) => ({
+			model: { ...model, overrides: Keyed.accept(model.overrides, key, result) },
+		}),
+		ClickedRetryOverrides: () =>
+			model.editingId === null ? { model } : requestOverrides(model, context, model.editingId),
 		ChangedLayerText: ({ key, field, value }) =>
 			field === "startsAt"
 				? editLayer(model, key, (layer) => ({ ...layer, startsAt: value, startsAtMs: null }))

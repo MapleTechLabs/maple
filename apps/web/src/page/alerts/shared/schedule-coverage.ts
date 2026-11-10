@@ -201,7 +201,7 @@ export const gapRangeText = (gap: Interval, timeZone: string, checkedToMs: numbe
 	return `${start} to ${end}`
 }
 
-/** "16h", "1h 30m", "3d 4h": a gap's length, rounded to minutes. */
+/** "16h", "1h 30m", "3d 4h": a gap's length. Minutes show only under a day; a longer one reads in days and hours. */
 export const durationText = (ms: number): string => {
 	const minutes = Math.round(ms / 60_000)
 	const days = Math.floor(minutes / 1440)
