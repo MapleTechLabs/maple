@@ -553,8 +553,8 @@ export const resolveTriageModel = (
 						? EU_DEFAULT_OPENROUTER_MODEL
 						: DEFAULT_OPENROUTER_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
-				// No default. This resolver serves chat, AI triage *and* the validator, so a number
-				// picked here would retune three stages with different shapes at once.
+				// No default. This resolver serves chat and AI triage, so a number picked here would
+				// retune two stages with different shapes at once.
 				undefined,
 				tags,
 				true,
