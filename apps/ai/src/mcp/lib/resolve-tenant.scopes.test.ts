@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -109,28 +109,21 @@ describe("scoped API keys on the MCP server", () => {
 	)
 })
 
-describe("internal service tokens on the MCP server", () => {
-	const resolveServiceToken = (token: string) =>
-		resolveMcpTenantContext(
-			new Request("https://api.example.com/mcp", {
-				method: "POST",
-				headers: { authorization: `Bearer maple_svc_${token}`, "x-org-id": orgId },
-			}),
-		).pipe(Effect.result)
-
-	it.effect("admits the configured token", () =>
+describe("Maple's internal service token on the MCP server", () => {
+	it.effect("refuses the configured token, whatever org it names", () =>
 		Effect.gen(function* () {
-			const result = yield* resolveServiceToken(INTERNAL_TOKEN)
-			expect(result._tag).toBe("Success")
-		}).pipe(Effect.provide(makeLayer())),
-	)
-
-	it.effect("refuses a token of the same length in other characters as a mismatch", () =>
-		Effect.gen(function* () {
-			const result = yield* resolveServiceToken(Str.repeat(INTERNAL_TOKEN.length)("\u00e9"))
+			const result = yield* resolveMcpTenantContext(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: { authorization: `Bearer maple_svc_${INTERNAL_TOKEN}`, "x-org-id": orgId },
+				}),
+			).pipe(Effect.result)
 			expect(result._tag).toBe("Failure")
 			if (result._tag === "Failure") {
-				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
+				expect(result.failure).toMatchObject({
+					_tag: "@maple/mcp/errors/McpAuthInvalidError",
+					reason: "malformed_token",
+				})
 			}
 		}).pipe(Effect.provide(makeLayer())),
 	)

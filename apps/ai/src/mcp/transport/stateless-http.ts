@@ -57,7 +57,6 @@ import {
 } from "../executor-loader"
 import { McpQueryBudgetError } from "../tools/types"
 import { CurrentMcpRequestTenant } from "../tenant"
-import { INTERNAL_SERVICE_USER_ID } from "../lib/resolve-tenant"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 import { canonicalToolName } from "../tools/tool-name-aliases"
@@ -266,14 +265,7 @@ export const layerStatelessMcpHttp = (options: {
 					const scope = yield* Scope.Scope
 					const tracer = yield* Effect.tracer
 					const tenant = yield* CurrentMcpRequestTenant
-					// Internal services share one user id, so it names no one and is left off.
-					const caller = mcpCaller(
-						request,
-						tenant === undefined || tenant.userId === INTERNAL_SERVICE_USER_ID
-							? undefined
-							: tenant.userId,
-						tenant?.orgId,
-					)
+					const caller = mcpCaller(request, tenant?.userId, tenant?.orgId)
 					// No session id is ever issued, so a client's leftover one is dropped: the server
 					// would look the session up by that id instead of by this request's client.
 					const requestHeaders = Arr.filter(

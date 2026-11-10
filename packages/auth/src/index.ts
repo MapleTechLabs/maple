@@ -548,9 +548,8 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
  * using, so the only way to read another org's data without disturbing the
  * user is to name it per request and prove membership server-side.
  *
- * Deliberately NOT `x-org-id`: that name belongs to the internal-service branch
- * in `apps/ai/src/mcp/lib/resolve-tenant.ts`, which trusts it wholesale behind
- * a shared secret. Two very different trust models must not share a spelling.
+ * Namespaced under `x-maple-`: the value is never trusted on its own, only
+ * after membership in the named org is proven.
  */
 export const ORG_SELECTION_HEADER = "x-maple-org-id"
 
@@ -871,8 +870,8 @@ export const makeResolveMcpTenant = (
 	// "Clerk / self-hosted session auth" fallback in resolveMcpTenantContext, used
 	// by a logged-in browser applying an approved chat proposal via
 	// POST /internal/chat/apply. Both resolve to the caller's own org (and a session
-	// token keeps the human userId for attribution). The internal-service and
-	// api-key paths run before this fallback, so this only widens the
+	// token keeps the human userId for attribution). The api-key path runs
+	// before this fallback, so this only widens the
 	// already-last-resort branch; self-hosted HS256 mode already ignored
 	// acceptsToken, so this just brings Clerk mode to parity.
 ) => makeResolveTenant(env, authenticateClerkRequest, ["api_key", "session_token"])

@@ -1,5 +1,4 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
-import { INTERNAL_SERVICE_BEARER_PREFIX } from "@maple/domain/http"
 import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
 import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
@@ -112,18 +111,13 @@ const mcpUnavailable = () =>
 
 /**
  * Which credential an MCP request presented, as far as the transport can tell.
- * Mirrors the branches in `resolveMcpTenantContext`: an internal service token
- * is Maple acting on its own behalf, any other bearer is an API key or OAuth
- * token, and no bearer at all means a forwarded dashboard session.
+ * Mirrors the branches in `resolveMcpTenantContext`: a bearer is an API key or
+ * OAuth token, and no bearer at all means a forwarded dashboard session.
  */
 const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorInfo => {
 	const authorization = headers["authorization"] ?? headers["Authorization"]
-	if (authorization === undefined || !Str.startsWith("bearer ")(Str.toLowerCase(authorization))) {
-		return { type: "user", source: "mcp" }
-	}
-	const bearer = Str.trim(Str.slice("bearer ".length)(authorization))
-	return Str.startsWith(INTERNAL_SERVICE_BEARER_PREFIX)(bearer)
-		? { type: "system", source: "system" }
+	return authorization === undefined || !Str.startsWith("bearer ")(Str.toLowerCase(authorization))
+		? { type: "user", source: "mcp" }
 		: { type: "api_key", source: "mcp" }
 }
 
@@ -161,15 +155,13 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 					Effect.provideService(Env, env),
 					Effect.flatMap((tenant) =>
 						Effect.gen(function* () {
-							if (tenant.rateLimitCredentialId !== undefined) {
-								const outcome = yield* rateLimiter.check(tenant.rateLimitCredentialId)
-								yield* Effect.annotateCurrentSpan({
-									"maple.rate_limit.outcome": outcome,
-									"maple.rate_limit.limit": MCP_TOOLS_RATE_LIMIT_REQUESTS,
-									"maple.rate_limit.period_seconds": MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
-								})
-								if (outcome === "limited") return mcpRateLimited()
-							}
+							const outcome = yield* rateLimiter.check(tenant.rateLimitCredentialId)
+							yield* Effect.annotateCurrentSpan({
+								"maple.rate_limit.outcome": outcome,
+								"maple.rate_limit.limit": MCP_TOOLS_RATE_LIMIT_REQUESTS,
+								"maple.rate_limit.period_seconds": MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
+							})
+							if (outcome === "limited") return mcpRateLimited()
 							return yield* Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
 								Effect.provideService(CurrentMcpRequestTenant, tenant),
 								// Without this an MCP mutation reads the reference's `undefined`

@@ -607,10 +607,9 @@ export type ChatProposalOutcome = "unknown" | "settled" | "decided"
 /**
  * The origin of a turn raised through Maple's own HTTP surface.
  *
- * That route authenticates a signed-in person and Maple's own service token alike, and the only
- * thing that distinguishes them is the user id the auth layer stamped on the caller — so the read
- * lives here rather than in the route, and an unattended pass cannot become attended by being
- * restarted from a different place.
+ * That route admits signed-in sessions only, so its turns are `app`. The read stays keyed on the
+ * user id so a tenant stamped `internal-service` (the investigation pass) is never made attended,
+ * wherever it is restarted from.
  */
 export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
 	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
