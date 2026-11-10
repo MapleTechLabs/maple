@@ -1,4 +1,6 @@
 import * as Policy from "@maple/domain/policy"
+import { DataSourceKind } from "@maple/domain/data-sources"
+import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
@@ -20,6 +22,7 @@ import {
 	V2AwsIngest,
 	V2AwsSetup,
 	V2ChatConnectorList,
+	V2DataSource,
 	V2GcpConnector,
 	V2GcpIntegration,
 	V2GcpSetupScripts,
@@ -70,6 +73,7 @@ export const StatusName = Schema.Literals([
 	"searchConsole",
 	"chat",
 	"scrapeTargets",
+	"dataSources",
 ])
 export type StatusName = typeof StatusName.Type
 
@@ -99,6 +103,11 @@ export const Message = defineMessageUnion({
 	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
+	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
+	/** A filter chip above the hub's list. */
+	SelectedFilter: { filter: HubFilter },
+	/** A data source row, or a "Query in place" card (Settings > Data sources). */
+	ClickedDataSource: { source: Schema.NullOr(Schema.String), connect: Schema.NullOr(DataSourceKind) },
 	CompletedLoadCustomer: result(BillingCustomer),
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},

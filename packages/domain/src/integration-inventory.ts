@@ -219,7 +219,7 @@ const failingError = (state: PollState, status: IntegrationStatus) =>
 	status === "failing" ? state.lastError : null
 
 /** "2 of 14 zones failing: <first error>", or null when every resource is healthy. */
-const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): string | null => {
+export const summarizeResources = (resources: ReadonlyArray<IntegrationResource>): string | null => {
 	const unhealthy = Arr.filter(resources, (r) => r.status !== "healthy")
 	if (unhealthy.length === 0) return null
 	const worst = worstStatus(Arr.map(unhealthy, (r) => r.status))
@@ -259,7 +259,12 @@ const entry = (
 		readonly feeds?: ReadonlyArray<string>
 	},
 ): IntegrationEntry => {
-	const resources = Arr.map(fields.resources, (r) => withAge(r, now))
+	// Sorted before summarizing, so `summarizeResources(entry.resources)` reproduces the summary.
+	const resources = Arr.map(fields.resources, (r) => withAge(r, now)).sort((a, b) =>
+		STATUS_RANK[a.status] !== STATUS_RANK[b.status]
+			? STATUS_RANK[a.status] - STATUS_RANK[b.status]
+			: Str.localeCompare(b.name)(a.name),
+	)
 	const resourceStatus = worstStatus(Arr.map(resources, (r) => r.status))
 	const status = worstStatus([fields.own?.status ?? "healthy", resourceStatus])
 	const problem =
@@ -273,11 +278,7 @@ const entry = (
 		connectedAt: fields.connectedAt,
 		problem: status === "healthy" ? null : problem,
 		feeds: fields.feeds ?? INTEGRATION_FEEDS[provider],
-		resources: [...resources].sort((a, b) =>
-			STATUS_RANK[a.status] !== STATUS_RANK[b.status]
-				? STATUS_RANK[a.status] - STATUS_RANK[b.status]
-				: Str.localeCompare(b.name)(a.name),
-		),
+		resources,
 	}
 }
 
@@ -416,6 +417,9 @@ const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEn
 	})
 }
 
+export const PLANETSCALE_NO_ORGANIZATION_PROBLEM =
+	"Authorized, but no PlanetScale organization is selected yet; pick one in Sources."
+
 const planetscale = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const oauth = oauthFor(inputs, "planetscale")
 	const connection = inputs.planetscaleConnection
@@ -428,8 +432,7 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 				? revokedProblem("PlanetScale")
 				: {
 						status: "pending",
-						problem:
-							"Authorized, but no PlanetScale organization is selected yet; pick one in Sources.",
+						problem: PLANETSCALE_NO_ORGANIZATION_PROBLEM,
 					},
 			resources: [],
 		})

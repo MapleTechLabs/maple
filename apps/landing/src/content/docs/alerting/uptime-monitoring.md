@@ -5,9 +5,9 @@ group: "Alerting"
 order: 5
 ---
 
-Maple monitors availability from three sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. Hosted uptime checks, on the **Uptime** tab under **Alerts**, run HTTP, TCP and DNS checks from Maple every 30 seconds or more and watch cron jobs through heartbeats. HTTP checks from an OpenTelemetry Collector you operate cover endpoints Maple cannot reach, such as ones inside a private network.
+Maple monitors availability from three sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. Hosted uptime checks, on the **Uptime** tab under **Alerts**, run HTTP, TCP and DNS checks from Maple every 30 seconds or more. [Heartbeat monitors](/docs/alerting/heartbeat-monitors), on the same tab, watch cron jobs and scheduled workers that ping Maple when they finish. HTTP checks from an OpenTelemetry Collector you operate cover endpoints Maple cannot reach, such as ones inside a private network.
 
-This page covers alerts on traces and Collector checks. For hosted checks, open the **Uptime** tab under **Alerts** and click **New uptime check**.
+This page covers alerts on traces and Collector checks. For hosted checks, open the **Uptime** tab under **Alerts** and click **New check**.
 
 > **Recommended reading first.** [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) is the background for this page: which failures a probe catches, which ones only traces see, and when a probe is worth adding. This page is the setup.
 
