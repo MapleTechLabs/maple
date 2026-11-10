@@ -1,6 +1,10 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, String as Str } from "effect"
 
+/**
+ * A logs view's footer line and its per-browser wrap and density preferences.
+ */
+
 /** The list footer's count line. */
 export const listFooterText = (
 	locale: string,
