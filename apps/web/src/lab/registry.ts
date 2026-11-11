@@ -78,6 +78,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/members",
+		title: "Members",
+		description:
+			"The settings members tab as an admin, with a role change on its inline confirm strip and saving (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/slos",
 		title: "SLOs",
 		description:
