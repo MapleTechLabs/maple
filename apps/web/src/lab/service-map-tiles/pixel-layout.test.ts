@@ -114,3 +114,34 @@ describe("open country and lakes in pixel art", () => {
 		expect(count(lake, ["reeds"])).toBeGreaterThan(2)
 	})
 })
+
+describe("landmarks and walls in pixel art", () => {
+	it("marks the landmark a click can ring or sound, where its sprite stands", () => {
+		const kinds = Arr.map(["edge", "database", "queue", "external"] as const, (kind) => {
+			const art = serviceArt(spec(kind, 0.5))
+			const sprite = Arr.findFirst(art.items, (item) =>
+				["lighthouse", "observatory", "windmill", "keep"].includes(item.sprite),
+			)
+			expect(sprite._tag).toBe("Some")
+			expect(sprite._tag === "Some" ? [sprite.value.x, sprite.value.y] : []).toEqual([
+				Math.round(art.landmark?.x ?? 999),
+				Math.round(art.landmark?.y ?? 999),
+			])
+			return art.landmark?.kind
+		})
+		expect(kinds).toEqual(["lighthouse", "observatory", "windmill", "keep"])
+	})
+
+	it("marks a town's church, and nothing in a hamlet", () => {
+		expect(serviceArt(spec("service", 0.9)).landmark?.kind).toBe("church")
+		expect(serviceArt(spec("service", 0.1)).landmark).toBeNull()
+	})
+
+	it("walls only a city, inside its tile and outside its houses' yard", () => {
+		expect(serviceArt(spec("service", 0.5)).wall).toBe(0)
+		const city = serviceArt(spec("service", 1))
+		expect(city.wall).toBeGreaterThan(100)
+		expect(city.wall).toBeLessThan(CORNER * Math.cos(Math.PI / 6))
+		expect(wildArt("1,2", biome, "farm").wall).toBe(0)
+	})
+})

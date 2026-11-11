@@ -70,6 +70,8 @@ const GROUNDS: ReadonlyArray<GroundName> = [
 ]
 /** How far apart a pixel train's wagons ride, in world units: a wagon sprite's length. */
 const COUPLING = 1.3
+/** Seconds a startled bird hurries for. */
+const BIRD_FRIGHT = 2.5
 
 const toPx = ([x, z]: Point): Point => [x * PX, z * PX]
 
@@ -195,6 +197,8 @@ export function startPixelScene(
 		pressed: { x: 0, y: 0, panning: false },
 		/** When each duck last hopped, in seconds. */
 		hops: [-9, -9, -9],
+		/** Three birds cross the board: how far across each is, and when it last took fright. */
+		birds: Arr.map([0, 0.31, 0.62], (turn) => ({ turn, startledAt: -9 })),
 		/** Rings spreading on a lake: where, and when they started. */
 		rings: new Array<{ readonly at: Point; readonly since: number }>(),
 	}
@@ -564,6 +568,28 @@ export function startPixelScene(
 		})
 	}
 
+	const isBirdStartled = (): boolean =>
+		Arr.some(state.birds, (bird) => state.seconds - bird.startledAt < BIRD_FRIGHT)
+	/** Where the birds are: a startled one beats its wings fast and climbs for a moment. */
+	const birds = (): Array<Sprite> =>
+		Arr.map(state.birds, (bird, index) => {
+			const middle = toPx(state.derived.centre)
+			const span = state.derived.radius * PX * 2.6
+			const u = bird.turn % 1
+			const fright = Math.max(0, 1 - (state.seconds - bird.startledAt) / BIRD_FRIGHT)
+			const isUp = Math.floor(state.seconds * (fright > 0 ? 12 : 5) + index) % 2 === 0
+			return {
+				sprite: isUp ? "birdUp" : "birdDown",
+				x: middle[0] - span / 2 + u * span + (index % 2) * 30,
+				y:
+					middle[1] -
+					span * 0.28 +
+					index * 150 +
+					Math.sin(u * 9 + index) * 24 -
+					Math.sin(Math.PI * fright) * 70,
+			}
+		})
+
 	const placeLabels = () => {
 		const { input, nodes, related, cells } = state.derived
 		const priority = (id: string) =>
@@ -655,6 +681,27 @@ export function startPixelScene(
 				ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
 			})
 		}
+		// A lighthouse turns its beam over the land after dark.
+		if (day.lamps > 0.01) {
+			ctx.globalCompositeOperation = "source-atop"
+			Arr.forEach(state.lands, (land) => {
+				const tower = land.art.landmark
+				if (tower === null || tower.kind !== "lighthouse") return
+				const x = (land.at[0] + tower.x) * state.scale + state.x
+				const y = (land.at[1] + tower.y - SPRITES.lighthouse[3] + 14) * state.scale + state.y
+				const turn = state.seconds * 0.7
+				const reach = 270 * state.scale
+				const beam = ctx.createRadialGradient(x, y, 0, x, y, reach)
+				beam.addColorStop(0, `rgba(255, 226, 150, ${(day.lamps * 0.55).toFixed(3)})`)
+				beam.addColorStop(1, "rgba(255, 226, 150, 0)")
+				ctx.fillStyle = beam
+				ctx.beginPath()
+				ctx.moveTo(x, y)
+				ctx.arc(x, y, reach, turn - 0.2, turn + 0.2)
+				ctx.closePath()
+				ctx.fill()
+			})
+		}
 		ctx.globalCompositeOperation = "source-over"
 	}
 
@@ -711,6 +758,39 @@ export function startPixelScene(
 			ctx.setLineDash([4, 6])
 			ctx.strokeStyle = "#6b4a2e"
 			ctx.stroke(track)
+			ctx.setLineDash([])
+		})
+		// A city's wall: a ring of stone round the town, open where a road or a railway leaves.
+		Arr.forEach(state.lands, (land) => {
+			const radius = land.art.wall
+			if (radius === 0) return
+			const gates = Arr.sort(
+				land.id === null ? [] : (network.corridors.get(land.id) ?? []),
+				Order.Number,
+			)
+			const gate = Math.asin(Math.min(1, 26 / radius))
+			const ring = new Path2D()
+			if (gates.length === 0) ring.arc(land.at[0], land.at[1], radius, 0, Math.PI * 2)
+			Arr.forEach(gates, (way, index) => {
+				const next = gates[(index + 1) % gates.length] ?? way
+				const from = way + gate
+				const to = (index === gates.length - 1 ? next + Math.PI * 2 : next) - gate
+				if (to <= from) return
+				ring.moveTo(land.at[0] + Math.cos(from) * radius, land.at[1] + Math.sin(from) * radius)
+				ring.arc(land.at[0], land.at[1], radius, from, to)
+			})
+			ctx.lineCap = "butt"
+			ctx.strokeStyle = OUTLINE
+			ctx.lineWidth = 12
+			ctx.stroke(ring)
+			ctx.strokeStyle = "#b9ad9a"
+			ctx.lineWidth = 8
+			ctx.stroke(ring)
+			// Lighter stones along the top, as battlements.
+			ctx.setLineDash([6, 6])
+			ctx.strokeStyle = "#ded5c5"
+			ctx.lineWidth = 4
+			ctx.stroke(ring)
 			ctx.setLineDash([])
 		})
 		ctx.strokeStyle = OUTLINE
@@ -771,18 +851,12 @@ export function startPixelScene(
 				ctx.fillStyle = "rgba(236, 236, 228, 0.55)"
 				ctx.fill(hexPath(centre(cell), 1))
 			})
-		// Birds cross the board, flapping.
-		if (input.flowing)
-			Arr.forEach([0, 1, 2], (index) => {
-				const middle = toPx(state.derived.centre)
-				const span = state.derived.radius * PX * 2.6
-				const u = (state.seconds * 0.03 + index * 0.31) % 1
-				draw({
-					sprite: Math.floor(state.seconds * 5 + index) % 2 === 0 ? "birdUp" : "birdDown",
-					x: middle[0] - span / 2 + u * span + (index % 2) * 30,
-					y: middle[1] - span * 0.28 + index * 150 + Math.sin(u * 9 + index) * 24,
-				})
-			})
+		// Birds cross the board, flapping; a startled one hurries on.
+		Arr.forEach(state.birds, (bird) => {
+			const isStartled = state.seconds - bird.startledAt < BIRD_FRIGHT
+			if (input.flowing || isStartled) bird.turn += delta * (isStartled ? 0.16 : 0.03)
+		})
+		if (input.flowing || isBirdStartled()) Arr.forEach(birds(), draw)
 		light()
 		// What is in hand is drawn over the night, so it reads at any hour.
 		ctx.setTransform(state.scale, 0, 0, state.scale, state.x, state.y)
@@ -861,7 +935,10 @@ export function startPixelScene(
 		const apart = ((((input.clock.hour - state.shownHour) % 24) + 36) % 24) - 12
 		const turning = Math.abs(apart) > 1e-3
 		const playing =
-			turning || state.rings.length > 0 || Arr.some(state.hops, (at) => state.seconds - at < 0.5)
+			turning ||
+			state.rings.length > 0 ||
+			isBirdStartled() ||
+			Arr.some(state.hops, (at) => state.seconds - at < 0.5)
 		if (!state.dirty && !playing && !(input.flowing && now - state.last >= FRAME_MS)) return
 		const delta = Math.min(0.05, (now - state.last) / 1000)
 		state.last = now
@@ -906,6 +983,13 @@ export function startPixelScene(
 		Option.getOrNull(Arr.findFirst(state.hot, (hot) => Math.hypot(hot.x - x, hot.y - y) < 24))
 	const duckAt = ([x, y]: Point): number | null =>
 		Option.getOrNull(Arr.findFirstIndex(ducks(), (duck) => Math.hypot(duck.x - x, duck.y - 8 - y) < 16))
+	/** The bird under the pointer, while the birds are out. */
+	const birdAt = ([x, y]: Point): number | null =>
+		state.derived.input.flowing || isBirdStartled()
+			? Option.getOrNull(
+					Arr.findFirstIndex(birds(), (bird) => Math.hypot(bird.x - x, bird.y - 10 - y) < 22),
+				)
+			: null
 	const lakeAt = (point: Point): boolean => {
 		const cell = cellAt(point)
 		const [cx, cy] = centre(cell)
@@ -942,7 +1026,8 @@ export function startPixelScene(
 			return invalidate()
 		}
 		const id = serviceAt(point)
-		const lively = moverAt(point) !== null || duckAt(point) !== null || lakeAt(point)
+		const lively =
+			moverAt(point) !== null || duckAt(point) !== null || birdAt(point) !== null || lakeAt(point)
 		canvas.style.cursor = lively || id !== null ? "pointer" : ""
 		const hover = id === null || lively ? null : (state.derived.cells.get(id) ?? null)
 		if (
@@ -967,6 +1052,13 @@ export function startPixelScene(
 			if (!input.muted) quacks.quack(2)
 			return invalidate()
 		}
+		const bird = birdAt(point)
+		if (bird !== null) {
+			const startled = state.birds[bird]
+			if (startled !== undefined) startled.startledAt = state.seconds
+			sounds.chirp(3)
+			return invalidate()
+		}
 		const mover = input.building ? null : moverAt(point)
 		if (mover !== null) {
 			if (mover.kind === "train") sounds.whistle()
@@ -982,6 +1074,26 @@ export function startPixelScene(
 			state.rings.push({ at: point, since: state.seconds })
 			sounds.splash()
 			return invalidate()
+		}
+		// A church rings its bell and the birds take fright; a lighthouse sounds its horn. The
+		// click still selects the service.
+		const land = Option.getOrUndefined(
+			Arr.findFirst(state.lands, (each) => each.id !== null && each.id === id),
+		)
+		const tower = land?.art.landmark ?? null
+		if (
+			land !== undefined &&
+			tower !== null &&
+			Math.hypot(point[0] - land.at[0] - tower.x, point[1] - land.at[1] - tower.y + 30) < 40
+		) {
+			if (tower.kind === "church") {
+				sounds.bell()
+				Arr.forEach(state.birds, (each) => {
+					each.startledAt = state.seconds
+				})
+			}
+			if (tower.kind === "lighthouse") sounds.horn()
+			invalidate()
 		}
 		events.onSelect(id === null || id === input.selectedId ? null : id)
 	}

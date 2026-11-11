@@ -15,6 +15,8 @@ export const PX = 40
 /** From a tile's middle to the middle of a side, and to a corner, in art pixels. */
 export const INRADIUS = HEX_SIZE * Math.cos(Math.PI / 6) * PX
 export const CORNER = HEX_SIZE * PX
+/** Radius of a city's wall, in art pixels. */
+const WALL = 128
 
 export type GroundName = Extract<
 	SpriteName,
@@ -53,7 +55,19 @@ export interface TileArt {
 	readonly items: ReadonlyArray<Placed>
 	/** Where the tile is lit from after dark, and how far the light reaches. */
 	readonly lamp: { readonly x: number; readonly y: number; readonly radius: number } | null
+	/** What stands out on the tile, and where its foot is: a click on it does something. */
+	readonly landmark: Landmark | null
+	/** Radius of a city's wall round the middle; 0 for none. */
+	readonly wall: number
 }
+
+export interface Landmark {
+	readonly kind: "church" | "lighthouse" | "windmill" | "observatory" | "keep"
+	readonly x: number
+	readonly y: number
+}
+
+const mark = (kind: Landmark["kind"], [x, y]: readonly [number, number]): Landmark => ({ kind, x, y })
 
 interface Look {
 	readonly ground: GroundName
@@ -206,7 +220,8 @@ export const serviceArt = (spec: ServiceSpec): TileArt => {
 		items.push(at("lighthouse", tower), at("well", [0, 8]))
 		cottages(Math.round(2 + spec.size * 3), 50, 0.7)
 		trees(4, 70)
-		return { ground: look.ground, patches, items, lamp: { x: 0, y: -10, radius: 150 } }
+		const lamp = { x: 0, y: -10, radius: 150 }
+		return { ground: look.ground, patches, items, lamp, landmark: mark("lighthouse", tower), wall: 0 }
 	}
 	if (spec.kind === "database") {
 		const dome = towards(facing, 34)
@@ -214,7 +229,8 @@ export const serviceArt = (spec: ServiceSpec): TileArt => {
 		items.push(at("observatory", dome))
 		trees(13, 40)
 		rocks(spec.biome.boulders > 1 ? 2 : 0)
-		return { ground: look.ground, patches, items, lamp: { x: dome[0], y: dome[1] - 24, radius: 95 } }
+		const lamp = { x: dome[0], y: dome[1] - 24, radius: 95 }
+		return { ground: look.ground, patches, items, lamp, landmark: mark("observatory", dome), wall: 0 }
 	}
 	if (spec.kind === "queue") {
 		const mill = towards(facing, 58)
@@ -224,7 +240,8 @@ export const serviceArt = (spec: ServiceSpec): TileArt => {
 		cottages(Math.round(1 + spec.size * 2), 50, 0.7, 0, 0.5)
 		wheat(7)
 		trees(3, 80)
-		return { ground: look.ground, patches, items, lamp: { x: 0, y: -10, radius: 120 } }
+		const lamp = { x: 0, y: -10, radius: 120 }
+		return { ground: look.ground, patches, items, lamp, landmark: mark("windmill", mill), wall: 0 }
 	}
 	if (spec.kind === "external") {
 		const tower = towards(facing, 44)
@@ -233,12 +250,13 @@ export const serviceArt = (spec: ServiceSpec): TileArt => {
 		cottages(1, 60, 0.7)
 		rocks(4)
 		trees(5, 60)
-		return { ground: look.ground, patches, items, lamp: { x: tower[0], y: tower[1] - 24, radius: 100 } }
+		const lamp = { x: tower[0], y: tower[1] - 24, radius: 100 }
+		return { ground: look.ground, patches, items, lamp, landmark: mark("keep", tower), wall: 0 }
 	}
 	const town = settlementOf(spec.size)
 	patches.push({ ground: "dirt", x: 0, y: 0, radius: Math.round(40 + spec.size * 62) })
+	const church = towards(facing, 70)
 	if (town.hasChurch) {
-		const church = towards(facing, 70)
 		claim(church, 36)
 		items.push(at("church", church))
 	}
@@ -271,6 +289,9 @@ export const serviceArt = (spec: ServiceSpec): TileArt => {
 		patches,
 		items,
 		lamp: { x: 0, y: -10, radius: Math.round(110 + spec.size * 70) },
+		landmark: town.hasChurch ? mark("church", church) : null,
+		// The wall stands just inside the tile's border, outside the last houses.
+		wall: town.wall > 0 ? WALL : 0,
 	}
 }
 
@@ -309,7 +330,7 @@ export const wildArt = (key: string, biome: Biome, feature: Feature): TileArt =>
 		put(() => "bush", 3, 12, 20)
 		put(() => "boulder", 1, 14, 30)
 	}
-	return { ground: look.ground, patches, items, lamp: null }
+	return { ground: look.ground, patches, items, lamp: null, landmark: null, wall: 0 }
 }
 
 /** How far from a lake's middle the ducks paddle. */
@@ -330,5 +351,7 @@ export const lakeArt = (key: string): TileArt => {
 			return at(random() < 0.75 ? "reeds" : "rocks", towards(angle, 100 + random() * 12))
 		}),
 		lamp: null,
+		landmark: null,
+		wall: 0,
 	}
 }
