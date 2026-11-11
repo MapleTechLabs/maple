@@ -304,7 +304,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 								}),
 						),
 					)
-					if (claimed !== undefined) return
+					// Only a route still at the removed page goes: a claimer that already published keeps its own.
 					const routedTo = yield* store.readHostRoute(row.hostname)
 					if (routedTo === null || routedTo === row.pageId)
 						yield* store.deleteHostRoute(row.hostname)

@@ -10,6 +10,7 @@ import {
 } from "@maple/views/ui/field"
 import { input } from "@maple/views/ui/input"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { hstack } from "@maple/views/ui/stack"
 import { textarea } from "@maple/views/ui/textarea"
 import { Array as Arr } from "effect"
 
@@ -63,27 +64,32 @@ export const textField = <M>(
 			isMono?: boolean
 			/** Commits the field: the editor saves as you go. */
 			onBlur?: M
+			/** Beside the input, level with it rather than with the label or hint: a submit button. */
+			trailing?: Html
 		}>,
-): Html =>
-	frame(
+): Html => {
+	const control = input(h, {
+		id: options.id,
+		type: options.type,
+		isDisabled: options.isDisabled,
+		controlClassName: options.isMono === true ? "font-mono" : undefined,
+		attributes: [
+			h.Value(options.value),
+			h.OnInput(options.onInput),
+			...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
+			...(options.onBlur === undefined ? [] : [h.OnBlur(options.onBlur)]),
+			...((options.error ?? null) === null
+				? []
+				: [h.AriaInvalid(true), h.AriaDescribedBy(`${options.id}-error`)]),
+		],
+		className: options.trailing === undefined ? undefined : "min-w-0 flex-1",
+	})
+	return frame(
 		h,
 		options,
-		input(h, {
-			id: options.id,
-			type: options.type,
-			isDisabled: options.isDisabled,
-			controlClassName: options.isMono === true ? "font-mono" : undefined,
-			attributes: [
-				h.Value(options.value),
-				h.OnInput(options.onInput),
-				...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
-				...(options.onBlur === undefined ? [] : [h.OnBlur(options.onBlur)]),
-				...((options.error ?? null) === null
-					? []
-					: [h.AriaInvalid(true), h.AriaDescribedBy(`${options.id}-error`)]),
-			],
-		}),
+		options.trailing === undefined ? control : hstack(h, { gap: "2" }, [control, options.trailing]),
 	)
+}
 
 export const textareaField = <M>(
 	h: HtmlBuilder<M>,

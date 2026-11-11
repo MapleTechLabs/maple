@@ -683,6 +683,56 @@ describe("StatusPagePublisher custom domains", () => {
 		),
 	)
 
+	it.effect("drops the removed page's route when the hostname's new claim is still pending", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const oldPage = newPageId()
+				const newPage = newPageId()
+				yield* seedPage(testDb, { id: oldPage, slug: "old-acme" })
+				yield* seedPage(testDb, { id: newPage, slug: "new-acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId: oldPage,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				assert.strictEqual(
+					(yield* store.contents).kv.get(StatusPageKeys.host("status.acme.com")),
+					oldPage,
+				)
+				// The old page lets the hostname go and another page claims it before its DNS lands.
+				yield* Effect.promise(() =>
+					executeSql(testDb, `DELETE FROM status_page_custom_domains WHERE page_id = $1`, [
+						oldPage,
+					]),
+				)
+				yield* seedCustomDomain(testDb, {
+					pageId: newPage,
+					hostname: "status.acme.com",
+					status: "pending_dns",
+				})
+				yield* seedCleanup(testDb, {
+					pageId: oldPage,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
 	it.effect("keeps the cleanup queued while Cloudflare is failing", () =>
 		withPublisher(({ testDb, cloudflare, publisher }) =>
 			Effect.gen(function* () {

@@ -46,6 +46,13 @@ const PURPOSE_LABEL = {
 	certificate: "Lets the certificate be issued",
 } as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
 
+/** Tells two TXT rows' copy buttons apart. */
+const PURPOSE_NAME = {
+	routing: "routing",
+	ownership: "ownership",
+	certificate: "certificate",
+} as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
+
 const copyCell = (h: H, model: Model, key: string, value: string, label: string): Html =>
 	hstack(h, { gap: "1", align: "center" }, [
 		typography(h, { size: "xs", mono: true, className: "break-all" }, [value]),
@@ -74,9 +81,9 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 							typography(h, { size: "xs", tone: "muted" }, [PURPOSE_LABEL[record.purpose]]),
 						]),
 					]),
-					tableCell(h, [copyCell(h, model, `name-${index}`, record.name, `${record.type} name`)]),
+					tableCell(h, [copyCell(h, model, `name-${index}`, record.name, `${PURPOSE_NAME[record.purpose]} ${record.type} name`)]),
 					tableCell(h, [
-						copyCell(h, model, `value-${index}`, record.value, `${record.type} value`),
+						copyCell(h, model, `value-${index}`, record.value, `${PURPOSE_NAME[record.purpose]} ${record.type} value`),
 					]),
 				]),
 			),
@@ -143,42 +150,35 @@ const hostnameForm = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 	return h.form(
 		[h.AriaLabel("Custom domain"), h.OnSubmit(Message.SubmittedCustomDomain())],
 		[
-			hstack(h, { gap: "2", align: "end", wrap: true }, [
-				textField(h, {
-					id: "status-page-custom-domain",
-					label: "Hostname",
-					value: customDomainInput(model),
-					placeholder: "status.acme.com",
-					isMono: true,
-					isDisabled: !canManage(model),
-					error:
-						issue ??
-						(model.customDomainFailure === null
-							? null
-							: failureMessage(model.customDomainFailure)),
-					hint:
-						domain.cname_target === null
-							? undefined
-							: `A subdomain you control, CNAMEd to ${domain.cname_target}.`,
-					className: "min-w-64 flex-1",
-					onInput: (value) => Message.ChangedCustomDomain({ value }),
-				}),
-				...(canManage(model)
-					? [
-							button(
-								h,
-								{
-									size: "default",
-									type: "submit",
-									isLoading: model.customDomainAction === "set",
-									isDisabled:
-										isUnchanged || issue !== null || model.customDomainAction !== null,
-								},
-								[domain.hostname === null ? "Add domain" : "Change domain"],
-							),
-						]
-					: []),
-			]),
+			textField(h, {
+				id: "status-page-custom-domain",
+				label: "Hostname",
+				value: customDomainInput(model),
+				placeholder: "status.acme.com",
+				isMono: true,
+				isDisabled: !canManage(model),
+				error:
+					issue ??
+					(model.customDomainFailure === null ? null : failureMessage(model.customDomainFailure)),
+				hint:
+					domain.cname_target === null
+						? undefined
+						: `A subdomain you control, CNAMEd to ${domain.cname_target}.`,
+				onInput: (value) => Message.ChangedCustomDomain({ value }),
+				trailing: !canManage(model)
+					? undefined
+					: button(
+							h,
+							{
+								size: "default",
+								type: "submit",
+								isLoading: model.customDomainAction === "set",
+								isDisabled:
+									isUnchanged || issue !== null || model.customDomainAction !== null,
+							},
+							[domain.hostname === null ? "Add domain" : "Change domain"],
+						),
+			}),
 		],
 	)
 }

@@ -1651,7 +1651,7 @@ describe("custom domain", () => {
 			expectView(text("status-domains.maple.dev")).toExist(),
 			expectView(text("_cf-custom-hostname.status.acme.com")).toExist(),
 			expectView(text("custom hostname does not CNAME to this zone.")).toExist(),
-			expectView(role("button", { name: "Copy TXT value" })).toExist(),
+			expectView(role("button", { name: "Copy ownership TXT value" })).toExist(),
 			expectView(role("button", { name: "Check now" })).toExist(),
 		)
 	})
