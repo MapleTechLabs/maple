@@ -2720,6 +2720,9 @@ export class CloudCostPersistenceError extends HttpTaggedError<CloudCostPersiste
 	},
 ) {}
 
+/** The widest window a cost read takes: a little past what `cost_daily` keeps. */
+export const COST_MAX_WINDOW_DAYS = 800
+
 /** Values per dimension a cost read may narrow to; the query inlines them, so both sizes are capped. */
 export const COST_FILTER_MAX_VALUES = 50
 export const COST_FILTER_MAX_VALUE_LENGTH = 300
@@ -3700,6 +3703,8 @@ const queryEngineEndpointErrors = [
 const costEndpointErrors = [
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
+	// A window wider than `COST_MAX_WINDOW_DAYS`.
+	QueryEngineValidationError,
 	...queryEngineEndpointErrors,
 ] as const
 

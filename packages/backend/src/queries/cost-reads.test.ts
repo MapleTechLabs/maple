@@ -469,6 +469,26 @@ describe("makeCostReads", () => {
 		},
 	)
 
+	it.effect("refuses a window wider than a cost read takes, before asking the warehouse", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb)
+			const years = { startTime: "2020-01-01 00:00:00", endTime: "2026-11-11 00:00:00" }
+			const refusals = yield* Effect.all([
+				Effect.flip(reads.totals(tenant, new CostTotalsRequest(years))),
+				Effect.flip(reads.timeseries(tenant, new CostTimeseriesRequest(years))),
+				Effect.flip(
+					reads.breakdown(tenant, new CostBreakdownRequest({ ...years, groupBy: "region" })),
+				),
+			])
+			expect(Arr.map(refusals, (error) => error._tag)).toEqual(
+				Arr.replicate("@maple/http/errors/QueryEngineValidationError", 3),
+			)
+			expect(statements).toEqual([])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("refuses every read for an org outside the cloudCost rollout", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

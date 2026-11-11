@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { Array as Arr, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -70,7 +70,12 @@ const makeWarehouse = (rows: ReadonlyArray<unknown>) => {
 }
 
 const makeHarness = (
-	options: { readonly awsAvailable: boolean; readonly warehouseRows?: ReadonlyArray<unknown> } = {
+	options: {
+		readonly awsAvailable: boolean
+		readonly warehouseRows?: ReadonlyArray<unknown>
+		/** The org is in the `cloudCost` rollout, so `cost` is offered. */
+		readonly cloudCost?: boolean
+	} = {
 		awsAvailable: true,
 	},
 ) => {
@@ -91,11 +96,14 @@ const makeHarness = (
 			HttpV2AwsIntegrationsLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
-						// Outside the `cloudCost` rollout, so `cost` is still a planned module here.
+						// Outside the `cloudCost` rollout unless a test asks for it: `cost` is then planned.
 						Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
 							Layer.provide([
 								FetchHttpClient.layer,
-								OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+								OrganizationFeatureFlagsService.fixed({
+									...DISABLED_ORGANIZATION_FEATURE_FLAGS,
+									cloudCost: options.cloudCost === true,
+								}),
 							]),
 						),
 						Layer.effect(AwsIngestService, AwsIngestService.make),
@@ -239,6 +247,38 @@ describe("v2 aws integration over HTTP", () => {
 			`delete-stack --region us-east-1 --stack-name ${setup.body.stack_name}`,
 		)
 		expect((await harness.request("GET", BASE, admin.secret)).body.connections).toEqual([])
+		await harness.dispose()
+	})
+
+	it("offers and accepts the cost module for an org in the cloudCost rollout", async () => {
+		const harness = makeHarness({ awsAvailable: true, cloudCost: true })
+		const admin = await harness.adminKey()
+		const availability = (body: { modules: ReadonlyArray<{ module: string; available: boolean }> }) =>
+			Arr.map(
+				Arr.filter(body.modules, (module) => module.available),
+				(module) => module.module,
+			)
+
+		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual(["cost"])
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+			modules: ["cost"],
+		})
+		expect(created.status).toBe(200)
+		expect(created.body.modules).toEqual(["cost"])
+		// The role's policy carries the module's reads.
+		const setup = await harness.request("GET", `${CONNECTIONS}/${created.body.id}/setup`, admin.secret)
+		expect(setup.body.cloudformation_template).toContain("ce:GetCostAndUsage")
+
+		const cleared = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
+			modules: [],
+		})
+		expect(cleared.body.modules).toEqual([])
+		const restored = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
+			modules: ["cost"],
+		})
+		expect(restored.status).toBe(200)
+		expect(restored.body.modules).toEqual(["cost"])
 		await harness.dispose()
 	})
 

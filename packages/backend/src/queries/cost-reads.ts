@@ -6,12 +6,14 @@ import {
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
 	COST_BREAKDOWN_DEFAULT_LIMIT,
+	COST_MAX_WINDOW_DAYS,
 	COST_TIMESERIES_DEFAULT_LIMIT,
 	type CostBreakdownRequest,
 	type CostSourceSummary,
 	type CostTimeseriesRequest,
 	type CostTotalsRequest,
 	type OrgId,
+	QueryEngineValidationError,
 	type TenantContext,
 } from "@maple/domain/http"
 import * as CH from "@maple/query-engine/ch"
@@ -30,7 +32,12 @@ import {
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
-import { daysOfWindow, historyFloor, utcMonth, utcToday } from "@maple/backend/services/cost/sync-plan"
+import {
+	daysOfWindow,
+	historyFloor,
+	requestsThisMonth,
+	utcToday,
+} from "@maple/backend/services/cost/sync-plan"
 import type { OrganizationFeatureFlagsServiceApi } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 
 export interface CostReadsDeps extends QueryRunnerDeps {
@@ -129,8 +136,7 @@ const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary =
 		lastSyncedAt: row.lastSyncedAt,
 		lastError: row.lastError,
 		lastErrorReason: row.lastErrorReason,
-		// The count belongs to `requestsMonth`: a new month starts from zero before the next sync.
-		requestsThisMonth: row.requestsMonth === utcMonth(nowMs) ? row.requestsCount : 0,
+		requestsThisMonth: requestsThisMonth(row, nowMs),
 	}
 }
 
@@ -159,12 +165,20 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 		})
 
 	/**
-	 * What every warehouse read carries, or null for an org with no source: the query does not
-	 * narrow on an empty id list, and a disconnected source keeps its rows.
+	 * What every warehouse read carries, or null for an org with no source, which needs no read.
+	 * A disconnected source keeps its rows, so a read always names the org's own sources.
 	 */
 	const windowOf = (tenant: TenantContext, payload: CostWindowRequest) =>
-		Effect.map(sourcesInRollout(tenant.orgId), (sources) =>
-			sources.length === 0
+		Effect.gen(function* () {
+			const sources = yield* sourcesInRollout(tenant.orgId)
+			// Every day of the window is a point of every series: an unbounded range is not a read.
+			if (Queries.wholeDayWindow(payload).days > COST_MAX_WINDOW_DAYS) {
+				return yield* new QueryEngineValidationError({
+					message: `A cost window covers at most ${COST_MAX_WINDOW_DAYS} days.`,
+					details: [],
+				})
+			}
+			return sources.length === 0
 				? null
 				: {
 						startTime: payload.startTime,
@@ -172,8 +186,8 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 						metric: payload.metric,
 						filters: payload.filters,
 						sourceIds: Arr.map(sources, (source) => source.id),
-					},
-		)
+					}
+		})
 
 	const totals = Effect.fn("CostReads.totals")(function* (
 		tenant: TenantContext,
