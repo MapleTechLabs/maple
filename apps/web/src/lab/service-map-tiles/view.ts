@@ -39,6 +39,7 @@ import {
 	MountScene,
 	placementsOf,
 	STATE_ATTRIBUTE,
+	STYLE_ATTRIBUTE,
 	topology,
 	TOPOLOGY_ATTRIBUTE,
 	WatchClock,
@@ -83,11 +84,9 @@ const healthDot = (h: H, errorRate: number): Html =>
 
 const TIME_OF_DAY = { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" } as const
 
-/** What the light button says: the held time of day, or what the viewer's clock makes it now. */
+/** What the light button says: the held time of day, or that it follows the viewer's clock. */
 const lightLabel = (model: Model): string =>
-	model.light === "clock"
-		? `Light: local time (${Str.toLowerCase(TIME_OF_DAY[daylightAt(model.clock).timeOfDay])})`
-		: `Light: ${Str.toLowerCase(TIME_OF_DAY[model.light])}`
+	model.light === "clock" ? "Light: auto" : `Light: ${Str.toLowerCase(TIME_OF_DAY[model.light])}`
 
 const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 	const dealing = model.stack.length > 0
@@ -139,7 +138,11 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					size: "sm",
 					variant: "ghost",
 					attributes: [
-						h.Title("Step through: your local time, dawn, day, dusk, night"),
+						h.Title(
+							model.light === "clock"
+								? `Following your local time: ${Str.toLowerCase(TIME_OF_DAY[daylightAt(model.clock).timeOfDay])} now. Click for dawn, day, dusk, night.`
+								: "Step through: your local time, dawn, day, dusk, night",
+						),
 						h.OnClick(Message.ClickedLight()),
 					],
 				},
@@ -151,7 +154,7 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					size: "sm",
 					variant: "ghost",
 					attributes: [
-						h.Title("Switch between the painted look and pixel art"),
+						h.Title("Switch between pixel art and the painted 3D look"),
 						h.OnClick(Message.ClickedStyle()),
 					],
 				},
@@ -175,10 +178,12 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 
 const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 	h.div(
-		[h.Key("tiles-canvas"), h.Class("absolute inset-0 overflow-hidden")],
+		// Keyed by the style: a canvas has one kind of context for life, so each look gets its own.
+		[h.Key(`tiles-canvas-${model.style}`), h.Class("absolute inset-0 overflow-hidden")],
 		[
 			h.canvas([
 				h.Class("block"),
+				h.Attribute(STYLE_ATTRIBUTE, model.style),
 				h.Attribute(TOPOLOGY_ATTRIBUTE, TOPOLOGY_JSON),
 				h.Attribute(CELLS_ATTRIBUTE, encodeJson(model.cells)),
 				h.Attribute(
@@ -470,8 +475,8 @@ const footer = (h: H, model: Model): Html =>
 							? "Click a pale cell to put the tile down"
 							: "Click a pale cell or another tile · Esc puts it back"
 						: model.isBuilding
-							? "Click a tile to lift it · drag to pan · right-drag to turn"
-							: "Click anything · drag to pan · right-drag to turn",
+							? `Click a tile to lift it · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`
+							: `Click anything · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`,
 				],
 			),
 			hstack(h, { gap: "3", wrap: true, as: "span" }, [

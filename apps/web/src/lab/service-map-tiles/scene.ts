@@ -2,22 +2,12 @@ import { encodeJson } from "@maple/views/data/request-key"
 import { Array as Arr, Option, Order, Record as Rec } from "effect"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
-import { connectedIds, health, HEALTH_COLOR } from "../../page/service-map/three/spatial-layout"
-import type { Node3D, Topology3D } from "../../page/service-map/three/types"
+import { health, HEALTH_COLOR } from "../../page/service-map/three/spatial-layout"
 import { quacker } from "../../page/service-map/three/quack"
-import { type Biome, biomeOf, biomesFor } from "./biome"
-import {
-	lakesOf,
-	type Link,
-	linksOf,
-	type Placements,
-	targetsFor,
-	type Targets,
-	type Wild,
-	wildsOf,
-} from "./board"
+import { biomeOf } from "./biome"
+import type { Link } from "./board"
 import { makeSky } from "./birds"
-import { type Clock, daylightAt } from "./daylight"
+import { daylightAt } from "./daylight"
 import { AWAY, FLIGHT, makeFlock } from "./ducks"
 import { makeFlourishes } from "./flourish"
 import {
@@ -33,61 +23,19 @@ import {
 	sameCell,
 } from "./hex"
 import { buildLake } from "./lake"
-import { type Network, networkOf } from "./network"
 import { type TilePalette, tilePalette } from "./palette"
-import { type ArtStyle, makePixelPass } from "./pixel"
 import { band, creases, fuse, type Vec3 } from "./solid"
 import { makeSounds } from "./sounds"
 import { buildTile, landmarkAt, type Tile, TILE_DEPTH, tileOutline } from "./tile"
 import { railNetwork } from "./rails"
 import { buildPoints, buildRoad, buildStation, buildTrack, RAIL_TOP } from "./tracks"
 import { makeTraffic, type Route, type Traffic } from "./traffic"
+import { derive, type SceneEvents, type SceneHandle, type SceneInput } from "./world"
 import { buildWild, type Feature, featureOf } from "./wild"
 
 // The landscape scene: one hex tile of land per service, a road where two tiles touch and a
 // railway along the tile borders where they do not. The lazy scene chunk's entry; the view owns
 // all DOM, and the scene only moves the `[data-tile-label]` elements under `[data-tiles-root]`.
-
-export interface CameraCommand {
-	readonly action: "reset" | "in" | "out"
-	readonly serial: number
-}
-
-export interface SceneInput {
-	readonly topology: Topology3D
-	/** Tiles on the board, by node id. A node without a cell is still in the stack. */
-	readonly cells: Readonly<Record<string, Cell>>
-	readonly selectedId: string | null
-	/** The tile in hand: it follows the pointer until it is put down. */
-	readonly heldId: string | null
-	/** Rearranging: a click picks a tile up instead of selecting it. */
-	readonly building: boolean
-	readonly flowing: boolean
-	readonly dark: boolean
-	/** Painted, or pixel art. */
-	readonly style: ArtStyle
-	/** The time of day the map is lit for: the viewer's own, or one held from the toolbar. */
-	readonly clock: Clock
-	/** The map's noises are off: quacks, whistles, bells. */
-	readonly muted: boolean
-	readonly command: CameraCommand
-}
-
-export interface SceneEvents {
-	readonly onSelect: (id: string | null) => void
-	readonly onPickUp: (id: string) => void
-	readonly onPlace: (id: string, cell: Cell) => void
-	/** The cell the held tile would land on, or `null` away from every target. */
-	readonly onHover: (cell: Cell | null) => void
-	readonly onCancel: () => void
-	/** A cart or a train was poked: the link it runs on. */
-	readonly onPokeLink: (linkId: string) => void
-}
-
-export interface SceneHandle {
-	readonly update: (input: SceneInput) => void
-	readonly stop: () => void
-}
 
 const LABEL_ATTRIBUTE = "data-tile-label"
 /** How many lamps and lighthouse beams the map has to hand out. */
@@ -104,97 +52,6 @@ const INRADIUS = NEIGHBOUR_DISTANCE / 2
 interface Size {
 	readonly width: number
 	readonly height: number
-}
-
-interface Derived {
-	readonly input: SceneInput
-	readonly palette: TilePalette
-	readonly links: ReadonlyArray<Link>
-	readonly cells: Placements
-	readonly nodes: ReadonlyMap<string, Node3D>
-	readonly sizes: ReadonlyMap<string, number>
-	readonly related: ReadonlySet<string> | null
-	readonly targets: Targets | null
-	/** One biome per namespace on the map. */
-	readonly biomes: ReadonlyMap<string, Biome>
-	/** Cells the land closes in on, flooded on their own; the first holds the ducks. */
-	readonly lakes: ReadonlyArray<Cell>
-	/** The open country round the tiles. */
-	readonly wilds: ReadonlyArray<Wild>
-	readonly network: Network
-	/** The middle and radius of the circle the camera frames. */
-	readonly centre: Point
-	readonly radius: number
-}
-
-/** The smallest circle round the tiles (and the cells a held tile may go to), so the view grows
- * as tiles go down. */
-const extentOf = (cells: ReadonlyArray<Cell>): { readonly centre: Point; readonly radius: number } => {
-	const points = Arr.map(cells, cellToPoint)
-	const first = points[0]
-	if (first === undefined) return { centre: [0, 0], radius: NEIGHBOUR_DISTANCE }
-	const far = (from: Point) =>
-		Arr.reduce(points, from, (best, point) =>
-			Math.hypot(point[0] - from[0], point[1] - from[1]) >
-			Math.hypot(best[0] - from[0], best[1] - from[1])
-				? point
-				: best,
-		)
-	// Each step pulls the centre a little less towards the furthest tile; it settles on the middle.
-	const centre = Arr.reduce(Arr.range(1, 60), first, (at: Point, step): Point => {
-		const furthest = far(at)
-		return [at[0] + (furthest[0] - at[0]) / (step + 1), at[1] + (furthest[1] - at[1]) / (step + 1)]
-	})
-	const furthest = far(centre)
-	const reach = Math.hypot(furthest[0] - centre[0], furthest[1] - centre[1])
-	// Quarter-tile steps, so the camera refits when the board grows, not on every tile.
-	const step = NEIGHBOUR_DISTANCE / 4
-	return { centre, radius: Math.ceil((reach + HEX_SIZE * 1.1) / step) * step }
-}
-
-const derive = (input: SceneInput, previous: Derived | null): Derived => {
-	const sameTopology = previous !== null && previous.input.topology === input.topology
-	const links = sameTopology ? previous.links : linksOf(input.topology)
-	const nodes = sameTopology
-		? previous.nodes
-		: new Map(Arr.map(input.topology.nodes, (node) => [node.id, node] as const))
-	const logs = Arr.map(input.topology.nodes, (node) => Math.log10(1 + node.throughput))
-	const low = Math.min(...logs)
-	const high = Math.max(...logs)
-	const sizes = sameTopology
-		? previous.sizes
-		: new Map(
-				Arr.map(input.topology.nodes, (node, index) => [
-					node.id,
-					high === low ? 0.5 : ((logs[index] ?? low) - low) / (high - low),
-				]),
-			)
-	const sameCells = previous !== null && previous.input.cells === input.cells
-	const cells: Placements = sameCells
-		? previous.cells
-		: new Map(Arr.filter(Rec.toEntries(input.cells), ([id]) => nodes.has(id)))
-	const targets = input.heldId === null ? null : targetsFor(cells, input.heldId)
-	const sameBoard = sameTopology && sameCells && previous.input.heldId === input.heldId
-	const lakes = sameBoard ? previous.lakes : lakesOf(cells, input.heldId ?? undefined)
-	const wilds = sameBoard ? previous.wilds : wildsOf(cells, lakes, input.heldId ?? undefined)
-	const country = [...lakes, ...Arr.map(wilds, (wild) => wild.cell)]
-	return {
-		input,
-		palette: tilePalette(input.dark),
-		links,
-		cells,
-		nodes,
-		sizes,
-		related: connectedIds(input.topology, input.selectedId),
-		targets,
-		biomes: sameTopology
-			? previous.biomes
-			: biomesFor(Arr.map(input.topology.nodes, (node) => node.namespace)),
-		lakes,
-		wilds,
-		network: sameBoard ? previous.network : networkOf(links, cells, input.heldId, country),
-		...extentOf([...cells.values(), ...country]),
-	}
 }
 
 // A guard keeps the default generics; a bare `instanceof` narrows to `Mesh<any, any>`.
@@ -241,14 +98,10 @@ const makeMaterials = (): Materials => ({
 	faint: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.7, depthWrite: false }),
 })
 
-const paint = (materials: Materials, palette: TilePalette, style: ArtStyle): void => {
+const paint = (materials: Materials, palette: TilePalette): void => {
 	materials.landDim.color.set(palette.dim)
-	// The painted look is inked along every crease. Pixel art outlines only what stands in
-	// front of something else, and its pass does that itself: the pencil lines would smother it.
 	materials.ink.color.set(palette.ink)
 	materials.inkDim.color.set(palette.ink)
-	materials.ink.visible = style === "painted"
-	materials.inkDim.visible = style === "painted"
 	materials.slot.color.set(palette.slot)
 	materials.slotEdge.color.set(palette.slotEdge)
 	materials.slotHover.color.set(palette.slotHover)
@@ -347,7 +200,6 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	renderer.toneMapping = THREE.NoToneMapping
 	renderer.shadowMap.enabled = true
 	renderer.shadowMap.type = THREE.PCFShadowMap
-	const pixels = makePixelPass(renderer)
 	const camera = new THREE.PerspectiveCamera(30, 1, 1, 2000)
 	const scene = new THREE.Scene()
 	const sky = new THREE.HemisphereLight()
@@ -956,7 +808,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	}
 
 	const sync = () => {
-		paint(materials, state.derived.palette, state.derived.input.style)
+		paint(materials, state.derived.palette)
 		syncLight()
 		syncTiles()
 		syncLakes()
@@ -997,7 +849,6 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const ratio = Math.min(Math.max(1, window.devicePixelRatio), 2)
 		renderer.setPixelRatio(ratio)
 		renderer.setSize(state.size.width, state.size.height, true)
-		pixels.resize(state.size.width * ratio, state.size.height * ratio, ratio)
 		camera.aspect = state.size.width / state.size.height
 		camera.updateProjectionMatrix()
 		invalidate()
@@ -1130,8 +981,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			const pace = (input.flowing ? 0.9 : 0) + ((spun.get(id) ?? 0) > seconds ? 8 : 0)
 			if (view.sails !== null) view.sails.rotation.z += delta * pace
 		})
-		if (input.style === "pixel") pixels.render(scene, camera)
-		else renderer.render(scene, camera)
+		renderer.render(scene, camera)
 		placeLabels()
 	}
 
@@ -1400,7 +1250,6 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			freeAll(scene)
 			hover.geometry.dispose()
 			Arr.forEach(Rec.values(materials), (material) => material.dispose())
-			pixels.dispose()
 			renderer.dispose()
 			renderer.forceContextLoss()
 		},

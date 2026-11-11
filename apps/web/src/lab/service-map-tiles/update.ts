@@ -16,8 +16,8 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
 import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
 import { Cell, ORIGIN } from "./hex"
-import { ArtStyle } from "./pixel"
-import type { SceneEvents, SceneHandle, SceneInput } from "./scene"
+import { ArtStyle } from "./style"
+import type { SceneEvents, SceneHandle, SceneInput } from "./world"
 
 // `/lab/service-map-tiles`: the service map as a landscape of hex tiles. The page keeps the
 // board (which tile stands on which cell, and the stack still to deal); the scene runs in a Mount
@@ -270,6 +270,8 @@ export const TOPOLOGY_ATTRIBUTE = "data-tiles-topology"
 export const CELLS_ATTRIBUTE = "data-tiles-cells"
 export const STATE_ATTRIBUTE = "data-tiles-state"
 export const COMMAND_ATTRIBUTE = "data-tiles-command"
+/** Which renderer the canvas is for; read once, when it mounts. */
+export const STYLE_ATTRIBUTE = "data-tiles-style"
 
 const decodeTopology = Schema.decodeUnknownOption(Schema.fromJsonString(Topology))
 const decodeCells = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Cell)))
@@ -364,14 +366,19 @@ export const MountScene = Mount.defineStream("MountServiceMapTiles", {
 			: Stream.callback<SceneMessage>((queue) =>
 					Effect.acquireRelease(
 						Effect.tryPromise({
-							try: () => import("./scene"),
+							// The two looks are two renderers: the canvas is made anew when the style
+							// changes, and each mount loads the one its canvas asks for.
+							try: (): Promise<StartScene> =>
+								element.getAttribute(STYLE_ATTRIBUTE) === "pixel"
+									? import("./pixel-scene").then((loaded) => loaded.startPixelScene)
+									: import("./scene").then((loaded) => loaded.startScene),
 							catch: (cause) =>
 								new SceneStartError({
 									message: "The landscape scene chunk did not load",
 									cause,
 								}),
 						}).pipe(
-							Effect.flatMap(({ startScene }) =>
+							Effect.flatMap((startScene) =>
 								Effect.try({
 									try: () =>
 										attach(element, startScene, (message) => {
