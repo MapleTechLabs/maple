@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain"
 import { baselineWarehouseCapabilities } from "../capabilities"
-import { costBreakdown, costTimeseries, costTotals } from "./cost"
+import { costBreakdown, costCurrencies, costTimeseries, costTotals } from "./cost"
 import { wholeDayWindow } from "./day-window"
 
 const orgId = OrgId.make("org_cost_registry")
@@ -69,6 +69,41 @@ describe("cost registry queries", () => {
 			expect(flat).toContain("max(cost_daily.EffectiveCost)")
 			expect(flat).toContain("cost_daily.Region IN ('eu-central-1')")
 			expect(flat).toContain("cost_daily.CloudService IN ('AmazonEC2', 'AmazonS3')")
+		}),
+	)
+
+	it.effect("narrows each read of money to the currency it is given", () =>
+		Effect.gen(function* () {
+			const read = { ...window, currency: "EUR" }
+			const compiled = yield* Effect.all([
+				costTotals.compile(read, orgId, capabilities),
+				costTimeseries.compile({ ...read, groupBy: "region" }, orgId, capabilities),
+				costBreakdown.compile({ ...read, groupBy: "region" }, orgId, capabilities),
+			])
+			expect(
+				Arr.map(compiled, ({ sql }) => Str.includes("cost_daily.Currency = 'EUR'")(oneLine(sql))),
+			).toEqual([true, true, true])
+			const anyCurrency = yield* costTotals.compile(window, orgId, capabilities)
+			expect(anyCurrency.sql).not.toContain("cost_daily.Currency =")
+		}),
+	)
+
+	it.effect("lists the currencies of the window and the period before, over the same rows", () =>
+		Effect.gen(function* () {
+			const { sql } = yield* costCurrencies.compile(
+				{ ...window, metric: "effective", filters: { region: ["eu-central-1"] } },
+				orgId,
+				capabilities,
+			)
+			const flat = oneLine(sql)
+			expect(flat).toContain("cost_daily.OrgId = 'org_cost_registry'")
+			expect(flat).toContain("cost_daily.SourceId IN ('source-a', 'source-b')")
+			expect(flat).toContain("cost_daily.Date >= '2026-09-01 00:00:00'")
+			expect(flat).toContain("cost_daily.Date <= '2026-10-30 00:00:00'")
+			expect(flat).toContain("latest.date >= '2026-10-01 00:00:00'")
+			expect(flat).toContain("max(cost_daily.EffectiveCost)")
+			expect(flat).toContain("cost_daily.Region IN ('eu-central-1')")
+			expect(flat).toContain("GROUP BY currency ORDER BY cost DESC, previousCost DESC, currency ASC")
 		}),
 	)
 

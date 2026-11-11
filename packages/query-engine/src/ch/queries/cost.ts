@@ -21,6 +21,11 @@ export const COST_OTHER_KEY = "__other__"
 export interface CostFilters {
 	readonly sourceIds?: ReadonlyArray<string>
 	readonly values?: Partial<Record<CostDimension, ReadonlyArray<string>>>
+	/**
+	 * Keeps only the rows billed in this currency, '' included. Nothing converts, so a read
+	 * without it adds every currency together: only `costCurrenciesQuery` may go without.
+	 */
+	readonly currency?: string
 }
 
 type DailyAccessor = ColumnAccessor<typeof Datasources.costDaily.columns>
@@ -132,6 +137,8 @@ function latestRows(filters: CostFilters, metric: CostMetric, startParam: StartP
 					CH.inList(pickDimension(dailyDimensions($), dimension), values),
 				),
 			),
+			// Here, not in `newestPulls`: a pull in another currency still supersedes the day.
+			CH.when(filters.currency, (currency) => $.Currency.eq(currency)),
 		])
 		.groupBy(
 			"date",
@@ -192,6 +199,35 @@ export function costTotalsQuery(opts: CostReadOpts = {}) {
 				currencies: CH.uniq($.currency),
 			}
 		})
+		.format("JSON")
+		.route("ingest")
+}
+
+export interface CostCurrenciesOutput {
+	readonly currency: string
+	/** The window's cost billed in the currency. */
+	readonly cost: number
+	readonly previousCost: number
+}
+
+/**
+ * Every currency of the window and the equal-length period before it, the window's largest first:
+ * what a read picks its one `currency` from, so it ignores that filter. Params: orgId,
+ * previousStartDate, startDate, endDate.
+ */
+export function costCurrenciesQuery(opts: Omit<CostReadOpts, "currency"> = {}) {
+	const filters = { sourceIds: opts.sourceIds, values: opts.values }
+	return costLatest(filters, opts.metric ?? "billed", "previousStartDate")
+		.select(($) => {
+			const current = $.date.gte(utcSecondsParam("startDate"))
+			return {
+				currency: $.currency,
+				cost: total(CH.sumIf($.cost, current)),
+				previousCost: total(CH.sumIf($.cost, CH.not(current))),
+			}
+		})
+		.groupBy("currency")
+		.orderBy(["cost", "desc"], ["previousCost", "desc"], ["currency", "asc"])
 		.format("JSON")
 		.route("ingest")
 }

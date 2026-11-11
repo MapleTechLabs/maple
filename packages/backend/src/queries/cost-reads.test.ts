@@ -46,22 +46,37 @@ const WINDOW = { startTime: "2026-10-01 08:00:00", endTime: "2026-10-03 20:00:00
 const DAYS = ["2026-10-01", "2026-10-02", "2026-10-03"]
 
 type Rows = ReadonlyArray<Record<string, unknown>>
-type QueryKind = "totals" | "breakdown" | "timeseries"
+type QueryKind = "currencies" | "totals" | "breakdown" | "timeseries"
 
 const kindOf = (sql: string): QueryKind =>
-	Str.includes("AS currencies")(sql)
-		? "totals"
-		: Str.includes("AS changeSize")(sql)
-			? "breakdown"
-			: "timeseries"
+	Str.includes("GROUP BY currency ORDER BY")(sql)
+		? "currencies"
+		: Str.includes("AS currencies")(sql)
+			? "totals"
+			: Str.includes("AS changeSize")(sql)
+				? "breakdown"
+				: "timeseries"
+
+/** The statements that read money: every one but the currency lookup each read starts with. */
+const moneyReads = (statements: ReadonlyArray<string>) =>
+	Arr.filter(statements, (sql) => kindOf(sql) !== "currencies")
+
+/** The currency each statement narrows its rows to, or null for one that reads them all. */
+const currencyOf = (sql: string) => /cost_daily\.Currency = '([^']*)'/u.exec(sql)?.[1] ?? null
+
+const USD_THEN_EUR = [
+	{ currency: "USD", cost: 72, previousCost: 73 },
+	{ currency: "EUR", cost: 40, previousCost: 0 },
+]
 
 /** A warehouse answering each kind of cost query from `rows`, recording every statement it ran. */
 const makeWarehouse = (rows: Partial<Record<QueryKind, Rows>>) => {
 	const statements: string[] = []
 	const decode = (compiled: CompiledQueryInput<unknown>) => {
 		const query = compiledQueryOf(compiled)
-		statements.push(Str.replace(/\s+/g, " ")(query.sql))
-		return query.decodeRows(rows[kindOf(query.sql)] ?? []).pipe(Effect.orDie)
+		const statement = Str.replace(/\s+/g, " ")(query.sql)
+		statements.push(statement)
+		return query.decodeRows(rows[kindOf(statement)] ?? []).pipe(Effect.orDie)
 	}
 	const warehouse = makeWarehouseServiceStub({
 		// SAFETY: these reads hand the stub a plain compiled query, never a capability compile.
@@ -160,19 +175,23 @@ describe("makeCostReads", () => {
 				previousCost: 0,
 				estimatedDays: 0,
 				currency: "",
-				mixedCurrencies: false,
+				currencies: [],
 				days: 3,
 			})
 			expect(
 				yield* reads.timeseries(tenant, new CostTimeseriesRequest({ ...WINDOW, groupBy: "region" })),
 			).toEqual({
+				currency: "",
 				days: DAYS,
 				series: [],
 				estimatedFrom: null,
 			})
 			expect(
-				yield* reads.breakdown(tenant, new CostBreakdownRequest({ ...WINDOW, groupBy: "region" })),
-			).toEqual({ rows: [] })
+				yield* reads.breakdown(
+					tenant,
+					new CostBreakdownRequest({ ...WINDOW, groupBy: "region", currency: "EUR" }),
+				),
+			).toEqual({ currency: "", rows: [] })
 			expect(yield* reads.sources(tenant)).toEqual({ sources: [] })
 			expect(statements).toEqual([])
 		}).pipe(Effect.provide(testDb.layer))
@@ -193,12 +212,17 @@ describe("makeCostReads", () => {
 			yield* reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))
 			yield* reads.timeseries(tenant, new CostTimeseriesRequest({ ...WINDOW, groupBy: "region" }))
 			yield* reads.breakdown(tenant, new CostBreakdownRequest({ ...WINDOW, groupBy: "region" }))
-			// Totals, the plain series, the top keys and their series, the breakdown.
+			// Totals, the plain series, the top keys and their series, the breakdown: each read
+			// starts by asking which currencies there are.
 			expect(Arr.map(statements, kindOf)).toEqual([
+				"currencies",
 				"totals",
+				"currencies",
 				"timeseries",
+				"currencies",
 				"breakdown",
 				"timeseries",
+				"currencies",
 				"breakdown",
 			])
 			expect(
@@ -211,15 +235,16 @@ describe("makeCostReads", () => {
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
-	it.effect("reports the window's totals, its length and whether currencies mix", () => {
+	it.effect("reports the window's totals in its largest currency, with its length", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
-			const mixed = yield* makeHarness(testDb, {
-				totals: [{ cost: 120.5, previousCost: 80, estimatedDays: 2, currency: "USD", currencies: 2 }],
+			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
+				totals: [{ cost: 120.5, previousCost: 80, estimatedDays: 2, currency: "USD", currencies: 1 }],
 			})
 			expect(
-				yield* mixed.reads.totals(
+				yield* reads.totals(
 					tenant,
 					new CostTotalsRequest({
 						...WINDOW,
@@ -232,28 +257,124 @@ describe("makeCostReads", () => {
 				previousCost: 80,
 				estimatedDays: 2,
 				currency: "USD",
-				mixedCurrencies: true,
+				currencies: ["USD", "EUR"],
 				days: 3,
 			})
-			expect(mixed.statements[0]).toContain("max(cost_daily.EffectiveCost)")
-			expect(mixed.statements[0]).toContain("cost_daily.Region IN ('eu-central-1')")
-			// The three days of the window and the three before them.
-			expect(mixed.statements[0]).toContain("cost_daily.Date >= '2026-09-28 00:00:00'")
-			expect(mixed.statements[0]).toContain("cost_daily.Date <= '2026-10-03 00:00:00'")
+			// The currencies are looked up over the same rows the totals then sum one currency of.
+			expect(Arr.map(statements, kindOf)).toEqual(["currencies", "totals"])
+			expect(Arr.map(statements, currencyOf)).toEqual([null, "USD"])
+			expect(
+				Arr.filter(
+					statements,
+					(sql) =>
+						Str.includes("max(cost_daily.EffectiveCost)")(sql) &&
+						Str.includes("cost_daily.Region IN ('eu-central-1')")(sql) &&
+						// The three days of the window and the three before them.
+						Str.includes("cost_daily.Date >= '2026-09-28 00:00:00'")(sql) &&
+						Str.includes("cost_daily.Date <= '2026-10-03 00:00:00'")(sql),
+				),
+			).toHaveLength(2)
+		}).pipe(Effect.provide(testDb.layer))
+	})
 
-			// A window with no cost rows counts no currency at all.
-			const none = yield* makeHarness(testDb, {
+	it.effect("resolves the currency once per read and passes it to every query", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
+				breakdown: [{ key: "eu-central-1", cost: 4, previousCost: 1, changeSize: 3 }],
+			})
+			const split = new CostTimeseriesRequest({ ...WINDOW, groupBy: "region" })
+			const shown = [
+				(yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))).currency,
+				(yield* reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))).currency,
+				(yield* reads.timeseries(tenant, split)).currency,
+				(yield* reads.breakdown(tenant, new CostBreakdownRequest({ ...WINDOW, groupBy: "region" })))
+					.currency,
+			]
+			// The largest in the window, though nothing asked for it.
+			expect(shown).toEqual(["USD", "USD", "USD", "USD"])
+			// One lookup per read, over every currency; the split series' two queries share its answer.
+			expect(Arr.map(statements, (sql) => [kindOf(sql), currencyOf(sql)])).toEqual([
+				["currencies", null],
+				["totals", "USD"],
+				["currencies", null],
+				["timeseries", "USD"],
+				["currencies", null],
+				["breakdown", "USD"],
+				["timeseries", "USD"],
+				["currencies", null],
+				["breakdown", "USD"],
+			])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("reads the currency the request names, and lists it first", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
+				totals: [{ cost: 40, previousCost: 0, estimatedDays: 0, currency: "EUR", currencies: 1 }],
+				breakdown: [{ key: "AmazonEC2", cost: 40, previousCost: 0, changeSize: 40 }],
+			})
+			const eur = { ...WINDOW, currency: "EUR" }
+			expect(yield* reads.totals(tenant, new CostTotalsRequest(eur))).toMatchObject({
+				cost: 40,
+				currency: "EUR",
+				currencies: ["EUR", "USD"],
+			})
+			const series = yield* reads.timeseries(
+				tenant,
+				new CostTimeseriesRequest({ ...eur, groupBy: "cloud_service" }),
+			)
+			const rows = yield* reads.breakdown(
+				tenant,
+				new CostBreakdownRequest({ ...eur, groupBy: "cloud_service" }),
+			)
+			expect([series.currency, rows.currency]).toEqual(["EUR", "EUR"])
+			// Totals, the top keys and their series, the breakdown: none reads the larger USD.
+			expect(Arr.map(moneyReads(statements), currencyOf)).toEqual(["EUR", "EUR", "EUR", "EUR"])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("reads zeros in a currency nothing is billed in, and still lists what is", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
 				totals: [{ cost: 0, previousCost: 0, estimatedDays: 0, currency: "", currencies: 0 }],
 			})
-			expect((yield* none.reads.totals(tenant, new CostTotalsRequest(WINDOW))).mixedCurrencies).toBe(
-				false,
-			)
-			const single = yield* makeHarness(testDb, {
-				totals: [{ cost: 5, previousCost: 0, estimatedDays: 0, currency: "EUR", currencies: 1 }],
+			expect(
+				yield* reads.totals(tenant, new CostTotalsRequest({ ...WINDOW, currency: "GBP" })),
+			).toEqual({
+				cost: 0,
+				previousCost: 0,
+				estimatedDays: 0,
+				currency: "GBP",
+				currencies: ["USD", "EUR"],
+				days: 3,
 			})
-			expect((yield* single.reads.totals(tenant, new CostTotalsRequest(WINDOW))).mixedCurrencies).toBe(
-				false,
-			)
+			expect(Arr.map(moneyReads(statements), currencyOf)).toEqual(["GBP"])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("names no currency for sources that have billed nothing, and still sums none together", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb, {
+				totals: [{ cost: 0, previousCost: 0, estimatedDays: 0, currency: "", currencies: 0 }],
+			})
+			expect(yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))).toMatchObject({
+				cost: 0,
+				currency: "",
+				currencies: [],
+			})
+			// Rows that land between the two queries are not added up across their currencies.
+			expect(Arr.map(moneyReads(statements), currencyOf)).toEqual([""])
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
@@ -262,6 +383,7 @@ describe("makeCostReads", () => {
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
 			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
 				breakdown: [
 					{ key: "AmazonS3", cost: 40, previousCost: 0, changeSize: 40 },
 					{ key: "AmazonEC2", cost: 15, previousCost: 30, changeSize: 15 },
@@ -279,6 +401,7 @@ describe("makeCostReads", () => {
 				new CostTimeseriesRequest({ ...WINDOW, groupBy: "cloud_service", limit: 2 }),
 			)
 			expect(result).toEqual({
+				currency: "USD",
 				days: DAYS,
 				series: [
 					{ key: "AmazonS3", other: false, total: 40, points: [0, 40, 0] },
@@ -288,7 +411,7 @@ describe("makeCostReads", () => {
 				],
 				estimatedFrom: "2026-10-02",
 			})
-			const [topKeys, series] = statements
+			const [topKeys, series] = moneyReads(statements)
 			expect(topKeys).toContain("ORDER BY cost DESC, key ASC LIMIT 2")
 			expect(series).toContain("IN ('AmazonS3', 'AmazonEC2')")
 			// The series cover the window alone, not the period the top keys are compared against.
@@ -316,7 +439,7 @@ describe("makeCostReads", () => {
 				{ key: "eu-central-1", other: false, total: 7, points: [0, 7, 0] },
 			])
 			expect(result.estimatedFrom).toBeNull()
-			expect(statements[0]).toContain("LIMIT 8")
+			expect(moneyReads(statements)[0]).toContain("LIMIT 8")
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
@@ -328,11 +451,12 @@ describe("makeCostReads", () => {
 			expect(
 				yield* reads.timeseries(tenant, new CostTimeseriesRequest({ ...WINDOW, groupBy: "service" })),
 			).toEqual({
+				currency: "",
 				days: DAYS,
 				series: [],
 				estimatedFrom: null,
 			})
-			expect(Arr.map(statements, kindOf)).toEqual(["breakdown"])
+			expect(Arr.map(statements, kindOf)).toEqual(["currencies", "breakdown"])
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
@@ -341,14 +465,16 @@ describe("makeCostReads", () => {
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
 			const some = yield* makeHarness(testDb, {
+				currencies: [{ currency: "EUR", cost: 15, previousCost: 0 }],
 				timeseries: [timeseriesRow("2026-10-01", "", 12), timeseriesRow("2026-10-03", "", 3, 1)],
 			})
 			expect(yield* some.reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))).toEqual({
+				currency: "EUR",
 				days: DAYS,
 				series: [{ key: "", other: false, total: 15, points: [12, 0, 3] }],
 				estimatedFrom: "2026-10-03",
 			})
-			expect(Arr.map(some.statements, kindOf)).toEqual(["timeseries"])
+			expect(Arr.map(some.statements, kindOf)).toEqual(["currencies", "timeseries"])
 
 			// Sources connected, nothing billed yet: a flat line, not a missing one.
 			const quiet = yield* makeHarness(testDb)
@@ -363,6 +489,7 @@ describe("makeCostReads", () => {
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
 			const { reads, statements } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
 				breakdown: [
 					{ key: "AmazonRDS", cost: 0, previousCost: 90, changeSize: 90 },
 					{ key: "AmazonEC2", cost: 50, previousCost: 20, changeSize: 30 },
@@ -379,14 +506,15 @@ describe("makeCostReads", () => {
 					}),
 				),
 			).toEqual({
+				currency: "USD",
 				rows: [
 					{ key: "AmazonRDS", cost: 0, previousCost: 90 },
 					{ key: "AmazonEC2", cost: 50, previousCost: 20 },
 				],
 			})
-			expect(statements[0]).toContain("ORDER BY changeSize DESC, key ASC LIMIT 25")
+			expect(moneyReads(statements)[0]).toContain("ORDER BY changeSize DESC, key ASC LIMIT 25")
 			yield* reads.breakdown(tenant, new CostBreakdownRequest({ ...WINDOW, groupBy: "cloud_service" }))
-			expect(statements[1]).toContain("ORDER BY cost DESC, key ASC LIMIT 50")
+			expect(moneyReads(statements)[1]).toContain("ORDER BY cost DESC, key ASC LIMIT 50")
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
@@ -486,6 +614,46 @@ describe("makeCostReads", () => {
 				Arr.replicate("@maple/http/errors/QueryEngineValidationError", 3),
 			)
 			expect(statements).toEqual([])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("refuses a window that starts after it ends, before asking the warehouse", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads, statements } = yield* makeHarness(testDb)
+			// Floored to days it would read as October 3rd alone.
+			const reversed = { startTime: "2026-10-03 20:00:00", endTime: "2026-10-01 08:00:00" }
+			// The same second: only the fraction, of another length, puts the start later.
+			const reversedWithinASecond = {
+				startTime: "2026-10-03 20:00:00.5",
+				endTime: "2026-10-03 20:00:00.25",
+			}
+			const refusals = yield* Effect.all([
+				Effect.flip(reads.totals(tenant, new CostTotalsRequest(reversed))),
+				Effect.flip(reads.timeseries(tenant, new CostTimeseriesRequest(reversed))),
+				Effect.flip(
+					reads.breakdown(tenant, new CostBreakdownRequest({ ...reversed, groupBy: "region" })),
+				),
+				Effect.flip(reads.totals(tenant, new CostTotalsRequest(reversedWithinASecond))),
+			])
+			expect(Arr.map(refusals, (error) => error._tag)).toEqual(
+				Arr.replicate("@maple/http/errors/QueryEngineValidationError", 4),
+			)
+			expect(statements).toEqual([])
+
+			// One day, entered as a span inside it or as a single instant.
+			const sameDay = { startTime: "2026-10-03 08:00:00", endTime: "2026-10-03 20:00:00.250" }
+			const instant = { startTime: "2026-10-03 08:00:00", endTime: "2026-10-03 08:00:00.000" }
+			expect((yield* reads.totals(tenant, new CostTotalsRequest(sameDay))).days).toBe(1)
+			expect((yield* reads.timeseries(tenant, new CostTimeseriesRequest(instant))).days).toEqual([
+				"2026-10-03",
+			])
+			expect(
+				(yield* reads.breakdown(tenant, new CostBreakdownRequest({ ...sameDay, groupBy: "region" })))
+					.rows,
+			).toEqual([])
+			expect(moneyReads(statements)).toHaveLength(3)
 		}).pipe(Effect.provide(testDb.layer))
 	})
 

@@ -21,11 +21,18 @@ interface CostWindowPayload {
 	readonly sourceIds: ReadonlyArray<string>
 }
 
-const readOpts = (payload: CostWindowPayload) => ({
+/** A read of money: `currency` is the one it sums. Without it the sum adds every currency together. */
+interface CostReadPayload extends CostWindowPayload {
+	readonly currency?: string | undefined
+}
+
+const windowOpts = (payload: CostWindowPayload) => ({
 	sourceIds: payload.sourceIds,
 	values: payload.filters,
 	metric: payload.metric,
 })
+
+const readOpts = (payload: CostReadPayload) => ({ ...windowOpts(payload), currency: payload.currency })
 
 const params = (payload: CostWindowPayload, orgId: OrgId) => {
 	const days = wholeDayWindow(payload)
@@ -38,15 +45,24 @@ const comparedParams = (payload: CostWindowPayload, orgId: OrgId) => ({
 	previousStartDate: wholeDayWindow(payload).previousStartDate,
 })
 
+/** The currencies a window and the period before it are billed in: what a read picks its one from. */
+export const costCurrencies = defineQuery({
+	id: "costCurrencies",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: CostWindowPayload, orgId: OrgId) =>
+		CH.compile(CH.costCurrenciesQuery(windowOpts(payload)), comparedParams(payload, orgId)),
+})
+
 export const costTotals = defineQuery({
 	id: "costTotals",
 	profile: "aggregation",
 	cache: timeRangeCache,
-	compile: (payload: CostWindowPayload, orgId: OrgId) =>
+	compile: (payload: CostReadPayload, orgId: OrgId) =>
 		CH.compile(CH.costTotalsQuery(readOpts(payload)), comparedParams(payload, orgId)),
 })
 
-export interface CostTimeseriesPayload extends CostWindowPayload {
+export interface CostTimeseriesPayload extends CostReadPayload {
 	readonly groupBy?: CostDimension | undefined
 	/** With `groupBy`: the keys that keep their own series; the rest fold into `COST_OTHER_KEY`. */
 	readonly keys?: ReadonlyArray<string> | undefined
@@ -67,7 +83,7 @@ export const costTimeseries = defineQuery({
 		),
 })
 
-export interface CostBreakdownPayload extends CostWindowPayload {
+export interface CostBreakdownPayload extends CostReadPayload {
 	readonly groupBy: CostDimension
 	readonly sortBy?: CH.CostBreakdownSortKey | undefined
 	readonly limit?: number | undefined

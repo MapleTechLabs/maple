@@ -51,6 +51,21 @@ describe("cost request filters", () => {
 	})
 })
 
+describe("cost request currency", () => {
+	it("takes a three-letter uppercase code on every read, and nothing else", () => {
+		expect(accepts("totals", { ...WINDOW, currency: "EUR" })).toBe(true)
+		expect(accepts("timeseries", { ...WINDOW, currency: "USD" })).toBe(true)
+		expect(accepts("breakdown", { ...WINDOW, groupBy: "region", currency: "JPY" })).toBe(true)
+		expect(accepts("totals", { ...WINDOW, currency: "eur" })).toBe(false)
+		expect(accepts("timeseries", { ...WINDOW, currency: "EURO" })).toBe(false)
+		expect(accepts("breakdown", { ...WINDOW, groupBy: "region", currency: "$" })).toBe(false)
+		expect(accepts("totals", { ...WINDOW, currency: "" })).toBe(false)
+		// A quote must not reach the query, which inlines the value.
+		expect(accepts("totals", { ...WINDOW, currency: "U'D" })).toBe(false)
+		expect(accepts("totals", { ...WINDOW, currency: "EUR\n" })).toBe(false)
+	})
+})
+
 describe("cost request limits", () => {
 	it("keeps a split timeseries between 1 and 20 series", () => {
 		const request = { ...WINDOW, groupBy: "cloud_service" }

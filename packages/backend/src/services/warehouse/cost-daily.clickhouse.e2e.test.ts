@@ -4,7 +4,8 @@
 //   - a key the provider dropped on restatement still counting (argMax per key would keep it),
 //   - an ingest retry's copy of a row counting twice (the seed keeps both copies unmerged),
 //   - a disconnected source's rows counting once the caller names the active sources,
-//   - the sync's zero marker row for an emptied day showing as a key of its own.
+//   - the sync's zero marker row for an emptied day showing as a key of its own,
+//   - two sources billing in different currencies adding up to one figure.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect, Order, Array as Arr, String as Str } from "effect"
@@ -146,6 +147,11 @@ const breakdown = async (opts: CH.CostBreakdownOpts) => {
 	return Arr.map(await runJson(sql), (r) => [r.key, r.cost, r.previousCost])
 }
 
+const currencies = async (opts: Parameters<typeof CH.costCurrenciesQuery>[0], at = params) => {
+	const { sql } = Effect.runSync(CH.compile(CH.costCurrenciesQuery(opts), at))
+	return Arr.map(await runJson(sql), (r) => [r.currency, r.cost, r.previousCost])
+}
+
 const timeseries = async (opts: CH.CostTimeseriesOpts) => {
 	const { sql } = Effect.runSync(CH.compile(CH.costTimeseriesQuery(opts), params))
 	return Arr.map(await runJson(sql), (r) => [r.date, r.key, r.cost, r.estimated])
@@ -274,6 +280,82 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 			currency: "EUR",
 			currencies: 2,
 		})
+	})
+
+	// `src_a` bills in USD; `src_switched` in EUR inside the window and in USD before it.
+	const TWO_CURRENCIES = { sourceIds: ["src_a", "src_switched"] }
+
+	it("leaves the other currency's rows out of every read of one currency", async () => {
+		const usd = { ...TWO_CURRENCIES, currency: "USD" }
+		// The 40 EUR of day 1 is in none of them; the switched account's 15 USD is, before the window.
+		assert.deepStrictEqual(await totals(usd), {
+			cost: 72,
+			previousCost: 73,
+			estimatedDays: 1,
+			currency: "USD",
+			currencies: 1,
+		})
+		assert.deepStrictEqual(await timeseries(usd), [
+			[day(0), "", 16, 0],
+			[day(1), "", 25, 0],
+			[day(2), "", 31, 1],
+		])
+		assert.deepStrictEqual(await breakdown({ ...usd, dimension: "cloud_service" }), [
+			["EC2", 62, 23],
+			["ELB", 5, 0],
+			["S3", 4, 0],
+			["Route 53", 1, 0],
+			["RDS", 0, 50],
+		])
+	})
+
+	it("reads only the other currency's rows when asked for it", async () => {
+		const eur = { ...TWO_CURRENCIES, currency: "EUR" }
+		assert.deepStrictEqual(await totals(eur), {
+			cost: 40,
+			previousCost: 0,
+			estimatedDays: 0,
+			currency: "EUR",
+			currencies: 1,
+		})
+		assert.deepStrictEqual(await timeseries(eur), [[day(1), "", 40, 0]])
+		assert.deepStrictEqual(await breakdown({ ...eur, dimension: "cloud_service" }), [["EC2", 40, 0]])
+	})
+
+	it("reads nothing in a currency no row is billed in", async () => {
+		const gbp = { ...TWO_CURRENCIES, currency: "GBP" }
+		assert.strictEqual((await totals(gbp))?.cost, 0)
+		assert.deepStrictEqual(await timeseries(gbp), [])
+		assert.deepStrictEqual(await breakdown({ ...gbp, dimension: "cloud_service" }), [])
+	})
+
+	it("lists each currency with its own cost, the window's largest first", async () => {
+		assert.deepStrictEqual(await currencies(TWO_CURRENCIES), [
+			["USD", 72, 73],
+			["EUR", 40, 0],
+		])
+		assert.deepStrictEqual(await currencies({ ...TWO_CURRENCIES, metric: "effective" }), [
+			["USD", 70, 73],
+			["EUR", 40, 0],
+		])
+		// The window's cost decides, not the larger amount before it nor the name.
+		assert.deepStrictEqual(await currencies({ sourceIds: ["src_switched"] }), [
+			["EUR", 40, 0],
+			["USD", 0, 15],
+		])
+		assert.deepStrictEqual(await currencies({ ...TWO_CURRENCIES, values: { region: ["global"] } }), [
+			["USD", 1, 0],
+		])
+		assert.deepStrictEqual(await currencies({ sourceIds: [] }), [])
+	})
+
+	it("orders currencies with no cost in the window by their cost before it", async () => {
+		// The three days after the seed: every row falls in the period before.
+		const later = { ...params, previousStartDate: day(0), startDate: day(3), endDate: day(5) }
+		assert.deepStrictEqual(await currencies(TWO_CURRENCIES, later), [
+			["USD", 0, 72],
+			["EUR", 0, 40],
+		])
 	})
 
 	it("ranks by the size of the move in either direction", async () => {
