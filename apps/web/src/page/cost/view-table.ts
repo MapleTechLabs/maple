@@ -105,9 +105,10 @@ const row = (
 	currency: string,
 ): Html => {
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
-	// While a source still backfills the period before, its cost there is too low to compare with.
+	// A period a source lacks history for is too cheap to compare with; the totals carry the
+	// window's days, so nothing is compared until they answer.
 	const previousSynced =
-		totals === undefined ||
+		totals !== undefined &&
 		previousPeriodOf(
 			Option.match(AsyncData.getData(model.sources.data), {
 				onNone: () => [],

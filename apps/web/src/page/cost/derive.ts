@@ -9,7 +9,7 @@ import {
 import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engine/datetime"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
 
@@ -174,6 +174,15 @@ export type ChartRow = Readonly<Record<string, string | number | boolean>>
 
 type SeriesKey = Readonly<{ key: string; other: boolean }>
 
+/** `name`, or its first marked form no taken name has: one of `taken.length + 2` forms is free. */
+const freeName = (name: string, mark: string, taken: ReadonlyArray<string>): string =>
+	Arr.findFirst(
+		Arr.makeBy(taken.length + 2, (index) =>
+			index === 0 ? name : index === 1 ? `${name} (${mark})` : `${name} (${mark} ${index})`,
+		),
+		(candidate) => !Arr.contains(taken, candidate),
+	).pipe(Option.getOrElse(() => name))
+
 /**
  * Each series' name in the chart, in order: the folded tail reads "Other", an empty key its
  * placeholder. A name is a chart column, so one a real key already has is told apart from it.
@@ -183,10 +192,8 @@ export const seriesLabels = (
 	series: ReadonlyArray<SeriesKey>,
 ): ReadonlyArray<string> => {
 	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [entry.key]))
-	const placeholder = DIMENSIONS[dimension].empty
-	const empty = Arr.contains(named, placeholder) ? `${placeholder} (empty)` : placeholder
-	const other =
-		Arr.contains(named, OTHER_LABEL) || empty === OTHER_LABEL ? `${OTHER_LABEL} (the rest)` : OTHER_LABEL
+	const empty = freeName(DIMENSIONS[dimension].empty, "empty", named)
+	const other = freeName(OTHER_LABEL, "the rest", [...named, empty])
 	return Arr.map(series, (entry) => (entry.other ? other : entry.key === "" ? empty : entry.key))
 }
 

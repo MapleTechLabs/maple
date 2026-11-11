@@ -6,7 +6,7 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 } from "@maple/domain/http"
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -460,9 +460,19 @@ describe("cost page", () => {
 				"Other (the rest)": 2,
 			},
 		])
+		// Keys that spell the marked names too: every series still has a column of its own.
+		const marked = Schema.decodeSync(CostTimeseriesResponse)({
+			...Schema.encodeSync(CostTimeseriesResponse)(response),
+			series: [
+				...response.series,
+				{ key: "Other (the rest)", other: false, total: 1, points: [1] },
+				{ key: "No region (empty)", other: false, total: 1, points: [1] },
+			],
+		})
+		expect(Rec.keys(chartRows(marked, "region")[0] ?? {})).toHaveLength(7)
 	})
 
-	test("the rows keep their currency when the totals read failed", () => {
+	test("the rows keep their currency when the totals read failed, and compare with nothing", () => {
 		const step = entered({ groupBy: "region" }, [source()]).model
 		const model = Arr.reduce(
 			[
@@ -478,7 +488,15 @@ describe("cost page", () => {
 			step,
 			(next, message) => pageUpdate(next, message).model,
 		)
-		scene({ update: pageUpdate, view }, given(model), resolveTheme, expectView(text("$900.00")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("$900.00")).toExist(),
+			// The totals carry the window's days: without them the period before cannot be checked.
+			expectView(text("$600.00")).not.toExist(),
+			expectView(text("+$300.00")).not.toExist(),
+		)
 	})
 
 	test("a fraction of a cent of credit reads as zero, not as a negative zero", () => {
