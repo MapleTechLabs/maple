@@ -133,7 +133,7 @@ finally:
 
 ## Verify
 
-Run two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent Sessions**. You should see one session with framework **smolagents**, one turn per `agent.run()`, a transcript, `OpenAIModel.generate` model calls with token counts, and `execute_tool <name>` tool calls. Each run ends with an `execute_tool final_answer` call. Cost shows as unpriced.
+Run two or three messages through `handle_message` with the same conversation id, including one that uses a tool, then open **Agent sessions**. You should see one session with framework **smolagents**, one turn per `agent.run()`, a transcript, `OpenAIModel.generate` model calls with token counts, and `execute_tool <name>` tool calls. Each run ends with an `execute_tool final_answer` call. Cost shows as unpriced.
 
 ## Troubleshooting
 

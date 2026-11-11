@@ -5,7 +5,7 @@ group: "Product Events"
 order: 1
 ---
 
-A product event is a named thing a person did: `signup_completed`, `checkout_completed`, `plan_started`. Maple stores every one in a single `product_events` table, keyed to a person by `user_id`, `group_id` and `visitor_id`, and keeps it for 365 days. Funnels, drop-off and paths in the dashboard query builder run on that table, and **Web Analytics** filters and breaks down browser events.
+A product event is a named thing a person did: `signup_completed`, `checkout_completed`, `plan_started`. Maple stores every one in a single `product_events` table, keyed to a person by `user_id`, `group_id` and `visitor_id`, and keeps it for 365 days. Funnels, drop-off and paths in the dashboard query builder run on that table, and **Web analytics** filters and breaks down browser events.
 
 Product events do not require session replay or the browser SDK. Any service that emits OpenTelemetry spans, or can make an HTTP request, can send them.
 
@@ -65,7 +65,7 @@ Names are 1 to 128 bytes. Names starting with `$` are reserved for Maple's SDKs.
 
 Send one event, then check within a minute:
 
-- **Browser `track()`**: open **Web Analytics**. The event is listed on the **Events** card, and in the **Event** section of the sidebar.
+- **Browser `track()`**: open **Web analytics**. The event is listed on the **Events** card, and in the **Event** section of the sidebar.
 - **Span annotation**: open the trace that produced it. The trace page lists it under **Product events**.
 - **Any source**: open a dashboard, add a chart, and pick **Product events** as the data source. The event name is available to count and filter.
 

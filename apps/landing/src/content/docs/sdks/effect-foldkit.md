@@ -145,7 +145,7 @@ The full path stays on the span as `url.path`.
 | `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name or template                     |
 | `slowPhases`           | `false \| { Update?, View?, Patch? }`   | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false` to turn them off                          |
 
-The returned object has `instrument`, plus the `layer`, `flush()` and `dispose()` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.
+The returned object has `instrument`, plus the `layer`, `flush()`, `dispose()` and `captureException(error)` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.
 
 ## Verify
 
