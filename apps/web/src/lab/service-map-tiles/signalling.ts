@@ -17,8 +17,6 @@ export interface Line {
 	/** Top speed, world units per second. */
 	readonly speed: number
 	readonly blocks: ReadonlyArray<Block>
-	/** How far apart the wagons ride; `COUPLING` unless the drawn wagons are another length. */
-	readonly coupling?: number
 }
 
 /** Standing at home, running out, standing at the far station, backing home. */
@@ -50,7 +48,7 @@ export const STAND = 1.6
 const SIGHT = 1.4
 
 /** From the engine's middle back to the end of its last wagon. */
-export const tailOf = (line: Line): number => line.wagons * (line.coupling ?? COUPLING) + 0.27
+export const tailOf = (line: Line): number => line.wagons * COUPLING + 0.27
 
 /** Where the engine stands at home: its last wagon just clear of the buffer. */
 export const homeOf = (line: Line): number => tailOf(line) + 0.1
@@ -101,7 +99,7 @@ export const roomFor = (line: Line): number => {
 	// At home the nose must stop short of the first block; at the far station the tail must
 	// have left the last one.
 	const tail = Math.min(first - NOSE - AIR - 0.1, line.length - NOSE - 0.11 - AIR - last)
-	return Math.min(line.wagons, Math.floor((tail - 0.27) / (line.coupling ?? COUPLING) + 1e-9))
+	return Math.min(line.wagons, Math.floor((tail - 0.27) / COUPLING + 1e-9))
 }
 
 /** A train for `line`, standing at home with `rest` seconds to go. It sheds wagons until it

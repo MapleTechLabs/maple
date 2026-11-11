@@ -16,7 +16,6 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
 import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
 import { Cell, ORIGIN } from "./hex"
-import { ArtStyle } from "./style"
 import type { SceneEvents, SceneHandle, SceneInput } from "./world"
 
 // `/lab/service-map-tiles`: the service map as a landscape of hex tiles. The page keeps the
@@ -49,8 +48,6 @@ export const Model = Schema.Struct({
 	pokedLinkId: Schema.NullOr(Schema.String),
 	/** The map's noises are off. */
 	isMuted: Schema.Boolean,
-	/** How the map is drawn: painted, or pixel art. */
-	style: ArtStyle,
 	/** How the map is lit: by the viewer's clock, or held at one time of day. */
 	light: LightMode,
 	/** The viewer's clock, read at the start and again every minute. */
@@ -72,7 +69,6 @@ export const Message = defineMessageUnion({
 	ClickedPlaceRest: {},
 	ClickedTraffic: { isFlowing: Schema.Boolean },
 	ClickedSound: {},
-	ClickedStyle: {},
 	/** Steps the light on: the clock, then dawn, day, dusk and night. */
 	ClickedLight: {},
 	TickedClock: { clock: Clock },
@@ -130,7 +126,6 @@ export const init = (flags: Flags): Return => ({
 		selectedId: null,
 		pokedLinkId: null,
 		isMuted: false,
-		style: "pixel",
 		light: "clock",
 		clock: flags.clock,
 		traffic: null,
@@ -199,10 +194,6 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedSound: () => ({ model: { ...model, isMuted: !model.isMuted } }),
-		// The other renderer gets its own try: one that failed must not keep it from mounting.
-		ClickedStyle: () => ({
-			model: { ...model, style: model.style === "pixel" ? "painted" : "pixel", isFailed: false },
-		}),
 		ClickedLight: () => ({
 			model: {
 				...model,
@@ -263,7 +254,6 @@ export const SceneState = Schema.Struct({
 	flowing: Schema.Boolean,
 	dark: Schema.Boolean,
 	muted: Schema.Boolean,
-	style: ArtStyle,
 	clock: Clock,
 })
 
@@ -271,8 +261,6 @@ export const TOPOLOGY_ATTRIBUTE = "data-tiles-topology"
 export const CELLS_ATTRIBUTE = "data-tiles-cells"
 export const STATE_ATTRIBUTE = "data-tiles-state"
 export const COMMAND_ATTRIBUTE = "data-tiles-command"
-/** Which renderer the canvas is for; read once, when it mounts. */
-export const STYLE_ATTRIBUTE = "data-tiles-style"
 
 const decodeTopology = Schema.decodeUnknownOption(Schema.fromJsonString(Topology))
 const decodeCells = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Cell)))
@@ -367,12 +355,8 @@ export const MountScene = Mount.defineStream("MountServiceMapTiles", {
 			: Stream.callback<SceneMessage>((queue) =>
 					Effect.acquireRelease(
 						Effect.tryPromise({
-							// The two looks are two renderers: the canvas is made anew when the style
-							// changes, and each mount loads the one its canvas asks for.
 							try: (): Promise<StartScene> =>
-								element.getAttribute(STYLE_ATTRIBUTE) === "pixel"
-									? import("./pixel-scene").then((loaded) => loaded.startPixelScene)
-									: import("./scene").then((loaded) => loaded.startScene),
+								import("./scene").then((loaded) => loaded.startScene),
 							catch: (cause) =>
 								new SceneStartError({
 									message: "The landscape scene chunk did not load",

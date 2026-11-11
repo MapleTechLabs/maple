@@ -18,9 +18,8 @@ import type { Clock } from "./daylight"
 import { type Cell, cellToPoint, HEX_SIZE, NEIGHBOUR_DISTANCE, type Point } from "./hex"
 import { type Network, networkOf } from "./network"
 import { type TilePalette, tilePalette } from "./palette"
-import type { ArtStyle } from "./style"
 
-// What both renderers draw from: the scene's input, the events it sends back, and everything
+// What the scene draws from: its input, the events it sends back, and everything
 // worked out from the input once (links, biomes, lakes, open country, roads and railways).
 
 export interface CameraCommand {
@@ -39,8 +38,6 @@ export interface SceneInput {
 	readonly building: boolean
 	readonly flowing: boolean
 	readonly dark: boolean
-	/** Painted, or pixel art. */
-	readonly style: ArtStyle
 	/** The time of day the map is lit for: the viewer's own, or one held from the toolbar. */
 	readonly clock: Clock
 	/** The map's noises are off: quacks, whistles, bells. */

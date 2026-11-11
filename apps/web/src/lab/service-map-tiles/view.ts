@@ -39,7 +39,6 @@ import {
 	MountScene,
 	placementsOf,
 	STATE_ATTRIBUTE,
-	STYLE_ATTRIBUTE,
 	topology,
 	TOPOLOGY_ATTRIBUTE,
 	WatchClock,
@@ -154,18 +153,6 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					size: "sm",
 					variant: "ghost",
 					attributes: [
-						h.Title("Switch between pixel art and the painted look"),
-						h.OnClick(Message.ClickedStyle()),
-					],
-				},
-				[model.style === "pixel" ? "Style: pixel" : "Style: painted"],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					variant: "ghost",
-					attributes: [
 						h.AriaPressed(String(flowing)),
 						h.OnClick(Message.ClickedTraffic({ isFlowing: flowing })),
 					],
@@ -178,14 +165,12 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 
 const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 	h.div(
-		// Keyed by the style: a canvas has one kind of context for life, so each look gets its own.
-		[h.Key(`tiles-canvas-${model.style}`), h.Class("absolute inset-0 overflow-hidden")],
+		[h.Key("tiles-canvas"), h.Class("absolute inset-0 overflow-hidden")],
 		[
 			h.canvas([
 				h.Class("block"),
 				// Focusable from code only: the map takes the focus while a tile is moved by keyboard.
 				h.Attribute("tabindex", "-1"),
-				h.Attribute(STYLE_ATTRIBUTE, model.style),
 				h.Attribute(TOPOLOGY_ATTRIBUTE, TOPOLOGY_JSON),
 				h.Attribute(CELLS_ATTRIBUTE, encodeJson(model.cells)),
 				h.Attribute(
@@ -197,7 +182,6 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 						flowing,
 						dark: isDark,
 						muted: model.isMuted,
-						style: model.style,
 						clock: litClockOf(model),
 					}),
 				),

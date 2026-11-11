@@ -27,7 +27,6 @@ const holding = (heldId: string | null) => {
 		building: true,
 		flowing: false,
 		dark: false,
-		style: "pixel",
 		clock: { hour: 12, day: 80, isSouthern: false },
 		muted: true,
 		command: { action: "reset", serial: 0 },

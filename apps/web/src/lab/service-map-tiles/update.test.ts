@@ -128,25 +128,3 @@ describe("the light on the map", () => {
 		expect(litClockOf(ticked).day).toBe(clock.day)
 	})
 })
-
-describe("the art style", () => {
-	it("opens as pixel art and switches to the painted look and back", () => {
-		const styles = Arr.map(
-			Arr.scan(Arr.range(1, 2), start(), (model) => step(model, Message.ClickedStyle())),
-			(model) => model.style,
-		)
-		expect(styles).toEqual(["pixel", "painted", "pixel"])
-	})
-
-	it("leaves the board, the light and the selection as they were", () => {
-		const before = step(start(), Message.ClickedLight())
-		const after = step(before, Message.ClickedStyle())
-		expect({ ...after, style: before.style }).toEqual(before)
-	})
-
-	it("gives the other renderer a try after one failed to start", () => {
-		const failed = step(start(), Message.FailedScene())
-		expect(failed.isFailed).toBe(true)
-		expect(step(failed, Message.ClickedStyle()).isFailed).toBe(false)
-	})
-})
