@@ -430,6 +430,62 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
 
+	it.effect("a probe with no recent check stops reading healthy, and a down one keeps its incident", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_uptime_stale")
+			const up = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Checkout health",
+				serviceName: "checkout-api",
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "up",
+			})
+			yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Billing health",
+				serviceName: "billing-api",
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "down",
+				error: "Status 503, expected 2xx",
+			})
+			const tickAt = (minutes: number) =>
+				Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + minutes * 60_000)
+					yield* alerts.runSchedulerTick()
+					const state = yield* Effect.promise(() =>
+						queryFirstRow<{ readonly last_status: string }>(
+							testDb,
+							"select last_status from alert_rule_states where rule_id = $1",
+							[up.ruleId],
+						),
+					)
+					return {
+						upRule: state?.last_status,
+						incidents: Arr.map((yield* alerts.listIncidents(orgId)).incidents, (incident) => [
+							incident.groupKey,
+							incident.status,
+						]),
+					}
+				})
+
+			// The monitors run every minute, so a check vouches for 5 minutes (the floor).
+			assert.deepStrictEqual(yield* tickAt(5), {
+				upRule: "healthy",
+				incidents: [["billing-api", "open"]],
+			})
+			// No report since: the up monitor has no data, and the down one is still down.
+			assert.deepStrictEqual(yield* tickAt(6), {
+				upRule: "skipped",
+				incidents: [["billing-api", "open"]],
+			})
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect("a heartbeat goes down only once its interval and grace have passed", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
