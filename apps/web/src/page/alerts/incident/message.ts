@@ -72,6 +72,8 @@ export const Message = defineMessageUnion({
 		acknowledged: Schema.Boolean,
 		result: Schema.Result(V2AlertIncident, LoadFailure),
 	},
+	/** `trackProduct("alert_incident_acknowledged")` was handed to the session SDK. */
+	CompletedTrackAcknowledged: {},
 	CompletedCreateInvestigation: { result: Schema.Result(Schema.String, LoadFailure) },
 	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },

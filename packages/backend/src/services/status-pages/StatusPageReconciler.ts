@@ -23,6 +23,7 @@ import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Str
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { repairMissingAutoIncidents, repairOrphanedAutoIncidents } from "./auto-incidents"
+import { advanceMaintenance } from "./maintenance"
 import { bumpPage } from "./outbox"
 import { StatusPagePublishDbError } from "./publish-errors"
 import { parseOverlayKey, StatusPageStore, type StatusPageStoreError } from "./StatusPageStore"
@@ -61,6 +62,8 @@ export interface StatusPageReconcilerApi {
 	readonly reconcileAll: Effect.Effect<StatusPageReconcileAllResult, StatusPageReconcileError>
 	/** Resolves auto incidents whose alert incident is resolved or gone; returns how many. */
 	readonly repairAutoIncidents: Effect.Effect<number, StatusPagePublishDbError>
+	/** Starts and completes maintenance whose window began or ended; returns how many moved. */
+	readonly advanceMaintenance: Effect.Effect<number, StatusPagePublishDbError>
 }
 
 /** A concurrent import inserted the entry's update first; rolls this attempt back. */
@@ -401,7 +404,14 @@ export class StatusPageReconciler extends Context.Service<StatusPageReconciler, 
 				return repaired
 			}).pipe(Effect.withSpan("StatusPageReconciler.repairAutoIncidents"))
 
-			return { reconcile, reconcileAll, repairAutoIncidents }
+			const advance = Effect.gen(function* () {
+				const nowMs = yield* Clock.currentTimeMillis
+				const advanced = yield* dbExecute((db) => advanceMaintenance(db, nowMs))
+				yield* Effect.annotateCurrentSpan({ "maple.status_page.maintenance_advanced": advanced })
+				return advanced
+			}).pipe(Effect.withSpan("StatusPageReconciler.advanceMaintenance"))
+
+			return { reconcile, reconcileAll, repairAutoIncidents, advanceMaintenance: advance }
 		}),
 	},
 ) {

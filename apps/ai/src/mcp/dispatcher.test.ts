@@ -299,6 +299,31 @@ describe("MCP dispatcher", () => {
 			}),
 		)
 
+		it.effect(
+			"makes a public MCP call an identified mcp_tool_called product event, an agent turn's not",
+			() =>
+				Effect.gen(function* () {
+					const executor = yield* makeValidationExecutor
+					const { spans, tracer } = makeRecordingTracer()
+					const executorSpans = () => Arr.filter(spans, (s) => s.name === "McpToolExecutor.execute")
+
+					yield* executor
+						.execute({ ...TENANT, mcpClientName: "claude-code" }, "inspect_trace", {}, "mcp")
+						.pipe(Effect.withTracer(tracer))
+					yield* executor
+						.execute(TENANT, "inspect_trace", {}, "chat")
+						.pipe(Effect.withTracer(tracer))
+
+					const [publicCall, agentCall] = executorSpans()
+					expect(publicCall?.attributes.get("maple.product_event.name")).toBe("mcp_tool_called")
+					expect(publicCall?.attributes.get("maple.product_event.user_id")).toBe("user_test")
+					expect(publicCall?.attributes.get("maple.product_event.group_id")).toBe("org_test")
+					expect(publicCall?.attributes.get("maple.product_event.prop.tool")).toBe("inspect_trace")
+					expect(publicCall?.attributes.get("maple.product_event.prop.client")).toBe("claude-code")
+					expect(agentCall?.attributes.has("maple.product_event.name")).toBe(false)
+				}),
+		)
+
 		it.effect("marks a failed tool call on the dispatcher span", () =>
 			Effect.gen(function* () {
 				const executor = yield* makeValidationExecutor

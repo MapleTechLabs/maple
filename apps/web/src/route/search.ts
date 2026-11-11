@@ -1029,8 +1029,17 @@ export const InfraKubernetesWorkloadParams = Schema.Struct({
 	workloadName: Schema.String,
 })
 
+/** The Findings tab's status filter: a finding's lifecycle state, or every one. */
+export const SecurityFindingStatusTab = Schema.Literals([
+	"open",
+	"fixed",
+	"dismissed",
+	"accepted_risk",
+	"all",
+])
+
 export const SecurityFindingsSearch = Schema.Struct({
-	status: Schema.optional(Schema.Literals(["open", "fixed", "dismissed", "accepted_risk", "all"])),
+	status: Schema.optional(SecurityFindingStatusTab),
 	/** A severity, or the unscored leads: the tiles' one filter. */
 	severity: Schema.optional(
 		Schema.Literals(["critical", "high", "medium", "low", "informational", "needs_validation"]),

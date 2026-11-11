@@ -566,6 +566,16 @@ Worker's init (`MapleDb`, `packages/infra/src/cloudflare/maple-db.ts`); no cloud
 created and the origin credentials stay in the dashboard. A config id that no longer exists
 fails the plan.
 
+## Status page custom domains
+
+Customer domains reach the status Worker through Cloudflare for SaaS on `maple.dev`: the zone's
+fallback origin is the originless `status-domains.maple.dev` (declared by US prd only, a zone
+singleton, skipped until `MAPLE_STATUS_DOMAINS_ZONE_ID` is set), and each custom hostname gets
+its own Worker route to its stage's status Worker, created at runtime by the api and alerting
+Workers with `MAPLE_STATUS_DOMAINS_API_TOKEN`. Never a `*/*` route on the zone: it would catch
+proxied hostnames without a Worker, such as ingest. Setup steps and the lifecycle are in
+[`status-page-custom-domains.md`](status-page-custom-domains.md).
+
 ## Cost decisions
 
 These are cash-flow calls, not design ones. Revisit them rather than treating them as

@@ -116,6 +116,16 @@ export const TrackConnected = Command.define("TrackIntegrationConnected", {
 		),
 })
 
+/** A confirmed disconnect is the `integration_disconnected` product event. */
+export const TrackDisconnected = Command.define("TrackIntegrationDisconnected", {
+	args: { provider: Schema.String },
+	messages: [Message.CompletedTrackDisconnected],
+	execute: ({ provider }) =>
+		trackProduct("integration_disconnected", { provider }).pipe(
+			Effect.as(Message.CompletedTrackDisconnected()),
+		),
+})
+
 /** The session the shell already read (`SessionTenant`): the settings rail and connecting read its grants. */
 export const LoadSession = Command.define("LoadIntegrationsSession", {
 	messages: [Message.CompletedLoadSession],

@@ -14,7 +14,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SeverityBucket } from "../kit/findings"
-import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
+import { SecurityFindingStatusTab, SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
@@ -49,7 +49,6 @@ export const Model = Schema.Struct({
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
 	searchGeneration: Schema.Finite,
-	statusSelect: Select.Model,
 	targetSelect: Select.Model,
 	runsTargetSelect: Select.Model,
 	/** Severity sections folded to their header. */
@@ -89,7 +88,7 @@ export const Message = defineMessageUnion({
 	},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Finite },
-	GotStatusSelectMessage: { message: Select.Message },
+	PickedStatus: { status: SecurityFindingStatusTab },
 	GotTargetSelectMessage: { message: Select.Message },
 	GotRunsTargetSelectMessage: { message: Select.Message },
 	ToggledShowRejected: {},

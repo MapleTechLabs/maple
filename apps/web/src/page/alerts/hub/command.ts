@@ -16,6 +16,7 @@ import { Cause, Clock, Effect, Schema } from "effect"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { toLoadFailure, settleTo } from "@maple/views/data/load-failure"
+import { trackProduct } from "../../../data/analytics"
 import { Command } from "foldkit"
 import { dismissSheetUrl, pushSheetUrl } from "../../kit/sheet-param"
 import {
@@ -115,6 +116,14 @@ export const AcknowledgeIncident = Command.define("AcknowledgeAlertIncident", {
 				Message.CompletedAcknowledgeIncident({ incidentId, acknowledged, result }),
 			),
 		),
+})
+
+/** An acknowledgement that landed is the `alert_incident_acknowledged` product event. */
+export const TrackAcknowledged = Command.define("TrackHubIncidentAcknowledged", {
+	messages: [Message.CompletedTrackAcknowledged],
+	execute: trackProduct("alert_incident_acknowledged").pipe(
+		Effect.as(Message.CompletedTrackAcknowledged()),
+	),
 })
 
 /** The row's toggle and the dialog's save: PATCH the destination. */

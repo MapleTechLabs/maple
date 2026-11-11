@@ -29,9 +29,10 @@ import {
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
+import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
+import { addPanel, componentPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -58,7 +59,7 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	}
 }
 
-/** What the preview outlines: the open component or incident, or the composer's components. */
+/** What the preview outlines: the open component or incident. */
 export const selectedIds = (model: Model): ReadonlyArray<string> => {
 	const panel = model.panel
 	if (panel === null) return []
@@ -67,8 +68,6 @@ export const selectedIds = (model: Model): ReadonlyArray<string> => {
 			return [panel.componentId]
 		case "Incident":
 			return [panel.incidentId]
-		case "Compose":
-			return model.incidentForm.componentIds
 		case "Add":
 			return []
 	}
@@ -107,8 +106,13 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 			description: page.description,
 			websiteUrl: page.website_url,
 			logoUrl: page.logo_url,
+			logoDarkUrl: page.logo_dark_url,
+			faviconUrl: page.favicon_url,
+			supportUrl: page.support_url,
 			privacyUrl: page.privacy_url,
 			termsUrl: page.terms_url,
+			customDomain: null,
+			visibility: page.visibility,
 			showPoweredBy: page.show_powered_by,
 			theme: previewTheme(page.theme, model.previewScheme),
 		},
@@ -116,7 +120,13 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 		incidents: shown.incidents,
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: true,
+		selectedIds: selectedIds(model),
+		publicUrl: pageUrlOf(model, page),
+	})
 }
 
 const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
@@ -335,8 +345,6 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
 			)
 		}
-		case "Compose":
-			return [composerPanel(h, model, time.timeZone)]
 		case "Add":
 			return [addPanel(h, model)]
 	}

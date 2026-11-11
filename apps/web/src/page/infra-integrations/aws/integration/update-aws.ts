@@ -33,7 +33,7 @@ import {
 	WriteAwsRemoved,
 } from "./aws"
 import { integrationOfSearch } from "../../../integrations/catalog"
-import { ReadClock } from "../../../integrations/command"
+import { ReadClock, TrackDisconnected } from "../../../integrations/command"
 import { disconnectSpec } from "../../../integrations/disconnect"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
@@ -303,6 +303,7 @@ export const completedDisconnect = (
 					"Delete the stack in AWS to remove the role.",
 				),
 			(next) => requestStatus(next, context, "aws", "Supersede"),
+			(next) => ({ model: next, commands: [TrackDisconnected({ provider: "aws" })] }),
 		],
 	)
 }

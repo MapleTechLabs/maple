@@ -2,6 +2,7 @@ import { makeOnboardingTeamActions } from "./team-actions"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { trackProduct } from "../../data/analytics"
 import { clerkTeamOrganization, clerkTry } from "../../platform/clerk"
 
 // The team step: rename the workspace and invite teammates through the Clerk organization, or the self-hosted notice.
@@ -55,6 +56,8 @@ export const TeamMessage = defineMessageUnion({
 	SubmittedInvite: {},
 	SucceededTeamOperation: { operation: Operation, value: Schema.String },
 	FailedTeamOperation: { message: Schema.String },
+	/** `trackProduct("member_invited")` was handed to the session SDK. */
+	TrackedMemberInvited: {},
 })
 export type TeamMessage = typeof TeamMessage.Type
 
@@ -101,6 +104,14 @@ export const RunTeamOperation = Command.define("RunOnboardingTeamOperation", {
 				Effect.succeed(TeamMessage.FailedTeamOperation({ message: error.message })),
 			),
 		),
+})
+
+/** A sent invitation is the `member_invited` product event; onboarding invites members only. */
+const TrackMemberInvited = Command.define("TrackOnboardingMemberInvited", {
+	messages: [TeamMessage.TrackedMemberInvited],
+	execute: trackProduct("member_invited", { role: "org:member" }).pipe(
+		Effect.as(TeamMessage.TrackedMemberInvited()),
+	),
 })
 
 export const isNameDirty = (team: Team): boolean => Str.trim(team.name) !== team.savedName
@@ -152,10 +163,11 @@ export const updateTeam = (team: Team, message: TeamMessage): TeamStep =>
 							invited: [...team.invited, value],
 							feedback: { message: `Invitation sent to ${value}.`, isError: false },
 						},
-			commands: [],
+			commands: operation === "invite" ? [TrackMemberInvited()] : [],
 		}),
 		FailedTeamOperation: ({ message: failure }) => ({
 			team: { ...team, pending: null, feedback: { message: failure, isError: true } },
 			commands: [],
 		}),
+		TrackedMemberInvited: () => ({ team, commands: [] }),
 	})

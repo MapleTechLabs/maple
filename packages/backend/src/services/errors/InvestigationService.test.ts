@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	AiTriageEvidence,
@@ -405,6 +405,36 @@ describe("InvestigationService", () => {
 			assert.strictEqual(partial.status, "failed")
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("a start is an identified investigation_started product event; a joined run is not", () => {
+		const chat = chatSessionHarness()
+		const harness = makeHarness(chat.env, chat.chatSessions)
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		const events = () =>
+			Arr.filter(
+				spans,
+				(span) => span.attributes.get("maple.product_event.name") === "investigation_started",
+			)
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			yield* service.createAndStartInvestigation(ORG, null, freeformRequest("why is checkout slow"))
+			assert.lengthOf(events(), 1)
+			const [event] = events()
+			assert.strictEqual(event.attributes.get("maple.product_event.group_id"), ORG)
+			assert.strictEqual(event.attributes.get("maple.product_event.prop.subject_type"), "freeform")
+			yield* service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_once"))
+			// The same incident again joins the run already going: no second event.
+			yield* service.createAndStartInvestigation(ORG, null, criticalIncidentRequest("err_once"))
+			assert.lengthOf(events(), 2)
+		}).pipe(Effect.withTracer(tracer), Effect.provide(harness.layer))
+	})
 
 	it.effect("refuses to restart a run that is still in flight", () => {
 		const chat = chatSessionHarness()

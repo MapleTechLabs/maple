@@ -72,8 +72,14 @@ export interface StatusPageStoreApi {
 	) => Effect.Effect<void, StatusPageStoreError>
 	/** The page id the slug's KV route points at, or null. */
 	readonly readSlugRoute: (slug: string) => Effect.Effect<string | null, StatusPageStoreError>
+	/** The page id a custom hostname's KV route points at, or null. */
+	readonly readHostRoute: (hostname: string) => Effect.Effect<string | null, StatusPageStoreError>
 	/** Removes the routes from KV and R2. */
 	readonly deleteRoutes: (routes: StatusPageRoutes) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes one custom hostname's route from KV and R2. */
+	readonly deleteHostRoute: (hostname: string) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes the snapshot from KV and R2; break-glass entries stay for the reconciler to import. */
+	readonly deleteSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes the snapshot (KV and R2) and every break-glass entry of the page. */
 	readonly deletePage: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	readonly putHeartbeat: (
@@ -171,6 +177,15 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			{ concurrency: 4, discard: true },
 		),
 	readSlugRoute: (slug) => backend.kvGet(StatusPageKeys.slug(slug)),
+	readHostRoute: (hostname) => backend.kvGet(StatusPageKeys.host(hostname)),
+	deleteHostRoute: (hostname) =>
+		Effect.all(
+			[
+				backend.kvDelete(StatusPageKeys.host(hostname)),
+				backend.objectDelete(StatusPageKeys.hostObject(hostname)),
+			],
+			{ concurrency: 2, discard: true },
+		),
 	deleteRoutes: (routes) =>
 		Effect.all(
 			[
@@ -182,6 +197,14 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 				]),
 			],
 			{ concurrency: 4, discard: true },
+		),
+	deleteSnapshot: (pageId) =>
+		Effect.all(
+			[
+				backend.kvDelete(StatusPageKeys.snapshot(pageId)),
+				backend.objectDelete(StatusPageKeys.snapshotObject(pageId)),
+			],
+			{ concurrency: 2, discard: true },
 		),
 	deletePage: (pageId) =>
 		Effect.all(

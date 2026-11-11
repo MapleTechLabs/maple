@@ -127,6 +127,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadCustomer: result(BillingCustomer),
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},
+	/** `trackProduct("integration_disconnected")` was handed to the session SDK. */
+	CompletedTrackDisconnected: {},
 	/** The shared session read answered with its grants. */
 	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
 	/** A catalog row or card, or the header's back button. */

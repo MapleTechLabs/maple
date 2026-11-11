@@ -18,6 +18,7 @@ import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failure
 import { loadRegistry } from "./tool-catalog"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 import type { TenantContext } from "@maple/domain/http"
+import { productEventSpanAttributes } from "@maple/domain/tinybird/product-event-attributes"
 
 /**
  * How a failure reads to the model: one short lead naming the kind of failure, never an error tag.
@@ -224,6 +225,22 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 					"maple.mcp.tool": name,
 					"maple.mcp.surface": surface,
 				})
+				// A public MCP call is also Maple's own `mcp_tool_called` product event,
+				// projected from this span. Agent turns (`chat`, `bot`) are not: the
+				// investigation that ran them is the event.
+				if (surface === "mcp") {
+					const base = { tool: name, source: "mcp" }
+					const props =
+						tenant.mcpClientName === undefined ? base : { ...base, client: tenant.mcpClientName }
+					yield* Effect.annotateCurrentSpan(
+						productEventSpanAttributes({
+							name: "mcp_tool_called",
+							userId: tenant.userId,
+							groupId: tenant.orgId,
+							props,
+						}),
+					)
+				}
 				const result = yield* callMcpToolUnscoped(name, input, surface).pipe(
 					Effect.provideService(CurrentMcpTenant, tenant),
 					Effect.provide(runtimeServices),

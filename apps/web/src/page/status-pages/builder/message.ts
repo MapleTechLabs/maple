@@ -1,6 +1,6 @@
 import { StatusPagePreviewParams, V2StatusPage, V2UptimeMonitor } from "@maple/domain/http/v2"
 import {
-	StatusPageSnapshot,
+	StatusPagePublicSnapshot,
 	StatusPageThemeAppearance,
 	StatusPageThemePreset,
 } from "@maple/domain/status-page"
@@ -30,9 +30,11 @@ export const Message = defineMessageUnion({
 	CompletedFetchPreview: {
 		generation: Schema.Number,
 		draft: StatusPagePreviewParams,
-		result: LoadOutcome(StatusPageSnapshot),
+		result: LoadOutcome(StatusPagePublicSnapshot),
 	},
 	ClickedSubmit: { mode: SubmitMode },
 	CompletedCreate: { mode: SubmitMode, result: LoadOutcome(V2StatusPage) },
+	/** A `trackProduct` call was handed to the session SDK. */
+	CompletedTrackProduct: {},
 })
 export type Message = typeof Message.Type

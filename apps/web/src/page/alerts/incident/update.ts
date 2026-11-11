@@ -37,6 +37,7 @@ import {
 	FetchIncidentSlos,
 	ReadIncidentClock,
 	SetIncidentAcknowledged,
+	TrackAcknowledged,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
@@ -568,8 +569,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 		CompletedSetAcknowledged: ({ acknowledged, result }) =>
 			Result.match(result, {
-				onSuccess: (incident) =>
-					followData(
+				onSuccess: (incident) => {
+					const next = followData(
 						{
 							...model,
 							isUpdatingAcknowledgement: false,
@@ -579,7 +580,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 									: withAcknowledgement(model.incidents, incident),
 						},
 						context,
-					),
+					)
+					return acknowledged
+						? { ...next, commands: [...(next.commands ?? []), TrackAcknowledged()] }
+						: next
+				},
 				onFailure: (failure) => ({
 					model: { ...model, isUpdatingAcknowledgement: false },
 					outMessage: PageOutMessage.RequestedToast({
@@ -619,6 +624,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							commands: [CreateInvestigation({ payload })],
 						}),
 					}),
+		CompletedTrackAcknowledged: () => ({ model }),
 		CompletedCreateInvestigation: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (id) => ({

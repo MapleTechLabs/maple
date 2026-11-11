@@ -1,5 +1,5 @@
 import type { StatusPageComponentStatus } from "@maple/primitives"
-import { overallStatus, type StatusPageFreshness, type StatusPageSnapshot } from "@maple/domain/status-page"
+import { overallStatus, type StatusPageFreshness, type StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeXml } from "./escape"
 
 const BADGE = {
@@ -17,7 +17,7 @@ const DELAYED = { text: "delayed", color: "#737373" } as const
 const textWidth = (text: string): number => Math.round(text.length * 6.6 + 12)
 
 /** A shields-style `status | operational` badge. */
-export const renderBadgeSvg = (snapshot: StatusPageSnapshot, freshness: StatusPageFreshness): string => {
+export const renderBadgeSvg = (snapshot: StatusPagePublicSnapshot, freshness: StatusPageFreshness): string => {
 	const label = "status"
 	const value = freshness._tag === "delayed" ? DELAYED : BADGE[overallStatus(snapshot)]
 	const left = textWidth(label)

@@ -3,7 +3,7 @@ import {
 	type StatusPageIncidentKind,
 	StatusPageIncidentStatus,
 } from "@maple/primitives"
-import { type StatusPageSnapshot, statusFitsKind } from "@maple/domain/status-page"
+import { type StatusPagePublicSnapshot, statusFitsKind } from "@maple/domain/status-page"
 import { pageHref, type RenderOptions, renderDocument, renderHeader } from "./document"
 import { escapeHtml } from "@maple/strings"
 import { IMPACT_LABEL, INCIDENT_STATUS_LABEL } from "./format"
@@ -59,7 +59,7 @@ const statusGroup = (kind: StatusPageIncidentKind, label: string): string =>
 
 /** Break-glass form: post an incident update straight to the edge while Maple is down. */
 export const renderManagePage = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	message?: ManageMessage,
 	options: RenderOptions = {},
 ): string => {

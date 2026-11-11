@@ -26,6 +26,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/primitives"
+import { productEventSpanAttributes } from "@maple/domain/tinybird/product-event-attributes"
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"
@@ -599,6 +600,15 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							),
 						)
 						if (claimed.length === 0) return doc
+						// Maple's own `investigation_started` product event, projected from this span.
+						yield* Effect.annotateCurrentSpan(
+							productEventSpanAttributes({
+								name: "investigation_started",
+								userId: userId ?? "",
+								groupId: orgId,
+								props: { subject_type: request.subject.type },
+							}),
+						)
 						yield* sendAutonomousTurn(orgId, doc, nowMs)
 						return yield* getInvestigation(orgId, doc.id).pipe(
 							Effect.catchTag("@maple/http/investigations/InvestigationNotFoundError", () =>

@@ -20,6 +20,7 @@ import {
 	readExposure,
 	postureText,
 	readRuntimes,
+	requireSecurityReader,
 	repositoryServicesOf,
 	runtimeLabelOf,
 } from "../lib/security"
@@ -61,6 +62,7 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.inspectSecurityFinding")(function* (params) {
 			const { id, repository } = params
 			const tenant = yield* CurrentMcpTenant
+			yield* requireSecurityReader(tenant)
 			const query = id.trim()
 			const needle = query.toLowerCase()
 			const dependencyId = decodeDependencyId(query)

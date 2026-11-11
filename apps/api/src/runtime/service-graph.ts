@@ -72,6 +72,7 @@ import { ScrapeTargetsService } from "@maple/backend/services/integrations/Scrap
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
@@ -153,6 +154,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	UptimeMonitorsService.layer,
 	SlosService.layer,
 	StatusPagesService.layer,
+	// Custom domains: Cloudflare for SaaS hostnames, unavailable where its zone is not configured.
+	StatusPageCustomDomainsService.layer,
 	// The `statusPages` rollout gate on the status page routes.
 	OrganizationFeatureFlagsService.layer,
 	// Read-only: previews of unsaved pages.

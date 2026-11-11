@@ -15,6 +15,7 @@ import {
 	ReadFormTimeZones,
 	SaveDraft,
 	TestDraft,
+	TrackCreated,
 } from "./command"
 import {
 	defaultName,
@@ -222,6 +223,7 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			Result.match(result, {
 				onSuccess: (monitor): Return => ({
 					model: { ...model, isSaving: false },
+					commands: model.editingId === null ? [TrackCreated({ kind: monitor.kind })] : [],
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: monitorHref(monitor.id),
 						isReplace: true,
@@ -235,4 +237,5 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 				// Inline beside the action bar, never a toast over its buttons.
 				onFailure: (saveFailure): Return => ({ model: { ...model, isSaving: false, saveFailure } }),
 			}),
+		CompletedTrackCreated: () => ({ model }),
 	})

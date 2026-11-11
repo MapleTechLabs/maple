@@ -157,6 +157,12 @@ const routers = {
 		search(Search.StatusPageSearch),
 		Route.mapTo(AppRoute.StatusPage),
 	),
+	StatusPageView: pipe(
+		path("status-pages"),
+		slash(segment("pageId")),
+		slash(path("view")),
+		Route.mapTo(AppRoute.StatusPageView),
+	),
 	Anomaly: pipe(
 		path("anomalies"),
 		slash(schemaSegment("incidentId", AnomalyIncidentId)),
@@ -570,6 +576,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.IngestRule,
 		routers.AlertsStatusPage,
 		routers.StatusPageNew,
+		routers.StatusPageView,
 		routers.StatusPage,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,

@@ -309,3 +309,26 @@ export const isNewFinding = (finding: SecurityAuditFinding, nowMs: number): bool
 /** A finding a later run marked fixed that came back. */
 export const isReopened = (finding: SecurityAuditFinding): boolean =>
 	finding.status === "open" && finding.fixedRunId !== null
+
+export type ResolvedCounts = Readonly<{
+	fixed: number
+	dismissed: number
+	acceptedRisk: number
+	total: number
+}>
+
+/** Findings no longer open, by how they closed; a disproved one is not counted as resolved. */
+export const resolvedCounts = (findings: ReadonlyArray<SecurityAuditFinding>): ResolvedCounts => {
+	const fixed = countForTab(findings, "fixed")
+	const dismissed = countForTab(findings, "dismissed")
+	const acceptedRisk = countForTab(findings, "accepted_risk")
+	return { fixed, dismissed, acceptedRisk, total: fixed + dismissed + acceptedRisk }
+}
+
+/** How many findings a run marked fixed (and that have not come back since). */
+export const fixedByRun = (findings: ReadonlyArray<SecurityAuditFinding>, runId: string): number =>
+	Arr.filter(
+		findings,
+		(finding) =>
+			finding.verdict !== "rejected" && finding.status === "fixed" && finding.fixedRunId === runId,
+	).length

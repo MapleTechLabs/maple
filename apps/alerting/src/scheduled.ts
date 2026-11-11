@@ -32,6 +32,7 @@ import { SupabaseInsightsService } from "@maple/backend/services/integrations/Su
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
@@ -49,13 +50,19 @@ import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
-/** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
+/**
+ * The status page publisher, only when its KV and R2 bindings exist on this Worker. Custom domains
+ * ride along: unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
+ */
 const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
 	Option.match(bindings, {
 		onNone: () => Layer.empty,
 		onSome: ({ kv, bucket }) =>
-			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
-				Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+			Layer.mergeAll(
+				Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
+					Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+				),
+				StatusPageCustomDomainsService.layer,
 			),
 	})
 
@@ -496,13 +503,16 @@ const prReviewPostMergeTick = makeTick(
 )
 
 /**
- * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
- * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ * Imports break-glass updates, repairs auto incidents, starts and completes maintenance whose
+ * window began or ended, checks custom domains due a check, then
+ * sweeps: edge cleanups, lagging pages and the heartbeat (written by the sweep only once it
+ * reached the database). Each step isolated.
  */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
 	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
-	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
+	const domains = yield* Effect.serviceOption(StatusPageCustomDomainsService)
+	if (Option.isNone(publisher) || Option.isNone(reconciler) || Option.isNone(domains)) {
 		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
 	}
 	yield* makeTick(reconciler.value.reconcileAll, "status_page_reconcile", (result) =>
@@ -517,7 +527,23 @@ const statusPagesTick = Effect.gen(function* () {
 	yield* makeTick(reconciler.value.repairAutoIncidents, "status_page_repair", (repaired) =>
 		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
 	)
+	// Before the sweep, so a window that just began or ended is on the page this same minute.
+	yield* makeTick(reconciler.value.advanceMaintenance, "status_page_maintenance", (advanced) =>
+		advanced > 0 ? { statusPageMaintenanceAdvanced: advanced } : undefined,
+	)
 	const nowMs = yield* Clock.currentTimeMillis
+	// Before the sweep, so a domain that just went live is routed in this same minute.
+	yield* makeTick(domains.value.poll(nowMs), "status_page_custom_domains", (result) =>
+		result.checked + result.errored + result.expired > 0
+			? {
+					statusPageCustomDomainsChecked: result.checked,
+					statusPageCustomDomainsActivated: result.activated,
+					statusPageCustomDomainsFailed: result.failed,
+					statusPageCustomDomainsErrored: result.errored,
+					statusPageCustomDomainsExpired: result.expired,
+				}
+			: undefined,
+	)
 	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
 		result.due + result.cleaned + result.cleanupsFailed > 0
 			? {

@@ -60,7 +60,9 @@ import {
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
-import { identityOf, isSameIdentity } from "./platform/session-identity"
+import * as Policy from "@maple/domain/policy"
+import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
+import { getActivePlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -68,6 +70,7 @@ import {
 	isPublicRoute,
 	type Redirect,
 	routeRedirect,
+	securityRouteRedirect,
 	urlToAppRoute,
 } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
@@ -441,10 +444,13 @@ const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHe
 
 const loadPage: Step = (model) =>
 	Option.match(
-		// A flag-gated route is on its way home: no page, so nothing it would fetch.
+		// A flag- or role-gated route is on its way home: no page, so nothing it would fetch.
 		Option.filter(
 			pageContextOf(model),
-			() => !isPlanGated(model) && Option.isNone(flagRedirectOf(model)),
+			() =>
+				!isPlanGated(model) &&
+				Option.isNone(flagRedirectOf(model)) &&
+				Option.isNone(roleRedirectOf(model)),
 		),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
@@ -498,6 +504,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
+					maybeRole: Option.flatMap(
+						Option.fromNullishOr(model.clerkSnapshot),
+						(snapshot) => snapshot.maybeRole,
+					),
 				}),
 			})
 		: null
@@ -744,6 +754,18 @@ const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
 			)
 		: Option.none()
 
+/**
+ * A Security route opened by someone whose role lacks `security:manage` (a member). Waits for
+ * Clerk's membership read, so an admin is never bounced while it loads; the API refuses either way.
+ */
+const roleRedirectOf = (model: Model): Option.Option<Redirect> =>
+	isClerkAuthEnabled
+		? Option.flatMap(
+				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeRole),
+				(role) => securityRouteRedirect(model.route, Policy.can([role], "security:manage")),
+			)
+		: Option.none()
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -752,6 +774,7 @@ const followRedirects: Step = (model) => {
 			Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)).pipe(
 				Option.orElse(() => Option.flatMap(planGateOf(model), (gate) => gate.redirect)),
 				Option.orElse(() => flagRedirectOf(model)),
+				Option.orElse(() => roleRedirectOf(model)),
 			),
 	})
 	return Option.match(maybeRedirect, {
@@ -827,15 +850,20 @@ const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]
 	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
 	const access = accessOf(next.customer)
 	const settled = withSettledPlan(settle(next))
-	return access === "app" || access === "onboarding"
-		? {
-				model: settled.model,
-				commands: [
-					...(settled.commands ?? []),
-					SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" }),
-				],
-			}
-		: settled
+	const known = sessionIdentityOf(model)
+	const identity = sessionIdentityOf(next)
+	return {
+		model: settled.model,
+		commands: [
+			...(known === undefined || identity === undefined || isSameIdentity(known, identity)
+				? []
+				: [IdentifySession({ identity })]),
+			...(settled.commands ?? []),
+			...(access === "app" || access === "onboarding"
+				? [SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" })]
+				: []),
+		],
+	}
 }
 
 /** The signed-in org, on a shell route. */
@@ -928,13 +956,25 @@ const changedClerkSession = (model: Model, snapshot: ClerkSnapshot): UpdateRetur
 		? { model }
 		: appliedClerkSnapshot(snapshot, false)(model)
 
+/** The active org's Autumn plan id, once its own customer read (not another org's) found one. */
+const activePlanIdOf = (model: Model, snapshot: ClerkSnapshot): string | null =>
+	Option.getOrNull(snapshot.maybeOrgId) === model.customer.orgId
+		? (getActivePlan(customerOf(model.customer))?.planId ?? null)
+		: null
+
+/** The identity the model names; `undefined` before Clerk's first answer. */
+const sessionIdentityOf = (model: Model): SessionIdentity | null | undefined =>
+	model.clerkSnapshot === null
+		? undefined
+		: identityOf(model.clerkSnapshot, activePlanIdOf(model, model.clerkSnapshot))
+
 /** `useClerkAuthSettled`: a signed-out first answer waits for a refreshing session, except on public pages. */
 const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
 	(previous) => {
 		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
-		const identity = identityOf(snapshot)
-		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
+		const identity = identityOf(snapshot, activePlanIdOf(model, snapshot))
+		const known = sessionIdentityOf(previous)
 		const identify =
 			known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {

@@ -119,21 +119,11 @@ describe("list_security_findings", () => {
 		])
 	})
 
-	it("does not tell a member that an audited repository is not set up", async () => {
-		const { output, text } = await list(member, {})
-		expect(output.repositories?.find((r) => r.repository === "acme/shop")).toMatchObject({
-			repository: "acme/shop",
-			auditReadable: false,
-			audit: null,
-		})
-		expect(text).toContain("admins and engineers only")
-		expect(text).not.toContain("not set up")
-	})
-
-	it("keeps code findings from members, as the dashboard does", async () => {
-		const { output } = await list(member, { area: "code" })
-		expect(output.areas[0]).toMatchObject({ area: "code", state: "forbidden" })
-		expect(output.findings).toEqual([])
+	it("refuses members every Security Center read, as the dashboard does", async () => {
+		const overview = await runToolDirect(member, "list_security_findings", {})
+		const finding = await runToolDirect(member, "inspect_security_finding", { id: "CVE-2024-0001" })
+		expect([overview.isError, finding.isError]).toEqual([true, true])
+		expect(markdown(overview)).toContain("Only org admins and engineers")
 	})
 
 	it("does not report a catch-all service's answered probes as exposures", async () => {
@@ -406,10 +396,14 @@ describe("list_security_audit_runs", () => {
 		expect(text).toContain("reached its monthly audit spend limit")
 	})
 
-	it("narrows to one repository and hides what runs reported from members", async () => {
-		const { output } = await runs(member, { repository: "ACME/shop" })
+	it("narrows to one repository", async () => {
+		const { output } = await runs(admin, { repository: "ACME/shop" })
 		expect(Arr.map(output.runs, (run) => run.runId)).toEqual(["run-shop-1", "run-shop-0"])
-		expect(Arr.map(output.runs, (run) => run.findings)).toEqual([null, null])
+	})
+
+	it("refuses members", async () => {
+		const result = await runToolDirect(member, "list_security_audit_runs", {})
+		expect(result.isError).toBe(true)
 	})
 
 	it("names a repository that is not set up", async () => {
