@@ -117,25 +117,66 @@ const magnitude = (group: CostGroup) => Math.max(Math.abs(group.billedCost), Mat
 const DETAIL_MIN_SHARE = 0.001
 /** ...and this much per day of the window. Most listed regions hold fractions of a cent. */
 const DETAIL_MIN_PER_DAY = 0.01
+/** Each detailed region is at least one more billed request per pull: the largest ones only. */
+export const MAX_DETAILED_REGIONS = 12
 
 /**
- * The regions of a `SERVICE` x `REGION` answer that get a pull by usage type, sorted. Credits and
- * refunds count by their absolute value.
+ * The regions of a `SERVICE` x `REGION` answer that get a pull by usage type, sorted: the largest
+ * `MAX_DETAILED_REGIONS` of those worth one. Credits and refunds count by their absolute value.
  */
 export const detailedRegions = (groups: ReadonlyArray<CostGroup>, days: number): ReadonlyArray<string> => {
 	const total = Num.sumAll(Arr.map(groups, magnitude))
-	const regions = Arr.sort(Arr.dedupe(Arr.map(groups, (group) => group.key)), Order.String)
-	return Arr.filter(regions, (region) => {
-		// A charge with no region keeps its service-level rows: an empty value is not a filter.
-		if (region === "") return false
-		const cost = Num.sumAll(
+	const regions = Arr.dedupe(Arr.map(groups, (group) => group.key))
+	const sized = Arr.map(regions, (region) => ({
+		region,
+		cost: Num.sumAll(
 			Arr.map(
 				Arr.filter(groups, (group) => group.key === region),
 				magnitude,
 			),
-		)
-		return cost >= total * DETAIL_MIN_SHARE && cost >= days * DETAIL_MIN_PER_DAY
-	})
+		),
+	}))
+	const worthIt = Arr.filter(
+		sized,
+		// A charge with no region keeps its service-level rows: an empty value is not a filter.
+		({ region, cost }) =>
+			region !== "" && cost >= total * DETAIL_MIN_SHARE && cost >= days * DETAIL_MIN_PER_DAY,
+	)
+	const largest = Arr.take(
+		Arr.sort(
+			worthIt,
+			Order.mapInput(Order.flip(Order.Number), (entry: { readonly cost: number }) => entry.cost),
+		),
+		MAX_DETAILED_REGIONS,
+	)
+	return Arr.sort(
+		Arr.map(largest, (entry) => entry.region),
+		Order.String,
+	)
+}
+
+/** A cent, or a thousandth of the region's cost: float noise passes, a missing charge does not. */
+const reconcileTolerance = (cost: number) => Math.max(0.01, Math.abs(cost) * 0.001)
+
+/**
+ * Whether a region's pull by usage type holds the same money as its rows in the `SERVICE` x
+ * `REGION` answer. When it does not (the region filter missed a charge), the region keeps its
+ * service-level rows, so the day still sums to what Cost Explorer reports.
+ */
+export const usageReconciles = (
+	usage: ReadonlyArray<CostGroup>,
+	byRegion: ReadonlyArray<CostGroup>,
+	region: string,
+): boolean => {
+	const ofRegion = Arr.filter(byRegion, (group) => group.key === region)
+	const sum = (groups: ReadonlyArray<CostGroup>, pick: (group: CostGroup) => number) =>
+		Num.sumAll(Arr.map(groups, pick))
+	const billed = sum(ofRegion, (group) => group.billedCost)
+	const effective = sum(ofRegion, (group) => group.effectiveCost)
+	return (
+		Math.abs(sum(usage, (group) => group.billedCost) - billed) <= reconcileTolerance(billed) &&
+		Math.abs(sum(usage, (group) => group.effectiveCost) - effective) <= reconcileTolerance(effective)
+	)
 }
 
 const CATEGORY_KEYWORDS: ReadonlyArray<readonly [category: string, keywords: ReadonlyArray<string>]> = [
