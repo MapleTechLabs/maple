@@ -47,6 +47,8 @@ interface SeedRow {
 	readonly effective?: number
 	readonly estimated?: boolean
 	readonly pulledAt: string
+	/** Defaults to USD. */
+	readonly currency?: string
 }
 
 const row = (
@@ -79,12 +81,15 @@ const SEED: ReadonlyArray<SeedRow> = [
 	row("src_a", -1, "RDS", "us-east-1", 50, SECOND_PULL),
 	// A disconnected source keeps its rows.
 	row("src_gone", 1, "EC2", "us-east-1", 1000, SECOND_PULL),
+	// An account that changed its billing currency between the period before and the window.
+	{ ...row("src_switched", 1, "EC2", "eu-central-1", 40, SECOND_PULL), currency: "EUR" },
+	row("src_switched", -2, "EC2", "eu-central-1", 15, SECOND_PULL),
 ]
 
 const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const values = (seed: SeedRow): string =>
-	`(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', 'USD', ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
+	`(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', ${quote(seed.currency ?? "USD")}, ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
 
 const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
@@ -145,7 +150,18 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 	})
 
 	it("counts a disconnected source only when the caller names no sources", async () => {
-		assert.strictEqual((await totals({}))?.cost, 1072)
+		assert.strictEqual((await totals({}))?.cost, 1112)
+	})
+
+	it("labels the window's cost with the window's currency, and flags a change before it", async () => {
+		assert.deepStrictEqual(await totals({ sourceIds: ["src_switched"] }), {
+			cost: 40,
+			previousCost: 15,
+			estimatedDays: 0,
+			// Not the USD of the period before, and two currencies: the amounts do not compare.
+			currency: "EUR",
+			currencies: 2,
+		})
 	})
 
 	it("reads nothing for an org whose source list is empty", async () => {
