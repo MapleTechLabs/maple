@@ -166,7 +166,16 @@ const componentAuditDiff = auditDiff({
 })
 
 const incidentAuditDiff = auditDiff({
-	fields: ["title", "impact", "published", "scheduled_start", "scheduled_end", "component_ids"],
+	fields: [
+		"title",
+		"impact",
+		"published",
+		"scheduled_start",
+		"scheduled_end",
+		"started_at",
+		"resolved_at",
+		"component_ids",
+	],
 })
 
 const DEFAULT_STATUS = {
@@ -712,6 +721,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.scheduled_end === undefined
 								? undefined
 								: { scheduledEnd: timestampMs(payload.scheduled_end) }),
+							...(payload.started_at === undefined
+								? undefined
+								: { startedAt: timestampMs(payload.started_at) }),
 							source: "api",
 							createdBy: tenant.userId,
 						})
@@ -741,6 +753,12 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								: { published: payload.published }),
 							...(scheduledStart === undefined ? undefined : { scheduledStart }),
 							...(scheduledEnd === undefined ? undefined : { scheduledEnd }),
+							...(payload.started_at === undefined
+								? undefined
+								: { startedAt: timestampMs(payload.started_at) }),
+							...(payload.resolved_at === undefined
+								? undefined
+								: { resolvedAt: timestampMs(payload.resolved_at) }),
 							...(payload.component_ids === undefined
 								? undefined
 								: { componentIds: payload.component_ids }),
@@ -783,6 +801,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.component_ids === undefined
 								? undefined
 								: { componentIds: payload.component_ids }),
+							...(payload.resolved_at === undefined
+								? undefined
+								: { resolvedAt: timestampMs(payload.resolved_at) }),
 							source: "api",
 							createdBy: tenant.userId,
 						})
