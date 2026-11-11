@@ -33,6 +33,8 @@ import {
 	toWarehouseDateTime64,
 	utcMonth,
 	utcToday,
+	BUDGET_REASON,
+	ROLLOUT_REASON,
 } from "./sync-plan"
 
 /** Longer than the lane's 15-minute deadline, so a live tick never loses its claim. */
@@ -48,12 +50,9 @@ const RATE_LIMIT_HOLD_MS = 60 * 60_000
 const TOO_LARGE_HOLD_MS = 24 * 60 * 60_000
 /** A source whose history waits on the month's request budget is looked at again this much later at most. */
 const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
-/** `lastErrorReason` while the month's request budget holds a source: a hold, not a failure. */
-const BUDGET_REASON = "budget"
 const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
 /** An org outside the `cloudCost` rollout is asked about again this much later: a hold, not a failure. */
 const ROLLOUT_HOLD_MS = 6 * 60 * 60_000
-const ROLLOUT_REASON = "rollout"
 const ROLLOUT_MESSAGE = "Cloud cost is not enabled for this organization."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
