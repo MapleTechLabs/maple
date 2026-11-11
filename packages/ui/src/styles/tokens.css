@@ -559,13 +559,14 @@
 	--color-destructive-foreground: var(--destructive-foreground);
 	/* The ladders, named. Text steps are solid (mixed into the page, never translucent), so a
 	   label reads the same grey on a tinted row: soft (body copy a step under foreground), subtle
-	   (secondary meta, the last step that carries information: 4.5:1 on the page and on a card),
+	   (secondary meta, the last step that carries information: 4.5:1 on the page, a card and
+	   the washes below),
 	   faint (separators and empty cells; near 2:1, so never a value or a label).
 	   Surfaces are translucent washes that read the same on any surface: faint, sunken (wells,
 	   row hover), strong (selected, pressed). Use these instead of `/NN` modifiers on the base
 	   colours. */
 	--color-foreground-soft: color-mix(in oklab, var(--foreground) 80%, var(--background));
-	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 90%, var(--background));
+	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 94%, var(--background));
 	--color-foreground-faint: color-mix(in oklab, var(--muted-foreground) 45%, var(--background));
 	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
