@@ -1286,13 +1286,13 @@ SELECT
         ORDER BY date ASC, key ASC
         FORMAT JSON
 
--- builder:cost:costTotalsQuery:filtered  [69ada9b4]
+-- builder:cost:costTotalsQuery:filtered  [512b4f9b]
 SELECT
           ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
           ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost,
           uniqIf(latest.date, (latest.date >= '2026-10-01 00:00:00' AND latest.estimated = 1)) AS estimatedDays,
-          any(latest.currency) AS currency,
-          uniqIf(latest.currency, latest.date >= '2026-10-01 00:00:00') AS currencies
+          if(anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00') != '', anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00'), any(latest.currency)) AS currency,
+          uniq(latest.currency) AS currencies
         FROM (SELECT
           cost_daily.Date AS date,
           cost_daily.SourceId AS sourceId,

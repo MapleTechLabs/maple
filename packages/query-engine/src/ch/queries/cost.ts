@@ -163,8 +163,9 @@ export interface CostTotalsOutput {
 	readonly previousCost: number
 	/** Days in the window the provider has not finalized yet. */
 	readonly estimatedDays: number
-	/** One billing currency of the rows; `currencies` above 1 means the sum mixes several. */
+	/** A billing currency of the window's rows, or of the period before when the window has none. */
 	readonly currency: string
+	/** Currencies over the window and the period before: above 1, the sums or the comparison mix them. */
 	readonly currencies: number
 }
 
@@ -180,8 +181,13 @@ export function costTotalsQuery(opts: CostReadOpts = {}) {
 				cost: total(CH.sumIf($.cost, current)),
 				previousCost: total(CH.sumIf($.cost, CH.not(current))),
 				estimatedDays: CH.uniqIf($.date, CH.and(current, $.estimated.eq(1))),
-				currency: CH.any_($.currency),
-				currencies: CH.uniqIf($.currency, current),
+				// The window's own currency labels its cost: the period before may bill in another.
+				currency: CH.if_(
+					CH.anyIf($.currency, current).neq(""),
+					CH.anyIf($.currency, current),
+					CH.any_($.currency),
+				),
+				currencies: CH.uniq($.currency),
 			}
 		})
 		.format("JSON")
