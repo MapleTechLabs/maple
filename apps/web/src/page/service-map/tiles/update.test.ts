@@ -184,6 +184,21 @@ describe("the board over a live map", () => {
 		expect(Rec.keys(after.cells)).toHaveLength(changed.nodes.length)
 	})
 
+	it("puts a service that left and came back on the cell it was moved to", () => {
+		const id = gone?.id ?? ""
+		const lifted = step(step(start(), Message.ClickedRearrange()), Message.PickedUpTile({ nodeId: id }))
+		const cell = targetsFor(placementsOf(lifted), id).free[0] ?? { q: 0, r: 0 }
+		const moved = step(lifted, Message.PlacedTile({ nodeId: id, cell }))
+		const back = sync(sync(moved, changed), { ...changed, nodes: [...changed.nodes, gone ?? newcomer] })
+		expect(back.cells[id]).toEqual(cell)
+	})
+
+	it("forgets where tiles stood once the board is auto-arranged", () => {
+		const away = sync(start(), changed)
+		expect(Rec.keys(away.remembered)).toEqual([gone?.id])
+		expect(step(away, Message.ClickedAutoArrange(), changed).remembered).toEqual({})
+	})
+
 	it("returns the same board while the services stay the same", () => {
 		const model = start()
 		expect(sync(model, { ...topology, edges: [] })).toBe(model)

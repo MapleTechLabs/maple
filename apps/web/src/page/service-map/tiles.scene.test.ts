@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { Message as ResizableMessage, MountResizeGroup } from "@maple/views/ui/resizable"
 import * as Tabs from "@maple/views/ui/tabs"
-import { Array as Arr, Option, Record as Rec, Result, Schema } from "effect"
+import { Array as Arr, Option, Order, Record as Rec, Result, Schema } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../contract"
@@ -86,12 +86,9 @@ const tiles = (message: Tiles.Message) => () => Message.GotTilesMessage({ messag
 const selectedOf = (model: Model) => Option.flatMap(model.map, (map) => map.selectedId)
 
 describe("service map tiles", () => {
-	test("a tile message lays the board out for the live map", () => {
-		const model = run(loaded(), [tiles(Tiles.Message.ClickedSound())])
-		expect(Arr.sort(Rec.keys(model.tiles.cells), (a, b) => (a < b ? -1 : 1))).toEqual([
-			"checkout",
-			"payments",
-		])
+	test("the board is laid out for the live map as soon as the map is in", () => {
+		const model = loaded()
+		expect(Arr.sort(Rec.keys(model.tiles.cells), Order.String)).toEqual(["checkout", "payments"])
 	})
 
 	test("a picked tile becomes the map's selection, and a miss clears it", () => {
@@ -101,8 +98,8 @@ describe("service map tiles", () => {
 		expect(selectedOf(cleared)).toEqual(Option.none())
 	})
 
-	test("a service that joins the map gets a tile, the rest keep theirs", () => {
-		const before = run(loaded(), [tiles(Tiles.Message.ClickedSound())])
+	test("a service that joins the map gets a tile on the refresh, the rest keep theirs", () => {
+		const before = loaded()
 		const after = run(before, [
 			() => Message.ClickedReload(),
 			(model) =>
@@ -113,7 +110,6 @@ describe("service map tiles", () => {
 						[edge("checkout", "payments"), edge("payments", "ledger")],
 					),
 				),
-			tiles(Tiles.Message.ClickedSound()),
 		])
 		expect(after.tiles.cells["checkout"]).toEqual(before.tiles.cells["checkout"])
 		expect(after.tiles.cells["payments"]).toEqual(before.tiles.cells["payments"])

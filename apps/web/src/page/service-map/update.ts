@@ -215,11 +215,22 @@ const applyUrlFocus = (result: Return, context: PageContext): Return =>
 	})
 
 /** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
+/** Lays the tile board out for the map as it changes, once the Tiles view has been opened. */
+const syncTiles = (result: Return): Return => {
+	const { model } = result
+	if (Option.isNone(model.map) || (model.search.view !== "tiles" && model.tiles.layoutKey === null))
+		return result
+	const tiles = Tiles.sync(model.tiles, topologyOf(model.map.value))
+	return tiles === model.tiles ? result : { ...result, model: { ...model, tiles } }
+}
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
 	context: PageContext,
-): Return => {
+): Return => syncTiles(searchChanged(model, route, context))
+
+const searchChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// The 3D viewport remounts when the view switches to it: its view state starts over, its world stays.
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
@@ -328,6 +339,9 @@ const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	syncTiles(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
 			// The facets window is minted once per visit and kept.

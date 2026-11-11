@@ -95,14 +95,21 @@ export type ViewportOptions<M> = Readonly<{
 
 type Palette = ReturnType<typeof mapPalette>
 
-/** The 3D topology from the map's effective graph and its dimming. */
-export const topologyOf = (map: ServiceMap.Model): Topology3D =>
-	liveTopology(
+const topologies = new WeakMap<ServiceMap.Model["graph"], Topology3D>()
+
+/** The 3D topology from the map's effective graph and its dimming, built once per graph. */
+export const topologyOf = (map: ServiceMap.Model): Topology3D => {
+	const known = topologies.get(map.graph)
+	if (known !== undefined) return known
+	const topology = liveTopology(
 		map.graph.nodes,
 		map.graph.edges,
 		map.graph.declutter.dimmedNodeIds,
 		map.graph.declutter.dimmedEdgeIds,
 	)
+	topologies.set(map.graph, topology)
+	return topology
+}
 
 const perspectiveBar = <M>(
 	h: HtmlBuilder<M>,

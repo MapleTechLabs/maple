@@ -30,7 +30,6 @@ import {
 	MountScene,
 	placementsOf,
 	STATE_ATTRIBUTE,
-	sync,
 	TOPOLOGY_ATTRIBUTE,
 	WatchClock,
 } from "./update"
@@ -55,30 +54,21 @@ export interface Board {
 	readonly biomes: ReadonlyMap<string, Biome>
 }
 
-let lastBoard: Board | undefined
+const boards = new WeakMap<Topology3D, Board>()
 
-/** The board for `topology`; an equal topology (the page rebuilds it every render) reuses the last. */
+/** The board for `topology`, worked out once per topology object (the page keeps one per graph). */
 export const boardOf = (topology: Topology3D): Board => {
-	const json = encodeJson(topology)
-	if (lastBoard?.json === json) return lastBoard
-	lastBoard = {
+	const known = boards.get(topology)
+	if (known !== undefined) return known
+	const board: Board = {
 		topology,
-		json,
+		json: encodeJson(topology),
 		links: linksOf(topology),
 		nodesById: new Map(Arr.map(topology.nodes, (node) => [node.id, node] as const)),
 		biomes: biomesFor(Arr.map(topology.nodes, (node) => node.namespace)),
 	}
-	return lastBoard
-}
-
-let lastSynced: { readonly from: Model; readonly json: string; readonly to: Model } | undefined
-
-/** The model laid out for the board, as the next `update` will find it: the page's topology can
- * change between two tile messages, and laying out is too slow to repeat every render. */
-const syncedOf = (model: Model, board: Board): Model => {
-	if (lastSynced?.from === model && lastSynced.json === board.json) return lastSynced.to
-	lastSynced = { from: model, json: board.json, to: sync(model, board.topology) }
-	return lastSynced.to
+	boards.set(topology, board)
+	return board
 }
 
 export const labelOf = (board: Board, id: string): string => board.nodesById.get(id)?.label ?? id
@@ -547,9 +537,8 @@ export const sortedLinks = (cells: Placements, own: ReadonlyArray<Link>): Readon
 	)
 
 /** The landscape column over the parent's topology, for the parent to place beside its own panels. */
-export const mapColumn = (current: Model, inputs: ViewInputs, h: H): Html => {
+export const mapColumn = (model: Model, inputs: ViewInputs, h: H): Html => {
 	const board = boardOf(inputs.topology)
-	const model = syncedOf(current, board)
 	const flowing = model.traffic ?? !inputs.reducedMotion
 	return vstack(
 		h,

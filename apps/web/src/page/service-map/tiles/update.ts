@@ -5,7 +5,7 @@ import { SceneStartError, Topology } from "../scene3d"
 import type { Topology3D } from "../three/types"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
 import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
-import { Cell, ORIGIN } from "./hex"
+import { Cell, cellKey, ORIGIN } from "./hex"
 import type { SceneEvents, SceneHandle, SceneInput } from "./world"
 
 // The service map as a landscape of hex tiles, over whatever topology the parent passes in (the
@@ -23,6 +23,9 @@ export const Model = Schema.Struct({
 	cells: Schema.Record(Schema.String, Cell),
 	/** The services `cells` was laid out for (`layoutKeyOf`); `null` before the first layout. */
 	layoutKey: Schema.NullOr(Schema.String),
+	/** Where tiles stood when their service left the map (a filter, a quiet window), so they come
+	 * back to the same cell. Cleared by a new deal or Auto-arrange. */
+	remembered: Schema.Record(Schema.String, Cell),
 	/** Tiles still to deal, the next one first. Empty once the map is complete. */
 	stack: Schema.Array(Schema.String),
 	/** A tile lifted off the board while rearranging. */
@@ -82,7 +85,7 @@ export const OutMessage = defineMessageUnion({
 export type OutMessage = typeof OutMessage.Type
 
 /** The viewer's clock now, in their own time zone. */
-export const readClock = (): Clock => clockOf(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone)
+const readClock = (): Clock => clockOf(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone)
 
 /** The clock the map is lit for: the viewer's own, or theirs with the hour held. */
 export const litClockOf = (model: Pick<Model, "light">, clock: Clock): Clock => ({
@@ -99,15 +102,22 @@ export const placementsOf = (model: Pick<Model, "cells">): Placements => new Map
 export const heldIdOf = (model: Pick<Model, "pickedId" | "stack">): string | null =>
 	model.pickedId ?? model.stack[0] ?? null
 
-/** The set of services on a map, the key a layout is kept under. */
-export const layoutKeyOf = (topology: Topology3D): string =>
-	Arr.join(
+const layoutKeys = new WeakMap<Topology3D, string>()
+
+/** The set of services on a map, the key a layout is kept under; once per topology object. */
+const layoutKeyOf = (topology: Topology3D): string => {
+	const known = layoutKeys.get(topology)
+	if (known !== undefined) return known
+	const key = Arr.join(
 		Arr.sort(
 			Arr.map(topology.nodes, (node) => node.id),
 			Order.String,
 		),
 		"\n",
 	)
+	layoutKeys.set(topology, key)
+	return key
+}
 
 /**
  * The board for this topology. A tile whose service is still on the map keeps its cell, a
@@ -118,24 +128,36 @@ export const sync = (model: Model, topology: Topology3D): Model => {
 	const key = layoutKeyOf(topology)
 	if (key === model.layoutKey) return model
 	const ids = new Set(Arr.map(topology.nodes, (node) => node.id))
-	const kept: Placements = new Map(Arr.filter(Rec.toEntries(model.cells), ([id]) => ids.has(id)))
+	const staying = Arr.filter(Rec.toEntries(model.cells), ([id]) => ids.has(id))
+	const gone = Arr.filter(Rec.toEntries(model.cells), ([id]) => !ids.has(id))
 	const stack = Arr.filter(model.stack, (id) => ids.has(id))
 	const dealing = model.layoutKey !== null && stack.length > 0
+	// A returning service takes its old cell back, unless another tile stands there now.
+	const taken = new Set(Arr.map(staying, ([, cell]) => cellKey(cell)))
+	const returning = Arr.filter(Rec.toEntries(model.remembered), ([id, cell]) => {
+		if (dealing || !ids.has(id) || taken.has(cellKey(cell))) return false
+		taken.add(cellKey(cell))
+		return true
+	})
+	const kept: Placements = new Map([...staying, ...returning])
 	const newcomers = Arr.filter(dealOrder(topology, new Set(kept.keys())), (id) => !Arr.contains(stack, id))
 	const pickedId = model.pickedId !== null && ids.has(model.pickedId) ? model.pickedId : null
 	return {
 		...model,
 		layoutKey: key,
+		remembered: Rec.filter({ ...model.remembered, ...Rec.fromEntries(gone) }, (_, id) => !ids.has(id)),
 		cells: toRecord(dealing ? kept : autoLayout(topology, kept)),
 		stack: dealing ? [...stack, ...newcomers] : [],
 		pickedId: dealing ? null : pickedId,
 		hover: null,
+		lastGain: null,
 	}
 }
 
 export const init = (): Model => ({
 	cells: {},
 	layoutKey: null,
+	remembered: {},
 	stack: [],
 	pickedId: null,
 	isBuilding: false,
@@ -179,6 +201,7 @@ export const update = (current: Model, message: Message, topology: Topology3D): 
 				model: {
 					...model,
 					cells: first === undefined ? {} : { [first]: ORIGIN },
+					remembered: {},
 					stack: Arr.drop(order, 1),
 					pickedId: null,
 					isBuilding: true,
@@ -193,6 +216,7 @@ export const update = (current: Model, message: Message, topology: Topology3D): 
 			model: {
 				...model,
 				cells: toRecord(autoLayout(topology)),
+				remembered: {},
 				stack: [],
 				pickedId: null,
 				isBuilding: false,
