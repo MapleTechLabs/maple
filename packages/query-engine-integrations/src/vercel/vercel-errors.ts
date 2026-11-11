@@ -16,7 +16,7 @@ export interface VercelErrorLogRow {
 export interface VercelErrorPattern {
 	/** The message with its variable parts as `<*>` (or `<uuid>`, `<ip>`...). */
 	readonly pattern: string
-	/** The newest line in the pattern, in full. */
+	/** The newest line in the pattern, in full (a function log without its runtime envelope). */
 	readonly sample: string
 	readonly occurrences: number
 	/** `lambda`, `edge`, `build`... of the newest line. */
@@ -36,6 +36,23 @@ interface Cluster {
 
 const ALL_ZERO = /^0*$/
 
+const LAMBDA_ENVELOPE = [
+	/^\s*START RequestId: \S+(?: Version: \S+)?\s*/,
+	/\s*END RequestId: \S+/,
+	/\s*REPORT RequestId: [\s\S]*$/,
+]
+
+/**
+ * A function log without the runtime's `START` / `END` / `REPORT` lines around it: they carry only
+ * ids and timings, and would make every invocation's pattern look alike. The envelope alone stays.
+ */
+export const withoutLambdaEnvelope = (body: string): string => {
+	const inner = Str.trim(
+		Arr.reduce(LAMBDA_ENVELOPE, body, (text, envelope) => Str.replace(envelope, "")(text)),
+	)
+	return inner === "" ? Str.trim(body) : inner
+}
+
 const idOrNull = (id: string): string | null => (ALL_ZERO.test(id) ? null : id)
 
 const byOccurrences = Order.mapInput(Order.flip(Order.Number), (p: VercelErrorPattern) => p.occurrences)
@@ -51,7 +68,7 @@ export const clusterVercelErrorLogs = (
 	const miner = makeLogTemplateMiner()
 	const clusters = new Map<number, Cluster>()
 	for (const row of rows) {
-		const body = Str.trim(row.body)
+		const body = withoutLambdaEnvelope(row.body)
 		if (body.length === 0) continue
 		const mined = miner.addLogMessage(body)
 		const cluster = clusters.get(mined.clusterId)
@@ -62,18 +79,15 @@ export const clusterVercelErrorLogs = (
 			cluster.occurrences += 1
 		}
 	}
-	const patterns = Arr.map(
-		Array.from(clusters.values()),
-		(cluster): VercelErrorPattern => ({
-			pattern: cluster.template,
-			sample: Str.trim(cluster.first.body),
-			occurrences: cluster.occurrences,
-			source: cluster.first.source,
-			lastSeen: cluster.first.timestamp,
-			traceId: idOrNull(cluster.first.traceId),
-			spanId: idOrNull(cluster.first.spanId),
-		}),
-	)
+	const patterns = Arr.map(Array.from(clusters.values()), (cluster): VercelErrorPattern => ({
+		pattern: cluster.template,
+		sample: withoutLambdaEnvelope(cluster.first.body),
+		occurrences: cluster.occurrences,
+		source: cluster.first.source,
+		lastSeen: cluster.first.timestamp,
+		traceId: idOrNull(cluster.first.traceId),
+		spanId: idOrNull(cluster.first.spanId),
+	}))
 	return Arr.take(Arr.sort(patterns, byOccurrences), limit)
 }
 

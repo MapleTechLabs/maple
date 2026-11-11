@@ -35,7 +35,7 @@ import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
 import { pickTimeSearch, type TimeSearch } from "../../../kit/view-tabs"
 import { pageTime } from "../../../kit/page-time"
-import { DEFAULT_PRESET, seriesInput } from "../data"
+import { DEFAULT_PRESET, linkTime, seriesInput } from "../data"
 import {
 	aiGatewayEmpty,
 	aiGatewayLoading,
@@ -422,7 +422,7 @@ const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyAr
  * (the tab strip, the chart panels) would shrink to nothing once the page is taller than the view.
  */
 export const projectPage = (h: H, model: Model, timeZone: string): Html => {
-	const time = pickTimeSearch(model.search)
+	const time = linkTime(pickTimeSearch(model.search))
 	const clock = { nowMs: model.nowMs, timeZone }
 	return vstack(h, { gap: "6", className: "min-w-0" }, [
 		header(h, model, time, clock),
@@ -453,7 +453,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						h,
 						model,
 						{ nowMs: model.nowMs, timeZone },
-						serviceMapHref(model, pickTimeSearch(model.search)),
+						serviceMapHref(model, linkTime(pickTimeSearch(model.search))),
 					),
 				},
 				[projectPage(h, model, timeZone)],

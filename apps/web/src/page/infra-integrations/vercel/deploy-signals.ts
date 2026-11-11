@@ -109,13 +109,12 @@ export function deployRegressions(
  * commit: a CLI deploy. Vercel's full ids run 32 characters and overflow every place they show.
  */
 export const deployLabel = (deployment: VercelDeploymentSummary): string =>
-	deployment.commitSha === null
-		? Str.slice(0, 11)(deployment.id)
-		: Str.slice(0, 7)(deployment.commitSha)
+	deployment.commitSha === null ? Str.slice(0, 11)(deployment.id) : Str.slice(0, 7)(deployment.commitSha)
 
 /** What the deploy shipped, in words: the commit's first line, else its short label. */
 export const deployTitle = (deployment: VercelDeploymentSummary): string => {
-	const message = deployment.commitMessage === null ? "" : Str.trim(Str.split(deployment.commitMessage, "\n")[0] ?? "")
+	const message =
+		deployment.commitMessage === null ? "" : Str.trim(Str.split(deployment.commitMessage, "\n")[0] ?? "")
 	return message === "" ? deployLabel(deployment) : message
 }
 
@@ -136,7 +135,9 @@ export const deployCommitMarkers = (
 	}))
 
 /** A critical band over each regression's window, drawn in the chart under the commit markers. */
-export const regressionBands = (regressions: ReadonlyArray<DeployRegression>): ReadonlyArray<ChartEventMarker> =>
+export const regressionBands = (
+	regressions: ReadonlyArray<DeployRegression>,
+): ReadonlyArray<ChartEventMarker> =>
 	Arr.map(regressions, (regression) => ({
 		id: regression.deployment.id,
 		at: new Date(deployedAt(regression.deployment)).toISOString(),

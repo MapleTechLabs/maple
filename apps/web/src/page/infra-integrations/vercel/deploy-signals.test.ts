@@ -118,7 +118,12 @@ describe("deployTitle", () => {
 		expect(deployLabel(cli)).toBe("dpl_FcAuGdT")
 		expect(deployTitle(cli)).toBe("dpl_FcAuGdT")
 		expect(
-			deployTitle(new VercelDeploymentSummary({ ...deploy("y", T0), commitMessage: "Fix the cart\n\nLong body" })),
+			deployTitle(
+				new VercelDeploymentSummary({
+					...deploy("y", T0),
+					commitMessage: "Fix the cart\n\nLong body",
+				}),
+			),
 		).toBe("Fix the cart")
 	})
 })

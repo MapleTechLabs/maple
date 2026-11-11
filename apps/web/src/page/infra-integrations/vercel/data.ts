@@ -20,6 +20,7 @@ import {
 import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
+import type { TimeSearch } from "../../kit/view-tabs"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
@@ -36,6 +37,15 @@ export type SeriesInput = typeof SeriesInput.Type
 
 /** Both pages' default window; matches the API's. */
 export const DEFAULT_PRESET = "24h"
+
+/**
+ * The page's time search for links out of it: with no range in the URL the page shows its default
+ * 24 hours, and the logs or traces explorer must open on the same window, not its own default.
+ */
+export const linkTime = (time: TimeSearch): TimeSearch =>
+	time.startTime === undefined && time.timePreset === undefined
+		? { ...time, timePreset: DEFAULT_PRESET }
+		: time
 
 const BUCKET_STEPS = [10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21_600, 43_200, 86_400]
 

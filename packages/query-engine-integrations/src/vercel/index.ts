@@ -18,6 +18,7 @@ export {
 export {
 	clusterVercelErrorLogs,
 	errorPatternSearch,
+	withoutLambdaEnvelope,
 	type VercelErrorLogRow,
 	type VercelErrorPattern,
 } from "./vercel-errors"

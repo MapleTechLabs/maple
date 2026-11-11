@@ -226,7 +226,7 @@ describe("vercel project", () => {
 			expectView(role("link", { name: /^Functions/ })).toHaveAttr("aria-current", "page"),
 			expectView(role("link", { name: "Open in the service map" })).toHaveAttr(
 				"href",
-				"/service-map?focusService=api",
+				"/service-map?focusService=api&timePreset=24h",
 			),
 		)
 	})
@@ -277,7 +277,10 @@ describe("vercel project", () => {
 		trafficScene(
 			answered(opened()),
 			expectView(role("heading", { name: "api" })).toExist(),
-			expectView(role("link", { name: "service api" })).toHaveAttr("href", "/services/api"),
+			expectView(role("link", { name: "service api" })).toHaveAttr(
+				"href",
+				"/services/api?timePreset=24h",
+			),
 			expectView(text("Cold starts")).toExist(),
 			expectView(text("/api/checkout")).toExist(),
 			expectView(text("(none)")).toExist(),
@@ -290,7 +293,7 @@ describe("vercel project", () => {
 			),
 			expectView(role("link", { name: /^Logs: START RequestId/ })).toHaveAttr(
 				"href",
-				"/logs?severities=%5B%22ERROR%22%2C%22FATAL%22%5D&attrs=%5B%22res%3Avercel.project.id%3Dprj_api%22%5D&search=%5BGET%5D+%2Fapi%2Fquote%3Fpage%3D",
+				"/logs?severities=%5B%22ERROR%22%2C%22FATAL%22%5D&attrs=%5B%22res%3Avercel.project.id%3Dprj_api%22%5D&search=%5BGET%5D+%2Fapi%2Fquote%3Fpage%3D&timePreset=24h",
 			),
 			// A pattern whose newest line carried no trace has no trace link.
 			expectView(role("link", { name: /^Newest trace: START RequestId/ })).not.toExist(),
@@ -299,7 +302,7 @@ describe("vercel project", () => {
 			expectView(text("api.stripe.com")).toExist(),
 			expectView(role("link", { name: "Traces" })).toHaveAttr(
 				"href",
-				"/traces?whereClause=resource.vercel.projectId+%3D+%22prj_api%22",
+				"/traces?whereClause=resource.vercel.projectId+%3D+%22prj_api%22&timePreset=24h",
 			),
 		)
 	})

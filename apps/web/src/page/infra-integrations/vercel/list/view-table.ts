@@ -80,9 +80,11 @@ const deployCell = (h: H, deployment: VercelDeploymentSummary | null, clock: Clo
 			),
 		]),
 		hstack(h, { gap: "1", className: "min-w-0 pl-3" }, [
-			typography(h, { size: "3xs", tone: failed ? "warning" : "muted", mono: true, className: "shrink-0" }, [
-				`${Str.toLowerCase(deployment.state)} ·`,
-			]),
+			typography(
+				h,
+				{ size: "3xs", tone: failed ? "warning" : "muted", mono: true, className: "shrink-0" },
+				[`${Str.toLowerCase(deployment.state)} ·`],
+			),
 			relativeTime(h, {
 				value: deployment.createdAt,
 				...clock,
@@ -91,7 +93,11 @@ const deployCell = (h: H, deployment: VercelDeploymentSummary | null, clock: Clo
 			}),
 			...(title === label
 				? []
-				: [typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [`· ${label}`])]),
+				: [
+						typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [
+							`· ${label}`,
+						]),
+					]),
 		]),
 	])
 }

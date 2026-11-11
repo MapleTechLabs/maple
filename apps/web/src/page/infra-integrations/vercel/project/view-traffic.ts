@@ -280,7 +280,7 @@ const DIMENSIONS = {
 
 const BREAKDOWN_ROWS = 10
 
-const breakdownRow = (h: H, row: VercelInfraBreakdownRow, total: number): Html => {
+const breakdownRow = (h: H, row: VercelInfraBreakdownRow, total: number, hasBytes: boolean): Html => {
 	const errorRate = row.requests > 0 ? row.requests5xx / row.requests : 0
 	return h.div(
 		[h.Key(row.key), h.Class(cn(ROW_CLASS, "relative"))],
@@ -317,10 +317,14 @@ const breakdownRow = (h: H, row: VercelInfraBreakdownRow, total: number): Html =
 				[h.Class(cn(NUMERIC_CELL, "relative hidden w-20 text-foreground-soft md:block"))],
 				[row.cacheLookups === 0 ? EMPTY_VALUE : formatPercent(row.cacheHits / row.cacheLookups)],
 			),
-			h.span(
-				[h.Class(cn(NUMERIC_CELL, "relative hidden w-24 text-foreground-soft md:block"))],
-				[formatBytes(row.bytes)],
-			),
+			...(hasBytes
+				? [
+						h.span(
+							[h.Class(cn(NUMERIC_CELL, "relative hidden w-24 text-foreground-soft md:block"))],
+							[formatBytes(row.bytes)],
+						),
+					]
+				: []),
 		],
 	)
 }
@@ -337,6 +341,8 @@ const breakdownTable = (
 	)
 	const shown = Arr.take(sorted, BREAKDOWN_ROWS)
 	const total = Arr.reduce(rows, 0, (sum, row) => sum + row.requests)
+	// Vercel sends a response size only on some plans and runtimes; a column of zeros says nothing.
+	const hasBytes = Arr.some(rows, (row) => row.bytes > 0)
 	const footer = listFooter(h, {
 		shown: shown.length,
 		total: rows.length,
@@ -360,16 +366,20 @@ const breakdownTable = (
 					align: "right",
 					hidden: "hidden md:flex",
 				}),
-				columnHead(h, {
-					label: "Bandwidth",
-					width: "w-24",
-					align: "right",
-					hidden: "hidden md:flex",
-				}),
+				...(hasBytes
+					? [
+							columnHead(h, {
+								label: "Bandwidth",
+								width: "w-24",
+								align: "right",
+								hidden: "hidden md:flex",
+							}),
+						]
+					: []),
 			],
 			shown.length === 0
 				? [dataTableEmpty(h, ["No requests in this window"])]
-				: Arr.map(shown, (row) => breakdownRow(h, row, total)),
+				: Arr.map(shown, (row) => breakdownRow(h, row, total, hasBytes)),
 		),
 		...(rows.length === 0 || footer === null ? [] : [footer]),
 	]
@@ -557,15 +567,16 @@ export const topErrors = (
 		[
 			sectionHeading(h, {
 				title: "Top errors",
-				hint:
-					options.capped
-						? `error and fatal logs grouped by pattern, from the newest ${formatNumber(options.sampled)}`
-						: "error and fatal logs grouped by pattern",
+				hint: options.capped
+					? `error and fatal logs grouped by pattern, from the newest ${formatNumber(options.sampled)}`
+					: "error and fatal logs grouped by pattern",
 				count: String(options.errors.length),
 				actions: typography(h, { size: "xs" }, [
-					textLink(h, { href: patternLogsHref(options.projectId, options.time, null), tone: "muted" }, [
-						"Open in Logs",
-					]),
+					textLink(
+						h,
+						{ href: patternLogsHref(options.projectId, options.time, null), tone: "muted" },
+						["Open in Logs"],
+					),
 				]),
 			}),
 			dataTable(
