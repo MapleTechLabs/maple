@@ -253,7 +253,8 @@ const scorePanel = (h: H, model: Model, board: Board, cells: Placements): Html =
 		h,
 		{
 			gap: "1.5",
-			className: `absolute top-3 left-3 w-64 p-3 ${PANEL_CLASS}`,
+			// Narrow, only the headline: the full panel would cover the top of the board.
+			className: `absolute top-3 left-3 px-3 py-2 @xl/page:w-64 @xl/page:p-3 ${PANEL_CLASS}`,
 			attributes: [h.AriaLabel("Map score")],
 		},
 		[
@@ -280,11 +281,13 @@ const scorePanel = (h: H, model: Model, board: Board, cells: Placements): Html =
 					),
 				]),
 			]),
-			meter(h, { value: score.roads, max: Math.max(1, score.total), label: "Connections by road" }),
-			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-				score.waiting > 0
-					? `${model.stack.length} tiles in the stack · ${score.rails} by rail`
-					: `${score.rails} by rail · ${Math.round(score.roadTraffic * 100)}% of traffic goes by road`,
+			vstack(h, { gap: "1.5", className: "hidden @xl/page:flex" }, [
+				meter(h, { value: score.roads, max: Math.max(1, score.total), label: "Connections by road" }),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					score.waiting > 0
+						? `${model.stack.length} tiles in the stack · ${score.rails} by rail`
+						: `${score.rails} by rail · ${Math.round(score.roadTraffic * 100)}% of traffic goes by road`,
+				]),
 			]),
 		],
 	)
