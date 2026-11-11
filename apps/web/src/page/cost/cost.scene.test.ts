@@ -23,7 +23,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { isUnderADay, requestFilters, withFilter } from "./derive"
+import { chartRows, isUnderADay, requestFilters, withFilter } from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -189,7 +189,10 @@ describe("cost page", () => {
 			expectView(text("123456789012")).toExist(),
 			expectView(text("Waiting for first sync")).toExist(),
 			expectView(text("Group by")).not.toExist(),
+			// The first sync lands while the page is open: the sources can be read again from here.
+			expectView(role("button", { name: "Reload" })).toExist(),
 		)
+		expect(names(pageUpdate(step.model, Message.ClickedReload()).commands)).toContain("FetchCostSources")
 	})
 
 	test("a synced source asks for the totals, the daily series and the breakdown of the window", () => {
@@ -416,6 +419,66 @@ describe("cost page", () => {
 			expectView(text("+$200.00")).toExist(),
 			expectView(text("The 30 days before are still syncing")).not.toExist(),
 		)
+	})
+
+	test("no change is shown against a period older than the history a source has", () => {
+		// The window starts Oct 12 and covers a year: the year before starts ahead of the history read.
+		const model = answered(
+			entered({ groupBy: "region" }, [source({ historyComplete: true, backfillDate: "2025-11-01" })])
+				.model,
+			totals({ days: 365 }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("The 365 days before start earlier than the history read")).toExist(),
+			expectView(text("The 365 days before are still syncing")).not.toExist(),
+			expectView(text("+$200.00")).not.toExist(),
+			expectView(text("+$300.00")).not.toExist(),
+		)
+	})
+
+	test("a key named like the folded tail or the empty placeholder keeps its own chart column", () => {
+		const response = Schema.decodeSync(CostTimeseriesResponse)({
+			days: ["2026-11-09"],
+			series: [
+				{ key: "Other", other: false, total: 5, points: [5] },
+				{ key: "No region", other: false, total: 4, points: [4] },
+				{ key: "", other: false, total: 3, points: [3] },
+				{ key: "__other__", other: true, total: 2, points: [2] },
+			],
+			estimatedFrom: null,
+			currency: "USD",
+		})
+		expect(chartRows(response, "region")).toEqual([
+			{
+				bucket: "2026-11-09T00:00:00Z",
+				Other: 5,
+				"No region": 4,
+				"No region (empty)": 3,
+				"Other (the rest)": 2,
+			},
+		])
+	})
+
+	test("the rows keep their currency when the totals read failed", () => {
+		const step = entered({ groupBy: "region" }, [source()]).model
+		const model = Arr.reduce(
+			[
+				Message.CompletedLoadTotals({
+					key: step.totals.key ?? "",
+					result: Result.fail(toLoadFailure("api down")),
+				}),
+				Message.CompletedLoadBreakdown({
+					key: step.breakdown.key ?? "",
+					result: Result.succeed(breakdown),
+				}),
+			],
+			step,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		scene({ update: pageUpdate, view }, given(model), resolveTheme, expectView(text("$900.00")).toExist())
 	})
 
 	test("a fraction of a cent of credit reads as zero, not as a negative zero", () => {

@@ -70,7 +70,8 @@ const NEW_CONNECTION_ID = Schema.decodeSync(AwsConnectionId)("018f2b3c-4d5e-4f70
 /** The id's first 24 hex digits, as the stack and role names carry it. */
 const suffixOf = (id: AwsConnectionId) => Str.slice(0, 24)(Str.replaceAll("-", "")(id))
 
-const roleArn = (id: AwsConnectionId) => `arn:aws:iam::${ACCOUNT}:role/MapleIntegration-${suffixOf(id)}`
+const roleArn = (id: AwsConnectionId, account: string = ACCOUNT) =>
+	`arn:aws:iam::${account}:role/MapleIntegration-${suffixOf(id)}`
 
 const CONNECTED: V2AwsConnection = {
 	id: CONNECTION_ID,
@@ -281,7 +282,7 @@ const answerOf = (fixture: Fixture, command: Pending): Option.Option<Answer> => 
 					...CONNECTED,
 					id: NEW_CONNECTION_ID,
 					account_id: request.account_id,
-					role_arn: roleArn(NEW_CONNECTION_ID),
+					role_arn: roleArn(NEW_CONNECTION_ID, request.account_id),
 					oidc_subject: `aws-connection:${NEW_CONNECTION_ID}`,
 					modules: request.modules ?? [],
 					granted_modules: null,

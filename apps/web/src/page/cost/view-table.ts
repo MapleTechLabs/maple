@@ -1,4 +1,4 @@
-import type { CostBreakdownRow, CostBreakdownSortBy } from "@maple/domain/http"
+import type { CostBreakdownResponse, CostBreakdownRow, CostBreakdownSortBy } from "@maple/domain/http"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
@@ -33,9 +33,9 @@ import {
 	formatMoneyChange,
 	groupByOf,
 	hasFilter,
-	isPreviousPeriodSynced,
+	previousPeriodOf,
 	keyLabel,
-	seriesLabel,
+	seriesLabels,
 	sortOf,
 	type CostGroupBy,
 	withFilter,
@@ -85,10 +85,11 @@ const head = (h: H, dimension: CostGroupBy, sort: CostBreakdownSortBy): Html => 
 const seriesColors = (model: Model, dimension: CostGroupBy): ReadonlyMap<string, string> => {
 	const series = Option.getOrUndefined(AsyncData.getData(model.timeseries.data))?.series ?? []
 	// The same name set the bar chart resolves, "Other" included: a colour depends on the whole set.
-	const colors = resolveSeriesColors(Arr.map(series, (entry) => seriesLabel(dimension, entry)))
+	const labels = seriesLabels(dimension, series)
+	const colors = resolveSeriesColors(labels)
 	return new Map(
-		Arr.flatMap(series, (entry) => {
-			const color = colors.get(seriesLabel(dimension, entry))
+		Arr.flatMap(series, (entry, index) => {
+			const color = colors.get(labels[index] ?? entry.key)
 			return entry.other || color === undefined ? [] : [[entry.key, color] as const]
 		}),
 	)
@@ -100,20 +101,21 @@ const row = (
 	dimension: CostGroupBy,
 	entry: CostBreakdownRow,
 	colors: ReadonlyMap<string, string>,
+	// The breakdown's own: the rows keep their currency when the totals read failed.
+	currency: string,
 ): Html => {
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
-	const currency = totals === undefined ? "" : totals.currency
 	// While a source still backfills the period before, its cost there is too low to compare with.
 	const previousSynced =
 		totals === undefined ||
-		isPreviousPeriodSynced(
+		previousPeriodOf(
 			Option.match(AsyncData.getData(model.sources.data), {
 				onNone: () => [],
 				onSome: (response) => response.sources,
 			}),
 			model.window,
 			totals.days,
-		)
+		) === "synced"
 	const label = keyLabel(dimension, entry.key)
 	const filter = { dimension, value: entry.key }
 	const color = colors.get(entry.key)
@@ -182,7 +184,7 @@ const row = (
 	)
 }
 
-const rowsTable = (h: H, model: Model, rows: ReadonlyArray<CostBreakdownRow>, isStale: boolean): Html => {
+const rowsTable = (h: H, model: Model, response: CostBreakdownResponse, isStale: boolean): Html => {
 	const dimension = groupByOf(model.search)
 	const colors = seriesColors(model, dimension)
 	return table(
@@ -196,7 +198,7 @@ const rowsTable = (h: H, model: Model, rows: ReadonlyArray<CostBreakdownRow>, is
 			head(h, dimension, sortOf(model.search)),
 			tableBody(
 				h,
-				Arr.map(rows, (entry) => row(h, model, dimension, entry, colors)),
+				Arr.map(response.rows, (entry) => row(h, model, dimension, entry, colors, response.currency)),
 			),
 		],
 	)
@@ -239,7 +241,7 @@ export const breakdownTable = (h: H, model: Model): Html => {
 			onData: (response) =>
 				response.rows.length === 0
 					? emptyMessage(h, { className: "py-10" }, ["No cost in this window"])
-					: rowsTable(h, model, response.rows, AsyncData.isRefreshing(model.breakdown.data)),
+					: rowsTable(h, model, response, AsyncData.isRefreshing(model.breakdown.data)),
 		}),
 	])
 }

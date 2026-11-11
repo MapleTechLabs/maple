@@ -8,7 +8,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { formatMoney, formatMoneyChange, isPreviousPeriodSynced } from "./derive"
+import { formatMoney, formatMoneyChange, type PreviousPeriod, previousPeriodOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -36,7 +36,8 @@ const notes = (totals: CostTotalsResponse): ReadonlyArray<string> => [
 		: []),
 ]
 
-const figures = (h: H, totals: CostTotalsResponse, previousSynced: boolean): Html => {
+const figures = (h: H, totals: CostTotalsResponse, previous: PreviousPeriod): Html => {
+	const previousSynced = previous === "synced"
 	const currency = totals.currency
 	const change = totals.cost - totals.previousCost
 	const lines = notes(totals)
@@ -53,7 +54,9 @@ const figures = (h: H, totals: CostTotalsResponse, previousSynced: boolean): Htm
 				// A period still being backfilled reads as cheaper than it was: no change is shown against it.
 				value: previousSynced ? formatMoneyChange(change, currency) : EMPTY_VALUE,
 				subline: !previousSynced
-					? `The ${daysText(totals.days)} before are still syncing`
+					? previous === "syncing"
+						? `The ${daysText(totals.days)} before are still syncing`
+						: `The ${daysText(totals.days)} before start earlier than the history read`
 					: totals.previousCost > 0
 						? hstack(h, { gap: "1.5", as: "span", inline: true }, [
 								// Rising cost is not good news: the delta reads it as the worse direction.
@@ -102,7 +105,7 @@ export const figuresRow = (h: H, model: Model): Html =>
 			figures(
 				h,
 				totals,
-				isPreviousPeriodSynced(
+				previousPeriodOf(
 					Option.match(AsyncData.getData(model.sources.data), {
 						onNone: () => [],
 						onSome: (response) => response.sources,

@@ -66,7 +66,7 @@ const at = (h: H, model: Model, timeZone: string, iso: string | null, prefix: st
 const COST_POLICY: RailItem = {
 	icon: "CircleDollarIcon",
 	title: "Cost policy",
-	detail: "Read-only Cost Explorer reads, attached to the role",
+	detail: "Read-only billing access (spend, savings recommendations, data exports), attached to the role",
 }
 
 /** `hasCost`: the stack carries the Cost module's policy (asked for, or ticked on the form). */

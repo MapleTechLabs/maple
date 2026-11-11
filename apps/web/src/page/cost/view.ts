@@ -22,6 +22,7 @@ import {
 import { errorState } from "@maple/views/ui/error-state"
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import { icon } from "@maple/views/ui/icon"
+import { refreshButton } from "@maple/views/ui/refresh-button"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { grid } from "@maple/views/ui/grid"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
@@ -202,6 +203,13 @@ const content = (h: H, model: Model): ReadonlyArray<Html> => {
 const showsData = (model: Model): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), (response) => hasSynced(response.sources))
 
+/** Sources are connected and none has cost yet. */
+const isAwaitingCost = (model: Model): boolean =>
+	Option.exists(
+		AsyncData.getData(model.sources.data),
+		(response) => response.sources.length > 0 && !hasSynced(response.sources),
+	)
+
 const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.sources.data, {
 		onEmpty: () => [loading(h)],
@@ -238,7 +246,14 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								onReload: Message.ClickedReload(),
 								isReloading: model.isReloading,
 							})
-						: undefined,
+						: isAwaitingCost(model)
+							? // The first sync lands while the page is open: Reload reads the sources again.
+								refreshButton(h, {
+									onRefresh: Message.ClickedReload(),
+									isPending: model.isReloading,
+									label: "Reload",
+								})
+							: undefined,
 				},
 				// A grid, not the scroll column's own flex: there a panel (it clips) is squeezed by a
 				// growing sibling such as the error state.

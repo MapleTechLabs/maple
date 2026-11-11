@@ -25,7 +25,8 @@ export const DIMENSIONS = {
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
 	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
-	account: { label: "Account", noun: "account", empty: "No account" },
+	// The account the connection reads, which for a management account bills its members' cost too.
+	account: { label: "Connected account", noun: "connected account", empty: "No account" },
 } as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>
 
 export const groupByOf = (search: Search): CostGroupBy => search.groupBy ?? DEFAULT_GROUP_BY
@@ -171,11 +172,23 @@ export const formatDay = (day: string, withYear = false): string => {
 
 export type ChartRow = Readonly<Record<string, string | number | boolean>>
 
-/** A series' name in the chart: the folded tail reads "Other", an empty key its placeholder. */
-export const seriesLabel = (
+type SeriesKey = Readonly<{ key: string; other: boolean }>
+
+/**
+ * Each series' name in the chart, in order: the folded tail reads "Other", an empty key its
+ * placeholder. A name is a chart column, so one a real key already has is told apart from it.
+ */
+export const seriesLabels = (
 	dimension: CostGroupBy,
-	series: Readonly<{ key: string; other: boolean }>,
-): string => (series.other ? OTHER_LABEL : keyLabel(dimension, series.key))
+	series: ReadonlyArray<SeriesKey>,
+): ReadonlyArray<string> => {
+	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [entry.key]))
+	const placeholder = DIMENSIONS[dimension].empty
+	const empty = Arr.contains(named, placeholder) ? `${placeholder} (empty)` : placeholder
+	const other =
+		Arr.contains(named, OTHER_LABEL) || empty === OTHER_LABEL ? `${OTHER_LABEL} (the rest)` : OTHER_LABEL
+	return Arr.map(series, (entry) => (entry.other ? other : entry.key === "" ? empty : entry.key))
+}
 
 /**
  * One row per UTC day for the bar chart: a column per series in the answer's order (largest
@@ -184,18 +197,20 @@ export const seriesLabel = (
 export const chartRows = (
 	response: CostTimeseriesResponse,
 	dimension: CostGroupBy,
-): ReadonlyArray<ChartRow> =>
-	Arr.map(response.days, (day, index) => ({
+): ReadonlyArray<ChartRow> => {
+	const labels = seriesLabels(dimension, response.series)
+	return Arr.map(response.days, (day, index) => ({
 		bucket: `${day}T00:00:00Z`,
 		...Rec.fromEntries(
-			Arr.map(response.series, (series) => {
+			Arr.map(response.series, (series, position) => {
 				// A fraction of a cent of credit would stretch the axis below zero for nothing.
 				const point = series.points[index] ?? 0
-				return [seriesLabel(dimension, series), isNegligible(point) ? 0 : point]
+				return [labels[position] ?? series.key, isNegligible(point) ? 0 : point]
 			}),
 		),
 		...(response.estimatedFrom !== null && day >= response.estimatedFrom ? { partial: true } : undefined),
 	}))
+}
 
 /** No day of the window has cost. */
 export const isEmptySeries = (response: CostTimeseriesResponse): boolean =>
@@ -203,25 +218,32 @@ export const isEmptySeries = (response: CostTimeseriesResponse): boolean =>
 
 const DAY_MS = 86_400_000
 
+/** `synced`: comparable. `syncing`: a source still backfills it. `beyond`: older than the history read. */
+export type PreviousPeriod = "synced" | "syncing" | "beyond"
+
 /**
  * Whether every syncing source has history back to the start of the period before the window.
- * While one is still backfilling, that period reads as cheaper than it was, so the change against
- * it is not shown. A paused source no longer syncs and does not hold the comparison back.
+ * Short of that the period reads as cheaper than it was, so no change is shown against it: while
+ * a source backfills, and for good once its history is complete and still starts later. A paused
+ * source no longer syncs and does not hold the comparison back.
  */
-export const isPreviousPeriodSynced = (
+export const previousPeriodOf = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	window: Readonly<{ startTime: string }> | null,
 	days: number,
-): boolean => {
-	if (window === null) return true
+): PreviousPeriod => {
+	if (window === null) return "synced"
 	const firstDay = new Date(`${Str.slice(0, 10)(window.startTime)}T00:00:00Z`).getTime()
-	if (!Number.isFinite(firstDay)) return true
+	if (!Number.isFinite(firstDay)) return "synced"
 	const previousStart = Str.slice(0, 10)(new Date(firstDay - days * DAY_MS).toISOString())
-	return Arr.every(
-		Arr.filter(sources, (source) => source.status !== "paused"),
+	const short = Arr.filter(
+		sources,
 		(source) =>
-			source.historyComplete || (source.backfillDate !== null && source.backfillDate <= previousStart),
+			source.status !== "paused" &&
+			!(source.backfillDate !== null && source.backfillDate <= previousStart),
 	)
+	if (short.length === 0) return "synced"
+	return Arr.some(short, (source) => !source.historyComplete) ? "syncing" : "beyond"
 }
 
 /** AWS bills each Cost Explorer request USD 0.01. */
