@@ -1,7 +1,9 @@
+import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { biomeOf, biomesFor } from "./biome"
 import { tilePalette } from "./palette"
-import { buildTile, landmarkAt, type TileSpec } from "./tile"
+import { HEX_SIZE } from "./hex"
+import { buildTile, landmarkAt, pondFor, type TileSpec } from "./tile"
 
 const spec = (kind: TileSpec["kind"], size: number, corridors: ReadonlyArray<number> = []): TileSpec => ({
 	id: `tile-${kind}`,
@@ -36,5 +38,29 @@ describe("a tile's landmark", () => {
 	it("gives a windmill sails and no one else", () => {
 		expect(buildTile(spec("queue", 0.5)).sails).not.toBeNull()
 		expect(buildTile(spec("database", 0.5)).sails).toBeNull()
+	})
+})
+
+describe("a tile's pond", () => {
+	// A pond lies towards a corner, so the two hex sides beside that corner are what it must clear.
+	const clearance = (offset: number, wanted: number) => {
+		const { radius, distance } = pondFor(offset, wanted)
+		const toSide = HEX_SIZE * Math.cos(Math.PI / 6) - distance * Math.cos(Math.PI / 6)
+		// Its outline bends up to 16% past the radius, with a rim of sand round it.
+		return toSide - (radius + 0.12) * 1.16
+	}
+
+	it("stays on its tile, sand and all, however far out its landmark stands", () => {
+		const gaps = Arr.map([1.2, 1.35, 1.4, 1.45, 1.5], (offset) => clearance(offset, 1.25))
+		Arr.forEach(gaps, (gap) => expect(gap).toBeGreaterThanOrEqual(-1e-9))
+	})
+
+	it("keeps the size it was asked for when there is room", () => {
+		expect(pondFor(0.5, 0.6).radius).toBeCloseTo(0.6)
+	})
+
+	it("lies beyond its landmark, never on it", () => {
+		const { radius, distance } = pondFor(1.35, 1.25)
+		expect(distance - radius).toBeGreaterThan(1.35)
 	})
 })

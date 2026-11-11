@@ -51,8 +51,17 @@ describe("railway lanes", () => {
 		).toBe(true)
 	})
 
-	it("is a straight line between two tiles with no land joining them", () => {
-		const lane = laneBetween(bordersOf([origin, { q: 6, r: 0 }]), origin, { q: 6, r: 0 })
-		expect(lane).toEqual([cellToPoint(origin), cellToPoint({ q: 6, r: 0 })])
+	it("crosses open country along cell sides when no land joins the two tiles", () => {
+		// Two landmasses, with a third tile standing alone between them.
+		const far: Cell = { q: 6, r: 0 }
+		const between: Cell = { q: 3, r: 0 }
+		const lane = laneBetween(bordersOf([origin, between, far]), origin, far)
+		expect(lane[0]).toEqual(cellToPoint(origin))
+		expect(lane[lane.length - 1]).toEqual(cellToPoint(far))
+		const track = lane.slice(1, -1)
+		expect(track.length).toBeGreaterThan(2)
+		// It goes round the tile in its way: never nearer its middle than a corner is.
+		const nearest = Math.min(...Arr.map(track, (point) => span(point, cellToPoint(between))))
+		expect(nearest).toBeGreaterThanOrEqual(HEX_SIZE - 1e-6)
 	})
 })

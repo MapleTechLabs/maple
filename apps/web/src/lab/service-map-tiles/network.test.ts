@@ -69,10 +69,10 @@ describe("railways and lakes", () => {
 			["a", { q: 0, r: 0 }],
 			["c", { q: 2, r: 0 }],
 		])
-		const direct = networkOf([link("a", "c")], apart, null).rails[0]?.points ?? []
 		const round = networkOf([link("a", "c")], apart, null, [{ q: 1, r: 0 }]).rails[0]?.points ?? []
-		// With no land between them the line is a straight hop; the lake gives it corners to follow.
-		expect(direct).toHaveLength(2)
-		expect(round.length).toBeGreaterThan(2)
+		const shore = round.slice(1, -1)
+		// Every point between the two stations is a corner of the lake's cell.
+		expect(shore.length).toBeGreaterThan(1)
+		Arr.forEach(shore, (point) => expect(span(point, cellToPoint({ q: 1, r: 0 }))).toBeCloseTo(HEX_SIZE))
 	})
 })

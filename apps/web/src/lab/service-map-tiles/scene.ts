@@ -8,7 +8,7 @@ import { quacker } from "../../page/service-map/three/quack"
 import { type Biome, biomeOf, biomesFor } from "./biome"
 import { lakesOf, type Link, linksOf, type Placements, targetsFor, type Targets } from "./board"
 import { makeSky } from "./birds"
-import { makeFlock } from "./ducks"
+import { AWAY, FLIGHT, makeFlock } from "./ducks"
 import { makeFlourishes } from "./flourish"
 import {
 	type Cell,
@@ -347,6 +347,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	scene.add(flock.root, birds.root, flourishes.root, outline)
 	const quacks = quacker()
 	const sounds = makeSounds(() => state.derived.input.muted)
+	/** Timers that wake a paused map for something due later; cleared with the scene. */
+	const wakes = new Set<number>()
 	/** Windmills spun by a click, and until when (seconds). */
 	const spun = new Map<string, number>()
 	const state = {
@@ -974,9 +976,11 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const duck = flock.under(raycaster)
 		if (duck !== null) {
 			// Two "wak"s for a poke, three when the duck takes fright; one that is away stays silent.
-			Option.map(flock.poke(duck), (poke) =>
-				input.muted ? undefined : quacks.quack(poke.alarm ? 3 : 2),
-			)
+			Option.map(flock.poke(duck), (poke) => {
+				if (!input.muted) quacks.quack(poke.alarm ? 3 : 2)
+				// A paused map stops drawing once the duck is out of sight: wake it for the glide back.
+				if (poke.alarm) wakes.add(window.setTimeout(invalidate, (FLIGHT + AWAY) * 1000))
+			})
 			invalidate()
 			return
 		}
@@ -1062,6 +1066,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		},
 		stop: () => {
 			cancelAnimationFrame(state.raf)
+			wakes.forEach((timer) => window.clearTimeout(timer))
 			observer.disconnect()
 			canvas.removeEventListener("pointerdown", onPointerDown)
 			canvas.removeEventListener("pointermove", onPointerMove)

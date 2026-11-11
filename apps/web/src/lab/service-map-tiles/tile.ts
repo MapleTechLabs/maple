@@ -327,6 +327,24 @@ const planOf = (spec: TileSpec, random: () => number): Plan => {
 	}
 }
 
+/** How far a pond's bent outline and its sand reach past its nominal radius. */
+const POND_BEND = 1.16
+const POND_SAND = 0.12
+/** Ground between a landmark and the pond beyond it. */
+const POND_GAP = 0.25
+
+/** The pond that fits beyond a landmark `offset` from the middle, towards a corner: as wide as
+ * `wanted` when the two hex sides beside that corner leave room, else as wide as they allow. */
+export const pondFor = (
+	offset: number,
+	wanted: number,
+): { readonly radius: number; readonly distance: number } => {
+	const slope = Math.cos(Math.PI / 6)
+	const widest = (INRADIUS - slope * (offset + POND_GAP) - POND_SAND * POND_BEND) / (POND_BEND + slope)
+	const radius = Math.max(0, Math.min(wanted, widest))
+	return { radius, distance: offset + radius + POND_GAP }
+}
+
 interface Spot {
 	readonly at: Point
 	readonly angle: number
@@ -407,12 +425,13 @@ export const buildTile = (spec: TileSpec): Tile => {
 	const facing = landmarkAngle(corridors, random)
 	const at = (distance: number): Point => [Math.cos(facing) * distance, Math.sin(facing) * distance]
 	const landmark = at(plan.offset)
-	const pond = at(plan.offset + plan.pond + 0.25)
+	const basin = pondFor(plan.offset, plan.pond)
+	const pond = at(basin.distance)
 	/** A spot is free when no road or railway runs over it and it is off the square, the landmark and the pond. */
 	const free = (spot: Point, room: number): boolean =>
 		span(spot, [0, 0]) > 0.6 + room &&
 		(plan.landmark.length === 0 || span(spot, landmark) > plan.clearing + room) &&
-		(plan.pond === 0 || span(spot, pond) > plan.pond + 0.15 + room) &&
+		(basin.radius === 0 || span(spot, pond) > basin.radius + 0.15 + room) &&
 		!Arr.some(corridors, (corridor) => {
 			const along = spot[0] * Math.cos(corridor) + spot[1] * Math.sin(corridor)
 			const across = Math.abs(spot[1] * Math.cos(corridor) - spot[0] * Math.sin(corridor))
@@ -439,11 +458,15 @@ export const buildTile = (spec: TileSpec): Tile => {
 	// The landmark looks back at the village square: its local +z points to the tile's middle.
 	const turn = Math.atan2(-Math.cos(facing), -Math.sin(facing))
 	const water =
-		plan.pond === 0
+		basin.radius === 0
 			? []
 			: [
-					patch(random, plan.pond + 0.12, 0.008, palette.sand).translate(pond[0], 0, pond[1]),
-					patch(random, plan.pond, 0.014, palette.water).translate(pond[0], 0, pond[1]),
+					patch(random, basin.radius + POND_SAND, 0.008, palette.sand).translate(
+						pond[0],
+						0,
+						pond[1],
+					),
+					patch(random, basin.radius, 0.014, palette.water).translate(pond[0], 0, pond[1]),
 				]
 	const inked = fuse([
 		...moved(plan.landmark, { position: [landmark[0], 0, landmark[1]], turn }),

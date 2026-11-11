@@ -209,10 +209,11 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 	const settle = (mover: Mover, t: number) => {
 		const nose = (mover.progress % 1) * mover.length
 		Arr.forEach(mover.bodies, (body) => {
-			const travelled = nose - body.behind
+			// A wagon wraps on its own: it finishes the lap its engine has just ended, so the load
+			// is seen reaching the callee.
+			const travelled = (((nose - body.behind) % mover.length) + mover.length) % mover.length
 			if (!stand(mover, travelled)) return
-			// A wagon still inside the station is not out on the line yet.
-			pose.scale.setScalar(travelled < 0 ? 0.001 : 1)
+			pose.scale.setScalar(1)
 			pose.updateMatrix()
 			body.mesh.setMatrixAt(body.index, pose.matrix)
 		})
