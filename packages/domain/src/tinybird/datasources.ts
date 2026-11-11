@@ -3073,6 +3073,10 @@ export const costDaily = defineDatasource("cost_daily", {
 			"Region",
 			"ResourceId",
 			"ChargeCategory",
+			// Rows of one pull that differ only in these are different charges, not copies.
+			"AccountId",
+			"ServiceName",
+			"Currency",
 		],
 		ver: "IngestedAt",
 		ttl: `toDate(Date) + INTERVAL ${COST_DAILY_TTL_DAYS} DAY`,

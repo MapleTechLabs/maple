@@ -2,12 +2,12 @@
 // Cost reads against real rows. `cost_daily` is versioned by pull, not deduplicated by key, so the
 // compiled SQL alone cannot show that a restated day replaces the older pull. Seeded to catch:
 //   - a key the provider dropped on restatement still counting (argMax per key would keep it),
-//   - an ingest retry's copy of a row counting twice,
+//   - an ingest retry's copy of a row counting twice (the seed keeps both copies unmerged),
 //   - a disconnected source's rows counting once the caller names the active sources,
 //   - the sync's zero marker row for an emptied day showing as a key of its own.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Order, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -69,8 +69,7 @@ const SEED: ReadonlyArray<SeedRow> = [
 	row("src_a", 0, "EC2", "us-east-1", 10, FIRST_PULL),
 	row("src_a", 0, "S3", "us-east-1", 4, FIRST_PULL),
 	row("src_a", 0, "Ghost", "us-east-1", 99, FIRST_PULL),
-	// Day 0, second pull, with one row written twice by an ingest retry.
-	ec2Restated,
+	// Day 0, second pull; `RETRIED` writes this row a second time.
 	ec2Restated,
 	row("src_a", 0, "S3", "us-east-1", 4, SECOND_PULL),
 	row("src_a", 1, "EC2", "us-east-1", 20, SECOND_PULL, { effective: 18 }),
@@ -88,12 +87,37 @@ const SEED: ReadonlyArray<SeedRow> = [
 	row("src_emptied", -1, "Lambda", "us-east-1", 9, SECOND_PULL),
 ]
 
+/** The copy of a second-pull row an ingest retry wrote again, in a block of its own. */
+const RETRIED: ReadonlyArray<SeedRow> = [ec2Restated]
+
 const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const values = (seed: SeedRow): string =>
 	seed.marker === true
 		? `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '', ${quote(day(seed.day))}, '', '', '', '', '', '', '', 'none', 'billed', '', 0, 0, 0, 0, '', map(), 0, ${quote(seed.pulledAt)})`
 		: `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', 'USD', ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
+
+const insert = (rows: ReadonlyArray<SeedRow>): Promise<string> =>
+	clickhouseExec(
+		`INSERT INTO cost_daily
+		 (OrgId, SourceId, Provider, AccountId, Date, CloudService, ServiceCategory, UsageType, Region, ResourceId, ResourceType, ServiceName, ChargeCategory, Basis, Currency, BilledCost, EffectiveCost, ListCost, ConsumedQuantity, ConsumedUnit, Tags, Estimated, IngestedAt)
+		 VALUES\n${Arr.join(Arr.map(rows, values), ",\n")}`,
+		database,
+	)
+
+// One INSERT per pull version and one for the retry copy, with merges held off. `optimize_on_insert`
+// collapses a ReplacingMergeTree block as it is written, so one block would leave only the newest
+// version of each key, once: the two states these reads exist to get right.
+const seed = async (): Promise<void> => {
+	await clickhouseExec(`SYSTEM STOP MERGES cost_daily`, database)
+	await Arr.reduce(
+		Arr.sort(Arr.dedupe(Arr.map(SEED, (seeded) => seeded.pulledAt)), Order.String),
+		Promise.resolve(""),
+		(previous, pulledAt) =>
+			previous.then(() => insert(Arr.filter(SEED, (seeded) => seeded.pulledAt === pulledAt))),
+	)
+	await insert(RETRIED)
+}
 
 const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
@@ -126,17 +150,28 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
-		await clickhouseExec(
-			`INSERT INTO cost_daily
-			 (OrgId, SourceId, Provider, AccountId, Date, CloudService, ServiceCategory, UsageType, Region, ResourceId, ResourceType, ServiceName, ChargeCategory, Basis, Currency, BilledCost, EffectiveCost, ListCost, ConsumedQuantity, ConsumedUnit, Tags, Estimated, IngestedAt)
-			 VALUES\n${Arr.join(Arr.map(SEED, values), ",\n")}`,
-			database,
-		)
+		await seed()
 	}, 180_000)
 
 	afterAll(async () => {
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
 	}, 30_000)
+
+	it("holds the rows the reads must collapse: both pulls of a day and both copies of a retried row", async () => {
+		// If the engine had merged them away, the tests below would pass over one row per key.
+		const stored = await runJson(
+			`SELECT toString(IngestedAt) AS pulledAt, count() AS copies FROM cost_daily
+			 WHERE OrgId = ${quote(ORG_ID)} AND SourceId = 'src_a' AND Date = ${quote(day(0))} AND CloudService = 'EC2'
+			 GROUP BY pulledAt ORDER BY pulledAt`,
+		)
+		assert.deepStrictEqual(
+			Arr.map(stored, (r) => [Str.slice(0, 19)(String(r.pulledAt)), Number(r.copies)]),
+			[
+				[FIRST_PULL, 1],
+				[SECOND_PULL, 2],
+			],
+		)
+	})
 
 	it("counts only the newest pull of a day, and a retried row once", async () => {
 		// Day 0 is 12 + 4 from the second pull: not 10, not the dropped 99, not 12 twice.
@@ -157,12 +192,25 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 		assert.strictEqual((await totals({}))?.cost, 1072)
 	})
 
+	it("reads nothing for an org whose source list is empty", async () => {
+		assert.strictEqual((await totals({ sourceIds: [] }))?.cost, 0)
+		assert.deepStrictEqual(await breakdown({ sourceIds: [], dimension: "cloud_service" }), [])
+	})
+
 	it("narrows by a dimension value, including the value of charges with no region", async () => {
 		assert.strictEqual((await totals({ ...ACTIVE, values: { region: ["global"] } }))?.cost, 1)
 		assert.strictEqual(
 			(await totals({ ...ACTIVE, values: { region: ["global", "eu-central-1"] } }))?.cost,
 			6,
 		)
+	})
+
+	it("does not bring back an older pull for a key the newest pull dropped", async () => {
+		// `Ghost` exists only in day 0's first pull: filtering to it must not make that pull the newest.
+		const ghost = { ...ACTIVE, values: { cloud_service: ["Ghost"] } }
+		assert.strictEqual((await totals(ghost))?.cost, 0)
+		assert.deepStrictEqual(await breakdown({ ...ghost, dimension: "cloud_service" }), [])
+		assert.deepStrictEqual(await timeseries(ghost), [])
 	})
 
 	it("returns one row per day, flagged while the provider can still restate it", async () => {

@@ -15,8 +15,13 @@ export const HEAD_INTERVAL_MS = 23 * 60 * 60_000
 export const SETTLE_INTERVAL_MS = (7 * 24 - 1) * 60 * 60_000
 /** History goes back to the first day of the month this many months before the current one. */
 export const HISTORY_MONTHS = 13
-/** Through this day of the month the previous month's bill is still open. */
+// Through this day of the month the previous month's bill is still open; the first settle after
+// it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
+/** Billable requests in a UTC month from which a source stops walking history until the next month. */
+export const BACKFILL_REQUEST_BUDGET = 500
+/** Billable requests in a UTC month from which a source pulls nothing at all until the next month. */
+export const MONTHLY_REQUEST_BUDGET = 1500
 
 const dayStart = (day: string) => DateTime.makeUnsafe(`${day}T00:00:00Z`)
 
@@ -46,25 +51,52 @@ export const daysOfWindow = (window: CostPullWindow): ReadonlyArray<string> =>
 		day > window.endDay ? Option.none() : Option.some([day, addDays(day, 1)]),
 	)
 
-export interface CostSyncState {
+/** The columns a finished step moves. */
+export interface CostSyncFrontiers {
 	readonly watermarkDate: string | null
 	readonly backfillDate: string | null
 	readonly lastSyncedAt: number | null
 	readonly lastSettledAt: number | null
 }
 
+export interface CostSyncState extends CostSyncFrontiers {
+	/** The UTC month (`YYYY-MM`) `requestsCount` counts billable requests in. */
+	readonly requestsMonth: string | null
+	readonly requestsCount: number
+}
+
 export interface CostSyncStep extends CostPullWindow {
 	readonly mode: "head" | "settle" | "backfill"
 }
 
-export type CostSyncPlan = CostSyncStep | { readonly mode: "idle" }
+/** `budget` names the request budget that keeps a source with work left idle. */
+export type CostSyncPlan = CostSyncStep | { readonly mode: "idle"; readonly budget?: "backfill" | "monthly" }
+
+/** Billable requests the source made in the UTC month of `now`: a count from another month is spent. */
+export const requestsThisMonth = (
+	state: Pick<CostSyncState, "requestsMonth" | "requestsCount">,
+	now: number,
+): number => (state.requestsMonth === utcMonth(now) ? state.requestsCount : 0)
+
+/** 00:00 UTC on the first day of the month after `now`'s, when a month's request count starts over. */
+export const nextMonthStartMs = (now: number): number =>
+	DateTime.toEpochMillis(dayStart(monthStart(utcToday(now), 1)))
+
+// A settle still takes the previous month through day 10, and once after it: when the last settle
+// was before day 11 began (or never), the previous month's last pull predates its closing.
+const settlesPreviousMonth = (today: string, lastSettledAt: number | null): boolean =>
+	Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS ||
+	lastSettledAt === null ||
+	lastSettledAt < DateTime.toEpochMillis(dayStart(addDays(monthStart(today), PREVIOUS_MONTH_OPEN_DAYS)))
 
 /**
  * The next pull of a source. SETTLE (the open months, whole) when it is new or a head is due and
  * the last settle is a week old; HEAD (the trailing days) when only the head is due; otherwise one
- * calendar month of BACKFILL until the floor.
+ * calendar month of BACKFILL until the floor. The month's request budgets stop history first, then all.
  */
 export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan => {
+	const requests = requestsThisMonth(state, now)
+	if (requests >= MONTHLY_REQUEST_BUDGET) return { mode: "idle", budget: "monthly" }
 	const today = utcToday(now)
 	// The first pull takes the previous month too, so there is something to compare against at once.
 	if (state.watermarkDate === null) {
@@ -74,15 +106,15 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 	const headDue = state.lastSyncedAt === null || now - state.lastSyncedAt >= HEAD_INTERVAL_MS
 	if (headDue) {
 		const settleDue = state.lastSettledAt === null || now - state.lastSettledAt >= SETTLE_INTERVAL_MS
-		const previousMonthOpen = Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS
 		const usualStart = settleDue
-			? monthStart(today, previousMonthOpen ? -1 : 0)
+			? monthStart(today, settlesPreviousMonth(today, state.lastSettledAt) ? -1 : 0)
 			: addDays(today, -(HEAD_DAYS - 1))
 		// A source held for long resumes from its watermark, so no day between is left unpulled.
 		const startDay = maxDay(floor, minDay(usualStart, addDays(state.watermarkDate, 1)))
 		return { mode: settleDue ? "settle" : "head", startDay, endDay: today }
 	}
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }
+	if (requests >= BACKFILL_REQUEST_BUDGET) return { mode: "idle", budget: "backfill" }
 	return {
 		mode: "backfill",
 		startDay: maxDay(floor, monthStart(state.backfillDate, -1)),
@@ -92,10 +124,10 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 
 /** The frontier columns a finished step writes. Head and settle never move the backfill frontier up. */
 export const advanceCostSync = (
-	state: CostSyncState,
+	state: CostSyncFrontiers,
 	step: CostSyncStep,
 	now: number,
-): Partial<CostSyncState> => {
+): Partial<CostSyncFrontiers> => {
 	if (step.mode === "backfill") return { backfillDate: step.startDay }
 	const head = {
 		watermarkDate: step.endDay,
@@ -173,24 +205,35 @@ const markerRow = (context: CostRowContext, day: string): CostDailyRow => ({
 	Estimated: 0,
 })
 
+export interface CostDailyRows {
+	readonly rows: ReadonlyArray<CostDailyRow>
+	/** Provider rows dropped because their day is not in the window. */
+	readonly outsideWindow: number
+}
+
 /**
  * A pull as datasource rows, plus one zero marker row per day of the window the pull left empty.
  * Without it a day whose cost vanished on restatement gets no newer version, and readers would
- * keep counting its older rows.
+ * keep counting its older rows. A row of a day outside the window is dropped: written, it would
+ * version that day with part of a pull.
  */
 export const toCostDailyRows = (
 	context: CostRowContext,
-	rows: ReadonlyArray<CostPullRow>,
+	pulled: ReadonlyArray<CostPullRow>,
 	window: CostPullWindow,
-): ReadonlyArray<CostDailyRow> => {
-	const pulledDays = new Set(Arr.map(rows, (row) => row.day))
-	return Arr.appendAll(
-		Arr.map(rows, (row) => toCostDailyRow(context, row)),
-		Arr.map(
-			Arr.filter(daysOfWindow(window), (day) => !pulledDays.has(day)),
-			(day) => markerRow(context, day),
+): CostDailyRows => {
+	const inWindow = Arr.filter(pulled, (row) => row.day >= window.startDay && row.day <= window.endDay)
+	const pulledDays = new Set(Arr.map(inWindow, (row) => row.day))
+	return {
+		rows: Arr.appendAll(
+			Arr.map(inWindow, (row) => toCostDailyRow(context, row)),
+			Arr.map(
+				Arr.filter(daysOfWindow(window), (day) => !pulledDays.has(day)),
+				(day) => markerRow(context, day),
+			),
 		),
-	)
+		outsideWindow: pulled.length - inWindow.length,
+	}
 }
 
 interface Batching {

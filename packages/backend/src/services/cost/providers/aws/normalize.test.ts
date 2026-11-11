@@ -7,10 +7,12 @@ import {
 	type CostGroup,
 	costExplorerPeriod,
 	detailedRegions,
+	MAX_DETAILED_REGIONS,
 	parseGroups,
 	serviceCategoryOf,
 	serviceRows,
 	usageRows,
+	usageReconciles,
 } from "./normalize"
 
 const ACCOUNT = "000000000000"
@@ -105,6 +107,35 @@ describe("detailedRegions", () => {
 
 	it("finds nothing in a window without cost", () => {
 		assert.deepStrictEqual(detailedRegions([group("eu-central-1", 0)], 10), [])
+	})
+})
+
+describe("detailedRegions cap", () => {
+	it("keeps only the largest regions when more are worth a pull than a pull may make", () => {
+		const groups = Arr.map(Arr.range(1, MAX_DETAILED_REGIONS + 3), (n) => group(`region-${n}`, n * 10))
+		const regions = detailedRegions(groups, 1)
+		assert.strictEqual(regions.length, MAX_DETAILED_REGIONS)
+		// The three smallest are the ones left to their service-level rows.
+		assert.isFalse(
+			Arr.some(regions, (region) => Arr.contains(["region-1", "region-2", "region-3"], region)),
+		)
+	})
+})
+
+describe("usageReconciles", () => {
+	const byRegion = [group("eu-central-1", 30, 28), group("us-west-2", 5)]
+	const usage = (cost: number, amortized = cost) => ({ ...group("Usage-Type", cost, amortized) })
+
+	it("accepts a pull that holds the region's money, split differently", () => {
+		assert.isTrue(usageReconciles([usage(10, 9), usage(20, 19)], byRegion, "eu-central-1"))
+		// Float noise from summing many small amounts is not a mismatch.
+		assert.isTrue(usageReconciles([usage(30.0000001, 28)], byRegion, "eu-central-1"))
+	})
+
+	it("refuses a pull that misses a charge, on either cost", () => {
+		assert.isFalse(usageReconciles([usage(10, 9)], byRegion, "eu-central-1"))
+		assert.isFalse(usageReconciles([usage(30, 20)], byRegion, "eu-central-1"))
+		assert.isFalse(usageReconciles([], byRegion, "eu-central-1"))
 	})
 })
 

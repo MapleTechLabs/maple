@@ -101,6 +101,7 @@ export class AwsCostProvider extends Context.Service<AwsCostProvider, CostProvid
 						"maple.cost.requests": pulled.requests,
 						"maple.cost.rows": pulled.rows.length,
 						"maple.cost.aws.detailed_regions": pulled.detailedRegions.length,
+						"maple.cost.aws.unreconciled_regions": pulled.unreconciledRegions,
 					})
 					return { rows: pulled.rows, requests: pulled.requests } satisfies CostPull
 				},

@@ -48,8 +48,8 @@ describe("cost queries", () => {
 		expect(oneLine(sql)).toContain("cost_daily.CloudService IN ('O\\'Brien\\' OR 1=1 --')")
 	})
 
-	it("does not narrow on an empty value list", () => {
-		const { sql } = compileUnsafe(costTotalsQuery({ sourceIds: [], values: { region: [] } }), params)
-		expect(sql).not.toContain(" IN (")
+	it("does not narrow a dimension on an empty value list", () => {
+		const { sql } = compileUnsafe(costTotalsQuery({ values: { region: [] } }), params)
+		expect(sql).not.toContain("Region IN")
 	})
 })

@@ -18,12 +18,14 @@ import {
 	detailedRegions,
 	parseGroups,
 	serviceRows,
+	usageReconciles,
 	usageRows,
 } from "./normalize"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
-// A page holds 2,500 groups and costs the account owner USD 0.01: a token that loops stops here.
-const MAX_PAGES = 200
+// A page holds 2,500 groups and costs the account owner USD 0.01. 20 pages is 50,000 groups for
+// one query; a pull that needs more fails instead of billing on.
+const MAX_PAGES = 20
 const METRICS = ["UnblendedCost", "AmortizedCost", "UsageQuantity"]
 
 // The SDK's default patience (8 retries, about 20s) outlasts the timeout, and a retry is a request.
@@ -58,6 +60,8 @@ export interface CostExplorerPull {
 	/** Every request sent to Cost Explorer, retries and the failed ones included. */
 	readonly requests: number
 	readonly detailedRegions: ReadonlyArray<string>
+	/** Regions whose pull by usage type did not match their service-level cost, and so was dropped. */
+	readonly unreconciledRegions: number
 }
 
 /**
@@ -137,8 +141,8 @@ export const pullCostExplorer = (
 				{ Type: "DIMENSION", Key: "REGION" },
 			],
 		})
-		const regions = detailedRegions(byRegion, period.value.days)
-		const detailed = yield* Effect.forEach(regions, (region) =>
+		const candidates = detailedRegions(byRegion, period.value.days)
+		const pulled = yield* Effect.forEach(candidates, (region) =>
 			Effect.map(
 				groupsOf({
 					...base,
@@ -148,13 +152,20 @@ export const pullCostExplorer = (
 					],
 					Filter: { Dimensions: { Key: "REGION", Values: [region] } },
 				}),
-				(groups) => usageRows(groups, accountId, region),
+				(groups) => ({ region, groups }),
 			),
 		)
+		// A region whose filtered pull holds other money than its service-level rows keeps those.
+		const detailed = Arr.filter(pulled, ({ region, groups }) => usageReconciles(groups, byRegion, region))
+		const regions = Arr.map(detailed, ({ region }) => region)
 		const requests = yield* Ref.get(sent)
 		return {
-			rows: Arr.appendAll(Arr.flatten(detailed), serviceRows(byRegion, accountId, regions)),
+			rows: Arr.appendAll(
+				Arr.flatMap(detailed, ({ region, groups }) => usageRows(groups, accountId, region)),
+				serviceRows(byRegion, accountId, regions),
+			),
 			requests,
 			detailedRegions: regions,
+			unreconciledRegions: candidates.length - regions.length,
 		}
 	})

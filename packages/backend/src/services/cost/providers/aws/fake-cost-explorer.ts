@@ -45,6 +45,8 @@ export interface FakeCostOptions {
 	readonly pageSize?: number
 	/** Days from this one on are still estimated, as the open month is. */
 	readonly estimatedFrom?: string
+	/** Services a `REGION` filter fails to match, though the unfiltered answer lists them in a region. */
+	readonly missedByRegionFilter?: ReadonlyArray<string>
 }
 
 // Sums of decimal fractions, printed the way AWS prints them: without the float tail.
@@ -70,7 +72,9 @@ export const answerCostExplorer = (
 		(item) =>
 			item.day >= request.TimePeriod.Start &&
 			item.day < request.TimePeriod.End &&
-			(filter === undefined || Arr.contains(filter.Values, dimensionOf(item, filter.Key))),
+			(filter === undefined ||
+				(Arr.contains(filter.Values, dimensionOf(item, filter.Key)) &&
+					!Arr.contains(options.missedByRegionFilter ?? [], item.service))),
 	)
 	const keysOf = (item: FakeCostItem) => [
 		dimensionOf(item, first?.Key ?? "SERVICE"),
