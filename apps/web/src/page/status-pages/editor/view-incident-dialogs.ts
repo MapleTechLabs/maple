@@ -486,7 +486,7 @@ const composeReview = (h: H, model: Model, time: TimeInputs) => {
 								typography(h, { size: "sm", tone: "muted", as: "p" }, [schedule]),
 							),
 						]),
-				reviewSection(h, "What changes", changesList(h, changes)),
+				reviewSection(h, "What changes when you publish", changesList(h, changes)),
 				...failureAlert(
 					h,
 					isMaintenance ? "Couldn't schedule it" : "Couldn't open the incident",

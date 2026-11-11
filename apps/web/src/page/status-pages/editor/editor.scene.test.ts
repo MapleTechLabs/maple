@@ -679,7 +679,7 @@ describe("posting an incident", () => {
 			),
 			tap(({ html }) => expect(messageHtml(html)).toBe("<p><strong>Checkout</strong> is slow.</p>")),
 			inside(
-				role("region", { name: "What changes" }),
+				role("region", { name: "What changes when you publish" }),
 				expectAll(all.role("listitem")).toHaveCount(2),
 				expectView(text("Page banner")).toExist(),
 				expectView(text("Component 2")).toExist(),
