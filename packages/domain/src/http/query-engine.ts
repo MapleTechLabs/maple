@@ -769,6 +769,18 @@ export class VercelInfraProjectsResponse extends Schema.Class<VercelInfraProject
 	projects: Schema.Array(VercelInfraProject),
 }) {}
 
+/** The log attribute a project's request breakdown groups by. */
+export const VercelInfraBreakdownDimension = Schema.Literals([
+	"path",
+	"host",
+	"region",
+	"source",
+	"cache",
+	"waf",
+	"status",
+])
+export type VercelInfraBreakdownDimension = typeof VercelInfraBreakdownDimension.Type
+
 export class VercelInfraTimeseriesRequest extends Schema.Class<VercelInfraTimeseriesRequest>(
 	"VercelInfraTimeseriesRequest",
 )({
@@ -777,6 +789,9 @@ export class VercelInfraTimeseriesRequest extends Schema.Class<VercelInfraTimese
 	bucketSeconds: BucketSeconds,
 	/** Every project when absent. */
 	projectId: Schema.optionalKey(VercelProjectId),
+	/** Narrows the requests to one breakdown value: the dimension, then `filterValue`. */
+	filterBy: Schema.optionalKey(VercelInfraBreakdownDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
 }) {}
 
 export const VercelInfraRequestBucket = Schema.Struct({
@@ -821,18 +836,6 @@ export class VercelInfraLatencyTimeseriesResponse extends Schema.Class<VercelInf
 	buckets: Schema.Array(VercelInfraLatencyBucket),
 }) {}
 
-/** The log attribute a project's request breakdown groups by. */
-export const VercelInfraBreakdownDimension = Schema.Literals([
-	"path",
-	"host",
-	"region",
-	"source",
-	"cache",
-	"waf",
-	"status",
-])
-export type VercelInfraBreakdownDimension = typeof VercelInfraBreakdownDimension.Type
-
 /** Narrows a breakdown to failing requests. */
 export const VercelInfraBreakdownStatus = Schema.Literals(["all", "4xx", "5xx"])
 export type VercelInfraBreakdownStatus = typeof VercelInfraBreakdownStatus.Type
@@ -846,6 +849,9 @@ export class VercelInfraBreakdownRequest extends Schema.Class<VercelInfraBreakdo
 	dimension: VercelInfraBreakdownDimension,
 	/** Every request when absent. */
 	status: Schema.optionalKey(VercelInfraBreakdownStatus),
+	/** Narrows the requests to one breakdown value: the dimension, then `filterValue`. */
+	filterBy: Schema.optionalKey(VercelInfraBreakdownDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
 }) {}
 
 export const VercelInfraBreakdownRow = Schema.Struct({
@@ -1001,6 +1007,8 @@ export class VercelInfraFunctionTimeseriesRequest extends Schema.Class<VercelInf
 	projectId: VercelProjectId,
 	/** The edge request's `http.route`; every route when absent. */
 	route: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+	/** Only invocations that called this host; every invocation when absent. */
+	host: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
 }) {}
 
 export const VercelInfraFunctionBucket = Schema.Struct({

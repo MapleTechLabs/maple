@@ -91,21 +91,34 @@ const strips = (h: H, buckets: ReadonlyArray<VercelInfraFunctionBucket>): Readon
 	]
 }
 
-/** Which routes the charts show: every route, or the picked one with a way back. */
-const scopeLine = (h: H, route: string | undefined): Html =>
+/** Which invocations the charts show: every one, or those of the picked route and host, each removable. */
+const scopeLine = (h: H, route: string | undefined, host: string | undefined): Html =>
 	hstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted" }, ["Charts show"]),
-		route === undefined
-			? typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["every route"])
-			: removableChip(h, {
-					label: `route = ${route === "" ? "(no route)" : route}`,
-					onRemove: Message.ClickedFunctionRoute({ route: null }),
-				}),
+		...(route === undefined && host === undefined
+			? [typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["every invocation"])]
+			: []),
+		...(route === undefined
+			? []
+			: [
+					removableChip(h, {
+						label: `route = ${route === "" ? "(no route)" : route}`,
+						onRemove: Message.ClickedFunctionRoute({ route: null }),
+					}),
+				]),
+		...(host === undefined
+			? []
+			: [
+					removableChip(h, {
+						label: `calls ${host}`,
+						onRemove: Message.ClickedDependencyHost({ host: null }),
+					}),
+				]),
 	])
 
 export const functionSignals = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	const failure = failureOf(model.functionSeries.data)
-	const scope = scopeLine(h, model.search.route)
+	const scope = scopeLine(h, model.search.route, model.search.host)
 	if (failure !== null)
 		return [
 			scope,

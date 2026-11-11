@@ -359,7 +359,7 @@ describe("vercel project", () => {
 	test("functions chart every route over time, list routes with their cold starts, then the hosts they call", () => {
 		functionsScene(
 			answered(opened("functions")),
-			expectView(text("every route")).toExist(),
+			expectView(text("every invocation")).toExist(),
 			expectView(text("Init time")).toExist(),
 			expectView(text("15% · 18.2K")).toExist(),
 			expectView(role("button", { name: /^\/api\/checkout/ })).toHaveAttr("aria-pressed", "false"),
@@ -387,10 +387,72 @@ describe("vercel project", () => {
 		expect(
 			pageUpdate(picked, Message.ClickedFunctionRoute({ route: "/api/checkout" })).outMessage,
 		).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api?tab=functions", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=functions",
+				isReplace: false,
+			}),
 		)
 		expect(pageUpdate(picked, Message.ClickedFunctionRoute({ route: null })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api?tab=functions", isReplace: false }),
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=functions",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("a dependency's row narrows the charts to invocations that called it, alongside a route", () => {
+		const picked = answered(
+			opened("functions", VERCEL_ALL_DRAINS_STATUS, { route: "/api/checkout", host: "api.stripe.com" }),
+		)
+		expect(picked.functionSeries.key).toContain("api.stripe.com")
+		expect(picked.functionSeries.key).toContain("/api/checkout")
+		functionsScene(
+			picked,
+			expectView(text("route = /api/checkout")).toExist(),
+			expectView(text("calls api.stripe.com")).toExist(),
+			expectView(role("button", { name: /^api\.stripe\.com/ })).toHaveAttr("aria-pressed", "true"),
+		)
+		expect(
+			pageUpdate(picked, Message.ClickedDependencyHost({ host: "api.stripe.com" })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=functions&route=%2Fapi%2Fcheckout",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("a breakdown row narrows the traffic tab to its value; again, or its chip, goes back", () => {
+		const all = answered(opened())
+		expect(pageUpdate(all, Message.ClickedBreakdownRow({ value: "/api/cart" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?filterBy=path&filterValue=%2Fapi%2Fcart",
+				isReplace: false,
+			}),
+		)
+		const filtered = opened(undefined, VERCEL_ALL_DRAINS_STATUS, {
+			filterBy: "path",
+			filterValue: "/api/cart",
+		})
+		// The request series and the breakdown carry the filter; latency (from traces) is not read.
+		expect(filtered.buckets.key).toContain("/api/cart")
+		expect(filtered.breakdown.key).toContain("/api/cart")
+		expect(filtered.latency.key).toBeNull()
+		expect(pageUpdate(filtered, Message.ClickedBreakdownRow({ value: "/api/cart" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api", isReplace: false }),
+		)
+		expect(pageUpdate(filtered, Message.ClickedBreakdownRow({ value: null })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api", isReplace: false }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(filtered)),
+			themeResolved(),
+			Mount.resolve(MountLinkedCursor, Message.AttachedLinkedCursor()),
+			...Arr.makeBy(3, () => Mount.resolve(MountChart, Chart.Message.CompletedMountChart())),
+			expectView(text("Path = /api/cart")).toExist(),
+			expectView(role("button", { name: /^\/api\/cart/ })).toHaveAttr("aria-pressed", "true"),
+			expectView(text("Latency p95")).not.toExist(),
 		)
 	})
 

@@ -42,13 +42,12 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { columnHead, dataTable, dataTableEmpty, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
-import { pressable } from "@maple/views/ui/pressable"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../../kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { integrationLinkActions } from "../kit/empty-states"
-import { type Clock, dataOf, failureOf, LEAD_COLUMN, ROW_CLASS } from "./view-parts"
+import { type Clock, dataOf, failureOf, LEAD_COLUMN, pickableRow, ROW_CLASS } from "./view-parts"
 
 // The sections the Vercel overview and project pages share. Each draws its own failed, loading,
 // empty and drain-off state, so a page composes them without checking first.
@@ -396,54 +395,51 @@ export const functionsSection = <M>(
 					? [dataTableEmpty(h, ["No function invocations in this window"])]
 					: Arr.map(functions, (fn) => {
 							const percent = percentOf(fn.coldStarts, fn.invocations)
-							const select = options.select
-							const isSelected = select?.route === fn.route
-							const row = (children: ReadonlyArray<Html>) =>
-								select === undefined
-									? h.div([h.Key(fn.route), h.Class(ROW_CLASS)], children)
-									: pressable(
-											h,
-											{
-												onClick: select.onSelect(fn.route),
-												isSelected,
-												selectedLane: isSelected,
-												className: cn(ROW_LINK_CLASS, "w-full text-left"),
-												attributes: [h.Key(fn.route)],
-											},
-											children,
-										)
-							return row([
-								typography(
-									h,
-									{
-										size: "xs",
-										tone: fn.route === "" ? "muted" : "foreground",
-										mono: true,
-										truncate: true,
-										className: LEAD_COLUMN,
-										attributes: [h.Title(fn.route)],
-									},
-									[fn.route === "" ? "(no route)" : fn.route],
-								),
-								h.span([h.Class(cn(NUM, "w-[96px]"))], [formatNumber(fn.invocations)]),
-								h.span(
-									[h.Class(cn(NUM, "w-[120px]", coldStartTone(percent)))],
-									[
-										percent === null
-											? EMPTY_VALUE
-											: `${formatPercent(percent / 100)} · ${formatNumber(fn.coldStarts)}`,
-									],
-								),
-								h.span(
-									[h.Class(cn(NUM, "hidden w-[80px] md:block"))],
-									[fn.initP50Ms === null ? EMPTY_VALUE : formatLatency(fn.initP50Ms)],
-								),
-								h.span(
-									[h.Class(cn(NUM, "w-[80px]"))],
-									[fn.initP95Ms === null ? EMPTY_VALUE : formatLatency(fn.initP95Ms)],
-								),
-								h.span([h.Class(cn(NUM, "w-[80px]"))], [formatLatency(fn.p95DurationMs)]),
-							])
+							return pickableRow(
+								h,
+								{
+									key: fn.route,
+									pick:
+										options.select === undefined
+											? undefined
+											: {
+													isSelected: options.select.route === fn.route,
+													onClick: options.select.onSelect(fn.route),
+												},
+								},
+								[
+									typography(
+										h,
+										{
+											size: "xs",
+											tone: fn.route === "" ? "muted" : "foreground",
+											mono: true,
+											truncate: true,
+											className: LEAD_COLUMN,
+											attributes: [h.Title(fn.route)],
+										},
+										[fn.route === "" ? "(no route)" : fn.route],
+									),
+									h.span([h.Class(cn(NUM, "w-[96px]"))], [formatNumber(fn.invocations)]),
+									h.span(
+										[h.Class(cn(NUM, "w-[120px]", coldStartTone(percent)))],
+										[
+											percent === null
+												? EMPTY_VALUE
+												: `${formatPercent(percent / 100)} · ${formatNumber(fn.coldStarts)}`,
+										],
+									),
+									h.span(
+										[h.Class(cn(NUM, "hidden w-[80px] md:block"))],
+										[fn.initP50Ms === null ? EMPTY_VALUE : formatLatency(fn.initP50Ms)],
+									),
+									h.span(
+										[h.Class(cn(NUM, "w-[80px]"))],
+										[fn.initP95Ms === null ? EMPTY_VALUE : formatLatency(fn.initP95Ms)],
+									),
+									h.span([h.Class(cn(NUM, "w-[80px]"))], [formatLatency(fn.p95DurationMs)]),
+								],
+							)
 						}),
 			),
 		],
@@ -458,11 +454,16 @@ export const dependenciesSection = <M>(
 		read: SectionRead<ReadonlyArray<VercelInfraDependency>, M>
 		tracesEnabled: boolean
 		serviceMapHref: string
+		/** Rows narrow the charts above to invocations that called their host. */
+		select?: Readonly<{ host: string | undefined; onSelect: (host: string) => M }>
 	}>,
 ): Html =>
 	readSection(h, {
 		title: "Dependencies",
-		hint: "outbound calls from this project's functions",
+		hint:
+			options.select === undefined
+				? "outbound calls from this project's functions"
+				: "outbound calls from this project's functions · click a host to chart its callers",
 		actions: typography(h, { size: "xs" }, [
 			textLink(h, { href: options.serviceMapHref, tone: "muted" }, ["Open in the service map"]),
 		]),
@@ -490,8 +491,18 @@ export const dependenciesSection = <M>(
 					? [dataTableEmpty(h, ["No outbound calls in this window"])]
 					: Arr.map(dependencies, (dependency) => {
 							const rate = (percentOf(dependency.errors, dependency.calls) ?? 0) / 100
-							return h.div(
-								[h.Key(dependency.host), h.Class(ROW_CLASS)],
+							return pickableRow(
+								h,
+								{
+									key: dependency.host,
+									pick:
+										options.select === undefined
+											? undefined
+											: {
+													isSelected: options.select.host === dependency.host,
+													onClick: options.select.onSelect(dependency.host),
+												},
+								},
 								[
 									typography(
 										h,

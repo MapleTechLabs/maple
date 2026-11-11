@@ -14,6 +14,7 @@ export {
 	type VercelBreakdownDimension,
 	type VercelBreakdownStatus,
 	type VercelProjectScope,
+	type VercelRequestFilter,
 } from "./vercel-infra"
 export {
 	clusterVercelErrorLogs,
@@ -25,7 +26,7 @@ export {
 export {
 	vercelFunctionRoutesSQL,
 	vercelFunctionRouteTimeseriesSQL,
-	vercelOneRouteTimeseriesSQL,
+	type VercelFunctionFilters,
 	vercelFunctionTimeseriesSQL,
 	vercelProjectDependenciesSQL,
 	vercelProjectFunctionsSQL,

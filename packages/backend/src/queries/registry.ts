@@ -272,6 +272,15 @@ const vercelWindow = (payload: { startTime: string; endTime: string }, orgId: Or
 	endTime: payload.endTime,
 })
 
+/** The request filter a payload carries, when it names both the dimension and the value. */
+const requestFilter = (payload: {
+	readonly filterBy?: Integrations.VercelBreakdownDimension
+	readonly filterValue?: string
+}): Integrations.VercelRequestFilter | undefined =>
+	payload.filterBy === undefined || payload.filterValue === undefined
+		? undefined
+		: { dimension: payload.filterBy, value: payload.filterValue }
+
 const vercelBucketed = (payload: VercelInfraTimeseriesRequest, orgId: OrgId) => ({
 	...vercelWindow(payload, orgId),
 	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
@@ -299,7 +308,10 @@ const vercelInfraRequestTimeseries = defineQuery({
 	cache: 15,
 	compile: (payload: VercelInfraTimeseriesRequest, orgId: OrgId) =>
 		CH.compile(
-			Integrations.vercelRequestTimeseriesSQL({ projectId: payload.projectId }),
+			Integrations.vercelRequestTimeseriesSQL({
+				projectId: payload.projectId,
+				filter: requestFilter(payload),
+			}),
 			vercelBucketed(payload, orgId),
 		),
 })
@@ -331,10 +343,17 @@ const vercelInfraBreakdown = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: VercelInfraBreakdownRequest, orgId: OrgId) =>
-		CH.compile(Integrations.vercelProjectBreakdownSQL(payload.dimension, payload.status ?? "all"), {
-			...vercelWindow(payload, orgId),
-			projectId: payload.projectId,
-		}),
+		CH.compile(
+			Integrations.vercelProjectBreakdownSQL(
+				payload.dimension,
+				payload.status ?? "all",
+				requestFilter(payload),
+			),
+			{
+				...vercelWindow(payload, orgId),
+				projectId: payload.projectId,
+			},
+		),
 })
 
 const vercelInfraTopPaths = defineQuery({
@@ -424,22 +443,13 @@ const vercelInfraRouteTimeseries = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: VercelInfraFunctionTimeseriesRequest, orgId: OrgId) =>
-		CH.compile(Integrations.vercelFunctionRouteTimeseriesSQL(), {
-			...vercelBucketed(payload, orgId),
-			projectId: payload.projectId,
-		}),
-})
-
-const vercelInfraOneRouteTimeseries = defineQuery({
-	id: "vercelInfraOneRouteTimeseries",
-	profile: "aggregation",
-	cache: 15,
-	compile: (payload: VercelInfraFunctionTimeseriesRequest & { readonly route: string }, orgId: OrgId) =>
-		CH.compile(Integrations.vercelOneRouteTimeseriesSQL(), {
-			...vercelBucketed(payload, orgId),
-			projectId: payload.projectId,
-			route: payload.route,
-		}),
+		CH.compile(
+			Integrations.vercelFunctionRouteTimeseriesSQL({ route: payload.route, host: payload.host }),
+			{
+				...vercelBucketed(payload, orgId),
+				projectId: payload.projectId,
+			},
+		),
 })
 
 const vercelInfraDependencies = defineQuery({
@@ -1264,7 +1274,6 @@ export const Queries = {
 	vercelInfraProjectFunctions,
 	vercelInfraFunctionRoutes,
 	vercelInfraRouteTimeseries,
-	vercelInfraOneRouteTimeseries,
 	vercelInfraDependencies,
 	vercelSpeedInsightsMetrics,
 	vercelSpeedInsightsRoutes,

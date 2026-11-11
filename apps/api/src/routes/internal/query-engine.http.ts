@@ -879,7 +879,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							{ concurrency: 2 },
 						)
 						const patterns = Integrations.clusterVercelErrorLogs(
-							Arr.map(errorLogs, (row) => ({ ...row, timestamp: DateTime.formatIso(row.timestamp) })),
+							Arr.map(errorLogs, (row) => ({
+								...row,
+								timestamp: DateTime.formatIso(row.timestamp),
+							})),
 						)
 						return new VercelInfraProjectDetailResponse({
 							paths,
@@ -930,10 +933,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("vercelInfraFunctionTimeseries", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const route = payload.route
-						const buckets = yield* route === undefined
-							? runQuery(Queries.vercelInfraRouteTimeseries, tenant, payload)
-							: runQuery(Queries.vercelInfraOneRouteTimeseries, tenant, { ...payload, route })
+						const buckets = yield* runQuery(Queries.vercelInfraRouteTimeseries, tenant, payload)
 						return new VercelInfraFunctionTimeseriesResponse({ buckets })
 					}),
 				)

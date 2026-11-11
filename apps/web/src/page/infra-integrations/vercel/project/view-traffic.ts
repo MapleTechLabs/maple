@@ -55,10 +55,10 @@ import { columnHead, dataTable, dataTableEmpty, NUMERIC_CELL } from "../../../ki
 import type { TimeSearch } from "../../../kit/view-tabs"
 import { relativeTime } from "../../../kit/relative-time"
 import { sectionHeading } from "../../../kit/section-heading"
-import { type Clock, LEAD_COLUMN, ROW_CLASS } from "../view-parts"
+import { type Clock, LEAD_COLUMN, pickableRow, ROW_CLASS } from "../view-parts"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
-import { breakdownByOf } from "./update"
+import { breakdownByOf, requestFilterOf } from "./update"
 
 // The traffic tab: the deploy-regression callout, the linked strips, the breakdown and the top
 // error logs.
@@ -280,10 +280,21 @@ const DIMENSIONS = {
 
 const BREAKDOWN_ROWS = 10
 
-const breakdownRow = (h: H, row: VercelInfraBreakdownRow, total: number, hasBytes: boolean): Html => {
+const breakdownRow = (
+	h: H,
+	row: VercelInfraBreakdownRow,
+	total: number,
+	hasBytes: boolean,
+	isSelected: boolean,
+): Html => {
 	const errorRate = row.requests > 0 ? row.requests5xx / row.requests : 0
-	return h.div(
-		[h.Key(row.key), h.Class(cn(ROW_CLASS, "relative"))],
+	return pickableRow(
+		h,
+		{
+			key: row.key,
+			className: "relative",
+			pick: { isSelected, onClick: Message.ClickedBreakdownRow({ value: row.key }) },
+		},
 		[
 			backdropBar(h, { value: row.requests, max: total, className: "bg-primary-a2" }),
 			typography(
@@ -334,6 +345,8 @@ const breakdownTable = (
 	dimension: Dimension,
 	rows: ReadonlyArray<VercelInfraBreakdownRow>,
 	isWaiting: boolean,
+	/** The picked row's value on this dimension, if the filter is on it. */
+	picked: string | null,
 ): ReadonlyArray<Html> => {
 	const sorted = Arr.sort(
 		rows,
@@ -379,10 +392,36 @@ const breakdownTable = (
 			],
 			shown.length === 0
 				? [dataTableEmpty(h, ["No requests in this window"])]
-				: Arr.map(shown, (row) => breakdownRow(h, row, total, hasBytes)),
+				: Arr.map(shown, (row) => breakdownRow(h, row, total, hasBytes, picked === row.key)),
 		),
 		...(rows.length === 0 || footer === null ? [] : [footer]),
 	]
+}
+
+/** The clicked row the whole tab is narrowed to, with the way back to every request. */
+export const requestFilterChip = (
+	h: H,
+	filter: Readonly<{ filterBy: VercelBreakdownBy; filterValue: string }>,
+): Html =>
+	removableChip(h, {
+		label: `${DIMENSIONS[filter.filterBy].column} = ${filter.filterValue === "" ? "(none)" : filter.filterValue}`,
+		onRemove: Message.ClickedBreakdownRow({ value: null }),
+	})
+
+/** Above the strips: which requests they count. */
+export const requestScope = (h: H, model: Model): Html => {
+	const filter = requestFilterOf(model)
+	return hstack(h, { gap: "2" }, [
+		typography(h, { size: "xs", tone: "muted" }, ["Charts show"]),
+		...(filter === null
+			? [typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["every request"])]
+			: [
+					requestFilterChip(h, filter),
+					typography(h, { size: "2xs", tone: "muted" }, [
+						"· latency and cold starts can't be split this way, so they're hidden",
+					]),
+				]),
+	])
 }
 
 /** The `status` narrowing: a removable chip once set, else the toggles that set it. */
@@ -414,6 +453,8 @@ const statusFilter = (h: H, model: Model): ReadonlyArray<Html> => {
 export const breakdownPanel = (h: H, model: Model): Html => {
 	const by = breakdownByOf(model)
 	const dimension = DIMENSIONS[by]
+	const filter = requestFilterOf(model)
+	const picked = filter !== null && filter.filterBy === by ? filter.filterValue : null
 	const body = AsyncData.match(model.breakdown.data, {
 		onIdle: () => [skeleton(h, "mx-4 mb-3 h-40")],
 		onLoading: () => [skeleton(h, "mx-4 mb-3 h-40")],
@@ -433,8 +474,8 @@ export const breakdownPanel = (h: H, model: Model): Html => {
 				variant: "row",
 			}),
 		],
-		onSuccess: (rows) => breakdownTable(h, dimension, rows, false),
-		onRefreshing: (rows) => breakdownTable(h, dimension, rows, true),
+		onSuccess: (rows) => breakdownTable(h, dimension, rows, false, picked),
+		onRefreshing: (rows) => breakdownTable(h, dimension, rows, true, picked),
 	})
 	return panel(h, {}, [
 		panelHeader(h, {
@@ -454,6 +495,7 @@ export const breakdownPanel = (h: H, model: Model): Html => {
 				hstack(h, { gap: "2", wrap: true }, [
 					panelTitle(h, ["Breakdown"]),
 					...statusFilter(h, model),
+					...(filter === null ? [] : [requestFilterChip(h, filter)]),
 				]),
 			],
 		}),

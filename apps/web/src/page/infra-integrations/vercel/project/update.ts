@@ -91,6 +91,14 @@ export const tabOf = (model: Model): VercelProjectTab => {
 
 export const breakdownByOf = (model: Model): VercelBreakdownBy => model.search.by ?? "path"
 
+/** The traffic tab's breakdown filter: a clicked row's dimension and value, when both are set. */
+export const requestFilterOf = (
+	model: Model,
+): Readonly<{ filterBy: VercelBreakdownBy; filterValue: string }> | null =>
+	model.search.filterBy === undefined || model.search.filterValue === undefined
+		? null
+		: { filterBy: model.search.filterBy, filterValue: model.search.filterValue }
+
 /** The rail's reads, on every tab: the header's row, functions, outbound calls and builds. */
 const RAIL_SLOTS: ReadonlyArray<Slot> = ["projects", "functions", "dependencies", "deployments"]
 
@@ -158,22 +166,28 @@ const sync = (
 	const window = model.window
 	if (window === null) return { model: withDeployments, commands }
 	const series = { ...seriesInput(window), projectId }
+	const filter = requestFilterOf(model)
+	// The request series and the breakdown narrow to the clicked row; latency comes from traces,
+	// which carry none of the breakdown's log attributes, so it is not read while a filter is on.
+	const requestSeries = filter === null ? series : { ...series, ...filter }
 	const detailInput = { startTime: window.startTime, endTime: window.endTime, projectId }
 	const projectsKey = requestKey(org, "getVercelProjects", { data: window })
-	const bucketsKey = requestKey(org, "getVercelRequestTimeseries", { data: series })
+	const bucketsKey = requestKey(org, "getVercelRequestTimeseries", { data: requestSeries })
 	const dimension = breakdownByOf(model)
 	const narrowed = model.search.status
-	const breakdownInput: BreakdownInput =
+	const unfiltered: BreakdownInput =
 		narrowed === undefined
 			? { ...detailInput, dimension }
 			: { ...detailInput, dimension, status: narrowed }
+	const breakdownInput: BreakdownInput = filter === null ? unfiltered : { ...unfiltered, ...filter }
 	const latencyKey = requestKey(org, "getVercelLatencyTimeseries", { data: series })
 	const breakdownKey = requestKey(org, "getVercelBreakdown", { data: breakdownInput })
 	const detailKey = requestKey(org, "getVercelProjectDetail", { data: detailInput })
 	const aiKey = requestKey(org, "getVercelAiGateway", { data: series })
 	const functionsKey = requestKey(org, "getVercelFunctions", { data: detailInput })
-	const route = model.search.route
-	const functionSeriesInput: FunctionSeriesInput = route === undefined ? series : { ...series, route }
+	const { route, host } = model.search
+	const byRoute: FunctionSeriesInput = route === undefined ? series : { ...series, route }
+	const functionSeriesInput: FunctionSeriesInput = host === undefined ? byRoute : { ...byRoute, host }
 	const functionSeriesKey = requestKey(org, "getVercelFunctionTimeseries", { data: functionSeriesInput })
 	const dependenciesKey = requestKey(org, "getVercelDependencies", { data: detailInput })
 	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: detailInput })
@@ -185,11 +199,14 @@ const sync = (
 				FetchProjects({ key: projectsKey, window }),
 			),
 			buckets: take("buckets", model.buckets, bucketsKey, () =>
-				FetchBuckets({ key: bucketsKey, input: series }),
+				FetchBuckets({ key: bucketsKey, input: requestSeries }),
 			),
-			latency: take("latency", model.latency, latencyKey, () =>
-				FetchLatency({ key: latencyKey, input: series }),
-			),
+			latency:
+				filter === null
+					? take("latency", model.latency, latencyKey, () =>
+							FetchLatency({ key: latencyKey, input: series }),
+						)
+					: model.latency,
 			breakdown: take("breakdown", model.breakdown, breakdownKey, () =>
 				FetchBreakdown({ key: breakdownKey, input: breakdownInput }),
 			),
@@ -334,6 +351,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryAiGateway: () => sync(model, context, "Refresh", ["aiGateway"]),
 		ClickedRetryFunctions: () => sync(model, context, "Refresh", ["functions"]),
 		ClickedRetryFunctionSeries: () => sync(model, context, "Refresh", ["functionSeries"]),
+		ClickedDependencyHost: ({ host }) =>
+			navigate(model, {
+				...model.search,
+				host: host === null || host === model.search.host ? undefined : host,
+			}),
+		ClickedBreakdownRow: ({ value }) => {
+			const dimension = breakdownByOf(model)
+			const isPicked = model.search.filterBy === dimension && model.search.filterValue === value
+			return value === null || isPicked
+				? navigate(model, { ...model.search, filterBy: undefined, filterValue: undefined })
+				: navigate(model, { ...model.search, filterBy: dimension, filterValue: value })
+		},
 		ClickedFunctionRoute: ({ route }) =>
 			navigate(model, {
 				...model.search,

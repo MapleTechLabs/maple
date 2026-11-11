@@ -20,11 +20,34 @@ const TimeRangeInputSchema = Schema.Struct({
 	endTime: Schema.optional(WarehouseDateTimeString),
 })
 
+/** A request filter: one breakdown dimension and its value. */
+const FilterFields = {
+	filterBy: Schema.optional(VercelInfraBreakdownDimension),
+	filterValue: Schema.optional(Schema.String),
+}
+
 const TimeseriesInputSchema = Schema.Struct({
 	...TimeRangeInputSchema.fields,
 	bucketSeconds: Schema.Number,
 	projectId: Schema.optional(Schema.String),
+	...FilterFields,
 })
+
+/** `{ [key]: value }`, or no key at all: the request schemas reject an explicit `undefined`. */
+const present = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> => {
+	const field: Partial<Record<K, V>> = {}
+	if (value !== undefined) field[key] = value
+	return field
+}
+
+/** The filter's two fields, or none: the request schemas take neither key when there is no filter. */
+const filterOf = (input: {
+	readonly filterBy?: VercelInfraBreakdownDimension
+	readonly filterValue?: string
+}) =>
+	input.filterBy === undefined || input.filterValue === undefined
+		? {}
+		: { filterBy: input.filterBy, filterValue: input.filterValue }
 
 const ProjectInputSchema = Schema.Struct({
 	...TimeRangeInputSchema.fields,
@@ -40,12 +63,14 @@ const BreakdownInputSchema = Schema.Struct({
 	...ProjectInputSchema.fields,
 	dimension: VercelInfraBreakdownDimension,
 	status: Schema.optional(VercelInfraBreakdownStatus),
+	...FilterFields,
 })
 
 const FunctionTimeseriesInputSchema = Schema.Struct({
 	...ProjectInputSchema.fields,
 	bucketSeconds: Schema.Number,
 	route: Schema.optional(Schema.String),
+	host: Schema.optional(Schema.String),
 })
 
 export type VercelFunctionTimeseriesInput = (typeof FunctionTimeseriesInputSchema)["Encoded"]
@@ -79,7 +104,11 @@ export const getVercelProjects = Effect.fn("QueryEngine.getVercelProjects")(func
 })
 
 const timeseriesRequest = (input: (typeof TimeseriesInputSchema)["Type"], nowMillis: number) => {
-	const window = { ...resolveRange(input, nowMillis), bucketSeconds: input.bucketSeconds }
+	const window = {
+		...resolveRange(input, nowMillis),
+		bucketSeconds: input.bucketSeconds,
+		...filterOf(input),
+	}
 	return input.projectId === undefined
 		? new VercelInfraTimeseriesRequest(window)
 		: new VercelInfraTimeseriesRequest({ ...window, projectId: input.projectId })
@@ -131,19 +160,13 @@ export const getVercelBreakdown = Effect.fn("QueryEngine.getVercelBreakdown")(fu
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelInfraBreakdown({
-				payload:
-					input.status === undefined
-						? new VercelInfraBreakdownRequest({
-								...range,
-								projectId: input.projectId,
-								dimension: input.dimension,
-							})
-						: new VercelInfraBreakdownRequest({
-								...range,
-								projectId: input.projectId,
-								dimension: input.dimension,
-								status: input.status,
-							}),
+				payload: new VercelInfraBreakdownRequest({
+					...range,
+					projectId: input.projectId,
+					dimension: input.dimension,
+					...present("status", input.status),
+					...filterOf(input),
+				}),
 			})
 		}),
 	)
@@ -293,9 +316,11 @@ export const getVercelFunctionTimeseries = Effect.fn("QueryEngine.getVercelFunct
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelInfraFunctionTimeseries({
-				payload: new VercelInfraFunctionTimeseriesRequest(
-					input.route === undefined ? window : { ...window, route: input.route },
-				),
+				payload: new VercelInfraFunctionTimeseriesRequest({
+					...window,
+					...present("route", input.route),
+					...present("host", input.host),
+				}),
 			})
 		}),
 	)

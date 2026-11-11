@@ -11,9 +11,16 @@ import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
 
-/** Narrows a read to one Vercel project. */
+/** Narrows a read to one Vercel project, and its requests to one breakdown value. */
 export interface VercelProjectScope {
 	readonly projectId?: string
+	readonly filter?: VercelRequestFilter
+}
+
+/** One breakdown value (a path, a region, a cache status...) the requests are narrowed to. */
+export interface VercelRequestFilter {
+	readonly dimension: VercelBreakdownDimension
+	readonly value: string
 }
 
 type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
@@ -98,6 +105,7 @@ export function vercelRequestTimeseriesSQL(scope: VercelProjectScope = {}) {
 		.where(($) => [
 			...vercelLogsWhere($),
 			CH.when(scope.projectId, (id) => $.ResourceAttributes.get("vercel.project.id").eq(id)),
+			CH.when(scope.filter, (filter) => matchesFilter($, filter)),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
@@ -117,6 +125,10 @@ export const VERCEL_BREAKDOWN_ATTRIBUTES = {
 } as const
 export type VercelBreakdownDimension = keyof typeof VERCEL_BREAKDOWN_ATTRIBUTES
 
+/** A request (and its log line) carrying the filter's value; the filter's value is a literal. */
+const matchesFilter = ($: LogColumns, filter: VercelRequestFilter) =>
+	isRequest($).and($.LogAttributes.get(VERCEL_BREAKDOWN_ATTRIBUTES[filter.dimension]).eq(filter.value))
+
 /** Narrows a breakdown to the failing requests. */
 export type VercelBreakdownStatus = "all" | "4xx" | "5xx"
 
@@ -127,6 +139,8 @@ export type VercelBreakdownStatus = "all" | "4xx" | "5xx"
 export function vercelProjectBreakdownSQL(
 	dimension: VercelBreakdownDimension,
 	status: VercelBreakdownStatus = "all",
+	/** Narrows the other breakdowns; a breakdown is never narrowed by its own dimension. */
+	filter?: VercelRequestFilter,
 ) {
 	const attribute = VERCEL_BREAKDOWN_ATTRIBUTES[dimension]
 	return from(Datasources.logs)
@@ -146,6 +160,7 @@ export function vercelProjectBreakdownSQL(
 			status === "all"
 				? undefined
 				: statusCode($).between(status === "4xx" ? 400 : 500, status === "4xx" ? 499 : 599),
+			filter === undefined || filter.dimension === dimension ? undefined : matchesFilter($, filter),
 		])
 		.groupBy("key")
 		.orderBy(["requests", "desc"])

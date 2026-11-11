@@ -880,18 +880,21 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "vercel-functions",
 		name: "vercelFunctionRouteTimeseriesSQL",
 		label: "default",
-		compile: () => compileUnsafe(CH.vercelFunctionRouteTimeseriesSQL(), { ...vercelProject, bucketSeconds: 300 }),
+		compile: () =>
+			compileUnsafe(CH.vercelFunctionRouteTimeseriesSQL(), { ...vercelProject, bucketSeconds: 300 }),
 	},
 	{
 		module: "vercel-functions",
-		name: "vercelOneRouteTimeseriesSQL",
-		label: "default",
+		name: "vercelFunctionRouteTimeseriesSQL",
+		label: "route and host",
 		compile: () =>
-			compileUnsafe(CH.vercelOneRouteTimeseriesSQL(), {
-				...vercelProject,
-				bucketSeconds: 300,
-				route: "/api/checkout",
-			}),
+			compileUnsafe(
+				CH.vercelFunctionRouteTimeseriesSQL({ route: "/api/checkout", host: "api.stripe.com" }),
+				{
+					...vercelProject,
+					bucketSeconds: 300,
+				},
+			),
 	},
 	{
 		module: "vercel-functions",

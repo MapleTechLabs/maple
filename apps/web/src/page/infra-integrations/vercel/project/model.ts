@@ -96,6 +96,10 @@ export const Message = defineMessageUnion({
 	ClickedRetryFunctionSeries: {},
 	/** A route's row: narrows the charts to it, or back to every route when it is already picked. */
 	ClickedFunctionRoute: { route: Schema.NullOr(Schema.String) },
+	/** A dependency's row: narrows the charts to invocations that called it, or back. */
+	ClickedDependencyHost: { host: Schema.NullOr(Schema.String) },
+	/** A breakdown row: narrows the traffic tab to its value, or back when it is already picked. */
+	ClickedBreakdownRow: { value: Schema.NullOr(Schema.String) },
 	ClickedRetryDependencies: {},
 	ClickedRetrySpeedInsights: {},
 	ClickedRetryWebAnalytics: {},

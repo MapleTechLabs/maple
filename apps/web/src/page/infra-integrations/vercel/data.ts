@@ -33,6 +33,11 @@ export const SeriesInput = Schema.Struct({
 	endTime: Schema.String,
 	bucketSeconds: Schema.Number,
 	projectId: Schema.optional(Schema.String),
+	/** The request series' breakdown filter (the traffic tab's clicked row). */
+	filterBy: Schema.optional(
+		Schema.Literals(["path", "host", "region", "source", "cache", "waf", "status"]),
+	),
+	filterValue: Schema.optional(Schema.String),
 })
 export type SeriesInput = typeof SeriesInput.Type
 
@@ -128,6 +133,10 @@ export const BreakdownInput = Schema.Struct({
 	projectId: Schema.String,
 	dimension: Schema.Literals(["path", "host", "region", "source", "cache", "waf", "status"]),
 	status: Schema.optional(Schema.Literals(["4xx", "5xx"])),
+	filterBy: Schema.optional(
+		Schema.Literals(["path", "host", "region", "source", "cache", "waf", "status"]),
+	),
+	filterValue: Schema.optional(Schema.String),
 })
 export type BreakdownInput = typeof BreakdownInput.Type
 
@@ -156,6 +165,7 @@ export const FunctionSeriesInput = Schema.Struct({
 	bucketSeconds: Schema.Number,
 	projectId: Schema.String,
 	route: Schema.optional(Schema.String),
+	host: Schema.optional(Schema.String),
 })
 export type FunctionSeriesInput = typeof FunctionSeriesInput.Type
 

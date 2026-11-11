@@ -30,6 +30,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { icon } from "@maple/views/ui/icon"
+import { pressable } from "@maple/views/ui/pressable"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnHead, dataTable, ROW_LINK_CLASS } from "../../kit/data-table"
@@ -165,6 +166,32 @@ export const LEAD_COLUMN = "w-0 flex-1 min-w-[200px]"
 
 /** A Vercel table body row. */
 export const ROW_CLASS = "flex items-center gap-4 border-b border-border/40 px-4 py-3 last:border-0"
+
+/** A row that narrows the page to its value when clicked: whether it is the picked one, and its Message. */
+export type RowPick<M> = Readonly<{ isSelected: boolean; onClick: M }>
+
+/**
+ * A table row; with `pick`, a toggle that narrows the page's charts to it (the web analytics
+ * breakdowns' behaviour), marked with the selection lane while picked.
+ */
+export const pickableRow = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ key: string; pick?: RowPick<M>; className?: string }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	options.pick === undefined
+		? h.div([h.Key(options.key), h.Class(cn(ROW_CLASS, options.className))], children)
+		: pressable(
+				h,
+				{
+					onClick: options.pick.onClick,
+					isSelected: options.pick.isSelected,
+					selectedLane: options.pick.isSelected,
+					className: cn(ROW_LINK_CLASS, "w-full text-left", options.className),
+					attributes: [h.Key(options.key)],
+				},
+				children,
+			)
 const NUM = "w-[96px] text-right font-mono text-xs tabular-nums text-foreground-soft"
 
 const errorRate = (errors: number, requests: number) => (requests > 0 ? errors / requests : 0)

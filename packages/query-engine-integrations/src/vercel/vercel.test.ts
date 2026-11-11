@@ -7,6 +7,7 @@ import {
 	vercelProjectErrorLogsSQL,
 	vercelProjectTopPathsSQL,
 	vercelRequestTimeseriesSQL,
+	vercelProjectBreakdownSQL,
 } from "./vercel-infra"
 import {
 	vercelAiGatewayByModelSQL,
@@ -17,7 +18,6 @@ import {
 import {
 	vercelFunctionRoutesSQL,
 	vercelFunctionRouteTimeseriesSQL,
-	vercelOneRouteTimeseriesSQL,
 	vercelProjectDependenciesSQL,
 	vercelProjectFunctionsSQL,
 } from "./vercel-functions"
@@ -124,18 +124,43 @@ describe("vercelProjectFunctionsSQL", () => {
 	})
 })
 
-describe("vercelOneRouteTimeseriesSQL", () => {
-	it("scopes to the tenant, the project and the route", () => {
-		const { sql } = compileUnsafe(vercelOneRouteTimeseriesSQL(), {
+describe("vercelFunctionRouteTimeseriesSQL", () => {
+	it("narrows to a route and to invocations that called a host only when asked", () => {
+		const every = compileUnsafe(vercelFunctionRouteTimeseriesSQL(), {
 			...bucketed,
 			projectId: "prj_1",
-			route: "/api/checkout",
+		}).sql
+		expect(every).toContain("traces.OrgId = 'org_1'")
+		expect(every).not.toContain("hostCalls > 0")
+		const narrowed = compileUnsafe(
+			vercelFunctionRouteTimeseriesSQL({ route: "/api/checkout", host: "api.stripe.com" }),
+			{ ...bucketed, projectId: "prj_1" },
+		).sql
+		expect(narrowed).toContain("t.route = '/api/checkout'")
+		expect(narrowed).toContain("t.hostCalls > 0")
+		expect(narrowed).toContain("'api.stripe.com'")
+	})
+
+	it("escapes a filter value", () => {
+		const { sql } = compileUnsafe(vercelFunctionRouteTimeseriesSQL({ route: "/x'; DROP" }), {
+			...bucketed,
+			projectId: "prj_1",
 		})
-		expect(sql).toContain("traces.OrgId = 'org_1'")
-		expect(sql).toContain("traces.ResourceAttributes['vercel.projectId'] = 'prj_1'")
-		expect(sql).toContain("'/api/checkout'")
-		expect(compileUnsafe(vercelFunctionRouteTimeseriesSQL(), { ...bucketed, projectId: "prj_1" }).sql).not.toContain(
-			"/api/checkout",
+		expect(sql).not.toContain("'/x'; DROP'")
+	})
+})
+
+describe("request filters", () => {
+	it("narrow the request series and the other breakdowns, never a breakdown by its own dimension", () => {
+		const filter = { dimension: "region", value: "iad1" } as const
+		expect(
+			compileUnsafe(vercelRequestTimeseriesSQL({ projectId: "prj_1", filter }), bucketed).sql,
+		).toContain("logs.LogAttributes['vercel.proxy.region'] = 'iad1'")
+		expect(compileUnsafe(vercelProjectBreakdownSQL("path", "all", filter), project).sql).toContain(
+			"logs.LogAttributes['vercel.proxy.region'] = 'iad1'",
+		)
+		expect(compileUnsafe(vercelProjectBreakdownSQL("region", "all", filter), project).sql).not.toContain(
+			"= 'iad1'",
 		)
 	})
 })

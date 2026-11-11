@@ -53,13 +53,14 @@ import {
 	webAnalyticsSection,
 } from "../sections"
 import { Message, type Model } from "./model"
-import { tabOf } from "./update"
+import { requestFilterOf, tabOf } from "./update"
 import { projectRail } from "./view-rail"
 import { functionSignals } from "./view-functions"
 import {
 	breakdownPanel,
 	errorLogsHref,
 	regressionCallout,
+	requestScope,
 	signals,
 	signalsLoading,
 	topErrors,
@@ -254,9 +255,10 @@ const trafficSignals = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> =
 		]
 	const status = dataOf(model.status.data)
 	const raw = dataOf(model.buckets.data)
-	// The latency read waits for the status; without the trace drain there is none to wait for.
-	const latency = status !== null && !status.tracesEnabled ? null : dataOf(model.latency.data)
-	const hasLatency = status === null || status.tracesEnabled
+	// The latency read waits for the status; without the trace drain there is none to wait for, and
+	// none is read while a breakdown filter narrows the requests (traces carry no log attributes).
+	const hasLatency = (status === null || status.tracesEnabled) && requestFilterOf(model) === null
+	const latency = hasLatency ? dataOf(model.latency.data) : null
 	const theme = model.themeColors
 	if (
 		raw === null ||
@@ -272,6 +274,7 @@ const trafficSignals = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> =
 	const regression = deploys.regressions[deploys.regressions.length - 1]
 	return [
 		...(regression === undefined ? [] : [regressionCallout(h, regression, model.projectId)]),
+		requestScope(h, model),
 		signals(h, model, {
 			buckets,
 			latency,
@@ -375,6 +378,10 @@ const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyAr
 					read: { data: model.dependencies.data, onRetry: Message.ClickedRetryDependencies() },
 					tracesEnabled,
 					serviceMapHref: serviceMapHref(model, time),
+					select: {
+						host: model.search.host,
+						onSelect: (host) => Message.ClickedDependencyHost({ host }),
+					},
 				}),
 			]
 		case "builds":
