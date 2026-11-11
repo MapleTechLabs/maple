@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { biomeOf, biomesFor } from "./biome"
 import { tilePalette } from "./palette"
 import { HEX_SIZE } from "./hex"
-import { buildTile, landmarkAt, pondFor, type TileSpec } from "./tile"
+import { buildTile, landmarkAt, pondFor, settlementOf, type TileSpec } from "./tile"
 
 const spec = (kind: TileSpec["kind"], size: number, corridors: ReadonlyArray<number> = []): TileSpec => ({
 	id: `tile-${kind}`,
@@ -62,5 +62,56 @@ describe("a tile's pond", () => {
 	it("lies beyond its landmark, never on it", () => {
 		const { radius, distance } = pondFor(1.35, 1.25)
 		expect(distance - radius).toBeGreaterThan(1.35)
+	})
+})
+
+describe("a settlement", () => {
+	const sizes = Arr.makeBy(21, (index) => index / 20)
+
+	it("grows with its service's throughput, never shrinking on the way up", () => {
+		const towns = Arr.map(sizes, settlementOf)
+		const grows = (read: (town: ReturnType<typeof settlementOf>) => number) =>
+			Arr.every(
+				Arr.zip(towns, Arr.drop(towns, 1)),
+				([smaller, bigger]) => read(bigger) >= read(smaller),
+			)
+		expect(grows((town) => town.houses)).toBe(true)
+		expect(grows((town) => town.yard)).toBe(true)
+		expect(grows((town) => town.scale)).toBe(true)
+		expect(settlementOf(1).houses).toBeGreaterThan(settlementOf(0).houses * 5)
+	})
+
+	it("is a hamlet at the bottom: barns and fields, no well, no church", () => {
+		expect(settlementOf(0.05)).toMatchObject({
+			hasWell: false,
+			hasChurch: false,
+			hasHall: false,
+			wall: 0,
+			stalls: 0,
+		})
+		expect(settlementOf(0.05).barnShare).toBeGreaterThan(0)
+		expect(settlementOf(0.05).fields).toBeGreaterThan(0)
+	})
+
+	it("gains a well, then a church and a market, then a hall and a wall", () => {
+		const has = (size: number) => {
+			const town = settlementOf(size)
+			return [town.hasWell, town.hasChurch, town.stalls > 0, town.hasHall, town.wall > 0]
+		}
+		expect(has(0.3)).toEqual([true, false, false, false, false])
+		expect(has(0.6)).toEqual([true, true, true, false, false])
+		expect(has(0.95)).toEqual([true, true, true, true, true])
+	})
+
+	it("keeps its wall, towers and all, on the tile", () => {
+		const inradius = HEX_SIZE * Math.cos(Math.PI / 6)
+		Arr.forEach(sizes, (size) => expect(settlementOf(size).wall + 0.15).toBeLessThan(inradius))
+	})
+
+	it("is built bigger: a city's tile holds several times a hamlet's geometry", () => {
+		const built = (size: number) =>
+			buildTile(spec("service", size)).geometry.getAttribute("position").count
+		expect(built(1)).toBeGreaterThan(built(0.05) * 3)
+		expect(built(0.6)).toBeGreaterThan(built(0.05))
 	})
 })

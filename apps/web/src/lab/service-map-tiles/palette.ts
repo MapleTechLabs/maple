@@ -24,6 +24,11 @@ export interface TilePalette {
 	readonly banner: string
 	readonly lamp: string
 	readonly timber: string
+	/** Sawn planks: barns, market counters. */
+	readonly plank: string
+	/** A window pane by day; at night the panes take the lamp's colour. */
+	readonly glass: string
+	readonly awnings: ReadonlyArray<string>
 	readonly sail: string
 	readonly gravel: string
 	readonly steel: string
@@ -70,6 +75,9 @@ const DAY: TilePalette = {
 	banner: "#c8553d",
 	lamp: "#ffd978",
 	timber: "#8a6a48",
+	plank: "#c9a77c",
+	glass: "#566b7c",
+	awnings: ["#c8553d", "#e9b949", "#f6efdc", "#5f8198"],
 	sail: "#fbf6ea",
 	gravel: "#c4b696",
 	steel: "#5d554b",

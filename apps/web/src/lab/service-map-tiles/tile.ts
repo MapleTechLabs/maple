@@ -1,16 +1,30 @@
-import { Array as Arr, Option, Order } from "effect"
+import { Array as Arr, Order } from "effect"
 import * as THREE from "three"
 import type { Node3DKind } from "../../page/service-map/three/types"
 import type { Biome, TreeKind } from "./biome"
 import { corners, HEX_SIZE, ORIGIN, type Point } from "./hex"
 import type { TilePalette } from "./palette"
-import { band, creases, fuse, gable, loft, moved, part, pickFrom, seeded, vary, type Vec3 } from "./solid"
+import { band, creases, fuse, loft, moved, part, pickFrom, seeded, vary, type Vec3 } from "./solid"
+import {
+	barn,
+	type Building,
+	church,
+	CHURCH_HEIGHT,
+	cottage,
+	placed,
+	stall,
+	townHall,
+	townhouse,
+	townWall,
+	well,
+} from "./village"
 
 // One hex tile of land per service. Its namespace's biome is the country it lies in (the ground,
-// the trees, the roofs), and what stands on it says what the node is: a village for a service
-// (more houses the busier it is, a church in the busiest), a pond and lighthouse where traffic
-// enters, an observatory for a database, a windmill for a queue and a keep for an external
-// dependency.
+// the trees, the roofs), and what stands on it says what the node is: a settlement for a service,
+// a pond and lighthouse where traffic enters, an observatory for a database, a windmill for a
+// queue and a keep for an external dependency. A settlement grows with its service's throughput:
+// a hamlet of cottages and barns among fields, a village round a well, a town with a church and
+// a market, a walled city of townhouses with a town hall.
 
 /** How thick the block of earth under a tile is. */
 export const TILE_DEPTH = 1.05
@@ -84,25 +98,6 @@ export const earthBlock = (palette: TilePalette, lip: string, top: string): THRE
 		{ lid: top, floor: palette.soilShade },
 	)
 
-const house = (palette: TilePalette, random: () => number, roofs: ReadonlyArray<string>): Parts => {
-	const width = 0.32 + random() * 0.12
-	const depth = 0.38 + random() * 0.18
-	const height = (0.22 + random() * 0.1) * (random() < 0.25 ? 1.5 : 1)
-	return [
-		part(
-			new THREE.BoxGeometry(width, height, depth),
-			vary(pickFrom(palette.walls, random, palette.dome), random, 0.03),
-			{ position: [0, height / 2, 0] },
-		),
-		gable(
-			width * 1.18,
-			0.16 + random() * 0.08,
-			depth * 1.12,
-			vary(pickFrom(roofs, random, palette.banner), random),
-		).translate(0, height, 0),
-	]
-}
-
 const trunk = (palette: TilePalette, height: number, radius: number): THREE.BufferGeometry =>
 	part(new THREE.CylinderGeometry(radius * 0.7, radius, height, 5), palette.timber, {
 		position: [0, height / 2, 0],
@@ -150,19 +145,6 @@ const boulder = (palette: TilePalette, random: () => number): Parts => {
 			position: [0, size * 0.45, 0],
 			turn: random() * Math.PI,
 			scale: [1, 0.7, 1.2],
-		}),
-	]
-}
-
-const church = (palette: TilePalette, biome: Biome, random: () => number): Parts => {
-	const roof = vary(pickFrom(biome.roofs, random, palette.banner), random)
-	return [
-		part(new THREE.BoxGeometry(0.5, 0.44, 0.92), wall(palette, 2), { position: [0, 0.22, 0.1] }),
-		gable(0.58, 0.28, 0.98, roof).translate(0, 0.44, 0.1),
-		part(new THREE.BoxGeometry(0.34, 1.02, 0.34), wall(palette, 0), { position: [0, 0.51, -0.5] }),
-		part(new THREE.ConeGeometry(0.29, 0.74, 4), roof, {
-			position: [0, 1.02 + 0.37, -0.5],
-			turn: Math.PI / 4,
 		}),
 	]
 }
@@ -236,13 +218,24 @@ const keep = (palette: TilePalette): Parts => [
 interface Plan {
 	/** Radius of the worn village ground round the square; 0 for none. */
 	readonly yard: number
-	readonly landmark: Parts
+	readonly landmark: Building
 	/** How far from the middle the landmark stands, towards a corner. */
 	readonly offset: number
 	/** Ground kept clear round the landmark. */
 	readonly clearing: number
 	readonly houses: number
-	readonly roofs: ReadonlyArray<string>
+	/** How many of the houses near the square are townhouses, and how many of the rest barns, 0 to 1. */
+	readonly townShare: number
+	readonly barnShare: number
+	/** How far out the houses reach, as a share of the way to the tile's border. */
+	readonly spread: number
+	/** How big the buildings are drawn. */
+	readonly scale: number
+	readonly hasWell: boolean
+	readonly stalls: number
+	readonly hasHall: boolean
+	/** Radius of the town wall; 0 for none. */
+	readonly wall: number
 	readonly trees: number
 	readonly fields: number
 	readonly boulders: number
@@ -251,17 +244,56 @@ interface Plan {
 	readonly height: number
 }
 
+const NOTHING: Building = { solid: [], trim: [] }
+
+/** A service's settlement, by where its throughput sits among the map's (`size`, 0 to 1): a
+ * hamlet at the bottom, a walled city at the top, and everything between growing smoothly. */
+export const settlementOf = (size: number) => {
+	const yard = 0.85 + size * 1.85
+	return {
+		yard,
+		houses: Math.round(4 + Math.pow(size, 1.2) * 38),
+		townShare: Math.max(0, Math.min(0.85, (size - 0.35) * 1.5)),
+		barnShare: size < 0.3 ? 0.35 : 0,
+		spread: Math.min(0.8, (yard - 0.1) / INRADIUS),
+		scale: 0.92 + size * 0.2,
+		hasWell: size >= 0.22,
+		stalls: size >= 0.5 ? 2 + Math.round(size * 2) : 0,
+		hasChurch: size > 0.5,
+		hasHall: size >= 0.8,
+		wall: size >= 0.85 ? yard + 0.25 : 0,
+		fields: size < 0.35 ? 3 : 0,
+	}
+}
+
 /** What the node's kind puts on the tile, before the biome has its say. */
 const standingOn = ({ kind, size, biome, palette }: TileSpec, random: () => number): Plan => {
-	const none = { yard: 0, houses: 0, fields: 0, boulders: 0, pond: 0, roofs: biome.roofs }
+	const none = {
+		yard: 0,
+		houses: 0,
+		townShare: 0,
+		barnShare: 0,
+		spread: 0.66,
+		scale: 1,
+		hasWell: false,
+		stalls: 0,
+		hasHall: false,
+		wall: 0,
+		fields: 0,
+		boulders: 0,
+		pond: 0,
+	}
+	// A landmark's own handful of houses grows a little with its traffic too.
+	const few = (count: number) => Math.round(count * (0.6 + size * 0.9))
 	if (kind === "edge")
 		return {
 			...none,
 			yard: 1.5,
-			landmark: lighthouse(palette),
+			landmark: { solid: lighthouse(palette), trim: [] },
 			offset: 1.35,
 			clearing: 0.65,
-			houses: 7,
+			houses: few(6),
+			hasWell: true,
 			trees: 9,
 			pond: 1.25,
 			height: 1.65,
@@ -269,10 +301,9 @@ const standingOn = ({ kind, size, biome, palette }: TileSpec, random: () => numb
 	if (kind === "database")
 		return {
 			...none,
-			landmark: observatory(palette, random),
+			landmark: { solid: observatory(palette, random), trim: [] },
 			offset: 1.45,
 			clearing: 1.05,
-			roofs: palette.slates,
 			trees: 26,
 			height: 0.95,
 		}
@@ -280,10 +311,11 @@ const standingOn = ({ kind, size, biome, palette }: TileSpec, random: () => numb
 		return {
 			...none,
 			yard: 1.1,
-			landmark: windmill(palette, biome, random),
+			landmark: { solid: windmill(palette, biome, random), trim: [] },
 			offset: 1.5,
 			clearing: 0.7,
-			houses: 4,
+			houses: few(4),
+			barnShare: 0.6,
 			trees: 7,
 			fields: 3,
 			height: 1.3,
@@ -291,26 +323,24 @@ const standingOn = ({ kind, size, biome, palette }: TileSpec, random: () => numb
 	if (kind === "external")
 		return {
 			...none,
-			landmark: keep(palette),
+			landmark: { solid: keep(palette), trim: [] },
 			offset: 1.4,
 			clearing: 0.7,
-			houses: 2,
-			roofs: palette.slates,
+			houses: few(2),
 			trees: 9,
 			boulders: 5,
 			height: 1.35,
 		}
-	const busy = size > 0.6
+	const town = settlementOf(size)
+	const grand = 1 + Math.max(0, size - 0.5) * 0.5
 	return {
 		...none,
-		yard: 1.25 + size * 1.1,
-		landmark: busy ? church(palette, biome, random) : [],
+		...town,
+		landmark: town.hasChurch ? church(palette, biome, random, grand) : NOTHING,
 		offset: 1.2,
-		clearing: busy ? 0.8 : 0,
-		houses: 7 + Math.round(size * 22),
-		trees: 10 + Math.round(random() * 4),
-		fields: size < 0.4 ? 2 : 0,
-		height: busy ? 1.8 : 0.65,
+		clearing: town.hasChurch ? 0.72 * grand : 0,
+		trees: Math.round(12 - size * 6 + random() * 3),
+		height: town.hasChurch ? CHURCH_HEIGHT * grand : 0.7,
 	}
 }
 
@@ -406,47 +436,87 @@ const field = (biome: Biome, random: () => number): THREE.BufferGeometry => {
 
 const angleBetween = (a: number, b: number): number => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)))
 
-/** The corner the landmark stands towards: the one furthest from every road and railway. */
-const landmarkAngle = (corridors: ReadonlyArray<number>, random: () => number): number => {
+/** The tile's six corners, the one furthest from every road and railway first: the landmark
+ * stands towards the first, a town hall towards the second. */
+const landmarkAngles = (corridors: ReadonlyArray<number>, random: () => number): ReadonlyArray<number> => {
 	const first = Math.floor(random() * 6)
 	const angles = Arr.makeBy(6, (index) => (Math.PI / 180) * (60 * ((index + first) % 6) - 30))
 	const clearance = (angle: number) =>
 		Math.min(Math.PI, ...Arr.map(corridors, (corridor) => angleBetween(angle, corridor)))
-	return Option.getOrElse(
-		Arr.head(Arr.sort(angles, Order.flip(Order.mapInput(Order.Number, clearance)))),
-		() => -Math.PI / 6,
-	)
+	return Arr.sort(angles, Order.flip(Order.mapInput(Order.Number, clearance)))
 }
 
 export const buildTile = (spec: TileSpec): Tile => {
 	const { palette, biome, corridors } = spec
 	const random = seeded(`tile:${spec.id}`)
 	const plan = planOf(spec, random)
-	const facing = landmarkAngle(corridors, random)
-	const at = (distance: number): Point => [Math.cos(facing) * distance, Math.sin(facing) * distance]
-	const landmark = at(plan.offset)
+	const [facing = -Math.PI / 6, second = Math.PI / 6] = landmarkAngles(corridors, random)
+	const towards = (angle: number, distance: number): Point => [
+		Math.cos(angle) * distance,
+		Math.sin(angle) * distance,
+	]
+	/** The turn that makes a building standing out at `angle` look back at the square. */
+	const facingSquare = (angle: number): number => Math.atan2(-Math.cos(angle), -Math.sin(angle))
+	const sized: Vec3 = [plan.scale, plan.scale, plan.scale]
+	const hasLandmark = plan.landmark.solid.length > 0
+	const landmark = towards(facing, plan.offset)
+	const hall = towards(second, 1.3)
 	const basin = pondFor(plan.offset, plan.pond)
-	const pond = at(basin.distance)
-	/** A spot is free when no road or railway runs over it and it is off the square, the landmark and the pond. */
-	const free = (spot: Point, room: number): boolean =>
-		span(spot, [0, 0]) > 0.6 + room &&
-		(plan.landmark.length === 0 || span(spot, landmark) > plan.clearing + room) &&
-		(basin.radius === 0 || span(spot, pond) > basin.radius + 0.15 + room) &&
-		!Arr.some(corridors, (corridor) => {
+	const pond = towards(facing, basin.distance)
+	const onWay = (spot: Point, room: number): boolean =>
+		Arr.some(corridors, (corridor) => {
 			const along = spot[0] * Math.cos(corridor) + spot[1] * Math.sin(corridor)
 			const across = Math.abs(spot[1] * Math.cos(corridor) - spot[0] * Math.sin(corridor))
 			return along > 0 && across < 0.3 + room
 		})
+	/** A spot is free when no road or railway runs over it and it is off the square, the
+	 * landmark, the town hall, the pond and the line of the town wall. */
+	const free = (spot: Point, room: number): boolean =>
+		span(spot, [0, 0]) > 0.6 + room &&
+		(!hasLandmark || span(spot, landmark) > plan.clearing + room) &&
+		(!plan.hasHall || span(spot, hall) > 0.55 + room) &&
+		(basin.radius === 0 || span(spot, pond) > basin.radius + 0.15 + room) &&
+		(plan.wall === 0 || Math.abs(span(spot, [0, 0]) - plan.wall) > 0.2 + room) &&
+		!onWay(spot, room)
 	const taken: Array<Point> = []
 	const fields = Arr.flatMap(scatter(random, plan.fields, 1.45, 1.5, 0.7, taken), (spot) => {
 		const strip = field(biome, random).rotateY(random() * Math.PI)
 		return free(spot.at, 0.5) ? [strip.translate(spot.at[0], 0, spot.at[1])] : []
 	})
-	const houses = Arr.flatMap(scatter(random, plan.houses, 0.62, 0.85, 0.66, taken), (spot) => {
-		const built = house(palette, random, plan.roofs)
-		const turn = -spot.angle + (random() - 0.5)
-		return free(spot.at, 0.2) ? moved(built, { position: [spot.at[0], 0, spot.at[1]], turn }) : []
-	})
+	const homes = Arr.flatMap(
+		scatter(random, plan.houses, 0.5 * plan.scale, 0.8, plan.spread, taken),
+		(spot) => {
+			// Townhouses crowd the square; cottages and barns stand further out.
+			const central = span(spot.at, [0, 0]) < plan.yard * 0.62
+			const roll = random()
+			const built =
+				central && roll < plan.townShare
+					? townhouse(palette, biome, random)
+					: roll > 1 - plan.barnShare
+						? barn(palette, biome, random)
+						: cottage(palette, biome, random)
+			const turn = facingSquare(spot.angle) + (random() - 0.5) * 0.5
+			return free(spot.at, 0.1)
+				? [placed(built, { position: [spot.at[0], 0, spot.at[1]], turn, scale: sized })]
+				: []
+		},
+	)
+	const stalls =
+		plan.stalls === 0
+			? []
+			: Arr.flatMap(
+					Arr.makeBy(plan.stalls, (index) => index),
+					(index) => {
+						const angle = facing + Math.PI / 5 + (index / plan.stalls) * Math.PI * 2
+						const spot = towards(angle, 0.86)
+						const built = stall(palette, random)
+						return onWay(spot, 0.12) ||
+							(hasLandmark && span(spot, landmark) < plan.clearing) ||
+							(plan.hasHall && span(spot, hall) < 0.6)
+							? []
+							: [placed(built, { position: [spot[0], 0, spot[1]], turn: facingSquare(angle) })]
+					},
+				)
 	const boulders = Arr.flatMap(scatter(random, plan.boulders, 0.5, 0.9, 0.86, taken), (spot) => {
 		const rock = boulder(palette, random)
 		return free(spot.at, 0.05) ? moved(rock, { position: [spot.at[0], 0, spot.at[1]] }) : []
@@ -455,8 +525,24 @@ export const buildTile = (spec: TileSpec): Tile => {
 		const grown = tree(palette, biome, random)
 		return free(spot.at, 0.12) ? moved(grown, { position: [spot.at[0], 0, spot.at[1]] }) : []
 	})
-	// The landmark looks back at the village square: its local +z points to the tile's middle.
-	const turn = Math.atan2(-Math.cos(facing), -Math.sin(facing))
+	// The landmark looks back at the square: its local +z points to the tile's middle.
+	const turn = facingSquare(facing)
+	const buildings: ReadonlyArray<Building> = [
+		placed(plan.landmark, { position: [landmark[0], 0, landmark[1]], turn }),
+		...homes,
+		...stalls,
+		...(plan.hasWell ? [placed(well(palette, biome, random), { scale: sized })] : []),
+		...(plan.hasHall
+			? [
+					placed(townHall(palette, biome, random), {
+						position: [hall[0], 0, hall[1]],
+						turn: facingSquare(second),
+						scale: sized,
+					}),
+				]
+			: []),
+		...(plan.wall === 0 ? [] : [townWall(palette, biome, random, plan.wall, corridors)]),
+	]
 	const water =
 		basin.radius === 0
 			? []
@@ -469,8 +555,7 @@ export const buildTile = (spec: TileSpec): Tile => {
 					patch(random, basin.radius, 0.014, palette.water).translate(pond[0], 0, pond[1]),
 				]
 	const inked = fuse([
-		...moved(plan.landmark, { position: [landmark[0], 0, landmark[1]], turn }),
-		...houses,
+		...Arr.flatMap(buildings, (building) => building.solid),
 		...boulders,
 		...trees,
 		...fields,
@@ -489,18 +574,17 @@ export const buildTile = (spec: TileSpec): Tile => {
 	]
 	const hub = new THREE.Vector3(...HUB).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn)
 	return {
-		geometry: fuse([block, ...ground, inked]),
+		geometry: fuse([block, ...ground, inked, ...Arr.flatMap(buildings, (building) => building.trim)]),
 		ink,
 		height: plan.height,
-		landmark:
-			plan.landmark.length === 0
-				? null
-				: {
-						kind: spec.kind,
-						at: landmark,
-						radius: plan.clearing,
-						top: [landmark[0], plan.height - 0.2, landmark[1]],
-					},
+		landmark: hasLandmark
+			? {
+					kind: spec.kind,
+					at: landmark,
+					radius: plan.clearing,
+					top: [landmark[0], plan.height - 0.2, landmark[1]],
+				}
+			: null,
 		sails:
 			spec.kind === "queue"
 				? { geometry: sailsOf(palette), hub: [landmark[0] + hub.x, hub.y, landmark[1] + hub.z], turn }
