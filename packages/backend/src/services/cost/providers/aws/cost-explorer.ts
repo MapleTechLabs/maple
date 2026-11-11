@@ -103,8 +103,9 @@ export const pullCostExplorer = (
 					duration: REQUEST_TIMEOUT,
 					orElse: () => fail("upstream", "GetCostAndUsage: AWS did not answer in time"),
 				}),
-				// A client span per billed call: `peer.service` draws Cost Explorer on the service map.
-				Effect.withSpan("CostExplorer.GetCostAndUsage", {
+				// One span per billed call, carrying `peer.service` for the service map. The SDK's own
+				// client span for the request is its child and is named `CostExplorer.GetCostAndUsage`.
+				Effect.withSpan("AwsCostProvider.costExplorerRequest", {
 					kind: "client",
 					attributes: {
 						"peer.service": "aws-cost-explorer",
