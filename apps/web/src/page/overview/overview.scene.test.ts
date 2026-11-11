@@ -248,6 +248,35 @@ describe("overview", () => {
 		)
 	})
 
+	test("health computed without alert status says so, and says nothing once alerts are known", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
+			Message.FailedLoadIncidents({ orgId }),
+		]
+		const mounts = Mount.resolveAll(
+			[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
+			[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)),
+			mounts,
+			expectView(text("Couldn't load alert status")).toExist(),
+			expectView(text("Service health leaves out firing alerts.")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([snapshotRow("checkout")])),
+			mounts,
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
+		)
+	})
+
 	test("picking an environment writes it to the URL; All environments leaves it", () => {
 		const model = loaded([snapshotRow("checkout")])
 		const picked = pageUpdate(

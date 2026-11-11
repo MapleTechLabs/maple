@@ -177,6 +177,8 @@ describe("services list", () => {
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(role("table", { name: "Services" })).toExist(),
 			expectView(text("checkout")).toExist(),
+			// The table still paints, and says its health is not known.
+			expectView(text("Couldn't load alert status or anomalies")).toExist(),
 		)
 	})
 
@@ -195,6 +197,7 @@ describe("services list", () => {
 			expectView(role("table", { name: "Services" })).toExist(),
 			expectView(text("checkout")).toExist(),
 			expectView(text("Showing 2 services")).toExist(),
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
 		)
 	})
 

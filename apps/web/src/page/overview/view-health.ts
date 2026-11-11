@@ -35,6 +35,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 import type { HealthIncident } from "../kit/service-health"
+import { healthGapNotice, healthGapOf } from "../kit/health-gap-notice"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -45,7 +46,7 @@ export type HealthData = readonly [
 	ReadonlyArray<HealthIncident>,
 ]
 
-/** The snapshot with the anomalies and alert incidents; those two read as empty when they failed. */
+/** The snapshot with the anomalies and alert incidents; those two read as empty when they failed, and `healthGapNotice` says so. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
 	AsyncData.all([
 		model.snapshot.data,
@@ -126,8 +127,10 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			)
 			const tone = (health: ServiceHealth, active: "ok" | "warn" | "crit") =>
 				counts[health] > 0 ? active : "neutral"
+			const gap = healthGapOf(model.incidents, model.anomalies.data)
 			return section(h, "mb-4 space-y-3", AsyncData.isRefreshing(data), [
 				...banner,
+				...(gap === null ? [] : [healthGapNotice(h, gap)]),
 				statRail(h, {}, [
 					statRailItem(h, {
 						eyebrow: "Services",
@@ -137,7 +140,8 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 					statRailItem(h, {
 						eyebrow: "Healthy",
 						value: String(counts.healthy),
-						tone: tone("healthy", "ok"),
+						// Not vouched for while an input is missing, so not green.
+						tone: gap === null ? tone("healthy", "ok") : "neutral",
 						action: railAction(h, slice, "healthy"),
 					}),
 					statRailItem(h, {
