@@ -27,7 +27,8 @@ current.
 
 ## Plans and specs
 
-[alerting-tier1-spec.md](alerting-tier1-spec.md), [eu-region-plan.md](eu-region-plan.md),
+[alerting-tier1-spec.md](alerting-tier1-spec.md), [cloud-cost-plan.md](cloud-cost-plan.md),
+[eu-region-plan.md](eu-region-plan.md),
 [external-data-sources-plan.md](external-data-sources-plan.md), [mcp-hub-plan.md](mcp-hub-plan.md),
 [otel-coverage-roadmap.md](otel-coverage-roadmap.md), [pr-review-agent-plan.md](pr-review-agent-plan.md),
 [pr-review-merge-checklist-plan.md](pr-review-merge-checklist-plan.md),
