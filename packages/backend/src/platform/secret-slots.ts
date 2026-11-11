@@ -106,6 +106,11 @@ export const railwayTokenSlot: SecretSlot<OrgRef> = {
 	binding: orgBinding,
 }
 
+export const vercelTokenSlot: SecretSlot<OrgRef> = {
+	name: "vercel_connections.token",
+	binding: orgBinding,
+}
+
 export const scrapeTargetCredentialsSlot: SecretSlot<OrgRowRef> = {
 	name: "scrape_targets.auth_credentials",
 	binding: orgRowBinding,

@@ -324,10 +324,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
-		CompletedFetchPage: ({ key, result }) => ({
-			model: { ...model, page: Keyed.accept(model.page, key, result) },
-			commands: [ReadEditorClock()],
-		}),
+		// The preview's history needs the page too: when the components came first, read it now.
+		CompletedFetchPage: ({ key, result }) => {
+			const next = { ...model, page: Keyed.accept(model.page, key, result) }
+			const awaitsHistory =
+				key === model.page.key &&
+				Result.isSuccess(result) &&
+				model.previewShown === 0 &&
+				Option.isSome(AsyncData.getData(model.components.data))
+			if (!awaitsHistory) return { model: next, commands: [ReadEditorClock()] }
+			const scheduled = schedulePreview(next)
+			return { model: scheduled.model, commands: [ReadEditorClock(), ...(scheduled.commands ?? [])] }
+		},
 		// New components mean new monitors to show history for: the preview reads it again.
 		CompletedFetchComponents: ({ key, result }) => {
 			const next = { ...model, components: Keyed.accept(model.components, key, result) }

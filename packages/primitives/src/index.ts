@@ -530,6 +530,7 @@ export const PULL_SOURCE_PLATFORMS = [
 	"cloudflare",
 	"gcp",
 	"railway",
+	"vercel",
 	"planetscale",
 	"github",
 	"aws",

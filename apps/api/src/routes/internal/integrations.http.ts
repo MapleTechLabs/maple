@@ -48,6 +48,8 @@ import {
 	VcsCommitRangeResponse,
 	VcsCommitRangesResponse,
 	VcsPullRequestsResponse,
+	VercelDeploymentsResponse,
+	VercelDisconnectResponse,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -70,6 +72,7 @@ import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
@@ -148,6 +151,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const vercel = yield* VercelIntegrationService
 		const supabaseOAuth = yield* SupabaseOAuthService
 		const supabase = yield* SupabaseConnectionService
 		const supabaseLogs = yield* SupabaseLogsService
@@ -308,6 +312,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 							),
 							cloudflare: connected(cloudflareAnalytics.getIntegrationStatus(tenant.orgId)),
 							railway: connected(railway.getStatus(tenant.orgId)),
+							vercel: connected(vercel.getStatus(tenant.orgId)),
 							planetscale: connected(planetscale.getStatus(tenant.orgId)),
 							// Google Cloud counts only with metrics on: the page reads metrics, not logs.
 							gcp: Effect.map(gcp.status(tenant.orgId), (status) =>
@@ -673,6 +678,95 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.roles, "integrations:manage")
 						const disconnected = yield* supabase.disconnect(tenant.orgId)
 						return new SupabaseDisconnectResponse(disconnected)
+					}),
+				)
+				.handle("vercelStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* vercel.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("vercelDiscover", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						return yield* vercel.discover(payload.token, payload.teamId)
+					}),
+				)
+				.handle("vercelConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const status = yield* vercel.connect(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("vercel_integration.connected", {
+							metadata: {
+								teamId: payload.teamId,
+								projectScope: payload.projectScope,
+								projectCount: payload.projectIds.length,
+								samplingRate: payload.samplingRate,
+								logsEnabled: payload.logsEnabled,
+								tracesEnabled: payload.tracesEnabled,
+								aiGatewayEnabled: status.aiGatewayEnabled,
+								speedInsightsEnabled: status.speedInsightsEnabled,
+								webAnalyticsEnabled: status.webAnalyticsEnabled,
+								auditLogEnabled: status.auditLogEnabled,
+							},
+						})
+						return status
+					}),
+				)
+				.handle("vercelSettings", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const status = yield* vercel.updateSettings(tenant.orgId, payload)
+						yield* recordHttpAudit("vercel_integration.updated", {
+							metadata: {
+								projectScope: status.projectScope,
+								projectCount: status.projectIds.length,
+								samplingRate: status.samplingRate,
+								logsEnabled: status.logsEnabled,
+								tracesEnabled: status.tracesEnabled,
+								aiGatewayEnabled: status.aiGatewayEnabled,
+								speedInsightsEnabled: status.speedInsightsEnabled,
+								webAnalyticsEnabled: status.webAnalyticsEnabled,
+								auditLogEnabled: status.auditLogEnabled,
+							},
+						})
+						return status
+					}),
+				)
+				.handle("vercelSync", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// Spends the token's per-user Vercel rate limit, so it needs integrations:manage like connect.
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						return yield* vercel.sync(tenant.orgId)
+					}),
+				)
+				.handle("vercelDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const result = yield* vercel.disconnect(tenant.orgId)
+						if (result.disconnected) {
+							yield* recordHttpAudit("vercel_integration.disconnected", {
+								metadata: { drainsRemoved: result.drainsRemoved },
+							})
+						}
+						return new VercelDisconnectResponse(result)
+					}),
+				)
+				.handle("vercelDeployments", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return new VercelDeploymentsResponse({
+							deployments: yield* vercel.deployments(
+								tenant.orgId,
+								query.projectId,
+								query.limit ?? 20,
+							),
+						})
 					}),
 				)
 				.handle("gcpResources", ({ query }) =>

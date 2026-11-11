@@ -19,6 +19,8 @@ const empty: IntegrationInventoryInputs = {
 	cloudflareHyperdrives: [],
 	railwayConnection: null,
 	railwayEnvironments: [],
+	vercelConnection: null,
+	vercelProjectCount: 0,
 	planetscaleConnection: null,
 	planetscaleDatabases: [],
 	planetscalePollStates: [],
@@ -185,6 +187,82 @@ describe("buildIntegrationInventory", () => {
 		expect(railway?.problem).toBe(
 			"1 of 1 stale, e.g. environment shop / production: no successful update for 2 h (3 services)",
 		)
+	})
+
+	describe("vercel", () => {
+		const connection = {
+			teamName: "Acme",
+			authFailedAt: null,
+			logsEnabled: true,
+			tracesEnabled: true,
+			aiGatewayEnabled: true,
+			speedInsightsEnabled: false,
+			webAnalyticsEnabled: false,
+			auditLogEnabled: false,
+			logDrainState: { status: "enabled", lastError: null },
+			traceDrainState: { status: "enabled", lastError: null },
+			aiGatewayDrainState: { status: "enabled", lastError: null },
+			speedInsightsDrainState: null,
+			webAnalyticsDrainState: null,
+			auditLogDrainState: null,
+			lastSuccessAt: NOW - MINUTE,
+			lastErrorAt: null,
+			lastError: null,
+			createdAt: NOW - 24 * 60 * MINUTE,
+		}
+
+		it("is healthy with every drain enabled, and counts the team's projects", () => {
+			const vercel = providerOf({ vercelConnection: connection, vercelProjectCount: 3 }, "vercel")
+			expect(vercel?.status).toBe("healthy")
+			expect(vercel?.account).toBe("Acme (3 projects)")
+			expect(Arr.map(vercel?.resources ?? [], (r) => r.name)).toEqual(["AI Gateway", "logs", "traces"])
+		})
+
+		it("fails on a drain Vercel reports missing, and leaves out a drain that is turned off", () => {
+			const vercel = providerOf(
+				{
+					vercelConnection: {
+						...connection,
+						tracesEnabled: false,
+						aiGatewayEnabled: false,
+						logDrainState: { status: "missing", lastError: "Drains need a Pro plan" },
+					},
+				},
+				"vercel",
+			)
+			expect(vercel?.status).toBe("failing")
+			expect(vercel?.resources).toHaveLength(1)
+			expect(vercel?.problem).toBe("1 of 1 failing, e.g. drain logs: Drains need a Pro plan")
+		})
+
+		it("fails on an opt-in drain Vercel refused for the team's plan", () => {
+			const vercel = providerOf(
+				{
+					vercelConnection: {
+						...connection,
+						auditLogEnabled: true,
+						auditLogDrainState: {
+							status: "errored",
+							lastError: "Audit Log drains need Enterprise",
+						},
+					},
+				},
+				"vercel",
+			)
+			expect(vercel?.status).toBe("failing")
+			expect(vercel?.problem).toBe(
+				"1 of 4 failing, e.g. drain audit log: Audit Log drains need Enterprise",
+			)
+		})
+
+		it("reports a rejected token as disconnected", () => {
+			const vercel = providerOf(
+				{ vercelConnection: { ...connection, authFailedAt: NOW - MINUTE } },
+				"vercel",
+			)
+			expect(vercel?.status).toBe("disconnected")
+			expect(vercel?.problem).toContain("Vercel rejected the access token")
+		})
 	})
 
 	it("lets a revoked grant outrank healthy resources", () => {

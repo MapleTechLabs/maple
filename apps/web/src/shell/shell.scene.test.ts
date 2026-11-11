@@ -36,6 +36,7 @@ const flags = { isMobile: false, theme: "dark", pinnedNamespaces: {}, dashboardF
 const statuses = (connected: Partial<Record<Integration, boolean>> = {}) => ({
 	cloudflare: false,
 	railway: false,
+	vercel: false,
 	planetscale: false,
 	gcp: false,
 	supabase: false,
@@ -358,6 +359,7 @@ describe("in-place org change", () => {
 			integrations: {
 				cloudflare: true,
 				railway: true,
+				vercel: false,
 				planetscale: false,
 				gcp: false,
 				supabase: false,
@@ -369,6 +371,7 @@ describe("in-place org change", () => {
 		expectVitest(onB.integrations).toEqual({
 			cloudflare: null,
 			railway: null,
+			vercel: null,
 			planetscale: null,
 			gcp: null,
 			supabase: null,
@@ -531,6 +534,7 @@ describe("infrastructure section", () => {
 					integrations: {
 						cloudflare: true,
 						railway: false,
+						vercel: true,
 						planetscale: false,
 						gcp: false,
 						supabase: false,
@@ -541,6 +545,7 @@ describe("infrastructure section", () => {
 			Mount.resolve(MeasureSidebarOverflow, Message.MeasuredSidebarOverflow()),
 			expect(role("link", { name: "Hosts" })).toExist(),
 			expect(role("link", { name: "Cloudflare" })).toExist(),
+			expect(role("link", { name: "Vercel" })).toHaveAttr("href", "/infra/vercel"),
 			expect(role("link", { name: "Kubernetes" })).toBeAbsent(),
 			expect(role("link", { name: "Railway" })).toBeAbsent(),
 		)

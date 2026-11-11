@@ -135,6 +135,9 @@ export interface InfraMetricChartInputs {
 	readonly className?: string
 	/** The last-value strip above the plot (`header`). */
 	readonly header?: Html
+	/** Drawn over the plot (deploy markers); `reportPlot` makes the chart report its geometry for it. */
+	readonly overlay?: Html
+	readonly reportPlot?: boolean
 }
 
 const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricChartInputs): Html => {
@@ -167,6 +170,8 @@ const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricCha
 								spec: inputs.spec,
 								ariaLabel: inputs.spec.seriesLabel ?? "Utilization",
 								className: "h-full w-full",
+								overlay: inputs.overlay,
+								reportPlot: inputs.reportPlot,
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>
 										tooltip._tag === "Bucket"

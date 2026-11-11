@@ -7,7 +7,7 @@ import { Array as Arr, String as Str } from "effect"
  * The row types restate the warehouse row types structurally.
  */
 
-type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "lambda" | "web" | "unknown"
+type ServicePlatform = "kubernetes" | "cloudflare" | "gcp" | "vercel" | "lambda" | "web" | "unknown"
 
 interface ServiceEdge {
 	sourceService: string
