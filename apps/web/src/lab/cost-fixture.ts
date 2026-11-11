@@ -106,7 +106,7 @@ export const labTotals = (request: Request): CostTotalsResponse => {
 		previousCost: round(Num.sumAll(Arr.flatMap(lines, (entry) => entry.previous))),
 		estimatedDays: lines.length === 0 ? 0 : Math.min(ESTIMATED_DAYS, request.days),
 		currency: lines.length === 0 ? "" : "USD",
-		mixedCurrencies: false,
+		currencies: lines.length === 0 ? [] : ["USD"],
 		days: request.days,
 	})
 }
@@ -146,6 +146,7 @@ export const labTimeseries = (
 		points,
 	})
 	return decodeTimeseries({
+		currency: "USD",
 		days: Arr.makeBy(request.days, (day) => dayAt(request.days - 1 - day)),
 		series: [
 			...Arr.map(Arr.take(ranked, request.limit), (group) => series(group.key, false, group.current)),
@@ -182,7 +183,7 @@ export const labBreakdown = (
 						Math.abs(row.cost - row.previousCost),
 					),
 				)
-	return decodeBreakdown({ rows: Arr.sort(rows, order) })
+	return decodeBreakdown({ currency: "USD", rows: Arr.sort(rows, order) })
 }
 
 type SourceWire = (typeof CostSourcesResponse.Encoded)["sources"][number]

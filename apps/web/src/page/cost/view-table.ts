@@ -101,7 +101,7 @@ const row = (
 	colors: ReadonlyMap<string, string>,
 ): Html => {
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
-	const currency = totals === undefined || totals.mixedCurrencies ? "" : totals.currency
+	const currency = totals === undefined ? "" : totals.currency
 	const label = keyLabel(dimension, entry.key)
 	const filter = { dimension, value: entry.key }
 	const color = colors.get(entry.key)

@@ -29,9 +29,7 @@ const descriptionOf = (model: Model): string => {
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const response = Option.getOrUndefined(AsyncData.getData(model.timeseries.data))
 	const unit =
-		totals === undefined || totals.currency === "" || totals.mixedCurrencies
-			? "Per UTC day."
-			: `${totals.currency} per UTC day.`
+		totals === undefined || totals.currency === "" ? "Per UTC day." : `${totals.currency} per UTC day.`
 	const estimatedFrom = response?.estimatedFrom ?? null
 	return estimatedFrom === null
 		? unit

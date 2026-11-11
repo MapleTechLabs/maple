@@ -25,14 +25,19 @@ const notes = (totals: CostTotalsResponse): ReadonlyArray<string> => [
 					: `The last ${totals.estimatedDays} days are not final yet. The provider can still restate them.`,
 			]
 		: []),
-	...(totals.mixedCurrencies
-		? ["These sums mix more than one currency. Maple adds them up without converting."]
+	// The API reads one currency at a time: the others are named, never added in.
+	...(totals.currencies.length > 1
+		? [
+				`Showing ${totals.currency}. This window also has cost in ${Arr.join(
+					Arr.filter(totals.currencies, (currency) => currency !== totals.currency),
+					", ",
+				)}, which is not added in.`,
+			]
 		: []),
 ]
 
 const figures = (h: H, totals: CostTotalsResponse): Html => {
-	// Mixed currencies have no one symbol: the sums read as plain numbers.
-	const currency = totals.mixedCurrencies ? "" : totals.currency
+	const currency = totals.currency
 	const change = totals.cost - totals.previousCost
 	const lines = notes(totals)
 	return vstack(h, { gap: "2" }, [

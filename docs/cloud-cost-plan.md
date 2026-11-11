@@ -1,8 +1,8 @@
 # Cloud cost: plan
 
-Status: **phase 1 in progress, 2026-11-11.** Phase 0 checked the provider APIs against docs, public
-schemas and one real AWS account. Built so far: the AWS `cost` permission list, `cost_daily` and its
-queries.
+Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
+into `cost_daily` and shown on `/cost`. Phase 0 checked the provider APIs against docs, public
+schemas and one real AWS account. Recommendations (phase 2) and the other providers are not built.
 
 ## Goal
 
@@ -84,25 +84,51 @@ It is a small table (hundreds of rows per source per day), so it needs no rollup
 
 ### Postgres
 
-- `cost_sources`: one row per connection that supplies cost. Capabilities, watermark, lease, last
-  error, the committed `PullVersion` per day window.
-- `cost_recommendations`: followed across runs by `(source, fingerprint)`. Kind, resource, title,
-  estimated monthly saving and currency, effort, risk, evidence (jsonb), origin (`provider` or
-  `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one that comes back
-  reopens. A dismissed one stays dismissed.
+- `cost_sources`: one row per connection that supplies cost. Its lease, frontiers (newest and
+  oldest day pulled), last error and its reason, and the provider requests made this month. A
+  connection that stops supplying cost pauses its source and keeps its history. Only a deleted
+  connection deletes it.
+- `cost_recommendations` (phase 2): followed across runs by `(source, fingerprint)`. Kind,
+  resource, title, estimated monthly saving and currency, effort, risk, evidence (jsonb), origin
+  (`provider` or `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one
+  that comes back reopens. A dismissed one stays dismissed.
 
 ### Sync
 
-A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit). Each source is
-pulled at most a few times a day: the last 3 days on every run, the last 35 days once a day, and
-the previous month again until it stops reporting as estimated.
+A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit). Per source:
+
+- First pull: the previous month through today.
+- Then the last four days about daily, and the open months about weekly. The previous month stays
+  in the weekly pull until one has run after the tenth, so its last pull is after the provider
+  finalizes it.
+- History walks down one calendar month per step, to thirteen months back.
+- A source held for long resumes from its watermark, so no day in between is skipped.
+
+Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
+marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
+
+What bounds the provider's bill for requests:
+
+- One request at a time, two retries, a page cap of two pages per day of the window (never under
+  20), and detail for the 12 largest regions at most.
+- Per source and month: past 500 requests history waits for the next month, past 1,500 the source
+  stops until then.
+- A pull too large to read is held a day. A source whose org left the rollout is not pulled.
+
+### Reads
+
+Every read names the org's cost sources, since a disconnected source keeps its rows, and is scoped
+to one currency: the largest in the window unless the request names one. The response says which
+currency the figures are in and lists the others. Nothing is added across currencies.
 
 ### Surfaces
 
-- Web: a "Cost" section behind the `cloudCost` flag. Overview (spend, change, top movers, open
-  savings), Explorer (group and filter), Recommendations (list and detail with the evidence chart),
-  Sources (what each connection supplies and what to enable).
-- API: `/v2/cost/*`.
+- Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
+  daily chart, a breakdown by service, category, region, usage type or account with filters, and
+  each source's sync state. The AWS connection has a Cost switch. Recommendations (list and detail
+  with the evidence chart) come with phase 2.
+- API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
+  `cost-breakdown`, `cost-sources`). A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -224,4 +250,6 @@ Each phase is one PR stack.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
+- AWS: an account with more than about 5,000 cost rows a day in one region is too large for the
+  Cost Explorer pull. It needs the CUR 2.0 export (phase 5).
 - Packaging: part of every plan, or an add-on.

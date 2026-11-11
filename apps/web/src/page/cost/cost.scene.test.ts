@@ -82,7 +82,7 @@ const totals = (over: Partial<typeof CostTotalsResponse.Encoded> = {}) =>
 		previousCost: 1000,
 		estimatedDays: 2,
 		currency: "USD",
-		mixedCurrencies: false,
+		currencies: ["USD"],
 		days: 30,
 		...over,
 	})
@@ -93,8 +93,10 @@ const timeseries = Schema.decodeSync(CostTimeseriesResponse)({
 		{ key: "", other: false, total: 300, points: [150, 150] },
 	],
 	estimatedFrom: "2026-11-09",
+	currency: "USD",
 })
 const breakdown = Schema.decodeSync(CostBreakdownResponse)({
+	currency: "USD",
 	rows: [
 		{ key: "north-1", cost: 900, previousCost: 600 },
 		{ key: "", cost: 300, previousCost: 400 },
@@ -225,14 +227,15 @@ describe("cost page", () => {
 		)
 	})
 
-	test("sums in several currencies say so and drop the currency symbol", () => {
+	test("a window with cost in several currencies shows one and names the others", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(populated({ groupBy: "region" }, totals({ mixedCurrencies: true }))),
+			given(populated({ groupBy: "region" }, totals({ currencies: ["USD", "EUR", "GBP"] }))),
 			resolveTheme,
-			expectView(text(/These sums mix more than one currency/)).toExist(),
-			expectView(text("1,200.00")).toExist(),
-			expectView(text("$1,200.00")).not.toExist(),
+			expectView(
+				text("Showing USD. This window also has cost in EUR, GBP, which is not added in."),
+			).toExist(),
+			expectView(text("$1,200.00")).toExist(),
 		)
 	})
 
