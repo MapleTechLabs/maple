@@ -30,6 +30,12 @@ const drainWhere = ($: LogColumns, service: string, scope: VercelProjectScope) =
 
 export type VercelSpeedInsightsGroup = "metric" | "route" | "device"
 
+/** One route or device type the Speed Insights readings are narrowed to; the value is a literal. */
+export interface VercelSpeedInsightsFilter {
+	readonly dimension: "route" | "device"
+	readonly value: string
+}
+
 const speedInsightsKey = ($: LogColumns, groupBy: VercelSpeedInsightsGroup) => {
 	switch (groupBy) {
 		case "metric":
@@ -46,7 +52,12 @@ const speedInsightsKey = ($: LogColumns, groupBy: VercelSpeedInsightsGroup) => {
 }
 
 /** The 75th percentile of each Web Vital, overall or per route or device type. */
-export function vercelSpeedInsightsSQL(groupBy: VercelSpeedInsightsGroup, scope: VercelProjectScope = {}) {
+export function vercelSpeedInsightsSQL(
+	groupBy: VercelSpeedInsightsGroup,
+	scope: VercelProjectScope = {},
+	/** Narrows the other groupings; a grouping is never narrowed by its own dimension. */
+	filter?: VercelSpeedInsightsFilter,
+) {
 	return from(Datasources.logs)
 		.select(($) => ({
 			key: speedInsightsKey($, groupBy),
@@ -59,6 +70,9 @@ export function vercelSpeedInsightsSQL(groupBy: VercelSpeedInsightsGroup, scope:
 		.where(($) => [
 			...drainWhere($, SPEED_INSIGHTS_SERVICE, scope),
 			$.LogAttributes.get("vercel.speed_insights.metric").neq(""),
+			filter === undefined || filter.dimension === groupBy
+				? undefined
+				: speedInsightsKey($, filter.dimension).eq(filter.value),
 		])
 		.groupBy("key", "metric")
 		.orderBy(["samples", "desc"])
@@ -71,18 +85,33 @@ const deviceId = ($: LogColumns) => $.LogAttributes.get("vercel.web_analytics.de
 const isPageView = ($: LogColumns) => eventType($).eq("pageview")
 
 /** Page views, the devices behind them, and custom events over the window. */
-export function vercelWebAnalyticsSummarySQL(scope: VercelProjectScope = {}) {
+export function vercelWebAnalyticsSummarySQL(
+	scope: VercelProjectScope = {},
+	filter?: VercelWebAnalyticsFilter,
+) {
 	return from(Datasources.logs)
 		.select(($) => ({
 			pageViews: CH.countIf(isPageView($)),
 			uniqueDevices: CH.uniqIf(deviceId($), isPageView($).and(deviceId($).neq(""))),
 			customEvents: CH.countIf(eventType($).eq("event")),
 		}))
-		.where(($) => drainWhere($, WEB_ANALYTICS_SERVICE, scope))
+		.where(($) => [
+			...drainWhere($, WEB_ANALYTICS_SERVICE, scope),
+			CH.when(filter, (f) => webAnalyticsValue($, f.dimension).eq(f.value)),
+		])
 		.format("JSON")
 }
 
 export type VercelWebAnalyticsDimension = "page" | "referrer" | "country" | "event"
+
+/**
+ * One page, referrer or country the Web Analytics reads are narrowed to; the value is a literal.
+ * Not a custom event: page views and events are separate records with nothing joining them.
+ */
+export interface VercelWebAnalyticsFilter {
+	readonly dimension: "page" | "referrer" | "country"
+	readonly value: string
+}
 
 const webAnalyticsValue = ($: LogColumns, dimension: VercelWebAnalyticsDimension) => {
 	switch (dimension) {
@@ -101,6 +130,8 @@ const webAnalyticsValue = ($: LogColumns, dimension: VercelWebAnalyticsDimension
 export function vercelWebAnalyticsTopSQL(
 	dimension: VercelWebAnalyticsDimension,
 	scope: VercelProjectScope = {},
+	/** Narrows the other tables; a table is never narrowed by its own dimension. */
+	filter?: VercelWebAnalyticsFilter,
 ) {
 	return from(Datasources.logs)
 		.select(($) => ({
@@ -112,6 +143,9 @@ export function vercelWebAnalyticsTopSQL(
 			...drainWhere($, WEB_ANALYTICS_SERVICE, scope),
 			dimension === "event" ? eventType($).eq("event") : isPageView($),
 			webAnalyticsValue($, dimension).neq(""),
+			filter === undefined || filter.dimension === dimension
+				? undefined
+				: webAnalyticsValue($, filter.dimension).eq(filter.value),
 		])
 		.groupBy("value")
 		.orderBy(["count", "desc"])

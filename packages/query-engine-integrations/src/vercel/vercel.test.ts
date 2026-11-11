@@ -150,6 +150,28 @@ describe("vercelFunctionRouteTimeseriesSQL", () => {
 	})
 })
 
+describe("real users filters", () => {
+	it("narrow the other Speed Insights groupings and Web Analytics tables, never their own", () => {
+		const device = { dimension: "device", value: "mobile" } as const
+		expect(
+			compileUnsafe(vercelSpeedInsightsSQL("route", { projectId: "prj_1" }, device), window).sql,
+		).toContain("= 'mobile'")
+		expect(
+			compileUnsafe(vercelSpeedInsightsSQL("device", { projectId: "prj_1" }, device), window).sql,
+		).not.toContain("= 'mobile'")
+		const country = { dimension: "country", value: "DE" } as const
+		expect(
+			compileUnsafe(vercelWebAnalyticsSummarySQL({ projectId: "prj_1" }, country), window).sql,
+		).toContain("logs.LogAttributes['geo.country.iso_code'] = 'DE'")
+		expect(
+			compileUnsafe(vercelWebAnalyticsTopSQL("page", { projectId: "prj_1" }, country), window).sql,
+		).toContain("= 'DE'")
+		expect(
+			compileUnsafe(vercelWebAnalyticsTopSQL("country", { projectId: "prj_1" }, country), window).sql,
+		).not.toContain("= 'DE'")
+	})
+})
+
 describe("request filters", () => {
 	it("narrow the request series and the other breakdowns, never a breakdown by its own dimension", () => {
 		const filter = { dimension: "region", value: "iad1" } as const

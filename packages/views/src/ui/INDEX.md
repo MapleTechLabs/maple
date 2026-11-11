@@ -79,6 +79,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/icon-button.ts` `iconButton`: An icon-only Button that always carries a name and, by default, a tooltip.
 - `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `packages/views/src/ui/identity-label.ts` `identityLabel`: `IdentityLabel`: the name-over-detail text beside an avatar in an account or org trigger, a grid of truncating lines that fills the rest of the row.
+- `packages/views/src/ui/info-hint.ts` `infoHint`: `InfoHint`: a small question mark beside a label that explains it in the app's tooltip, on hover or keyboard focus.
 - `packages/views/src/ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
 - `packages/views/src/ui/inline-rename-input.ts` `inlineRenameInput`: `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box.
 - `packages/views/src/ui/input-group.ts` `inputGroup`, `inputGroupAddon`, `inputGroupText`, `inputGroupButton`, `inputGroupInput`: One bordered control holding addons and an unstyled input.

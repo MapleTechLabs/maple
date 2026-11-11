@@ -281,6 +281,21 @@ const requestFilter = (payload: {
 		? undefined
 		: { dimension: payload.filterBy, value: payload.filterValue }
 
+const speedInsightsFilter = (
+	payload: VercelInfraWindowRequest,
+): Integrations.VercelSpeedInsightsFilter | undefined =>
+	payload.filterValue === undefined || (payload.filterBy !== "route" && payload.filterBy !== "device")
+		? undefined
+		: { dimension: payload.filterBy, value: payload.filterValue }
+
+const webAnalyticsFilter = (
+	payload: VercelInfraWindowRequest,
+): Integrations.VercelWebAnalyticsFilter | undefined =>
+	payload.filterValue === undefined ||
+	(payload.filterBy !== "page" && payload.filterBy !== "referrer" && payload.filterBy !== "country")
+		? undefined
+		: { dimension: payload.filterBy, value: payload.filterValue }
+
 const vercelBucketed = (payload: VercelInfraTimeseriesRequest, orgId: OrgId) => ({
 	...vercelWindow(payload, orgId),
 	bucketSeconds: Math.max(60, Math.floor(payload.bucketSeconds)),
@@ -469,7 +484,11 @@ const vercelSpeedInsightsMetrics = defineQuery({
 	cache: 15,
 	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
 		CH.compile(
-			Integrations.vercelSpeedInsightsSQL("metric", { projectId: payload.projectId }),
+			Integrations.vercelSpeedInsightsSQL(
+				"metric",
+				{ projectId: payload.projectId },
+				speedInsightsFilter(payload),
+			),
 			vercelWindow(payload, orgId),
 		),
 })
@@ -480,7 +499,11 @@ const vercelSpeedInsightsRoutes = defineQuery({
 	cache: 15,
 	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
 		CH.compile(
-			Integrations.vercelSpeedInsightsSQL("route", { projectId: payload.projectId }),
+			Integrations.vercelSpeedInsightsSQL(
+				"route",
+				{ projectId: payload.projectId },
+				speedInsightsFilter(payload),
+			),
 			vercelWindow(payload, orgId),
 		),
 })
@@ -491,7 +514,11 @@ const vercelSpeedInsightsDevices = defineQuery({
 	cache: 15,
 	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
 		CH.compile(
-			Integrations.vercelSpeedInsightsSQL("device", { projectId: payload.projectId }),
+			Integrations.vercelSpeedInsightsSQL(
+				"device",
+				{ projectId: payload.projectId },
+				speedInsightsFilter(payload),
+			),
 			vercelWindow(payload, orgId),
 		),
 })
@@ -502,7 +529,10 @@ const vercelWebAnalyticsSummary = defineQuery({
 	cache: 15,
 	compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
 		CH.compile(
-			Integrations.vercelWebAnalyticsSummarySQL({ projectId: payload.projectId }),
+			Integrations.vercelWebAnalyticsSummarySQL(
+				{ projectId: payload.projectId },
+				webAnalyticsFilter(payload),
+			),
 			vercelWindow(payload, orgId),
 		),
 })
@@ -514,7 +544,11 @@ const vercelWebAnalyticsTop = (id: string, dimension: Integrations.VercelWebAnal
 		cache: 15,
 		compile: (payload: VercelInfraWindowRequest, orgId: OrgId) =>
 			CH.compile(
-				Integrations.vercelWebAnalyticsTopSQL(dimension, { projectId: payload.projectId }),
+				Integrations.vercelWebAnalyticsTopSQL(
+					dimension,
+					{ projectId: payload.projectId },
+					webAnalyticsFilter(payload),
+				),
 				vercelWindow(payload, orgId),
 			),
 	})

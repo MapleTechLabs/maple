@@ -17,6 +17,7 @@ import {
 	DEPLOYMENTS_LIMIT,
 	type FunctionSeriesInput,
 	seriesInput,
+	type WindowInput,
 } from "../data"
 import type { VercelIntegrationStatus } from "@maple/domain/http"
 import type { VercelBreakdownBy, VercelProjectTab } from "../../../../route/search"
@@ -190,8 +191,17 @@ const sync = (
 	const functionSeriesInput: FunctionSeriesInput = host === undefined ? byRoute : { ...byRoute, host }
 	const functionSeriesKey = requestKey(org, "getVercelFunctionTimeseries", { data: functionSeriesInput })
 	const dependenciesKey = requestKey(org, "getVercelDependencies", { data: detailInput })
-	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: detailInput })
-	const webKey = requestKey(org, "getVercelWebAnalytics", { data: detailInput })
+	const { vitalsBy, vitalsValue, visitsBy, visitsValue } = model.search
+	const speedInput: WindowInput =
+		vitalsBy === undefined || vitalsValue === undefined
+			? detailInput
+			: { ...detailInput, filterBy: vitalsBy, filterValue: vitalsValue }
+	const webInput: WindowInput =
+		visitsBy === undefined || visitsValue === undefined
+			? detailInput
+			: { ...detailInput, filterBy: visitsBy, filterValue: visitsValue }
+	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: speedInput })
+	const webKey = requestKey(org, "getVercelWebAnalytics", { data: webInput })
 	return {
 		model: {
 			...withDeployments,
@@ -226,10 +236,10 @@ const sync = (
 				FetchDependencies({ key: dependenciesKey, input: detailInput }),
 			),
 			speedInsights: take("speedInsights", model.speedInsights, speedKey, () =>
-				FetchSpeedInsights({ key: speedKey, input: detailInput }),
+				FetchSpeedInsights({ key: speedKey, input: speedInput }),
 			),
 			webAnalytics: take("webAnalytics", model.webAnalytics, webKey, () =>
-				FetchWebAnalytics({ key: webKey, input: detailInput }),
+				FetchWebAnalytics({ key: webKey, input: webInput }),
 			),
 		},
 		commands,
@@ -356,6 +366,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model.search,
 				host: host === null || host === model.search.host ? undefined : host,
 			}),
+		ClickedVitalsRow: ({ by, value }) => {
+			const isPicked = model.search.vitalsBy === by && model.search.vitalsValue === value
+			return value === null || isPicked
+				? navigate(model, { ...model.search, vitalsBy: undefined, vitalsValue: undefined })
+				: navigate(model, { ...model.search, vitalsBy: by, vitalsValue: value })
+		},
+		ClickedVisitsRow: ({ by, value }) => {
+			const isPicked = model.search.visitsBy === by && model.search.visitsValue === value
+			return value === null || isPicked
+				? navigate(model, { ...model.search, visitsBy: undefined, visitsValue: undefined })
+				: navigate(model, { ...model.search, visitsBy: by, visitsValue: value })
+		},
 		ClickedBreakdownRow: ({ value }) => {
 			const dimension = breakdownByOf(model)
 			const isPicked = model.search.filterBy === dimension && model.search.filterValue === value

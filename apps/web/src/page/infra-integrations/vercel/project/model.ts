@@ -100,6 +100,13 @@ export const Message = defineMessageUnion({
 	ClickedDependencyHost: { host: Schema.NullOr(Schema.String) },
 	/** A breakdown row: narrows the traffic tab to its value, or back when it is already picked. */
 	ClickedBreakdownRow: { value: Schema.NullOr(Schema.String) },
+	/** A Speed Insights route or device row: narrows the vitals to it, or back. */
+	ClickedVitalsRow: { by: Schema.Literals(["route", "device"]), value: Schema.NullOr(Schema.String) },
+	/** A Web Analytics page, referrer or country row: narrows the visits to it, or back. */
+	ClickedVisitsRow: {
+		by: Schema.Literals(["page", "referrer", "country"]),
+		value: Schema.NullOr(Schema.String),
+	},
 	ClickedRetryDependencies: {},
 	ClickedRetrySpeedInsights: {},
 	ClickedRetryWebAnalytics: {},

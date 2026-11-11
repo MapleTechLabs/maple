@@ -80,6 +80,9 @@ export const WindowInput = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
 	projectId: Schema.optional(Schema.String),
+	/** A Real users filter: a route or device (Speed Insights), a page, referrer or country (Web Analytics). */
+	filterBy: Schema.optional(Schema.Literals(["route", "device", "page", "referrer", "country"])),
+	filterValue: Schema.optional(Schema.String),
 })
 export type WindowInput = typeof WindowInput.Type
 

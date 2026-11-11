@@ -397,11 +397,25 @@ const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyAr
 				speedInsightsSection(h, {
 					read: { data: model.speedInsights.data, onRetry: Message.ClickedRetrySpeedInsights() },
 					enabled: status?.speedInsightsEnabled ?? true,
+					pick: {
+						picked:
+							model.search.vitalsBy === undefined || model.search.vitalsValue === undefined
+								? null
+								: { by: model.search.vitalsBy, value: model.search.vitalsValue },
+						onPick: (by, value) => Message.ClickedVitalsRow({ by, value }),
+					},
 				}),
 				webAnalyticsSection(h, {
 					read: { data: model.webAnalytics.data, onRetry: Message.ClickedRetryWebAnalytics() },
 					enabled: status?.webAnalyticsEnabled ?? true,
 					compact: false,
+					pick: {
+						picked:
+							model.search.visitsBy === undefined || model.search.visitsValue === undefined
+								? null
+								: { by: model.search.visitsBy, value: model.search.visitsValue },
+						onPick: (by, value) => Message.ClickedVisitsRow({ by, value }),
+					},
 				}),
 			]
 		case "aiGateway":

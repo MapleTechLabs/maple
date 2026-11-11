@@ -38,6 +38,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { removableChip } from "@maple/views/ui/removable-chip"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
@@ -47,7 +48,15 @@ import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { integrationLinkActions } from "../kit/empty-states"
-import { type Clock, dataOf, failureOf, LEAD_COLUMN, pickableRow, ROW_CLASS } from "./view-parts"
+import {
+	type Clock,
+	dataOf,
+	failureOf,
+	LEAD_COLUMN,
+	pickableRow,
+	ROW_CLASS,
+	type RowPick,
+} from "./view-parts"
 
 // The sections the Vercel overview and project pages share. Each draws its own failed, loading,
 // empty and drain-off state, so a page composes them without checking first.
@@ -556,6 +565,8 @@ const vitalsTable = <M>(
 	title: string,
 	keyLabel: string,
 	readings: VercelSpeedInsightsResponse["routes"],
+	by: VitalsDimension,
+	pick: SectionPick<VitalsDimension, M> | undefined,
 ): Html => {
 	const rows = vitalsByKey(readings)
 	return h.section(
@@ -585,51 +596,95 @@ const vitalsTable = <M>(
 				rows.length === 0
 					? [dataTableEmpty(h, ["No readings in this window"])]
 					: Arr.map(rows, (row) =>
-							h.div(
-								[h.Key(row.key), h.Class(ROW_CLASS)],
-								[
-									typography(
-										h,
-										{
-											size: "xs",
-											tone: "foreground",
-											mono: true,
-											truncate: true,
-											className: "w-0 min-w-[160px] flex-1",
-											attributes: [h.Title(row.key)],
-										},
-										[row.key === "" ? "(unknown)" : row.key],
-									),
-									...Arr.map(WEB_VITALS, (metric) => {
-										const p75 = row.p75[metric]
-										return h.span(
-											[
-												h.Class(
-													cn(
-														NUM,
-														"w-[64px]",
-														p75 === undefined
-															? undefined
-															: TONE_TEXT[
-																	RATING_TONE[vitalRating(metric, p75)]
-																],
-													),
+							pickableRow(h, { key: row.key, pick: rowPick(pick, by, row.key) }, [
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "foreground",
+										mono: true,
+										truncate: true,
+										className: "w-0 min-w-[160px] flex-1",
+										attributes: [h.Title(row.key)],
+									},
+									[row.key === "" ? "(unknown)" : row.key],
+								),
+								...Arr.map(WEB_VITALS, (metric) => {
+									const p75 = row.p75[metric]
+									return h.span(
+										[
+											h.Class(
+												cn(
+													NUM,
+													"w-[64px]",
+													p75 === undefined
+														? undefined
+														: TONE_TEXT[RATING_TONE[vitalRating(metric, p75)]],
 												),
-											],
-											[vitalText(metric, p75)],
-										)
-									}),
-									h.span(
-										[h.Class(cn(NUM, "hidden w-[72px] md:block"))],
-										[formatNumber(row.samples)],
-									),
-								],
-							),
+											),
+										],
+										[vitalText(metric, p75)],
+									)
+								}),
+								h.span(
+									[h.Class(cn(NUM, "hidden w-[72px] md:block"))],
+									[formatNumber(row.samples)],
+								),
+							]),
 						),
 			),
 		],
 	)
 }
+
+/** Rows that narrow their section to one value (the web analytics breakdowns' behaviour). */
+export type SectionPick<D extends string, M> = Readonly<{
+	/** The picked dimension and value, or null when nothing is picked. */
+	picked: Readonly<{ by: D; value: string }> | null
+	/** A row's click, or (with null) the chip's way back to everything. */
+	onPick: (by: D, value: string | null) => M
+}>
+
+/** The picked value above a section's figures, removable. */
+const pickedLine = <D extends string, M>(
+	h: HtmlBuilder<M>,
+	pick: SectionPick<D, M> | undefined,
+	labels: Readonly<Record<D, string>>,
+): ReadonlyArray<Html> =>
+	pick === undefined || pick.picked === null
+		? []
+		: [
+				hstack(h, { gap: "2" }, [
+					typography(h, { size: "xs", tone: "muted" }, ["Showing"]),
+					removableChip(h, {
+						label: `${labels[pick.picked.by]} = ${pick.picked.value === "" ? "(none)" : pick.picked.value}`,
+						onRemove: pick.onPick(pick.picked.by, null),
+					}),
+				]),
+			]
+
+/** A row's toggle within a section's pick, when the section has one. */
+const rowPick = <D extends string, M>(
+	pick: SectionPick<D, M> | undefined,
+	by: D,
+	value: string,
+): RowPick<M> | undefined =>
+	pick === undefined
+		? undefined
+		: {
+				isSelected: pick.picked !== null && pick.picked.by === by && pick.picked.value === value,
+				onClick: pick.onPick(by, value),
+			}
+
+type VitalsDimension = "route" | "device"
+const VITALS_LABELS = { route: "route", device: "device" } as const satisfies Record<VitalsDimension, string>
+
+type VisitsDimension = "page" | "referrer" | "country"
+const VISITS_LABELS = {
+	page: "page",
+	referrer: "referrer",
+	country: "country",
+} as const satisfies Record<VisitsDimension, string>
 
 const SPEED_INSIGHTS_OFF: DrainOff = {
 	lead: "Speed Insights is off.",
@@ -639,20 +694,30 @@ const SPEED_INSIGHTS_OFF: DrainOff = {
 /** p75 of each Web Vital, rated; by route and device when the read is one project's. */
 export const speedInsightsSection = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ read: SectionRead<VercelSpeedInsightsResponse, M>; enabled: boolean }>,
+	options: Readonly<{
+		read: SectionRead<VercelSpeedInsightsResponse, M>
+		enabled: boolean
+		/** Route and device rows narrow the vitals and the other table to them. */
+		pick?: SectionPick<VitalsDimension, M>
+	}>,
 ): Html =>
 	readSection(h, {
 		title: "Speed Insights",
-		hint: "p75 from real visits",
+		hint:
+			options.pick === undefined
+				? "p75 from real visits"
+				: "p75 from real visits · click a route or device to narrow to it",
 		read: options.read,
 		off: options.enabled ? null : SPEED_INSIGHTS_OFF,
 		failure: "Couldn't load Speed Insights",
 		loading: () => [statRailLoading(h, 5, 5)],
 		body: (data) => {
 			const overall = vitalsByKey(data.metrics)[0]
+			const picked = pickedLine(h, options.pick, VITALS_LABELS)
 			if (overall === undefined)
-				return [dataTableEmpty(h, ["No Speed Insights readings in this window"])]
+				return [...picked, dataTableEmpty(h, ["No Speed Insights readings in this window"])]
 			return [
+				...picked,
 				statRail(
 					h,
 					{ columns: 5 },
@@ -676,9 +741,25 @@ export const speedInsightsSection = <M>(
 								[
 									h.div(
 										[h.Class("xl:col-span-2")],
-										[vitalsTable(h, "By route", "Route", data.routes)],
+										[
+											vitalsTable(
+												h,
+												"By route",
+												"Route",
+												data.routes,
+												"route",
+												options.pick,
+											),
+										],
 									),
-									vitalsTable(h, "By device", "Device", data.devices),
+									vitalsTable(
+										h,
+										"By device",
+										"Device",
+										data.devices,
+										"device",
+										options.pick,
+									),
 								],
 							),
 						]),
@@ -700,6 +781,9 @@ const topTable = <M>(
 		label: string
 		countLabel: string
 		rows: ReadonlyArray<VercelWebAnalyticsTop>
+		/** The dimension a click narrows by; custom events have none. */
+		by?: VisitsDimension
+		pick?: SectionPick<VisitsDimension, M>
 	}>,
 ): Html =>
 	h.section(
@@ -717,8 +801,15 @@ const topTable = <M>(
 				options.rows.length === 0
 					? [dataTableEmpty(h, ["None in this window"])]
 					: Arr.map(options.rows, (row) =>
-							h.div(
-								[h.Key(row.value), h.Class(ROW_CLASS)],
+							pickableRow(
+								h,
+								{
+									key: row.value,
+									pick:
+										options.by === undefined
+											? undefined
+											: rowPick(options.pick, options.by, row.value),
+								},
 								[
 									typography(
 										h,
@@ -748,25 +839,34 @@ export const webAnalyticsSection = <M>(
 		read: SectionRead<VercelWebAnalyticsResponse, M>
 		enabled: boolean
 		compact: boolean
+		/** Page, referrer and country rows narrow the figures and the other tables to them. */
+		pick?: SectionPick<VisitsDimension, M>
 	}>,
 ): Html =>
 	readSection(h, {
 		title: "Web Analytics",
-		hint: "from Vercel Web Analytics",
+		hint:
+			options.pick === undefined
+				? "from Vercel Web Analytics"
+				: "from Vercel Web Analytics · click a page, referrer or country to narrow to it",
 		read: options.read,
 		off: options.enabled ? null : WEB_ANALYTICS_OFF,
 		failure: "Couldn't load Web Analytics",
 		loading: () => [statRailLoading(h, 3, 3)],
 		body: (data) => {
+			const picked = pickedLine(h, options.pick, VISITS_LABELS)
 			if (data.summary.pageViews === 0 && data.summary.customEvents === 0)
-				return [dataTableEmpty(h, ["No page views in this window"])]
+				return [...picked, dataTableEmpty(h, ["No page views in this window"])]
 			const pages = topTable(h, {
 				title: "Top pages",
 				label: "Path",
 				countLabel: "Views",
 				rows: data.pages,
+				by: "page",
+				pick: options.pick,
 			})
 			return [
+				...picked,
 				statRail(h, { columns: 3 }, [
 					statRailItem(h, { eyebrow: "Page views", value: formatNumber(data.summary.pageViews) }),
 					statRailItem(h, {
@@ -790,12 +890,16 @@ export const webAnalyticsSection = <M>(
 									label: "Referrer",
 									countLabel: "Views",
 									rows: data.referrers,
+									by: "referrer",
+									pick: options.pick,
 								}),
 								topTable(h, {
 									title: "Countries",
 									label: "Country",
 									countLabel: "Views",
 									rows: data.countries,
+									by: "country",
+									pick: options.pick,
 								}),
 								topTable(h, {
 									title: "Custom events",

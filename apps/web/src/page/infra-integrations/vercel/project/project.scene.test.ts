@@ -474,11 +474,53 @@ describe("vercel project", () => {
 			themeResolved(),
 			expectView(text("/products/[slug]")).toExist(),
 			expectView(text("https://news.ycombinator.com")).toExist(),
-			// Each vital explains itself on hover, in the tiles and the table heads alike.
-			expectView(text("LCP", { exact: true })).toHaveAttr(
+			// Each vital has a question mark beside it that explains it on hover.
+			expectView(
+				role("img", {
+					name: "Largest Contentful Paint: how long until the main content of the page shows up.",
+				}),
+			).toHaveAttr(
 				"data-tooltip",
 				"Largest Contentful Paint: how long until the main content of the page shows up.",
 			),
+		)
+	})
+
+	test("real users narrow by a route, device, page, referrer or country row, each section on its own", () => {
+		const users = answered(opened("users"))
+		expect(
+			pageUpdate(users, Message.ClickedVitalsRow({ by: "route", value: "/products/[slug]" }))
+				.outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=users&vitalsBy=route&vitalsValue=%2Fproducts%2F%5Bslug%5D",
+				isReplace: false,
+			}),
+		)
+		const narrowed = opened("users", VERCEL_ALL_DRAINS_STATUS, {
+			vitalsBy: "device",
+			vitalsValue: "mobile",
+			visitsBy: "country",
+			visitsValue: "DE",
+		})
+		expect(narrowed.speedInsights.key).toContain("mobile")
+		expect(narrowed.speedInsights.key).not.toContain("DE")
+		expect(narrowed.webAnalytics.key).toContain("DE")
+		expect(narrowed.webAnalytics.key).not.toContain("mobile")
+		expect(
+			pageUpdate(narrowed, Message.ClickedVisitsRow({ by: "country", value: null })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=users&vitalsBy=device&vitalsValue=mobile",
+				isReplace: false,
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(narrowed)),
+			themeResolved(),
+			expectView(text("device = mobile")).toExist(),
+			expectView(text("country = DE")).toExist(),
 		)
 	})
 

@@ -6,7 +6,7 @@ import { divTableHead, sortButton } from "@maple/views/ui/table"
 import type { SortDir } from "./table-sort"
 import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
-import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { infoHint } from "@maple/views/ui/info-hint"
 
 // A sortable data table: its column heads, numeric cells, row links, and empty and skeleton rows.
 
@@ -38,12 +38,9 @@ export type ColumnHeadOptions<M> = Readonly<{
 	sort?: Readonly<{ isActive: boolean; dir: SortDir; onSort?: M }>
 	align?: "left" | "right"
 	hidden?: string
-	/** What the column means, on hover; the label gets a dotted underline. */
+	/** What the column means: a question mark beside the label that explains it on hover (`infoHint`). */
 	tooltip?: string
 }>
-
-/** A label that explains itself on hover. */
-export const HINTED_LABEL = "cursor-help underline decoration-dotted underline-offset-2"
 
 /** A column head in the kit's table-head type; a sortable one is the kit `sortButton`. */
 export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>): Html => {
@@ -60,12 +57,12 @@ export const columnHead = <M>(h: HtmlBuilder<M>, options: ColumnHeadOptions<M>):
 		},
 		[
 			sort?.onSort === undefined
-				? h.span(
-						options.tooltip === undefined
-							? []
-							: [h.Class(HINTED_LABEL), ...tooltipTrigger(h, options.tooltip)],
-						[options.label],
-					)
+				? options.tooltip === undefined
+					? h.span([], [options.label])
+					: hstack(h, { gap: "1", as: "span" }, [
+							h.span([], [options.label]),
+							infoHint(h, options.tooltip),
+						])
 				: sortButton(
 						h,
 						{

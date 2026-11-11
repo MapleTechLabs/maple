@@ -8,6 +8,7 @@ import {
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
 	VercelInfraWindowRequest,
+	VercelRealUsersDimension,
 } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -57,6 +58,9 @@ const ProjectInputSchema = Schema.Struct({
 const WindowInputSchema = Schema.Struct({
 	...TimeRangeInputSchema.fields,
 	projectId: Schema.optional(Schema.String),
+	/** A Real users filter: a route or device (Speed Insights), a page, referrer or country (Web Analytics). */
+	filterBy: Schema.optional(VercelRealUsersDimension),
+	filterValue: Schema.optional(Schema.String),
 })
 
 const BreakdownInputSchema = Schema.Struct({
@@ -208,9 +212,11 @@ export const getVercelAiGateway = Effect.fn("QueryEngine.getVercelAiGateway")(fu
 
 const windowRequest = (input: (typeof WindowInputSchema)["Type"], nowMillis: number) => {
 	const range = resolveRange(input, nowMillis)
-	return input.projectId === undefined
-		? new VercelInfraWindowRequest(range)
-		: new VercelInfraWindowRequest({ ...range, projectId: input.projectId })
+	const filter =
+		input.filterBy === undefined || input.filterValue === undefined
+			? {}
+			: { filterBy: input.filterBy, filterValue: input.filterValue }
+	return new VercelInfraWindowRequest({ ...range, ...present("projectId", input.projectId), ...filter })
 }
 
 export const getVercelFunctions = Effect.fn("QueryEngine.getVercelFunctions")(function* ({

@@ -33,9 +33,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { type TypographyTone, typography } from "@maple/views/ui/typography"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
-import { HINTED_LABEL } from "../../../kit/data-table"
-import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { cn } from "@maple/ui/lib/utils"
+import { infoHint } from "@maple/views/ui/info-hint"
 import { thresholdScale } from "../../../kit/threshold-scale"
 import { drainNotice } from "../sections"
 import { dataOf, failureOf } from "../view-parts"
@@ -219,17 +217,10 @@ const vitalRows = (h: H, data: VercelSpeedInsightsResponse): ReadonlyArray<Html>
 					const [good, poor] = VITAL_THRESHOLDS[metric]
 					return [
 						hstack(h, { gap: "3" }, [
-							typography(
-								h,
-								{
-									size: "xs",
-									tone: "soft",
-									mono: true,
-									className: cn("w-10 shrink-0", HINTED_LABEL),
-									attributes: tooltipTrigger(h, VITAL_EXPLAINERS[metric]),
-								},
-								[metric],
-							),
+							hstack(h, { gap: "1", className: "w-14 shrink-0" }, [
+								typography(h, { size: "xs", tone: "soft", mono: true }, [metric]),
+								infoHint(h, VITAL_EXPLAINERS[metric]),
+							]),
 							typography(
 								h,
 								{

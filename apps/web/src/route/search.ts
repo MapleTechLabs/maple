@@ -810,6 +810,12 @@ export const InfraVercelProjectSearch = Schema.Struct({
 	/** Narrows the traffic tab to one breakdown value: the dimension, then `filterValue`. */
 	filterBy: Schema.optional(VercelBreakdownBy),
 	filterValue: StringParam,
+	/** Narrows Speed Insights to one route or device type. */
+	vitalsBy: Schema.optional(Schema.Literals(["route", "device"])),
+	vitalsValue: StringParam,
+	/** Narrows Web Analytics to one page, referrer or country. */
+	visitsBy: Schema.optional(Schema.Literals(["page", "referrer", "country"])),
+	visitsValue: StringParam,
 	...TimeRangeSearchFields,
 })
 

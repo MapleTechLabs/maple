@@ -969,6 +969,13 @@ export class VercelAiGatewayResponse extends Schema.Class<VercelAiGatewayRespons
 ) {}
 
 /** A window, for every project or one. */
+/**
+ * What a Real users read is narrowed to: a route or device type for Speed Insights, a page,
+ * referrer or country for Web Analytics. Each read ignores the other's dimensions.
+ */
+export const VercelRealUsersDimension = Schema.Literals(["route", "device", "page", "referrer", "country"])
+export type VercelRealUsersDimension = typeof VercelRealUsersDimension.Type
+
 export class VercelInfraWindowRequest extends Schema.Class<VercelInfraWindowRequest>(
 	"VercelInfraWindowRequest",
 )({
@@ -976,6 +983,8 @@ export class VercelInfraWindowRequest extends Schema.Class<VercelInfraWindowRequ
 	endTime: TinybirdDateTime,
 	/** Every project when absent. */
 	projectId: Schema.optionalKey(VercelProjectId),
+	filterBy: Schema.optionalKey(VercelRealUsersDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
 }) {}
 
 /** One route of a project: the function behind it, from the trace drain's platform spans. */

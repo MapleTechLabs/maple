@@ -36,7 +36,9 @@ export {
 	vercelSpeedInsightsSQL,
 	vercelWebAnalyticsSummarySQL,
 	vercelWebAnalyticsTopSQL,
+	type VercelSpeedInsightsFilter,
 	type VercelSpeedInsightsGroup,
+	type VercelWebAnalyticsFilter,
 	type VercelWebAnalyticsDimension,
 } from "./vercel-event-drains"
 export {
