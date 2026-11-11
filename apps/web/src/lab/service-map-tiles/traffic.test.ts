@@ -89,13 +89,20 @@ describe("a round trip", () => {
 
 	it("runs a train to the far station and back again in reverse, never gone", () => {
 		const fleet = makeTraffic([route("c>d", "train", 5)], tilePalette(false))
-		// One trip is a little over eighteen units at one unit a second: look once a second for one trip.
+		// One trip is a little over seventeen units at one unit a second: look once a second for one trip.
+		const atBuffer = { ever: false }
 		const noses = Arr.map(Arr.range(0, 18), () => {
 			const at = whereOn(fleet, "c>d", 5)
-			runFor(fleet, 1)
+			// The far end is looked at four times a second: the engine waits there under a second.
+			Arr.forEach(Arr.range(1, 4), () => {
+				atBuffer.ever = atBuffer.ever || fleet.under(down(10, 5)) !== null
+				runFor(fleet, 0.25)
+			})
 			return Math.max(...at, -1)
 		})
 		expect(Arr.every(noses, (nose) => nose >= 0)).toBe(true)
+		// It pulls up short of the far buffer instead of running into it.
+		expect(atBuffer.ever).toBe(false)
 		expect(Math.max(...noses)).toBeGreaterThan(9.5)
 		// Out and home again within one trip, with no jump between two looks a second apart.
 		expect(noses[noses.length - 1] ?? 9).toBeLessThan(3)

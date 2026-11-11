@@ -58,6 +58,8 @@ const PUFFS = 3
 const LANE = 0.085
 /** How far behind its engine, or the wagon in front, a wagon rides. */
 export const COUPLING = 0.66
+/** How far short of the far buffer an engine stops: half its own length and a little air. */
+const BUFFER = 0.42
 /** The share of each leg of a train's trip it spends standing at the station. */
 const DWELL = 0.1
 
@@ -244,7 +246,7 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		const legs = legsOf(Arr.map(route.points, (point) => new THREE.Vector3(...point)))
 		// The engine stops where its last wagon is still clear of the buffer.
 		const home = route.count * COUPLING + 0.3
-		const reach = lengthOf(legs) - home
+		const reach = lengthOf(legs) - home - BUFFER
 		if (reach <= 0) return []
 		const slot = next.engine++
 		meshes.engine.setColorAt(slot, new THREE.Color(route.color))
