@@ -112,7 +112,7 @@ The trace drain forwards these spans to Maple. You do not need to configure an e
   - **AI Gateway**, **Speed Insights** (p75 Web Vitals by route and device) and **Web Analytics** (page views, devices, top pages, referrers, countries and custom events).
 
   A section whose drain is off says so and links to the setting that turns it on.
-- **Service map**: each project with its outbound calls, from its function spans.
+- **Service map**: each project with its outbound calls, from its function spans, and an edge from `vercel.edge-network` to every project it invokes. A project's Infrastructure tab links to its Vercel project page.
 - [Logs](/docs/explore/logs): filter by `service.name` (the project name) or `vercel.project.id`. Speed Insights, Web Analytics and audit log events are under their own `service.name`.
 - [Traces](/docs/explore/traces): your `@vercel/otel` service, the deployment traces, and `ai-gateway`.
 - **Dashboards**: the **Vercel** template charts requests, cache, errors and AI Gateway usage.

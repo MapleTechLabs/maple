@@ -443,6 +443,7 @@ describe("service map page: where a service runs", () => {
 					railwayServiceId: "",
 					railwayEnvironmentId: "",
 					railwayEnvironmentName: "",
+					vercelProjectId: "",
 				},
 			],
 		})
