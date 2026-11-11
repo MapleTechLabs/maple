@@ -1,5 +1,7 @@
 import { encodeJson } from "@maple/views/data/request-key"
-import { Array as Arr, Option, Order } from "effect"
+import { Array as Arr, Option, Order, Record as Rec } from "effect"
+import * as THREE from "three"
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { quacker } from "../../page/service-map/three/quack"
 import { health, HEALTH_COLOR } from "../../page/service-map/three/spatial-layout"
 import { SPRITES } from "./art/sprites.generated"
@@ -11,22 +13,16 @@ import {
 	cellKey,
 	cellToPoint,
 	corners,
+	HEX_SIZE,
 	hexDistance,
+	ORIGIN,
 	type Point,
 	pointToCell,
 	sameCell,
 } from "./hex"
-import {
-	DUCK_LOOP,
-	type GroundName,
-	INRADIUS,
-	lakeArt,
-	type Placed,
-	PX,
-	serviceArt,
-	type TileArt,
-	wildArt,
-} from "./pixel-layout"
+import { type Bill, type Billboards, GROUND, makeBillboards } from "./pixel-billboards"
+import { type Frame, type Land, makePainter, northFirst, type Painter } from "./pixel-ground"
+import { DUCK_LOOP, lakeArt, PX, serviceArt, type TileArt, wildArt } from "./pixel-layout"
 import { railNetwork } from "./rails"
 import {
 	isLoaded,
@@ -38,6 +34,7 @@ import {
 	type Train,
 	wagonsOf,
 } from "./signalling"
+import { band, fuse, part, type Vec3 } from "./solid"
 import { makeSounds } from "./sounds"
 import { featureOf } from "./wild"
 import {
@@ -50,52 +47,40 @@ import {
 	type SceneInput,
 } from "./world"
 
-// The pixel-art map: the same board, roads, railways and traffic as the 3D scene, drawn in 2D
-// from a sheet of hand-pixelled sprites. Everything is laid out in art pixels and the camera
-// scales whole pixels, so at a whole-number zoom every art pixel is a square block on screen.
+// The pixel-art map in 3D. The ground is painted flat from the sprite sheet and laid over raised
+// hex tiles; houses, trees, trains and ducks are sprites standing on it that turn to face the
+// camera. The same sun, moon and lamps as the painted look light them, and they cast shadows.
 
 const LABEL_ATTRIBUTE = "data-tile-label"
 const DRAG_TOLERANCE = 5
-/** Traffic and water are drawn at about 30 frames a second. */
+/** Traffic is drawn at about 30 frames a second. */
 const FRAME_MS = 32
-/** The earth that shows below the board's southern edge. */
-const RIM = 18
 const SOIL = "#7a5b3c"
-const SOIL_SHADE = "#5f452d"
-const OUTLINE = "#2b1f2e"
-const GROUNDS: ReadonlyArray<GroundName> = [
-	"grass",
-	"dryGrass",
-	"forestFloor",
-	"autumn",
-	"rocky",
-	"flowerGrass",
-	"snow",
-	"dirt",
-	"water",
-	"deepWater",
-	"sand",
-	"wheatField",
-]
+const SOIL_SHADE = "#4f3925"
+/** How far the tiles' earth goes down, in world units. */
+const DEPTH = 1.05
 /** How far apart a pixel train's wagons ride, in world units: a wagon sprite's length. */
 const COUPLING = 1.3
 /** Seconds a startled bird hurries for. */
 const BIRD_FRIGHT = 2.5
+/** How high the birds fly, and a tile in hand is held, in world units. */
+const BIRD_HEIGHT = 4
+const HELD_LIFT = 1.7
+// A fixed number of lights: adding or removing one makes three rebuild every shader.
+const LAMPS = 24
+const BEACONS = 2
+const BEACON_POWER = 60
+const OUTLINE = corners(ORIGIN)
+const UP = new THREE.Vector3(0, 1, 0)
 
-const toPx = ([x, z]: Point): Point => [x * PX, z * PX]
-
-interface Land {
-	readonly key: string
-	readonly at: Point
-	readonly art: TileArt
-	/** The service standing on it; `null` for open country and lakes. */
-	readonly id: string | null
+interface Size {
+	readonly width: number
+	readonly height: number
 }
 
-interface Sprite extends Placed {
-	/** Lifts the sprite off its foot: a hopping duck. */
-	readonly lift?: number
-	readonly flip?: boolean
+/** A sprite that stands still, and the service whose tile it stands on. */
+interface Standing extends Bill {
+	readonly owner: string | null
 }
 
 interface Cart {
@@ -116,18 +101,41 @@ interface Engine {
 	running: boolean
 }
 
+/** Something that can be clicked: where its foot is and how tall it stands, in world units. */
 interface Hot {
-	readonly x: number
-	readonly y: number
+	readonly at: Vec3
+	readonly tall: number
 	readonly linkId: string
 	readonly kind: "cart" | "train"
 }
 
-/** Where `along` art pixels down a polyline is, and which way the line runs there. */
+/** A cart or an engine on a failing link: where to hang its health colour. */
+interface Ailing {
+	readonly at: Vec3
+	readonly color: string
+}
+
+/** Everything of the scene that needs the sprite sheet, made once it has loaded. */
+interface Ready {
+	readonly painter: Painter
+	readonly statics: Billboards
+	readonly moving: Billboards
+}
+
+const measure = (element: Element): Size => {
+	const { width, height } = element.getBoundingClientRect()
+	return { width: Math.max(1, width), height: Math.max(1, height) }
+}
+
+/** Art pixels to the world, `height` world units up; and the ground of the world to art pixels. */
+const toWorld = ([x, y]: Point, height = 0): Vec3 => [x / PX, height, y / PX]
+const toArt = ([x, z]: Point): Point => [x * PX, z * PX]
+
+/** Where `along` world units down a polyline is, and which way the line runs there. */
 const pointAlong = (
 	path: ReadonlyArray<Point>,
 	along: number,
-): { readonly at: Point; readonly dx: number; readonly dy: number } => {
+): { readonly at: Point; readonly way: Point } => {
 	const state = { left: Math.max(0, along) }
 	for (let index = 0; index < path.length - 1; index++) {
 		const [a, b] = [path[index], path[index + 1]]
@@ -137,13 +145,12 @@ const pointAlong = (
 			const t = length === 0 ? 0 : Math.min(1, state.left / length)
 			return {
 				at: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t],
-				dx: b[0] - a[0],
-				dy: b[1] - a[1],
+				way: [b[0] - a[0], b[1] - a[1]],
 			}
 		}
 		state.left -= length
 	}
-	return { at: path[0] ?? [0, 0], dx: 1, dy: 0 }
+	return { at: path[0] ?? [0, 0], way: [1, 0] }
 }
 
 const lengthOf = (path: ReadonlyArray<Point>): number =>
@@ -153,6 +160,115 @@ const lengthOf = (path: ReadonlyArray<Point>): number =>
 		(sum, [a, b]) => sum + Math.hypot(b[0] - a[0], b[1] - a[1]),
 	)
 
+/** A triangle from `a`, wound so that it faces the way `out` points. */
+const facing = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, out: THREE.Vector3) => {
+	const normal = b.clone().sub(a).cross(c.clone().sub(a))
+	return normal.dot(out) >= 0 ? [a, b, c] : [a, c, b]
+}
+
+/** The tiles as blocks: their tops, which take the painting, and the earth down their open sides.
+ * `centres` are in world units; `isOpen` says whether a tile's side `index` has nothing beyond it. */
+const blocksOf = (
+	centres: ReadonlyArray<Point>,
+	frame: Frame,
+	isOpen: (centre: Point, index: number) => boolean,
+): { readonly tops: THREE.BufferGeometry; readonly sides: THREE.BufferGeometry } => {
+	const tops = { position: new Array<number>(), uv: new Array<number>(), normal: new Array<number>() }
+	const sides = { position: new Array<number>(), color: new Array<number>(), normal: new Array<number>() }
+	const [soil, shade] = [new THREE.Color(SOIL), new THREE.Color(SOIL_SHADE)]
+	Arr.forEach(centres, (centre) => {
+		const ring = Arr.map(OUTLINE, ([x, z]): Point => [centre[0] + x, centre[1] + z])
+		Arr.forEach(ring, (from, index) => {
+			const to = ring[(index + 1) % ring.length] ?? from
+			const corner = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
+			Arr.forEach(
+				facing(
+					corner(centre[0], 0, centre[1]),
+					corner(from[0], 0, from[1]),
+					corner(to[0], 0, to[1]),
+					UP,
+				),
+				(point) => {
+					tops.position.push(point.x, 0, point.z)
+					tops.normal.push(0, 1, 0)
+					tops.uv.push(
+						(point.x * PX - frame.origin[0]) / frame.size[0],
+						1 - (point.z * PX - frame.origin[1]) / frame.size[1],
+					)
+				},
+			)
+			if (!isOpen(centre, index)) return
+			const out = corner(
+				(from[0] + to[0]) / 2 - centre[0],
+				0,
+				(from[1] + to[1]) / 2 - centre[1],
+			).normalize()
+			const [a, b] = [corner(from[0], 0, from[1]), corner(to[0], 0, to[1])]
+			const [low, lower] = [corner(from[0], -DEPTH, from[1]), corner(to[0], -DEPTH, to[1])]
+			Arr.forEach([...facing(a, b, low, out), ...facing(b, lower, low, out)], (point) => {
+				sides.position.push(point.x, point.y, point.z)
+				sides.normal.push(out.x, 0, out.z)
+				const tone = point.y === 0 ? soil : shade
+				sides.color.push(tone.r, tone.g, tone.b)
+			})
+		})
+	})
+	const geometry = (attributes: Readonly<Record<string, readonly [ReadonlyArray<number>, number]>>) => {
+		const built = new THREE.BufferGeometry()
+		Arr.forEach(Rec.toEntries(attributes), ([name, [values, size]]) =>
+			built.setAttribute(name, new THREE.Float32BufferAttribute([...values], size)),
+		)
+		return built
+	}
+	return {
+		tops: geometry({ position: [tops.position, 3], normal: [tops.normal, 3], uv: [tops.uv, 2] }),
+		sides: geometry({
+			position: [sides.position, 3],
+			normal: [sides.normal, 3],
+			color: [sides.color, 3],
+		}),
+	}
+}
+
+/** A city's wall as stone blocks round the town, with a gap where a road or a railway leaves. */
+const wallOf = (at: Point, radius: number, ways: ReadonlyArray<number>): Array<THREE.BufferGeometry> => {
+	const gates = Arr.sort(ways, Order.Number)
+	const gate = Math.asin(Math.min(1, 26 / PX / radius))
+	const arcs: ReadonlyArray<readonly [number, number]> =
+		gates.length === 0
+			? [[0, Math.PI * 2]]
+			: Arr.map(gates, (way, index) => {
+					const next = gates[(index + 1) % gates.length] ?? way
+					return [
+						way + gate,
+						(index === gates.length - 1 ? next + Math.PI * 2 : next) - gate,
+					] as const
+				})
+	return Arr.flatMap(arcs, ([from, to]) => {
+		if (to <= from) return []
+		const stones = Math.max(1, Math.round(((to - from) * radius) / 0.34))
+		const step = (to - from) / stones
+		return Arr.map(Arr.range(0, stones - 1), (index) => {
+			const angle = from + (index + 0.5) * step
+			// Every other stone stands taller and lighter: battlements.
+			const isTall = index % 2 === 0
+			const height = isTall ? 0.62 : 0.46
+			return part(
+				new THREE.BoxGeometry(step * radius + 0.02, height, 0.24),
+				isTall ? "#ded5c5" : "#b9ad9a",
+				{
+					position: [
+						at[0] + Math.cos(angle) * radius,
+						height / 2,
+						at[1] + Math.sin(angle) * radius,
+					],
+					turn: -(angle + Math.PI / 2),
+				},
+			)
+		})
+	})
+}
+
 /** Starts the pixel-art scene on `canvas`; it sizes to the canvas's parent. */
 export function startPixelScene(
 	canvas: HTMLCanvasElement,
@@ -161,49 +277,168 @@ export function startPixelScene(
 ): SceneHandle {
 	const container = canvas.parentElement ?? canvas
 	const labelsRoot = canvas.closest("[data-tiles-root]") ?? container
-	const context = canvas.getContext("2d")
-	// A fresh canvas always has a 2D context; without one there is nothing to draw on.
-	if (context === null) return { update: () => undefined, stop: () => undefined }
-	const ctx = context
-	const dark = document.createElement("canvas")
-	const atlas = new Image()
-	const patterns = new Map<GroundName, CanvasPattern>()
+	const renderer = new THREE.WebGLRenderer({
+		canvas,
+		antialias: true,
+		alpha: true,
+		// The ground marks the stencil, so the sprites' shadows fall on it and nowhere else.
+		stencil: true,
+		powerPreference: "high-performance",
+	})
+	renderer.outputColorSpace = THREE.SRGBColorSpace
+	renderer.toneMapping = THREE.NoToneMapping
+	const camera = new THREE.PerspectiveCamera(30, 1, 1, 2000)
+	const scene = new THREE.Scene()
+	const sky = new THREE.HemisphereLight()
+	const sun = new THREE.DirectionalLight()
+	scene.add(sky, sun, sun.target)
+
+	// The ground: one painting over every tile's top, and plain earth down the sides.
+	const paper = document.createElement("canvas")
+	const painting = new THREE.CanvasTexture(paper)
+	painting.colorSpace = THREE.SRGBColorSpace
+	painting.magFilter = THREE.NearestFilter
+	painting.anisotropy = renderer.capabilities.getMaxAnisotropy()
+	const materials = {
+		top: new THREE.MeshLambertMaterial({
+			map: painting,
+			stencilWrite: true,
+			stencilRef: GROUND,
+			stencilZPass: THREE.ReplaceStencilOp,
+		}),
+		earth: new THREE.MeshLambertMaterial({ vertexColors: true }),
+		stone: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+		// Unlit, so they read at any hour: rings, slots, and the veil over unrelated tiles.
+		ring: new THREE.MeshBasicMaterial({
+			vertexColors: true,
+			transparent: true,
+			opacity: 0.92,
+			depthWrite: false,
+		}),
+		veil: new THREE.MeshBasicMaterial({
+			vertexColors: true,
+			transparent: true,
+			opacity: 0.5,
+			depthWrite: false,
+		}),
+		slot: new THREE.MeshBasicMaterial({
+			vertexColors: true,
+			transparent: true,
+			opacity: 0.85,
+			depthWrite: false,
+		}),
+		ripple: new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
+		// A held tile's would-be connections: a road to a neighbour, a railway to anything further.
+		road: new THREE.MeshBasicMaterial({
+			transparent: true,
+			opacity: 0.85,
+			depthWrite: false,
+		}),
+		rail: new THREE.MeshBasicMaterial({
+			transparent: true,
+			opacity: 0.7,
+			depthWrite: false,
+		}),
+	}
+	const land = {
+		tops: new THREE.Mesh(new THREE.BufferGeometry(), materials.top),
+		sides: new THREE.Mesh(new THREE.BufferGeometry(), materials.earth),
+		walls: new THREE.Mesh(new THREE.BufferGeometry(), materials.stone),
+		rings: new THREE.Mesh(new THREE.BufferGeometry(), materials.ring),
+		veils: new THREE.Mesh(new THREE.BufferGeometry(), materials.veil),
+		slots: new THREE.Mesh(new THREE.BufferGeometry(), materials.slot),
+	}
+	land.rings.renderOrder = 4
+	land.veils.renderOrder = 3
+	land.slots.renderOrder = 2
+	const pointed = new THREE.Mesh(band(OUTLINE, 0.04, 0.9, 0.985, "#ffffff"), materials.ring)
+	pointed.visible = false
+	pointed.renderOrder = 5
+	const chosen = new THREE.Mesh(band(OUTLINE, 0.05, 0, 0.95, "#f5a524"), materials.veil)
+	chosen.visible = false
+	chosen.renderOrder = 6
+	const prospect = new THREE.Group()
+	// The tile in hand: its own small painting on a block of earth.
+	const heldPaper = document.createElement("canvas")
+	const heldPainting = new THREE.CanvasTexture(heldPaper)
+	heldPainting.colorSpace = THREE.SRGBColorSpace
+	heldPainting.magFilter = THREE.NearestFilter
+	const held = {
+		group: new THREE.Group(),
+		top: new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ map: heldPainting })),
+		sides: new THREE.Mesh(new THREE.BufferGeometry(), materials.earth),
+		art: null as TileArt | null,
+		id: null as string | null,
+	}
+	held.group.add(held.top, held.sides)
+	held.group.visible = false
+	// Rings spreading on a lake, and the health colours hung over failing traffic.
+	const ripples = Arr.makeBy(4, () => {
+		const mesh = new THREE.Mesh(
+			new THREE.RingGeometry(0.86, 1, 40).rotateX(-Math.PI / 2),
+			materials.ripple.clone(),
+		)
+		mesh.visible = false
+		mesh.renderOrder = 5
+		return mesh
+	})
+	const flags = Arr.makeBy(16, () => {
+		const flag = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false }))
+		flag.scale.setScalar(0.24)
+		flag.visible = false
+		flag.renderOrder = 8
+		return flag
+	})
+	scene.add(...Rec.values(land), pointed, chosen, prospect, held.group, ...ripples, ...flags)
+
+	// A fixed number of lamps, handed to the villages that need them, and beams for lighthouses.
+	const lamps = Arr.makeBy(LAMPS, () => {
+		const light = new THREE.PointLight("#ffc56e", 0, 4, 1.4)
+		scene.add(light)
+		return { light, power: 0 }
+	})
+	const beacons = Arr.makeBy(BEACONS, () => {
+		const light = new THREE.SpotLight("#ffe296", 0, 16, 0.3, 0.7, 1.1)
+		scene.add(light, light.target)
+		return { light, isLit: false, turn: 0 }
+	})
+
 	const quacks = quacker()
 	const sounds = makeSounds(() => state.derived.input.muted)
 	const state = {
 		derived: derive(initial, null),
-		width: 1,
-		height: 1,
-		ratio: 1,
-		/** Device pixels per art pixel, and where art (0, 0) falls on the canvas. */
-		scale: 1,
-		x: 0,
-		y: 0,
+		ready: null as Ready | null,
+		size: measure(container),
+		pending: 0,
 		raf: 0,
-		last: 0,
-		dirty: true,
+		last: performance.now(),
+		seconds: 0,
+		shownHour: initial.clock.hour,
 		userMoved: false,
 		fitKey: "",
 		lastCommand: initial.command.serial,
 		boardKey: "",
 		trafficKey: "",
+		marksKey: "",
+		slotsKey: "",
+		prospectKey: "",
 		lands: new Array<Land>(),
-		statics: new Array<Sprite>(),
-		lamps: new Array<{ readonly x: number; readonly y: number; readonly radius: number }>(),
-		coast: new Path2D(),
 		landCells: new Set<string>(),
+		statics: new Array<Standing>(),
 		carts: new Array<Cart>(),
 		engines: new Array<Engine>(),
 		box: null as SignalBox | null,
+		roads: new Array<readonly [Point, Point]>(),
 		rails: new Array<ReadonlyArray<Point>>(),
 		buffers: new Array<Point>(),
 		hot: new Array<Hot>(),
-		shownHour: initial.clock.hour,
-		seconds: 0,
+		/** A held tile's would-be connections, drawn from the cell it is over. */
+		strips: new Array<THREE.Mesh<THREE.BoxGeometry>>(),
 		hoverCell: null as Cell | null,
 		hoverTile: null as Cell | null,
-		pointer: null as Point | null,
-		pressed: { x: 0, y: 0, panning: false },
+		/** Where on the ground the pointer is, in world units: a tile in hand follows it. */
+		heldPoint: null as Point | null,
+		pressed: { x: 0, y: 0 },
 		/** When each duck last hopped, in seconds. */
 		hops: [-9, -9, -9],
 		/** Three birds cross the board: how far across each is, and when it last took fright. */
@@ -212,42 +447,86 @@ export function startPixelScene(
 		rings: new Array<{ readonly at: Point; readonly since: number }>(),
 	}
 	const invalidate = () => {
-		state.dirty = true
+		state.pending = Math.min(60, state.pending + 2)
 	}
+
+	const orbit = new OrbitControls(camera, canvas)
+	orbit.enableDamping = true
+	orbit.dampingFactor = 0.12
+	orbit.screenSpacePanning = false
+	orbit.zoomToCursor = true
+	orbit.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+	orbit.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }
+	orbit.minPolarAngle = 0.3
+	orbit.maxPolarAngle = 1.2
+	orbit.addEventListener("change", invalidate)
+	// A click also starts and ends a gesture: only one that moved the camera takes the view.
+	const gesture = { active: false }
+	orbit.addEventListener("start", () => {
+		gesture.active = true
+	})
+	orbit.addEventListener("end", () => {
+		gesture.active = false
+	})
+	orbit.addEventListener("change", () => {
+		if (gesture.active) state.userMoved = true
+	})
+
+	const atlas = new Image()
 	atlas.addEventListener("load", () => {
-		Arr.forEach(GROUNDS, (name) => {
-			const [sx, sy, w, h] = SPRITES[name]
-			const swatch = document.createElement("canvas")
-			swatch.width = w
-			swatch.height = h
-			swatch.getContext("2d")?.drawImage(atlas, sx, sy, w, h, 0, 0, w, h)
-			const pattern = ctx.createPattern(swatch, "repeat")
-			if (pattern !== null) patterns.set(name, pattern)
-		})
-		invalidate()
+		const sheet = new THREE.Texture(atlas)
+		sheet.colorSpace = THREE.SRGBColorSpace
+		sheet.magFilter = THREE.NearestFilter
+		sheet.minFilter = THREE.LinearFilter
+		sheet.generateMipmaps = false
+		sheet.needsUpdate = true
+		const size = { width: atlas.naturalWidth, height: atlas.naturalHeight }
+		const ready: Ready = {
+			painter: makePainter(atlas),
+			statics: makeBillboards(sheet, size, 2048),
+			moving: makeBillboards(sheet, size, 256),
+		}
+		scene.add(ready.statics.mesh, ready.statics.shade, ready.moving.mesh, ready.moving.shade)
+		state.ready = ready
+		// The held tile's block never changes shape: its painting is always the same size.
+		const blocks = blocksOf([[0, 0]], ready.painter.tile(heldPaper, lakeArt("held")), () => true)
+		held.top.geometry = blocks.tops
+		held.sides.geometry = blocks.sides
+		state.boardKey = ""
+		sync()
 	})
 	atlas.src = new URL("./art/atlas.png", import.meta.url).href
 
-	const centre = (cell: Cell): Point => toPx(cellToPoint(cell))
-	const hexPath = (at: Point, grow = 0): Path2D => {
-		const path = new Path2D()
-		Arr.forEach(corners({ q: 0, r: 0 }), ([x, z], index) => {
-			const [px, py] = [at[0] + x * (PX + grow / 4), at[1] + z * (PX + grow / 4)]
-			if (index === 0) path.moveTo(px, py)
-			else path.lineTo(px, py)
-		})
-		path.closePath()
-		return path
+	const centre = (cell: Cell): Point => {
+		const [x, z] = cellToPoint(cell)
+		return [x * PX, z * PX]
+	}
+	/** A flat hexagon over `cell`, `inner` to `outer` of the tile's size. */
+	const plate = (cell: Cell, y: number, inner: number, outer: number, color: string) => {
+		const [x, z] = cellToPoint(cell)
+		return band(OUTLINE, y, inner, outer, color).translate(x, 0, z)
+	}
+	const replace = (mesh: THREE.Mesh, geometry: THREE.BufferGeometry) => {
+		mesh.geometry.dispose()
+		mesh.geometry = geometry
 	}
 
-	/** Everything that stands still: land, sprites, lamps, the coast. Rebuilt when the board changes. */
-	const syncBoard = () => {
+	/** Everything that stands still: land, sprites, walls, lamps. Rebuilt when the board changes. */
+	const syncBoard = (ready: Ready) => {
 		const { input, cells, nodes, sizes, biomes, lakes, wilds, network, targets } = state.derived
 		const down = Arr.filter([...cells], ([id]) => id !== input.heldId)
 		const offered = new Set(Arr.map(targets?.free ?? [], cellKey))
-		const key = encodeJson([down, lakes, Arr.map(wilds, (wild) => wild.cell), [...offered]])
+		const key = encodeJson([
+			down,
+			lakes,
+			Arr.map(wilds, (wild) => wild.cell),
+			[...offered],
+			state.roads,
+			state.rails,
+		])
 		if (key === state.boardKey) return
 		state.boardKey = key
+		state.marksKey = ""
 		const services = Arr.flatMap(down, ([id, cell]): Array<Land> => {
 			const node = nodes.get(id)
 			if (node === undefined) return []
@@ -296,43 +575,87 @@ export function startPixelScene(
 				},
 			]
 		})
-		// North to south, so a tile's rim of earth is covered by the tile below it.
-		state.lands = Arr.sort(
-			[...services, ...waters, ...country],
-			Order.mapInput(Order.Number, (land: Land) => land.at[1]),
+		state.lands = northFirst([...services, ...waters, ...country])
+		state.landCells = new Set(Arr.map(state.lands, (each) => each.key))
+		state.statics = Arr.flatMap(state.lands, (each) =>
+			Arr.map(each.art.items, (item): Standing => ({
+				sprite: item.sprite,
+				at: toWorld([each.at[0] + item.x, each.at[1] + item.y]),
+				owner: each.id,
+			})),
 		)
-		state.landCells = new Set(Arr.map(state.lands, (land) => land.key))
-		state.statics = Arr.flatMap(state.lands, (land) =>
-			Arr.map(land.art.items, (item) => ({ ...item, x: land.at[0] + item.x, y: land.at[1] + item.y })),
+		// The painting, and the blocks it lies on.
+		const frame = ready.painter.board(
+			paper,
+			state.lands,
+			Arr.map(state.roads, ([from, to]) => [toArt(from), toArt(to)] as const),
+			Arr.map(state.rails, (piece) => Arr.map(piece, toArt)),
 		)
-		state.lamps = Arr.flatMap(state.lands, (land) =>
-			land.art.lamp === null
-				? []
-				: [
-						{
-							x: land.at[0] + land.art.lamp.x,
-							y: land.at[1] + land.art.lamp.y,
-							radius: land.art.lamp.radius,
-						},
-					],
+		painting.dispose()
+		painting.needsUpdate = true
+		const blocks = blocksOf(
+			Arr.map(state.lands, (each): Point => [each.at[0] / PX, each.at[1] / PX]),
+			frame,
+			(middle, index) => {
+				const [from, to] = [OUTLINE[index], OUTLINE[(index + 1) % OUTLINE.length]]
+				if (from === undefined || to === undefined) return false
+				const beyond = pointToCell([middle[0] + from[0] + to[0], middle[1] + from[1] + to[1]])
+				return !state.landCells.has(cellKey(beyond))
+			},
 		)
-		// The coast: every side of a tile with nothing beyond it.
-		const coast = new Path2D()
-		Arr.forEach(state.lands, (land) => {
-			const cell = pointToCell([land.at[0] / PX, land.at[1] / PX])
-			const ring = corners(cell)
-			Arr.forEach(ring, (from, index) => {
-				const to = ring[(index + 1) % ring.length]
-				if (to === undefined) return
-				const [mx, mz] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2]
-				const [x, z] = cellToPoint(cell)
-				const beyond = pointToCell([x + (mx - x) * 2, z + (mz - z) * 2])
-				if (state.landCells.has(cellKey(beyond))) return
-				coast.moveTo(from[0] * PX, from[1] * PX)
-				coast.lineTo(to[0] * PX, to[1] * PX)
-			})
+		replace(land.tops, blocks.tops)
+		replace(land.sides, blocks.sides)
+		replace(
+			land.walls,
+			fuse(
+				Arr.flatMap(state.lands, (each) =>
+					each.art.wall === 0
+						? []
+						: wallOf(
+								[each.at[0] / PX, each.at[1] / PX],
+								each.art.wall / PX,
+								each.id === null ? [] : (network.corridors.get(each.id) ?? []),
+							),
+				),
+			),
+		)
+		// The lamps go to the biggest villages; the beams to the lighthouses.
+		const wanting = Arr.sort(
+			Arr.flatMap(state.lands, (each) =>
+				each.art.lamp === null
+					? []
+					: [
+							{
+								at: [each.at[0] + each.art.lamp.x, each.at[1] + each.art.lamp.y] as const,
+								reach: each.art.lamp.radius / PX,
+							},
+						],
+			),
+			Order.flip(Order.mapInput(Order.Number, (lamp: { readonly reach: number }) => lamp.reach)),
+		)
+		Arr.forEach(lamps, (lamp, index) => {
+			const wanted = wanting[index]
+			lamp.power = wanted === undefined ? 0 : 5 + wanted.reach * 3
+			if (wanted === undefined) return
+			lamp.light.position.set(...toWorld(wanted.at, 1.5))
+			lamp.light.distance = wanted.reach * 1.7
 		})
-		state.coast = coast
+		const towers = Arr.flatMap(state.lands, (each) =>
+			each.art.landmark?.kind === "lighthouse"
+				? [
+						toWorld(
+							[each.at[0] + each.art.landmark.x, each.at[1] + each.art.landmark.y],
+							(SPRITES.lighthouse[3] - 14) / PX,
+						),
+					]
+				: [],
+		)
+		Arr.forEach(beacons, (beacon, index) => {
+			const tower = towers[index]
+			beacon.isLit = tower !== undefined
+			if (tower !== undefined) beacon.light.position.set(...tower)
+		})
+		applyLight()
 	}
 
 	/** Roads, railways, carts and trains. A selection only changes which of them run. */
@@ -364,14 +687,15 @@ export function startPixelScene(
 			const level = health(link.errorRate)
 			return level === "healthy" ? null : HEALTH_COLOR[level]
 		}
+		state.roads = Arr.map(network.roads, ({ from, to }) => [from, to] as const)
 		state.carts = Arr.flatMap(network.roads, ({ link, from, to }): Array<Cart> => {
 			if (link.callsPerSecond <= 0) return []
 			const busy = Math.log10(1 + link.callsPerSecond)
 			const count = Math.min(3, 1 + Math.floor(busy / 1.4))
 			return Arr.makeBy(count, (index) => ({
 				linkId: link.id,
-				from: toPx(from),
-				to: toPx(to),
+				from,
+				to,
 				speed: 0.035 + 0.02 * busy,
 				isAiling: ailing(link),
 				running: running.get(link.id) === true,
@@ -381,8 +705,8 @@ export function startPixelScene(
 		const rail = railNetwork(
 			Arr.map(network.rails, ({ link, points }) => ({ id: link.id, stops: points })),
 		)
-		state.rails = Arr.map(rail.pieces, (piece) => Arr.map(piece.line, toPx))
-		state.buffers = Arr.map(rail.stations, (station) => toPx(station.at))
+		state.rails = Arr.map(rail.pieces, (piece) => piece.line)
+		state.buffers = Arr.map(rail.stations, (station) => station.at)
 		state.engines = Arr.flatMap(network.rails, ({ link }, index): Array<Engine> => {
 			const path = rail.paths.get(link.id)
 			if (path === undefined || link.callsPerSecond <= 0) return []
@@ -410,114 +734,269 @@ export function startPixelScene(
 		state.box = makeSignalBox(Arr.map(state.engines, (engine) => engine.train))
 	}
 
-	const fit = () => {
-		const { radius, centre: middle } = state.derived
-		const wide = Math.min(state.width, state.height) / (2 * radius * PX + RIM * 2)
-		// A whole number of device pixels per art pixel wherever the board is big enough for it.
-		state.scale = wide >= 1 ? Math.floor(wide) : wide
-		state.x = Math.round(state.width / 2 - middle[0] * PX * state.scale)
-		state.y = Math.round(state.height / 2 - middle[1] * PX * state.scale)
+	/** Rings round failing and selected tiles, the veil over unrelated ones, and their sprites paled. */
+	const syncMarks = (ready: Ready) => {
+		const { input, cells, nodes, related, palette } = state.derived
+		const key = encodeJson([state.boardKey.length, input.selectedId, input.heldId, palette.selected])
+		if (key === state.marksKey) return
+		state.marksKey = key
+		const down = Arr.filter([...cells], ([id]) => id !== input.heldId)
+		replace(
+			land.rings,
+			fuse(
+				Arr.flatMap(down, ([id, cell]) => {
+					const node = nodes.get(id)
+					const level = node === undefined ? "healthy" : health(node.errorRate)
+					const isSelected = id === input.selectedId
+					if (!isSelected && level === "healthy") return []
+					return [
+						plate(
+							cell,
+							0.03,
+							isSelected ? 0.88 : 0.93,
+							0.975,
+							isSelected ? palette.selected : HEALTH_COLOR[level],
+						),
+					]
+				}),
+			),
+		)
+		const isApart = (id: string | null) => related !== null && id !== null && !related.has(id)
+		replace(
+			land.veils,
+			fuse(
+				Arr.flatMap(down, ([id, cell]) => (isApart(id) ? [plate(cell, 0.02, 0, 1, "#ecece4")] : [])),
+			),
+		)
+		ready.statics.set(
+			Arr.map(state.statics, (bill) => (isApart(bill.owner) ? { ...bill, fade: 0.5 } : bill)),
+		)
 	}
 
-	const zoomAt = (factor: number, sx: number, sy: number) => {
-		const least = Math.min(state.width, state.height) / (2 * state.derived.radius * PX) / 1.6
-		const raw = Math.min(6, Math.max(least, state.scale * factor))
-		const whole = Math.round(raw)
-		const next = whole >= 1 && Math.abs(raw - whole) < 0.09 ? whole : raw
-		state.x = Math.round(sx - ((sx - state.x) / state.scale) * next)
-		state.y = Math.round(sy - ((sy - state.y) / state.scale) * next)
-		state.scale = next
-		state.userMoved = true
-		invalidate()
+	/** Where a held tile may go. */
+	const syncSlots = () => {
+		const { targets, palette } = state.derived
+		const key = encodeJson([targets?.free ?? [], palette.slot])
+		if (key === state.slotsKey) return
+		state.slotsKey = key
+		replace(
+			land.slots,
+			fuse(
+				Arr.flatMap(targets?.free ?? [], (cell) => [
+					plate(cell, 0, 0, 0.93, "#f6ecd4"),
+					plate(cell, 0.01, 0.89, 0.93, palette.slotEdge),
+				]),
+			),
+		)
+	}
+
+	/** The cell the held tile is over, and the connections it would have there. */
+	const syncProspect = () => {
+		const { input, links, cells, palette } = state.derived
+		const key = encodeJson([input.heldId, state.hoverCell])
+		if (key === state.prospectKey) return
+		state.prospectKey = key
+		Arr.forEach(state.strips, (strip) => {
+			prospect.remove(strip)
+			strip.geometry.dispose()
+		})
+		state.strips = []
+		materials.road.color.set(palette.selected)
+		materials.rail.color.set(palette.slotEdge)
+		const over = state.hoverCell
+		chosen.visible = over !== null && input.heldId !== null
+		if (over === null || input.heldId === null) return
+		const [x, z] = cellToPoint(over)
+		chosen.position.set(x, 0, z)
+		Arr.forEach(links, (link) => {
+			const other =
+				link.source === input.heldId ? link.target : link.target === input.heldId ? link.source : null
+			const at = other === null ? undefined : cells.get(other)
+			if (at === undefined || sameCell(at, over)) return
+			const isTouching = hexDistance(at, over) === 1
+			const [tx, tz] = cellToPoint(at)
+			const strip = new THREE.Mesh(
+				new THREE.BoxGeometry(Math.hypot(tx - x, tz - z), 0.04, isTouching ? 0.3 : 0.08),
+				isTouching ? materials.road : materials.rail,
+			)
+			strip.position.set((x + tx) / 2, 0.09, (z + tz) / 2)
+			strip.rotation.y = -Math.atan2(tz - z, tx - x)
+			strip.renderOrder = 7
+			prospect.add(strip)
+			state.strips.push(strip)
+		})
+	}
+
+	/** The tile in hand gets its own painting; what stands on it is drawn with the moving sprites. */
+	const syncHeld = (ready: Ready) => {
+		const { input, nodes, sizes, biomes, cells } = state.derived
+		if (input.heldId === held.id) return
+		held.id = input.heldId
+		const node = input.heldId === null ? undefined : nodes.get(input.heldId)
+		held.group.visible = node !== undefined
+		held.art = null
+		if (input.heldId === null || node === undefined) return
+		held.art = serviceArt({
+			id: input.heldId,
+			kind: node.kind,
+			size: sizes.get(input.heldId) ?? 0.5,
+			biome: biomeOf(biomes, node.namespace),
+			corridors: [],
+		})
+		ready.painter.tile(heldPaper, held.art)
+		heldPainting.needsUpdate = true
+		// It lifts from where it stood; a tile off the stack comes in over the middle of the board.
+		const home = cells.get(input.heldId)
+		const [x, z] = home === undefined ? state.derived.centre : cellToPoint(home)
+		held.group.position.set(x, home === undefined ? HELD_LIFT : 0, z)
+	}
+
+	/** Lights the map for the hour now showing: the sun or the moon, the sky's fill, the lamps. */
+	const applyLight = () => {
+		const { radius, centre: middle, input } = state.derived
+		const light = daylightAt({ ...input.clock, hour: state.shownHour })
+		sky.color.setRGB(...light.sky, THREE.SRGBColorSpace)
+		sky.groundColor.setRGB(...light.bounce, THREE.SRGBColorSpace)
+		sky.intensity = light.skyPower * 0.8
+		sun.color.setRGB(...light.sun, THREE.SRGBColorSpace)
+		sun.intensity = light.sunPower * 0.8
+		sun.target.position.set(middle[0], 0, middle[1])
+		const [x, y, z] = light.direction
+		const far = radius * 1.6
+		sun.position.set(middle[0] + x * far, y * far, middle[1] + z * far)
+		// A shadow lies away from the light, longer as the light sinks; it is drawn falling
+		// towards the near side of the board, where it is seen, and paler by night.
+		const flat = Math.max(1e-6, Math.hypot(x, z))
+		const reach = Math.min(1.7, flat / Math.max(0.05, y))
+		const way: Point = [(-x / flat) * reach, (Math.abs(z) / flat) * reach]
+		Arr.forEach([state.ready?.statics, state.ready?.moving], (set) =>
+			set?.cast(way, 0.44 - 0.2 * light.lamps),
+		)
+		Arr.forEach(lamps, (lamp) => {
+			lamp.light.intensity = lamp.power * light.lamps
+		})
+		Arr.forEach(beacons, (beacon) => {
+			beacon.light.intensity = beacon.isLit ? BEACON_POWER * light.lamps : 0
+		})
+	}
+
+	/** Turns the shown hour towards the wanted one, the short way round the clock. */
+	const turnClock = (delta: number): boolean => {
+		const apart = ((((state.derived.input.clock.hour - state.shownHour) % 24) + 36) % 24) - 12
+		if (Math.abs(apart) < 1e-3) return false
+		const step = Math.min(Math.abs(apart), delta * Math.max(8, Math.abs(apart) * 3))
+		state.shownHour = (((state.shownHour + Math.sign(apart) * step) % 24) + 24) % 24
+		applyLight()
+		return true
+	}
+
+	/** Turns each lighthouse's beam: its target circles the tower, a little below the lantern. */
+	const turnBeacons = (delta: number): boolean => {
+		const lit = Arr.filter(beacons, (beacon) => beacon.isLit && beacon.light.intensity > 0)
+		Arr.forEach(lit, (beacon) => {
+			beacon.turn += delta * 0.7
+			const { x, y, z } = beacon.light.position
+			beacon.light.target.position.set(
+				x + Math.cos(beacon.turn) * 6,
+				y - 1.5,
+				z + Math.sin(beacon.turn) * 6,
+			)
+		})
+		return lit.length > 0
+	}
+
+	const fit = () => {
+		const { radius, centre: middle } = state.derived
+		const vertical = THREE.MathUtils.degToRad(camera.fov) / 2
+		const horizontal = Math.atan(Math.tan(vertical) * camera.aspect)
+		// The board lies flat, so it needs less of the frame's height than its radius.
+		const distance = Math.max((radius * 0.8) / Math.sin(vertical), (radius * 0.98) / Math.sin(horizontal))
+		const polar = 0.82
+		orbit.target.set(middle[0], 0, middle[1])
+		camera.position.set(middle[0], distance * Math.cos(polar), middle[1] + distance * Math.sin(polar))
+		orbit.minDistance = distance * 0.1
+		orbit.maxDistance = distance * 1.8
+		camera.near = distance * 0.02
+		camera.far = distance * 6
+		camera.updateProjectionMatrix()
+		orbit.update()
 	}
 
 	const resize = () => {
-		const bounds = container.getBoundingClientRect()
-		state.ratio = Math.min(Math.max(1, window.devicePixelRatio), 2)
-		state.width = Math.max(1, Math.round(bounds.width * state.ratio))
-		state.height = Math.max(1, Math.round(bounds.height * state.ratio))
-		canvas.width = state.width
-		canvas.height = state.height
-		canvas.style.width = `${bounds.width}px`
-		canvas.style.height = `${bounds.height}px`
-		dark.width = Math.ceil(state.width / 2)
-		dark.height = Math.ceil(state.height / 2)
+		state.size = measure(container)
+		renderer.setPixelRatio(Math.min(Math.max(1, window.devicePixelRatio), 2))
+		renderer.setSize(state.size.width, state.size.height, true)
+		camera.aspect = state.size.width / state.size.height
+		camera.updateProjectionMatrix()
 		invalidate()
 	}
 
+	/** Fits on the first frame, on Reset, and on a bigger board or a new canvas size until the user takes the view. */
 	const rig = () => {
 		const { input, radius, centre: middle } = state.derived
-		const key = `${middle[0].toFixed(2)}:${middle[1].toFixed(2)}:${radius}:${state.width}:${state.height}`
-		const fresh = input.command.serial !== state.lastCommand
-		state.lastCommand = input.command.serial
-		if (fresh && input.command.action === "reset") state.userMoved = false
+		const key = `${middle[0].toFixed(2)}:${middle[1].toFixed(2)}:${radius}:${state.size.width}:${state.size.height}`
+		const command = input.command
+		const fresh = command.serial !== state.lastCommand
+		state.lastCommand = command.serial
+		if (fresh && command.action === "reset") state.userMoved = false
 		if (
 			(state.fitKey !== key && !state.userMoved) ||
 			state.fitKey === "" ||
-			(fresh && input.command.action === "reset")
+			(fresh && command.action === "reset")
 		)
 			fit()
 		state.fitKey = key
-		if (fresh && input.command.action !== "reset")
-			zoomAt(input.command.action === "in" ? 1.3 : 1 / 1.3, state.width / 2, state.height / 2)
+		if (fresh && command.action !== "reset") {
+			state.userMoved = true
+			const offset = camera.position.clone().sub(orbit.target)
+			const length = THREE.MathUtils.clamp(
+				offset.length() * (command.action === "in" ? 0.8 : 1.25),
+				orbit.minDistance,
+				orbit.maxDistance,
+			)
+			camera.position.copy(orbit.target).add(offset.setLength(length))
+		}
+		orbit.update()
+		camera.updateMatrixWorld()
 	}
 
-	const draw = (sprite: Sprite) => {
-		const [sx, sy, w, h] = SPRITES[sprite.sprite]
-		const x = Math.round(sprite.x - w / 2)
-		const y = Math.round(sprite.y - h - (sprite.lift ?? 0))
-		if (sprite.flip !== true) return ctx.drawImage(atlas, sx, sy, w, h, x, y, w, h)
-		ctx.save()
-		ctx.translate(x + w, y)
-		ctx.scale(-1, 1)
-		ctx.drawImage(atlas, sx, sy, w, h, 0, 0, w, h)
-		ctx.restore()
-	}
-
-	const fill = (ground: GroundName, path: Path2D) => {
-		const pattern = patterns.get(ground)
-		if (pattern === undefined) return
-		ctx.fillStyle = pattern
-		ctx.fill(path)
-	}
-
-	const circle = (x: number, y: number, radius: number): Path2D => {
-		const path = new Path2D()
-		path.arc(Math.round(x), Math.round(y), radius, 0, Math.PI * 2)
-		return path
-	}
-
-	const line = (points: ReadonlyArray<Point>): Path2D => {
-		const path = new Path2D()
-		Arr.forEach(points, ([x, y], index) => (index === 0 ? path.moveTo(x, y) : path.lineTo(x, y)))
-		return path
-	}
-
-	const drawLand = (land: Land) => {
-		fill(land.art.ground, hexPath(land.at, 1))
-		Arr.forEach(land.art.patches, (patch) =>
-			fill(patch.ground, circle(land.at[0] + patch.x, land.at[1] + patch.y, patch.radius)),
-		)
-	}
-
-	/** Carts and trains move on, and everything that moves is listed for drawing and for clicks. */
-	const movers = (delta: number): Array<Sprite & { readonly ailing?: string | null }> => {
+	/** Carts and trains move on; everything that moves is listed for drawing and for clicks. */
+	const movers = (
+		delta: number,
+		across: THREE.Vector3,
+	): { readonly bills: Array<Bill>; readonly ailing: Array<Ailing> } => {
 		const { input } = state.derived
-		const sprites: Array<Sprite & { readonly ailing?: string | null }> = []
+		const bills: Array<Bill> = []
+		const ailing: Array<Ailing> = []
+		// A sprite is drawn facing right: it is mirrored when it runs the other way across the screen.
+		const isLeftward = (way: Point) => way[0] * across.x + way[1] * across.z < 0
+		const tall = (sprite: Bill["sprite"]) => SPRITES[sprite][3] / PX
+		// Traffic that has nothing to do with the selected service pales with its tiles.
+		const paled = (mover: { readonly running: boolean }) => (mover.running ? 0 : 0.5)
 		state.hot = []
 		Arr.forEach(state.carts, (cart) => {
 			if (input.flowing && cart.running) cart.progress = (cart.progress + delta * cart.speed) % 1
 			const out = cart.progress < 0.5
 			const t = out ? cart.progress * 2 : 2 - cart.progress * 2
-			const [dx, dy] = [cart.to[0] - cart.from[0], cart.to[1] - cart.from[1]]
-			const length = Math.hypot(dx, dy)
+			const [dx, dz] = [cart.to[0] - cart.from[0], cart.to[1] - cart.from[1]]
+			const length = Math.hypot(dx, dz)
 			// Clear of both squares, and on the right of the road each way.
-			const along = 26 + t * (length - 52)
-			const side = out ? 7 : -7
-			const x = cart.from[0] + (dx / length) * along - (dy / length) * side
-			const y = cart.from[1] + (dy / length) * along + (dx / length) * side
-			sprites.push({ sprite: "cart", x, y: y + 8, flip: (out ? dx : -dx) < 0, ailing: cart.isAiling })
-			state.hot.push({ x, y: y - 6, linkId: cart.linkId, kind: "cart" })
+			const along = 0.65 + t * (length - 1.3)
+			const side = out ? 0.18 : -0.18
+			const at: Vec3 = [
+				cart.from[0] + (dx / length) * along - (dz / length) * side,
+				0,
+				cart.from[1] + (dz / length) * along + (dx / length) * side,
+			]
+			bills.push({
+				sprite: "cart",
+				at,
+				flip: isLeftward(out ? [dx, dz] : [-dx, -dz]),
+				fade: paled(cart),
+			})
+			state.hot.push({ at, tall: tall("cart"), linkId: cart.linkId, kind: "cart" })
+			if (cart.isAiling !== null)
+				ailing.push({ at: [at[0], tall("cart") + 0.2, at[2]], color: cart.isAiling })
 		})
 		state.box?.step(
 			Math.min(delta, 0.05),
@@ -528,56 +1007,51 @@ export function startPixelScene(
 			const { train, path } = engine
 			const place = (along: number) => {
 				const found = pointAlong(path, along)
-				const [x, y] = toPx(found.at)
-				return { x, y, flip: found.dx < 0 }
+				return { at: [found.at[0], 0, found.at[1]] as const, flip: isLeftward(found.way) }
 			}
 			const nose = place(train.along)
-			sprites.push({
-				sprite: "loco",
-				x: nose.x,
-				y: nose.y + 8,
-				flip: nose.flip,
-				ailing: engine.isAiling,
-			})
-			state.hot.push({ x: nose.x, y: nose.y - 10, linkId: engine.linkId, kind: "train" })
+			bills.push({ sprite: "loco", at: nose.at, flip: nose.flip, fade: paled(engine) })
+			state.hot.push({ at: nose.at, tall: tall("loco"), linkId: engine.linkId, kind: "train" })
+			if (engine.isAiling !== null)
+				ailing.push({ at: [nose.at[0], tall("loco") + 0.2, nose.at[2]], color: engine.isAiling })
 			Arr.forEach(wagonsOf(train), (wagon) => {
-				const at = place(train.along - wagon * COUPLING)
-				sprites.push({
-					sprite: isLoaded(train) ? "wagonFull" : "wagonEmpty",
-					x: at.x,
-					y: at.y + 8,
-					flip: at.flip,
-				})
-				state.hot.push({ x: at.x, y: at.y - 8, linkId: engine.linkId, kind: "train" })
+				const car = place(train.along - wagon * COUPLING)
+				const sprite = isLoaded(train) ? "wagonFull" : "wagonEmpty"
+				bills.push({ sprite, at: car.at, flip: car.flip, fade: paled(engine) })
+				state.hot.push({ at: car.at, tall: tall(sprite), linkId: engine.linkId, kind: "train" })
 			})
 			Arr.forEach(signalsOf(train.line), (signal) => {
 				const found = pointAlong(path, signal.along)
-				const [x, y] = toPx(found.at)
-				const length = Math.hypot(found.dx, found.dy)
+				const length = Math.hypot(found.way[0], found.way[1])
 				const isRed = Arr.some(signal.guards, (section) => state.box?.isOccupied(section) === true)
-				sprites.push({
+				bills.push({
 					sprite: isRed ? "signalRed" : "signalGreen",
-					x: x - (found.dy / length) * 16 * signal.side,
-					y: y + (found.dx / length) * 16 * signal.side + 6,
+					at: [
+						found.at[0] - (found.way[1] / length) * 0.4 * signal.side,
+						0,
+						found.at[1] + (found.way[0] / length) * 0.4 * signal.side,
+					],
 				})
 			})
 		})
-		return sprites
+		return { bills, ailing }
 	}
 
-	const ducks = (): Array<Sprite> => {
+	const ducks = (across: THREE.Vector3): Array<Bill> => {
 		const first = state.derived.lakes[0]
 		if (first === undefined) return []
 		const [cx, cy] = centre(first)
 		return Arr.map([0.1, 0.42, 0.74], (phase, index) => {
 			const turn = (phase + state.seconds * 0.02) * Math.PI * 2
 			const hop = Math.max(0, 1 - (state.seconds - (state.hops[index] ?? -9)) / 0.45)
+			const [wide, deep] = [DUCK_LOOP * (0.7 + index * 0.25), DUCK_LOOP * (0.55 + index * 0.2)]
 			return {
 				sprite: "duck",
-				x: cx + Math.cos(turn) * DUCK_LOOP * (0.7 + index * 0.25),
-				y: cy + Math.sin(turn) * DUCK_LOOP * (0.55 + index * 0.2) + 6,
-				flip: Math.sin(turn) > 0,
-				lift: Math.sin(Math.PI * hop) * 10,
+				at: toWorld(
+					[cx + Math.cos(turn) * wide, cy + Math.sin(turn) * deep],
+					Math.sin(Math.PI * hop) * 0.25,
+				),
+				flip: -Math.sin(turn) * wide * across.x + Math.cos(turn) * deep * across.z < 0,
 			}
 		})
 	}
@@ -585,27 +1059,51 @@ export function startPixelScene(
 	const isBirdStartled = (): boolean =>
 		Arr.some(state.birds, (bird) => state.seconds - bird.startledAt < BIRD_FRIGHT)
 	/** Where the birds are: a startled one beats its wings fast and climbs for a moment. */
-	const birds = (): Array<Sprite> =>
+	const birds = (): Array<Bill> =>
 		Arr.map(state.birds, (bird, index) => {
-			const middle = toPx(state.derived.centre)
+			const middle = toArt(state.derived.centre)
 			const span = state.derived.radius * PX * 2.6
 			const u = bird.turn % 1
 			const fright = Math.max(0, 1 - (state.seconds - bird.startledAt) / BIRD_FRIGHT)
 			const isUp = Math.floor(state.seconds * (fright > 0 ? 12 : 5) + index) % 2 === 0
 			return {
 				sprite: isUp ? "birdUp" : "birdDown",
-				x: middle[0] - span / 2 + u * span + (index % 2) * 30,
-				y:
-					middle[1] -
-					span * 0.28 +
-					index * 150 +
-					Math.sin(u * 9 + index) * 24 -
-					Math.sin(Math.PI * fright) * 70,
+				at: toWorld(
+					[
+						middle[0] - span / 2 + u * span + (index % 2) * 30,
+						middle[1] - span * 0.28 + index * 150 + Math.sin(u * 9 + index) * 24,
+					],
+					BIRD_HEIGHT + Math.sin(Math.PI * fright) * 1.75,
+				),
+				flip: rightward().x < 0,
 			}
 		})
+	/** Which way is right on the screen, as a direction in the world. */
+	const rightward = (): THREE.Vector3 => new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
 
+	const probe = new THREE.Vector3()
+	/** Where a point in the world falls on the canvas, in CSS pixels. */
+	const screenOf = (x: number, y: number, z: number): Point => {
+		probe.set(x, y, z).project(camera)
+		return [(probe.x * 0.5 + 0.5) * state.size.width, (-probe.y * 0.5 + 0.5) * state.size.height]
+	}
+	/** Whether `pointer` (CSS pixels on the canvas) is on a sprite `tall` world units high standing at `foot`. */
+	const isOver = (pointer: Point, foot: Vec3, tall: number): boolean => {
+		const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion)
+		const base = screenOf(...foot)
+		const top = screenOf(foot[0] + up.x * tall, foot[1] + up.y * tall, foot[2] + up.z * tall)
+		const reach = Math.max(10, Math.hypot(top[0] - base[0], top[1] - base[1]) * 0.6)
+		return Math.hypot(pointer[0] - (base[0] + top[0]) / 2, pointer[1] - (base[1] + top[1]) / 2) < reach
+	}
+
+	/** Each label lies on the near side of its tile; a label that would cover one already placed
+	 * is hidden, the selected service and the busiest ones first. */
 	const placeLabels = () => {
 		const { input, nodes, related, cells } = state.derived
+		const toCamera = new THREE.Vector2(
+			camera.position.x - orbit.target.x,
+			camera.position.z - orbit.target.z,
+		).normalize()
 		const priority = (id: string) =>
 			(id === input.selectedId ? 1e9 : 0) +
 			(related?.has(id) === true ? 1e6 : 0) +
@@ -619,22 +1117,23 @@ export function startPixelScene(
 			Order.flip(Order.mapInput(Order.Number, (label: { readonly id: string }) => priority(label.id))),
 		)
 		const placed: Array<{ x: number; y: number; width: number; height: number }> = []
-		const [w, h] = [state.width / state.ratio, state.height / state.ratio]
+		const out = HEX_SIZE * Math.cos(Math.PI / 6) * 0.7
 		Arr.forEach(labels, ({ id, element }) => {
 			const cell = cells.get(id)
-			if (cell === undefined || id === input.heldId) {
+			if (cell === undefined || id === input.heldId || state.ready === null) {
 				element.style.visibility = "hidden"
 				return
 			}
-			const [x, y] = centre(cell)
-			const left = (x * state.scale + state.x) / state.ratio
-			const top = ((y + INRADIUS * 0.7) * state.scale + state.y) / state.ratio
+			const [x, z] = cellToPoint(cell)
+			const [left, top] = screenOf(x + toCamera.x * out, 0.05, z + toCamera.y * out)
 			const [width, height] = [element.offsetWidth, element.offsetHeight]
 			const hidden =
+				probe.z < -1 ||
+				probe.z > 1 ||
 				left < width / 2 ||
-				left > w - width / 2 ||
+				left > state.size.width - width / 2 ||
 				top < 0 ||
-				top > h - height ||
+				top > state.size.height - height ||
 				Arr.some(
 					placed,
 					(other) =>
@@ -647,344 +1146,118 @@ export function startPixelScene(
 		})
 	}
 
-	/** Night falls as a dark veil with a hole of lamplight over every village; a low sun warms it. */
-	const light = () => {
-		const { input } = state.derived
-		const day = daylightAt({ ...input.clock, hour: state.shownHour })
-		const low = Math.max(0, 1 - Math.abs(day.elevation - 4) / 14) * (1 - day.lamps)
-		ctx.setTransform(1, 0, 0, 1, 0, 0)
-		ctx.globalCompositeOperation = "source-atop"
-		if (low > 0.01) {
-			ctx.fillStyle = `rgba(255, 126, 40, ${(low * 0.2).toFixed(3)})`
-			ctx.fillRect(0, 0, state.width, state.height)
-		}
-		if (day.lamps > 0.01) {
-			const veil = dark.getContext("2d")
-			if (veil !== null) {
-				veil.setTransform(1, 0, 0, 1, 0, 0)
-				veil.globalCompositeOperation = "source-over"
-				veil.clearRect(0, 0, dark.width, dark.height)
-				veil.fillStyle = `rgba(16, 22, 62, ${(day.lamps * 0.62).toFixed(3)})`
-				veil.fillRect(0, 0, dark.width, dark.height)
-				veil.globalCompositeOperation = "destination-out"
-				Arr.forEach(state.lamps, (lamp) => {
-					const [x, y] = [
-						(lamp.x * state.scale + state.x) / 2,
-						(lamp.y * state.scale + state.y) / 2,
-					]
-					const radius = (lamp.radius * state.scale) / 2
-					const glow = veil.createRadialGradient(x, y, 0, x, y, radius)
-					glow.addColorStop(0, "rgba(0, 0, 0, 0.95)")
-					glow.addColorStop(0.45, "rgba(0, 0, 0, 0.6)")
-					glow.addColorStop(1, "rgba(0, 0, 0, 0)")
-					veil.fillStyle = glow
-					veil.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-				})
-				ctx.imageSmoothingEnabled = true
-				ctx.drawImage(dark, 0, 0, dark.width, dark.height, 0, 0, state.width, state.height)
-			}
-			// The lamplight itself: a little warmth added where the veil was opened.
-			ctx.globalCompositeOperation = "lighter"
-			Arr.forEach(state.lamps, (lamp) => {
-				const [x, y] = [lamp.x * state.scale + state.x, lamp.y * state.scale + state.y]
-				const radius = lamp.radius * state.scale * 0.7
-				const glow = ctx.createRadialGradient(x, y, 0, x, y, radius)
-				glow.addColorStop(0, `rgba(255, 176, 72, ${(day.lamps * 0.24).toFixed(3)})`)
-				glow.addColorStop(1, "rgba(255, 176, 72, 0)")
-				ctx.fillStyle = glow
-				ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2)
-			})
-		}
-		// A lighthouse turns its beam over the land after dark.
-		if (day.lamps > 0.01) {
-			ctx.globalCompositeOperation = "source-atop"
-			Arr.forEach(state.lands, (land) => {
-				const tower = land.art.landmark
-				if (tower === null || tower.kind !== "lighthouse") return
-				const x = (land.at[0] + tower.x) * state.scale + state.x
-				const y = (land.at[1] + tower.y - SPRITES.lighthouse[3] + 14) * state.scale + state.y
-				const turn = state.seconds * 0.7
-				const reach = 270 * state.scale
-				const beam = ctx.createRadialGradient(x, y, 0, x, y, reach)
-				beam.addColorStop(0, `rgba(255, 226, 150, ${(day.lamps * 0.55).toFixed(3)})`)
-				beam.addColorStop(1, "rgba(255, 226, 150, 0)")
-				ctx.fillStyle = beam
-				ctx.beginPath()
-				ctx.moveTo(x, y)
-				ctx.arc(x, y, reach, turn - 0.2, turn + 0.2)
-				ctx.closePath()
-				ctx.fill()
-			})
-		}
-		ctx.globalCompositeOperation = "source-over"
+	/** The held tile glides to its target cell, or to the point under the pointer. */
+	const carryHeld = (delta: number): boolean => {
+		if (!held.group.visible) return false
+		const target = state.hoverCell !== null ? cellToPoint(state.hoverCell) : state.heldPoint
+		const goal = new THREE.Vector3(
+			target?.[0] ?? held.group.position.x,
+			HELD_LIFT,
+			target?.[1] ?? held.group.position.z,
+		)
+		const before = held.group.position.distanceTo(goal)
+		held.group.position.lerp(goal, 1 - Math.exp(-delta * 16))
+		return before > 0.01
 	}
 
-	const render = (delta: number) => {
-		const { input, cells, nodes, related, targets, links, palette } = state.derived
-		rig()
-		ctx.setTransform(1, 0, 0, 1, 0, 0)
-		ctx.globalCompositeOperation = "source-over"
-		ctx.clearRect(0, 0, state.width, state.height)
-		ctx.setTransform(state.scale, 0, 0, state.scale, state.x, state.y)
-		// Nearest-neighbour when a pixel is a block; smoothed when the whole board is shrunk to fit.
-		ctx.imageSmoothingEnabled = state.scale < 1
-		ctx.imageSmoothingQuality = "high"
-		// The earth under the board, showing along its southern edge.
-		Arr.forEach(state.lands, (land) => {
-			ctx.fillStyle = SOIL_SHADE
-			ctx.fill(hexPath([land.at[0], land.at[1] + RIM], 1))
-			ctx.fillStyle = SOIL
-			ctx.fill(hexPath([land.at[0], land.at[1] + RIM * 0.55], 1))
-		})
-		Arr.forEach(state.lands, drawLand)
-		// Roads: a dark edge under a strip of trodden earth.
-		const { network } = state.derived
-		ctx.lineCap = "round"
-		Arr.forEach(network.roads, ({ from, to }) => {
-			const road = line([toPx(from), toPx(to)])
-			ctx.strokeStyle = "#8b6a44"
-			ctx.lineWidth = 30
-			ctx.stroke(road)
-			ctx.strokeStyle = patterns.get("dirt") ?? "#c79a63"
-			ctx.lineWidth = 25
-			ctx.stroke(road)
-		})
-		// Railways: a gravel bed, sleepers as dashes across it, and two rails.
-		ctx.lineCap = "butt"
-		ctx.lineJoin = "round"
-		Arr.forEach(state.rails, (piece) => {
-			const track = line(piece)
-			ctx.setLineDash([])
-			ctx.strokeStyle = "#9c8f7c"
-			ctx.lineWidth = 18
-			ctx.stroke(track)
-			ctx.setLineDash([4, 6])
-			ctx.strokeStyle = "#6b4a2e"
-			ctx.lineWidth = 16
-			ctx.stroke(track)
-			ctx.setLineDash([])
-			ctx.strokeStyle = "#3d3540"
-			ctx.lineWidth = 10
-			ctx.stroke(track)
-			ctx.strokeStyle = "#9c8f7c"
-			ctx.lineWidth = 6
-			ctx.stroke(track)
-			ctx.setLineDash([4, 6])
-			ctx.strokeStyle = "#6b4a2e"
-			ctx.stroke(track)
-			ctx.setLineDash([])
-		})
-		// A city's wall: a ring of stone round the town, open where a road or a railway leaves.
-		Arr.forEach(state.lands, (land) => {
-			const radius = land.art.wall
-			if (radius === 0) return
-			const gates = Arr.sort(
-				land.id === null ? [] : (network.corridors.get(land.id) ?? []),
-				Order.Number,
-			)
-			const gate = Math.asin(Math.min(1, 26 / radius))
-			const ring = new Path2D()
-			if (gates.length === 0) ring.arc(land.at[0], land.at[1], radius, 0, Math.PI * 2)
-			Arr.forEach(gates, (way, index) => {
-				const next = gates[(index + 1) % gates.length] ?? way
-				const from = way + gate
-				const to = (index === gates.length - 1 ? next + Math.PI * 2 : next) - gate
-				if (to <= from) return
-				ring.moveTo(land.at[0] + Math.cos(from) * radius, land.at[1] + Math.sin(from) * radius)
-				ring.arc(land.at[0], land.at[1], radius, from, to)
-			})
-			ctx.lineCap = "butt"
-			ctx.strokeStyle = OUTLINE
-			ctx.lineWidth = 12
-			ctx.stroke(ring)
-			ctx.strokeStyle = "#b9ad9a"
-			ctx.lineWidth = 8
-			ctx.stroke(ring)
-			// Lighter stones along the top, as battlements.
-			ctx.setLineDash([6, 6])
-			ctx.strokeStyle = "#ded5c5"
-			ctx.lineWidth = 4
-			ctx.stroke(ring)
-			ctx.setLineDash([])
-		})
-		ctx.strokeStyle = OUTLINE
-		ctx.lineWidth = 2
-		ctx.lineCap = "round"
-		ctx.stroke(state.coast)
-		// Health and selection ring the tile; the tile under the pointer gets a pale one.
-		Arr.forEach([...cells], ([id, cell]) => {
-			if (id === input.heldId) return
-			const node = nodes.get(id)
-			const level = node === undefined ? "healthy" : health(node.errorRate)
-			const isSelected = id === input.selectedId
-			if (!isSelected && level === "healthy") return
-			ctx.strokeStyle = isSelected ? palette.selected : HEALTH_COLOR[level]
-			ctx.lineWidth = isSelected ? 7 : 4
-			ctx.stroke(hexPath(centre(cell), -5))
-		})
-		if (state.hoverTile !== null && input.heldId === null) {
-			ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"
-			ctx.lineWidth = 3
-			ctx.stroke(hexPath(centre(state.hoverTile), -4))
-		}
-		// Rings on the water.
-		state.rings = Arr.filter(state.rings, (ring) => state.seconds - ring.since < 1)
-		Arr.forEach(state.rings, (ring) => {
-			const u = state.seconds - ring.since
-			ctx.strokeStyle = `rgba(255, 255, 255, ${(0.8 * (1 - u)).toFixed(3)})`
-			ctx.lineWidth = 2
-			ctx.stroke(circle(ring.at[0], ring.at[1], 6 + u * 34))
-		})
-		// Everything that stands up, north to south, so what is nearer covers what is behind.
-		const moving = movers(delta)
-		const standing = [
-			...state.statics,
-			...Arr.map(state.buffers, ([x, y]): Sprite => ({ sprite: "buffer", x, y: y + 10 })),
-			...moving,
-			...ducks(),
-		]
-		Arr.forEach(
-			Arr.sort(
-				standing,
-				Order.mapInput(Order.Number, (sprite: Sprite) => sprite.y),
-			),
-			draw,
-		)
-		// A failing link's cart or engine carries its health colour as a dot above it.
-		Arr.forEach(moving, (sprite) => {
-			if (sprite.ailing === undefined || sprite.ailing === null) return
-			ctx.fillStyle = OUTLINE
-			ctx.fill(circle(sprite.x, sprite.y - SPRITES[sprite.sprite][3] - 6, 5))
-			ctx.fillStyle = sprite.ailing
-			ctx.fill(circle(sprite.x, sprite.y - SPRITES[sprite.sprite][3] - 6, 3.5))
-		})
-		// Tiles that have nothing to do with the selected service fall back.
-		if (related !== null)
-			Arr.forEach([...cells], ([id, cell]) => {
-				if (related.has(id) || id === input.heldId) return
-				ctx.fillStyle = "rgba(236, 236, 228, 0.55)"
-				ctx.fill(hexPath(centre(cell), 1))
-			})
-		// Birds cross the board, flapping; a startled one hurries on.
+	const frame = (ready: Ready, delta: number) => {
+		const { input } = state.derived
+		const right = rightward()
+		const moving = movers(delta, right)
 		Arr.forEach(state.birds, (bird) => {
 			const isStartled = state.seconds - bird.startledAt < BIRD_FRIGHT
 			if (input.flowing || isStartled) bird.turn += delta * (isStartled ? 0.16 : 0.03)
 		})
-		if (input.flowing || isBirdStartled()) Arr.forEach(birds(), draw)
-		light()
-		// What is in hand is drawn over the night, so it reads at any hour.
-		ctx.setTransform(state.scale, 0, 0, state.scale, state.x, state.y)
-		ctx.imageSmoothingEnabled = state.scale < 1
-		// Where a held tile may go, and which of those cells the pointer is over.
-		Arr.forEach(targets?.free ?? [], (cell) => {
-			const plate = hexPath(centre(cell), -4)
-			ctx.fillStyle = "rgba(246, 236, 212, 0.85)"
-			ctx.fill(plate)
-			ctx.setLineDash([8, 6])
-			ctx.strokeStyle = palette.slotEdge
-			ctx.lineWidth = 2
-			ctx.stroke(plate)
-			ctx.setLineDash([])
+		const { x, y, z } = held.group.position
+		ready.moving.set([
+			...moving.bills,
+			...Arr.map(state.buffers, ([bx, bz]): Bill => ({ sprite: "buffer", at: [bx, 0, bz] })),
+			...ducks(right),
+			...(input.flowing || isBirdStartled() ? birds() : []),
+			...(held.group.visible
+				? Arr.map(held.art?.items ?? [], (item): Bill => ({
+						sprite: item.sprite,
+						at: [x + item.x / PX, y, z + item.y / PX],
+					}))
+				: []),
+		])
+		Arr.forEach(flags, (flag, index) => {
+			const wanted = moving.ailing[index]
+			flag.visible = wanted !== undefined
+			if (wanted === undefined) return
+			flag.position.set(...wanted.at)
+			flag.material.color.set(wanted.color)
 		})
-		if (state.hoverCell !== null && input.heldId !== null) {
-			const [x, y] = centre(state.hoverCell)
-			ctx.fillStyle = "rgba(245, 165, 36, 0.55)"
-			ctx.fill(hexPath([x, y], -4))
-			Arr.forEach(links, (link) => {
-				const other =
-					link.source === input.heldId
-						? link.target
-						: link.target === input.heldId
-							? link.source
-							: null
-				const at = other === null ? undefined : cells.get(other)
-				if (at === undefined || state.hoverCell === null || sameCell(at, state.hoverCell)) return
-				const touching = hexDistance(at, state.hoverCell) === 1
-				ctx.strokeStyle = touching ? palette.selected : "rgba(120, 100, 80, 0.7)"
-				ctx.lineWidth = touching ? 12 : 3
-				ctx.stroke(line([[x, y], centre(at)]))
-			})
-		}
-		// The tile in hand follows the pointer, lifted off the board.
-		// One moved by the keyboard has no pointer to follow: it stands over the place chosen.
-		const under = state.hoverCell !== null ? centre(state.hoverCell) : state.pointer
-		if (input.heldId !== null && under !== null) {
-			const node = nodes.get(input.heldId)
-			const at: Point = [under[0], under[1] - 22]
-			if (node !== undefined) {
-				const art = serviceArt({
-					id: input.heldId,
-					kind: node.kind,
-					size: state.derived.sizes.get(input.heldId) ?? 0.5,
-					biome: biomeOf(state.derived.biomes, node.namespace),
-					corridors: [],
-				})
-				ctx.fillStyle = "rgba(30, 20, 30, 0.25)"
-				ctx.fill(hexPath([at[0], at[1] + 30], 1))
-				drawLand({ key: "held", at, art, id: input.heldId })
-				ctx.strokeStyle = OUTLINE
-				ctx.lineWidth = 2
-				ctx.stroke(hexPath(at, 1))
-				Arr.forEach(
-					Arr.sort(
-						Arr.map(art.items, (item): Sprite => ({
-							...item,
-							x: at[0] + item.x,
-							y: at[1] + item.y,
-						})),
-						Order.mapInput(Order.Number, (sprite: Sprite) => sprite.y),
-					),
-					draw,
-				)
-			}
-		}
-		placeLabels()
+		state.rings = Arr.filter(state.rings, (ring) => state.seconds - ring.since < 1)
+		Arr.forEach(ripples, (ripple, index) => {
+			const ring = state.rings[index]
+			ripple.visible = ring !== undefined
+			if (ring === undefined) return
+			const age = state.seconds - ring.since
+			ripple.position.set(ring.at[0], 0.03, ring.at[1])
+			ripple.scale.setScalar(0.15 + age * 0.85)
+			ripple.material.opacity = 0.8 * (1 - age)
+		})
 	}
 
 	const loop = (now: number) => {
 		state.raf = requestAnimationFrame(loop)
 		const { input } = state.derived
-		// The hour shown turns towards the wanted one, so a change of light sweeps across.
-		const apart = ((((input.clock.hour - state.shownHour) % 24) + 36) % 24) - 12
-		const turning = Math.abs(apart) > 1e-3
-		const playing =
-			turning ||
-			state.rings.length > 0 ||
-			isBirdStartled() ||
-			Arr.some(state.hops, (at) => state.seconds - at < 0.5)
-		if (!state.dirty && !playing && !(input.flowing && now - state.last >= FRAME_MS)) return
+		const idle = state.pending === 0
+		if (!input.flowing && idle && input.heldId === null) return
+		if (idle && input.heldId === null && now - state.last < FRAME_MS) return
 		const delta = Math.min(0.05, (now - state.last) / 1000)
 		state.last = now
-		state.dirty = false
-		if (turning) {
-			const step = Math.min(Math.abs(apart), delta * Math.max(8, Math.abs(apart) * 3))
-			state.shownHour = (((state.shownHour + Math.sign(apart) * step) % 24) + 24) % 24
-		}
-		if (input.flowing || playing) state.seconds += delta
-		if (atlas.complete && atlas.naturalWidth > 0) render(delta)
+		state.pending = Math.max(0, state.pending - 1)
+		const ready = state.ready
+		if (ready === null) return
+		rig()
+		// What a click set off plays out on a paused map too: keep drawing until it all settles.
+		const playing = [
+			turnClock(delta),
+			carryHeld(delta),
+			state.rings.length > 0,
+			isBirdStartled(),
+			Arr.some(state.hops, (at) => state.seconds - at < 0.5),
+		]
+		const isPlaying = Arr.some(playing, Boolean)
+		if (isPlaying) invalidate()
+		if (input.flowing || isPlaying) state.seconds += delta
+		if (input.flowing && turnBeacons(delta)) invalidate()
+		frame(ready, delta)
+		renderer.render(scene, camera)
+		placeLabels()
 	}
 
-	/** The pointer's place on the board, in art pixels. */
-	const artAt = (event: MouseEvent): Point => {
+	const raycaster = new THREE.Raycaster()
+	const ground = new THREE.Plane(UP, 0)
+	const pointerOf = (event: MouseEvent): Point => {
 		const bounds = canvas.getBoundingClientRect()
-		return [
-			((event.clientX - bounds.left) * state.ratio - state.x) / state.scale,
-			((event.clientY - bounds.top) * state.ratio - state.y) / state.scale,
-		]
+		return [event.clientX - bounds.left, event.clientY - bounds.top]
 	}
-	const cellAt = ([x, y]: Point): Cell => pointToCell([x / PX, y / PX])
-	const serviceAt = (point: Point): string | null => {
-		const cell = cellAt(point)
+	/** The point of the ground under the pointer, in world units. */
+	const groundAt = (event: MouseEvent): Point | null => {
+		const [x, y] = pointerOf(event)
+		raycaster.setFromCamera(
+			new THREE.Vector2((x / state.size.width) * 2 - 1, -(y / state.size.height) * 2 + 1),
+			camera,
+		)
+		const point = raycaster.ray.intersectPlane(ground, new THREE.Vector3())
+		return point === null ? null : [point.x, point.z]
+	}
+	const serviceAt = (point: Point | null): string | null => {
+		if (point === null) return null
+		const cell = pointToCell(point)
 		const found = Arr.findFirst(
 			[...state.derived.cells],
 			([id, at]) => id !== state.derived.input.heldId && sameCell(at, cell),
 		)
 		return Option.getOrNull(Option.map(found, ([id]) => id))
 	}
-	const targetAt = (point: Point): Cell | null => {
+	const targetAt = (point: Point | null): Cell | null => {
 		const { targets, cells, input } = state.derived
-		if (targets === null || input.heldId === null) return null
-		const cell = cellAt(point)
+		if (point === null || targets === null || input.heldId === null) return null
+		const cell = pointToCell(point)
 		const home = cells.get(input.heldId)
 		const valid =
 			(home !== undefined && sameCell(home, cell)) ||
@@ -997,53 +1270,53 @@ export function startPixelScene(
 			(state.hoverCell === null ? "" : cellKey(state.hoverCell)) !==
 			(cell === null ? "" : cellKey(cell))
 		state.hoverCell = cell
-		if (changed) events.onHover(cell)
+		if (!changed) return
+		syncProspect()
+		events.onHover(cell)
 	}
-	const moverAt = ([x, y]: Point): Hot | null =>
-		Option.getOrNull(Arr.findFirst(state.hot, (hot) => Math.hypot(hot.x - x, hot.y - y) < 24))
-	const duckAt = ([x, y]: Point): number | null =>
-		Option.getOrNull(Arr.findFirstIndex(ducks(), (duck) => Math.hypot(duck.x - x, duck.y - 8 - y) < 16))
+	const moverAt = (pointer: Point): Hot | null =>
+		Option.getOrNull(Arr.findFirst(state.hot, (hot) => isOver(pointer, hot.at, hot.tall)))
+	const duckAt = (pointer: Point): number | null =>
+		Option.getOrNull(
+			Arr.findFirstIndex(ducks(rightward()), (duck) => isOver(pointer, duck.at, SPRITES.duck[3] / PX)),
+		)
 	/** The bird under the pointer, while the birds are out. */
-	const birdAt = ([x, y]: Point): number | null =>
+	const birdAt = (pointer: Point): number | null =>
 		state.derived.input.flowing || isBirdStartled()
 			? Option.getOrNull(
-					Arr.findFirstIndex(birds(), (bird) => Math.hypot(bird.x - x, bird.y - 10 - y) < 22),
+					Arr.findFirstIndex(birds(), (bird) => isOver(pointer, bird.at, SPRITES.birdUp[3] / PX)),
 				)
 			: null
-	const lakeAt = (point: Point): boolean => {
-		const cell = cellAt(point)
-		const [cx, cy] = centre(cell)
+	const lakeAt = (point: Point | null): boolean => {
+		if (point === null) return false
+		const cell = pointToCell(point)
+		const [x, z] = cellToPoint(cell)
 		return (
 			Arr.some(state.derived.lakes, (lake) => sameCell(lake, cell)) &&
-			Math.hypot(point[0] - cx, point[1] - cy) < 100
+			Math.hypot(point[0] - x, point[1] - z) < 2.5
 		)
 	}
 
 	const onPointerDown = (event: PointerEvent) => {
-		state.pressed = { x: event.clientX, y: event.clientY, panning: false }
+		state.pressed = { x: event.clientX, y: event.clientY }
 	}
 	const onPointerMove = (event: PointerEvent) => {
-		const point = artAt(event)
-		state.pointer = point
 		const { input } = state.derived
-		const dragged = Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y)
-		if (event.buttons !== 0 && (state.pressed.panning || dragged > DRAG_TOLERANCE)) {
-			state.pressed.panning = true
-			state.x += Math.round(event.movementX * state.ratio)
-			state.y += Math.round(event.movementY * state.ratio)
-			state.userMoved = true
-			canvas.style.cursor = "grabbing"
-			return invalidate()
-		}
+		const point = groundAt(event)
 		if (input.heldId !== null) {
-			const cell = targetAt(point)
-			setHover(cell)
-			canvas.style.cursor = cell === null ? "grabbing" : "copy"
+			pointed.visible = false
+			state.heldPoint = point
+			setHover(targetAt(point))
+			canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 			return invalidate()
 		}
+		const pointer = pointerOf(event)
 		const id = serviceAt(point)
 		const lively =
-			moverAt(point) !== null || duckAt(point) !== null || birdAt(point) !== null || lakeAt(point)
+			(!input.building && moverAt(pointer) !== null) ||
+			duckAt(pointer) !== null ||
+			birdAt(pointer) !== null ||
+			lakeAt(point)
 		canvas.style.cursor = lively || id !== null ? "pointer" : ""
 		const hover = id === null || lively ? null : (state.derived.cells.get(id) ?? null)
 		if (
@@ -1052,30 +1325,34 @@ export function startPixelScene(
 		)
 			invalidate()
 		state.hoverTile = hover
+		pointed.visible = hover !== null
+		if (hover !== null) pointed.position.set(cellToPoint(hover)[0], 0, cellToPoint(hover)[1])
 	}
 	const onClick = (event: MouseEvent) => {
-		if (state.pressed.panning) return
+		if (Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y) > DRAG_TOLERANCE)
+			return
 		const { input } = state.derived
-		const point = artAt(event)
+		const point = groundAt(event)
+		const pointer = pointerOf(event)
 		if (input.heldId !== null) {
 			const cell = targetAt(point)
 			if (cell !== null) events.onPlace(input.heldId, cell)
 			return
 		}
-		const duck = duckAt(point)
+		const duck = duckAt(pointer)
 		if (duck !== null) {
 			state.hops[duck] = state.seconds
 			if (!input.muted) quacks.quack(2)
 			return invalidate()
 		}
-		const bird = birdAt(point)
+		const bird = birdAt(pointer)
 		if (bird !== null) {
 			const startled = state.birds[bird]
 			if (startled !== undefined) startled.startledAt = state.seconds
 			sounds.chirp(3)
 			return invalidate()
 		}
-		const mover = input.building ? null : moverAt(point)
+		const mover = input.building ? null : moverAt(pointer)
 		if (mover !== null) {
 			if (mover.kind === "train") sounds.whistle()
 			else sounds.ding()
@@ -1086,21 +1363,25 @@ export function startPixelScene(
 			if (id !== null) events.onPickUp(id)
 			return
 		}
-		if (id === null && lakeAt(point)) {
+		if (id === null && point !== null && lakeAt(point)) {
 			state.rings.push({ at: point, since: state.seconds })
 			sounds.splash()
 			return invalidate()
 		}
 		// A church rings its bell and the birds take fright; a lighthouse sounds its horn. The
 		// click still selects the service.
-		const land = Option.getOrUndefined(
+		const stood = Option.getOrUndefined(
 			Arr.findFirst(state.lands, (each) => each.id !== null && each.id === id),
 		)
-		const tower = land?.art.landmark ?? null
+		const tower = stood?.art.landmark ?? null
 		if (
-			land !== undefined &&
+			stood !== undefined &&
 			tower !== null &&
-			Math.hypot(point[0] - land.at[0] - tower.x, point[1] - land.at[1] - tower.y + 30) < 40
+			isOver(
+				pointer,
+				toWorld([stood.at[0] + tower.x, stood.at[1] + tower.y]),
+				SPRITES[tower.kind][3] / PX,
+			)
 		) {
 			if (tower.kind === "church") {
 				sounds.bell()
@@ -1113,18 +1394,17 @@ export function startPixelScene(
 		}
 		events.onSelect(id === null || id === input.selectedId ? null : id)
 	}
-	const onWheel = (event: WheelEvent) => {
-		event.preventDefault()
-		const bounds = canvas.getBoundingClientRect()
-		zoomAt(
-			Math.exp(-event.deltaY * 0.0022),
-			(event.clientX - bounds.left) * state.ratio,
-			(event.clientY - bounds.top) * state.ratio,
-		)
-	}
 	const onLeave = () => {
 		state.hoverTile = null
+		pointed.visible = false
 		invalidate()
+	}
+	const onContextMenu = (event: MouseEvent) => event.preventDefault()
+	/** A way across the screen as a way across the board, however the camera is turned. */
+	const acrossBoard = ([right, down]: Point): Point => {
+		const ahead = camera.getWorldDirection(new THREE.Vector3())
+		const side = rightward()
+		return [right * side.x - down * ahead.x, right * side.z - down * ahead.z]
 	}
 	// A tile in hand can be placed without a pointer: arrows choose where, Enter puts it down.
 	const onKeyDown = (event: KeyboardEvent) => {
@@ -1135,7 +1415,7 @@ export function startPixelScene(
 		const arrow = arrowOf(event.key)
 		if (arrow !== null) {
 			event.preventDefault()
-			setHover(keyedTarget(state.derived, state.hoverCell, arrow))
+			setHover(keyedTarget(state.derived, state.hoverCell, acrossBoard(arrow)))
 			return invalidate()
 		}
 		if (event.key === "Enter" && state.hoverCell !== null) {
@@ -1143,23 +1423,32 @@ export function startPixelScene(
 			events.onPlace(input.heldId, state.hoverCell)
 		}
 	}
-	// A wheel over a name plate or a panel still zooms: only the canvas hears it otherwise.
-	const onRootWheel = (event: Event) => {
+	// A wheel over a name plate or a panel still zooms: the controls only hear the canvas.
+	const onWheel = (event: Event) => {
 		if (event.target === canvas || !(event instanceof WheelEvent)) return
-		onWheel(event)
+		event.preventDefault()
+		canvas.dispatchEvent(new WheelEvent("wheel", event))
 	}
 	canvas.addEventListener("pointerdown", onPointerDown)
 	canvas.addEventListener("pointermove", onPointerMove)
 	canvas.addEventListener("pointerleave", onLeave)
 	canvas.addEventListener("click", onClick)
-	canvas.addEventListener("wheel", onWheel, { passive: false })
-	labelsRoot.addEventListener("wheel", onRootWheel, { passive: false })
+	canvas.addEventListener("contextmenu", onContextMenu)
+	labelsRoot.addEventListener("wheel", onWheel, { passive: false })
 	window.addEventListener("keydown", onKeyDown)
 	const observer = new ResizeObserver(resize)
 	observer.observe(container)
 	const sync = () => {
-		syncBoard()
+		applyLight()
 		syncTraffic()
+		const ready = state.ready
+		if (ready !== null) {
+			syncBoard(ready)
+			syncMarks(ready)
+			syncHeld(ready)
+		}
+		syncSlots()
+		syncProspect()
 		invalidate()
 	}
 	resize()
@@ -1169,8 +1458,11 @@ export function startPixelScene(
 		update: (input) => {
 			const previous = state.derived
 			state.derived = derive(input, previous)
-			if (previous.input.heldId !== input.heldId || previous.input.cells !== input.cells)
+			if (input.heldId !== null) pointed.visible = false
+			if (previous.input.heldId !== input.heldId || previous.input.cells !== input.cells) {
 				state.hoverCell = null
+				state.heldPoint = null
+			}
 			sync()
 		},
 		stop: () => {
@@ -1180,11 +1472,24 @@ export function startPixelScene(
 			canvas.removeEventListener("pointermove", onPointerMove)
 			canvas.removeEventListener("pointerleave", onLeave)
 			canvas.removeEventListener("click", onClick)
-			canvas.removeEventListener("wheel", onWheel)
-			labelsRoot.removeEventListener("wheel", onRootWheel)
+			canvas.removeEventListener("contextmenu", onContextMenu)
+			labelsRoot.removeEventListener("wheel", onWheel)
 			window.removeEventListener("keydown", onKeyDown)
+			orbit.dispose()
+			state.ready?.statics.dispose()
+			state.ready?.moving.dispose()
+			Arr.forEach([...Rec.values(land), pointed, chosen, held.top, held.sides, ...ripples], (mesh) => {
+				mesh.geometry.dispose()
+			})
+			Arr.forEach(ripples, (ripple) => ripple.material.dispose())
+			Arr.forEach(flags, (flag) => flag.material.dispose())
+			held.top.material.dispose()
+			Arr.forEach(Rec.values(materials), (material) => material.dispose())
+			painting.dispose()
+			heldPainting.dispose()
 			quacks.close()
 			sounds.close()
+			renderer.dispose()
 		},
 	}
 }

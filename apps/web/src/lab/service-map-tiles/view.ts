@@ -154,7 +154,7 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					size: "sm",
 					variant: "ghost",
 					attributes: [
-						h.Title("Switch between pixel art and the painted 3D look"),
+						h.Title("Switch between pixel art and the painted look"),
 						h.OnClick(Message.ClickedStyle()),
 					],
 				},
@@ -480,8 +480,8 @@ const footer = (h: H, model: Model): Html =>
 							? "Click a pale cell to put the tile down · or arrow keys, then Enter"
 							: "Click a pale cell or another tile · or arrow keys, then Enter · Esc puts it back"
 						: model.isBuilding
-							? `Click a tile to lift it, or press Enter on its name · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`
-							: `Click anything · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`,
+							? `Click a tile to lift it, or press Enter on its name · drag to pan · right-drag to turn`
+							: `Click anything · drag to pan · right-drag to turn`,
 				],
 			),
 			hstack(h, { gap: "3", wrap: true, as: "span" }, [
