@@ -116,6 +116,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"GcpConnectors",
 	// Also removed with its connector, by the foreign key.
 	"GcpResources",
+	// Before the connections they point at: a surviving row would keep the cost sync pulling.
+	"CostSources",
 	// A surviving row would keep Maple signing tokens for, and assuming, the customer's role.
 	"AwsConnections",
 	"ErrorIssueEvents",

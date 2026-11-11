@@ -1,5 +1,11 @@
 import { Schema } from "effect"
 
+/**
+ * `ChargeCategory` of the zero row the sync writes for a day a pull returned nothing for. It is
+ * not a charge: it only gives the day a newer pull version, and every cost read leaves it out.
+ */
+export const COST_EMPTY_DAY_CATEGORY = "none"
+
 /** Which money column a read sums: what was invoiced, or with upfront commitments spread over their term. */
 export const CostMetric = Schema.Literals(["billed", "effective"])
 export type CostMetric = typeof CostMetric.Type
