@@ -24,7 +24,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
-import { init, routeChanged, update } from "./update"
+import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -388,6 +388,12 @@ describe("cost page", () => {
 			expectView(text("AccessDeniedException: not authorized")).toExist(),
 			expectView(text("This connection no longer supplies cost. Its history stays.")).toExist(),
 		)
+	})
+
+	test("a changed time zone resolves the day window again before it reads anything", () => {
+		// The presets are whole days in the reader's zone: the old window would be the wrong days.
+		const moved: PageContext = { ...context, timeZone: "Pacific/Auckland" }
+		expect(names(contextChanged(populated(), moved).commands)).toEqual(["ResolveCostWindow"])
 	})
 
 	test("a source held before its first pull is not called paused", () => {

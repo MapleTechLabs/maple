@@ -157,8 +157,12 @@ export const routeChanged = (
 	})
 }
 
-export const contextChanged = (model: Model, context: PageContext): Return =>
-	requestData(model, context, "Load")
+// The presets are whole days in the reader's time zone, so a changed zone moves the window:
+// resolve it again, which then requests the data, and never re-request the old window.
+export const contextChanged = (model: Model, context: PageContext): Return => ({
+	model,
+	commands: [resolveCommand(model, context, "Load")],
+})
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
