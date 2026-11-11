@@ -271,7 +271,7 @@ A long-running server needs this only in its shutdown hook.
 
 ## Verify
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session with the id you passed and framework **LiteLLM**, one turn per message, and a transcript with the prompts, replies and tool calls.
+Run a conversation with two messages and a tool call, then open **Agent sessions** in Maple. You should see one session with the id you passed and framework **LiteLLM**, one turn per message, and a transcript with the prompts, replies and tool calls.
 
 ## Troubleshooting
 

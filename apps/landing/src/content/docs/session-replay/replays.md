@@ -1,6 +1,6 @@
 ---
 title: "Replays"
-description: "Find a browser session on the Session Replays page, play it back next to its events and backend traces, and move between a trace and the replay that produced it."
+description: "Find a browser session on the Replays page, play it back next to its events and backend traces, and move between a trace and the replay that produced it."
 group: "Session Replay"
 order: 2
 ---
@@ -50,7 +50,7 @@ From the **Session** tab, the links next to **User ID**, **Group** and **Visitor
 The SDK tags every span and replay event with the same `session.id`, so Maple links them both ways:
 
 - **From a replay to a trace.** Use the **Traces** tab, or **Open trace** on a network event.
-- **From a trace to a replay.** When a browser session observed a trace, the trace page shows **View Session Replay**. It opens the replay at that session.
+- **From a trace to a replay.** When a browser session observed a trace, the trace page shows **View session replay**. It opens the replay at that session.
 
 For a backend span to appear in the same trace as the browser request, the request must carry the `traceparent` header. Same-origin requests always do. For a cross-origin API, see [Connect browser and backend traces](/docs/session-replay/browser-sdk#connect-browser-and-backend-traces).
 

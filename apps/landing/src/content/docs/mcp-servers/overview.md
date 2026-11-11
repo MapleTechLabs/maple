@@ -38,7 +38,9 @@ span.setAttributes({
 With the Effect SDK the same keys go through `Effect.annotateCurrentSpan`:
 
 ```ts
-yield * Effect.annotateCurrentSpan({ "user.id": user.id, "user.name": user.name })
+Effect.gen(function* () {
+	yield* Effect.annotateCurrentSpan({ "user.id": user.id, "user.name": user.name })
+})
 ```
 
 Send an id you already use for the user, never a secret: it is stored with the span and shown on the page.

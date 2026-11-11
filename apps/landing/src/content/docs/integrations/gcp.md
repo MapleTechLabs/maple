@@ -24,7 +24,7 @@ If your workloads also send telemetry over OpenTelemetry, read [Google Cloud wit
 
 ## Prerequisites
 
-You need to be an admin of the Maple organization, and in Google Cloud:
+You need to be an admin or engineer in the Maple organization, and in Google Cloud:
 
 | You connect     | Roles you need                                                                                                                                      |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |

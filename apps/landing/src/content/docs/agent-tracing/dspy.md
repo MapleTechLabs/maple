@@ -210,7 +210,7 @@ finally:
 
 ## Verify
 
-Set `cache=False` on the LM, then run two or three messages through `handle_message` with one conversation id, including one tool call. In **Agent Sessions** you should see one session with framework **DSPy**, one turn per call, and `LM.__call__` model calls with tokens. `finish.__call__` is `dspy.ReAct`'s built-in end-of-loop tool.
+Set `cache=False` on the LM, then run two or three messages through `handle_message` with one conversation id, including one tool call. In **Agent sessions** you should see one session with framework **DSPy**, one turn per call, and `LM.__call__` model calls with tokens. `finish.__call__` is `dspy.ReAct`'s built-in end-of-loop tool.
 
 ## Troubleshooting
 

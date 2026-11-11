@@ -11,7 +11,7 @@ Maple checks each connection every hour, and whenever you click **Sync now** on 
 
 ## Prerequisites
 
-You need to be an admin of the Maple organization, and in AWS, permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers it, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
+You need to be an admin or engineer in the Maple organization, and in AWS, permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers it, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
 
 Find the 12-digit account ID in the account menu at the top right of the AWS console. Maple accepts it with or without the dashes the console shows.
 

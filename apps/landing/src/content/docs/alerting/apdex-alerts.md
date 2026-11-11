@@ -110,9 +110,9 @@ The rule editor opens on **Start with a template**. Pick <span class="hl-t">Low 
 
 ### 2. Set the target, then the score you defend
 
-<span class="hl-t">Apdex target</span> (in milliseconds) is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then set **Alert when the value** to **is below** and **Threshold** to the score worth paging for, typically `0.8`.
+<span class="hl-t">Apdex target</span> (in milliseconds) is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then, under **Alert when**, set the condition to **is below** and **Threshold** to the score worth paging for, typically `0.8`.
 
-The **What to watch** section also states the measurement boundary: built-in signals read entry-point spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold. Use a **Query builder** or **SQL** rule for that case.
+The **When** card also states the measurement boundary: built-in signals read entry-point spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold. Use a **Query builder** or **SQL** rule for that case.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-02-signal.webp" alt="The Signal & threshold panel with the Apdex chip selected, Apdex target 500 ms, condition less-than, threshold 0.8 and severity Warning." loading="lazy" />
@@ -139,7 +139,7 @@ Five minutes is the default window. Short windows on low-traffic services are no
 
 An Apdex rule skips windows with no requests, so a service that goes quiet overnight does not read as a score of 0. The other fields (**Breaches to fire**, **Resolve after**, **Remind while open, every**) work as on every rule. See [How alert rules are evaluated](/docs/alerting/rule-evaluation).
 
-Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations) under **Who gets notified**, and pick **Last 1 week** in the range picker above the chart to replay the rule over the past week. Then click **Create rule**.
+Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations) under **Notify**, and pick **Last 1 week** in the range picker above the chart to replay the rule over the past week. Then click **Create rule**.
 
 ### Creating the same rule over the API
 

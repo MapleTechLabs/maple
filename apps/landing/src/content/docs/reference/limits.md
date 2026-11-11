@@ -82,6 +82,7 @@ See [SQL reference](/docs/reference/sql).
 
 | Limit                     | Value                                                               |
 | ------------------------- | ------------------------------------------------------------------- |
+| Enabled rules             | 100 per organization. Uptime monitor and SLO rules do not count     |
 | Evaluation window         | 1 minute to 24 hours                                                |
 | Check interval            | 1 to 60 minutes. Auto is a fifth of the window, from 1 to 5 minutes |
 | Groups per raw-SQL alert  | 100                                                                 |
