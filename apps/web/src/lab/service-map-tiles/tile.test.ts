@@ -4,6 +4,7 @@ import { biomeOf, biomesFor } from "./biome"
 import { tilePalette } from "./palette"
 import { HEX_SIZE } from "./hex"
 import { buildTile, landmarkAt, pondFor, settlementOf, type TileSpec } from "./tile"
+import { townWall } from "./village"
 
 const spec = (kind: TileSpec["kind"], size: number, corridors: ReadonlyArray<number> = []): TileSpec => ({
 	id: `tile-${kind}`,
@@ -113,5 +114,35 @@ describe("a settlement", () => {
 			buildTile(spec("service", size)).geometry.getAttribute("position").count
 		expect(built(1)).toBeGreaterThan(built(0.05) * 3)
 		expect(built(0.6)).toBeGreaterThan(built(0.05))
+	})
+})
+
+describe("a town wall", () => {
+	const biome = biomeOf(biomesFor(["shop"]), "shop")
+	/** How near the wall's stonework comes to `spot` on the ground. */
+	const nearest = (
+		spot: readonly [number, number],
+		blocked?: (at: readonly [number, number]) => boolean,
+	) => {
+		const wall = townWall(tilePalette(false), biome, () => 0.5, 2.9, [], blocked)
+		const distances = Arr.flatMap([...wall.solid, ...wall.trim], (piece) => {
+			const position = piece.getAttribute("position")
+			return Arr.makeBy(position.count, (index) =>
+				Math.hypot(position.getX(index) - spot[0], position.getZ(index) - spot[1]),
+			)
+		})
+		return Math.min(...distances)
+	}
+
+	it("runs all the way round a town with nothing in its way", () => {
+		expect(nearest([2.9, 0])).toBeLessThan(0.2)
+	})
+
+	it("stops short of a pond on its line, towers and all", () => {
+		const pond: readonly [number, number] = [2.9, 0]
+		const shore = 1.1
+		const near = nearest(pond, (at) => Math.hypot(at[0] - pond[0], at[1] - pond[1]) < shore)
+		// A tower is 0.15 wide at its roof, so the stonework keeps that much back from the shore at most.
+		expect(near).toBeGreaterThan(shore - 0.16)
 	})
 })

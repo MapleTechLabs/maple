@@ -352,13 +352,15 @@ export const well = (palette: TilePalette, biome: Biome, random: () => number): 
 const WALL_CORNERS = 18
 
 /** A town wall `radius` out from the square: stretches of wall between round towers, open where
- * a road or a railway (`corridors`, radians) leaves the town. */
+ * a road or a railway (`corridors`, radians) leaves the town, and wherever `blocked` says
+ * something else lies on its line (a pond). */
 export const townWall = (
 	palette: TilePalette,
 	biome: Biome,
 	random: () => number,
 	radius: number,
 	corridors: ReadonlyArray<number>,
+	blocked: (at: readonly [number, number]) => boolean = () => false,
 ): Building => {
 	const roof = vary(pickFrom(biome.roofs, random, palette.banner), random)
 	const gate = Math.asin(Math.min(1, 0.55 / radius))
@@ -366,9 +368,16 @@ export const townWall = (
 		const angle = ((index % WALL_CORNERS) / WALL_CORNERS) * Math.PI * 2
 		return [Math.cos(angle) * radius, Math.sin(angle) * radius]
 	}
-	/** A stretch stands unless a way out of the town passes through it. */
+	/** A stretch stands unless a way out of the town passes through it, or either of its ends
+	 * (where a tower may stand) or its middle is blocked. */
 	const stands = (index: number): boolean => {
 		const middle = ((index + 0.5) / WALL_CORNERS) * Math.PI * 2
+		const ends = [
+			corner(index),
+			corner(index + 1),
+			[Math.cos(middle) * radius, Math.sin(middle) * radius] as const,
+		]
+		if (Arr.some(ends, blocked)) return false
 		return !Arr.some(
 			corridors,
 			(corridor) =>

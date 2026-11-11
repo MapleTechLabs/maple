@@ -483,6 +483,18 @@ export const buildTile = (spec: TileSpec): Tile => {
 		const strip = field(biome, random).rotateY(random() * Math.PI)
 		return free(spot.at, 0.5) ? [strip.translate(spot.at[0], 0, spot.at[1])] : []
 	})
+	// The market is laid out before the houses, so no house is built over a stall.
+	const stallSpots = Arr.filter(
+		Arr.makeBy(plan.stalls, (index) => {
+			const angle = facing + Math.PI / 5 + (index / Math.max(1, plan.stalls)) * Math.PI * 2
+			return { angle, at: towards(angle, 0.86) }
+		}),
+		({ at }) =>
+			!onWay(at, 0.12) &&
+			!(hasLandmark && span(at, landmark) < plan.clearing) &&
+			!(plan.hasHall && span(at, hall) < 0.6),
+	)
+	Arr.forEach(stallSpots, ({ at }) => taken.push(at))
 	const homes = Arr.flatMap(
 		scatter(random, plan.houses, 0.5 * plan.scale, 0.8, plan.spread, taken),
 		(spot) => {
@@ -501,22 +513,9 @@ export const buildTile = (spec: TileSpec): Tile => {
 				: []
 		},
 	)
-	const stalls =
-		plan.stalls === 0
-			? []
-			: Arr.flatMap(
-					Arr.makeBy(plan.stalls, (index) => index),
-					(index) => {
-						const angle = facing + Math.PI / 5 + (index / plan.stalls) * Math.PI * 2
-						const spot = towards(angle, 0.86)
-						const built = stall(palette, random)
-						return onWay(spot, 0.12) ||
-							(hasLandmark && span(spot, landmark) < plan.clearing) ||
-							(plan.hasHall && span(spot, hall) < 0.6)
-							? []
-							: [placed(built, { position: [spot[0], 0, spot[1]], turn: facingSquare(angle) })]
-					},
-				)
+	const stalls = Arr.map(stallSpots, ({ angle, at }) =>
+		placed(stall(palette, random), { position: [at[0], 0, at[1]], turn: facingSquare(angle) }),
+	)
 	const boulders = Arr.flatMap(scatter(random, plan.boulders, 0.5, 0.9, 0.86, taken), (spot) => {
 		const rock = boulder(palette, random)
 		return free(spot.at, 0.05) ? moved(rock, { position: [spot.at[0], 0, spot.at[1]] }) : []
@@ -541,7 +540,19 @@ export const buildTile = (spec: TileSpec): Tile => {
 					}),
 				]
 			: []),
-		...(plan.wall === 0 ? [] : [townWall(palette, biome, random, plan.wall, corridors)]),
+		...(plan.wall === 0
+			? []
+			: [
+					// The wall stops at the pond's shore instead of running out over the water.
+					townWall(
+						palette,
+						biome,
+						random,
+						plan.wall,
+						corridors,
+						(spot) => basin.radius > 0 && span(spot, pond) < basin.radius + POND_SAND + 0.2,
+					),
+				]),
 	]
 	const water =
 		basin.radius === 0
