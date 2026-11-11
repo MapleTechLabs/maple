@@ -16,17 +16,36 @@ function cells(y,m){var lead=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,n=new
 function mback(d,b){var p=d.split("-"),i=p[0]*12+(p[1]-1)-b;return Math.floor(i/12)+"-"+pad(i%12+1)}
 `
 
-/** DOM glue: relative times and the delayed banner, the subscribe menu and its copy button, paging, the calendar's day panel and bar tooltips. */
+/** DOM glue: relative times and the delayed banner, the subscribe dialog and its copy buttons, paging, the calendar's day panel and bar tooltips. */
 const PAGE_SCRIPT_DOM = `var b=document.body,u=+b.getAttribute("data-updated-at"),s=+b.getAttribute("data-stale-after");
 function age(ms){var m=Math.floor(Math.max(0,ms)/6e4);if(m<1)return"just now";if(m<60)return m+" min ago";var h=Math.floor(m/60);return h<48?h+" h ago":Math.floor(h/24)+" d ago"}
 function tick(){var g=Date.now()-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false}
 tick();setInterval(tick,3e4);
-var sub=document.querySelector("details.subscribe");
-document.querySelectorAll("[data-copy]").forEach(function(c){c.hidden=false});
-function pick(c){var r=document.createRange(),x=getSelection();r.selectNodeContents(c);x.removeAllRanges();x.addRange(r)}
-function copy(a){var c=a.parentNode.querySelector("code"),k=function(){pick(c)};if(navigator.clipboard)navigator.clipboard.writeText(a.getAttribute("data-copy")).then(function(){a.textContent="Copied"},k);else k()}
-document.addEventListener("click",function(ev){var t=ev.target,a=t&&t.closest?t.closest("[data-copy]"):null;if(a)copy(a);if(sub&&sub.open&&!sub.contains(t))sub.open=false});
-document.addEventListener("keydown",function(ev){if(ev.key==="Escape"&&sub&&sub.open){sub.open=false;sub.querySelector("summary").focus()}});
+b.classList.add("js");
+var dlg=document.getElementById("subscribe"),box=dlg.querySelector(".modal-box"),title=document.getElementById("sub-title"),form=dlg.querySelector(".sub-form"),addr=form.elements.email,boxes=form.querySelectorAll('[name="componentIds"]'),opener=null;
+form.noValidate=true;
+document.querySelectorAll("[data-copy],.picks-head").forEach(function(c){c.hidden=false});
+function isOpen(){return dlg.classList.contains("open")}
+function openSub(){opener=document.activeElement;dlg.classList.add("open");box.focus({preventScroll:true})}
+function closeSub(){if(!dlg.querySelector(".sub-done").hidden){form.reset();count();dlg.querySelector(".sub-done").hidden=true;dlg.querySelector(".sub-tabs").hidden=false;title.textContent="Subscribe to updates"}dlg.classList.remove("open");if(location.hash==="#subscribe")history.replaceState(null,"",location.pathname+location.search);if(opener&&opener.focus)opener.focus()}
+function err(k,t){var e=form.querySelector('[data-sub-error="'+k+'"]');if(!e)return;if(typeof t==="string"&&t)e.textContent=t;e.hidden=!t}
+function count(){var n=0;boxes.forEach(function(x){if(x.checked)n++});var c=form.querySelector("[data-sub-count]");if(c)c.textContent=n+" of "+boxes.length+" selected";if(n)err("components",false)}
+function fail(t){var a=form.querySelector(".sub-alert");a.textContent=t||"Subscriptions are unavailable right now. Try again in a few minutes.";a.hidden=false}
+function done(v){dlg.querySelector("[data-sub-address]").textContent=v;dlg.querySelector(".sub-tabs").hidden=true;dlg.querySelector(".sub-done").hidden=false;title.textContent="Confirm your subscription";box.focus({preventScroll:true})}
+function send(v){var btn=form.querySelector("[type=submit]");btn.disabled=true;form.querySelector(".sub-alert").hidden=true;fetch(form.action,{method:"POST",body:new URLSearchParams(new FormData(form))}).then(function(r){return r.text().then(function(t){if(r.ok)return done(v);var p=new DOMParser().parseFromString(t,"text/html").querySelector(".result p");fail(p?p.textContent:"")})},function(){fail("")}).then(function(){btn.disabled=false})}
+form.addEventListener("input",function(ev){if(ev.target===addr)err("email",false)});
+form.addEventListener("change",count);
+form.addEventListener("submit",function(ev){var v=addr.value.trim(),ok=true;ev.preventDefault();
+if(!v){err("email","Please enter your email address");ok=false}else if(addr.validity.typeMismatch){err("email","Please enter a valid email address");ok=false}
+if(form.querySelector('[value="some"]:checked')&&!form.querySelectorAll('[name="componentIds"]:checked').length){err("components",true);ok=false}
+if(ok)send(v)});
+function pick(c){c.focus();c.select()}
+function copy(a){var c=a.parentNode.querySelector("input"),k=function(){pick(c)};if(navigator.clipboard)navigator.clipboard.writeText(c.value).then(function(){a.setAttribute("data-copied","");setTimeout(function(){a.removeAttribute("data-copied")},1500)},k);else k()}
+document.addEventListener("click",function(ev){var t=ev.target;if(!t||!t.closest)return;var a=t.closest("[data-copy]"),p=t.closest("[data-sub-pick]");if(a)copy(a);if(p){var all=p.getAttribute("data-sub-pick")==="all";boxes.forEach(function(x){x.checked=all});count()}
+if(t.closest('a[href="#subscribe"]')){ev.preventDefault();openSub()}else if(t.closest("[data-sub-close]")){ev.preventDefault();closeSub()}});
+document.addEventListener("keydown",function(ev){if(ev.key==="Escape"&&isOpen())closeSub()});
+document.addEventListener("focusin",function(ev){if(isOpen()&&!dlg.contains(ev.target))box.focus({preventScroll:true})});
+if(location.hash==="#subscribe")openSub();
 var src=document.getElementById("sp-data");if(!src)return;var D=JSON.parse(src.textContent),W=0,C=0;
 function mk(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function nav(n,pos,max){document.querySelectorAll('[data-nav="'+n+'"]').forEach(function(a){a.hidden=false;a.disabled=a.getAttribute("data-dir")==="older"?pos>=max-1:pos<=0})}

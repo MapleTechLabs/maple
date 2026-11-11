@@ -13,7 +13,7 @@ describe("subscribing from the page", () => {
 		publish(fake, makeSnapshot())
 	})
 
-	it("forwards the address and the picked components, and tells the visitor to check their inbox", async () => {
+	it("forwards the address and the picked components, and tells the visitor to confirm it from their inbox", async () => {
 		const response = await send(
 			fake,
 			postForm(`${SHARED}/subscribe`, [
@@ -25,7 +25,8 @@ describe("subscribing from the page", () => {
 		expect(response.status).toBe(200)
 		expect(response.headers.get("cache-control")).toBe("no-store")
 		const html = await response.text()
-		expect(html).toContain("Check your inbox")
+		expect(html).toContain("Confirm your subscription")
+		expect(html).toContain("sent an email to ana@example.com")
 		expect(html).toContain(`href="/s/acme/"`)
 		expect(fake.subscriptionCalls).toEqual([
 			{
@@ -74,7 +75,7 @@ describe("subscribing from the page", () => {
 		expect(fake.limits.keys).toEqual([`subscribe:203.0.113.7:${FIXTURE_PAGE_ID}`])
 	})
 
-	it("sends a plain visit to the form on the page", async () => {
+	it("sends a plain visit to the page with the subscribe dialog open", async () => {
 		const response = await send(fake, `${SHARED}/subscribe`)
 		expect(response.status).toBe(303)
 		expect(response.headers.get("location")).toBe("/s/acme/#subscribe")
@@ -98,7 +99,7 @@ describe("links from the emails", () => {
 
 		const confirmed = await send(fake, postForm(`${SHARED}/subscribe/confirm`, [["token", "tok-1"]]))
 		expect(confirmed.status).toBe(200)
-		expect(await confirmed.text()).toContain("You are subscribed")
+		expect(await confirmed.text()).toContain("Subscription confirmed")
 		expect(fake.subscriptionCalls).toEqual([
 			{ action: "confirm", pageId: FIXTURE_PAGE_ID, input: "tok-1" },
 		])
@@ -120,7 +121,7 @@ describe("links from the emails", () => {
 			postForm(`${SHARED}/unsubscribe?token=tok-2`, [["List-Unsubscribe", "One-Click"]]),
 		)
 		expect(response.status).toBe(200)
-		expect(await response.text()).toContain("You are unsubscribed")
+		expect(await response.text()).toContain("You will no longer receive email notifications")
 		expect(fake.subscriptionCalls).toEqual([
 			{ action: "unsubscribe", pageId: FIXTURE_PAGE_ID, input: "tok-2" },
 		])

@@ -98,7 +98,7 @@ interface At {
 const UNAVAILABLE_VIEW: SubscriptionView = {
 	title: "Try again later",
 	text: "Subscriptions are unavailable right now. Try again in a few minutes.",
-	tone: "error",
+	icon: "alert",
 }
 
 const page = (
@@ -131,7 +131,7 @@ const answer = (
 			return page(env, snapshot, at, 400, {
 				title: "Something is not right",
 				text: outcome.message,
-				tone: "error",
+				icon: "alert",
 			})
 		case "not-found":
 			return notFound()
@@ -145,11 +145,12 @@ const field = (form: FormData, name: string): string => {
 	return typeof value === "string" ? Str.trim(value) : ""
 }
 
-const SUBSCRIBED: SubscriptionView = {
-	title: "Check your inbox",
-	text: "If that address is not subscribed yet, we have sent it a link to confirm. The link works for 48 hours.",
-	tone: "ok",
-}
+const subscribed = (email: string): SubscriptionView => ({
+	title: "Confirm your subscription",
+	text: `We've sent an email to ${email} with a confirmation link. Your subscription becomes active once you confirm your address with that link, which works for 48 hours.`,
+	detail: "If you're already subscribed, you won't get another email.",
+	icon: "check",
+})
 
 const postSubscribe = (env: StatusEnv, request: Request, snapshot: StatusPageSnapshot, at: At) =>
 	Effect.gen(function* () {
@@ -162,7 +163,7 @@ const postSubscribe = (env: StatusEnv, request: Request, snapshot: StatusPageSna
 			return page(env, snapshot, at, 429, {
 				title: "Too many attempts",
 				text: "Wait a minute and try again.",
-				tone: "error",
+				icon: "alert",
 			})
 		}
 		const form = yield* readFormData(request)
@@ -170,18 +171,16 @@ const postSubscribe = (env: StatusEnv, request: Request, snapshot: StatusPageSna
 			field(form, SUBSCRIBE_FIELDS.scope) === SUBSCRIBE_SCOPE_SOME
 				? Arr.filter(form.getAll(SUBSCRIBE_FIELDS.componentIds), (value) => typeof value === "string")
 				: null
-		const outcome = yield* env.subscriptions.subscribe(at.pageId, {
-			email: field(form, SUBSCRIBE_FIELDS.email),
-			componentIds,
-		})
-		return answer(env, snapshot, at, outcome, SUBSCRIBED)
+		const email = field(form, SUBSCRIBE_FIELDS.email)
+		const outcome = yield* env.subscriptions.subscribe(at.pageId, { email, componentIds })
+		return answer(env, snapshot, at, outcome, subscribed(email))
 	}).pipe(
 		Effect.catchTag("@maple/status/BreakGlassRejected", (error) =>
 			Effect.succeed(
 				page(env, snapshot, at, error.status, {
 					title: "Something is not right",
 					text: error.message,
-					tone: "error",
+					icon: "alert",
 				}),
 			),
 		),
@@ -190,7 +189,7 @@ const postSubscribe = (env: StatusEnv, request: Request, snapshot: StatusPageSna
 const INVALID_LINK: SubscriptionView = {
 	title: "This link is not valid",
 	text: "The link is incomplete. Open it again from the email, or subscribe again from the status page.",
-	tone: "error",
+	icon: "alert",
 }
 
 /**
@@ -243,30 +242,31 @@ export const serveSubscription = (
 		return tokenRoute(env, request, url, snapshot, at, {
 			prompt: {
 				title: "Confirm your subscription",
-				text: `Get an email when ${snapshot.page.name} posts an incident or maintenance update.`,
-				tone: "ok",
+				text: `Click the button below to start receiving email notifications for the ${snapshot.page.name} status page.`,
+				icon: "check",
 			},
 			label: "Confirm subscription",
 			act: (token) => env.subscriptions.confirm(at.pageId, token),
 			done: {
-				title: "You are subscribed",
-				text: `You will get an email when ${snapshot.page.name} posts an update. Every email has an unsubscribe link.`,
-				tone: "ok",
+				title: "Subscription confirmed",
+				text: `Thank you for confirming your subscription. You'll receive notifications for the ${snapshot.page.name} status page.`,
+				detail: "Every email has an unsubscribe link.",
+				icon: "check",
 			},
 		})
 	}
 	return tokenRoute(env, request, url, snapshot, at, {
 		prompt: {
-			title: "Unsubscribe",
-			text: `Stop emails about ${snapshot.page.name} status updates.`,
-			tone: "ok",
+			title: "Unsubscribe from updates",
+			text: `Click the button below to stop receiving email notifications for the ${snapshot.page.name} status page.`,
+			icon: "bell-off",
 		},
 		label: "Unsubscribe",
 		act: (token) => env.subscriptions.unsubscribe(at.pageId, token),
 		done: {
-			title: "You are unsubscribed",
-			text: `This address no longer gets ${snapshot.page.name} status updates.`,
-			tone: "ok",
+			title: "You've been unsubscribed",
+			text: `You will no longer receive email notifications for the ${snapshot.page.name} status page.`,
+			icon: "bell-off",
 		},
 	})
 }
