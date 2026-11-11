@@ -105,7 +105,7 @@ const trunk = (palette: TilePalette, height: number, radius: number): THREE.Buff
 
 /** A tree of the biome's kind standing on y = 0: a leafy crown, tiers of pine, a maple on a tall
  * trunk, or a pine under snow. */
-const tree = (palette: TilePalette, biome: Biome, random: () => number): Parts => {
+export const tree = (palette: TilePalette, biome: Biome, random: () => number): Parts => {
 	const size = 0.2 + random() * 0.13
 	const leaf = () => vary(pickFrom(biome.foliage, random, biome.turf), random, 0.04)
 	const crown = (radius: number, x: number, y: number, z: number) =>
@@ -138,7 +138,7 @@ const tree = (palette: TilePalette, biome: Biome, random: () => number): Parts =
 	return grown[biome.trees]()
 }
 
-const boulder = (palette: TilePalette, random: () => number): Parts => {
+export const boulder = (palette: TilePalette, random: () => number): Parts => {
 	const size = 0.14 + random() * 0.16
 	return [
 		part(new THREE.IcosahedronGeometry(size, 0), vary(palette.rock, random, 0.05), {
@@ -385,7 +385,7 @@ const span = (a: Point, b: Point): number => Math.hypot(a[0] - b[0], a[1] - b[1]
 /** Up to `count` spots on the tile at least `spacing` apart, between `near` units from the middle
  * and `far` of the way to the border. The corridors play no part here, so a new road removes the
  * spots in its way and moves none of the others. */
-const scatter = (
+export const scatter = (
 	random: () => number,
 	count: number,
 	spacing: number,
@@ -422,7 +422,7 @@ export const patch = (
 }
 
 /** A ploughed strip: a slightly crooked rectangle, flat on the ground. */
-const field = (biome: Biome, random: () => number): THREE.BufferGeometry => {
+export const field = (biome: Biome, random: () => number): THREE.BufferGeometry => {
 	const [w, d] = [0.5 + random() * 0.3, 0.36 + random() * 0.22]
 	const skew = () => 0.88 + random() * 0.24
 	const outline: ReadonlyArray<Point> = [

@@ -42,11 +42,12 @@ export const networkOf = (
 	links: ReadonlyArray<Link>,
 	cells: Placements,
 	without: string | null,
-	lakes: ReadonlyArray<Cell> = [],
+	country: ReadonlyArray<Cell> = [],
 ): Network => {
 	const down = new Map(Arr.filter([...cells], ([id]) => id !== without))
-	// A lake is land as far as a railway is concerned: the track runs along its shore.
-	const borders = bordersOf([...down.values(), ...lakes])
+	// Lakes and open country are land as far as a railway is concerned: the track runs along
+	// their borders too.
+	const borders = bordersOf([...down.values(), ...country])
 	const corridors = new Map<string, Array<number>>()
 	const leave = (id: string, angle: number) => {
 		const list = corridors.get(id)

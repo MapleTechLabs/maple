@@ -85,6 +85,24 @@ describe("autoLayout", () => {
 		expect(tally(linksOf(topology), cells).roads).toBe(2)
 	})
 
+	it("leaves open country between services that have nothing to do with each other", () => {
+		// Two pairs in two namespaces: each pair is linked, and nothing links one pair to the other.
+		const topology = {
+			nodes: [node("a", "red"), node("b", "red"), node("c", "blue"), node("d", "blue")],
+			edges: [edge("a", "b"), edge("c", "d")],
+		}
+		const cells = autoLayout(topology)
+		const apart = (first: string, second: string) =>
+			hexDistance(cells.get(first) ?? { q: 0, r: 0 }, cells.get(second) ?? { q: 0, r: 0 })
+		expect([apart("a", "b"), apart("c", "d")]).toEqual([1, 1])
+		// Of the four ways a red tile could touch a blue one, at most one does.
+		const touching = Arr.filter(
+			[apart("a", "c"), apart("a", "d"), apart("b", "c"), apart("b", "d")],
+			(far) => far === 1,
+		)
+		expect(touching.length).toBeLessThanOrEqual(1)
+	})
+
 	it("is the same on every run", () => {
 		expect([...autoLayout(SERVICE_MAP_3D_TOPOLOGY)]).toEqual([...autoLayout(SERVICE_MAP_3D_TOPOLOGY)])
 	})

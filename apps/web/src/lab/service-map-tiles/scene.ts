@@ -6,7 +6,16 @@ import { connectedIds, health, HEALTH_COLOR } from "../../page/service-map/three
 import type { Node3D, Topology3D } from "../../page/service-map/three/types"
 import { quacker } from "../../page/service-map/three/quack"
 import { type Biome, biomeOf, biomesFor } from "./biome"
-import { lakesOf, type Link, linksOf, type Placements, targetsFor, type Targets } from "./board"
+import {
+	lakesOf,
+	type Link,
+	linksOf,
+	type Placements,
+	targetsFor,
+	type Targets,
+	type Wild,
+	wildsOf,
+} from "./board"
 import { makeSky } from "./birds"
 import { AWAY, FLIGHT, makeFlock } from "./ducks"
 import { makeFlourishes } from "./flourish"
@@ -28,8 +37,10 @@ import { type TilePalette, tilePalette } from "./palette"
 import { band, creases, fuse, type Vec3 } from "./solid"
 import { makeSounds } from "./sounds"
 import { buildTile, landmarkAt, type Tile, TILE_DEPTH, tileOutline } from "./tile"
-import { buildRail, buildRoad } from "./tracks"
+import { railNetwork } from "./rails"
+import { buildPoints, buildRoad, buildStation, buildTrack, RAIL_TOP } from "./tracks"
 import { makeTraffic, type Route, type Traffic } from "./traffic"
+import { buildWild, type Feature, featureOf } from "./wild"
 
 // The landscape scene: one hex tile of land per service, a road where two tiles touch and a
 // railway along the tile borders where they do not. The lazy scene chunk's entry; the view owns
@@ -98,6 +109,8 @@ interface Derived {
 	readonly biomes: ReadonlyMap<string, Biome>
 	/** Cells the land closes in on, flooded on their own; the first holds the ducks. */
 	readonly lakes: ReadonlyArray<Cell>
+	/** The open country round the tiles. */
+	readonly wilds: ReadonlyArray<Wild>
 	readonly network: Network
 	/** The middle and radius of the circle the camera frames. */
 	readonly centre: Point
@@ -153,6 +166,8 @@ const derive = (input: SceneInput, previous: Derived | null): Derived => {
 	const targets = input.heldId === null ? null : targetsFor(cells, input.heldId)
 	const sameBoard = sameTopology && sameCells && previous.input.heldId === input.heldId
 	const lakes = sameBoard ? previous.lakes : lakesOf(cells, input.heldId ?? undefined)
+	const wilds = sameBoard ? previous.wilds : wildsOf(cells, lakes, input.heldId ?? undefined)
+	const country = [...lakes, ...Arr.map(wilds, (wild) => wild.cell)]
 	return {
 		input,
 		palette: tilePalette(input.dark),
@@ -166,8 +181,9 @@ const derive = (input: SceneInput, previous: Derived | null): Derived => {
 			? previous.biomes
 			: biomesFor(Arr.map(input.topology.nodes, (node) => node.namespace)),
 		lakes,
-		network: sameBoard ? previous.network : networkOf(links, cells, input.heldId, lakes),
-		...extentOf([...cells.values(), ...lakes, ...(targets?.free ?? [])]),
+		wilds,
+		network: sameBoard ? previous.network : networkOf(links, cells, input.heldId, country),
+		...extentOf([...cells.values(), ...country]),
 	}
 }
 
@@ -323,11 +339,12 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	const layers = {
 		tiles: new THREE.Group(),
 		lakes: new THREE.Group(),
+		wilds: new THREE.Group(),
 		network: new THREE.Group(),
 		slots: new THREE.Group(),
 		prospect: new THREE.Group(),
 	}
-	scene.add(layers.tiles, layers.lakes, layers.network, layers.slots, layers.prospect)
+	scene.add(layers.tiles, layers.lakes, layers.wilds, layers.network, layers.slots, layers.prospect)
 	const materials = makeMaterials()
 	const hover = new THREE.Mesh(hexPlate(), materials.slotHover)
 	hover.visible = false
@@ -347,6 +364,12 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	scene.add(flock.root, birds.root, flourishes.root, outline)
 	const quacks = quacker()
 	const sounds = makeSounds(() => state.derived.input.muted)
+	/** The open country's built tiles by key, and what each one's mesh is. */
+	const wildTiles = new Map<
+		string,
+		{ readonly mesh: THREE.Mesh; readonly lines: THREE.LineSegments; readonly cell: string }
+	>()
+	const wildFeatures = new WeakMap<THREE.Object3D, Feature>()
 	/** Timers that wake a paused map for something due later; cleared with the scene. */
 	const wakes = new Set<number>()
 	/** Windmills spun by a click, and until when (seconds). */
@@ -360,6 +383,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		lightKey: "",
 		networkKey: "",
 		lakesKey: "",
+		wildsKey: "",
 		slotsKey: "",
 		traffic: null as Traffic | null,
 		/** Where the held tile is heading: a target cell, or the bare point under the pointer. */
@@ -531,12 +555,82 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		})
 	}
 
+	/** The open country: each cell takes the biome of the service nearest to it. Built tiles are
+	 * kept by key, so putting a tile down rebuilds only the cells whose country changed. */
+	const syncWilds = () => {
+		const { wilds, palette, cells, nodes, biomes, input } = state.derived
+		const down = Arr.filter([...cells], ([id]) => id !== input.heldId)
+		const specs = Arr.map(wilds, ({ cell, ring }) => {
+			const nearest = Arr.head(
+				Arr.sort(
+					down,
+					Order.combine(
+						Order.mapInput(Order.Number, ([, at]: readonly [string, Cell]) =>
+							hexDistance(at, cell),
+						),
+						Order.mapInput(Order.String, ([id]: readonly [string, Cell]) => id),
+					),
+				),
+			)
+			const namespace = Option.getOrElse(
+				Option.map(nearest, ([id]) => nodes.get(id)?.namespace ?? ""),
+				() => "",
+			)
+			const biome = biomeOf(biomes, namespace)
+			const feature = featureOf(cellKey(cell), ring, biome)
+			return { cell, biome, feature, key: `${cellKey(cell)}:${biome.id}:${feature}:${palette.night}` }
+		})
+		const key = Arr.join(
+			Arr.map(specs, (spec) => spec.key),
+			"|",
+		)
+		// While a tile is in hand, the country on the cells it may go to steps aside for the
+		// pale plates that mark them.
+		const offered = new Set(Arr.map(state.derived.targets?.free ?? [], cellKey))
+		const showOffers = () =>
+			wildTiles.forEach((view) => {
+				view.mesh.visible = !offered.has(view.cell)
+				view.lines.visible = view.mesh.visible
+			})
+		if (key === state.wildsKey) return showOffers()
+		state.wildsKey = key
+		const wanted = new Set(Arr.map(specs, (spec) => spec.key))
+		Arr.forEach([...wildTiles], ([built, view]) => {
+			if (wanted.has(built)) return
+			layers.wilds.remove(view.mesh, view.lines)
+			view.mesh.geometry.dispose()
+			view.lines.geometry.dispose()
+			wildTiles.delete(built)
+		})
+		Arr.forEach(specs, (spec) => {
+			if (wildTiles.has(spec.key)) return
+			const tile = buildWild({
+				key: cellKey(spec.cell),
+				biome: spec.biome,
+				feature: spec.feature,
+				palette,
+			})
+			const mesh = new THREE.Mesh(tile.geometry, materials.land)
+			mesh.castShadow = true
+			mesh.receiveShadow = true
+			const [x, z] = cellToPoint(spec.cell)
+			mesh.position.set(x, 0, z)
+			const lines = new THREE.LineSegments(tile.ink, materials.ink)
+			lines.position.copy(mesh.position)
+			wildFeatures.set(mesh, spec.feature)
+			wildTiles.set(spec.key, { mesh, lines, cell: cellKey(spec.cell) })
+			layers.wilds.add(mesh, lines)
+		})
+		showOffers()
+	}
+
 	const syncNetwork = () => {
-		const { input, links, cells, palette, network, lakes, nodes, biomes } = state.derived
+		const { input, links, cells, palette, network, lakes, wilds, nodes, biomes } = state.derived
 		/** What a link carries: the produce of the biome its caller lies in. */
 		const loadOf = (link: Link) => biomeOf(biomes, nodes.get(link.source)?.namespace ?? "").produce.paint
 		const key = encodeJson([
 			lakes,
+			Arr.map(wilds, (wild) => wild.cell),
 			[...cells],
 			Arr.map(links, (link) => [link.id, link.callsPerSecond, link.errorRate, link.dimmed]),
 			input.selectedId,
@@ -573,23 +667,51 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 					running: !dimmed,
 				})
 		})
-		Arr.forEach(network.rails, ({ link, points }) => {
-			const dimmed = isDimmed(link)
+		// The railways are one network: shared borders are one track, and routes part at points.
+		const rail = railNetwork(
+			Arr.map(network.rails, ({ link, points }) => ({ id: link.id, stops: points })),
+		)
+		const dimmedLinks = new Set(
+			Arr.map(
+				Arr.filter(network.rails, ({ link }) => isDimmed(link)),
+				({ link }) => link.id,
+			),
+		)
+		/** A stretch of track, a set of points or a station fades only when every route over it does. */
+		const fadedOut = (users: ReadonlyArray<string>) => Arr.every(users, (id) => dimmedLinks.has(id))
+		const furniture = {
+			solid: new Array<THREE.BufferGeometry>(),
+			faded: new Array<THREE.BufferGeometry>(),
+		}
+		Arr.forEach(rail.pieces, (piece) =>
+			(fadedOut(piece.routes) ? rails.faded : rails.solid).push(buildTrack(piece.line, palette)),
+		)
+		Arr.forEach(rail.points, (points) =>
+			(fadedOut(points.routes) ? furniture.faded : furniture.solid).push(
+				...buildPoints(points.at, points.heading, palette),
+			),
+		)
+		Arr.forEach(rail.stations, (station) =>
+			(fadedOut(station.routes) ? furniture.faded : furniture.solid).push(
+				...buildStation(station.at, station.heading, palette),
+			),
+		)
+		Arr.forEach(network.rails, ({ link }) => {
+			const path = rail.paths.get(link.id)
+			if (path === undefined || link.callsPerSecond <= 0) return
 			const level = health(link.errorRate)
 			const busy = Math.log10(1 + link.callsPerSecond)
-			const rail = buildRail(points, palette)
-			;(dimmed ? rails.faded : rails.solid).push(rail.geometry)
-			if (link.callsPerSecond > 0)
-				routes.push({
-					linkId: link.id,
-					kind: "train",
-					points: rail.track,
-					count: Math.min(3, 1 + Math.floor(busy / 1.5)),
-					speed: 0.7 + 0.3 * busy,
-					color: level === "healthy" ? palette.engine : HEALTH_COLOR[level],
-					load: loadOf(link),
-					running: !dimmed,
-				})
+			routes.push({
+				linkId: link.id,
+				kind: "train",
+				points: Arr.map(path, ([x, z]): Vec3 => [x, RAIL_TOP, z]),
+				// A busier link pulls a longer train.
+				count: Math.min(3, 1 + Math.floor(busy / 1.5)),
+				speed: 0.7 + 0.3 * busy,
+				color: level === "healthy" ? palette.engine : HEALTH_COLOR[level],
+				load: loadOf(link),
+				running: !isDimmed(link),
+			})
 		})
 		Arr.forEach(
 			[
@@ -597,6 +719,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 				{ parts: roads.faded, land: materials.landDim, ink: materials.inkDim, inked: true },
 				{ parts: rails.solid, land: materials.land, ink: materials.ink, inked: false },
 				{ parts: rails.faded, land: materials.landDim, ink: materials.inkDim, inked: false },
+				{ parts: furniture.solid, land: materials.land, ink: materials.ink, inked: true },
+				{ parts: furniture.faded, land: materials.landDim, ink: materials.inkDim, inked: true },
 			],
 			({ parts, land, ink, inked }) => {
 				if (parts.length === 0) return
@@ -612,7 +736,12 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			Arr.filter([...cells], ([id]) => id !== input.heldId),
 			([, cell]) => cell,
 		)
-		layers.network.add(new THREE.LineSegments(coastOf([...down, ...lakes]), materials.ink))
+		layers.network.add(
+			new THREE.LineSegments(
+				coastOf([...down, ...lakes, ...Arr.map(wilds, (wild) => wild.cell)]),
+				materials.ink,
+			),
+		)
 		const traffic = makeTraffic(routes, palette)
 		state.traffic = traffic
 		layers.network.add(traffic.root)
@@ -671,6 +800,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		syncLight()
 		syncTiles()
 		syncLakes()
+		syncWilds()
 		syncNetwork()
 		syncSlots()
 		syncProspect()
@@ -1013,6 +1143,23 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			invalidate()
 			return
 		}
+		// A click into a wood sends the birds up out of it.
+		const wood =
+			hit === null
+				? Arr.head(
+						raycaster.intersectObjects(
+							// A ray does not skip hidden objects.
+							Arr.filter(layers.wilds.children, (child) => child.visible),
+							false,
+						),
+					)
+				: Option.none()
+		Option.map(wood, ({ object, point }) => {
+			if (wildFeatures.get(object) !== "forest") return
+			birds.flush([point.x, 0.6, point.z])
+			sounds.chirp(3)
+			invalidate()
+		})
 		if (hit !== null) flourish(hit.id, hit.at)
 		events.onSelect(hit === null || hit.id === input.selectedId ? null : hit.id)
 	}

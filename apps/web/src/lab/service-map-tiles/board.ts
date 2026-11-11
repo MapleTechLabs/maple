@@ -143,6 +143,9 @@ export const dealOrder = (
 /** Weight of the compactness and namespace terms next to a link's pull (at least 1 per step). */
 const SPREAD_COST = 0.06
 const NAMESPACE_BONUS = 0.6
+/** What it costs a tile to stand beside one it has nothing to do with: another namespace's, with
+ * no link between them. It leaves gaps of open country between unrelated services. */
+const STRANGER_COST = 0.45
 
 /** Lays every node out on the board. `pinned` tiles stay where they are. Greedy first (each tile
  * goes where the most of its links become roads), then moves and swaps while they shorten the connections. */
@@ -163,7 +166,22 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 				occupant !== undefined && occupant !== id && namespaces.get(occupant) === namespaces.get(id)
 			)
 		}).length
-		return reach + SPREAD_COST * hexDistance(cell, ORIGIN) - NAMESPACE_BONUS * kin
+		const linked = new Set(Arr.map(adjacency.get(id) ?? [], (next) => next.other))
+		const strangers = Arr.filter(neighbours(cell), (next) => {
+			const occupant = taken.get(cellKey(next))
+			return (
+				occupant !== undefined &&
+				occupant !== id &&
+				namespaces.get(occupant) !== namespaces.get(id) &&
+				!linked.has(occupant)
+			)
+		}).length
+		return (
+			reach +
+			SPREAD_COST * hexDistance(cell, ORIGIN) -
+			NAMESPACE_BONUS * kin +
+			STRANGER_COST * strangers
+		)
 	}
 	const put = (id: string, cell: Cell) => {
 		const previous = cells.get(id)
@@ -355,4 +373,45 @@ export const lakesOf = (cells: Placements, without?: string): ReadonlyArray<Cell
 		3,
 	)
 	return Arr.map(bays.length > 0 ? bays : Arr.take(shores, 1), (shore) => shore.cell)
+}
+
+/** A cell of open country: `ring` 1 touches a tile, `ring` 2 lies one cell further out. */
+export interface Wild {
+	readonly cell: Cell
+	readonly ring: 1 | 2
+}
+
+/** Whether a cell two steps out is land: a little over half are, so the coast is ragged. */
+const isOuterLand = (cell: Cell): boolean =>
+	((Math.imul(cell.q, 73856093) ^ Math.imul(cell.r, 19349663)) >>> 0) % 100 < 42
+
+/** The open country round the tiles: every free cell that touches a tile and is not a lake, and
+ * some of the cells beyond those. A tile put on one of them takes its place. */
+export const wildsOf = (
+	cells: Placements,
+	lakes: ReadonlyArray<Cell>,
+	without?: string,
+): ReadonlyArray<Wild> => {
+	if (Arr.every([...cells.keys()], (id) => id === without)) return []
+	const taken = takenOf(cells)
+	const flooded = new Set(Arr.map(lakes, cellKey))
+	const inner = Arr.filter(frontier(taken, cells, without), (cell) => !flooded.has(cellKey(cell)))
+	const used = new Set([
+		...flooded,
+		...Arr.map(inner, cellKey),
+		...Arr.map(
+			Arr.filter([...cells], ([id]) => id !== without),
+			([, cell]) => cellKey(cell),
+		),
+	])
+	const outer = new Map<string, Cell>()
+	Arr.forEach([...inner, ...lakes], (cell) =>
+		Arr.forEach(neighbours(cell), (next) => {
+			if (!used.has(cellKey(next)) && isOuterLand(next)) outer.set(cellKey(next), next)
+		}),
+	)
+	return [
+		...Arr.map(inner, (cell): Wild => ({ cell, ring: 1 })),
+		...Arr.map(Arr.sort([...outer.values()], byCell), (cell): Wild => ({ cell, ring: 2 })),
+	]
 }
