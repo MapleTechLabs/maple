@@ -69,6 +69,8 @@ const runtimeHref = (runtime: ServiceRuntime, time: TimeSearch): string => {
 					search: { ...time, account: runtime.account === "" ? undefined : runtime.account },
 				}),
 			)
+		case "vercelProject":
+			return hrefOf(AppRoute.InfraVercelProject({ projectId: runtime.vercelProjectId, search: time }))
 	}
 }
 
@@ -78,8 +80,9 @@ const runtimeLocation = (runtime: ServiceRuntime): ReadonlyArray<string> => {
 			return present([runtime.railwayEnvironmentName])
 		case "ecs":
 			return present([runtime.cluster, runtime.region])
-		// A Cloudflare account id is a hash nobody reads.
+		// A Cloudflare account id is a hash nobody reads, a Vercel project id too.
 		case "cloudflareWorker":
+		case "vercelProject":
 			return []
 		default:
 			return present([runtime.account, runtime.region])
@@ -97,6 +100,7 @@ export const runtimeLink = (runtime: ServiceRuntime, time: TimeSearch): RuntimeL
 				runtime.region,
 				runtime.cluster,
 				runtime.railwayEnvironmentId,
+				runtime.vercelProjectId,
 			],
 			"|",
 		),

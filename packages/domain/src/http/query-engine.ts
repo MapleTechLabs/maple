@@ -1899,6 +1899,7 @@ export const ServiceRuntimeRow = Schema.Struct({
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
+	vercelProjectId: Schema.String,
 })
 export type ServiceRuntimeRow = typeof ServiceRuntimeRow.Type
 

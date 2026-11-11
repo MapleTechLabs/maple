@@ -22,6 +22,7 @@ const CLOUD_RUN: ServiceRuntime = {
 	railwayServiceId: "",
 	railwayEnvironmentId: "",
 	railwayEnvironmentName: "",
+	vercelProjectId: "",
 }
 
 const update = (model: Model) => ({ model })
@@ -69,7 +70,11 @@ describe("the map's service node", () => {
 		})
 
 	test("drops the empty pods cell when it runs on a platform", () => {
-		scene({ update, view: node("Cloud Run") }, given({ runtimes: [] }), expectView(text("pods")).not.toExist())
+		scene(
+			{ update, view: node("Cloud Run") },
+			given({ runtimes: [] }),
+			expectView(text("pods")).not.toExist(),
+		)
 	})
 
 	test("keeps the pods cell when it runs on no platform", () => {

@@ -124,6 +124,7 @@ describe("serviceRuntimeResources", () => {
 		railwayServiceId: "",
 		railwayEnvironmentId: "",
 		railwayEnvironmentName: "",
+		vercelProjectId: "",
 		...overrides,
 	})
 	const railway = (metricServiceName: string, region: string) =>
@@ -169,5 +170,18 @@ describe("serviceRuntimeResources", () => {
 			["fleet-api"],
 		)
 		expect(Arr.map(resources, (r) => r.region)).toEqual(["europe-west1", "us-central1"])
+	})
+
+	it("keeps one Vercel resource per project, whatever the service's name", () => {
+		const vercel = (vercelProjectId: string) =>
+			row({ metricServiceName: "storefront", metricName: "vercel.project", vercelProjectId })
+		const resources = serviceRuntimeResources(
+			[vercel("prj_web"), vercel("prj_web"), vercel("prj_docs")],
+			["storefront"],
+		)
+		expect(Arr.map(resources, (r) => [r.kind, r.vercelProjectId])).toEqual([
+			["vercelProject", "prj_web"],
+			["vercelProject", "prj_docs"],
+		])
 	})
 })
