@@ -154,6 +154,9 @@ const makeTile = (tile: Tile, id: string, key: string, materials: Materials): Ti
 const hexPlate = (): THREE.BufferGeometry =>
 	new THREE.CylinderGeometry(HEX_SIZE * 0.95, HEX_SIZE * 0.95, 0.05, 6)
 
+/** Where a pointer is, as a mouse event gives it. */
+type Aim = Pick<MouseEvent, "clientX" | "clientY">
+
 const measure = (element: Element): Size => {
 	const { width, height } = element.getBoundingClientRect()
 	return { width: Math.max(1, width), height: Math.max(1, height) }
@@ -287,6 +290,12 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		/** Where the held tile is heading: a target cell, or the bare point under the pointer. */
 		hoverCell: null as Cell | null,
 		heldPoint: null as Point | null,
+		/** Where the pointer last was over the canvas; `null` once it has left. */
+		pointerAt: null as Aim | null,
+		/** The place for the held tile was chosen with the arrow keys, not by the pointer. */
+		isKeyed: false,
+		/** The camera moved since the last frame: what the pointer is over may have changed. */
+		cameraMoved: false,
 		userMoved: false,
 		fitKey: "",
 		lastCommand: initial.command.serial,
@@ -314,6 +323,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		gesture.active = false
 	})
 	orbit.addEventListener("change", () => {
+		state.cameraMoved = true
 		if (gesture.active) state.userMoved = true
 	})
 
@@ -972,6 +982,10 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		state.last = now
 		state.pending = Math.max(0, state.pending - 1)
 		rig()
+		if (state.cameraMoved) {
+			state.cameraMoved = false
+			retarget()
+		}
 		const seconds = now / 1000
 		// What a click set off plays out on a paused map too: keep drawing until it all settles.
 		const playing = [
@@ -996,7 +1010,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 
 	const raycaster = new THREE.Raycaster()
 	const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
-	const aim = (event: MouseEvent) => {
+	const aim = (event: Aim) => {
 		const bounds = canvas.getBoundingClientRect()
 		raycaster.setFromCamera(
 			new THREE.Vector2(
@@ -1065,7 +1079,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			flourishes.beam(top, state.derived.palette.lamp)
 		}
 	}
-	const pickGround = (event: MouseEvent): Point | null => {
+	const pickGround = (event: Aim): Point | null => {
 		aim(event)
 		const point = raycaster.ray.intersectPlane(ground, new THREE.Vector3())
 		return point === null ? null : [point.x, point.z]
@@ -1095,6 +1109,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	}
 	const onPointerMove = (event: PointerEvent) => {
 		const { input } = state.derived
+		state.pointerAt = { clientX: event.clientX, clientY: event.clientY }
 		if (input.heldId === null) {
 			aim(event)
 			const id = pickTile(event)
@@ -1112,11 +1127,20 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			return
 		}
 		outline.visible = false
+		state.isKeyed = false
 		const point = pickGround(event)
 		state.heldPoint = point
 		setHover(targetAt(point))
 		canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 		invalidate()
+	}
+	/** The camera can move under a still pointer (it glides on after a drag, or zooms): the place
+	 * the pointer chose for the held tile is worked out again, so a click lands where it shows. */
+	const retarget = () => {
+		if (state.derived.input.heldId === null || state.isKeyed || state.pointerAt === null) return
+		const point = pickGround(state.pointerAt)
+		state.heldPoint = point
+		setHover(targetAt(point))
 	}
 	const onClick = (event: MouseEvent) => {
 		if (Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y) > DRAG_TOLERANCE)
@@ -1189,6 +1213,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		events.onSelect(hit === null || hit.id === input.selectedId ? null : hit.id)
 	}
 	const onPointerLeave = () => {
+		state.pointerAt = null
 		outline.visible = false
 		invalidate()
 	}
@@ -1209,6 +1234,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			event.preventDefault()
 			// The map takes the focus, so that Enter puts the tile down and presses no button.
 			canvas.focus({ preventScroll: true })
+			state.isKeyed = true
 			setHover(keyedTarget(state.derived, state.hoverCell, acrossBoard(arrow)))
 			return invalidate()
 		}

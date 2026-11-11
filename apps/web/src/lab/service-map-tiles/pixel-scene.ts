@@ -441,6 +441,12 @@ export function startPixelScene(
 		hoverTile: null as Cell | null,
 		/** Where on the ground the pointer is, in world units: a tile in hand follows it. */
 		heldPoint: null as Point | null,
+		/** Where the pointer is on the canvas, in CSS pixels; `null` once it has left. */
+		pointerAt: null as Point | null,
+		/** The place for the held tile was chosen with the arrow keys, not by the pointer. */
+		isKeyed: false,
+		/** The camera moved since the last frame: what the pointer is over may have changed. */
+		cameraMoved: false,
 		pressed: { x: 0, y: 0 },
 		/** When each duck last hopped, in seconds. */
 		hops: [-9, -9, -9],
@@ -472,6 +478,7 @@ export function startPixelScene(
 		gesture.active = false
 	})
 	orbit.addEventListener("change", () => {
+		state.cameraMoved = true
 		if (gesture.active) state.userMoved = true
 	})
 
@@ -1219,6 +1226,10 @@ export function startPixelScene(
 		const ready = state.ready
 		if (ready === null) return
 		rig()
+		if (state.cameraMoved) {
+			state.cameraMoved = false
+			retarget()
+		}
 		// What a click set off plays out on a paused map too: keep drawing until it all settles.
 		const playing = [
 			turnClock(delta),
@@ -1243,8 +1254,8 @@ export function startPixelScene(
 		return [event.clientX - bounds.left, event.clientY - bounds.top]
 	}
 	/** The point of the ground under the pointer, in world units. */
-	const groundAt = (event: MouseEvent): Point | null => {
-		const [x, y] = pointerOf(event)
+	const groundAt = (event: MouseEvent): Point | null => groundUnder(pointerOf(event))
+	const groundUnder = ([x, y]: Point): Point | null => {
 		raycaster.setFromCamera(
 			new THREE.Vector2((x / state.size.width) * 2 - 1, -(y / state.size.height) * 2 + 1),
 			camera,
@@ -1307,18 +1318,48 @@ export function startPixelScene(
 	const onPointerDown = (event: PointerEvent) => {
 		state.pressed = { x: event.clientX, y: event.clientY }
 	}
+	/** The camera can move under a still pointer (it glides on after a drag, or zooms): the place
+	 * the pointer chose for the held tile is worked out again, so a click lands where it shows. */
+	const retarget = () => {
+		if (state.derived.input.heldId === null || state.isKeyed || state.pointerAt === null) return
+		const point = groundUnder(state.pointerAt)
+		state.heldPoint = point
+		setHover(targetAt(point))
+	}
+	/** The tile whose landmark the pointer is on. A tall one stands in front of the tile behind
+	 * it, so the ground under the pointer would name the wrong tile. */
+	const landmarkAt = (pointer: Point): Land | null => {
+		const { input } = state.derived
+		const hit = Arr.filter(state.lands, (each) => {
+			const tower = each.art.landmark
+			return (
+				each.id !== null &&
+				each.id !== input.heldId &&
+				tower !== null &&
+				isOver(
+					pointer,
+					toWorld([each.at[0] + tower.x, each.at[1] + tower.y]),
+					SPRITES[tower.kind][3] / PX,
+				)
+			)
+		})
+		const away = (each: Land) => camera.position.distanceTo(new THREE.Vector3(...toWorld(each.at)))
+		return Option.getOrNull(Arr.head(Arr.sort(hit, Order.mapInput(Order.Number, away))))
+	}
 	const onPointerMove = (event: PointerEvent) => {
 		const { input } = state.derived
 		const point = groundAt(event)
+		state.pointerAt = pointerOf(event)
 		if (input.heldId !== null) {
 			pointed.visible = false
+			state.isKeyed = false
 			state.heldPoint = point
 			setHover(targetAt(point))
 			canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 			return invalidate()
 		}
 		const pointer = pointerOf(event)
-		const id = serviceAt(point)
+		const id = landmarkAt(pointer)?.id ?? serviceAt(point)
 		const lively =
 			(!input.building && moverAt(pointer) !== null) ||
 			duckAt(pointer) !== null ||
@@ -1365,7 +1406,8 @@ export function startPixelScene(
 			else sounds.ding()
 			return events.onPokeLink(mover.linkId)
 		}
-		const id = serviceAt(point)
+		const marked = landmarkAt(pointer)
+		const id = marked?.id ?? serviceAt(point)
 		if (input.building) {
 			if (id !== null) events.onPickUp(id)
 			return
@@ -1377,19 +1419,8 @@ export function startPixelScene(
 		}
 		// A church rings its bell and the birds take fright; a lighthouse sounds its horn. The
 		// click still selects the service.
-		const stood = Option.getOrUndefined(
-			Arr.findFirst(state.lands, (each) => each.id !== null && each.id === id),
-		)
-		const tower = stood?.art.landmark ?? null
-		if (
-			stood !== undefined &&
-			tower !== null &&
-			isOver(
-				pointer,
-				toWorld([stood.at[0] + tower.x, stood.at[1] + tower.y]),
-				SPRITES[tower.kind][3] / PX,
-			)
-		) {
+		const tower = marked?.art.landmark ?? null
+		if (tower !== null) {
 			if (tower.kind === "church") {
 				sounds.bell()
 				Arr.forEach(state.birds, (each) => {
@@ -1402,6 +1433,7 @@ export function startPixelScene(
 		events.onSelect(id === null || id === input.selectedId ? null : id)
 	}
 	const onLeave = () => {
+		state.pointerAt = null
 		state.hoverTile = null
 		pointed.visible = false
 		invalidate()
@@ -1424,6 +1456,7 @@ export function startPixelScene(
 			event.preventDefault()
 			// The map takes the focus, so that Enter puts the tile down and presses no button.
 			canvas.focus({ preventScroll: true })
+			state.isKeyed = true
 			setHover(keyedTarget(state.derived, state.hoverCell, acrossBoard(arrow)))
 			return invalidate()
 		}
