@@ -35,6 +35,7 @@ import {
 import { buildLake } from "./lake"
 import { type Network, networkOf } from "./network"
 import { type TilePalette, tilePalette } from "./palette"
+import { type ArtStyle, makePixelPass } from "./pixel"
 import { band, creases, fuse, type Vec3 } from "./solid"
 import { makeSounds } from "./sounds"
 import { buildTile, landmarkAt, type Tile, TILE_DEPTH, tileOutline } from "./tile"
@@ -63,6 +64,8 @@ export interface SceneInput {
 	readonly building: boolean
 	readonly flowing: boolean
 	readonly dark: boolean
+	/** Painted, or pixel art. */
+	readonly style: ArtStyle
 	/** The time of day the map is lit for: the viewer's own, or one held from the toolbar. */
 	readonly clock: Clock
 	/** The map's noises are off: quacks, whistles, bells. */
@@ -238,10 +241,14 @@ const makeMaterials = (): Materials => ({
 	faint: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.7, depthWrite: false }),
 })
 
-const paint = (materials: Materials, palette: TilePalette): void => {
+const paint = (materials: Materials, palette: TilePalette, style: ArtStyle): void => {
 	materials.landDim.color.set(palette.dim)
+	// The painted look is inked along every crease. Pixel art outlines only what stands in
+	// front of something else, and its pass does that itself: the pencil lines would smother it.
 	materials.ink.color.set(palette.ink)
 	materials.inkDim.color.set(palette.ink)
+	materials.ink.visible = style === "painted"
+	materials.inkDim.visible = style === "painted"
 	materials.slot.color.set(palette.slot)
 	materials.slotEdge.color.set(palette.slotEdge)
 	materials.slotHover.color.set(palette.slotHover)
@@ -340,6 +347,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	renderer.toneMapping = THREE.NoToneMapping
 	renderer.shadowMap.enabled = true
 	renderer.shadowMap.type = THREE.PCFShadowMap
+	const pixels = makePixelPass(renderer)
 	const camera = new THREE.PerspectiveCamera(30, 1, 1, 2000)
 	const scene = new THREE.Scene()
 	const sky = new THREE.HemisphereLight()
@@ -948,7 +956,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	}
 
 	const sync = () => {
-		paint(materials, state.derived.palette)
+		paint(materials, state.derived.palette, state.derived.input.style)
 		syncLight()
 		syncTiles()
 		syncLakes()
@@ -986,8 +994,10 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 
 	const resize = () => {
 		state.size = measure(container)
-		renderer.setPixelRatio(Math.min(Math.max(1, window.devicePixelRatio), 2))
+		const ratio = Math.min(Math.max(1, window.devicePixelRatio), 2)
+		renderer.setPixelRatio(ratio)
 		renderer.setSize(state.size.width, state.size.height, true)
+		pixels.resize(state.size.width * ratio, state.size.height * ratio, ratio)
 		camera.aspect = state.size.width / state.size.height
 		camera.updateProjectionMatrix()
 		invalidate()
@@ -1120,7 +1130,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			const pace = (input.flowing ? 0.9 : 0) + ((spun.get(id) ?? 0) > seconds ? 8 : 0)
 			if (view.sails !== null) view.sails.rotation.z += delta * pace
 		})
-		renderer.render(scene, camera)
+		if (input.style === "pixel") pixels.render(scene, camera)
+		else renderer.render(scene, camera)
 		placeLabels()
 	}
 
@@ -1389,6 +1400,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			freeAll(scene)
 			hover.geometry.dispose()
 			Arr.forEach(Rec.values(materials), (material) => material.dispose())
+			pixels.dispose()
 			renderer.dispose()
 			renderer.forceContextLoss()
 		},

@@ -116,7 +116,7 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 			),
 			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedDeal())] }, [
 				icon(h, "LayersIcon"),
-				"Deal the tiles",
+				"Deal tiles",
 			]),
 			button(
 				h,
@@ -151,14 +151,23 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					size: "sm",
 					variant: "ghost",
 					attributes: [
+						h.Title("Switch between the painted look and pixel art"),
+						h.OnClick(Message.ClickedStyle()),
+					],
+				},
+				[model.style === "pixel" ? "Style: pixel" : "Style: painted"],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					attributes: [
 						h.AriaPressed(String(flowing)),
 						h.OnClick(Message.ClickedTraffic({ isFlowing: flowing })),
 					],
 				},
-				[
-					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					flowing ? "Pause traffic" : "Play traffic",
-				],
+				[icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"), flowing ? "Pause" : "Play"],
 			),
 		],
 	)
@@ -181,6 +190,7 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 						flowing,
 						dark: isDark,
 						muted: model.isMuted,
+						style: model.style,
 						clock: litClockOf(model),
 					}),
 				),

@@ -16,6 +16,7 @@ import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
 import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
 import { Cell, ORIGIN } from "./hex"
+import { ArtStyle } from "./pixel"
 import type { SceneEvents, SceneHandle, SceneInput } from "./scene"
 
 // `/lab/service-map-tiles`: the service map as a landscape of hex tiles. The page keeps the
@@ -48,6 +49,8 @@ export const Model = Schema.Struct({
 	pokedLinkId: Schema.NullOr(Schema.String),
 	/** The map's noises are off. */
 	isMuted: Schema.Boolean,
+	/** How the map is drawn: painted, or pixel art. */
+	style: ArtStyle,
 	/** How the map is lit: by the viewer's clock, or held at one time of day. */
 	light: LightMode,
 	/** The viewer's clock, read at the start and again every minute. */
@@ -69,6 +72,7 @@ export const Message = defineMessageUnion({
 	ClickedPlaceRest: {},
 	ClickedTraffic: { isFlowing: Schema.Boolean },
 	ClickedSound: {},
+	ClickedStyle: {},
 	/** Steps the light on: the clock, then dawn, day, dusk and night. */
 	ClickedLight: {},
 	TickedClock: { clock: Clock },
@@ -126,6 +130,7 @@ export const init = (flags: Flags): Return => ({
 		selectedId: null,
 		pokedLinkId: null,
 		isMuted: false,
+		style: "pixel",
 		light: "clock",
 		clock: flags.clock,
 		traffic: null,
@@ -194,6 +199,9 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedSound: () => ({ model: { ...model, isMuted: !model.isMuted } }),
+		ClickedStyle: () => ({
+			model: { ...model, style: model.style === "pixel" ? "painted" : "pixel" },
+		}),
 		ClickedLight: () => ({
 			model: {
 				...model,
@@ -254,6 +262,7 @@ export const SceneState = Schema.Struct({
 	flowing: Schema.Boolean,
 	dark: Schema.Boolean,
 	muted: Schema.Boolean,
+	style: ArtStyle,
 	clock: Clock,
 })
 
