@@ -199,8 +199,9 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedSound: () => ({ model: { ...model, isMuted: !model.isMuted } }),
+		// The other renderer gets its own try: one that failed must not keep it from mounting.
 		ClickedStyle: () => ({
-			model: { ...model, style: model.style === "pixel" ? "painted" : "pixel" },
+			model: { ...model, style: model.style === "pixel" ? "painted" : "pixel", isFailed: false },
 		}),
 		ClickedLight: () => ({
 			model: {

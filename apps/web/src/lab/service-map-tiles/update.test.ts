@@ -143,4 +143,10 @@ describe("the art style", () => {
 		const after = step(before, Message.ClickedStyle())
 		expect({ ...after, style: before.style }).toEqual(before)
 	})
+
+	it("gives the other renderer a try after one failed to start", () => {
+		const failed = step(start(), Message.FailedScene())
+		expect(failed.isFailed).toBe(true)
+		expect(step(failed, Message.ClickedStyle()).isFailed).toBe(false)
+	})
 })

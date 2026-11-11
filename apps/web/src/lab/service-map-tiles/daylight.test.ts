@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { type Clock, clockOf, daylightAt, elevationAt, hourFor, sunTimes } from "./daylight"
+import { type Clock, clockOf, daylightAt, elevationAt, hourFor, isSouthernZone, sunTimes } from "./daylight"
 
 const at = (hour: number, day = 80, isSouthern = false): Clock => ({ hour, day, isSouthern })
 const hours = Arr.makeBy(96, (index) => index / 4)
@@ -118,5 +118,32 @@ describe("clockOf", () => {
 	it("knows a southern time zone by its name", () => {
 		expect(clockOf(new Date(2026, 0, 1, 12, 0), "Australia/Sydney").isSouthern).toBe(true)
 		expect(clockOf(new Date(2026, 0, 1, 12, 0), "America/New_York").isSouthern).toBe(false)
+	})
+})
+
+describe("isSouthernZone", () => {
+	it.each([
+		"Africa/Blantyre",
+		"Africa/Nairobi",
+		"America/Cuiaba",
+		"America/Buenos_Aires",
+		"America/Argentina/Ushuaia",
+		"Asia/Jakarta",
+		"Indian/Mauritius",
+		"Pacific/Auckland",
+		"Antarctica/Troll",
+	])("places %s south of the equator", (zone) => {
+		expect(isSouthernZone(zone)).toBe(true)
+	})
+
+	it.each([
+		"Europe/Berlin",
+		"Africa/Lagos",
+		"America/Boa_Vista",
+		"Asia/Singapore",
+		"Pacific/Honolulu",
+		"UTC",
+	])("places %s north of it", (zone) => {
+		expect(isSouthernZone(zone)).toBe(false)
 	})
 })

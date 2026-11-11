@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 
 // The light on the map, from the hour on the viewer's clock: where the sun (or the moon) stands,
 // what colour it is and how strong, the colour of the sky's fill light, and how far the windows
@@ -165,10 +165,36 @@ export const clockOf = (date: Date, timeZone: string): Clock => {
 	return {
 		hour: date.getHours() + date.getMinutes() / 60,
 		day: Math.floor((date.getTime() - start.getTime()) / 86_400_000),
-		isSouthern: SOUTHERN.test(timeZone),
+		isSouthern: isSouthernZone(timeZone),
 	}
 }
 
-/** Time zones that lie south of the equator, as far as their names tell. */
-const SOUTHERN =
-	/^(Australia\/|Antarctica\/|Pacific\/(Auckland|Chatham|Fiji|Tongatapu)|America\/(Sao_Paulo|Argentina\/|Santiago|Montevideo|Asuncion|La_Paz|Lima)|Africa\/(Johannesburg|Maputo|Harare|Windhoek|Gaborone|Lusaka))/
+/** Whether a time zone lies south of the equator, by its name. */
+export const isSouthernZone = (timeZone: string): boolean =>
+	SOUTHERN_REGIONS.test(timeZone) || SOUTHERN_ZONES.has(timeZone)
+
+/** Regions that lie wholly south of the equator, and the old names for some of them. */
+const SOUTHERN_REGIONS = /^(Australia|Antarctica|America\/Argentina|Brazil|Chile)\//
+
+// Every other zone the time zone database places south of the equator, with the older names
+// browsers still report for a few of them. Cities are listed by region, a space between each.
+const SOUTHERN_CITIES: ReadonlyArray<readonly [region: string, cities: string]> = [
+	["Africa", "Blantyre Brazzaville Bujumbura Dar_es_Salaam Gaborone Harare Johannesburg Kigali"],
+	["Africa", "Kinshasa Luanda Lubumbashi Lusaka Maputo Maseru Mbabane Nairobi Windhoek"],
+	["America", "Araguaina Asuncion Bahia Belem Buenos_Aires Campo_Grande Catamarca Cordoba Coyhaique"],
+	["America", "Cuiaba Eirunepe Fortaleza Guayaquil Jujuy La_Paz Lima Maceio Manaus Mendoza"],
+	["America", "Montevideo Noronha Porto_Acre Porto_Velho Punta_Arenas Recife Rio_Branco Rosario"],
+	["America", "Santarem Santiago Sao_Paulo"],
+	["Asia", "Dili Jakarta Jayapura Makassar Pontianak Ujung_Pandang"],
+	["Atlantic", "South_Georgia St_Helena Stanley"],
+	["Indian", "Antananarivo Chagos Christmas Cocos Comoro Kerguelen Mahe Mauritius Mayotte Reunion"],
+	["Pacific", "Apia Auckland Bougainville Chatham Easter Efate Enderbury Fakaofo Fiji Funafuti"],
+	["Pacific", "Galapagos Gambier Guadalcanal Kanton Marquesas Nauru Niue Norfolk Noumea Pago_Pago"],
+	["Pacific", "Pitcairn Port_Moresby Rarotonga Samoa Tahiti Tongatapu Wallis"],
+]
+
+const SOUTHERN_ZONES: ReadonlySet<string> = new Set(
+	Arr.flatMap(SOUTHERN_CITIES, ([region, cities]) =>
+		Arr.map(Str.split(cities, " "), (city) => `${region}/${city}`),
+	),
+)

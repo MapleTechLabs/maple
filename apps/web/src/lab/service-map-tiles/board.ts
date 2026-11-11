@@ -1,6 +1,6 @@
 import { Array as Arr, Option, Order } from "effect"
 import type { Topology3D } from "../../page/service-map/three/types"
-import { type Cell, cellKey, hexDistance, neighbours, ORIGIN, sameCell } from "./hex"
+import { type Cell, cellKey, cellToPoint, hexDistance, neighbours, ORIGIN, type Point, sameCell } from "./hex"
 
 // The tile game over a topology: every service is one hex tile, and a call between two services
 // is a road when their tiles share a side and a railway when they do not. Laying the map out
@@ -246,6 +246,29 @@ export interface Targets {
 	readonly free: ReadonlyArray<Cell>
 	/** Other tiles the held tile can trade places with (only a tile already on the board trades). */
 	readonly swaps: ReadonlyArray<Cell>
+}
+
+/** Every cell the held tile may be put down on: its own, the free ones and the tiles it trades with. */
+export const placesOf = (cells: Placements, heldId: string, targets: Targets): ReadonlyArray<Cell> => {
+	const home = cells.get(heldId)
+	return [...(home === undefined ? [] : [home]), ...targets.free, ...targets.swaps]
+}
+
+/** The place one keyboard step on from `from`: the nearest one in `direction` (a vector on the
+ * board), a place off to the side counting as further away. `from` itself when none lies that way. */
+export const stepTarget = (places: ReadonlyArray<Cell>, from: Cell, direction: Point): Cell => {
+	const [fromX, fromZ] = cellToPoint(from)
+	const length = Math.max(1e-9, Math.hypot(direction[0], direction[1]))
+	const [wayX, wayZ] = [direction[0] / length, direction[1] / length]
+	const best = Arr.reduce(places, { cell: from, cost: Infinity }, (found, cell) => {
+		const [x, z] = cellToPoint(cell)
+		const ahead = (x - fromX) * wayX + (z - fromZ) * wayZ
+		const aside = Math.abs((x - fromX) * wayZ - (z - fromZ) * wayX)
+		// Only a place within sixty degrees or so of the way pressed lies that way.
+		const cost = ahead > 1e-6 && aside <= ahead * 2 ? ahead + aside : Infinity
+		return cost < found.cost - 1e-9 ? { cell, cost } : found
+	})
+	return best.cell
 }
 
 /** Where the held tile may be put down. */

@@ -12,6 +12,7 @@ import {
 	signalsOf,
 	tailOf,
 	type Train,
+	wagonsOf,
 } from "./signalling"
 
 const line = (blocks: ReadonlyArray<Block> = [], wagons = 1): Line => ({
@@ -174,6 +175,13 @@ describe("two trains over one stretch of track", () => {
 		expect(train(line([{ section: "middle", from: 2, to: 10 }], 3)).line.wagons).toBe(1)
 		// A line with no shared track keeps every wagon.
 		expect(roomFor(line([], 3))).toBe(3)
+	})
+
+	it("runs an engine on its own where there is no room for a wagon", () => {
+		const light = train(line([{ section: "throat", from: 1.2, to: 3 }], 3))
+		expect(light.line.wagons).toBe(0)
+		expect(wagonsOf(light)).toEqual([])
+		expect(wagonsOf(train(line([], 3)))).toEqual([1, 2, 3])
 	})
 
 	it("runs no train where not even an engine could stand clear of the stretch", () => {

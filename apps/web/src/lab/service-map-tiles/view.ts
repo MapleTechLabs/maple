@@ -216,7 +216,12 @@ const labels = (h: H, model: Model): ReadonlyArray<Html> => {
 			pressable(
 				h,
 				{
-					onClick: Message.PickedNode({ nodeId: isSelected ? null : node.id }),
+					// While rearranging, the canvas takes the pointer; the plate still lifts its tile
+					// for the keyboard.
+					onClick:
+						model.isBuilding && model.stack.length === 0
+							? Message.PickedUpTile({ nodeId: node.id })
+							: Message.PickedNode({ nodeId: isSelected ? null : node.id }),
 					isSelected,
 					className: `absolute top-0 left-0 flex max-w-36 items-center gap-1 rounded-sm border px-1.5 py-px font-mono text-4xs whitespace-nowrap ${model.isBuilding ? "pointer-events-none" : "pointer-events-auto"} ${isSelected ? "border-primary bg-popover text-popover-foreground" : "bg-popover text-popover-foreground hover:border-border-strong active:border-border-strong"} ${faded ? "opacity-40" : ""}`,
 					attributes: [
@@ -472,10 +477,10 @@ const footer = (h: H, model: Model): Html =>
 				[
 					heldIdOf(model) !== null
 						? model.pickedId === null
-							? "Click a pale cell to put the tile down"
-							: "Click a pale cell or another tile · Esc puts it back"
+							? "Click a pale cell to put the tile down · or arrow keys, then Enter"
+							: "Click a pale cell or another tile · or arrow keys, then Enter · Esc puts it back"
 						: model.isBuilding
-							? `Click a tile to lift it · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`
+							? `Click a tile to lift it, or press Enter on its name · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`
 							: `Click anything · ${model.style === "pixel" ? "drag to pan · scroll to zoom" : "drag to pan · right-drag to turn"}`,
 				],
 			),

@@ -9,11 +9,13 @@ import {
 	linksOf,
 	linkState,
 	placeTile,
+	placesOf,
 	prospect,
+	stepTarget,
 	tally,
 	targetsFor,
 } from "./board"
-import { type Cell, cellKey, disc, hexDistance } from "./hex"
+import { type Cell, cellKey, disc, hexDistance, neighbours } from "./hex"
 
 const node = (id: string, namespace = "shop"): Node3D => ({
 	id,
@@ -169,6 +171,66 @@ describe("placing a tile", () => {
 
 	it("offers only the middle cell on an empty board", () => {
 		expect(targetsFor(board([]), "a")).toEqual({ free: [{ q: 0, r: 0 }], swaps: [] })
+	})
+})
+
+describe("choosing a place with the keyboard", () => {
+	const middle: Cell = { q: 0, r: 0 }
+	// The middle cell with a ring of places round it, bar the two above, and one further right.
+	const places: ReadonlyArray<Cell> = [
+		middle,
+		{ q: 1, r: 0 },
+		{ q: 2, r: 0 },
+		{ q: 0, r: 1 },
+		{ q: -1, r: 1 },
+		{ q: -1, r: 0 },
+	]
+
+	it("steps to the nearest place the way the arrow points", () => {
+		expect(stepTarget(places, middle, [1, 0])).toEqual({ q: 1, r: 0 })
+		expect(stepTarget(places, middle, [-1, 0])).toEqual({ q: -1, r: 0 })
+		expect(hexDistance(stepTarget(places, middle, [0, 1]), middle)).toBe(1)
+		expect(stepTarget(places, middle, [0, 1]).r).toBe(1)
+	})
+
+	it("takes a neighbour before a further place, whichever way the board is turned", () => {
+		const ring = [middle, ...neighbours(middle), { q: 2, r: -1 }, { q: 1, r: 1 }, { q: -1, r: 2 }]
+		const turns = Arr.map(Arr.range(0, 23), (step) => (step / 24) * Math.PI * 2)
+		const reached = Arr.map(turns, (turn) => stepTarget(ring, middle, [Math.cos(turn), Math.sin(turn)]))
+		expect(Arr.map(reached, (cell) => hexDistance(cell, middle))).toEqual(Arr.map(turns, () => 1))
+	})
+
+	it("stays where it is when no place lies that way", () => {
+		expect(stepTarget(places, middle, [0, -1])).toEqual(middle)
+		expect(stepTarget(places, { q: 2, r: 0 }, [1, 0])).toEqual({ q: 2, r: 0 })
+	})
+
+	it("reaches every place by stepping", () => {
+		const ways: ReadonlyArray<readonly [number, number]> = [
+			[1, 0],
+			[-1, 0],
+			[0, 1],
+			[0, -1],
+		]
+		const walk = (seen: ReadonlyArray<Cell>): ReadonlyArray<Cell> => {
+			const reached: ReadonlyArray<Cell> = [
+				...seen,
+				...Arr.flatMap(seen, (cell) => Arr.map(ways, (way) => stepTarget(places, cell, way))),
+			]
+			const next = Arr.dedupeWith(reached, (a, b) => cellKey(a) === cellKey(b))
+			return next.length === seen.length ? seen : walk(next)
+		}
+		expect(walk([middle]).length).toBe(places.length)
+	})
+
+	it("offers a lifted tile its own cell first, then the free cells and the tiles to trade with", () => {
+		const cells = board([
+			["a", { q: 0, r: 0 }],
+			["b", { q: 1, r: 0 }],
+		])
+		const targets = targetsFor(cells, "a")
+		expect(placesOf(cells, "a", targets)).toEqual([{ q: 0, r: 0 }, ...targets.free, ...targets.swaps])
+		expect(placesOf(cells, "c", targetsFor(cells, "c"))).toEqual(targetsFor(cells, "c").free)
 	})
 })
 

@@ -36,10 +36,19 @@ import {
 	type SignalBox,
 	signalsOf,
 	type Train,
+	wagonsOf,
 } from "./signalling"
 import { makeSounds } from "./sounds"
 import { featureOf } from "./wild"
-import { derive, type SceneEvents, type SceneHandle, type SceneInput } from "./world"
+import {
+	arrowOf,
+	derive,
+	isTyping,
+	keyedTarget,
+	type SceneEvents,
+	type SceneHandle,
+	type SceneInput,
+} from "./world"
 
 // The pixel-art map: the same board, roads, railways and traffic as the 3D scene, drawn in 2D
 // from a sheet of hand-pixelled sprites. Everything is laid out in art pixels and the camera
@@ -442,7 +451,12 @@ export function startPixelScene(
 		const fresh = input.command.serial !== state.lastCommand
 		state.lastCommand = input.command.serial
 		if (fresh && input.command.action === "reset") state.userMoved = false
-		if ((state.fitKey !== key && !state.userMoved) || state.fitKey === "") fit()
+		if (
+			(state.fitKey !== key && !state.userMoved) ||
+			state.fitKey === "" ||
+			(fresh && input.command.action === "reset")
+		)
+			fit()
 		state.fitKey = key
 		if (fresh && input.command.action !== "reset")
 			zoomAt(input.command.action === "in" ? 1.3 : 1 / 1.3, state.width / 2, state.height / 2)
@@ -526,7 +540,7 @@ export function startPixelScene(
 				ailing: engine.isAiling,
 			})
 			state.hot.push({ x: nose.x, y: nose.y - 10, linkId: engine.linkId, kind: "train" })
-			Arr.forEach(Arr.range(1, train.line.wagons), (wagon) => {
+			Arr.forEach(wagonsOf(train), (wagon) => {
 				const at = place(train.along - wagon * COUPLING)
 				sprites.push({
 					sprite: isLoaded(train) ? "wagonFull" : "wagonEmpty",
@@ -892,12 +906,11 @@ export function startPixelScene(
 			})
 		}
 		// The tile in hand follows the pointer, lifted off the board.
-		if (input.heldId !== null && state.pointer !== null) {
+		// One moved by the keyboard has no pointer to follow: it stands over the place chosen.
+		const under = state.hoverCell !== null ? centre(state.hoverCell) : state.pointer
+		if (input.heldId !== null && under !== null) {
 			const node = nodes.get(input.heldId)
-			const at: Point =
-				state.hoverCell !== null
-					? [centre(state.hoverCell)[0], centre(state.hoverCell)[1] - 22]
-					: [state.pointer[0], state.pointer[1] - 22]
+			const at: Point = [under[0], under[1] - 22]
 			if (node !== undefined) {
 				const art = serviceArt({
 					id: input.heldId,
@@ -979,6 +992,13 @@ export function startPixelScene(
 			Arr.some(targets.swaps, (swap) => sameCell(swap, cell))
 		return valid ? cell : null
 	}
+	const setHover = (cell: Cell | null) => {
+		const changed =
+			(state.hoverCell === null ? "" : cellKey(state.hoverCell)) !==
+			(cell === null ? "" : cellKey(cell))
+		state.hoverCell = cell
+		if (changed) events.onHover(cell)
+	}
 	const moverAt = ([x, y]: Point): Hot | null =>
 		Option.getOrNull(Arr.findFirst(state.hot, (hot) => Math.hypot(hot.x - x, hot.y - y) < 24))
 	const duckAt = ([x, y]: Point): number | null =>
@@ -1017,11 +1037,7 @@ export function startPixelScene(
 		}
 		if (input.heldId !== null) {
 			const cell = targetAt(point)
-			const changed =
-				(state.hoverCell === null ? "" : cellKey(state.hoverCell)) !==
-				(cell === null ? "" : cellKey(cell))
-			state.hoverCell = cell
-			if (changed) events.onHover(cell)
+			setHover(cell)
 			canvas.style.cursor = cell === null ? "grabbing" : "copy"
 			return invalidate()
 		}
@@ -1110,8 +1126,22 @@ export function startPixelScene(
 		state.hoverTile = null
 		invalidate()
 	}
+	// A tile in hand can be placed without a pointer: arrows choose where, Enter puts it down.
 	const onKeyDown = (event: KeyboardEvent) => {
-		if (event.key === "Escape" && state.derived.input.heldId !== null) events.onCancel()
+		const { input } = state.derived
+		if (input.heldId === null) return
+		if (event.key === "Escape") return events.onCancel()
+		if (isTyping(event)) return
+		const arrow = arrowOf(event.key)
+		if (arrow !== null) {
+			event.preventDefault()
+			setHover(keyedTarget(state.derived, state.hoverCell, arrow))
+			return invalidate()
+		}
+		if (event.key === "Enter" && state.hoverCell !== null) {
+			event.preventDefault()
+			events.onPlace(input.heldId, state.hoverCell)
+		}
 	}
 	// A wheel over a name plate or a panel still zooms: only the canvas hears it otherwise.
 	const onRootWheel = (event: Event) => {

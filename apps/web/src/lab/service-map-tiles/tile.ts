@@ -500,10 +500,13 @@ export const buildTile = (spec: TileSpec): Tile => {
 	})
 	// The market is laid out before the houses, so no house is built over a stall.
 	const stallSpots = Arr.filter(
-		Arr.makeBy(plan.stalls, (index) => {
-			const angle = facing + Math.PI / 5 + (index / Math.max(1, plan.stalls)) * Math.PI * 2
-			return { angle, at: towards(angle, 0.86) }
-		}),
+		// `makeBy` never makes an empty array, and a hamlet has no market.
+		plan.stalls < 1
+			? []
+			: Arr.makeBy(plan.stalls, (index) => {
+					const angle = facing + Math.PI / 5 + (index / plan.stalls) * Math.PI * 2
+					return { angle, at: towards(angle, 0.86) }
+				}),
 		({ at }) =>
 			!onWay(at, 0.12) &&
 			!(hasLandmark && span(at, landmark) < plan.clearing) &&

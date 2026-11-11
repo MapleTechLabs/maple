@@ -30,7 +30,15 @@ import { buildTile, landmarkAt, type Tile, TILE_DEPTH, tileOutline } from "./til
 import { railNetwork } from "./rails"
 import { buildPoints, buildRoad, buildStation, buildTrack, RAIL_TOP } from "./tracks"
 import { makeTraffic, type Route, type Traffic } from "./traffic"
-import { derive, type SceneEvents, type SceneHandle, type SceneInput } from "./world"
+import {
+	arrowOf,
+	derive,
+	isTyping,
+	keyedTarget,
+	type SceneEvents,
+	type SceneHandle,
+	type SceneInput,
+} from "./world"
 import { buildWild, type Feature, featureOf } from "./wild"
 
 // The landscape scene: one hex tile of land per service, a road where two tiles touch and a
@@ -1183,8 +1191,28 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		outline.visible = false
 		invalidate()
 	}
+	/** A way across the screen as a way across the board, however the camera is turned. */
+	const acrossBoard = ([right, down]: Point): Point => {
+		const ahead = camera.getWorldDirection(new THREE.Vector3())
+		const side = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion)
+		return [right * side.x - down * ahead.x, right * side.z - down * ahead.z]
+	}
+	// A tile in hand can be placed without a pointer: arrows choose where, Enter puts it down.
 	const onKeyDown = (event: KeyboardEvent) => {
-		if (event.key === "Escape" && state.derived.input.heldId !== null) events.onCancel()
+		const { input } = state.derived
+		if (input.heldId === null) return
+		if (event.key === "Escape") return events.onCancel()
+		if (isTyping(event)) return
+		const arrow = arrowOf(event.key)
+		if (arrow !== null) {
+			event.preventDefault()
+			setHover(keyedTarget(state.derived, state.hoverCell, acrossBoard(arrow)))
+			return invalidate()
+		}
+		if (event.key === "Enter" && state.hoverCell !== null) {
+			event.preventDefault()
+			events.onPlace(input.heldId, state.hoverCell)
+		}
 	}
 	const onContextMenu = (event: MouseEvent) => event.preventDefault()
 	// A wheel over a name plate or a panel still zooms: the controls only hear the canvas.

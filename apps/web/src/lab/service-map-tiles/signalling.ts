@@ -123,6 +123,10 @@ export const makeTrain = (line: Line, rest: number): Train | null => {
 			}
 }
 
+/** The train's wagons, counted back from the engine. An engine that had to shed them all has none. */
+export const wagonsOf = (train: Train): ReadonlyArray<number> =>
+	train.line.wagons < 1 ? [] : Arr.range(1, train.line.wagons)
+
 /** Whether the train is carrying: loaded at home, emptied halfway through its stand at the far station. */
 export const isLoaded = (train: Train): boolean =>
 	train.phase === "home" || train.phase === "out" || (train.phase === "far" && train.rest > STAND / 2)

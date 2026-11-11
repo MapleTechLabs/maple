@@ -7,6 +7,8 @@ import {
 	type Link,
 	linksOf,
 	type Placements,
+	placesOf,
+	stepTarget,
 	targetsFor,
 	type Targets,
 	type Wild,
@@ -81,6 +83,42 @@ export interface Derived {
 	/** The middle and radius of the circle the camera frames. */
 	readonly centre: Point
 	readonly radius: number
+}
+
+const ARROWS: ReadonlyMap<string, Point> = new Map([
+	["ArrowLeft", [-1, 0]],
+	["ArrowRight", [1, 0]],
+	["ArrowUp", [0, -1]],
+	["ArrowDown", [0, 1]],
+])
+
+/** The way an arrow key points across the screen, x to the right and y down; `null` for other keys. */
+export const arrowOf = (key: string): Point | null => ARROWS.get(key) ?? null
+
+/** Whether a key press is meant for a text field, or is a shortcut with a modifier held. */
+export const isTyping = (event: KeyboardEvent): boolean =>
+	event.metaKey ||
+	event.ctrlKey ||
+	event.altKey ||
+	(event.target instanceof HTMLElement &&
+		(event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)))
+
+/** Where a keyboard step takes the held tile: one place on in `direction` (a vector on the board)
+ * from the place it is over, or from its own cell; a tile off the stack starts at the place
+ * nearest the middle of the board. */
+export const keyedTarget = (derived: Derived, current: Cell | null, direction: Point): Cell | null => {
+	const { targets, cells, input, centre } = derived
+	if (targets === null || input.heldId === null) return null
+	const places = placesOf(cells, input.heldId, targets)
+	const from = current ?? cells.get(input.heldId)
+	if (from !== undefined) return stepTarget(places, from, direction)
+	const off = (cell: Cell): number => {
+		const [x, z] = cellToPoint(cell)
+		return Math.hypot(x - centre[0], z - centre[1])
+	}
+	return Arr.reduce(places, null as Cell | null, (near, cell) =>
+		near === null || off(cell) < off(near) - 1e-9 ? cell : near,
+	)
 }
 
 /** The smallest circle round the tiles (and the cells a held tile may go to), so the view grows

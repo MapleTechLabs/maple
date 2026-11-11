@@ -11,6 +11,7 @@ import {
 	type Signal,
 	signalsOf,
 	type Train,
+	wagonsOf,
 } from "./signalling"
 import { fuse, part, type Vec3 } from "./solid"
 
@@ -273,18 +274,15 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		const slot = next.engine++
 		meshes.engine.setColorAt(slot, new THREE.Color(route.color))
 		// The train may be shorter than asked: it sheds wagons to stand clear at its stations.
-		const drawn = Arr.flatMap(
-			Arr.makeBy(train.line.wagons, (index) => index + 1),
-			(wagon): Array<Body> => {
-				const at = next.wagon++
-				meshes.wagon.setColorAt(at, white)
-				meshes.wagonLoad.setColorAt(at, new THREE.Color(route.load))
-				return [
-					{ mesh: meshes.wagon, index: at, behind: wagon * COUPLING, isLoad: false },
-					{ mesh: meshes.wagonLoad, index: at, behind: wagon * COUPLING, isLoad: true },
-				]
-			},
-		)
+		const drawn = Arr.flatMap(wagonsOf(train), (wagon): Array<Body> => {
+			const at = next.wagon++
+			meshes.wagon.setColorAt(at, white)
+			meshes.wagonLoad.setColorAt(at, new THREE.Color(route.load))
+			return [
+				{ mesh: meshes.wagon, index: at, behind: wagon * COUPLING, isLoad: false },
+				{ mesh: meshes.wagonLoad, index: at, behind: wagon * COUPLING, isLoad: true },
+			]
+		})
 		return [
 			{
 				linkId: route.linkId,
