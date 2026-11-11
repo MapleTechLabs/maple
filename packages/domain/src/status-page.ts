@@ -55,6 +55,17 @@ const RESERVED_CUSTOM_DOMAIN_SUFFIXES = [
 
 const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
 
+/**
+ * Common two-label public suffixes: `acme.co.uk` is an apex, so it needs a fourth label. Not the
+ * full public suffix list; a missed apex only sits in pending DNS until removed.
+ */
+const TWO_LABEL_PUBLIC_SUFFIXES = new Set([
+	"co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "ac.uk", "gov.uk",
+	"com.au", "net.au", "org.au", "co.nz", "org.nz", "co.za", "co.jp", "ne.jp", "or.jp",
+	"co.kr", "co.in", "com.br", "com.cn", "com.mx", "com.tr", "com.sg", "com.hk", "com.tw",
+	"co.il", "com.ar", "co.id", "com.my", "com.ph", "github.io", "netlify.app", "vercel.app",
+])
+
 /** Trimmed, lower-cased, without a trailing dot: the one spelling a custom domain is stored in. */
 export const normalizeCustomDomain = (raw: string): string =>
 	Str.replace(/\.$/u, "")(Str.toLowerCase(Str.trim(raw)))
@@ -72,7 +83,8 @@ export const customDomainIssue = (hostname: string): string | null => {
 	if (!Arr.every(labels, (label) => HOSTNAME_LABEL.test(label)))
 		return "Use letters, digits and hyphens between the dots, like status.acme.com."
 	if (/^[0-9]+$/u.test(labels.at(-1) ?? "")) return "Enter a hostname, not an IP address."
-	if (labels.length < 3)
+	const suffixLabels = TWO_LABEL_PUBLIC_SUFFIXES.has(Arr.join(labels.slice(-2), ".")) ? 2 : 1
+	if (labels.length < suffixLabels + 2)
 		return "Use a subdomain, like status.acme.com: an apex domain cannot point at Maple."
 	const reserved = Arr.findFirst(
 		RESERVED_CUSTOM_DOMAIN_SUFFIXES,

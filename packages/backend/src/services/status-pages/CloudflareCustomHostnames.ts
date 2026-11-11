@@ -211,7 +211,7 @@ export class CloudflareCustomHostnames extends Context.Service<
 				)
 				return { status: response.status, decoded, failed }
 			}).pipe(
-				Effect.withSpan(`CloudflareCustomHostnames.${operation}`, {
+				Effect.withSpan("CloudflareCustomHostnames.call", {
 					kind: "client",
 					attributes: { "peer.service": "cloudflare-api", "maple.cloudflare.operation": operation },
 				}),

@@ -1,4 +1,16 @@
 -- metadata
+ALTER TABLE "status_page_subscribers" DROP CONSTRAINT IF EXISTS "status_page_subscribers_page_id_status_pages_id_fk";
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "status_page_update_notifications" DROP CONSTRAINT IF EXISTS "status_page_update_notifications_TAITGL8oaHOK_fk";
+--> statement-breakpoint
+-- destructive
+DROP TABLE IF EXISTS "status_page_subscribers";
+--> statement-breakpoint
+-- destructive
+DROP TABLE IF EXISTS "status_page_update_notifications";
+--> statement-breakpoint
+-- metadata
 CREATE TABLE IF NOT EXISTS "status_page_custom_domains" (
 	"page_id" text NOT NULL,
 	"org_id" text NOT NULL,

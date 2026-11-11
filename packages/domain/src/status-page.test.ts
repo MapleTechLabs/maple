@@ -618,6 +618,9 @@ describe("custom domain hostnames", () => {
 		for (const hostname of [
 			"",
 			"acme.com",
+			"acme.co.uk",
+			"acme.com.au",
+			"acme.github.io",
 			"10.0.0.1",
 			"https://status.acme.com",
 			"status.acme.com/path",
