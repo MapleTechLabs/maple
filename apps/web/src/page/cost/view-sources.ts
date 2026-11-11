@@ -23,6 +23,7 @@ const STATUS = {
 	syncing: { label: "Syncing history", variant: "info" },
 	pending: { label: "Waiting for first sync", variant: "muted" },
 	paused: { label: "Paused", variant: "muted" },
+	held: { label: "On hold", variant: "muted" },
 	error: { label: "Sync failing", variant: "crit" },
 } as const satisfies Record<
 	CostSourceStatus,
@@ -56,7 +57,7 @@ const facts = (
 	`${formatNumber(source.requestsThisMonth)} provider ${pluralize(source.requestsThisMonth, "request")} this month (${requestsCost(source.requestsThisMonth)})`,
 ]
 
-/** What the status alone does not say: why a sync fails, and what pausing keeps. */
+/** What the status alone does not say: why a sync fails or waits, and what pausing keeps. */
 const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 	source.status === "error" && source.lastError !== null
 		? [typography(h, { size: "xs", tone: "error", as: "p" }, [source.lastError])]
@@ -66,7 +67,10 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 						"This connection no longer supplies cost. Its history stays.",
 					]),
 				]
-			: []
+			: // Held is not a failure: the reason reads as a note, not as an error.
+				source.status === "held" && source.lastError !== null
+				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [source.lastError])]
+				: []
 
 const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: string): Html => {
 	const brand = providerBrand(source.provider)

@@ -389,4 +389,24 @@ describe("cost page", () => {
 			expectView(text("This connection no longer supplies cost. Its history stays.")).toExist(),
 		)
 	})
+
+	test("a source the sync holds says why, and does not read as failing", () => {
+		const step = entered({}, [
+			source({
+				status: "held",
+				lastError: "This month's provider request budget is spent; pulls resume next month.",
+				lastErrorReason: "budget",
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(step.model)),
+			resolveTheme,
+			expectView(text("On hold")).toExist(),
+			expectView(
+				text("This month's provider request budget is spent; pulls resume next month."),
+			).toExist(),
+			expectView(text("Sync failing")).not.toExist(),
+		)
+	})
 })
