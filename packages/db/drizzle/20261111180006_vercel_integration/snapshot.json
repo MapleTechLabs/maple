@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "af2275241f745ff1e102f84ab63e0574cca26658e9e7b0ebe6cd755acccfbacb",
+	"id": "a22c2ae84317d25bf2af33e9cc3a8c5d9e29cab35f77cd55b796d498370869a3",
 	"prevIds": [
-		"1a90de1132ef80ef62d7c29eb1ece11ccaa0b2078bd45e41d25e83fbdfef6c49"
+		"5b4fe667734aff2259a2da2171c061eeb4987519f6d4a955344c77a9f5521c85"
 	],
 	"entities": [
 		{
@@ -1108,6 +1108,16 @@
 				"name": "status_page_components_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_custom_domains",
+			"primaryKey": {
+				"name": "status_page_custom_domains_pkey",
+				"columns": [
+					"page_id"
 				]
 			}
 		},
@@ -15999,7 +16009,7 @@
 			"name": "slug",
 			"position": 3,
 			"type": "text",
-			"notNull": true,
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
@@ -16016,8 +16026,38 @@
 		{
 			"kind": "column",
 			"table": "status_page_cleanups",
-			"name": "created_at",
+			"name": "hostname",
 			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_hostname_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_route_id",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16136,6 +16176,126 @@
 		{
 			"kind": "column",
 			"table": "status_page_components",
+			"name": "updated_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "page_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "hostname",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_hostname_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_route_id",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "dns_records",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_error",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_checked_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "activated_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
 			"name": "updated_at",
 			"position": 11,
 			"type": "timestamp with time zone",
@@ -16496,7 +16656,7 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "privacy_url",
+			"name": "logo_dark_url",
 			"position": 7,
 			"type": "text",
 			"notNull": false,
@@ -16506,7 +16666,7 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "terms_url",
+			"name": "favicon_url",
 			"position": 8,
 			"type": "text",
 			"notNull": false,
@@ -16516,8 +16676,38 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "theme",
+			"name": "support_url",
 			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "privacy_url",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "terms_url",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "theme",
+			"position": 12,
 			"type": "jsonb",
 			"notNull": true,
 			"default": "'{\"preset\":\"default\",\"appearance\":\"auto\",\"accent\":null,\"background\":null,\"text\":null,\"card\":null,\"border\":null,\"radius\":\"md\",\"font\":\"sans\"}'",
@@ -16527,7 +16717,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "show_powered_by",
-			"position": 10,
+			"position": 13,
 			"type": "boolean",
 			"notNull": true,
 			"default": "true",
@@ -16537,7 +16727,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "auto_incidents",
-			"position": 11,
+			"position": 14,
 			"type": "text",
 			"notNull": true,
 			"default": "'off'",
@@ -16547,7 +16737,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "break_glass_token_sha256",
-			"position": 12,
+			"position": 15,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16557,7 +16747,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "break_glass_token_suffix",
-			"position": 13,
+			"position": 16,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16566,47 +16756,17 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "draft",
-			"position": 14,
-			"type": "boolean",
-			"notNull": true,
-			"default": "false",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "revision",
-			"position": 15,
-			"type": "bigint",
-			"notNull": true,
-			"default": "1",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "published_revision",
-			"position": 16,
-			"type": "bigint",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "published_at",
+			"name": "visibility",
 			"position": 17,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
+			"type": "text",
+			"notNull": true,
+			"default": "'public'",
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "last_publish_error",
+			"name": "password_hash",
 			"position": 18,
 			"type": "text",
 			"notNull": false,
@@ -16616,8 +16776,58 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "published_hash",
+			"name": "draft",
 			"position": 19,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "revision",
+			"position": 20,
+			"type": "bigint",
+			"notNull": true,
+			"default": "1",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_revision",
+			"position": 21,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_at",
+			"position": 22,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "last_publish_error",
+			"position": 23,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_hash",
+			"position": 24,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16627,7 +16837,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "publish_attempted_at",
-			"position": 20,
+			"position": 25,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -16637,7 +16847,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "created_by",
-			"position": 21,
+			"position": 26,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -16647,7 +16857,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "created_at",
-			"position": 22,
+			"position": 27,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16657,7 +16867,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "updated_at",
-			"position": 23,
+			"position": 28,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -17366,27 +17576,27 @@
 		{
 			"kind": "column",
 			"table": "uptime_monitors",
-			"name": "interval_seconds",
+			"name": "headers_ciphertext",
 			"position": 5,
-			"type": "integer",
-			"notNull": true,
-			"default": "60",
+			"type": "text",
+			"notNull": false,
+			"default": null,
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "uptime_monitors",
-			"name": "failures_to_down",
+			"name": "headers_iv",
 			"position": 6,
-			"type": "integer",
-			"notNull": true,
-			"default": "2",
+			"type": "text",
+			"notNull": false,
+			"default": null,
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "uptime_monitors",
-			"name": "service_name",
+			"name": "headers_tag",
 			"position": 7,
 			"type": "text",
 			"notNull": false,
@@ -17396,8 +17606,38 @@
 		{
 			"kind": "column",
 			"table": "uptime_monitors",
-			"name": "alert_rule_id",
+			"name": "interval_seconds",
 			"position": 8,
+			"type": "integer",
+			"notNull": true,
+			"default": "60",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitors",
+			"name": "failures_to_down",
+			"position": 9,
+			"type": "integer",
+			"notNull": true,
+			"default": "2",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitors",
+			"name": "service_name",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "uptime_monitors",
+			"name": "alert_rule_id",
+			"position": 11,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -17407,7 +17647,7 @@
 			"kind": "column",
 			"table": "uptime_monitors",
 			"name": "heartbeat_token",
-			"position": 9,
+			"position": 12,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -17417,7 +17657,7 @@
 			"kind": "column",
 			"table": "uptime_monitors",
 			"name": "enabled",
-			"position": 10,
+			"position": 13,
 			"type": "boolean",
 			"notNull": true,
 			"default": "true",
@@ -17427,7 +17667,7 @@
 			"kind": "column",
 			"table": "uptime_monitors",
 			"name": "created_by",
-			"position": 11,
+			"position": 14,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -17437,7 +17677,7 @@
 			"kind": "column",
 			"table": "uptime_monitors",
 			"name": "created_at",
-			"position": 12,
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -17447,7 +17687,7 @@
 			"kind": "column",
 			"table": "uptime_monitors",
 			"name": "updated_at",
-			"position": 13,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -18226,8 +18466,38 @@
 		{
 			"kind": "column",
 			"table": "vercel_connections",
-			"name": "log_drain_id",
+			"name": "speed_insights_enabled",
 			"position": 16,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "web_analytics_enabled",
+			"position": 17,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_enabled",
+			"position": 18,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "log_drain_id",
+			"position": 19,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -18237,7 +18507,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "trace_drain_id",
-			"position": 17,
+			"position": 20,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -18247,7 +18517,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "ai_gateway_drain_id",
-			"position": 18,
+			"position": 21,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -18256,37 +18526,7 @@
 		{
 			"kind": "column",
 			"table": "vercel_connections",
-			"name": "log_drain_state",
-			"position": 19,
-			"type": "jsonb",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "vercel_connections",
-			"name": "trace_drain_state",
-			"position": 20,
-			"type": "jsonb",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "vercel_connections",
-			"name": "ai_gateway_drain_state",
-			"position": 21,
-			"type": "jsonb",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "vercel_connections",
-			"name": "drain_key_hash",
+			"name": "speed_insights_drain_id",
 			"position": 22,
 			"type": "text",
 			"notNull": false,
@@ -18296,8 +18536,98 @@
 		{
 			"kind": "column",
 			"table": "vercel_connections",
-			"name": "auth_failed_at",
+			"name": "web_analytics_drain_id",
 			"position": 23,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_drain_id",
+			"position": 24,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "log_drain_state",
+			"position": 25,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "trace_drain_state",
+			"position": 26,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "ai_gateway_drain_state",
+			"position": 27,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "speed_insights_drain_state",
+			"position": 28,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "web_analytics_drain_state",
+			"position": 29,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_drain_state",
+			"position": 30,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "drain_key_hash",
+			"position": 31,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "auth_failed_at",
+			"position": 32,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18307,7 +18637,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "discovered_at",
-			"position": 24,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18317,7 +18647,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "deployments_watermark_at",
-			"position": 25,
+			"position": 34,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18327,7 +18657,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "lease_until",
-			"position": 26,
+			"position": 35,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18337,7 +18667,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "last_success_at",
-			"position": 27,
+			"position": 36,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18347,7 +18677,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "last_error",
-			"position": 28,
+			"position": 37,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -18357,7 +18687,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "last_error_at",
-			"position": 29,
+			"position": 38,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18367,7 +18697,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "created_at",
-			"position": 30,
+			"position": 39,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -18377,7 +18707,7 @@
 			"kind": "column",
 			"table": "vercel_connections",
 			"name": "updated_at",
-			"position": 31,
+			"position": 40,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -18516,8 +18846,18 @@
 		{
 			"kind": "column",
 			"table": "vercel_deployments",
-			"name": "created_at_vercel",
+			"name": "error_message",
 			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "created_at_vercel",
+			"position": 14,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -18526,8 +18866,18 @@
 		{
 			"kind": "column",
 			"table": "vercel_deployments",
+			"name": "building_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
 			"name": "ready_at",
-			"position": 14,
+			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -18537,7 +18887,7 @@
 			"kind": "column",
 			"table": "vercel_deployments",
 			"name": "inspector_url",
-			"position": 15,
+			"position": 17,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -18547,7 +18897,7 @@
 			"kind": "column",
 			"table": "vercel_deployments",
 			"name": "updated_at",
-			"position": 16,
+			"position": 18,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -21012,6 +21362,39 @@
 		},
 		{
 			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_checked_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"last_checked_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_hostname_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"hostname\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "status_page_incident_components",
 			"name": "status_page_incident_components_component_idx",
 			"unique": false,
@@ -21054,6 +21437,17 @@
 				"\"alert_incident_id\""
 			],
 			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incidents",
+			"name": "status_page_incidents_open_maintenance_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"scheduled_start\""
+			],
+			"where": "\"kind\" = 'maintenance' and \"resolved_at\" is null"
 		},
 		{
 			"kind": "index",
@@ -21657,6 +22051,20 @@
 			"kind": "foreign_key",
 			"table": "status_page_components",
 			"name": "status_page_components_page_id_status_pages_id_fk",
+			"columns": [
+				"page_id"
+			],
+			"foreignTable": "status_pages",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_page_id_status_pages_id_fk",
 			"columns": [
 				"page_id"
 			],
