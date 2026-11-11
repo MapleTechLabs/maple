@@ -72,6 +72,7 @@ export const SCENARIOS = [
 	"add-target-exists",
 	"spend-and-models",
 	"findings",
+	"findings-fixed",
 	"findings-member",
 	"runs",
 	"run-live",
@@ -487,6 +488,11 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			}
 		case "findings":
 			return { _tag: "Tabs", step: tabs(AppRoute.SecurityCodeFindings({ search: {} }), nowMs) }
+		case "findings-fixed":
+			return {
+				_tag: "Tabs",
+				step: tabs(AppRoute.SecurityCodeFindings({ search: { status: "fixed" } }), nowMs),
+			}
 		case "findings-member":
 			return {
 				_tag: "Tabs",

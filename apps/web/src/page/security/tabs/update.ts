@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Result, Array as Arr, String as Str, Option } from "effect"
+import { Result, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -35,7 +35,6 @@ import {
 	runningRuns,
 	runsOf,
 	settingsOf,
-	STATUS_TABS,
 	targetsOf,
 } from "./derive"
 import { Message, type Model, type Tab } from "./model"
@@ -56,7 +55,6 @@ const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
-	statusSelect: { ...model.statusSelect, value: model.findingsSearch.status ?? "open" },
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
@@ -224,7 +222,6 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
-		statusSelect: Select.init("security-status", { value: "open", selectedIndex: 0 }),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
 		// Disproved findings start folded, unless the URL asked to show them.
@@ -546,27 +543,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},
-		GotStatusSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.statusSelect,
-				inner,
-				(statusSelect) => ({ statusSelect }),
-				(next) => Message.GotStatusSelectMessage({ message: next }),
-				(updated, value) => {
-					const { status: _status, ...rest } = searchWithDraft(updated)
-					// Open is the default, so the URL only carries another status.
-					return navigate(
-						updated,
-						findingsUrl(
-							Option.match(
-								Arr.findFirst(STATUS_TABS, (tab) => tab === value && tab !== "open"),
-								{ onNone: () => rest, onSome: (status) => ({ ...rest, status }) },
-							),
-						),
-					)
-				},
-			),
+		PickedStatus: ({ status }) => {
+			const { status: _status, ...rest } = searchWithDraft(model)
+			// Open is the default, so the URL only carries another status.
+			return navigate(model, findingsUrl(status === "open" ? rest : { ...rest, status }))
+		},
 		GotTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,
