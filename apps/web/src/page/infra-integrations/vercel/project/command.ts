@@ -4,11 +4,13 @@ import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
 	BreakdownInput,
+	FunctionSeriesInput,
 	loadVercelAiGateway,
 	loadVercelBreakdown,
 	loadVercelDependencies,
 	loadVercelDeployments,
 	loadVercelFunctions,
+	loadVercelFunctionSeries,
 	loadVercelLatencySeries,
 	loadVercelProjectDetail,
 	loadVercelProjects,
@@ -108,6 +110,15 @@ export const FetchFunctions = Command.define("FetchVercelProjectFunctions", {
 	messages: [Message.CompletedFetchFunctions],
 	execute: ({ key, input }) =>
 		Effect.map(loadVercelFunctions(input), (result) => Message.CompletedFetchFunctions({ key, result })),
+})
+
+export const FetchFunctionSeries = Command.define("FetchVercelProjectFunctionSeries", {
+	args: { key: Schema.String, input: FunctionSeriesInput },
+	messages: [Message.CompletedFetchFunctionSeries],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelFunctionSeries(input), (result) =>
+			Message.CompletedFetchFunctionSeries({ key, result }),
+		),
 })
 
 export const FetchDependencies = Command.define("FetchVercelProjectDependencies", {

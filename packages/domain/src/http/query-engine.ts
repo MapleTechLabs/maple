@@ -991,6 +991,37 @@ export class VercelInfraFunctionsResponse extends Schema.Class<VercelInfraFuncti
 	functions: Schema.Array(VercelInfraFunction),
 }) {}
 
+/** One project's functions over time, for every route or one. */
+export class VercelInfraFunctionTimeseriesRequest extends Schema.Class<VercelInfraFunctionTimeseriesRequest>(
+	"VercelInfraFunctionTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	projectId: VercelProjectId,
+	/** The edge request's `http.route`; every route when absent. */
+	route: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+}) {}
+
+export const VercelInfraFunctionBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	/** Cold-start init time; 0 in a bucket without a cold start. */
+	initP50Ms: Schema.Number,
+	initP95Ms: Schema.Number,
+})
+export type VercelInfraFunctionBucket = typeof VercelInfraFunctionBucket.Type
+
+export class VercelInfraFunctionTimeseriesResponse extends Schema.Class<VercelInfraFunctionTimeseriesResponse>(
+	"VercelInfraFunctionTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraFunctionBucket),
+}) {}
+
 /** One host a project's functions called. */
 export const VercelInfraDependency = Schema.Struct({
 	host: Schema.String,
@@ -4112,6 +4143,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("vercelInfraFunctions", "/vercel-infra-functions", {
 			payload: VercelInfraProjectDetailRequest,
 			success: VercelInfraFunctionsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraFunctionTimeseries", "/vercel-infra-function-timeseries", {
+			payload: VercelInfraFunctionTimeseriesRequest,
+			success: VercelInfraFunctionTimeseriesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

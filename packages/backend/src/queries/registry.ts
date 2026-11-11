@@ -36,6 +36,7 @@ import type {
 	ServiceCloudflareStatsRequest,
 	SpanDetailRequest,
 	VercelInfraBreakdownRequest,
+	VercelInfraFunctionTimeseriesRequest,
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
@@ -415,6 +416,29 @@ const vercelInfraFunctionRoutes = defineQuery({
 		CH.compile(Integrations.vercelFunctionRoutesSQL(), {
 			...vercelWindow(payload, orgId),
 			projectId: payload.projectId,
+		}),
+})
+
+const vercelInfraRouteTimeseries = defineQuery({
+	id: "vercelInfraRouteTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraFunctionTimeseriesRequest, orgId: OrgId) =>
+		CH.compile(Integrations.vercelFunctionRouteTimeseriesSQL(), {
+			...vercelBucketed(payload, orgId),
+			projectId: payload.projectId,
+		}),
+})
+
+const vercelInfraOneRouteTimeseries = defineQuery({
+	id: "vercelInfraOneRouteTimeseries",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: VercelInfraFunctionTimeseriesRequest & { readonly route: string }, orgId: OrgId) =>
+		CH.compile(Integrations.vercelOneRouteTimeseriesSQL(), {
+			...vercelBucketed(payload, orgId),
+			projectId: payload.projectId,
+			route: payload.route,
 		}),
 })
 
@@ -1239,6 +1263,8 @@ export const Queries = {
 	vercelAiGatewayTimeseries,
 	vercelInfraProjectFunctions,
 	vercelInfraFunctionRoutes,
+	vercelInfraRouteTimeseries,
+	vercelInfraOneRouteTimeseries,
 	vercelInfraDependencies,
 	vercelSpeedInsightsMetrics,
 	vercelSpeedInsightsRoutes,

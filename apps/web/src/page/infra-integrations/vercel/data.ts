@@ -11,6 +11,7 @@ import {
 	getVercelLatencyTimeseries,
 	getVercelDependencies,
 	getVercelFunctions,
+	getVercelFunctionTimeseries,
 	getVercelProjectDetail,
 	getVercelProjects,
 	getVercelRequestTimeseries,
@@ -47,11 +48,12 @@ export const linkTime = (time: TimeSearch): TimeSearch =>
 		? { ...time, timePreset: DEFAULT_PRESET }
 		: time
 
-const BUCKET_STEPS = [10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21_600, 43_200, 86_400]
+const BUCKET_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 21_600, 43_200, 86_400]
 
 /**
- * About 120 points over the window. Finer than the shared infra rule (five minutes at least, for
- * scraped metrics): the drains send every request, so a ten-minute window still draws a line.
+ * About 120 points over the window, a minute at least (the API's floor). Finer than the shared
+ * infra rule (five minutes at least, for scraped metrics): the drains send every request, so a
+ * ten-minute window still draws a line.
  */
 export const vercelBucketSeconds = (window: Pick<TimeWindow, "startTime" | "endTime">): number => {
 	const seconds = Math.max(0, (toEpochMs(window.endTime) - toEpochMs(window.startTime)) / 1000)
@@ -147,6 +149,22 @@ export const loadVercelProjectDetail = (input: ProjectInput) =>
 	getVercelProjectDetail({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
 
 /** `vercelFunctionsResultAtom({ data })`. */
+/** One project's functions per bucket, for every route or the one in `route`. */
+export const FunctionSeriesInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	bucketSeconds: Schema.Number,
+	projectId: Schema.String,
+	route: Schema.optional(Schema.String),
+})
+export type FunctionSeriesInput = typeof FunctionSeriesInput.Type
+
+export const loadVercelFunctionSeries = (input: FunctionSeriesInput) =>
+	getVercelFunctionTimeseries({ data: { ...input } }).pipe(
+		Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
+		Effect.result,
+	)
+
 export const loadVercelFunctions = (input: ProjectInput) =>
 	getVercelFunctions({ data: { ...input } }).pipe(
 		Effect.mapBoth({ onSuccess: (response) => response.functions, onFailure: toLoadFailure }),

@@ -24,6 +24,8 @@ export {
 } from "./vercel-errors"
 export {
 	vercelFunctionRoutesSQL,
+	vercelFunctionRouteTimeseriesSQL,
+	vercelOneRouteTimeseriesSQL,
 	vercelFunctionTimeseriesSQL,
 	vercelProjectDependenciesSQL,
 	vercelProjectFunctionsSQL,

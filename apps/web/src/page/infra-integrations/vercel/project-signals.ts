@@ -3,6 +3,7 @@
 
 import type {
 	VercelDeploymentSummary,
+	VercelInfraFunctionBucket,
 	VercelInfraLatencyBucket,
 	VercelInfraRequestBucket,
 } from "@maple/domain/http"
@@ -32,6 +33,32 @@ const rowsOf = <B extends { readonly bucket: string }>(
 			return value === null ? [] : [{ bucket: bucket.bucket, attributeValue: name, value }]
 		}),
 	)
+
+/** The functions tab's strips: invocations, cold-start share, duration and cold-start init time. */
+export const functionRows = (buckets: ReadonlyArray<VercelInfraFunctionBucket>) => ({
+	invocations: rowsOf(buckets, [["value", (b) => b.invocations]]),
+	coldStarts: rowsOf(buckets, [["value", (b) => share(b.coldStarts, b.invocations)]]),
+	// A bucket without an invocation (or a cold start) has no duration: no point, not a zero.
+	duration: rowsOf(buckets, [
+		["p50", (b) => (b.invocations > 0 ? b.p50DurationMs : null)],
+		["p95", (b) => (b.invocations > 0 ? b.p95DurationMs : null)],
+	]),
+	init: rowsOf(buckets, [
+		["p50", (b) => (b.coldStarts > 0 ? b.initP50Ms : null)],
+		["p95", (b) => (b.coldStarts > 0 ? b.initP95Ms : null)],
+	]),
+})
+
+/** A zero bucket for `fillBuckets`. */
+export const zeroFunctionBucket = (bucket: string): VercelInfraFunctionBucket => ({
+	bucket,
+	invocations: 0,
+	coldStarts: 0,
+	p50DurationMs: 0,
+	p95DurationMs: 0,
+	initP50Ms: 0,
+	initP95Ms: 0,
+})
 
 /** 5xx share of each bucket's requests, 0–1. */
 export const serverErrorRateRows = (buckets: ReadonlyArray<VercelInfraRequestBucket>) =>
@@ -106,6 +133,18 @@ export type DeploySignals = Readonly<{
  * The project's production deploys in the window as chart markers, and the ones followed by a
  * jump in 5xx. `buckets` must be the window's filled grid of `bucketSeconds`.
  */
+/** The window's production deploys as commit markers, for strips that show no regression. */
+export const projectDeployCommits = (
+	deployments: ReadonlyArray<VercelDeploymentSummary>,
+	window: Readonly<{ startTime: string; endTime: string }>,
+): ReadonlyArray<CommitMarker> =>
+	deployCommitMarkers(
+		productionDeploysIn(deployments, {
+			startMs: toEpochMs(window.startTime),
+			endMs: toEpochMs(window.endTime),
+		}),
+	)
+
 export const projectDeploySignals = (
 	buckets: ReadonlyArray<VercelInfraRequestBucket>,
 	deployments: ReadonlyArray<VercelDeploymentSummary>,

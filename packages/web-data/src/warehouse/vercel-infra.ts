@@ -3,6 +3,7 @@ import {
 	VercelInfraBreakdownDimension,
 	VercelInfraBreakdownRequest,
 	VercelInfraBreakdownStatus,
+	VercelInfraFunctionTimeseriesRequest,
 	VercelInfraProjectDetailRequest,
 	VercelInfraProjectsRequest,
 	VercelInfraTimeseriesRequest,
@@ -41,6 +42,13 @@ const BreakdownInputSchema = Schema.Struct({
 	status: Schema.optional(VercelInfraBreakdownStatus),
 })
 
+const FunctionTimeseriesInputSchema = Schema.Struct({
+	...ProjectInputSchema.fields,
+	bucketSeconds: Schema.Number,
+	route: Schema.optional(Schema.String),
+})
+
+export type VercelFunctionTimeseriesInput = (typeof FunctionTimeseriesInputSchema)["Encoded"]
 export type VercelBreakdownInput = (typeof BreakdownInputSchema)["Encoded"]
 export type VercelTimeRangeInput = (typeof TimeRangeInputSchema)["Encoded"]
 export type VercelWindowInput = (typeof WindowInputSchema)["Encoded"]
@@ -263,6 +271,31 @@ export const getVercelAuditLog = Effect.fn("QueryEngine.getVercelAuditLog")(func
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.vercelAuditLog({
 				payload: new VercelInfraProjectsRequest(range),
+			})
+		}),
+	)
+})
+
+/** One project's functions per bucket, for every route or one. */
+export const getVercelFunctionTimeseries = Effect.fn("QueryEngine.getVercelFunctionTimeseries")(function* ({
+	data,
+}: {
+	data: VercelFunctionTimeseriesInput
+}) {
+	const input = yield* decodeInput(FunctionTimeseriesInputSchema, data, "getVercelFunctionTimeseries")
+	const nowMillis = yield* Clock.currentTimeMillis
+	const window = {
+		...resolveRange(input, nowMillis),
+		bucketSeconds: input.bucketSeconds,
+		projectId: input.projectId,
+	}
+	return yield* runWarehouseQuery("vercelInfraFunctionTimeseries", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.vercelInfraFunctionTimeseries({
+				payload: new VercelInfraFunctionTimeseriesRequest(
+					input.route === undefined ? window : { ...window, route: input.route },
+				),
 			})
 		}),
 	)

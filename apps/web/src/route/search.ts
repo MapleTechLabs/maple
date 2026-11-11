@@ -803,6 +803,8 @@ export const InfraVercelProjectSearch = Schema.Struct({
 	by: Schema.optional(VercelBreakdownBy),
 	/** Narrows the breakdown to failing requests. */
 	status: Schema.optional(Schema.Literals(["4xx", "5xx"])),
+	/** Narrows the functions tab's charts to one route (the edge request's `http.route`). */
+	route: StringParam,
 	...TimeRangeSearchFields,
 })
 

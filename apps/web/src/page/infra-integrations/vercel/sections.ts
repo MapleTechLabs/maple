@@ -42,7 +42,8 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../../kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, ROW_LINK_CLASS, skeletonRows } from "../../kit/data-table"
+import { pressable } from "@maple/views/ui/pressable"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
@@ -357,11 +358,19 @@ const coldStartTone = (percent: number | null): string =>
 /** Per route: invocations, the share that started cold and what a cold start cost. */
 export const functionsSection = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ read: SectionRead<ReadonlyArray<VercelInfraFunction>, M>; tracesEnabled: boolean }>,
+	options: Readonly<{
+		read: SectionRead<ReadonlyArray<VercelInfraFunction>, M>
+		tracesEnabled: boolean
+		/** Rows narrow the charts above to their route: the picked route, and the Message a row sends. */
+		select?: Readonly<{ route: string | undefined; onSelect: (route: string) => M }>
+	}>,
 ): Html =>
 	readSection(h, {
 		title: "Functions",
-		hint: "by route, most invoked first",
+		hint:
+			options.select === undefined
+				? "by route, most invoked first"
+				: "by route, most invoked first · click a route to chart it alone",
 		read: options.read,
 		off: options.tracesEnabled ? null : TRACES_OFF,
 		failure: "Couldn't load functions",
@@ -387,41 +396,54 @@ export const functionsSection = <M>(
 					? [dataTableEmpty(h, ["No function invocations in this window"])]
 					: Arr.map(functions, (fn) => {
 							const percent = percentOf(fn.coldStarts, fn.invocations)
-							return h.div(
-								[h.Key(fn.route), h.Class(ROW_CLASS)],
-								[
-									typography(
-										h,
-										{
-											size: "xs",
-											tone: fn.route === "" ? "muted" : "foreground",
-											mono: true,
-											truncate: true,
-											className: LEAD_COLUMN,
-											attributes: [h.Title(fn.route)],
-										},
-										[fn.route === "" ? "(no route)" : fn.route],
-									),
-									h.span([h.Class(cn(NUM, "w-[96px]"))], [formatNumber(fn.invocations)]),
-									h.span(
-										[h.Class(cn(NUM, "w-[120px]", coldStartTone(percent)))],
-										[
-											percent === null
-												? EMPTY_VALUE
-												: `${formatPercent(percent / 100)} · ${formatNumber(fn.coldStarts)}`,
-										],
-									),
-									h.span(
-										[h.Class(cn(NUM, "hidden w-[80px] md:block"))],
-										[fn.initP50Ms === null ? EMPTY_VALUE : formatLatency(fn.initP50Ms)],
-									),
-									h.span(
-										[h.Class(cn(NUM, "w-[80px]"))],
-										[fn.initP95Ms === null ? EMPTY_VALUE : formatLatency(fn.initP95Ms)],
-									),
-									h.span([h.Class(cn(NUM, "w-[80px]"))], [formatLatency(fn.p95DurationMs)]),
-								],
-							)
+							const select = options.select
+							const isSelected = select?.route === fn.route
+							const row = (children: ReadonlyArray<Html>) =>
+								select === undefined
+									? h.div([h.Key(fn.route), h.Class(ROW_CLASS)], children)
+									: pressable(
+											h,
+											{
+												onClick: select.onSelect(fn.route),
+												isSelected,
+												selectedLane: isSelected,
+												className: cn(ROW_LINK_CLASS, "w-full text-left"),
+												attributes: [h.Key(fn.route)],
+											},
+											children,
+										)
+							return row([
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: fn.route === "" ? "muted" : "foreground",
+										mono: true,
+										truncate: true,
+										className: LEAD_COLUMN,
+										attributes: [h.Title(fn.route)],
+									},
+									[fn.route === "" ? "(no route)" : fn.route],
+								),
+								h.span([h.Class(cn(NUM, "w-[96px]"))], [formatNumber(fn.invocations)]),
+								h.span(
+									[h.Class(cn(NUM, "w-[120px]", coldStartTone(percent)))],
+									[
+										percent === null
+											? EMPTY_VALUE
+											: `${formatPercent(percent / 100)} · ${formatNumber(fn.coldStarts)}`,
+									],
+								),
+								h.span(
+									[h.Class(cn(NUM, "hidden w-[80px] md:block"))],
+									[fn.initP50Ms === null ? EMPTY_VALUE : formatLatency(fn.initP50Ms)],
+								),
+								h.span(
+									[h.Class(cn(NUM, "w-[80px]"))],
+									[fn.initP95Ms === null ? EMPTY_VALUE : formatLatency(fn.initP95Ms)],
+								),
+								h.span([h.Class(cn(NUM, "w-[80px]"))], [formatLatency(fn.p95DurationMs)]),
+							])
 						}),
 			),
 		],

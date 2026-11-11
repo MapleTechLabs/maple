@@ -5707,6 +5707,37 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:vercel-functions:vercelFunctionRouteTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(t.startedAt, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(t.invokeMs), 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          ifNull(ifNotFinite(quantile(0.5)(t.initMs), 0), 0) AS initP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(t.initMs), 0), 0) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startedAt,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:vercel-functions:vercelFunctionTimeseriesSQL:default
 SELECT
           formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
@@ -5742,6 +5773,38 @@ SELECT
           AND traces.SpanKind = 'Server'
           AND traces.SpanName IN ('Invoke Function', 'Start VM')
           AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelOneRouteTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(t.startedAt, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(t.invokeMs), 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          ifNull(ifNotFinite(quantile(0.5)(t.initMs), 0), 0) AS initP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(t.initMs), 0), 0) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startedAt,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+          AND t.route = '/api/checkout'
         GROUP BY bucket
         ORDER BY bucket ASC
         LIMIT 2000

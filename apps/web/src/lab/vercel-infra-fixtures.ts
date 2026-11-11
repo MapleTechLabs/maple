@@ -17,6 +17,7 @@ import {
 	type VercelAuditEvent,
 	type VercelInfraDependency,
 	type VercelInfraFunction,
+	type VercelInfraFunctionBucket,
 	type VercelInfraLatencyBucket,
 	type VercelInfraProject,
 	type VercelInfraRequestBucket,
@@ -437,6 +438,20 @@ export const VERCEL_TEAM_DEPLOYMENTS: ReadonlyArray<VercelDeploymentSummary> = [
 	deployment("storefront-k2", "READY", "main", "Checkout: retry card tokenization", 3 * HOUR),
 	...VERCEL_API_DEPLOYMENTS,
 ]
+
+/** One project's functions per bucket: the latency fixture's invocations, with init time on cold starts. */
+export const VERCEL_FUNCTION_BUCKETS: ReadonlyArray<VercelInfraFunctionBucket> = Arr.map(
+	VERCEL_LATENCY_BUCKETS,
+	(b, i) => ({
+		bucket: b.bucket,
+		invocations: b.invocations,
+		coldStarts: b.coldStarts,
+		p50DurationMs: b.invokeP50Ms ?? 0,
+		p95DurationMs: b.invokeP95Ms ?? 0,
+		initP50Ms: b.coldStarts === 0 ? 0 : 780 + (i % 9) * 12,
+		initP95Ms: b.coldStarts === 0 ? 0 : 1_420 + ((i * 31) % 160),
+	}),
+)
 
 export const VERCEL_FUNCTIONS: ReadonlyArray<VercelInfraFunction> = [
 	{

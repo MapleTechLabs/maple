@@ -11,7 +11,13 @@ import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
-import { type BreakdownInput, DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
+import {
+	type BreakdownInput,
+	DEFAULT_PRESET,
+	DEPLOYMENTS_LIMIT,
+	type FunctionSeriesInput,
+	seriesInput,
+} from "../data"
 import type { VercelIntegrationStatus } from "@maple/domain/http"
 import type { VercelBreakdownBy, VercelProjectTab } from "../../../../route/search"
 import {
@@ -23,6 +29,7 @@ import {
 	FetchDeployments,
 	FetchDetail,
 	FetchFunctions,
+	FetchFunctionSeries,
 	FetchLatency,
 	FetchProjects,
 	FetchSpeedInsights,
@@ -63,6 +70,7 @@ type Slot =
 	| "deployments"
 	| "aiGateway"
 	| "functions"
+	| "functionSeries"
 	| "dependencies"
 	| "speedInsights"
 	| "webAnalytics"
@@ -89,7 +97,7 @@ const RAIL_SLOTS: ReadonlyArray<Slot> = ["projects", "functions", "dependencies"
 /** What each tab shows beside the rail; a drain-fed read waits for the status to say its drain is on. */
 const TAB_SLOTS = {
 	traffic: ["buckets", "latency", "breakdown", "detail"],
-	functions: [],
+	functions: ["functionSeries"],
 	builds: [],
 	users: ["speedInsights", "webAnalytics"],
 	aiGateway: ["aiGateway"],
@@ -98,6 +106,7 @@ const TAB_SLOTS = {
 const drainOn = (slot: Slot, status: VercelIntegrationStatus | null): boolean => {
 	switch (slot) {
 		case "functions":
+		case "functionSeries":
 		case "dependencies":
 		case "latency":
 			return status?.tracesEnabled === true
@@ -163,6 +172,9 @@ const sync = (
 	const detailKey = requestKey(org, "getVercelProjectDetail", { data: detailInput })
 	const aiKey = requestKey(org, "getVercelAiGateway", { data: series })
 	const functionsKey = requestKey(org, "getVercelFunctions", { data: detailInput })
+	const route = model.search.route
+	const functionSeriesInput: FunctionSeriesInput = route === undefined ? series : { ...series, route }
+	const functionSeriesKey = requestKey(org, "getVercelFunctionTimeseries", { data: functionSeriesInput })
 	const dependenciesKey = requestKey(org, "getVercelDependencies", { data: detailInput })
 	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: detailInput })
 	const webKey = requestKey(org, "getVercelWebAnalytics", { data: detailInput })
@@ -189,6 +201,9 @@ const sync = (
 			),
 			functions: take("functions", model.functions, functionsKey, () =>
 				FetchFunctions({ key: functionsKey, input: detailInput }),
+			),
+			functionSeries: take("functionSeries", model.functionSeries, functionSeriesKey, () =>
+				FetchFunctionSeries({ key: functionSeriesKey, input: functionSeriesInput }),
 			),
 			dependencies: take("dependencies", model.dependencies, dependenciesKey, () =>
 				FetchDependencies({ key: dependenciesKey, input: detailInput }),
@@ -220,6 +235,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		deployments: Keyed.idle(),
 		aiGateway: Keyed.idle(),
 		functions: Keyed.idle(),
+		functionSeries: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		speedInsights: Keyed.idle(),
 		webAnalytics: Keyed.idle(),
@@ -289,6 +305,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFunctions: ({ key, result }) => ({
 			model: { ...model, functions: Keyed.accept(model.functions, key, result) },
 		}),
+		CompletedFetchFunctionSeries: ({ key, result }) => ({
+			model: { ...model, functionSeries: Keyed.accept(model.functionSeries, key, result) },
+		}),
 		CompletedFetchDependencies: ({ key, result }) => ({
 			model: { ...model, dependencies: Keyed.accept(model.dependencies, key, result) },
 		}),
@@ -314,6 +333,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryDeployments: () => sync(model, context, "Refresh", ["deployments"]),
 		ClickedRetryAiGateway: () => sync(model, context, "Refresh", ["aiGateway"]),
 		ClickedRetryFunctions: () => sync(model, context, "Refresh", ["functions"]),
+		ClickedRetryFunctionSeries: () => sync(model, context, "Refresh", ["functionSeries"]),
+		ClickedFunctionRoute: ({ route }) =>
+			navigate(model, {
+				...model.search,
+				route: route === null || route === model.search.route ? undefined : route,
+			}),
 		ClickedRetryDependencies: () => sync(model, context, "Refresh", ["dependencies"]),
 		ClickedRetrySpeedInsights: () => sync(model, context, "Refresh", ["speedInsights"]),
 		ClickedRetryWebAnalytics: () => sync(model, context, "Refresh", ["webAnalytics"]),

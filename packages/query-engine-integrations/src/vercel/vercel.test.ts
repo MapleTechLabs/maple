@@ -16,6 +16,8 @@ import {
 } from "./vercel-ai-gateway"
 import {
 	vercelFunctionRoutesSQL,
+	vercelFunctionRouteTimeseriesSQL,
+	vercelOneRouteTimeseriesSQL,
 	vercelProjectDependenciesSQL,
 	vercelProjectFunctionsSQL,
 } from "./vercel-functions"
@@ -119,6 +121,22 @@ describe("vercelProjectFunctionsSQL", () => {
 		expect(sql).toContain("countIf(traces.SpanName = 'Invoke Function') AS invocations")
 		expect(sql).toContain("countIf(traces.SpanName = 'Start VM') AS coldStarts")
 		expect(sql).toContain("GROUP BY projectId")
+	})
+})
+
+describe("vercelOneRouteTimeseriesSQL", () => {
+	it("scopes to the tenant, the project and the route", () => {
+		const { sql } = compileUnsafe(vercelOneRouteTimeseriesSQL(), {
+			...bucketed,
+			projectId: "prj_1",
+			route: "/api/checkout",
+		})
+		expect(sql).toContain("traces.OrgId = 'org_1'")
+		expect(sql).toContain("traces.ResourceAttributes['vercel.projectId'] = 'prj_1'")
+		expect(sql).toContain("'/api/checkout'")
+		expect(compileUnsafe(vercelFunctionRouteTimeseriesSQL(), { ...bucketed, projectId: "prj_1" }).sql).not.toContain(
+			"/api/checkout",
+		)
 	})
 })
 

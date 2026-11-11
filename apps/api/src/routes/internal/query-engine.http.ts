@@ -24,6 +24,7 @@ import {
 	VercelAuditLogResponse,
 	VercelInfraDependenciesResponse,
 	VercelInfraFunctionsResponse,
+	VercelInfraFunctionTimeseriesResponse,
 	VercelInfraProjectDetailResponse,
 	VercelInfraProjectsResponse,
 	VercelInfraRequestTimeseriesResponse,
@@ -924,6 +925,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						const tenant = yield* CurrentTenant.Context
 						const functions = yield* runQuery(Queries.vercelInfraFunctionRoutes, tenant, payload)
 						return new VercelInfraFunctionsResponse({ functions })
+					}),
+				)
+				.handle("vercelInfraFunctionTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const route = payload.route
+						const buckets = yield* route === undefined
+							? runQuery(Queries.vercelInfraRouteTimeseries, tenant, payload)
+							: runQuery(Queries.vercelInfraOneRouteTimeseries, tenant, { ...payload, route })
+						return new VercelInfraFunctionTimeseriesResponse({ buckets })
 					}),
 				)
 				.handle("vercelInfraDependencies", ({ payload }) =>

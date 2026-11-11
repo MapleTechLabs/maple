@@ -27,6 +27,7 @@ import {
 	VERCEL_DEPENDENCIES,
 	VERCEL_EMPTY_AI_GATEWAY,
 	VERCEL_FUNCTIONS,
+	VERCEL_FUNCTION_BUCKETS,
 	VERCEL_LATENCY_BUCKETS,
 	VERCEL_PROJECT_SPEED_INSIGHTS,
 	VERCEL_PROJECTS,
@@ -34,7 +35,7 @@ import {
 	VERCEL_WEB_ANALYTICS,
 } from "../../../../lab/vercel-infra-fixtures"
 import type { InfraVercelProjectSearch } from "../../../../route/search"
-import type { PageContext, PageOutMessage } from "../../../contract"
+import { type PageContext, PageOutMessage } from "../../../contract"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -127,6 +128,11 @@ const answered = (
 				result: Result.succeed(VERCEL_FUNCTIONS),
 			}),
 		(m) =>
+			Message.CompletedFetchFunctionSeries({
+				key: m.functionSeries.key ?? "",
+				result: Result.succeed(VERCEL_FUNCTION_BUCKETS),
+			}),
+		(m) =>
 			Message.CompletedFetchDependencies({
 				key: m.dependencies.key ?? "",
 				result: Result.succeed(VERCEL_DEPENDENCIES),
@@ -186,6 +192,20 @@ const trafficScene = (
 		...assertions,
 	)
 
+/** The functions tab with its four strips mounted. */
+const functionsScene = (
+	model: Model,
+	...assertions: ReadonlyArray<SceneStep<Model, Message, PageOutMessage>>
+) =>
+	scene(
+		{ update: pageUpdate, view },
+		given(model),
+		themeResolved(),
+		Mount.resolve(MountLinkedCursor, Message.AttachedLinkedCursor()),
+		...Arr.makeBy(4, () => Mount.resolve(MountChart, Chart.Message.CompletedMountChart())),
+		...assertions,
+	)
+
 describe("vercel project", () => {
 	test("each tab reads what it shows, beside the rail's reads", () => {
 		expect(names(init(routeTo(), context).commands)).toEqual(
@@ -203,7 +223,7 @@ describe("vercel project", () => {
 				"FetchVercelProjectRequestSeries",
 			),
 		)
-		expect(readsOf("functions", VERCEL_STATUS)).toEqual(withRail())
+		expect(readsOf("functions", VERCEL_STATUS)).toEqual(withRail("FetchVercelProjectFunctionSeries"))
 		expect(readsOf("builds", VERCEL_STATUS)).toEqual(withRail())
 		expect(readsOf("users", VERCEL_ALL_DRAINS_STATUS)).toEqual(
 			withRail("FetchVercelProjectSpeedInsights", "FetchVercelProjectWebAnalytics"),
@@ -219,10 +239,8 @@ describe("vercel project", () => {
 		expect(readsOf("webAnalytics", VERCEL_ALL_DRAINS_STATUS)).toEqual(
 			readsOf("users", VERCEL_ALL_DRAINS_STATUS),
 		)
-		scene(
-			{ update: pageUpdate, view },
-			given(answered(opened("dependencies"))),
-			themeResolved(),
+		functionsScene(
+			answered(opened("dependencies")),
 			expectView(role("link", { name: /^Functions/ })).toHaveAttr("aria-current", "page"),
 			expectView(role("link", { name: "Open in the service map" })).toHaveAttr(
 				"href",
@@ -338,13 +356,41 @@ describe("vercel project", () => {
 		)
 	})
 
-	test("functions list routes with their cold starts, then the hosts they call", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(answered(opened("functions"))),
-			themeResolved(),
+	test("functions chart every route over time, list routes with their cold starts, then the hosts they call", () => {
+		functionsScene(
+			answered(opened("functions")),
+			expectView(text("every route")).toExist(),
+			expectView(text("Init time")).toExist(),
 			expectView(text("15% · 18.2K")).toExist(),
+			expectView(role("button", { name: /^\/api\/checkout/ })).toHaveAttr("aria-pressed", "false"),
 			expectView(role("heading", { name: "Dependencies" })).toExist(),
+		)
+	})
+
+	test("a route's row narrows the charts to it, and again (or its chip) goes back to every route", () => {
+		const all = answered(opened("functions"))
+		expect(pageUpdate(all, Message.ClickedFunctionRoute({ route: "/api/checkout" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/infra/vercel/prj_api?tab=functions&route=%2Fapi%2Fcheckout",
+				isReplace: false,
+			}),
+		)
+		const picked = answered(opened("functions", VERCEL_ALL_DRAINS_STATUS, { route: "/api/checkout" }))
+		// The series read carries the route, so the charts show that route alone.
+		expect(picked.functionSeries.key).not.toBe(all.functionSeries.key)
+		expect(picked.functionSeries.key).toContain("/api/checkout")
+		functionsScene(
+			picked,
+			expectView(text("route = /api/checkout")).toExist(),
+			expectView(role("button", { name: /^\/api\/checkout/ })).toHaveAttr("aria-pressed", "true"),
+		)
+		expect(
+			pageUpdate(picked, Message.ClickedFunctionRoute({ route: "/api/checkout" })).outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api?tab=functions", isReplace: false }),
+		)
+		expect(pageUpdate(picked, Message.ClickedFunctionRoute({ route: null })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/infra/vercel/prj_api?tab=functions", isReplace: false }),
 		)
 	})
 

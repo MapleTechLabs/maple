@@ -147,6 +147,74 @@ export function vercelFunctionRoutesSQL() {
 		.format("JSON")
 }
 
+/** Per trace: when it started, its route, its invocations and cold starts, and their durations. */
+const functionTraces = () =>
+	from(Datasources.traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			startedAt: CH.min_($.Timestamp),
+			route: CH.anyIf($.SpanAttributes.get("http.route"), $.ServiceName.eq(VERCEL_EDGE_SERVICE)),
+			traceInvocations: CH.countIf($.SpanName.eq(INVOKE_FUNCTION)),
+			traceColdStarts: CH.countIf($.SpanName.eq(START_VM)),
+			invokeMs: CH.maxIf($.Duration, $.SpanName.eq(INVOKE_FUNCTION)).div(1_000_000),
+			// NULL without a cold start, so the init quantiles skip warm traces.
+			initMs: CH.nullIf(CH.sumIf($.Duration, $.SpanName.in_(...COLD_START_PHASES)), 0).div(1_000_000),
+		}))
+		.where(($) => [
+			...tracesWindow($),
+			CH.mapContains($.ResourceAttributes, "vercel.projectId"),
+			projectId($).eq(param.string("projectId")),
+			CH.or(
+				isEdgeRequest($),
+				isRuntime($)
+					.and($.SpanKind.eq("Server"))
+					.and($.SpanName.in_(INVOKE_FUNCTION, ...COLD_START_PHASES)),
+			),
+		])
+		.groupBy("traceId")
+
+/**
+ * One project's functions per bucket: invocations, cold starts, invocation p50/p95 and cold-start
+ * init p50/p95, over every route. The same per-trace join as `vercelFunctionRoutesSQL`; a trace
+ * lands in the bucket it started in.
+ */
+export function vercelFunctionRouteTimeseriesSQL() {
+	return fromQuery(functionTraces(), "t")
+		.select(($) => ({
+			bucket: isoBucket($.startedAt),
+			invocations: CH.sum($.traceInvocations),
+			coldStarts: CH.sum($.traceColdStarts),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.invokeMs)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.invokeMs)),
+			initP50Ms: finiteOrZero(CH.quantile(0.5)($.initMs)),
+			initP95Ms: finiteOrZero(CH.quantile(0.95)($.initMs)),
+		}))
+		.where(($) => [$.traceInvocations.gt(0)])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(2000)
+		.format("JSON")
+}
+
+/** `vercelFunctionRouteTimeseriesSQL` for one route (`route`, the edge request's `http.route`). */
+export function vercelOneRouteTimeseriesSQL() {
+	return fromQuery(functionTraces(), "t")
+		.select(($) => ({
+			bucket: isoBucket($.startedAt),
+			invocations: CH.sum($.traceInvocations),
+			coldStarts: CH.sum($.traceColdStarts),
+			p50DurationMs: finiteOrZero(CH.quantile(0.5)($.invokeMs)),
+			p95DurationMs: finiteOrZero(CH.quantile(0.95)($.invokeMs)),
+			initP50Ms: finiteOrZero(CH.quantile(0.5)($.initMs)),
+			initP95Ms: finiteOrZero(CH.quantile(0.95)($.initMs)),
+		}))
+		.where(($) => [$.traceInvocations.gt(0), $.route.eq(param.string("route"))])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(2000)
+		.format("JSON")
+}
+
 /**
  * The hosts one project's functions call, with failures and latency.
  *

@@ -1,7 +1,5 @@
 import type { VercelDeploymentSummary, VercelProjectStatus } from "@maple/domain/http"
 import { formatCost } from "@maple/agent-sessions"
-import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,7 +27,6 @@ import type { VercelProjectTab } from "../../../../route/search"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { relativeTime } from "../../../kit/relative-time"
-import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { linkTabStrip } from "../../../kit/underline-tabs"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
@@ -58,6 +55,7 @@ import {
 import { Message, type Model } from "./model"
 import { tabOf } from "./update"
 import { projectRail } from "./view-rail"
+import { functionSignals } from "./view-functions"
 import {
 	breakdownPanel,
 	errorLogsHref,
@@ -311,22 +309,6 @@ const errorLogs = (h: H, model: Model, time: TimeSearch, clock: Clock): Readonly
 			]
 }
 
-const functionsStats = (h: H, row: VercelProjectRow | null): Html =>
-	row === null
-		? statRailLoading(h, 2, 2)
-		: statRail(h, { columns: 2 }, [
-				statRailItem(h, { eyebrow: "Invocations", value: formatNumber(row.invocations) }),
-				statRailItem(h, {
-					eyebrow: "Cold starts",
-					value:
-						row.coldStartPercent === null
-							? EMPTY_VALUE
-							: formatPercent(row.coldStartPercent / 100),
-					tone: errorRateLevel(row.coldStartPercent === null ? 0 : row.coldStartPercent / 100),
-					subline: "of invocations started a new instance",
-				}),
-			])
-
 const aiGatewaySection = (h: H, model: Model, time: TimeSearch, timeZone: string, enabled: boolean): Html =>
 	readSection(h, {
 		title: "AI Gateway",
@@ -380,10 +362,14 @@ const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyAr
 			]
 		case "functions":
 			return [
-				...(tracesEnabled ? [functionsStats(h, projectRowOf(model))] : []),
+				...(tracesEnabled ? functionSignals(h, model, clock.timeZone) : []),
 				functionsSection(h, {
 					read: { data: model.functions.data, onRetry: Message.ClickedRetryFunctions() },
 					tracesEnabled,
+					select: {
+						route: model.search.route,
+						onSelect: (route) => Message.ClickedFunctionRoute({ route }),
+					},
 				}),
 				dependenciesSection(h, {
 					read: { data: model.dependencies.data, onRetry: Message.ClickedRetryDependencies() },
