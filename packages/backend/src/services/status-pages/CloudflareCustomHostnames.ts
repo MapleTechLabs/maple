@@ -148,8 +148,8 @@ const toState = (result: typeof HostnameResult.Type): CustomHostnameState => {
 	}
 }
 
-/** Cloudflare's "duplicate custom hostname" codes. */
-const DUPLICATE_HOSTNAME_CODES: ReadonlySet<number> = new Set([1406, 1407])
+/** Cloudflare's "duplicate custom hostname" code. 1407 is an invalid hostname, not a duplicate. */
+const DUPLICATE_HOSTNAME_CODES: ReadonlySet<number> = new Set([1406])
 
 interface Configured {
 	readonly zoneId: string
