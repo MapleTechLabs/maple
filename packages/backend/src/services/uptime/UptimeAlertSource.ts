@@ -11,7 +11,13 @@ import {
 	type UptimeMonitorStatus,
 	type UserId,
 } from "@maple/primitives"
-import { describeMissedHeartbeat, heartbeatDeadline, type UptimeMonitorConfig } from "@maple/domain/uptime"
+import {
+	describeMissedHeartbeat,
+	describeStaleProbe,
+	heartbeatDeadline,
+	probeStaleAfterMs,
+	type UptimeMonitorConfig,
+} from "@maple/domain/uptime"
 import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -22,7 +28,9 @@ export interface UptimeAlertObservation {
 	/** The monitor's service when linked, so a down monitor is a cause in that service's health. */
 	readonly groupKey: string
 	readonly down: boolean
-	/** The failing check's error, e.g. `Status 503, expected 2xx`; null while up. */
+	/** No recent check vouches for an `up` or `pending` probe: the rule has no data, not a healthy check. */
+	readonly stale: boolean
+	/** The failing check's error, e.g. `Status 503, expected 2xx`, or why it is stale; null while up. */
 	readonly detail: string | null
 }
 
@@ -50,10 +58,37 @@ export const isHeartbeatOverdue = (monitor: HeartbeatWatch, nowMs: number): bool
 	return Option.exists(heartbeatDeadline(monitor.config, waitingSince), (deadline) => nowMs > deadline)
 }
 
+/** The probe fields the staleness check reads. */
+export interface ProbeWatch {
+	readonly config: UptimeMonitorConfig
+	readonly intervalSeconds: number
+	readonly enabled: boolean
+	readonly status: UptimeMonitorStatus
+	readonly statusChangedAt: number | null
+	readonly lastCheckJson: { readonly at: number } | null
+	readonly createdAt: number
+}
+
+/**
+ * True when an http, tcp or dns monitor that reads `up` or `pending` has had no check result for
+ * `probeStaleAfterMs`. A `pending` one waits from its creation or resume. A `down` one is never
+ * stale: its open incident stays until a check says otherwise.
+ */
+export const isProbeStale = (monitor: ProbeWatch, nowMs: number): boolean => {
+	if (monitor.config._tag === "heartbeat" || !monitor.enabled) return false
+	if (monitor.status !== "up" && monitor.status !== "pending") return false
+	const lastCheckAt = monitor.lastCheckJson?.at ?? 0
+	const waitingSince =
+		monitor.status === "pending"
+			? Math.max(lastCheckAt, monitor.statusChangedAt ?? 0, monitor.createdAt)
+			: Math.max(lastCheckAt, monitor.createdAt)
+	return nowMs - waitingSince > probeStaleAfterMs(monitor.intervalSeconds)
+}
+
 export interface UptimeAlertSourceApi {
 	/**
-	 * The monitor behind `ruleId` as one observation, marking an overdue heartbeat down first.
-	 * `None` when no monitor owns the rule any more.
+	 * The monitor behind `ruleId` as one observation, marking an overdue heartbeat down first and
+	 * a probe with no recent check stale. `None` when no monitor owns the rule any more.
 	 */
 	readonly observe: (
 		orgId: OrgId,
@@ -99,6 +134,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							.select(($) => ({
 								id: $.id,
 								configJson: $.configJson,
+								intervalSeconds: $.intervalSeconds,
 								serviceName: $.serviceName,
 								enabled: $.enabled,
 								createdAt: $.createdAt,
@@ -126,6 +162,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				return {
 					groupKey: row.serviceName ?? UNGROUPED_GROUP_KEY,
 					down,
+					stale: false,
 					detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
 				}
 			}
@@ -140,6 +177,19 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				const row = read.value
 				const groupKey = row.serviceName ?? UNGROUPED_GROUP_KEY
 				const watch = { ...row, config: row.configJson }
+				// The scraper stopped reporting, or the API refuses its reports: say so, not "up".
+				if (isProbeStale(watch, nowMs)) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.uptime.monitor_id": row.id,
+						"maple.uptime.checks_stale": true,
+					})
+					return Option.some({
+						groupKey,
+						down: false,
+						stale: true,
+						detail: describeStaleProbe(row.lastCheckJson?.at ?? null, nowMs),
+					})
+				}
 				if (!isHeartbeatOverdue(watch, nowMs)) return Option.some(asStored(row))
 				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
@@ -171,7 +221,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					"maple.uptime.monitor_id": row.id,
 					"maple.uptime.heartbeat_overdue": marked.length > 0,
 				})
-				if (marked.length > 0) return Option.some({ groupKey, down: true, detail: error })
+				if (marked.length > 0)
+					return Option.some({ groupKey, down: true, stale: false, detail: error })
 				// A ping or failure landed between the read and the write: report what it left.
 				const monitor = yield* readMonitor(orgId, ruleId)
 				return Option.map(monitor, asStored)
