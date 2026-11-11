@@ -49,7 +49,9 @@ const filterChips = (model: Model, pinnedNamespace: string | null) => {
 /** Above a loaded table whose health was computed without its alerts or anomalies. */
 const healthGap = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => {
 	const gap = healthGapOf(model.incidents, model.anomalies.data)
-	return gap === null || !FoldkitAsyncData.hasData(model.overview.data) ? [] : [healthGapNotice(h, gap)]
+	return gap === null || !FoldkitAsyncData.hasData(model.overview.data)
+		? []
+		: [healthGapNotice(h, gap, "mb-4")]
 }
 
 const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {
