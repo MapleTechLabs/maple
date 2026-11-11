@@ -3,8 +3,8 @@
 A status page can be served on a customer's own subdomain (`status.acme.com`) through
 Cloudflare for SaaS on the `maple.dev` zone. The customer adds a CNAME; Cloudflare validates
 the hostname and issues its certificate; the page then answers there with every route it has
-on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/badge.svg`,
-`/_manage`).
+on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/api/v1/uptime.json`,
+`/badge.svg`, `/_manage`; see `status-page-public-api.md`).
 
 ## How a request reaches the page
 

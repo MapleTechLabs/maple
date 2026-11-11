@@ -1,6 +1,8 @@
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { describe, expect, it } from "vitest"
 import {
+	hasAppearanceIssues,
+	hasPageFieldIssues,
 	hasSettingsIssues,
 	isSameSettings,
 	type SettingsForm,
@@ -17,7 +19,10 @@ const saved: SettingsForm = {
 	websiteUrl: "https://acme.example",
 	privacyUrl: "",
 	termsUrl: "",
+	supportUrl: "",
 	logoUrl: "",
+	logoDarkUrl: "",
+	faviconUrl: "",
 	showPoweredBy: true,
 	autoIncidents: "off",
 	theme: themeFormOf({ ...DEFAULT_STATUS_PAGE_THEME, accent: "#aabbcc" }),
@@ -81,6 +86,27 @@ describe("URL fields", () => {
 		expect(issues.privacyUrl).toBe("Use a valid URL, like https://acme.example.")
 		expect(issues.termsUrl).toBeNull()
 		expect(issues.logoUrl).toBeNull()
+	})
+
+	it("marks a bad branding link on the Appearance tab and a bad support link on Settings", () => {
+		const badLogo = { ...saved, logoDarkUrl: "http://acme.example/dark.svg" }
+		expect(hasAppearanceIssues(badLogo)).toBe(true)
+		expect(hasPageFieldIssues(badLogo)).toBe(false)
+		const badSupport = { ...saved, supportUrl: "mailto:help@acme.example" }
+		expect(hasPageFieldIssues(badSupport)).toBe(true)
+		expect(hasAppearanceIssues(badSupport)).toBe(false)
+	})
+
+	it("sends the branding links trimmed and blank ones as null", () => {
+		const payload = settingsPayload({
+			...saved,
+			logoDarkUrl: " https://acme.example/dark.svg ",
+			faviconUrl: " ",
+			supportUrl: "https://acme.example/help",
+		})
+		expect(payload.logo_dark_url).toBe("https://acme.example/dark.svg")
+		expect(payload.favicon_url).toBeNull()
+		expect(payload.support_url).toBe("https://acme.example/help")
 	})
 
 	it("refuses a link longer than the service stores", () => {

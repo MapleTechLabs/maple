@@ -1,4 +1,7 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** Edge-cacheable for 15s, served stale for a day if this Worker errors. */
 export const PUBLIC_CACHE_CONTROL = "public, max-age=15, stale-while-revalidate=60, stale-if-error=86400"
 
@@ -44,6 +47,18 @@ export const asset = (body: string, contentType: string, extra: Record<string, s
 			"cache-control": PUBLIC_CACHE_CONTROL,
 			"content-security-policy": "default-src 'none'",
 			...extra,
+		},
+	})
+
+/** A JSON API error, `{ "error": message }`, readable cross-origin like the API itself. */
+export const jsonError = (status: number, message: string): Response =>
+	new Response(encodeJson({ error: message }), {
+		status,
+		headers: {
+			...COMMON_HEADERS,
+			"content-type": "application/json; charset=utf-8",
+			"cache-control": "no-store",
+			"access-control-allow-origin": "*",
 		},
 	})
 

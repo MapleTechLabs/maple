@@ -954,3 +954,129 @@ describe("previewSnapshot with history", () => {
 		expect(renderPage(snapshot, live, FIXTURE_NOW)).toContain("100% uptime")
 	})
 })
+
+describe("branding", () => {
+	const page = makeSnapshot().page
+	const headerOf = (html: string): string => between(html, `<header class="top">`, "</header>")
+	const withPage = (fields: Partial<StatusPageSnapshot["page"]>) =>
+		renderPage(makeSnapshot({ page: { ...page, ...fields } }), live, FIXTURE_NOW)
+	const LIGHT = "https://acme.example/logo.svg"
+	const DARK = "https://acme.example/logo-dark.svg"
+
+	it("swaps to the dark logo with the visitor's scheme on an auto page", () => {
+		const header = headerOf(withPage({ logoUrl: LIGHT, logoDarkUrl: DARK }))
+		expect(header).toContain(
+			`<picture><source srcset="${DARK}" media="(prefers-color-scheme: dark)"><img src="${LIGHT}" alt="Acme"></picture>`,
+		)
+	})
+
+	it("shows the one logo a forced mode needs, and either logo alone in every mode", () => {
+		const forced = (appearance: "light" | "dark") =>
+			headerOf(
+				withPage({
+					logoUrl: LIGHT,
+					logoDarkUrl: DARK,
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance },
+				}),
+			)
+		expect(forced("dark")).toContain(`<img src="${DARK}"`)
+		expect(forced("dark")).not.toContain(LIGHT)
+		expect(forced("light")).toContain(`<img src="${LIGHT}"`)
+		expect(forced("light")).not.toContain(DARK)
+		const darkOnly = headerOf(withPage({ logoDarkUrl: DARK }))
+		expect(darkOnly).toContain(`<img src="${DARK}" alt="Acme">`)
+		expect(darkOnly).not.toContain("mono-mark")
+	})
+
+	it("drops a logo, favicon or support link that is not https", () => {
+		const html = withPage({
+			logoDarkUrl: "http://acme.example/dark.svg",
+			faviconUrl: "javascript:alert(1)",
+			supportUrl: "http://acme.example/help",
+		})
+		expect(headerOf(html)).toContain("mono-mark")
+		expect(html).not.toContain(`rel="icon"`)
+		expect(html).not.toContain("Contact support")
+	})
+
+	it("links the favicon and puts the support link in the header", () => {
+		const html = withPage({
+			faviconUrl: "https://acme.example/favicon.png",
+			supportUrl: "https://acme.example/help",
+		})
+		expect(html).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
+		expect(headerOf(html)).toContain(
+			`<a class="site" href="https://acme.example/help" rel="noopener">Contact support</a>`,
+		)
+	})
+})
+
+describe("link previews", () => {
+	const metaOf = (html: string, key: string): string =>
+		captured(html, new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)">`, "u"), 1)
+
+	it("describes the overall status and names the active incidents", () => {
+		const html = renderPage(
+			makeSnapshot({
+				components: [makeComponent(0, { status: "partial_outage" })],
+				incidents: [makeIncident("inc-1", { title: "API errors" })],
+			}),
+			live,
+			FIXTURE_NOW,
+			{ publicUrl: "https://status.acme.example" },
+		)
+		expect(metaOf(html, "og:title")).toBe("Acme status")
+		expect(metaOf(html, "og:site_name")).toBe("Acme")
+		expect(metaOf(html, "og:description")).toBe(
+			"We&#39;re experiencing a partial outage. Active incident: API errors.",
+		)
+		expect(metaOf(html, "twitter:description")).toBe(metaOf(html, "og:description"))
+		expect(metaOf(html, "twitter:card")).toBe("summary")
+		expect(metaOf(html, "og:url")).toBe("https://status.acme.example/")
+		expect(html).toContain(`<link rel="canonical" href="https://status.acme.example/">`)
+		// The page's own description stays the search snippet.
+		expect(metaOf(html, "description")).toBe("Status of Acme services")
+	})
+
+	it("falls back to the status for the description, and uses the logo as the image", () => {
+		const page = makeSnapshot().page
+		const html = renderPage(
+			makeSnapshot({ page: { ...page, description: null, logoUrl: "https://acme.example/logo.png" } }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(metaOf(html, "description")).toBe("We&#39;re fully operational.")
+		expect(metaOf(html, "og:image")).toBe("https://acme.example/logo.png")
+		expect(metaOf(html, "twitter:image")).toBe("https://acme.example/logo.png")
+		// No public address to point at: a static copy names none.
+		expect(html).not.toContain("og:url")
+		expect(html).not.toContain(`rel="canonical"`)
+	})
+
+	it("escapes customer text in the tags", () => {
+		const html = renderPage(
+			makeSnapshot({ incidents: [makeIncident("inc-1", { title: `"><script>x</script>` })] }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(metaOf(html, "og:description")).toContain("&quot;&gt;&lt;script&gt;x&lt;/script&gt;")
+	})
+})
+
+describe("times", () => {
+	it("marks every time with its instant, so the script can show it in the visitor's zone", () => {
+		const at = Date.UTC(2026, 9, 28, 11, 30)
+		const html = renderPage(
+			makeSnapshot({
+				incidents: [
+					makeIncident("inc-1", { startedAt: at, updates: [update("u-1", at, "Looking")] }),
+				],
+			}),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(
+			allMatches(html, /<time datetime="2026-10-28T11:30:00.000Z">Oct 28, 2026, 11:30 UTC<\/time>/gu),
+		).toHaveLength(2)
+	})
+})

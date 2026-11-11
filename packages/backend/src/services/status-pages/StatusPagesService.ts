@@ -76,6 +76,9 @@ export interface CreateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly logoDarkUrl?: string | null
+	readonly faviconUrl?: string | null
+	readonly supportUrl?: string | null
 	readonly privacyUrl?: string | null
 	readonly termsUrl?: string | null
 	readonly theme?: StatusPageTheme
@@ -94,6 +97,9 @@ export interface UpdateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly logoDarkUrl?: string | null
+	readonly faviconUrl?: string | null
+	readonly supportUrl?: string | null
 	readonly privacyUrl?: string | null
 	readonly termsUrl?: string | null
 	/** Merged onto the stored theme under the page's row lock, so concurrent partial edits both land. */
@@ -448,6 +454,9 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	description: row.description,
 	websiteUrl: row.websiteUrl,
 	logoUrl: row.logoUrl,
+	logoDarkUrl: row.logoDarkUrl,
+	faviconUrl: row.faviconUrl,
+	supportUrl: row.supportUrl,
 	privacyUrl: row.privacyUrl,
 	termsUrl: row.termsUrl,
 	theme: row.theme,
@@ -682,6 +691,9 @@ const contentOf = (
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	logo_dark_url: page.logoDarkUrl,
+	favicon_url: page.faviconUrl,
+	support_url: page.supportUrl,
 	privacy_url: page.privacyUrl,
 	terms_url: page.termsUrl,
 	show_powered_by: page.showPoweredBy,
@@ -785,6 +797,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
+				const logoDarkUrl = yield* validateHttpsUrl(input.logoDarkUrl ?? null, "Dark mode logo URL")
+				const faviconUrl = yield* validateHttpsUrl(input.faviconUrl ?? null, "Favicon URL")
+				const supportUrl = yield* validateHttpsUrl(input.supportUrl ?? null, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme ?? DEFAULT_STATUS_PAGE_THEME)
@@ -811,6 +826,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									description,
 									websiteUrl,
 									logoUrl,
+									logoDarkUrl,
+									faviconUrl,
+									supportUrl,
 									privacyUrl,
 									termsUrl,
 									theme,
@@ -874,6 +892,18 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					patch.logoUrl === undefined
 						? undefined
 						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
+				const logoDarkUrl =
+					patch.logoDarkUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.logoDarkUrl, "Dark mode logo URL")
+				const faviconUrl =
+					patch.faviconUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.faviconUrl, "Favicon URL")
+				const supportUrl =
+					patch.supportUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.supportUrl, "Support URL")
 				const privacyUrl =
 					patch.privacyUrl === undefined
 						? undefined
@@ -905,6 +935,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
+										...(logoDarkUrl === undefined ? undefined : { logoDarkUrl }),
+										...(faviconUrl === undefined ? undefined : { faviconUrl }),
+										...(supportUrl === undefined ? undefined : { supportUrl }),
 										...(privacyUrl === undefined ? undefined : { privacyUrl }),
 										...(termsUrl === undefined ? undefined : { termsUrl }),
 										...(theme === undefined ? undefined : { theme }),
@@ -1541,6 +1574,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
+				const logoDarkUrl = yield* validateHttpsUrl(input.logo_dark_url, "Dark mode logo URL")
+				const faviconUrl = yield* validateHttpsUrl(input.favicon_url, "Favicon URL")
+				const supportUrl = yield* validateHttpsUrl(input.support_url, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacy_url, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme)
@@ -1565,6 +1601,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					description,
 					website_url: websiteUrl,
 					logo_url: logoUrl,
+					logo_dark_url: logoDarkUrl,
+					favicon_url: faviconUrl,
+					support_url: supportUrl,
 					privacy_url: privacyUrl,
 					terms_url: termsUrl,
 					show_powered_by: input.show_powered_by,
@@ -1623,6 +1662,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										description,
 										websiteUrl,
 										logoUrl,
+										logoDarkUrl,
+										faviconUrl,
+										supportUrl,
 										privacyUrl,
 										termsUrl,
 										theme,

@@ -312,6 +312,50 @@ const renderFooter = (
 	return `<footer>${powered}<p class="links">${Arr.join(links, " · ")}</p><p id="updated">Updated ${formatAge(nowMs - freshness.updatedAt)}</p></footer>`
 }
 
+/** `We're experiencing a partial outage. Active incident: API errors.` */
+const statusSummary = (
+	overall: StatusPageComponentStatus,
+	active: ReadonlyArray<StatusPageSnapshotIncident>,
+): string =>
+	active.length === 0
+		? `${HERO_SENTENCE[overall]}.`
+		: `${HERO_SENTENCE[overall]}. ${active.length === 1 ? "Active incident" : "Active incidents"}: ${Arr.join(
+				Arr.map(active, (incident) => incident.title),
+				", ",
+			)}.`
+
+/**
+ * Link previews (Open Graph and Twitter) and the canonical address. The address needs
+ * `publicUrl`; the image is the logo, when there is one.
+ */
+const shareTags = (
+	snapshot: StatusPageSnapshot,
+	title: string,
+	summary: string,
+	options: RenderOptions,
+): string => {
+	const url = options.publicUrl === undefined ? null : safeUrl(`${options.publicUrl}/`, ["https:", "http:"])
+	const image = safeUrl(snapshot.page.logoUrl, ["https:"]) ?? safeUrl(snapshot.page.logoDarkUrl, ["https:"])
+	const meta = (attr: "property" | "name", key: string, value: string) =>
+		`<meta ${attr}="${key}" content="${escapeHtml(value)}">`
+	return Arr.join(
+		[
+			url === null ? "" : `<link rel="canonical" href="${escapeHtml(url)}">`,
+			meta("property", "og:type", "website"),
+			meta("property", "og:site_name", snapshot.page.name),
+			meta("property", "og:title", title),
+			meta("property", "og:description", summary),
+			url === null ? "" : meta("property", "og:url", url),
+			image === null ? "" : meta("property", "og:image", image),
+			meta("name", "twitter:card", "summary"),
+			meta("name", "twitter:title", title),
+			meta("name", "twitter:description", summary),
+			image === null ? "" : meta("name", "twitter:image", image),
+		],
+		"",
+	)
+}
+
 /** The public status page: server-rendered, self-contained, readable with scripts off. */
 export const renderPage = (
 	snapshot: StatusPageSnapshot,
@@ -376,14 +420,17 @@ export const renderPage = (
 		"",
 	)
 
+	const title = `${snapshot.page.name} status`
+	const summary = statusSummary(overall, active)
 	return renderDocument({
 		snapshot,
 		options,
-		title: `${snapshot.page.name} status`,
+		title,
+		description: snapshot.page.description ?? summary,
 		styles: pageStyles,
 		body,
 		bodyAttrs: ` data-generated-at="${snapshot.generatedAt}" data-updated-at="${freshness.updatedAt}" data-stale-after="${STATUS_PAGE_STALE_AFTER_MS}" data-freshness="${freshness._tag}"`,
-		head: `<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`,
+		head: `${shareTags(snapshot, title, summary, options)}<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`,
 		script: PAGE_SCRIPT,
 	})
 }

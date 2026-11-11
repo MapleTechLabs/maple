@@ -1705,6 +1705,41 @@ describe("settings and appearance views", () => {
 		)
 	})
 
+	test("the branding links preview at once: the dark logo in dark mode and the favicon", () => {
+		const iframeOf = find("iframe")
+		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
+			Option.getOrElse(Option.flatMap(iframeOf(html), attr("srcdoc")), () => "")
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "appearance" })),
+			type(role("textbox", { name: "Logo URL" }), "https://acme.example/logo.svg"),
+			type(role("textbox", { name: "Dark mode logo URL" }), "https://acme.example/logo-dark.svg"),
+			type(role("textbox", { name: "Favicon URL" }), "https://acme.example/favicon.png"),
+			tap(({ html }) => {
+				expect(srcdoc(html)).toContain(`<img src="https://acme.example/logo.svg"`)
+				expect(srcdoc(html)).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
+			}),
+			inside(role("group", { name: "Preview mode" }), click(role("button", { name: "Dark" }))),
+			tap(({ html }) =>
+				expect(srcdoc(html)).toContain(`<img src="https://acme.example/logo-dark.svg"`),
+			),
+		)
+	})
+
+	test("a bad branding link is marked on Appearance, and the Settings save bar points there", () => {
+		const edited = pageUpdate(
+			loaded({ tab: "appearance" }),
+			Message.ChangedSetting({ field: "faviconUrl", value: "http://acme.example/favicon.png" }),
+		).model
+		scene({ update: pageUpdate, view }, given(edited), expectView(text("Use an https URL.")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...edited, search: { view: "settings" } }),
+			expectView(text("Fix the fields marked on the Appearance tab.")).toExist(),
+			expectView(role("button", { name: "Save" })).toBeDisabled(),
+		)
+	})
+
 	test("the preview can show a state the page is not in, and says it is an example", () => {
 		const iframeOf = find("iframe")
 		const srcdoc = (html: Parameters<typeof iframeOf>[0]): string =>
