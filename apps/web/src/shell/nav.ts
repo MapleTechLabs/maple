@@ -14,6 +14,7 @@ export const NavSurface = Schema.Literals([
 	"cloudflare",
 	"planetscale",
 	"railway",
+	"vercel",
 	"supabase",
 	"gcp",
 	"aws",
@@ -59,7 +60,7 @@ export interface NavGroup {
 	readonly items: ReadonlyArray<NavItem>
 }
 
-type InfraProvider = "cloudflare" | "planetscale" | "railway" | "supabase" | "gcp" | "aws"
+type InfraProvider = "cloudflare" | "planetscale" | "railway" | "vercel" | "supabase" | "gcp" | "aws"
 
 /** A provider's `/infra` page row, named and marked by the provider registry. */
 const providerItem = (id: InfraProvider, iconColor?: string): NavSubItem => ({
@@ -102,6 +103,7 @@ const infrastructureItem: NavItem = {
 		providerItem("cloudflare"),
 		providerItem("planetscale", PROVIDERS.planetscale.accent),
 		providerItem("railway"),
+		providerItem("vercel"),
 		providerItem("supabase"),
 		providerItem("gcp"),
 		providerItem("aws"),

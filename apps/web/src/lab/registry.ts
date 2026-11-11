@@ -33,7 +33,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/infra",
 		title: "Infrastructure",
 		description:
-			"The infra overview, hosts list and Railway list over fixture rows, no warehouse needed.",
+			"The infra overview, hosts list, Railway list and the Vercel list, AI Gateway and project pages over fixture rows, no warehouse needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -170,6 +170,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Cost",
 		description:
 			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/vercel",
+		title: "Vercel integration",
+		description:
+			"Integrations → Vercel not connected, the connect steps, and a connected team healthy, with a broken drain and with a rejected token, over fixtures.",
 		kind: "lab",
 		session: "none",
 	},
@@ -313,6 +321,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Service map 3D",
 		description:
 			"Two 3D perspectives over one sample topology: Atlas groups infrastructure by namespace; Cascade follows dependency depth.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-map-tiles",
+		title: "Service map tiles",
+		description:
+			"The service map as a landscape of hex tiles: touching tiles share a road, the rest go by rail. Deal the tiles and place them, or rearrange the automatic layout.",
 		kind: "lab",
 		session: "none",
 	},

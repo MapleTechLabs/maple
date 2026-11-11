@@ -162,6 +162,10 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	"RailwayConnections",
 	"RailwayEnvironments",
+	// The encrypted Vercel token, and the team inventory read with it.
+	"VercelConnections",
+	"VercelProjects",
+	"VercelDeployments",
 	// The Supabase grant itself is in oauth_connections; these hold the org binding and projects.
 	"SupabaseProjectInsights",
 	"SupabaseProjects",

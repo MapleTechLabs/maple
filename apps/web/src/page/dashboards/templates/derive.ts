@@ -73,6 +73,7 @@ const TEMPLATE_ICONS = new Map<string, IconName>([
 	["cloudflare", "CloudflareBrandIcon"],
 	["gcp", "GoogleCloudIcon"],
 	["planetscale", "PlanetScaleIcon"],
+	["vercel", "VercelIcon"],
 	["host-metrics", "ServerIcon"],
 	["kubernetes-cluster", "KubernetesIcon"],
 	["kubernetes-pod", "KubernetesIcon"],

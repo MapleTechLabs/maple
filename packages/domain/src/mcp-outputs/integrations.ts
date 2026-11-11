@@ -59,6 +59,35 @@ export const SyncRailwayOutput = Schema.Struct({
 	),
 })
 
+const SyncVercelDrain = Schema.Struct({
+	status: Schema.String,
+	lastError: Schema.NullOr(Schema.String),
+})
+
+export const SyncVercelOutput = Schema.Struct({
+	connected: Schema.Boolean,
+	team: Schema.NullOr(Schema.String),
+	/** Vercel rejected the stored token; polling is paused until a new one is saved. */
+	authFailed: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.String),
+	lastError: Schema.NullOr(Schema.String),
+	/** Null when that drain is turned off. */
+	logDrain: Schema.NullOr(SyncVercelDrain),
+	traceDrain: Schema.NullOr(SyncVercelDrain),
+	aiGatewayDrain: Schema.NullOr(SyncVercelDrain),
+	speedInsightsDrain: Schema.NullOr(SyncVercelDrain),
+	webAnalyticsDrain: Schema.NullOr(SyncVercelDrain),
+	auditLogDrain: Schema.NullOr(SyncVercelDrain),
+	projects: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			forwarded: Schema.Boolean,
+			latestDeploymentState: Schema.NullOr(Schema.String),
+			latestDeploymentAt: Schema.NullOr(Schema.String),
+		}),
+	),
+})
+
 export const ScrapeTargetRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,

@@ -29,6 +29,8 @@ import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
 import * as Railway from "../infra-integrations/railway/integration/update-railway"
+import * as Vercel from "../infra-integrations/vercel/integration/update-vercel"
+import { initVercelCard } from "../infra-integrations/vercel/integration/vercel"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
@@ -139,6 +141,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		statuses: {
 			cloudflare: Keyed.idle(),
 			railway: Keyed.idle(),
+			vercel: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			planetscaleDatabases: Keyed.idle(),
 			gcp: Keyed.idle(),
@@ -165,6 +168,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
 		railwayCard: initRailwayCard(),
+		vercelCard: initVercelCard(),
 		supabaseCard: initSupabaseCard(),
 		searchConsoleCard: initSearchConsoleCard(),
 	}
@@ -229,6 +233,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
 			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
+		CompletedLoadVercel: ({ key, result }) =>
+			accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
 			const read = accepted(model, {
 				...s,
@@ -416,6 +422,31 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRailwayRotate: () => Railway.setRotating(model, true),
 		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
 		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
+		TickedVercelSettle: () => Vercel.tickedSettle(model, context),
+		ClickedVercelSync: () => Vercel.clickedSync(model),
+		CompletedVercelSync: ({ failure }) => Vercel.completedSync(model, context, failure),
+		ClickedVercelReapply: () => Vercel.clickedReapply(model),
+		ClickedVercelConfigure: ({ target }) => Vercel.openConfigure(model, target),
+		GotVercelConfigureDialogMessage: ({ message: child }) => Vercel.gotConfigureDialog(model, child),
+		GotVercelTokenMessage: ({ message: child }) => Vercel.gotToken(model, child),
+		SubmittedVercelToken: () => Vercel.submittedToken(model),
+		CompletedVercelDiscover: ({ forTeam, response, error }) =>
+			Vercel.completedDiscover(model, forTeam, response, error),
+		GotVercelTeamMessage: ({ message: child }) => Vercel.gotTeam(model, child),
+		SubmittedVercelTeam: () => Vercel.submittedTeam(model),
+		ClickedVercelConfigureBack: () => Vercel.clickedBack(model),
+		ToggledVercelSignal: ({ signal }) => Vercel.toggledSignal(model, signal),
+		ChangedVercelScope: ({ scope }) => Vercel.changedScope(model, scope),
+		ToggledVercelProject: ({ id }) => Vercel.toggledProject(model, id),
+		ChangedVercelProjectQuery: ({ value }) => Vercel.changedProjectQuery(model, value),
+		ChangedVercelSampling: ({ value }) => Vercel.changedSampling(model, value),
+		SubmittedVercelConnect: () => Vercel.submittedConnect(model),
+		CompletedVercelConnect: ({ mode, teamName, error }) =>
+			Vercel.completedConnect(model, context, mode, teamName, error),
+		ClickedVercelSave: () => Vercel.clickedSave(model),
+		GotVercelConfirmDialogMessage: ({ message: child }) => Vercel.gotConfirmDialog(model, child),
+		ConfirmedVercelSave: () => Vercel.confirmedSave(model),
+		CompletedVercelSave: ({ isReapply, error }) => Vercel.completedSave(model, context, isReapply, error),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),
@@ -638,7 +669,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			if (spec === undefined) return closed
 			const toast = PageOutMessage.RequestedToast(
 				failure === null
-					? { type: "success", title: spec.success, description: "" }
+					? {
+							type: spec.successType ?? "success",
+							title: spec.success,
+							description: spec.successDescription ?? "",
+						}
 					: { type: "error", title: spec.error, description: failure.message },
 			)
 			return chain(settled, [

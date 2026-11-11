@@ -8,6 +8,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import * as Select from "@maple/views/ui/select"
+import * as Tiles from "./tiles/update"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
@@ -53,11 +54,12 @@ export const Message = defineMessageUnion({
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetryFacets: {},
 	ClickedResetTimeRange: {},
-	ClickedView: { view: Schema.Literals(["2d", "3d"]) },
+	ClickedView: { view: Schema.Literals(["2d", "3d", "tiles"]) },
 	GotMapMessage: { message: ServiceMap.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotScene3dMessage: { message: Scene3d.Message },
+	GotTilesMessage: { message: Tiles.Message },
 	/** The org's world for the 3D viewport; dropped when it answers for another org. */
 	CompletedLoadWorld: { orgId: Schema.String, result: Schema.Result(WorldDocument, LoadFailure) },
 	CompletedSaveWorld: {

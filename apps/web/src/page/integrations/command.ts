@@ -53,6 +53,9 @@ export const STATUS_READS = {
 	railway: statusRead("LoadIntegrationsRailwayStatus", Message.CompletedLoadRailway, (refresh) =>
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.railway({ refresh })),
 	),
+	vercel: statusRead("LoadIntegrationsVercelStatus", Message.CompletedLoadVercel, () =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.vercelStatus()),
+	),
 	planetscale: statusRead(
 		"LoadIntegrationsPlanetscaleStatus",
 		Message.CompletedLoadPlanetscale,

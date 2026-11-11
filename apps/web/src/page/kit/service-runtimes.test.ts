@@ -8,7 +8,8 @@ import { runtimeLink, type ServiceRuntime, workloadLink } from "./service-runtim
 const runtime = ({
 	name,
 	...overrides
-}: Partial<Omit<ServiceRuntime, "serviceName">> & Pick<ServiceRuntime, "kind"> & { readonly name: string }): ServiceRuntime => ({
+}: Partial<Omit<ServiceRuntime, "serviceName">> &
+	Pick<ServiceRuntime, "kind"> & { readonly name: string }): ServiceRuntime => ({
 	serviceName: Schema.decodeSync(ServiceName)(name),
 	account: "",
 	region: "",
@@ -16,6 +17,7 @@ const runtime = ({
 	railwayServiceId: "",
 	railwayEnvironmentId: "",
 	railwayEnvironmentName: "",
+	vercelProjectId: "",
 	...overrides,
 })
 
@@ -94,6 +96,18 @@ describe("runtimeLink", () => {
 			search: { account: "cf1" },
 		})
 		expect(link.location).toEqual([])
+	})
+
+	test("a Vercel project opens its project page by id, whatever the service is called", () => {
+		const link = runtimeLink(
+			runtime({ kind: "vercelProject", name: "docs-app", vercelProjectId: "prj_docs" }),
+			TIME,
+		)
+		expect(routeOf(link.href)).toMatchObject({
+			_tag: "InfraVercelProject",
+			projectId: "prj_docs",
+			search: { timePreset: "1h" },
+		})
 	})
 
 	test("the same resource in two environments keeps two keys", () => {

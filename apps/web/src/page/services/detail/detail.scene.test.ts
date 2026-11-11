@@ -477,6 +477,7 @@ describe("where the service runs", () => {
 		railwayServiceId: "",
 		railwayEnvironmentId: "",
 		railwayEnvironmentName: "",
+		vercelProjectId: "",
 	}
 	const withRuntimes = (runtimes: ReadonlyArray<typeof CLOUD_RUN>) => {
 		const model = entered()
