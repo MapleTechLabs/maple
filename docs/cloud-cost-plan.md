@@ -105,13 +105,20 @@ the previous month again until it stops reporting as estimated.
 
 - Spend: Cost Explorer `GetCostAndUsage`, endpoint `us-east-1` only. Live: works on a standalone
   account with no setup beyond having opened Cost Explorer once.
-- Live: at most two `GroupBy` keys ("Only two values for GroupBy are allowed"). `REGION` is
-  accepted as one. So one pull is `SERVICE` x `USAGE_TYPE`, and region comes from a second pull or
-  from the usage type prefix.
+- Live: at most two `GroupBy` keys ("Only two values for GroupBy are allowed"). Service, usage
+  type and region are three, and a usage type does not always name its region (`us-east-1` usage
+  types carry no prefix). So region is a filter, not a key: one `SERVICE` x `USAGE_TYPE` pull per
+  region, each filtered on `REGION`.
+- Live: the per-region pulls of a closed month add up to the unfiltered total. Charges with no
+  region come back under `global` or an empty region and are stored that way.
+- Live: `GetDimensionValues` listed 19 regions for an account that runs in two. The other 17 held
+  under a cent a month. One `SERVICE` x `REGION` pull finds the regions worth a filtered pull. The
+  rest keep that pull's service-level rows, with no usage type.
 - Live: a page holds 2,500 groups. A small account produces about 250 groups a day at
   `SERVICE` x `USAGE_TYPE`, so a 10 day pull is 2 requests.
-- Docs: each request costs the account owner USD 0.01. The connect screen must say so. The sync
-  schedule above is a few cents a day for a small account.
+- Docs: each request costs the account owner USD 0.01. A pull is one request plus one per region
+  with real spend, more when a region passes a page. The connect screen says so, each source
+  counts its requests, and the schedule keeps a small account to a few dollars a month.
 - Live: a closed month reports `Estimated: false`. Every day of the open month reports `true`.
 - Docs: history is the current month and the 13 before it. Data refreshes at least daily.
 - Docs: a member account of an organization sees only its own cost, and the management account can
