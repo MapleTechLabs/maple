@@ -201,9 +201,11 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 						},
 						[
 							hstack(h, { gap: "2" }, [
-								typography(h, { tone: "primary", attributes: [h.AriaHidden(true)] }, [
-									icon(h, "MapleMark", { size: 20 }),
-								]),
+								icon(h, "MapleMark", {
+									size: 20,
+									className: "text-brand-maple",
+									attributes: [h.AriaHidden(true)],
+								}),
 								h.span(
 									[h.Class("font-display text-lg font-semibold tracking-tight")],
 									["maple"],

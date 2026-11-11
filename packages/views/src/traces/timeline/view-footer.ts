@@ -31,7 +31,7 @@ export const footer = (h: H, model: Model): Html =>
 			h.div(
 				[
 					h.Class(
-						"hidden shrink-0 items-center gap-3 text-foreground-faint @min-[560px]/timeline:flex",
+						"hidden shrink-0 items-center gap-3 text-foreground-subtle @min-[560px]/timeline:flex",
 					),
 				],
 				[
@@ -44,7 +44,7 @@ export const footer = (h: H, model: Model): Html =>
 							tone: "muted",
 							onClick: Message.ClickedShortcuts(),
 							className:
-								"gap-1.5 text-foreground-faint hover:text-foreground-soft active:text-foreground-soft hover:no-underline active:no-underline",
+								"gap-1.5 text-foreground-subtle hover:text-foreground-soft active:text-foreground-soft hover:no-underline active:no-underline",
 						},
 						[kbd(h, HINT_KBD, ["?"]), "all shortcuts"],
 					),

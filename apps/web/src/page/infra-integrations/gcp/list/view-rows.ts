@@ -16,6 +16,7 @@ import { type GcpBandSpec, healthDot } from "./view-band"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { divTableHead } from "@maple/views/ui/table"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str } from "effect"
 
@@ -150,15 +151,9 @@ const VOLUME_NUMBER_SLOT = "w-[56px] shrink-0"
 
 /** The head over a `volumeCell` column: its label ends where the right-aligned counts end. */
 export const volumeHead = (h: H, label: string, hidden?: string): Html =>
-	h.div(
-		[h.Class(cn(VOLUME_CELL, typographyClass({ size: "2xs", weight: "medium" }), hidden))],
-		[
-			h.span(
-				[h.Class(cn(VOLUME_NUMBER_SLOT, "flex justify-end whitespace-nowrap text-muted-foreground"))],
-				[label],
-			),
-		],
-	)
+	divTableHead(h, { className: cn(VOLUME_CELL, hidden) }, [
+		h.span([h.Class(cn(VOLUME_NUMBER_SLOT, "flex justify-end whitespace-nowrap"))], [label]),
+	])
 
 export const volumeCell = (
 	h: H,

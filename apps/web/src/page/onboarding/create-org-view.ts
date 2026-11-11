@@ -34,9 +34,11 @@ const initialOf = (name: string): string => Str.toUpperCase(Str.takeLeft(1)(name
 const header = (h: H, email: string | null): Html =>
 	hstack(h, { gap: "4", justify: "between" }, [
 		hstack(h, { gap: "2", align: "center", className: "text-foreground" }, [
-			typography(h, { tone: "primary", attributes: [h.AriaHidden(true)] }, [
-				icon(h, "MapleMark", { size: 20 }),
-			]),
+			icon(h, "MapleMark", {
+				size: 20,
+				className: "text-brand-maple",
+				attributes: [h.AriaHidden(true)],
+			}),
 			h.span([h.Class("font-display text-lg font-semibold tracking-tight")], ["maple"]),
 		]),
 		hstack(h, { gap: "3", align: "center", shrink: true, className: "text-xs" }, [

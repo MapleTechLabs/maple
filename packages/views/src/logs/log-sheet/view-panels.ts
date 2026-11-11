@@ -2,7 +2,7 @@ import { formatDuration } from "@maple/domain/format"
 import { parseErrorBody } from "@maple/ui/lib/error-body"
 import { formatErrorPrompt } from "@maple/ui/lib/error-prompt"
 import { shortId } from "@maple/ui/lib/ids"
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { formatCompactTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Effect, Option, Array as Arr, String as Str } from "effect"
@@ -158,7 +158,7 @@ const contextList = (
 						h.Class(
 							"w-11 shrink-0 text-3xs font-semibold uppercase leading-4 tracking-caption tabular-nums",
 						),
-						h.Style({ color: getSeverityColor(row.severityText) }),
+						h.Style({ color: getSeverityInk(row.severityText) }),
 					],
 					[row.severityText],
 				),

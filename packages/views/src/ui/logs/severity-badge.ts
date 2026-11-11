@@ -1,4 +1,4 @@
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../display"
@@ -18,7 +18,10 @@ export const severityBadge = <M>(h: HtmlBuilder<M>, options: SeverityBadgeOption
 			variant: "secondary",
 			className: cn("font-mono text-3xs uppercase", options.className),
 			attributes: [
-				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+				h.Style({
+					color: getSeverityInk(label),
+					"background-color": `color-mix(in oklch, ${color} 10%, transparent)`,
+				}),
 			],
 		},
 		[label],
