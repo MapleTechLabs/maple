@@ -6,7 +6,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections } from "@maple/db/tables"
 import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
 import { AwsConnectionId } from "@maple/primitives"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -83,6 +83,14 @@ export class AwsCostProvider extends Context.Service<AwsCostProvider, CostProvid
 						),
 					)
 					if (row === undefined) return yield* noConnection()
+					// The sync pauses a source whose connection stopped supplying cost, a batch a tick:
+					// one it has not reached must not be pulled, and billed, once more.
+					if (!Arr.contains(row.modules, "cost")) {
+						return yield* failed("not_ready", "The AWS connection does not ask for cost.")
+					}
+					if (row.grantedModules === null || !Arr.contains(row.grantedModules, "cost")) {
+						return yield* failed("not_ready", "The AWS role does not grant cost.")
+					}
 
 					const names = awsConnectionResourceNames(row.id)
 					const token = yield* Clock.currentTimeMillis.pipe(

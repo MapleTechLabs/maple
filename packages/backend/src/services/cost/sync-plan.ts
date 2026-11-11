@@ -56,11 +56,21 @@ export const historyFloor = (today: string): string => monthStart(today, -HISTOR
 const minDay = (a: string, b: string) => (a < b ? a : b)
 const maxDay = (a: string, b: string) => (a > b ? a : b)
 
-/** Every day of a window, oldest first; none when it ends before it starts. */
-export const daysOfWindow = (window: CostPullWindow): ReadonlyArray<string> =>
-	Arr.unfold(window.startDay, (day): Option.Option<readonly [string, string]> =>
-		day > window.endDay ? Option.none() : Option.some([day, addDays(day, 1)]),
-	)
+const DAY_MS = 86_400_000
+
+/** `count` consecutive days from `startDay`, oldest first; none for a count below 1. */
+export const daysFrom = (startDay: string, count: number): ReadonlyArray<string> =>
+	count >= 1 ? Arr.makeBy(count, (offset) => addDays(startDay, offset)) : []
+
+/**
+ * Every day of a window, oldest first; none when it ends before it starts. Counted from the two
+ * instants: day strings stop sorting by date past the year 9999, so a walk to `endDay` may not end.
+ */
+export const daysOfWindow = (window: CostPullWindow): ReadonlyArray<string> => {
+	const elapsedMs =
+		DateTime.toEpochMillis(dayStart(window.endDay)) - DateTime.toEpochMillis(dayStart(window.startDay))
+	return daysFrom(window.startDay, Math.round(elapsedMs / DAY_MS) + 1)
+}
 
 /** The columns a finished step moves. */
 export interface CostSyncFrontiers {
@@ -120,8 +130,11 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 		const usualStart = settleDue
 			? monthStart(today, settlesPreviousMonth(today, state.lastSettledAt) ? -1 : 0)
 			: addDays(today, -(HEAD_DAYS - 1))
-		// A source held for long resumes from its watermark, so no day between is left unpulled.
-		const startDay = maxDay(floor, minDay(usualStart, addDays(state.watermarkDate, 1)))
+		// A gap below the usual start: the days up to the watermark were pulled while their month was
+		// open and no later window revisits them. Resume a month before the watermark's, so that month
+		// and the one before it (still open then, perhaps) get their final amounts.
+		const gap = addDays(state.watermarkDate, 1) < usualStart
+		const startDay = maxDay(floor, gap ? monthStart(state.watermarkDate, -1) : usualStart)
 		return { mode: settleDue ? "settle" : "head", startDay, endDay: today }
 	}
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }
@@ -254,9 +267,26 @@ interface Batching {
 
 const NO_BATCHES: Batching = { batches: [], open: [] }
 
+/** The day of a `cost_daily` row, `YYYY-MM-DD`. */
+const dayOfRow = (row: CostDailyRow): string => Str.slice(0, 10)(row.Date)
+
+/** The first day with more than `maxRows` rows, if any: a day one `ingest` request cannot hold. */
+export const oversizedDay = (
+	rows: ReadonlyArray<CostDailyRow>,
+	maxRows: number,
+): Option.Option<{ readonly day: string; readonly rows: number }> =>
+	Arr.findFirst(
+		Arr.sort(
+			Rec.toEntries(Arr.groupBy(rows, dayOfRow)),
+			Order.mapInput(Order.String, ([day]: readonly [string, unknown]) => day),
+		),
+		([, dayRows]) => dayRows.length > maxRows,
+	).pipe(Option.map(([day, dayRows]) => ({ day, rows: dayRows.length })))
+
 /**
- * Rows as `ingest` batches of at most `maxRows` that hold whole days, oldest day first, so a failed
- * batch never leaves a day half written. Only a day larger than `maxRows` is split, on its own.
+ * Rows as `ingest` batches that hold whole days, oldest day first, each of at most `maxRows`. A
+ * day is never split: readers take a day's newest version, so half of one would hide the whole
+ * older pull. A day above `maxRows` is a batch of its own, so callers refuse it first (`oversizedDay`).
  */
 export const batchWholeDays = (
 	rows: ReadonlyArray<CostDailyRow>,
@@ -272,11 +302,9 @@ export const batchWholeDays = (
 	const close = (state: Batching) =>
 		state.open.length === 0 ? state.batches : [...state.batches, state.open]
 	const packed = Arr.reduce(days, NO_BATCHES, (state, day): Batching =>
-		day.length > maxRows
-			? { batches: [...close(state), ...Arr.chunksOf(day, maxRows)], open: [] }
-			: state.open.length + day.length > maxRows
-				? { batches: close(state), open: day }
-				: { batches: state.batches, open: [...state.open, ...day] },
+		state.open.length + day.length > maxRows
+			? { batches: close(state), open: day }
+			: { batches: state.batches, open: [...state.open, ...day] },
 	)
 	return close(packed)
 }

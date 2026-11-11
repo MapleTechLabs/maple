@@ -2,10 +2,10 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Number as Num, Schema, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
-import { AwsAccountId, OrgId, UserId } from "@maple/primitives"
+import { AwsAccountId, type AwsModule, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "../../../integrations/AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../../../integrations/aws/fake-aws"
 import type { CostPullSource } from "../../CostProvider"
@@ -51,20 +51,42 @@ const makeWorld = (config: Record<string, string> = mapleAws) => {
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, costExplorer.client)),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...config }))),
 	)
-	return { aws, costExplorer, layer }
+	return { aws, costExplorer, layer, testDb }
 }
 
 type World = ReturnType<typeof makeWorld>
 
-/** A connection of `orgId`. `deployed` runs the customer's stack, which is what creates the role. */
-const connect = (world: World, deployed = true) =>
+/** What a role check would record as granted on the connection. */
+const setGranted = (world: World, connectionId: string, granted: ReadonlyArray<AwsModule> | null) =>
+	Effect.promise(() =>
+		executeSql(world.testDb, "UPDATE aws_connections SET granted_modules = $2::jsonb WHERE id = $1", [
+			connectionId,
+			granted === null ? null : JSON.stringify(granted),
+		]),
+	)
+
+interface ConnectOptions {
+	/** Runs the customer's stack, which is what creates the role. Defaults to true. */
+	readonly deployed?: boolean
+	/** What the org asks of the connection. Defaults to cost. */
+	readonly modules?: ReadonlyArray<AwsModule>
+	/** What the last role check read as granted; null is a role no check has read. Defaults to cost. */
+	readonly granted?: ReadonlyArray<AwsModule> | null
+}
+
+/** A connection of `orgId` that supplies cost, unless `options` take that away. */
+const connect = (world: World, options: ConnectOptions = {}) =>
 	Effect.gen(function* () {
 		const connections = yield* AwsConnectionService
-		const created = yield* connections.create(orgId, userId, { accountId: account, modules: [] })
-		if (deployed) {
+		const created = yield* connections.create(orgId, userId, {
+			accountId: account,
+			modules: options.modules ?? ["cost"],
+		})
+		if (options.deployed !== false) {
 			const setup = yield* connections.setup(orgId, created.id)
 			world.aws.deploy(account, setup.cloudformationTemplate)
 		}
+		yield* setGranted(world, created.id, options.granted === undefined ? ["cost"] : options.granted)
 		return created
 	})
 
@@ -128,7 +150,7 @@ describe("AwsCostProvider", () => {
 	it.effect("reports a role that cannot be assumed as an auth failure, before any billed request", () => {
 		const world = makeWorld()
 		return Effect.gen(function* () {
-			const connection = yield* connect(world, false)
+			const connection = yield* connect(world, { deployed: false })
 			const error = yield* Effect.flip(pull({ orgId, connectionRef: connection.id }))
 			assert.strictEqual(error.reason, "auth")
 			assert.strictEqual(error.requests, 0)
@@ -156,6 +178,37 @@ describe("AwsCostProvider", () => {
 			const error = yield* Effect.flip(pull({ orgId, connectionRef: connection.id }))
 			assert.strictEqual(error.reason, "not_ready")
 			assert.strictEqual(error.requests, 1)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("refuses a connection that no longer asks for cost, before asking AWS anything", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			// The role still grants cost: only the org's own choice changed.
+			const connection = yield* connect(world, { modules: [], granted: ["cost"] })
+			const error = yield* Effect.flip(pull({ orgId, connectionRef: connection.id }))
+			assert.deepStrictEqual([error.reason, error.requests], ["not_ready", 0])
+			assert.lengthOf(world.aws.calls, 0)
+			assert.lengthOf(world.costExplorer.requests, 0)
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("refuses a connection whose role no longer grants cost, or was never read", () => {
+		const world = makeWorld()
+		return Effect.gen(function* () {
+			const revoked = yield* connect(world, { granted: [] })
+			const lost = yield* Effect.flip(pull({ orgId, connectionRef: revoked.id }))
+			yield* setGranted(world, revoked.id, null)
+			const unread = yield* Effect.flip(pull({ orgId, connectionRef: revoked.id }))
+			assert.deepStrictEqual(
+				[lost.reason, lost.requests, unread.reason, unread.requests],
+				["not_ready", 0, "not_ready", 0],
+			)
+			assert.lengthOf(world.aws.calls, 0)
+			assert.lengthOf(world.costExplorer.requests, 0)
+			// Granted again, the same connection is pulled.
+			yield* setGranted(world, revoked.id, ["cost"])
+			assert.strictEqual((yield* pull({ orgId, connectionRef: revoked.id })).requests, 4)
 		}).pipe(Effect.provide(world.layer))
 	})
 

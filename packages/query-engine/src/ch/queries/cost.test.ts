@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import {
@@ -91,12 +91,29 @@ describe("cost queries", () => {
 		)
 	})
 
-	it("lists the currencies whatever the dimension filters, the window's largest first", () => {
+	it("marks the folded rows apart from a value that is named like their key", () => {
+		const split = oneLine(
+			compileUnsafe(costTimeseriesQuery({ dimension: "cloud_service", keys: ["__other__"] }), params)
+				.sql,
+		)
+		expect(split).toContain("if(latest.cloudService IN ('__other__'), 0, 1) AS other")
+		expect(split).toContain("GROUP BY date, key, other ORDER BY date ASC, key ASC, other ASC")
+		// Nothing folds without keys to keep, or without a dimension to split by.
+		const whole = [
+			compileUnsafe(costTimeseriesQuery({ dimension: "cloud_service" }), params).sql,
+			compileUnsafe(costTimeseriesQuery({ keys: ["__other__"] }), params).sql,
+		]
+		expect(Arr.map(whole, (sql) => Str.includes("0 AS other")(oneLine(sql)))).toEqual([true, true])
+	})
+
+	it("lists the currencies whatever the dimension filters, those of the window first", () => {
 		const flat = oneLine(
 			compileUnsafe(costCurrenciesQuery({ values: { region: ["eu-central-1"] } }), params).sql,
 		)
 		expect(flat).not.toContain("cost_daily.Currency =")
 		expect(flat).toContain("cost_daily.Region IN ('eu-central-1')")
-		expect(flat).toContain("GROUP BY currency ORDER BY cost DESC, previousCost DESC, currency ASC")
+		expect(flat).toContain(
+			"GROUP BY currency ORDER BY inWindow DESC, cost DESC, previousCost DESC, currency ASC",
+		)
 	})
 })

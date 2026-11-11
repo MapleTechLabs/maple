@@ -17,7 +17,6 @@ import {
 	type TenantContext,
 } from "@maple/domain/http"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import * as CH from "@maple/query-engine/ch"
 import { Queries } from "@maple/query-engine/registry"
 import {
 	Clock,
@@ -34,7 +33,7 @@ import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/query-runner"
 import {
-	daysOfWindow,
+	daysFrom,
 	historyFloor,
 	isCostHold,
 	requestsThisMonth,
@@ -52,6 +51,8 @@ type CostWindowRequest = CostTotalsRequest | CostTimeseriesRequest | CostBreakdo
 interface TimeseriesRow {
 	readonly date: DateTime.Utc
 	readonly key: string
+	/** 1 for the rows of every value folded together, whatever `key` says. */
+	readonly other: number
 	readonly cost: number
 	readonly estimated: number
 }
@@ -61,10 +62,10 @@ const toPersistenceError = makePersistenceErrorMapper(CloudCostPersistenceError,
 /** The `YYYY-MM-DD` of a `YYYY-MM-DD HH:mm:ss` day bound. */
 const dayOf = (date: string) => Str.slice(0, 10)(date)
 
-/** Every day of the request's window, oldest first. */
+/** Every day of the request's window, oldest first: as many as the window counts, from its first. */
 const windowDays = (payload: CostWindowRequest) => {
 	const window = Queries.wholeDayWindow(payload)
-	return daysOfWindow({ startDay: dayOf(window.startDate), endDay: dayOf(window.endDate) })
+	return daysFrom(dayOf(window.startDate), window.days)
 }
 
 interface Ranked {
@@ -79,21 +80,22 @@ const byTotalThenKey = Order.combine(
 
 /**
  * Rows as one zero-filled series per key over `days`, largest total first. With `split`, the
- * folded `COST_OTHER_KEY` series goes last and is left out when it is all zero; without it there
- * is always the one series with key "".
+ * folded series goes last and is left out when it is all zero; without it there is always the one
+ * series with key "". A value named like the folded key is a series of its own: `other` tells.
  */
 const toSeries = (days: ReadonlyArray<string>, rows: ReadonlyArray<TimeseriesRow>, split: boolean) => {
-	const seriesOf = (key: string, keyRows: ReadonlyArray<TimeseriesRow>) => {
+	const seriesOf = (key: string, other: boolean, keyRows: ReadonlyArray<TimeseriesRow>) => {
 		const costByDay = Rec.fromEntries(
 			Arr.map(keyRows, (row) => [DateTime.formatIsoDateUtc(row.date), row.cost] as const),
 		)
 		const points = Arr.map(days, (day) => costByDay[day] ?? 0)
-		return { key, other: split && key === CH.COST_OTHER_KEY, total: Num.sumAll(points), points }
+		return { key, other, total: Num.sumAll(points), points }
 	}
-	const all = Arr.map(Rec.toEntries(Arr.groupBy(rows, (row) => row.key)), ([key, keyRows]) =>
-		seriesOf(key, keyRows),
-	)
-	if (!split) return all.length === 0 ? [seriesOf("", [])] : all
+	const all = Arr.map(Rec.values(Arr.groupBy(rows, (row) => `${row.other}:${row.key}`)), (keyRows) => {
+		const first = Arr.headNonEmpty(keyRows)
+		return seriesOf(first.key, first.other === 1, keyRows)
+	})
+	if (!split) return all.length === 0 ? [seriesOf("", false, [])] : all
 	return Arr.appendAll(
 		Arr.sort(
 			Arr.filter(all, (series) => !series.other),
@@ -203,7 +205,7 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 	/**
 	 * The window narrowed to the one currency a read sums, or null for an org with no source.
 	 * Nothing converts, so every warehouse read of money carries `window.currency`: the one asked
-	 * for, else the largest in the window. One nobody bills in reads zeros; "" is no cost at all.
+	 * for, else the window's largest. One nobody bills in reads zeros; "" is no cost at all.
 	 */
 	const inOneCurrency = (tenant: TenantContext, payload: CostWindowRequest) =>
 		Effect.gen(function* () {

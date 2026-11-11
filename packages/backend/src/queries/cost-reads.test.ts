@@ -66,8 +66,8 @@ const moneyReads = (statements: ReadonlyArray<string>) =>
 const currencyOf = (sql: string) => /cost_daily\.Currency = '([^']*)'/u.exec(sql)?.[1] ?? null
 
 const USD_THEN_EUR = [
-	{ currency: "USD", cost: 72, previousCost: 73 },
-	{ currency: "EUR", cost: 40, previousCost: 0 },
+	{ currency: "USD", inWindow: 1, cost: 72, previousCost: 73 },
+	{ currency: "EUR", inWindow: 1, cost: 40, previousCost: 0 },
 ]
 
 /** A warehouse answering each kind of cost query from `rows`, recording every statement it ran. */
@@ -161,8 +161,15 @@ const makeHarness = (
 const timeseriesRow = (date: string, key: string, cost: number, estimated = 0) => ({
 	date,
 	key,
+	other: 0,
 	cost,
 	estimated,
+})
+
+/** A day's row of every value outside the kept keys, as the query folds them. */
+const foldedRow = (date: string, cost: number, estimated = 0) => ({
+	...timeseriesRow(date, "__other__", cost, estimated),
+	other: 1,
 })
 
 describe("makeCostReads", () => {
@@ -391,9 +398,9 @@ describe("makeCostReads", () => {
 				],
 				timeseries: [
 					timeseriesRow("2026-10-01", "AmazonEC2", 10),
-					timeseriesRow("2026-10-01", "__other__", 60),
+					foldedRow("2026-10-01", 60),
 					timeseriesRow("2026-10-02", "AmazonS3", 40, 1),
-					timeseriesRow("2026-10-02", "__other__", 40, 1),
+					foldedRow("2026-10-02", 40, 1),
 					timeseriesRow("2026-10-03", "AmazonEC2", 5, 1),
 				],
 			})
@@ -427,10 +434,7 @@ describe("makeCostReads", () => {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
 			const { reads, statements } = yield* makeHarness(testDb, {
 				breakdown: [{ key: "eu-central-1", cost: 7, previousCost: 0, changeSize: 7 }],
-				timeseries: [
-					timeseriesRow("2026-10-02", "eu-central-1", 7),
-					timeseriesRow("2026-10-02", "__other__", 0),
-				],
+				timeseries: [timeseriesRow("2026-10-02", "eu-central-1", 7), foldedRow("2026-10-02", 0)],
 			})
 			const result = yield* reads.timeseries(
 				tenant,
@@ -441,6 +445,32 @@ describe("makeCostReads", () => {
 			])
 			expect(result.estimatedFrom).toBeNull()
 			expect(moneyReads(statements)[0]).toContain("LIMIT 8")
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("keeps a value named like the folded key as a series of its own", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			const { reads } = yield* makeHarness(testDb, {
+				currencies: USD_THEN_EUR,
+				breakdown: [{ key: "__other__", cost: 9, previousCost: 0, changeSize: 9 }],
+				timeseries: [
+					timeseriesRow("2026-10-01", "__other__", 7),
+					foldedRow("2026-10-01", 30),
+					timeseriesRow("2026-10-03", "__other__", 2),
+					foldedRow("2026-10-03", 5),
+				],
+			})
+			const result = yield* reads.timeseries(
+				tenant,
+				new CostTimeseriesRequest({ ...WINDOW, groupBy: "cloud_service", limit: 1 }),
+			)
+			// The same key twice: the service that is called so, then everything that was folded.
+			expect(result.series).toEqual([
+				{ key: "__other__", other: false, total: 9, points: [7, 0, 2] },
+				{ key: "__other__", other: true, total: 35, points: [30, 0, 5] },
+			])
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
@@ -466,7 +496,7 @@ describe("makeCostReads", () => {
 		return Effect.gen(function* () {
 			yield* insertSources(testDb, [{ id: SOURCE_A }])
 			const some = yield* makeHarness(testDb, {
-				currencies: [{ currency: "EUR", cost: 15, previousCost: 0 }],
+				currencies: [{ currency: "EUR", inWindow: 1, cost: 15, previousCost: 0 }],
 				timeseries: [timeseriesRow("2026-10-01", "", 12), timeseriesRow("2026-10-03", "", 3, 1)],
 			})
 			expect(yield* some.reads.timeseries(tenant, new CostTimeseriesRequest(WINDOW))).toEqual({
@@ -626,6 +656,42 @@ describe("makeCostReads", () => {
 				Arr.replicate("@maple/http/errors/QueryEngineValidationError", 3),
 			)
 			expect(statements).toEqual([])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
+	it.effect("refuses a window in a year no read takes, before asking the warehouse", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// No source either: the days of the window are listed without any warehouse read.
+			const { reads, statements } = yield* makeHarness(testDb)
+			const farFuture = { startTime: "9999-12-31 00:00:00", endTime: "9999-12-31 00:00:00" }
+			const refusals = yield* Effect.all([
+				Schema.decodeEffect(CostTotalsRequest)(farFuture).pipe(
+					Effect.flatMap((request) => reads.totals(tenant, request)),
+					Effect.flip,
+				),
+				Schema.decodeEffect(CostTimeseriesRequest)(farFuture).pipe(
+					Effect.flatMap((request) => reads.timeseries(tenant, request)),
+					Effect.flip,
+				),
+				Schema.decodeEffect(CostBreakdownRequest)({ ...farFuture, groupBy: "region" }).pipe(
+					Effect.flatMap((request) => reads.breakdown(tenant, request)),
+					Effect.flip,
+				),
+			])
+			expect(Arr.map(refusals, (error) => error._tag)).toEqual(Arr.replicate("SchemaError", 3))
+			expect(statements).toEqual([])
+
+			// A bound that got past the boundary all the same lists its one day, and stops there.
+			const unchecked = new CostTimeseriesRequest(farFuture, { disableChecks: true })
+			expect((yield* reads.timeseries(tenant, unchecked)).days).toEqual(["9999-12-31"])
+			// The last year a read takes, across a leap day.
+			const leap = { startTime: "2096-02-28 12:00:00", endTime: "2096-03-01 12:00:00" }
+			expect((yield* reads.timeseries(tenant, new CostTimeseriesRequest(leap))).days).toEqual([
+				"2096-02-28",
+				"2096-02-29",
+				"2096-03-01",
+			])
 		}).pipe(Effect.provide(testDb.layer))
 	})
 

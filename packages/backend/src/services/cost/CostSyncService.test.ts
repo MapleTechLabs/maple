@@ -1,5 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { DateTime, Duration, Effect, Fiber, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import {
+	DateTime,
+	Duration,
+	Effect,
+	Fiber,
+	Layer,
+	Option,
+	Order,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { TestClock } from "effect/testing"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
@@ -25,8 +36,11 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-11T12:00:00Z"))
 const HOUR_MS = 60 * 60_000
+/** How long a source of an org outside the rollout sits out: under the lane's hourly tick. */
+const ROLLOUT_HOLD_MS = 50 * 60_000
 const CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000a1"
 const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
+const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
 /** What every fake pull reports as billable. */
 const REQUESTS_PER_PULL = 2
 
@@ -65,6 +79,8 @@ interface FakeProviderOptions {
 	readonly pullTakesASecond?: boolean
 	/** Every `ingest` call answers 503. */
 	readonly failIngest?: boolean
+	/** Rows the provider answers for a day; one for every other day. */
+	readonly rowsOn?: Readonly<Record<string, number>>
 }
 
 const pullRow = (day: string): CostPullRow => ({
@@ -115,11 +131,27 @@ const harness = (options: FakeProviderOptions = {}) => {
 		readonly startDay: string
 		readonly endDay: string
 	}> = []
+	// Connections another writer puts on hold while any pull is in flight, as an overlapping tick would.
+	const heldDuringPulls = new Set<string>()
+	const holdDuringPulls = (connectionRef: string) =>
+		Effect.sync(() => {
+			heldDuringPulls.add(connectionRef)
+		})
 	const adapter: CostProviderAdapter = {
 		provider: "aws",
 		pull: (source, window) =>
 			Effect.gen(function* () {
 				pulls.push({ orgId: source.orgId, connectionRef: source.connectionRef, ...window })
+				yield* Effect.forEach(
+					heldDuringPulls,
+					(connectionRef) =>
+						sql(
+							`UPDATE cost_sources SET next_attempt_at = to_timestamp($1 / 1000.0)
+							  WHERE connection_ref = $2`,
+							[NOW + 6 * HOUR_MS, connectionRef],
+						),
+					{ discard: true },
+				)
 				if (options.pullTakesASecond === true) yield* TestClock.adjust("1 second")
 				if (options.stealLease === true) {
 					yield* sql("UPDATE cost_sources SET lease_until = to_timestamp($1 / 1000.0)", [
@@ -138,7 +170,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 					})
 				}
 				return {
-					rows: Arr.map(
+					rows: Arr.flatMap(
 						[
 							...Arr.filter(
 								daysOfWindow(window),
@@ -146,7 +178,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 							),
 							...(options.strayDays ?? []),
 						],
-						pullRow,
+						(day) => Arr.replicate(pullRow(day), options.rowsOn?.[day] ?? 1),
 					),
 					requests: REQUESTS_PER_PULL,
 				}
@@ -266,6 +298,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 		sourceStateOf,
 		sourceIdentity,
 		setCloudCost,
+		holdDuringPulls,
 	}
 }
 
@@ -745,6 +778,80 @@ describe("CostSyncService failures", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
+	it.effect("writes nothing of a step with more rows in one day than a request stores", () => {
+		// A day split over two requests would be published by halves if the second one failed.
+		const h = harness({ rowsOn: { "2026-11-10": 10_001 } })
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			const summary = yield* poll
+			assert.deepStrictEqual(
+				[summary.failures, summary.synced, summary.rowsWritten, summary.requests],
+				[1, 0, 0, REQUESTS_PER_PULL],
+			)
+			// Not the days before the large one either: the step is whole or it is not written.
+			assert.lengthOf(h.writes, 0)
+			assert.deepStrictEqual(h.windows(), [["2026-10-01", "2026-11-11"]])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.backfill, state?.synced, state?.reason, state?.next, state?.lease],
+				[null, null, null, "too_large", String(NOW + 24 * HOUR_MS), null],
+			)
+			assert.include(state?.error, "2026-11-10")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("writes days that only together exceed a request as several batches of whole days", () => {
+		const h = harness({ rowsOn: { "2026-11-10": 6_000, "2026-11-11": 6_000 } })
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.synced, summary.failures], [1, 0])
+			// The first step: 40 days of one row and two of 6,000. The last day does not fit the first request.
+			const [first = [], second = []] = h.writes
+			assert.deepStrictEqual([first.length, second.length], [40 + 6_000, 6_000])
+			assert.deepStrictEqual(Arr.dedupe(Arr.map(second, (row) => row.Date)), ["2026-11-11 00:00:00"])
+			assert.isFalse(Arr.some(first, (row) => row.Date === "2026-11-11 00:00:00"))
+			// One pull, so one version, over both requests.
+			assert.lengthOf(Arr.dedupe(Arr.map([...first, ...second], (row) => row.IngestedAt)), 1)
+			assert.strictEqual(summary.rowsWritten, 40 + 12_000 + 30 + 31)
+			assert.strictEqual((yield* h.sourceState)?.watermark, "2026-11-11")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("does not claim a source that was put on hold after the tick loaded it as due", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* h.connect({ id: CONNECTION_B, account: "222222222222" })
+			yield* h.connect({ id: CONNECTION_C, account: "333333333333" })
+			yield* poll
+			// All three due for their head; the third sorts last, so it waits for one of two slots.
+			yield* seedSynced(h, NOW - 25 * HOUR_MS)
+			yield* h.sql(
+				"UPDATE cost_sources SET last_synced_at = to_timestamp($1 / 1000.0) WHERE connection_ref = $2",
+				[NOW - 24 * HOUR_MS, CONNECTION_C],
+			)
+			const before = yield* h.sourceStateOf("org_a", CONNECTION_C)
+			const pullsBefore = h.pulls.length
+			// While the first two are pulled, an overlapping tick fails the third and holds it.
+			yield* h.holdDuringPulls(CONNECTION_C)
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.synced, summary.skipped], [3, 2, 1])
+			assert.deepStrictEqual(
+				Arr.sort(
+					Arr.dedupe(Arr.map(h.pulls.slice(pullsBefore), (pull) => pull.connectionRef)),
+					Order.String,
+				),
+				[CONNECTION_A, CONNECTION_B],
+			)
+			// Not leased, not counted, and still on the other tick's hold.
+			assert.deepStrictEqual(yield* h.sourceStateOf("org_a", CONNECTION_C), {
+				...before,
+				next: String(NOW + 6 * HOUR_MS),
+			})
+		}).pipe(Effect.provide(h.layer))
+	})
+
 	it.effect("writes nothing once another tick took the row over", () => {
 		const h = harness({ stealLease: true })
 		return Effect.gen(function* () {
@@ -851,7 +958,7 @@ describe("CostSyncService rollout", () => {
 			// The frontiers and the request count as they were, and the claim's failure not counted.
 			assert.deepStrictEqual(yield* h.sourceState, {
 				...before,
-				next: String(NOW + 7 * HOUR_MS),
+				next: String(NOW + HOUR_MS + ROLLOUT_HOLD_MS),
 				error: ROLLOUT_ERROR,
 				reason: "rollout",
 			})
@@ -860,16 +967,16 @@ describe("CostSyncService rollout", () => {
 				[2, null, "2026-11-11"],
 			)
 
-			// Still held five hours on; asked again after six, and held again without a pull.
-			yield* TestClock.adjust("5 hours")
+			// Still held half an hour on; asked again on the next hourly tick, and held again without a pull.
+			yield* TestClock.adjust("30 minutes")
 			assert.strictEqual((yield* poll).due, 0)
-			yield* TestClock.adjust("1 hour")
+			yield* TestClock.adjust("30 minutes")
 			const again = yield* poll
 			assert.deepStrictEqual([again.due, again.skipped, again.failures], [1, 1, 0])
 			assert.deepStrictEqual([h.pulls.length, h.writes.length], [pulls, writes])
 			assert.deepStrictEqual(yield* h.sourceState, {
 				...before,
-				next: String(NOW + 13 * HOUR_MS),
+				next: String(NOW + 2 * HOUR_MS + ROLLOUT_HOLD_MS),
 				error: ROLLOUT_ERROR,
 				reason: "rollout",
 			})
@@ -890,9 +997,9 @@ describe("CostSyncService rollout", () => {
 			)
 			yield* h.setCloudCost("org_a", true)
 			// The hold stands until it runs out, then the claim proceeds as any other.
-			yield* TestClock.adjust("5 hours")
+			yield* TestClock.adjust("30 minutes")
 			assert.deepStrictEqual([(yield* poll).due, h.pulls.length], [0, 0])
-			yield* TestClock.adjust("1 hour")
+			yield* TestClock.adjust("30 minutes")
 			const summary = yield* poll
 			assert.deepStrictEqual([summary.synced, summary.failures], [1, 0])
 			assert.deepStrictEqual(h.windows(), [
@@ -922,7 +1029,34 @@ describe("CostSyncService rollout", () => {
 			assert.deepStrictEqual([a?.watermark, a?.error, a?.reason], ["2026-11-11", null, null])
 			assert.deepStrictEqual(
 				[b?.watermark, b?.error, b?.reason, b?.next],
-				[null, ROLLOUT_ERROR, "rollout", String(NOW + 6 * HOUR_MS)],
+				[null, ROLLOUT_ERROR, "rollout", String(NOW + ROLLOUT_HOLD_MS)],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a flag that read off for one tick costs that tick alone: the next hourly one pulls", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			yield* seedSynced(h, NOW - 25 * HOUR_MS)
+			yield* h.sql("UPDATE cost_sources SET watermark_date = '2026-11-10'")
+			// What a failed lookup looks like to the sync: the flag reads off, once.
+			yield* h.setCloudCost("org_a", false)
+			const before = h.pulls.length
+			const missed = yield* poll
+			assert.deepStrictEqual([missed.skipped, missed.failures, h.pulls.length], [1, 0, before])
+			assert.strictEqual((yield* h.sourceState)?.reason, "rollout")
+			yield* h.setCloudCost("org_a", true)
+			yield* TestClock.adjust("1 hour")
+			const next = yield* poll
+			assert.deepStrictEqual([next.due, next.synced, next.failures], [1, 1, 0])
+			// The head that was due an hour ago, pulled now.
+			assert.deepStrictEqual(h.windows()[before], ["2026-11-08", "2026-11-11"])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.error, state?.reason, state?.failures],
+				["2026-11-11", null, null, 0],
 			)
 		}).pipe(Effect.provide(h.layer))
 	})

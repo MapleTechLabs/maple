@@ -103,7 +103,9 @@ describe("cost registry queries", () => {
 			expect(flat).toContain("latest.date >= '2026-10-01 00:00:00'")
 			expect(flat).toContain("max(cost_daily.EffectiveCost)")
 			expect(flat).toContain("cost_daily.Region IN ('eu-central-1')")
-			expect(flat).toContain("GROUP BY currency ORDER BY cost DESC, previousCost DESC, currency ASC")
+			expect(flat).toContain(
+				"GROUP BY currency ORDER BY inWindow DESC, cost DESC, previousCost DESC, currency ASC",
+			)
 		}),
 	)
 
