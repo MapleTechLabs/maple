@@ -47,7 +47,7 @@ describe("isNavItemActive", () => {
 	test("pages without a row of their own highlight their parent row", () => {
 		const off = { releases: false, securityAudit: false, statusPages: false }
 		expect(activeTitles("/anomalies", off)).toEqual(["Alerts"])
-		expect(activeTitles("/security/code/findings", off)).toEqual(["Code review"])
+		expect(activeTitles("/security/code/findings", off)).toEqual(["Code review & CI"])
 		expect(activeTitles("/releases", off)).toEqual(["Services"])
 		expect(activeTitles("/status-pages/stp_abc", off)).toEqual(["Services"])
 	})

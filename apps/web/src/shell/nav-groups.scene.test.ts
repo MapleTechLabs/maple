@@ -88,7 +88,7 @@ describe("sidebar groups", () => {
 			expect(triage).toHaveAttr("aria-expanded", "false"),
 			expect(role("link", { name: "Alerts" })).toExist(),
 			expect(role("link", { name: "Errors" })).toBeAbsent(),
-			expect(role("link", { name: "Code review" })).toBeAbsent(),
+			expect(role("link", { name: "Code review & CI" })).toBeAbsent(),
 		)
 	})
 
