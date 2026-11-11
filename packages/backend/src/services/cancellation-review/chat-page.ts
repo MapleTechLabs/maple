@@ -1,8 +1,8 @@
 /**
  * The cancellation report as an HTML page, for a chat connector that shows one in a message
  * (Hazel's HTML renders). The same content as the Slack message, laid out to be read at a glance:
- * a header with the org's links, the likely reason, one tile per stat, then what stands out beside
- * the account's company, integrations and other orgs.
+ * a header with the org's links, the likely reason, one strip of stats, what stands out, then the
+ * account's company, integrations and other orgs in a row below.
  *
  * The page sits on the channel's background and takes Hazel's theme through its CSS variables
  * (`--card`, `--destructive`, …), so it follows light and dark mode. Everything free-text is
@@ -11,7 +11,7 @@
 import type { ChatBlock } from "@maple/chat-platform"
 import type { CancellationModelRead } from "@maple/domain/http"
 import type { IntegrationEntry } from "@maple/domain/integration-inventory"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { buildCancellationChatBlocks } from "./chat-message"
 import {
 	type CancellationReport,
@@ -53,6 +53,28 @@ const link = (label: string, url: string, className: string): string =>
 		? `<a class="${className}" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`
 		: `<span class="${className}">${escapeHtml(label)}</span>`
 
+/** Favicons, because the page has no icon set of its own. */
+const iconOf = (domain: string) =>
+	`<img class="icon" alt="" src="https://www.google.com/s2/favicons?domain=${domain}&amp;sz=64">`
+
+/** Where each header link's icon comes from; Sessions open in Maple, so they take its icon. */
+const LINK_ICON_DOMAINS = [
+	["Clerk", "clerk.com"],
+	["Stripe", "stripe.com"],
+	["Autumn", "useautumn.com"],
+	["Sessions", "maple.dev"],
+] as const
+
+/** An icon-only link, its name kept as the tooltip and accessible label. */
+const iconLink = (name: string, url: string): string => {
+	const domain = Option.getOrUndefined(
+		Arr.findFirst(LINK_ICON_DOMAINS, ([label]) => label === name).pipe(Option.map(([, d]) => d)),
+	)
+	if (domain === undefined || !/^https?:\/\//i.test(url)) return link(name, url, "")
+	const tip = name === "Sessions" ? "Session replays" : `Open in ${name}`
+	return `<a class="button" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${tip}" aria-label="${tip}">${iconOf(domain)}</a>`
+}
+
 const TONE_CLASS = {
 	concern: "concern",
 	healthy: "healthy",
@@ -63,56 +85,53 @@ const dot = (tone: CancellationSignal["tone"]) => `<span class="dot ${TONE_CLASS
 
 const label = (text: string) => `<div class="label">${escapeHtml(text)}</div>`
 
-/** Favicons, because the page has no icon set of its own. */
-const iconOf = (domain: string) =>
-	`<img class="icon" alt="" src="https://www.google.com/s2/favicons?domain=${domain}&amp;sz=64">`
-
 const STYLE = `
 *{box-sizing:border-box}
 a{color:inherit;text-decoration:none}
-.report{display:flex;flex-direction:column;gap:16px}
-.header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
-.heading{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 auto}
+.report{display:flex;flex-direction:column;gap:20px;max-width:880px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px 24px;flex-wrap:wrap}
+.heading{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 320px}
 .title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.title{font-size:20px;font-weight:600;line-height:1.25;letter-spacing:-0.01em}
-.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.5;background:var(--muted);white-space:nowrap}
-.pill.ended{color:var(--destructive);text-transform:uppercase;letter-spacing:0.04em}
-.pill.cancelled{color:var(--warning);text-transform:uppercase;letter-spacing:0.04em}
-.meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted-foreground)}
-.actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0}
-.buttons{display:flex;gap:6px;justify-content:flex-end}
-.button{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border:1px solid var(--border);border-radius:6px;background:var(--card);font-size:12px;font-weight:500}
-.button:hover{border-color:var(--ring)}
-.button::after{content:"\\2197";font-size:11px;color:var(--muted-foreground)}
-.code{font-family:var(--font-mono);font-size:12px;padding:1px 6px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--secondary-foreground)}
-.card{border:1px solid var(--border);border-radius:var(--radius);background:var(--card)}
-.verdict{display:flex;flex-direction:column;gap:12px;padding:16px;border-left:3px solid var(--destructive)}
+.title{font-size:16px;font-weight:600;line-height:1.35}
+.pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;line-height:1.6;background:var(--muted);white-space:nowrap;text-transform:uppercase;letter-spacing:0.05em}
+.pill.ended{color:var(--destructive)}
+.pill.cancelled{color:var(--warning)}
+.meta{display:flex;flex-wrap:wrap;gap:2px 0;font-size:13px;color:var(--muted-foreground)}
+.meta span+span::before{content:"\\00b7";padding:0 6px}
+.buttons{display:flex;gap:4px}
+.button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;opacity:0.85}
+.button:hover{background:var(--muted);opacity:1}
+.button .icon{width:16px;height:16px}
 .label{font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted-foreground)}
-.reason-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:4px}
-.reason{font-size:18px;font-weight:600;line-height:1.3}
+.verdict{display:flex;flex-direction:column;gap:6px}
+.reason-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px}
+.reason{font-size:15px;font-weight:600;line-height:1.4}
 .muted{color:var(--muted-foreground)}
 .small{font-size:12px}
-.conclusion{max-width:640px;font-size:14px;line-height:1.55;color:var(--secondary-foreground);margin:0}
-.told{display:flex;gap:8px;padding-top:12px;border-top:1px solid var(--border);font-size:13px}
-.told-label{flex-shrink:0;font-size:12px;font-weight:600;color:var(--muted-foreground);line-height:1.6}
-.skipped{font-style:italic;color:var(--muted-foreground)}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px}
-.tile{display:flex;flex-direction:column;gap:4px;padding:12px}
-.tile-label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted-foreground)}
-.value{font-size:22px;font-weight:600;line-height:1.2;letter-spacing:-0.01em;font-variant-numeric:tabular-nums}
-.note{font-size:12px;line-height:1.35;color:var(--muted-foreground)}
-.before{font-size:12px;line-height:1.35;color:var(--secondary-foreground);font-variant-numeric:tabular-nums}
+.conclusion{max-width:68ch;font-size:14px;line-height:1.55;color:var(--secondary-foreground);margin:0}
+.told{display:flex;gap:6px;font-size:13px;color:var(--secondary-foreground)}
+.told-label{flex-shrink:0;color:var(--muted-foreground)}
+.skipped{color:var(--muted-foreground)}
+.card{border:1px solid var(--border);border-radius:var(--radius);background:var(--card)}
+.stats{display:flex;flex-direction:column;gap:12px;padding:14px 16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:16px 20px}
+.tile{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground)}
+.value{font-size:18px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums}
+.note{font-size:12px;line-height:1.4;color:var(--muted-foreground)}
+.before{font-size:12px;line-height:1.4;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:6px;height:6px;border-radius:999px;flex-shrink:0;background:var(--muted-foreground)}
+.dot.neutral{opacity:0.4}
 .dot.concern{background:var(--destructive)}
 .dot.healthy{background:var(--success)}
-.columns{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
-.findings{flex:1 1 320px;display:flex;flex-direction:column;gap:10px;min-width:0}
-.finding{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.55}
+.dot.stale{background:var(--warning)}
+.findings{display:flex;flex-direction:column;gap:8px}
+.finding{display:flex;gap:10px;align-items:flex-start;max-width:76ch;font-size:14px;line-height:1.55}
 .finding .dot{margin-top:8px}
-.side{flex:0 1 300px;min-width:260px;display:flex;flex-direction:column}
-.section{display:flex;flex-direction:column;gap:6px;padding:12px}
-.section+.section{border-top:1px solid var(--border)}
-.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.account{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px 24px;padding-top:16px;border-top:1px solid var(--border)}
+.section{display:flex;flex-direction:column;gap:6px;min-width:0}
+.section-head{display:flex;align-items:center;gap:8px}
+.confidence{font-size:11px;font-weight:500}
 .confidence.high{color:var(--success)}
 .confidence.medium{color:var(--warning)}
 .confidence.low{color:var(--muted-foreground)}
@@ -121,15 +140,15 @@ a{color:inherit;text-decoration:none}
 .integration{display:flex;align-items:center;gap:8px;font-size:13px}
 .integration .name{font-weight:500;flex-shrink:0}
 .integration .detail{flex:1;min-width:0;font-size:12px;color:var(--muted-foreground)}
-.icon{width:16px;height:16px;flex-shrink:0;border-radius:3px}
 .integration .dot{margin-right:4px;vertical-align:middle}
-.dot.stale{background:var(--warning)}
+.icon{width:14px;height:14px;flex-shrink:0;border-radius:3px}
 .org{display:flex;flex-direction:column;gap:2px}
-.org+.org{margin-top:8px}
+.org+.org{margin-top:6px}
 .org-title{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:500}
 .links{display:flex;gap:10px;font-size:12px;font-weight:500}
 .links a{color:var(--accent)}
-.footer{font-size:12px;color:var(--muted-foreground)}
+.footer{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted-foreground)}
+.code{font-family:var(--font-mono);font-size:11px;user-select:all}
 `
 
 const header = (report: CancellationReport): string => {
@@ -148,7 +167,7 @@ const header = (report: CancellationReport): string => {
 		...(subject.contactEmail === null ? [] : [subject.contactEmail]),
 	]
 	const buttons = Arr.map(orgLinkList(subject.links, subject.sessionsUrl), ([name, url]) =>
-		link(name, url, "button"),
+		iconLink(name, url),
 	)
 	return `<div class="header">
 <div class="heading">
@@ -158,7 +177,7 @@ const header = (report: CancellationReport): string => {
 		"",
 	)}</div>
 </div>
-<div class="actions"><div class="buttons">${Arr.join(buttons, "")}</div><span class="code">${escapeHtml(subject.orgId)}</span></div>
+<div class="buttons">${Arr.join(buttons, "")}</div>
 </div>`
 }
 
@@ -188,8 +207,8 @@ const toldStripe = (report: CancellationReport): string | null => {
 const verdict = (report: CancellationReport): string => {
 	const conclusion = report.modelRead?.conclusion ?? ""
 	const told = toldStripe(report)
-	return `<div class="card verdict">
-<div>${label("Likely reason")}<div class="reason-row">${reasonLine(report)}</div></div>
+	return `<div class="verdict">
+${label("Likely reason")}<div class="reason-row">${reasonLine(report)}</div>
 ${conclusion === "" ? "" : `<p class="conclusion">${escapeHtml(clip(conclusion))}</p>`}
 ${told ?? ""}
 </div>`
@@ -202,10 +221,10 @@ const tileStat = (stat: Stat): Stat =>
 const tiles = (report: CancellationReport): string => {
 	const shown = stats(report.snapshot)
 	if (shown.length === 0) return ""
-	return `<div class="tiles">${Arr.join(
+	return `<div class="card stats"><div class="tiles">${Arr.join(
 		Arr.map(
 			rankedStats(Arr.map(shown, tileStat), report.signals),
-			({ stat, tone }) => `<div class="card tile">
+			({ stat, tone }) => `<div class="tile">
 <div class="tile-label">${dot(tone)}<span>${escapeHtml(stat.label)}</span></div>
 <div class="value">${escapeHtml(stat.now)}</div>
 ${stat.before === null ? "" : `<div class="before">month before ${escapeHtml(stat.before)}</div>`}
@@ -213,7 +232,7 @@ ${stat.notes.length === 0 ? "" : `<div class="note">${escapeHtml(Arr.join(stat.n
 </div>`,
 		),
 		"",
-	)}</div>`
+	)}</div></div>`
 }
 
 /** The signals no tile shows (the plan itself), then the model's findings. */
@@ -240,7 +259,7 @@ const company = (modelRead: CancellationModelRead | null): string => {
 	const guess = modelRead?.company ?? null
 	if (guess === null) return ""
 	return `<div class="section">
-<div class="section-head">${label("Company")}<span class="pill confidence ${guess.confidence}">${escapeHtml(
+<div class="section-head">${label("Company")}<span class="confidence ${guess.confidence}">${escapeHtml(
 		`${Str.capitalize(guess.confidence)} confidence`,
 	)}</span></div>
 <div class="strong">${escapeHtml(clip(guess.name))}${guess.location === null ? "" : `<span class="muted small"> &#183; ${escapeHtml(clip(guess.location))}</span>`}</div>
@@ -312,14 +331,21 @@ const otherOrgs = (orgs: ReadonlyArray<OtherOrg> | null): string => {
 /** The whole page, a complete document. */
 export const cancellationReportHtml = (report: CancellationReport): string => {
 	const missing = unreadSources(report)
-	const side = `<div class="card side">${company(report.modelRead)}${integrations(report.subject.integrations)}${otherOrgs(report.subject.otherOrgs)}</div>`
+	const account = `${company(report.modelRead)}${integrations(report.subject.integrations)}${otherOrgs(report.subject.otherOrgs)}`
+	const footer = [
+		`<span class="code">${escapeHtml(report.subject.orgId)}</span>`,
+		...(missing.length === 0
+			? []
+			: [`<span>Could not read: ${escapeHtml(Arr.join(missing, ", "))}</span>`]),
+	]
 	return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title(report))}</title><style>${STYLE}</style></head><body>
 <div class="report">
 ${header(report)}
 ${verdict(report)}
 ${tiles(report)}
-<div class="columns">${findings(report)}${side}</div>
-${missing.length === 0 ? "" : `<div class="footer">Could not read: ${escapeHtml(Arr.join(missing, ", "))}</div>`}
+${findings(report)}
+${account === "" ? "" : `<div class="account">${account}</div>`}
+<div class="footer">${Arr.join(footer, "")}</div>
 </div>
 </body></html>`
 }
