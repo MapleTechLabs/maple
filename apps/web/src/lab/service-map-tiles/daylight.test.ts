@@ -84,6 +84,27 @@ describe("daylightAt", () => {
 		expect(evening[0]).toBeGreaterThan(0.5)
 	})
 
+	it("turns the light from the sun's side to the moon's only while it is all but out", () => {
+		const { set } = sunTimes(at(0))
+		// Minute by minute from sunset on: the sun no longer crosses the board, so any turn of
+		// the light is the hand-over to the moon.
+		const minutes = Arr.map(Arr.range(0, 180), (minute) => daylightAt(at(set + minute / 60)))
+		const turns = Arr.flatMap(Arr.zip(minutes, Arr.drop(minutes, 1)), ([before, after]) => {
+			const cosine = Arr.reduce([0, 1, 2], 0, (sum, axis) => {
+				return sum + (before.direction[axis] ?? 0) * (after.direction[axis] ?? 0)
+			})
+			const degrees = (Math.acos(Math.min(1, cosine)) * 180) / Math.PI
+			return degrees > 0.05 ? [{ degrees, direct: Math.max(before.direct, after.direct) }] : []
+		})
+		expect(turns.length).toBeGreaterThan(5)
+		expect(Math.max(...Arr.map(turns, (turn) => turn.direct))).toBeLessThan(0.3)
+		// A little at a time: no minute turns it far.
+		expect(Math.max(...Arr.map(turns, (turn) => turn.degrees))).toBeLessThan(12)
+		const [first, last] = [minutes[0], minutes[minutes.length - 1]]
+		expect(first?.direct).toBeGreaterThan(0.3)
+		expect(last?.direct).toBe(1)
+	})
+
 	it("never changes the light much from one quarter of an hour to the next", () => {
 		const jumps = Arr.map(Arr.zip(hours, Arr.drop(hours, 1)), ([before, after]) => {
 			const [a, b] = [daylightAt(at(before)), daylightAt(at(after))]

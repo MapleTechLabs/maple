@@ -876,7 +876,8 @@ export function startPixelScene(
 		const reach = Math.min(1.7, flat / Math.max(0.05, y))
 		const way: Point = [(-x / flat) * reach, (Math.abs(z) / flat) * reach]
 		Arr.forEach([state.ready?.statics, state.ready?.moving], (set) =>
-			set?.cast(way, 0.44 - 0.2 * light.lamps),
+			// A shadow fades out with the light that throws it, as the sun hands over to the moon.
+			set?.cast(way, (0.44 - 0.2 * light.lamps) * Math.min(1, Math.max(0, (light.direct - 0.2) / 0.4))),
 		)
 		Arr.forEach(lamps, (lamp) => {
 			lamp.light.intensity = lamp.power * light.lamps
