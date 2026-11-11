@@ -16,19 +16,22 @@ import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasPageFieldIssues,
 	hasSettingsIssues,
-	hasThemeIssues,
+	hasAppearanceIssues,
 	type SettingsForm,
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { appearanceSection, previewPanel } from "./view-appearance"
+import { accessSection } from "./view-access"
+import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
+import { customDomainSection } from "./view-domain"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The Settings tab: the page's fields, the break-glass token and deleting the page.
+// The Settings tab: the page's fields, who can view it, the break-glass token and deleting the page.
 
 type H = HtmlBuilder<Message>
 
@@ -108,13 +111,14 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
 					}),
 					textField(h, {
-						id: "status-page-logo",
-						label: "Logo URL",
-						value: form.logoUrl,
-						placeholder: "https://acme.example/logo.svg",
+						id: "status-page-support",
+						label: "Support URL",
+						value: form.supportUrl,
+						placeholder: "https://acme.example/support",
 						isDisabled: isReadOnly,
-						error: issues.logoUrl,
-						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
+						error: issues.supportUrl,
+						hint: "Linked in the page header as Contact support.",
+						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
 				],
 			),
@@ -194,7 +198,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 				"If Maple itself is down, post updates straight to the page with this token at ",
 				h.code(
 					[h.Class(typographyClass({ size: "xs", mono: true }))],
-					[`${publicAddress(page.slug)}/_manage`],
+					[`${pageUrlOf(model, page) ?? publicAddress(page.slug)}/_manage`],
 				),
 				". The page keeps serving from edge storage either way.",
 			],
@@ -281,7 +285,7 @@ const formView = (
 ): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
-	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasThemeIssues(form)
+	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasAppearanceIssues(form)
 	return vstack(h, { className: "max-w-4xl xl:max-w-7xl" }, [
 		h.div(
 			[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
@@ -329,12 +333,18 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
-		breakGlassSection(h, model, page),
+		accessSection(h, model, page),
+		customDomainSection(h, model, page),
+		// Break-glass posts at the public address, which an internal page does not answer on.
+		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 		...(canManage(model) ? [deleteSection(h)] : []),
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, "appearance", (form) => [appearanceSection(h, model, form)])
+	formView(h, model, page, "appearance", (form) => [
+		brandingSection(h, model, form),
+		appearanceSection(h, model, form),
+	])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

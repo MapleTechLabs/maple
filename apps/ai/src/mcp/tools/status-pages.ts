@@ -90,6 +90,7 @@ const toPageRow = (page: StatusPageRecord): typeof StatusPageRow.Type => ({
 	name: page.name,
 	slug: page.slug,
 	autoIncidents: page.autoIncidents,
+	visibility: page.visibility,
 	draft: page.draft,
 	revision: page.revision,
 	publishedRevision: page.publishedRevision,
@@ -517,7 +518,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			incident: P.optionalText(
 				"The incident's id (sti_… or its UUID; get_status_page lists open ones). Omit to open a new one",
 			),
-			message: P.text("The public update, written for customers"),
+			message: P.text("The public update, written for customers (up to 20,000 characters)"),
 			status: P.optionalOneOf(
 				UPDATE_STATUSES,
 				"Incidents: investigating, identified, monitoring, resolved. Maintenance: scheduled, in_progress, completed. Required on an existing incident; a new incident starts investigating, new maintenance scheduled",
@@ -527,7 +528,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				"Opening only: public title, e.g. `Elevated API errors` or `Database upgrade`",
 			),
 			starts_at: P.optionalTimestamp("Opening maintenance only: when it starts"),
-			ends_at: P.optionalTimestamp("Opening maintenance only: when it ends"),
+			ends_at: P.optionalTimestamp(
+				"Opening maintenance only: when it ends. It moves to in_progress at the start and completed at the end on its own",
+			),
 			impact: P.optionalOneOf(
 				StatusPageIncidentImpact.literals,
 				"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",
@@ -690,6 +693,17 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			)
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
+			const visibility = params.config.visibility
+			if (visibility !== undefined && visibility !== page.visibility)
+				yield* Policy.check(
+					tenant.roles,
+					"status_pages:access",
+					() =>
+						new McpUnavailableError({
+							message: `${tool} would change who can read the page, which only org admins may do. Leave \`visibility\` as it is, or ask an admin.`,
+							capability: "org_admin",
+						}),
+				)
 			const { config, changes } = yield* service
 				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
 					ifVersion: params.if_version ?? params.config.version,

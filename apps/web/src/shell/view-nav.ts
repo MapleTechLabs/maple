@@ -1,4 +1,5 @@
 import { isClerkAuthEnabled } from "../platform/auth-mode"
+import * as Policy from "@maple/domain/policy"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
@@ -39,14 +40,18 @@ import { typography } from "@maple/views/ui/typography"
 /**
  * Self-hosted turns every rollout on; a Clerk org reads its public
  * metadata, and fails closed (no flagged rows) until Clerk has an org.
+ * Security also needs a role with `security:manage`: members never see it.
  */
 export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
 	const flag = (name: keyof NavFlags) =>
 		!isClerkAuthEnabled ||
 		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
+	const canReadSecurity =
+		!isClerkAuthEnabled ||
+		(clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.can([role], "security:manage")))
 	return navGroups({
 		releases: flag("releases"),
-		securityAudit: flag("securityAudit"),
+		securityAudit: flag("securityAudit") && canReadSecurity,
 		statusPages: flag("statusPages"),
 	})
 }

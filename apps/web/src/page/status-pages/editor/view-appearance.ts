@@ -21,11 +21,13 @@ import {
 	THEME_OVERRIDE_FIELDS,
 	type ThemeColorField,
 	type ThemeForm,
+	settingsIssues,
 	themeColorIssues,
 	themeContrastOf,
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
+import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
 import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
@@ -119,6 +121,56 @@ const colorField = (
 				]
 			: []),
 	])
+}
+
+/** The logos and tab icon: what carries the brand besides the colours. */
+export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
+	const issues = settingsIssues(form)
+	const isReadOnly = !canManage(model)
+	return settingsSection(
+		h,
+		{
+			id: "status-page-settings-branding",
+			title: "Branding",
+			description: ["Your logo in the page header and the icon in the browser tab."],
+		},
+		[
+			h.div(
+				[h.Class("grid gap-4 sm:grid-cols-2")],
+				[
+					textField(h, {
+						id: "status-page-logo",
+						label: "Logo URL",
+						value: form.logoUrl,
+						placeholder: "https://acme.example/logo.svg",
+						isDisabled: isReadOnly,
+						error: issues.logoUrl,
+						hint: "Also the image when the page is shared.",
+						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
+					}),
+					textField(h, {
+						id: "status-page-logo-dark",
+						label: "Dark mode logo URL",
+						value: form.logoDarkUrl,
+						placeholder: "https://acme.example/logo-dark.svg",
+						isDisabled: isReadOnly,
+						error: issues.logoDarkUrl,
+						hint: "Shown instead of the logo on a dark page.",
+						onInput: (value) => Message.ChangedSetting({ field: "logoDarkUrl", value }),
+					}),
+					textField(h, {
+						id: "status-page-favicon",
+						label: "Favicon URL",
+						value: form.faviconUrl,
+						placeholder: "https://acme.example/favicon.png",
+						isDisabled: isReadOnly,
+						error: issues.faviconUrl,
+						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
+					}),
+				],
+			),
+		],
+	)
 }
 
 export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
@@ -242,8 +294,13 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			description: orNull(form.description),
 			websiteUrl: orNull(form.websiteUrl),
 			logoUrl: orNull(form.logoUrl),
+			logoDarkUrl: orNull(form.logoDarkUrl),
+			faviconUrl: orNull(form.faviconUrl),
+			supportUrl: orNull(form.supportUrl),
 			privacyUrl: orNull(form.privacyUrl),
 			termsUrl: orNull(form.termsUrl),
+			customDomain: null,
+			visibility: page.visibility,
 			showPoweredBy: form.showPoweredBy,
 			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},
@@ -251,7 +308,13 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 		incidents: shown.incidents,
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: false,
+		selectedIds: [],
+		publicUrl: pageUrlOf(model, page),
+	})
 }
 
 export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>

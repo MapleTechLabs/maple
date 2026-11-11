@@ -99,6 +99,7 @@ import * as SourceDetail from "./sources/detail"
 import * as StatusPageBuilder from "./status-pages/builder"
 import * as StatusPageEditor from "./status-pages/editor"
 import * as StatusPagesList from "./status-pages/list"
+import * as StatusPageViewer from "./status-pages/viewer"
 import * as TraceDetail from "./traces/detail"
 import * as TracesList from "./traces/list"
 
@@ -131,6 +132,7 @@ export const pages = [
 	StatusPagesList.page,
 	StatusPageBuilder.page,
 	StatusPageEditor.page,
+	StatusPageViewer.page,
 	AlertEditor.page,
 	ServiceMap.page,
 	InfraHosts.page,

@@ -82,7 +82,7 @@ export const saveSettings = (model: Model): Return => {
 }
 
 /** The saved page replaces the read; edits made while it was in flight stay. */
-const withPage = (model: Model, page: V2StatusPage): Model => ({
+export const withPage = (model: Model, page: V2StatusPage): Model => ({
 	...model,
 	page: { ...model.page, data: AsyncData.map(model.page.data, () => page) },
 })

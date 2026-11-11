@@ -21,7 +21,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { settingsSection } from "../../kit/settings-section"
-import { publicAddress, statusPagesHref } from "../shared/commands"
+import { publicAddress, publicUrl, STATUS_PAGE_BASE_URL, statusPagesHref } from "../shared/commands"
 import { textField } from "../shared/fields"
 import { APPEARANCES, presetCards } from "../shared/look"
 import { monitorStatusOf } from "../shared/derive"
@@ -160,8 +160,13 @@ const draftDocument = (model: Model): string => {
 			description: null,
 			websiteUrl: null,
 			logoUrl: null,
+			logoDarkUrl: null,
+			faviconUrl: null,
+			supportUrl: null,
 			privacyUrl: null,
 			termsUrl: null,
+			customDomain: null,
+			visibility: "public",
 			showPoweredBy: true,
 			theme: previewTheme(
 				{
@@ -187,7 +192,13 @@ const draftDocument = (model: Model): string => {
 		incidents: [],
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: false,
+		selectedIds: [],
+		publicUrl: isSlug(model.slug) ? publicUrl(STATUS_PAGE_BASE_URL, model.slug) : null,
+	})
 }
 
 const previewPanel = (h: H, model: Model): Html =>
