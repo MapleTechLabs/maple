@@ -17,9 +17,17 @@ import {
 	putOverlayEntry,
 	send,
 } from "./test-support"
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const PAGE = "https://status.acme.example/"
+
+const decodeUptime = Schema.decodeUnknownSync(
+	Schema.Struct({
+		page: Schema.Struct({ status_url: Schema.String }),
+		days: Schema.Number,
+		components: Schema.Array(Schema.Struct({ name: Schema.String, days: Schema.Array(Schema.Unknown) })),
+	}),
+)
 const TOKEN = "mstat_correct-horse-battery-staple"
 
 const delayedBanner = (html: string): string =>
@@ -213,6 +221,37 @@ describe("serving a page", () => {
 		const html = await (await send(stale, PAGE)).text()
 		expect(delayedBanner(html)).not.toContain("hidden")
 		expect(html).toContain("Live checks are delayed")
+	})
+
+	it("serves daily uptime as public JSON, cached like status.json", async () => {
+		const response = await send(fake, `${PAGE}api/v1/uptime.json?days=7`)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("access-control-allow-origin")).toBe("*")
+		expect(response.headers.get("cache-control")).toBe(
+			(await send(fake, `${PAGE}api/v1/status.json`)).headers.get("cache-control"),
+		)
+		const json = decodeUptime(await response.json())
+		expect(json.page.status_url).toBe("https://status.acme.example")
+		// The fixture's third component has no monitor: it has no uptime to report.
+		expect(Arr.map(json.components, (component) => component.name)).toEqual(["API", "Dashboard"])
+		expect(Arr.map(json.components, (component) => component.days.length)).toEqual([7, 7])
+
+		const one = decodeUptime(
+			await (await send(fake, `${PAGE}api/v1/uptime.json?component=${fixtureComponentId(1)}`)).json(),
+		)
+		expect(Arr.map(one.components, (component) => component.name)).toEqual(["Dashboard"])
+		expect(one.days).toBe(90)
+	})
+
+	it("refuses a bad window and an id with no uptime, as JSON", async () => {
+		for (const days of ["0", "366", "7.5", "week"]) {
+			const response = await send(fake, `${PAGE}api/v1/uptime.json?days=${days}`)
+			expect(response.status).toBe(400)
+			expect(await response.json()).toEqual({ error: "days must be a whole number from 1 to 365." })
+		}
+		const missing = await send(fake, `${PAGE}api/v1/uptime.json?component=${fixtureComponentId(2)}`)
+		expect(missing.status).toBe(404)
+		expect(missing.headers.get("access-control-allow-origin")).toBe("*")
 	})
 
 	it("serves status.json, the badge and the feed", async () => {
@@ -526,7 +565,13 @@ describe("custom domains", () => {
 		expect(await (await send(fake, `${viaSlug}/api/v1/status.json`)).json()).toMatchObject({
 			page: { status_url: CUSTOM },
 		})
-		expect(await (await send(fake, `${viaSlug}/`)).text()).toContain(`/feed subscribe ${CUSTOM}/feed.rss`)
+		const html = await (await send(fake, `${viaSlug}/`)).text()
+		expect(html).toContain(`/feed subscribe ${CUSTOM}/feed.rss`)
+		expect(html).toContain(`<link rel="canonical" href="${CUSTOM}/">`)
+		expect(html).toContain(`<meta property="og:url" content="${CUSTOM}/">`)
+		expect(await (await send(fake, `${viaSlug}/api/v1/uptime.json`)).json()).toMatchObject({
+			page: { status_url: CUSTOM },
+		})
 	})
 
 	it("answers 404 on a host with no page, and never serves another page by path there", async () => {

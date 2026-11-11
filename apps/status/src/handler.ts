@@ -6,11 +6,14 @@ import {
 	renderPage,
 	renderRssFeed,
 	renderStatusJson,
+	renderUptimeJson,
+	UPTIME_MAX_DAYS,
 } from "@maple/status-page"
+import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
-import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
+import { asset, html, jsonError, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -127,6 +130,27 @@ const canonicalUrl = (url: URL, view: PageView, target: Target): string =>
 		? `${url.origin}${target.basePath}`
 		: `https://${view.snapshot.page.customDomain}`
 
+/** `?days=`, 1 to {@link UPTIME_MAX_DAYS}, default one page window; null when it is anything else. */
+const uptimeDays = (url: URL): number | null => {
+	const raw = url.searchParams.get("days")
+	if (raw === null) return STATUS_PAGE_WINDOW_DAYS
+	const days = Number(raw)
+	return /^\d+$/u.test(raw) && days >= 1 && days <= UPTIME_MAX_DAYS ? days : null
+}
+
+const serveUptime = (url: URL, view: PageView, pageUrl: string): Response => {
+	const days = uptimeDays(url)
+	if (days === null) return jsonError(400, `days must be a whole number from 1 to ${UPTIME_MAX_DAYS}.`)
+	const uptime = renderUptimeJson(view.snapshot, pageUrl, {
+		days,
+		componentId: url.searchParams.get("component"),
+	})
+	if (uptime === null) return jsonError(404, "No component on this page shows uptime under that id.")
+	return asset(encodeJson(uptime), "application/json; charset=utf-8", {
+		"access-control-allow-origin": "*",
+	})
+}
+
 const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, target: Target) => {
 	const isRead = request.method === "GET" || request.method === "HEAD"
 	const pageUrl = canonicalUrl(url, view, target)
@@ -156,6 +180,8 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 					},
 				),
 			)
+		case "/api/v1/uptime.json":
+			return Effect.succeed(serveUptime(url, view, pageUrl))
 		case "/badge.svg":
 			return Effect.succeed(
 				asset(renderBadgeSvg(view.snapshot, view.freshness), "image/svg+xml; charset=utf-8"),
