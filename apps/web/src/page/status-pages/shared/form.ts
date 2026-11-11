@@ -14,6 +14,7 @@ import type {
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncident,
 	V2StatusPageIncidentCreateParams,
+	V2StatusPageIncidentPostUpdateParams,
 	V2StatusPageIncidentUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
@@ -26,6 +27,7 @@ import {
 	type StatusPageTheme,
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
+	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "./derive"
@@ -101,6 +103,7 @@ export const IncidentTextField = Schema.Literals([
 	"body",
 	"scheduledStart",
 	"scheduledEnd",
+	"startedAt",
 ])
 export type IncidentTextField = typeof IncidentTextField.Type
 
@@ -116,6 +119,8 @@ export const IncidentForm = Schema.Struct({
 	/** Maintenance only: the window as `datetime-local` values, in the viewer's time zone. */
 	scheduledStart: Schema.String,
 	scheduledEnd: Schema.String,
+	/** Incident only: when it began, as a `datetime-local` value; blank is when it is posted. */
+	startedAt: Schema.String,
 })
 export type IncidentForm = typeof IncidentForm.Type
 
@@ -129,6 +134,7 @@ export const emptyIncidentForm = (kind: StatusPageIncidentKind): IncidentForm =>
 	isPublished: true,
 	scheduledStart: "",
 	scheduledEnd: "",
+	startedAt: "",
 })
 
 const LOCAL_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/u
@@ -144,6 +150,25 @@ export const localToIso = (value: string, timeZone: string): Option.Option<strin
 	)
 }
 
+/** An instant as a `datetime-local` value in `timeZone`; `""` for none. */
+export const isoToLocal = (value: string | null, timeZone: string): string =>
+	value === null
+		? ""
+		: Option.match(DateTime.makeZoned(value, { timeZone }), {
+				onNone: () => "",
+				onSome: (zoned) => Str.slice(0, 16)(DateTime.formatIsoOffset(zoned)),
+			})
+
+const UPDATE_MAX_LENGTH_LABEL = STATUS_PAGE_UPDATE_MAX_LENGTH.toLocaleString("en-US")
+
+/** An update message longer than the API takes, or `null`. */
+export const updateBodyLengthIssue = (body: string): string | null => {
+	const length = Str.trim(body).length
+	return length > STATUS_PAGE_UPDATE_MAX_LENGTH
+		? `Keep it under ${UPDATE_MAX_LENGTH_LABEL} characters (${length.toLocaleString("en-US")} now).`
+		: null
+}
+
 /** What stops the incident from being sent, by field; `null` where nothing does. */
 export type IncidentIssues = Readonly<{ title: string | null; body: string | null; window: string | null }>
 
@@ -152,7 +177,7 @@ export const incidentIssues = (form: IncidentForm, timeZone: string): IncidentIs
 	const end = localToIso(form.scheduledEnd, timeZone)
 	return {
 		title: Str.trim(form.title) === "" ? "Add a title." : null,
-		body: Str.trim(form.body) === "" ? "Write the first update." : null,
+		body: Str.trim(form.body) === "" ? "Write the first update." : updateBodyLengthIssue(form.body),
 		window:
 			form.kind !== "maintenance"
 				? null
@@ -182,7 +207,11 @@ export const incidentPayload = (
 		component_ids: form.componentIds,
 		published: form.isPublished,
 	}
-	if (form.kind !== "maintenance") return base
+	if (form.kind !== "maintenance")
+		return Option.match(localToIso(form.startedAt, timeZone), {
+			onNone: () => base,
+			onSome: (startedAt) => ({ ...base, started_at: startedAt }),
+		})
 	return Option.match(
 		Option.all([localToIso(form.scheduledStart, timeZone), localToIso(form.scheduledEnd, timeZone)]),
 		{
@@ -194,31 +223,104 @@ export const incidentPayload = (
 
 // INCIDENT DETAILS
 
-export const IncidentEditField = Schema.Literals(["title", "impact"])
+export const IncidentEditField = Schema.Literals(["title", "impact", "start", "end"])
 export type IncidentEditField = typeof IncidentEditField.Type
 
-/** An incident's title, impact and components, edited without posting an update. */
+/** An incident's title, impact, times and components, edited without posting an update. */
 export const IncidentEditForm = Schema.Struct({
 	incidentId: StatusPageIncidentId,
 	kind: StatusPageIncidentKind,
+	status: StatusPageIncidentStatus,
 	title: Schema.String,
 	impact: StatusPageIncidentImpact,
 	componentIds: Schema.Array(StatusPageComponentId),
+	/**
+	 * `datetime-local` values in the viewer's zone: the window for maintenance, when it started
+	 * and ended for an incident (`""` while open).
+	 */
+	start: Schema.String,
+	end: Schema.String,
 })
 export type IncidentEditForm = typeof IncidentEditForm.Type
 
-export const incidentEditFormOf = (incident: V2StatusPageIncident): IncidentEditForm => ({
-	incidentId: incident.id,
-	kind: incident.kind,
-	title: incident.title,
-	impact: incident.impact,
-	componentIds: incident.component_ids,
-})
+/** The times an incident's Edit details shows: the maintenance window, or started and ended. */
+const savedTimes = (incident: V2StatusPageIncident) =>
+	incident.kind === "maintenance"
+		? { start: incident.scheduled_start, end: incident.scheduled_end }
+		: { start: incident.started_at, end: incident.resolved_at }
 
-/** Maintenance has no impact to pick, so only an incident sends one. */
-export const incidentEditPayload = (form: IncidentEditForm): V2StatusPageIncidentUpdateParams => {
+export const incidentEditFormOf = (incident: V2StatusPageIncident, timeZone: string): IncidentEditForm => {
+	const times = savedTimes(incident)
+	return {
+		incidentId: incident.id,
+		kind: incident.kind,
+		status: incident.status,
+		title: incident.title,
+		impact: incident.impact,
+		componentIds: incident.component_ids,
+		start: isoToLocal(times.start, timeZone),
+		end: isoToLocal(times.end, timeZone),
+	}
+}
+
+/** Which times Edit details offers: an open maintenance window, an incident's start, a closed one's end. */
+export const editableTimes = (
+	form: Pick<IncidentEditForm, "kind" | "status">,
+): Readonly<{ start: boolean; end: boolean }> =>
+	form.kind === "maintenance"
+		? { start: form.status !== "completed", end: form.status !== "completed" }
+		: { start: true, end: form.status === "resolved" }
+
+/** What stops the edit from being saved, by field; `null` where nothing does. */
+export const incidentEditIssues = (
+	form: IncidentEditForm,
+	timeZone: string,
+): Readonly<{ title: string | null; times: string | null }> => {
+	const editable = editableTimes(form)
+	const start = localToIso(form.start, timeZone)
+	const end = localToIso(form.end, timeZone)
+	const times = (): string | null => {
+		if (form.kind === "maintenance") {
+			if (!editable.start) return null
+			if (Option.isNone(start) || Option.isNone(end)) return "Set when the maintenance starts and ends."
+			return end.value > start.value ? null : "The maintenance must end after it starts."
+		}
+		if (Option.isNone(start)) return "Set when it started."
+		if (!editable.end) return null
+		if (Option.isNone(end)) return "Set when it ended."
+		return end.value < start.value ? "It can't end before it started." : null
+	}
+	return { title: Str.trim(form.title) === "" ? "Add a title." : null, times: times() }
+}
+
+/**
+ * Title and components always; impact for an incident; a time only when it was changed, so a
+ * value saved to the second is not rounded to the minute by an unrelated edit.
+ */
+export const incidentEditPayload = (
+	form: IncidentEditForm,
+	incident: V2StatusPageIncident,
+	timeZone: string,
+): V2StatusPageIncidentUpdateParams => {
+	const saved = incidentEditFormOf(incident, timeZone)
+	const editable = editableTimes(form)
+	const changed = (field: "start" | "end"): Option.Option<string> =>
+		editable[field] && form[field] !== saved[field] ? localToIso(form[field], timeZone) : Option.none()
+	const start = Option.getOrUndefined(changed("start"))
+	const end = Option.getOrUndefined(changed("end"))
 	const base = { title: Str.trim(form.title), component_ids: form.componentIds }
-	return form.kind === "incident" ? { ...base, impact: form.impact } : base
+	return form.kind === "maintenance"
+		? {
+				...base,
+				...(start === undefined ? undefined : { scheduled_start: start }),
+				...(end === undefined ? undefined : { scheduled_end: end }),
+			}
+		: {
+				...base,
+				impact: form.impact,
+				...(start === undefined ? undefined : { started_at: start }),
+				...(end === undefined ? undefined : { resolved_at: end }),
+			}
 }
 
 // UPDATES
@@ -228,6 +330,8 @@ export const UpdateForm = Schema.Struct({
 	kind: StatusPageIncidentKind,
 	status: StatusPageIncidentStatus,
 	body: Schema.String,
+	/** With the closing status: when it ended, as a `datetime-local` value; blank is when it is posted. */
+	endedAt: Schema.String,
 })
 export type UpdateForm = typeof UpdateForm.Type
 
@@ -252,7 +356,28 @@ export const updateFormFor = (
 				? "This incident has been resolved."
 				: "The maintenance is complete."
 			: "",
+		endedAt: "",
 	}
+}
+
+/** A typed end before the incident started, which the API refuses; `null` otherwise. */
+export const endedIssue = (form: UpdateForm, startedAt: string, timeZone: string): string | null =>
+	form.status !== closingStatus(form.kind)
+		? null
+		: Option.match(localToIso(form.endedAt, timeZone), {
+				onNone: () => null,
+				onSome: (ended) => (ended < startedAt ? "It can't end before it started." : null),
+			})
+
+/** The end time goes only with the closing status, and only once typed. */
+export const updatePayload = (form: UpdateForm, timeZone: string): V2StatusPageIncidentPostUpdateParams => {
+	const base = { status: form.status, body: Str.trim(form.body) }
+	return form.status !== closingStatus(form.kind)
+		? base
+		: Option.match(localToIso(form.endedAt, timeZone), {
+				onNone: () => base,
+				onSome: (resolved_at) => ({ ...base, resolved_at }),
+			})
 }
 
 // SETTINGS

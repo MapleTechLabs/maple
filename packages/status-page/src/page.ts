@@ -22,6 +22,7 @@ import {
 	dayTitle,
 	formatAge,
 	formatDateTime,
+	formatDuration,
 	formatDay,
 	formatPercent,
 	HERO_SENTENCE,
@@ -69,7 +70,7 @@ const incidentMeta = (incident: StatusPageSnapshotIncident): string => {
 		return `Scheduled for ${timeTag(incident.scheduledStart)}${end}`
 	}
 	if (incident.resolvedAt !== null) {
-		return `${timeTag(incident.startedAt)} to ${timeTag(incident.resolvedAt)}`
+		return `${timeTag(incident.startedAt)} to ${timeTag(incident.resolvedAt)} (${formatDuration(incident.resolvedAt - incident.startedAt)})`
 	}
 	return `Started ${timeTag(incident.startedAt)}`
 }

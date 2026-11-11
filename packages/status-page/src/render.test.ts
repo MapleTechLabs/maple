@@ -212,6 +212,24 @@ describe("renderPage", () => {
 		expect(section("past")).not.toContain("Elevated errors")
 		expect(html).toContain("Updated 2 min ago")
 	})
+
+	it("dates a past incident from when it started to when it ended, with how long it lasted", () => {
+		const startedAt = Date.UTC(2026, 9, 27, 14, 5)
+		const snapshot = makeSnapshot({
+			incidents: [
+				makeIncident("old", {
+					title: "Login outage",
+					status: "resolved",
+					startedAt,
+					resolvedAt: startedAt + 75 * 60_000,
+				}),
+			],
+		})
+		const past = between(renderPage(snapshot, live, FIXTURE_NOW), `id="h-past"`, "</section>")
+		expect(past).toContain(
+			`<time datetime="2026-10-27T14:05:00.000Z">Oct 27, 2026, 14:05 UTC</time> to <time datetime="2026-10-27T15:20:00.000Z">Oct 27, 2026, 15:20 UTC</time> (1 h 15 min)`,
+		)
+	})
 })
 
 /** The rendered body of the one update on a page whose incident says `body`. */
@@ -611,6 +629,9 @@ describe("renderStatusJson", () => {
 		})
 		const json = renderStatusJson(snapshot, delayed, "https://status.acme.com")
 		expect(Arr.map(json.incidents, (incident) => incident.id)).toEqual(["open"])
+		expect(json.incidents[0]?.started_at).toBe(
+			new Date(snapshot.incidents[0]?.startedAt ?? 0).toISOString(),
+		)
 		expect(json.status.delayed).toBe(true)
 		expect(json.updated_at).toBe("2026-10-28T11:00:00.000Z")
 	})

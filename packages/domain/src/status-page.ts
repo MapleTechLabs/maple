@@ -25,6 +25,8 @@ export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 /** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
 export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+/** Longest incident update message, in characters; the API, the service and the editor all check it. */
+export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 
 /** Lowercase letters, digits and inner hyphens: the `<slug>` in `<slug>.<status domain>`. */
 export const StatusPageSlug = Schema.String.check(
@@ -60,10 +62,39 @@ const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
  * full public suffix list; a missed apex only sits in pending DNS until removed.
  */
 const TWO_LABEL_PUBLIC_SUFFIXES = new Set([
-	"co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "ac.uk", "gov.uk",
-	"com.au", "net.au", "org.au", "co.nz", "org.nz", "co.za", "co.jp", "ne.jp", "or.jp",
-	"co.kr", "co.in", "com.br", "com.cn", "com.mx", "com.tr", "com.sg", "com.hk", "com.tw",
-	"co.il", "com.ar", "co.id", "com.my", "com.ph", "github.io", "netlify.app", "vercel.app",
+	"co.uk",
+	"org.uk",
+	"me.uk",
+	"ltd.uk",
+	"plc.uk",
+	"ac.uk",
+	"gov.uk",
+	"com.au",
+	"net.au",
+	"org.au",
+	"co.nz",
+	"org.nz",
+	"co.za",
+	"co.jp",
+	"ne.jp",
+	"or.jp",
+	"co.kr",
+	"co.in",
+	"com.br",
+	"com.cn",
+	"com.mx",
+	"com.tr",
+	"com.sg",
+	"com.hk",
+	"com.tw",
+	"co.il",
+	"com.ar",
+	"co.id",
+	"com.my",
+	"com.ph",
+	"github.io",
+	"netlify.app",
+	"vercel.app",
 ])
 
 /** Trimmed, lower-cased, without a trailing dot: the one spelling a custom domain is stored in. */

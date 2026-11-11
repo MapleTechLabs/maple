@@ -481,6 +481,168 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("backdates an incident's start and records when it ended, refusing impossible times", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const now = Date.UTC(2026, 10, 11, 15)
+			yield* TestClock.setTime(now)
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const base: CreateStatusPageIncidentInput = {
+				kind: "incident",
+				title: "Elevated errors",
+				impact: "major",
+				status: "investigating",
+				body: "Looking",
+				componentIds: [],
+				source: "dashboard",
+			}
+			const refused = (effect: Effect.Effect<unknown, { readonly _tag: string }>) =>
+				Effect.flip(effect).pipe(
+					Effect.map((error) =>
+						assert.strictEqual(error._tag, "@maple/http/errors/StatusPageValidationError"),
+					),
+				)
+			yield* refused(service.createIncident(ORG, page.id, { ...base, startedAt: now + 60_000 }))
+			yield* refused(
+				service.createIncident(ORG, page.id, {
+					...base,
+					kind: "maintenance",
+					status: "scheduled",
+					scheduledStart: now + DAY,
+					scheduledEnd: now + 2 * DAY,
+					startedAt: now - 60_000,
+				}),
+			)
+
+			const began = now - 55 * 60_000
+			const incident = yield* service.createIncident(ORG, page.id, { ...base, startedAt: began })
+			assert.strictEqual(incident.startedAt, began)
+
+			const close = (resolvedAt: number) =>
+				service.postUpdate(ORG, incident.id, {
+					status: "resolved",
+					body: "Fixed",
+					source: "api",
+					resolvedAt,
+				})
+			yield* refused(close(began - 1))
+			yield* refused(close(now + 1))
+			yield* refused(
+				service.postUpdate(ORG, incident.id, {
+					status: "monitoring",
+					body: "Watching",
+					source: "api",
+					resolvedAt: now,
+				}),
+			)
+			const ended = now - 10 * 60_000
+			const resolved = yield* close(ended)
+			assert.deepStrictEqual([resolved.startedAt, resolved.resolvedAt], [began, ended])
+
+			yield* refused(service.updateIncident(ORG, incident.id, { startedAt: ended + 1 }))
+			yield* refused(service.updateIncident(ORG, incident.id, { resolvedAt: now + 1 }))
+			const corrected = yield* service.updateIncident(ORG, incident.id, {
+				startedAt: began - 60_000,
+				resolvedAt: ended + 60_000,
+			})
+			assert.deepStrictEqual(
+				[corrected.startedAt, corrected.resolvedAt],
+				[began - 60_000, ended + 60_000],
+			)
+
+			const open = yield* service.createIncident(ORG, page.id, base)
+			yield* refused(service.updateIncident(ORG, open.id, { resolvedAt: now }))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("caps an update at 20,000 characters", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const open = (body: string) =>
+				service.createIncident(ORG, page.id, {
+					kind: "incident",
+					title: "Long",
+					impact: "minor",
+					status: "investigating",
+					body,
+					componentIds: [],
+					source: "api",
+				})
+			const incident = yield* open(Str.repeat(20_000)("x"))
+			assert.strictEqual(incident.updates[0]?.body.length, 20_000)
+			const tooLong = yield* Effect.flip(open(Str.repeat(20_001)("x")))
+			assert.strictEqual(tooLong._tag, "@maple/http/errors/StatusPageValidationError")
+			const tooLongUpdate = yield* Effect.flip(
+				service.postUpdate(ORG, incident.id, {
+					status: "identified",
+					body: Str.repeat(20_001)("x"),
+					source: "api",
+				}),
+			)
+			assert.strictEqual(tooLongUpdate._tag, "@maple/http/errors/StatusPageValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("edits a maintenance window only within what its status allows", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const now = Date.UTC(2026, 10, 11, 15)
+			const HOUR = 3_600_000
+			yield* TestClock.setTime(now)
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const maintenance = yield* service.createIncident(ORG, page.id, {
+				kind: "maintenance",
+				title: "Database upgrade",
+				impact: "none",
+				status: "scheduled",
+				body: "Planned",
+				componentIds: [],
+				source: "dashboard",
+				scheduledStart: now + HOUR,
+				scheduledEnd: now + 2 * HOUR,
+			})
+			const edit = (patch: { scheduledStart?: number; scheduledEnd?: number }) =>
+				service.updateIncident(ORG, maintenance.id, patch)
+			const refusedWith = (patch: { scheduledStart?: number; scheduledEnd?: number }) =>
+				Effect.flip(edit(patch)).pipe(Effect.map((error) => error.message))
+
+			assert.include(yield* refusedWith({ scheduledStart: now - HOUR }), "can't start in the past")
+			assert.include(yield* refusedWith({ scheduledEnd: now + HOUR }), "end after it starts")
+			const moved = yield* edit({ scheduledStart: now + 3 * HOUR, scheduledEnd: now + 4 * HOUR })
+			assert.deepStrictEqual(
+				[moved.scheduledStart, moved.scheduledEnd, moved.startedAt],
+				[now + 3 * HOUR, now + 4 * HOUR, now + 3 * HOUR],
+			)
+
+			yield* service.postUpdate(ORG, maintenance.id, {
+				status: "in_progress",
+				body: "Started early",
+				source: "dashboard",
+			})
+			assert.include(yield* refusedWith({ scheduledStart: now + HOUR }), "can't move into the future")
+			assert.include(
+				yield* refusedWith({ scheduledStart: now - HOUR, scheduledEnd: now - 1 }),
+				"end in the future",
+			)
+			const extended = yield* edit({ scheduledStart: now - HOUR, scheduledEnd: now + 5 * HOUR })
+			assert.strictEqual(extended.scheduledEnd, now + 5 * HOUR)
+
+			yield* service.postUpdate(ORG, maintenance.id, {
+				status: "completed",
+				body: "Done",
+				source: "dashboard",
+			})
+			assert.include(yield* refusedWith({ scheduledEnd: now + 6 * HOUR }), "keeps its window")
+			// Sending the saved window back is no change, so it is not refused.
+			const unchanged = yield* edit({ scheduledStart: now - HOUR, scheduledEnd: now + 5 * HOUR })
+			assert.strictEqual(unchanged.status, "completed")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("rotates a break-glass token, storing only its hash and suffix", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

@@ -40,7 +40,15 @@ import {
 	STATUSES_OF_KIND,
 } from "../shared/derive"
 import { selectField, textareaField, textField } from "../shared/fields"
-import { incidentIssues, localToIso, type UpdateForm } from "../shared/form"
+import {
+	editableTimes,
+	endedIssue,
+	incidentEditIssues,
+	incidentIssues,
+	localToIso,
+	updateBodyLengthIssue,
+	type UpdateForm,
+} from "../shared/form"
 import { Message } from "./message"
 import type { ComposeStep, Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
@@ -329,6 +337,21 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, timeZone: string, 
 								]),
 					]),
 					...(isMaintenance
+						? []
+						: [
+								grid(h, { sm: 2, gap: "4" }, [
+									textField(h, {
+										id: "status-page-incident-started",
+										label: "Started",
+										type: "datetime-local",
+										value: form.startedAt,
+										hint: `Leave empty if it started now. Times are in ${timeZone}.`,
+										onInput: (value) =>
+											Message.ChangedIncidentField({ field: "startedAt", value }),
+									}),
+								]),
+							]),
+					...(isMaintenance
 						? [
 								grid(h, { sm: 2, gap: "4" }, [
 									textField(h, {
@@ -365,6 +388,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, timeZone: string, 
 							? "We are upgrading the primary database. Expect brief read-only periods."
 							: "We are looking into elevated error rates on the API.",
 						hint: MESSAGE_HINT,
+						error: updateBodyLengthIssue(form.body),
 						onInput: (value) => Message.ChangedIncidentField({ field: "body", value }),
 					}),
 				]),
@@ -381,13 +405,29 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, timeZone: string, 
 	]
 }
 
+const rangeLabel = (iso: string, timeZone: string): string =>
+	formatTimestampInTimezone(iso, { timeZone, style: "range" })
+
+/** What the maintenance does on its own, from the window as typed. */
+const scheduleNote = (
+	start: string,
+	end: string,
+	status: StatusPageIncidentStatus,
+	timeZone: string,
+): string | null =>
+	Option.match(Option.all([localToIso(start, timeZone), localToIso(end, timeZone)]), {
+		onNone: () => null,
+		onSome: ([from, to]) =>
+			status === "in_progress"
+				? `In progress now, ends ${rangeLabel(to, timeZone)} (${timeZone}). It moves to Completed on its own at the end; subscribers see that update.`
+				: `Starts ${rangeLabel(from, timeZone)} and ends ${rangeLabel(to, timeZone)} (${timeZone}). It moves to In progress at the start and to Completed at the end on its own; subscribers see both updates.`,
+	})
+
 /** "Oct 28, 14:00 to 16:00", from the window as typed. */
 const draftWindow = (start: string, end: string, timeZone: string): ReadonlyArray<string> =>
 	Option.match(Option.all([localToIso(start, timeZone), localToIso(end, timeZone)]), {
 		onNone: () => [],
-		onSome: ([from, to]) => [
-			`${formatTimestampInTimezone(from, { timeZone, style: "range" })} to ${formatTimestampInTimezone(to, { timeZone, style: "range" })}`,
-		],
+		onSome: ([from, to]) => [`${rangeLabel(from, timeZone)} to ${rangeLabel(to, timeZone)}`],
 	})
 
 const composeReview = (h: H, model: Model, time: TimeInputs) => {
@@ -411,6 +451,10 @@ const composeReview = (h: H, model: Model, time: TimeInputs) => {
 			},
 		],
 	})
+	const schedule = isMaintenance
+		? scheduleNote(form.scheduledStart, form.scheduledEnd, form.status, time.timeZone)
+		: null
+	const started = isMaintenance ? Option.none() : localToIso(form.startedAt, time.timeZone)
 	const isScheduling =
 		isMaintenance &&
 		Option.match(localToIso(form.scheduledStart, time.timeZone), {
@@ -434,10 +478,23 @@ const composeReview = (h: H, model: Model, time: TimeInputs) => {
 							...(isMaintenance
 								? [draftWindow(form.scheduledStart, form.scheduledEnd, time.timeZone)]
 								: []),
+							...Option.match(started, {
+								onNone: () => [],
+								onSome: (at) => [[`Started ${rangeLabel(at, time.timeZone)}`]],
+							}),
 							["Posted just now"],
 						]),
 					}),
 				),
+				...(schedule === null
+					? []
+					: [
+							reviewSection(
+								h,
+								"Schedule",
+								typography(h, { size: "sm", tone: "muted", as: "p" }, [schedule]),
+							),
+						]),
 				reviewSection(h, "What changes", changesList(h, changes)),
 				...failureAlert(
 					h,
@@ -520,6 +577,8 @@ const updateWrite = (
 	const id = model.updateDialog.id
 	const last = incident.updates[0]
 	const names = namesOf(model, incident.component_ids)
+	const tooLong = updateBodyLengthIssue(form.body)
+	const ended = endedIssue(form, incident.started_at, time.timeZone)
 	return [
 		header(h, id, {
 			step: "write",
@@ -574,12 +633,29 @@ const updateWrite = (
 								]
 							: []),
 					]),
+					...(form.status === closingStatus(form.kind)
+						? [
+								grid(h, { sm: 2, gap: "4" }, [
+									textField(h, {
+										id: "status-page-update-ended",
+										label: "Ended",
+										type: "datetime-local",
+										value: form.endedAt,
+										hint: `Leave empty if it ended now. Times are in ${time.timeZone}.`,
+										error: ended,
+										onInput: (value) =>
+											Message.ChangedUpdateField({ field: "endedAt", value }),
+									}),
+								]),
+							]
+						: []),
 					textareaField(h, {
 						id: "status-page-update-body",
 						label: "Message",
 						value: form.body,
 						controlClassName: "min-h-25",
 						hint: MESSAGE_HINT,
+						error: tooLong,
 						onInput: (value) => Message.ChangedUpdateField({ field: "body", value }),
 					}),
 					textLink(
@@ -589,13 +665,20 @@ const updateWrite = (
 							className: "self-start underline",
 							onClick: Message.ClickedEditIncident({ incidentId: incident.id }),
 						},
-						["Change title, impact or components"],
+						["Change title, impact, times or components"],
 					),
 				]),
 			]),
 			DialogView.dialogFooter(h, "dialog", [
 				button(h, { variant: "outline", attributes: close }, ["Cancel"]),
-				button(h, { type: "submit", isDisabled: Str.trim(form.body) === "" }, ["Review"]),
+				button(
+					h,
+					{
+						type: "submit",
+						isDisabled: Str.trim(form.body) === "" || tooLong !== null || ended !== null,
+					},
+					["Review"],
+				),
 			]),
 		]),
 	]
@@ -619,6 +702,8 @@ const updateReview = (
 		after: Arr.map(incidents, (row) => (row.id === incident.id ? { ...row, status: form.status } : row)),
 	})
 	const window = windowLine(h, incident, time.timeZone)
+	const endedAt =
+		form.status === closingStatus(form.kind) ? localToIso(form.endedAt, time.timeZone) : Option.none()
 	return [
 		header(h, id, { step: "review", title: "Review before publishing" }),
 		DialogView.dialogPanel(h, "dialog", id, [
@@ -634,6 +719,10 @@ const updateReview = (
 						meta: joined([
 							affectsLine(model, incident.component_ids),
 							...(window === null ? [] : [window]),
+							...Option.match(endedAt, {
+								onNone: () => [],
+								onSome: (at) => [[`Ended ${rangeLabel(at, time.timeZone)}`]],
+							}),
 							["Posted just now"],
 						]),
 					}),
@@ -689,10 +778,56 @@ const updateDialogView = (h: H, model: Model, time: TimeInputs): Html => {
 
 // EDIT DETAILS
 
-/** Title, impact and components, changed in place: saving posts no update. */
-const editDialogView = (h: H, model: Model): Html => {
+/** The start and end Edit details offers, side by side; the last one carries the zone or the error. */
+const timeFields = (
+	h: H,
+	form: NonNullable<Model["incidentEdit"]>,
+	error: string | null,
+	timeZone: string,
+): ReadonlyArray<Html> => {
+	const editable = editableTimes(form)
+	const isMaintenance = form.kind === "maintenance"
+	const fields = [
+		...(editable.start
+			? [{ field: "start" as const, label: isMaintenance ? "Starts" : "Started", value: form.start }]
+			: []),
+		...(editable.end
+			? [{ field: "end" as const, label: isMaintenance ? "Ends" : "Ended", value: form.end }]
+			: []),
+	]
+	return fields.length === 0
+		? []
+		: [
+				grid(
+					h,
+					{ sm: 2, gap: "4" },
+					Arr.map(fields, (entry, index) =>
+						textField(h, {
+							id: `status-page-incident-edit-${entry.field}`,
+							label: entry.label,
+							type: "datetime-local",
+							value: entry.value,
+							...(index === fields.length - 1
+								? {
+										hint: isMaintenance
+											? `Times are in ${timeZone}. It moves to In progress and Completed on its own.`
+											: `Times are in ${timeZone}.`,
+										error,
+									}
+								: undefined),
+							onInput: (value) =>
+								Message.ChangedIncidentEditField({ field: entry.field, value }),
+						}),
+					),
+				),
+			]
+}
+
+/** Title, impact, times and components, changed in place: saving posts no update. */
+const editDialogView = (h: H, model: Model, timeZone: string): Html => {
 	const form = model.incidentEdit
-	const isBlank = form === null || Str.trim(form.title) === ""
+	const issues = form === null ? null : incidentEditIssues(form, timeZone)
+	const isBlank = issues === null || issues.title !== null
 	return formDialog(h, {
 		slotId: "status-page-edit-incident",
 		model: model.editIncidentDialog,
@@ -702,7 +837,7 @@ const editDialogView = (h: H, model: Model): Html => {
 		onSubmit: Message.SubmittedIncidentEdit(),
 		submitLabel: "Save changes",
 		isPending: model.isSavingIncident,
-		isSubmitDisabled: isBlank,
+		isSubmitDisabled: isBlank || (issues?.times ?? null) !== null,
 		isNested: model.updateDialog.isOpen,
 		className: DIALOG_CLASS,
 		fields:
@@ -729,6 +864,7 @@ const editDialogView = (h: H, model: Model): Html => {
 									}),
 								]
 							: []),
+						...timeFields(h, form, issues?.times ?? null, timeZone),
 						componentChecklist(h, model, {
 							checkedIds: form.componentIds,
 							idPrefix: "status-page-incident-edit-component",
@@ -748,5 +884,5 @@ export const incidentDialogs = (
 ): ReadonlyArray<Html> => [
 	composeDialogView(h, model, page, time),
 	updateDialogView(h, model, time),
-	editDialogView(h, model),
+	editDialogView(h, model, time.timeZone),
 ]

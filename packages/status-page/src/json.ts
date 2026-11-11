@@ -33,6 +33,7 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
 	status: incident.status,
 	impact: incident.impact,
 	created_at: iso(incident.startedAt),
+	started_at: iso(incident.startedAt),
 	updated_at: iso(incident.updates[0]?.at ?? incident.startedAt),
 	resolved_at: iso(incident.resolvedAt),
 	component_ids: incident.componentIds,

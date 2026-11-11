@@ -482,7 +482,8 @@ const prReviewPostMergeTick = makeTick(
 )
 
 /**
- * Imports break-glass updates, repairs auto incidents, checks custom domains due a check, then
+ * Imports break-glass updates, repairs auto incidents, starts and completes maintenance whose
+ * window began or ended, checks custom domains due a check, then
  * sweeps: edge cleanups, lagging pages and the heartbeat (written by the sweep only once it
  * reached the database). Each step isolated.
  */
@@ -503,6 +504,10 @@ const statusPagesTick = Effect.gen(function* () {
 	)
 	yield* makeTick(reconciler.value.repairAutoIncidents, "status_page_repair", (repaired) =>
 		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
+	)
+	// Before the sweep, so a window that just began or ended is on the page this same minute.
+	yield* makeTick(reconciler.value.advanceMaintenance, "status_page_maintenance", (advanced) =>
+		advanced > 0 ? { statusPageMaintenanceAdvanced: advanced } : undefined,
 	)
 	const nowMs = yield* Clock.currentTimeMillis
 	// Before the sweep, so a domain that just went live is routed in this same minute.

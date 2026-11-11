@@ -34,7 +34,7 @@ import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
-export const UpdateTextField = Schema.Literals(["status", "body"])
+export const UpdateTextField = Schema.Literals(["status", "body", "endedAt"])
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },

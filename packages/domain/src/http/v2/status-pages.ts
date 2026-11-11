@@ -22,6 +22,7 @@ import {
 	StatusPageThemePreset,
 	StatusPageSnapshot,
 	StatusPageThemeRadius,
+	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "../../status-page"
 import {
 	StatusPageComponentNotFoundError,
@@ -856,7 +857,21 @@ export const V2StatusPageIncidentUpdate = Schema.Struct({
 }).annotate({ identifier: "StatusPageIncidentUpdate", title: "Status page incident update" })
 
 const scheduledField = Timestamp.annotate({
-	description: "Maintenance only: the scheduled window bound.",
+	description:
+		"Maintenance only: the scheduled window bound. At its start the maintenance moves to `in_progress`, at its end to `completed`, each with an automatic update.",
+})
+
+/** A public message, up to `STATUS_PAGE_UPDATE_MAX_LENGTH` characters. */
+const UpdateBody = NonEmptyString.check(Schema.isMaxLength(STATUS_PAGE_UPDATE_MAX_LENGTH))
+
+const startedAtField = Timestamp.annotate({
+	description:
+		"Incident only: when it actually began, if before now (not in the future). Defaults to now; maintenance starts at `scheduled_start`.",
+})
+
+const resolvedAtField = Timestamp.annotate({
+	description:
+		"When it actually ended: not in the future and not before `started_at`. Only with a closing status; defaults to now.",
 })
 
 export const V2StatusPageIncident = Schema.Struct({
@@ -933,13 +948,14 @@ export const V2StatusPageIncidentCreateParams = Schema.Struct({
 			description: "Defaults to `investigating` for an incident and `scheduled` for maintenance.",
 		}),
 	),
-	body: NonEmptyString.annotate({ description: "The first public update." }),
+	body: UpdateBody.annotate({ description: "The first public update." }),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
 	published: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "`false` saves a draft. Defaults to `true`." }),
 	),
 	scheduled_start: Schema.optionalKey(scheduledField),
 	scheduled_end: Schema.optionalKey(scheduledField),
+	started_at: Schema.optionalKey(startedAtField),
 }).annotate({
 	identifier: "StatusPageIncidentCreateParams",
 	title: "Status page incident create parameters",
@@ -960,21 +976,29 @@ export const V2StatusPageIncidentUpdateParams = Schema.Struct({
 	published: Schema.optionalKey(Schema.Boolean),
 	scheduled_start: Schema.optionalKey(Schema.NullOr(scheduledField)),
 	scheduled_end: Schema.optionalKey(Schema.NullOr(scheduledField)),
+	started_at: Schema.optionalKey(startedAtField),
+	resolved_at: Schema.optionalKey(
+		resolvedAtField.annotate({
+			description:
+				"A closed incident or maintenance only: when it actually ended, not in the future and not before `started_at`.",
+		}),
+	),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
 }).annotate({
 	identifier: "StatusPageIncidentUpdateParams",
 	title: "Status page incident update parameters",
 	description:
-		"Request body for editing an incident without posting an update. Omitted fields are left unchanged.",
+		"Request body for editing an incident without posting an update. Omitted fields are left unchanged. A maintenance window must end after it starts; once completed it no longer changes, and while open it must end in the future. A scheduled maintenance cannot move its start into the past (post `in_progress` to start it now); one in progress cannot move its start into the future.",
 	examples: [wireExample({ published: true })],
 })
 export type V2StatusPageIncidentUpdateParams = Schema.Schema.Type<typeof V2StatusPageIncidentUpdateParams>
 
 export const V2StatusPageIncidentPostUpdateParams = Schema.Struct({
 	status: StatusPageIncidentStatus,
-	body: NonEmptyString.annotate({ description: "The public message." }),
+	body: UpdateBody.annotate({ description: "The public message." }),
 	impact: Schema.optionalKey(StatusPageIncidentImpact),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
+	resolved_at: Schema.optionalKey(resolvedAtField),
 }).annotate({
 	identifier: "StatusPageIncidentPostUpdateParams",
 	title: "Status page incident post-update parameters",

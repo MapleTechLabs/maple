@@ -152,6 +152,10 @@ export const StatusPageIncidents = PG.table("status_page_incidents", {
 	indexes: [
 		PG.index("status_page_incidents_page_idx", ["pageId", "startedAt"]),
 		PG.index("status_page_incidents_alert_idx", ["alertIncidentId"]),
+		// The minutely sweep that starts and completes maintenance reads only the open windows.
+		PG.index("status_page_incidents_open_maintenance_idx", ["scheduledStart"], {
+			where: `"kind" = 'maintenance' and "resolved_at" is null`,
+		}),
 	],
 	foreignKeys: [
 		PG.foreignKey({

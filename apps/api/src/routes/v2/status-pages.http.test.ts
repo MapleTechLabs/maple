@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -497,6 +506,48 @@ describe("v2 status pages", () => {
 				body: "Soon.",
 			})
 			expect(noWindow.status).toBe(400)
+		}))
+
+	it("backdates an incident, records when it ended and caps an update at 20,000 characters", () =>
+		withHarness(async (harness) => {
+			const { secret: token } = await harness.bootstrapKey()
+			const page = await harness.request("POST", "/v2/status_pages", token, {
+				name: "Acme",
+				slug: "acme-times",
+			})
+			const minute = 60_000
+			const startedAt = new Date(Math.floor(Date.now() / minute) * minute - 50 * minute).toISOString()
+			const endedAt = new Date(Math.floor(Date.now() / minute) * minute - 5 * minute).toISOString()
+			const opened = await harness.request("POST", "/v2/status_page_incidents", token, {
+				page_id: page.body.id,
+				title: "Elevated API errors",
+				body: "We are looking into elevated error rates.",
+				started_at: startedAt,
+			})
+			expect(opened.body.started_at).toBe(startedAt)
+
+			const tooLong = await harness.request(
+				"POST",
+				`/v2/status_page_incidents/${opened.body.id}/updates`,
+				token,
+				{ status: "identified", body: Str.repeat(20_001)("x") },
+			)
+			expect(tooLong.status).toBe(400)
+			const resolved = await harness.request(
+				"POST",
+				`/v2/status_page_incidents/${opened.body.id}/updates`,
+				token,
+				{ status: "resolved", body: Str.repeat(20_000)("x"), resolved_at: endedAt },
+			)
+			expect(resolved.body).toMatchObject({ status: "resolved", resolved_at: endedAt })
+
+			const beforeStart = await harness.request(
+				"PATCH",
+				`/v2/status_page_incidents/${opened.body.id}`,
+				token,
+				{ resolved_at: new Date(Date.parse(startedAt) - minute).toISOString() },
+			)
+			expect(beforeStart.status).toBe(400)
 		}))
 
 	describe("statusPages rollout", () => {

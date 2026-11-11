@@ -15,15 +15,19 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { CreateIncident, DeleteIncident, PostIncidentUpdate, PublishIncident, SaveIncident } from "./command"
 import {
 	emptyIncidentForm,
+	endedIssue,
 	hasIncidentIssues,
 	type IncidentEditField,
 	incidentEditFormOf,
+	incidentEditIssues,
 	incidentEditPayload,
 	type IncidentTextField,
 	incidentIssues,
 	incidentPayload,
+	updateBodyLengthIssue,
 	type UpdateForm,
 	updateFormFor,
+	updatePayload,
 } from "../shared/form"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -229,11 +233,12 @@ export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isRes
 }
 
 /** Edits apply while the update is being written. */
-export const changeUpdate = (model: Model, field: "status" | "body", value: string): Return => {
+export const changeUpdate = (model: Model, field: "status" | "body" | "endedAt", value: string): Return => {
 	const state = model.updateForm
 	if (state._tag !== "Writing") return { model }
 	const withForm = (form: UpdateForm): Return => ({ model: { ...model, updateForm: { ...state, form } } })
 	if (field === "body") return withForm({ ...state.form, body: value })
+	if (field === "endedAt") return withForm({ ...state.form, endedAt: value })
 	const allowed: ReadonlyArray<string> = STATUSES_OF_KIND[state.form.kind]
 	return Option.match(decodeStatus(value), {
 		onNone: () => ({ model }),
@@ -241,10 +246,15 @@ export const changeUpdate = (model: Model, field: "status" | "body", value: stri
 	})
 }
 
-/** Review is reached only with a message to post. */
-export const reviewUpdate = (model: Model): Return => {
+/** Review is reached only with a message and an end time the API takes. */
+export const reviewUpdate = (model: Model, context: PageContext): Return => {
 	const state = model.updateForm
-	return state._tag !== "Writing" || Str.trim(state.form.body) === ""
+	if (state._tag !== "Writing") return { model }
+	const incident = Arr.findFirst(incidentsOf(model), (row) => row.id === state.form.incidentId)
+	return Option.isNone(incident) ||
+		Str.trim(state.form.body) === "" ||
+		updateBodyLengthIssue(state.form.body) !== null ||
+		endedIssue(state.form, incident.value.started_at, context.timeZone) !== null
 		? { model }
 		: { model: { ...model, updateForm: { _tag: "Reviewing", form: state.form } } }
 }
@@ -257,7 +267,7 @@ export const backToUpdateWrite = (model: Model): Return => {
 		: { model }
 }
 
-export const submitUpdate = (model: Model): Return => {
+export const submitUpdate = (model: Model, context: PageContext): Return => {
 	const state = model.updateForm
 	return state._tag !== "Reviewing" && state._tag !== "Failed"
 		? { model }
@@ -271,7 +281,7 @@ export const submitUpdate = (model: Model): Return => {
 					PostIncidentUpdate({
 						incidentId: state.form.incidentId,
 						generation: model.nextUpdatePost,
-						payload: { status: state.form.status, body: Str.trim(state.form.body) },
+						payload: updatePayload(state.form, context.timeZone),
 					}),
 				],
 			}
@@ -347,8 +357,12 @@ export const publishedIncident = (
 
 const nounOf = (kind: StatusPageIncidentKind): string => (kind === "incident" ? "Incident" : "Maintenance")
 
-/** The Edit details dialog on the title, impact and components as saved; over Post update when opened from it. */
-export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId): Return =>
+/** The Edit details dialog on the incident as saved; over Post update when opened from it. */
+export const openIncidentEdit = (
+	model: Model,
+	incidentId: StatusPageIncidentId,
+	context: PageContext,
+): Return =>
 	model.isSavingIncident
 		? { model }
 		: Option.match(
@@ -360,7 +374,7 @@ export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId)
 							{
 								...model,
 								panel: { _tag: "Incident", incidentId },
-								incidentEdit: incidentEditFormOf(incident),
+								incidentEdit: incidentEditFormOf(incident, context.timeZone),
 								incidentEditFailure: null,
 							},
 							Dialog.open(model.editIncidentDialog),
@@ -372,12 +386,12 @@ export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId)
 export const changeIncidentEdit = (model: Model, field: IncidentEditField, value: string): Return => {
 	const form = model.incidentEdit
 	if (form === null || model.isSavingIncident) return { model }
-	return field === "title"
-		? { model: { ...model, incidentEdit: { ...form, title: value } } }
-		: Option.match(decodeImpact(value), {
+	return field === "impact"
+		? Option.match(decodeImpact(value), {
 				onNone: () => ({ model }),
 				onSome: (impact) => ({ model: { ...model, incidentEdit: { ...form, impact } } }),
 			})
+		: { model: { ...model, incidentEdit: { ...form, [field]: value } } }
 }
 
 export const toggleIncidentEditComponent = (model: Model, componentId: StatusPageComponentId): Return => {
@@ -397,13 +411,24 @@ export const toggleIncidentEditComponent = (model: Model, componentId: StatusPag
 			}
 }
 
-export const submitIncidentEdit = (model: Model): Return => {
+export const submitIncidentEdit = (model: Model, context: PageContext): Return => {
 	const form = model.incidentEdit
-	return form === null || model.isSavingIncident || Str.trim(form.title) === ""
+	const incident =
+		form === null
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === form.incidentId))
+	if (form === null || incident === undefined || model.isSavingIncident) return { model }
+	const issues = incidentEditIssues(form, context.timeZone)
+	return issues.title !== null || issues.times !== null
 		? { model }
 		: {
 				model: { ...model, isSavingIncident: true, incidentEditFailure: null },
-				commands: [SaveIncident({ incidentId: form.incidentId, payload: incidentEditPayload(form) })],
+				commands: [
+					SaveIncident({
+						incidentId: form.incidentId,
+						payload: incidentEditPayload(form, incident, context.timeZone),
+					}),
+				],
 			}
 }
 

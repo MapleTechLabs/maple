@@ -8,7 +8,7 @@ import {
 	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	all,
 	attr,
@@ -821,6 +821,73 @@ describe("posting an incident", () => {
 		)
 	})
 
+	test("an incident can be backdated: the review says when it started and the post carries it", () => {
+		const reviewed = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "incident" }),
+			Message.ChangedIncidentField({ field: "title", value: "Elevated errors" }),
+			Message.ChangedIncidentField({ field: "body", value: "Looking into it." }),
+			Message.ChangedIncidentField({ field: "startedAt", value: "2026-10-30T14:05" }),
+			Message.SubmittedIncidentWrite(),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(reviewed),
+			mounted,
+			inside(
+				role("region", { name: "On the page" }),
+				expectView(text(/Started Oct 30, 14:05/u)).toExist(),
+			),
+		)
+		expect(pageUpdate(reviewed, Message.SubmittedIncident({ isPublished: true })).commands).toMatchObject(
+			[
+				{
+					name: "CreateStatusPageIncident",
+					args: { payload: { started_at: "2026-10-30T14:05:00.000Z" } },
+				},
+			],
+		)
+	})
+
+	test("the maintenance review says it starts and completes on its own", () => {
+		const reviewed = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "maintenance" }),
+			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+			Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
+			Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
+			Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-31T01:00" }),
+			Message.SubmittedIncidentWrite(),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(reviewed),
+			mounted,
+			inside(
+				role("region", { name: "Schedule" }),
+				expectView(
+					text(
+						"Starts Oct 30, 22:00 and ends Oct 31, 01:00 (UTC). It moves to In progress at the start and to Completed at the end on its own; subscribers see both updates.",
+					),
+				).toExist(),
+			),
+		)
+	})
+
+	test("a first update over 20,000 characters keeps Review shut and says so", () => {
+		const long = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "incident" }),
+			Message.ChangedIncidentField({ field: "title", value: "Elevated errors" }),
+			Message.ChangedIncidentField({ field: "body", value: Str.repeat(20_001)("x") }),
+		])
+		expect(pageUpdate(long, Message.SubmittedIncidentWrite()).model.composeStep).toBe("write")
+		scene(
+			{ update: pageUpdate, view },
+			given(long),
+			mounted,
+			expectAll(all.text("Keep it under 20,000 characters (20,001 now).")).toHaveCount(2),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+		)
+	})
+
 	test("the write step lists what is missing for maintenance", () => {
 		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "maintenance" })).model
 		scene(
@@ -923,6 +990,48 @@ describe("posting an update", () => {
 		expect(posted.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Incident resolved" })
 	})
 
+	test("resolving can say when it ended, but not before the incident started", () => {
+		const opened = pageUpdate(
+			loaded({ incidents: [incident(1)] }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+		).model
+		const early = steps(opened, [
+			Message.ChangedUpdateField({ field: "endedAt", value: "2026-10-01T11:45" }),
+			Message.SubmittedUpdateWrite(),
+		])
+		expect(early.updateForm._tag).toBe("Writing")
+		scene(
+			{ update: pageUpdate, view },
+			given(early),
+			mounted,
+			expectView(text("It can't end before it started.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+		)
+		const reviewed = steps(early, [
+			Message.ChangedUpdateField({ field: "endedAt", value: "2026-10-01T11:58" }),
+			Message.SubmittedUpdateWrite(),
+		])
+		expect(pageUpdate(reviewed, Message.SubmittedUpdate()).commands).toMatchObject([
+			{
+				name: "PostStatusPageIncidentUpdate",
+				args: { payload: { status: "resolved", resolved_at: "2026-10-01T11:58:00.000Z" } },
+			},
+		])
+	})
+
+	test("an update that does not close the incident has no end time to set", () => {
+		const opened = pageUpdate(
+			loaded({ incidents: [incident(1)] }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			expectView(role("textbox", { name: "Ended" })).not.toExist(),
+		)
+	})
+
 	test("Back keeps the message, and a failed post stays on the review with the reason", () => {
 		const back = pageUpdate(resolving(), Message.ClickedUpdateBack()).model
 		expect(back.updateForm).toMatchObject({
@@ -947,7 +1056,7 @@ describe("posting an update", () => {
 		)
 	})
 
-	test("Change title, impact or components opens Edit details over the update, which keeps its message", () => {
+	test("Change title, impact, times or components opens Edit details over the update, which keeps its message", () => {
 		const typed = steps(loaded({ incidents: [incident(1, { title: "Elevated errors" })] }), [
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
 			Message.ChangedUpdateField({ field: "body", value: "Still looking." }),
@@ -960,7 +1069,9 @@ describe("posting an update", () => {
 			{ update: pageUpdate, view },
 			given(typed),
 			mounted,
-			expectView(role("button", { name: "Change title, impact or components" })).toHaveHandler("click"),
+			expectView(role("button", { name: "Change title, impact, times or components" })).toHaveHandler(
+				"click",
+			),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -1052,7 +1163,15 @@ describe("editing an incident's details", () => {
 
 	test("maintenance has no impact to edit, so its save sends none", () => {
 		const opened = pageUpdate(
-			shown(incident(1, { kind: "maintenance", status: "scheduled", impact: "none" })),
+			shown(
+				incident(1, {
+					kind: "maintenance",
+					status: "scheduled",
+					impact: "none",
+					scheduled_start: "1970-01-01T01:10:00.000Z",
+					scheduled_end: "1970-01-01T02:10:00.000Z",
+				}),
+			),
 			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
 		).model
 		scene(
@@ -1065,6 +1184,77 @@ describe("editing an incident's details", () => {
 		const sent = pageUpdate(opened, Message.SubmittedIncidentEdit()).commands ?? []
 		expect(sent).toMatchObject([{ name: "SaveStatusPageIncident" }])
 		expect(sent[0]?.args?.payload).not.toHaveProperty("impact")
+	})
+
+	const maintenance = incident(1, {
+		kind: "maintenance",
+		status: "scheduled",
+		impact: "none",
+		scheduled_start: "1970-01-01T01:10:00.000Z",
+		scheduled_end: "1970-01-01T02:10:00.000Z",
+	})
+
+	test("a maintenance window is edited in the viewer's zone, sending only the bound that changed", () => {
+		const zoned: PageContext = { ...context, timeZone: "Europe/Berlin" }
+		const opened = update(
+			shown(maintenance),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+			zoned,
+		).model
+		expect(opened.incidentEdit).toMatchObject({ start: "1970-01-01T02:10", end: "1970-01-01T03:10" })
+		const inverted = steps(
+			opened,
+			[Message.ChangedIncidentEditField({ field: "end", value: "1970-01-01T02:00" })],
+			zoned,
+		)
+		expect(update(inverted, Message.SubmittedIncidentEdit(), zoned).commands ?? []).toEqual([])
+		const extended = steps(
+			inverted,
+			[Message.ChangedIncidentEditField({ field: "end", value: "1970-01-01T04:00" })],
+			zoned,
+		)
+		const sent = update(extended, Message.SubmittedIncidentEdit(), zoned).commands ?? []
+		expect(sent[0]?.args?.payload).toMatchObject({ scheduled_end: "1970-01-01T03:00:00.000Z" })
+		expect(sent[0]?.args?.payload).not.toHaveProperty("scheduled_start")
+	})
+
+	test("completed maintenance offers no window to edit", () => {
+		const opened = pageUpdate(
+			shown({ ...maintenance, status: "completed", resolved_at: "1970-01-01T02:10:00.000Z" }),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			expectView(role("textbox", { name: "Starts" })).not.toExist(),
+			expectView(role("textbox", { name: "Ends" })).not.toExist(),
+		)
+	})
+
+	test("a resolved incident's start and end can be corrected, but not out of order", () => {
+		const opened = pageUpdate(
+			shown(incident(1, { status: "resolved", resolved_at: "2026-10-01T11:55:00.000Z" })),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		const inverted = pageUpdate(
+			opened,
+			Message.ChangedIncidentEditField({ field: "start", value: "2026-10-01T11:57" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(inverted),
+			mounted,
+			expectView(text("It can't end before it started.")).toExist(),
+			expectView(role("button", { name: "Save changes" })).toBeDisabled(),
+		)
+		const corrected = pageUpdate(
+			inverted,
+			Message.ChangedIncidentEditField({ field: "start", value: "2026-10-01T11:40" }),
+		).model
+		const sent = pageUpdate(corrected, Message.SubmittedIncidentEdit()).commands ?? []
+		expect(sent[0]?.args?.payload).toMatchObject({ started_at: "2026-10-01T11:40:00.000Z" })
+		expect(sent[0]?.args?.payload).not.toHaveProperty("resolved_at")
 	})
 })
 

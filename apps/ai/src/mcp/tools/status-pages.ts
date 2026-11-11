@@ -517,7 +517,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			incident: P.optionalText(
 				"The incident's id (sti_… or its UUID; get_status_page lists open ones). Omit to open a new one",
 			),
-			message: P.text("The public update, written for customers"),
+			message: P.text("The public update, written for customers (up to 20,000 characters)"),
 			status: P.optionalOneOf(
 				UPDATE_STATUSES,
 				"Incidents: investigating, identified, monitoring, resolved. Maintenance: scheduled, in_progress, completed. Required on an existing incident; a new incident starts investigating, new maintenance scheduled",
@@ -527,7 +527,9 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				"Opening only: public title, e.g. `Elevated API errors` or `Database upgrade`",
 			),
 			starts_at: P.optionalTimestamp("Opening maintenance only: when it starts"),
-			ends_at: P.optionalTimestamp("Opening maintenance only: when it ends"),
+			ends_at: P.optionalTimestamp(
+				"Opening maintenance only: when it ends. It moves to in_progress at the start and completed at the end on its own",
+			),
 			impact: P.optionalOneOf(
 				StatusPageIncidentImpact.literals,
 				"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",

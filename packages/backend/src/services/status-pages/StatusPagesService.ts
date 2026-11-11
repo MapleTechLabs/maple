@@ -61,6 +61,7 @@ import {
 	sha256Base64Url,
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
+	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
@@ -136,6 +137,8 @@ export interface CreateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Incident only: when it began, if before now; defaults to now. */
+	readonly startedAt?: number
 	readonly source: StatusPageUpdateSource
 	readonly createdBy?: UserId | null
 }
@@ -149,6 +152,8 @@ export interface PostStatusPageIncidentUpdateInput {
 	readonly createdBy?: UserId | null
 	/** Publishes a draft in the same write, so the update and its visibility never split. */
 	readonly publish?: boolean
+	/** With a closing status: when it ended; defaults to now. */
+	readonly resolvedAt?: number
 }
 
 export interface UpdateStatusPageIncidentInput {
@@ -157,6 +162,10 @@ export interface UpdateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Incident only. */
+	readonly startedAt?: number
+	/** A closed incident or maintenance only. */
+	readonly resolvedAt?: number
 	readonly componentIds?: ReadonlyArray<StatusPageComponentId>
 }
 
@@ -386,11 +395,48 @@ const validateWindow = (
 		: Effect.fail(invalid("Maintenance must end after it starts"))
 }
 
+/**
+ * A window edit on maintenance: completed keeps its window, an open one must end in the future, a
+ * scheduled one cannot start in the past and one in progress cannot start in the future.
+ */
+const validateWindowEdit = (
+	current: StatusPageIncidentRow,
+	scheduledStart: number,
+	scheduledEnd: number,
+	now: number,
+) => {
+	if (isClosedStatus(current.status)) return Effect.fail(invalid("Completed maintenance keeps its window"))
+	if (scheduledEnd <= now)
+		return Effect.fail(invalid("Maintenance must end in the future; complete it to end it now"))
+	if (current.status === "scheduled" && scheduledStart !== current.scheduledStart && scheduledStart < now)
+		return Effect.fail(
+			invalid("Scheduled maintenance can't start in the past; post In progress to start it now"),
+		)
+	if (current.status === "in_progress" && scheduledStart > now)
+		return Effect.fail(
+			invalid("Maintenance in progress has started; its start can't move into the future"),
+		)
+	return Effect.void
+}
+
+const validateStartedAt = (kind: StatusPageIncidentKind, startedAt: number, now: number) => {
+	if (kind === "maintenance")
+		return Effect.fail(invalid("Maintenance starts at its scheduled start; change its window instead"))
+	return startedAt > now ? Effect.fail(invalid("An incident can't start in the future")) : Effect.void
+}
+
+const validateResolvedAt = (resolvedAt: number, startedAt: number, now: number) => {
+	if (resolvedAt > now) return Effect.fail(invalid("It can't end in the future"))
+	return resolvedAt < startedAt ? Effect.fail(invalid("It can't end before it started")) : Effect.void
+}
+
+const UPDATE_MAX_LENGTH_LABEL = STATUS_PAGE_UPDATE_MAX_LENGTH.toLocaleString("en-US")
+
 const validateUpdateBody = (raw: string) => {
 	const body = Str.trim(raw)
 	if (body.length === 0) return Effect.fail(invalid("An update needs a message"))
-	if (body.length > MAX_TEXT_LENGTH)
-		return Effect.fail(invalid(`An update must be at most ${MAX_TEXT_LENGTH} characters`))
+	if (body.length > STATUS_PAGE_UPDATE_MAX_LENGTH)
+		return Effect.fail(invalid(`An update must be at most ${UPDATE_MAX_LENGTH_LABEL} characters`))
 	return Effect.succeed(body)
 }
 
@@ -1252,6 +1298,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* validateWindow(input.kind, scheduledStart, scheduledEnd)
 				const componentIds = [...new Set(input.componentIds)]
 				const now = yield* Clock.currentTimeMillis
+				if (input.startedAt !== undefined) yield* validateStartedAt(input.kind, input.startedAt, now)
 				const id = StatusPageIncidentId.make(randomUUID())
 				const createdBy = input.createdBy ?? null
 				yield* dbExecute((db) =>
@@ -1272,7 +1319,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									alertIncidentId: null,
 									scheduledStart,
 									scheduledEnd,
-									startedAt: scheduledStart ?? now,
+									startedAt: input.startedAt ?? scheduledStart ?? now,
 									resolvedAt: isClosedStatus(input.status) ? now : null,
 									createdBy,
 									createdAt: now,
@@ -1324,6 +1371,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							if (componentIds !== undefined)
 								yield* ensureComponentsOnPage(db, orgId, current.pageId, componentIds)
 							const closed = isClosedStatus(input.status)
+							if (input.resolvedAt !== undefined) {
+								if (!closed) return yield* invalid("Only a closing update sets when it ended")
+								yield* validateResolvedAt(input.resolvedAt, current.startedAt, now)
+							}
 							yield* db.run(
 								PG.update(StatusPageIncidents)
 									.set({
@@ -1332,7 +1383,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 											? undefined
 											: { impact: input.impact }),
 										...(input.publish === true ? { published: true } : undefined),
-										resolvedAt: closed ? (current.resolvedAt ?? now) : null,
+										resolvedAt: closed
+											? (input.resolvedAt ?? current.resolvedAt ?? now)
+											: null,
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1381,9 +1434,24 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							const scheduledEnd =
 								patch.scheduledEnd === undefined ? current.scheduledEnd : patch.scheduledEnd
 							const windowChanged =
-								patch.scheduledStart !== undefined || patch.scheduledEnd !== undefined
-							if (windowChanged)
+								scheduledStart !== current.scheduledStart ||
+								scheduledEnd !== current.scheduledEnd
+							if (windowChanged) {
 								yield* validateWindow(current.kind, scheduledStart, scheduledEnd)
+								if (scheduledStart !== null && scheduledEnd !== null)
+									yield* validateWindowEdit(current, scheduledStart, scheduledEnd, now)
+							}
+							const startedAt = patch.startedAt ?? current.startedAt
+							if (patch.startedAt !== undefined)
+								yield* validateStartedAt(current.kind, patch.startedAt, now)
+							if (patch.resolvedAt !== undefined && current.resolvedAt === null)
+								return yield* invalid("Only a closed incident has an end time")
+							const resolvedAt = patch.resolvedAt ?? current.resolvedAt
+							if (
+								resolvedAt !== null &&
+								(patch.startedAt !== undefined || patch.resolvedAt !== undefined)
+							)
+								yield* validateResolvedAt(resolvedAt, startedAt, now)
 							if (componentIds !== undefined)
 								yield* ensureComponentsOnPage(db, orgId, current.pageId, componentIds)
 							yield* db.run(
@@ -1402,6 +1470,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										scheduledStart !== null
 											? { startedAt: scheduledStart }
 											: undefined),
+										...(patch.startedAt === undefined ? undefined : { startedAt }),
+										...(patch.resolvedAt === undefined ? undefined : { resolvedAt }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),

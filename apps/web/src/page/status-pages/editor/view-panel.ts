@@ -289,19 +289,26 @@ export const componentPanel = (h: H, model: Model, component: V2StatusPageCompon
 
 // INCIDENT
 
-/** "Oct 28, 14:00 to 16:00": the maintenance window in the viewer's zone. */
+/**
+ * "Oct 28, 14:00 to 16:00" in the viewer's zone: the maintenance window, or when an incident
+ * started and ended ("Since Oct 28, 14:00" while open).
+ */
 export const windowLine = <M>(
 	h: HtmlBuilder<M>,
 	incident: V2StatusPageIncident,
 	timeZone: string,
 ): ReadonlyArray<Html | string> | null => {
-	if (incident.scheduled_start === null || incident.scheduled_end === null) return null
 	const at = (value: string): Html =>
 		timestamp(h, {
 			value,
 			timeZone,
 			label: formatTimestampInTimezone(value, { timeZone, style: "range" }),
 		})
+	if (incident.kind === "incident")
+		return incident.resolved_at === null
+			? ["Since ", at(incident.started_at)]
+			: [at(incident.started_at), " to ", at(incident.resolved_at)]
+	if (incident.scheduled_start === null || incident.scheduled_end === null) return null
 	return [at(incident.scheduled_start), " to ", at(incident.scheduled_end)]
 }
 
