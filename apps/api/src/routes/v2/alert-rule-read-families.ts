@@ -18,15 +18,17 @@ export const ruleReadFamilies = (
 		case "apdex":
 		case "throughput":
 			return ["traces"]
+		// No query of their own: an anomaly rule reads open incidents, and uptime and SLO rules
+		// are refused by the generic rule APIs before anything runs.
 		case "anomaly":
+		case "uptime":
+		case "slo_burn_rate":
 			return []
 		case "builder_query": {
 			const source = rule.queryBuilderDraft?.dataSource
 			return source !== undefined && isTelemetryFamily(source) ? [source] : TELEMETRY_READ_FAMILIES
 		}
 		case "raw_query":
-		case "uptime":
-		case "slo_burn_rate":
 			return TELEMETRY_READ_FAMILIES
 	}
 }

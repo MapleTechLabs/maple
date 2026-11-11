@@ -1085,6 +1085,25 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses a rule test to a key that cannot read the telemetry the rule queries", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"])
+		const response = await harness.request("POST", "/v2/alerts/rules/test", key.secret, {
+			rule: logsBuilderPreview.rule,
+			send_notification: false,
+		})
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
 	it("refuses a raw SQL preview to a key missing one telemetry family", async () => {
 		let warehouseCalls = 0
 		const harness = makeHarness({
