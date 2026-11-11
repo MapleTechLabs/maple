@@ -58,7 +58,7 @@ describe("buildChatToolkit", () => {
 		])
 	})
 
-	it("leaves every other tool's arguments as the model sent them", async () => {
+	it("reads the session's repository whatever repository the model names", async () => {
 		const { executor, calls } = recordingExecutor()
 		const { handlers } = buildChatToolkit(
 			executor,
@@ -73,8 +73,60 @@ describe("buildChatToolkit", () => {
 		const read = { repository: "MapleTechLabs/other", ref: "main", path: "a.ts" }
 
 		assert.isDefined(handlers.sandbox_read_file)
+		assert.isDefined(handlers.search_source_code)
 		await Effect.runPromise(handlers.sandbox_read_file(read, {}))
+		await Effect.runPromise(
+			handlers.search_source_code({ repository: "octo/private", query: "token" }, {}),
+		)
 
-		assert.deepEqual(calls, [{ name: "sandbox_read_file", params: read }])
+		assert.deepEqual(calls, [
+			{ name: "sandbox_read_file", params: { ...read, repository: PULL_REQUEST.repository } },
+			{ name: "search_source_code", params: { repository: PULL_REQUEST.repository, query: "token" } },
+		])
+	})
+
+	it("leaves a telemetry tool's arguments as the model sent them", async () => {
+		const { executor, calls } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			PULL_REQUEST,
+		)
+
+		assert.isDefined(handlers.list_services)
+		await Effect.runPromise(handlers.list_services({ environment: "production" }, {}))
+
+		assert.deepEqual(calls, [{ name: "list_services", params: { environment: "production" } }])
+	})
+
+	it("offers no tool that names a repository when the pull request could not be read", () => {
+		const { executor } = recordingExecutor()
+		const { handlers } = buildChatToolkit(
+			executor,
+			tenantFor(human),
+			PR_REVIEW_RULESET,
+			"chat",
+			undefined,
+			undefined,
+			undefined,
+			"unreadable",
+		)
+
+		assert.isUndefined(handlers.pr_file_diff)
+		assert.isUndefined(handlers.sandbox_exec)
+		assert.isUndefined(handlers.read_source_file)
+		assert.isDefined(handlers.list_services)
+	})
+
+	it("does not let a review list the organization's other repositories", () => {
+		const { executor } = recordingExecutor()
+		const { handlers } = buildChatToolkit(executor, tenantFor(human), PR_REVIEW_RULESET, "chat")
+
+		assert.isUndefined(handlers.list_source_repositories)
 	})
 })

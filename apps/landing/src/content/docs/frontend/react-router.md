@@ -223,7 +223,12 @@ Its HTTP server span is active while React Router renders the page. In `app/entr
 ```tsx
 // app/entry.server.tsx
 import { context, propagation, trace } from "@opentelemetry/api"
-import { type HandleErrorFunction, isRouteErrorResponse } from "react-router"
+import {
+	type EntryContext,
+	type HandleErrorFunction,
+	isRouteErrorResponse,
+	type RouterContextProvider,
+} from "react-router"
 
 // Record loader, action and render errors on the request's span
 export const handleError: HandleErrorFunction = (error, { request }) => {

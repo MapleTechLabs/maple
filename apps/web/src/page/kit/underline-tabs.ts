@@ -60,7 +60,12 @@ export type LinkTab<M = never> = Readonly<{
 }>
 
 /** A page's tabs as links: each one a route, the current one underlined. */
-export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: ReadonlyArray<LinkTab<M>>): Html =>
+export const linkTabStrip = <M>(
+	h: HtmlBuilder<M>,
+	label: string,
+	tabs: ReadonlyArray<LinkTab<M>>,
+	options?: Readonly<{ className?: string }>,
+): Html =>
 	underlineTabStrip(
 		h,
 		{
@@ -68,7 +73,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			label,
 			bleed: false,
 			divided: false,
-			className: "gap-0 border-b border-border",
+			className: cn("gap-0 border-b border-border", options?.className),
 		},
 		Arr.map(tabs, (tab) =>
 			h.a(

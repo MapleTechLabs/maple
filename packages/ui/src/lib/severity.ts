@@ -12,10 +12,28 @@ export const SEVERITY_COLORS: Record<string, string> = {
 	NOTE: "var(--color-severity-debug)",
 } satisfies Record<string, string>
 
+/** A severity as text: its ink, which clears 4.5:1 where the fill colour above does not. */
+const SEVERITY_INKS: Record<string, string> = {
+	TRACE: "var(--severity-trace-ink)",
+	DEBUG: "var(--severity-debug-ink)",
+	INFO: "var(--severity-info-ink)",
+	WARN: "var(--severity-warn-ink)",
+	WARNING: "var(--severity-warn-ink)",
+	ERROR: "var(--severity-error-ink)",
+	FATAL: "var(--severity-fatal-ink)",
+	CRITICAL: "var(--severity-error-ink)",
+	NOTE: "var(--severity-debug-ink)",
+} satisfies Record<string, string>
+
 export const SEVERITY_ORDER = ["FATAL", "ERROR", "WARN", "WARNING", "INFO", "DEBUG", "TRACE"]
 
 export function getSeverityColor(severity: string): string {
 	return SEVERITY_COLORS[Str.toUpperCase(severity)] ?? "var(--color-muted-foreground)"
+}
+
+/** The colour for a severity set as text (`color`); fills and edges take `getSeverityColor`. */
+export function getSeverityInk(severity: string): string {
+	return SEVERITY_INKS[Str.toUpperCase(severity)] ?? "var(--color-muted-foreground)"
 }
 
 // Synonyms share a rank (WARN/WARNING, FATAL/CRITICAL); 0 is the most severe.

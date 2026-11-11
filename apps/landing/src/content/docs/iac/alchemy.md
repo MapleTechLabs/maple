@@ -144,7 +144,7 @@ To use the same stack for hosted deploys, also pass `ingestKey` (or `endpoint`):
 | Prop           | Default                            | Notes                                                                          |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------------------ |
 | `dataDir`      | `.alchemy/maple-local/<hash>/data` | One store per stack, stage and resource; it persists across `alchemy dev` runs |
-| `port`         | `4318`                             | An occupied port fails startup                                                 |
+| `port`         | `4318`                             | Unset, a free port is used when 4318 is taken. A port you set must be free     |
 | `onDirtyStore` | `"fail"`                           | `"wipe"` discards a store left unclean by a crashed server and starts fresh    |
 
 The first run downloads the chDB library Maple pins (the same release the `maple` CLI ships), verifies its checksum and caches it in `~/.maple/cache/libchdb` (about 330 MB, shared across projects). Set `MAPLE_LIBCHDB` to point at a copy you already have. Run `alchemy dev` with Bun, on macOS or Linux.
@@ -203,7 +203,7 @@ Change a threshold and redeploy, and the rule is updated in place. Remove it fro
 | [`Maple.Dashboard`](/docs/iac/alchemy-resources#mapledashboard)               | Dashboards, their widgets, sections and variables                                                 |
 | [`Maple.AlertDestination`](/docs/iac/alchemy-resources#maplealertdestination) | PagerDuty, incident.io, webhook, Discord, Telegram, Google Chat, Teams, email and Linear channels |
 | [`Maple.AlertRule`](/docs/iac/alchemy-resources#maplealertrule)               | Alert rules on any signal, delivering to destinations                                             |
-| [`Maple.ApiKey`](/docs/iac/alchemy-resources#mapleapikey)                     | Scoped API keys, with in-place rotation                                                           |
+| [`Maple.ApiKey`](/docs/iac/alchemy-resources#mapleapikey)                     | Scoped API keys, with rotation                                                                    |
 | [`Maple.IngestKeys`](/docs/iac/alchemy-resources#mapleingestkeys)             | Your organization's ingest keys, as outputs (read-only)                                           |
 
 Every prop and output is in [Alchemy resources](/docs/iac/alchemy-resources).

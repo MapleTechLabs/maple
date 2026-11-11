@@ -13,7 +13,7 @@ For a service that handles requests, alert on the traces it already sends ([Upti
 
 You need the engineer or admin role in the organization.
 
-1. Open **Alerts**, select the **Uptime** tab and click **New check**.
+1. Open **Alerts → Uptime** and click **New monitor** (**New uptime check** when there are none yet).
 2. Under **Type**, pick **Heartbeat**.
 3. Enter a **Name**, such as `nightly-billing-export`.
 4. Under **Expect a ping**, set the schedule:

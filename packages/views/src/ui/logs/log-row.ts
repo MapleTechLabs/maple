@@ -1,3 +1,4 @@
+import { getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -220,7 +221,7 @@ export const logRow = <Message>(
 							? [row.timeMain]
 							: [
 									row.timeMain,
-									h.span([rowClass(h, "text-foreground-faint")], [row.timeFraction]),
+									h.span([rowClass(h, "text-foreground-subtle")], [row.timeFraction]),
 								],
 					),
 					h.span(
@@ -235,7 +236,7 @@ export const logRow = <Message>(
 							h.Style(
 								FILLED_SEVERITIES.has(row.severity)
 									? { "background-color": row.severityColor }
-									: { color: row.severityColor },
+									: { color: getSeverityInk(row.severity) },
 							),
 							h.Title(row.severity),
 						],

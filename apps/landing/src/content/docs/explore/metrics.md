@@ -47,7 +47,7 @@ Query controls above the chart:
 
 The chart header shows the query, such as `rate(http.server.requests) by service.name`, and the metric's unit.
 
-The **Top values** panel ranks values of one attribute. Choose it with **Break down by...** (default `service.name`). Click a bar to add that value to **Where**.
+The **Top values** panel ranks values of one attribute. Choose it with **Break down by…** (default `service.name`). Click a bar to add that value to **Where**.
 
 The side panel shows the type, unit, and whether a sum is monotonic. It also shows **Datapoints in range**, **First seen**, **Last seen**, how many services emit the metric, and each attribute key with its usage count.
 

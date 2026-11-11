@@ -193,7 +193,7 @@ new NodeSDK({
 	serviceName: "acme-web-server",
 	traceExporter: new OTLPTraceExporter({
 		url: "https://ingest.maple.dev/v1/traces", // EU: https://ingest.eu.maple.dev/v1/traces
-		headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` },
+		headers: { authorization: `Bearer ${process.env.MAPLE_INGEST_KEY}` }, // private key, maple_sk_...
 	}),
 }).start()
 ```

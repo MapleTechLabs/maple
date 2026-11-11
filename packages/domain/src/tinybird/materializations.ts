@@ -1412,6 +1412,8 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
 	description:
 		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
 	datasource: scannerRequests,
+	// A catalog change only renames new rows; without this Tinybird replays 30 days of `traces`.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "scanner_requests_mv_node",

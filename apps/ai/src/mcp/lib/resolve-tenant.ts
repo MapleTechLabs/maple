@@ -122,8 +122,8 @@ export const describeMalformedBearer = (token: string | undefined): string | und
  */
 export const mcpResourceUrl = (apiBaseUrl: string) => `${Str.replace(/\/+$/, "")(apiBaseUrl)}/mcp`
 
-/** A request with neither an `Authorization` header nor a cookie sent nothing a session reads. */
-const carriesCredential = (headers: Headers): boolean => headers.has("authorization") || headers.has("cookie")
+/** A request without an `Authorization` header sent nothing a session reads. */
+const carriesCredential = (headers: Headers): boolean => headers.has("authorization")
 
 /**
  * The session resolver's failures as the MCP ones. A provider outage is retryable (503), and a

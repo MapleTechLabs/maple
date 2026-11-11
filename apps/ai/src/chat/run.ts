@@ -45,7 +45,7 @@ import {
 } from "./events"
 import { buildReviewFanout } from "./review/fanout"
 import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
-import { buildChatToolkit, type SessionPullRequest } from "./maple-toolkit"
+import { buildChatToolkit, type SessionRepositoryScope } from "./maple-toolkit"
 import { accumulateUsage, type RunUsage } from "./usage"
 import type { MakeCompletion } from "./completion"
 import type { TenantContext } from "@maple/domain/http"
@@ -111,11 +111,10 @@ export interface ChatRunInput {
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
 	/**
-	 * The pull request a review session is about. Its diff tools read this one whatever
-	 * repository or number the model passes: a wrong guess there failed the call, and enough of
-	 * those stopped the review.
+	 * The pull request a review or reply session is about. Its diff and repository tools read
+	 * this one whatever repository or number the model passes; `unreadable` withholds them.
 	 */
-	readonly pullRequest?: SessionPullRequest
+	readonly pullRequest?: SessionRepositoryScope
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */

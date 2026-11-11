@@ -240,7 +240,7 @@ Chats with an agent from `ai.defineAgent()` (in `genkit/beta`) already carry Gen
 
 ## Verify
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id, one turn per flow run, and a transcript with the prompts, replies and tool calls. Each model call shows its token counts.
+Run a conversation with two messages and a tool call, then open **Agent sessions** in Maple. You should see one session named after your conversation id, one turn per flow run, and a transcript with the prompts, replies and tool calls. Each model call shows its token counts.
 
 The framework shows as **Genkit**. Cost shows as unpriced because Genkit doesn't report it.
 

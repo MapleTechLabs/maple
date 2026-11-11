@@ -26,15 +26,16 @@ write_workspace() {
 }
 
 # Copies the lockfile and every package.json (relative paths kept) into the fixture dir.
+# Each gets a .fixture suffix so GitHub's dependency graph does not report their pins as ours.
 # $1 project dir, $2 fixture name (kind/variant), $3 lockfile name; expected.json is read from stdin.
 save() {
 	local dest="$OUT/$2"
 	rm -rf "$dest" && mkdir -p "$dest"
-	cp "$1/$3" "$dest/$3"
+	cp "$1/$3" "$dest/$3.fixture"
 	(cd "$1" && find . -name package.json -not -path '*/node_modules/*' -not -path './.yarn/*') | while read -r f; do
-		mkdir -p "$dest/$(dirname "$f")" && cp "$1/$f" "$dest/$f"
+		mkdir -p "$dest/$(dirname "$f")" && cp "$1/$f" "$dest/$f.fixture"
 	done
-	[ -f "$1/pnpm-workspace.yaml" ] && cp "$1/pnpm-workspace.yaml" "$dest/"
+	[ -f "$1/pnpm-workspace.yaml" ] && cp "$1/pnpm-workspace.yaml" "$dest/pnpm-workspace.yaml.fixture"
 	cat >"$dest/expected.json"
 	log "$2: $(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).length)' <"$dest/expected.json") packages"
 }
@@ -184,7 +185,7 @@ cargo_fixture() {
 	printf 'fn main() {}\n' >"$dir/src/main.rs"
 	(cd "$dir" && cap 150 cargo generate-lockfile >/dev/null 2>&1)
 	(cd "$dir" && cap 60 cargo metadata --format-version 1 2>/dev/null) | normalize cargo | save "$dir" cargo-lock/basic Cargo.lock
-	cp "$dir/Cargo.toml" "$OUT/cargo-lock/basic/"
+	cp "$dir/Cargo.toml" "$OUT/cargo-lock/basic/Cargo.toml.fixture"
 }
 
 npm_fixture package-lock/v1 "npx -y npm@6" app

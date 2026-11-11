@@ -51,6 +51,7 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"list_integrations",
 	"list_security_audit_runs",
 	"list_security_findings",
+	"list_source_repositories",
 	"mine_log_patterns",
 	"query_data",
 	"run_sql",

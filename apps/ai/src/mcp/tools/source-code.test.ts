@@ -131,6 +131,26 @@ describe("the source-code tools", () => {
 		}),
 	)
 
+	it.effect("refuses a search path that would add a qualifier of its own", () =>
+		Effect.gen(function* () {
+			const searched: Array<string> = []
+			const error = yield* Effect.flip(
+				call(
+					"search_source_code",
+					{ repository: "octo/shop", query: "three", path: "src repo:octo/other" },
+					{
+						searchCode: (_org, repo) => {
+							searched.push(repo)
+							return Effect.succeed([])
+						},
+					},
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
+			assert.deepStrictEqual(searched, [])
+		}),
+	)
+
 	it("splits search paths and finds match lines", () => {
 		assert.deepStrictEqual(splitSearchPath("apps/api/"), { dir: "apps/api" })
 		assert.deepStrictEqual(splitSearchPath("README.md"), { filename: "README.md" })

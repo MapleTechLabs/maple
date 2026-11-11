@@ -28,7 +28,13 @@ import {
 	runtimePosture,
 	runtimeProductOf,
 } from "@maple/domain/runtime-posture"
-import { PROBE_CATEGORIES, probeCategoryOf } from "@maple/domain/security-telemetry"
+import {
+	PROBE_CATEGORIES,
+	type AttackStage,
+	attackChainReasons,
+	attackStagesOf,
+	probeCategoryOf,
+} from "@maple/domain/security-telemetry"
 import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -410,7 +416,8 @@ export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId
 
 type SignatureRow = CH.ScannerSignaturesOutput
 type ExposedRow = CH.ScannerExposedOutput
-type SourceRow = CH.ScannerSourcesOutput
+/** A source row with the stages its probes show, classified once per read. */
+type SourceRow = CH.ScannerSourcesOutput & { readonly stages: ReadonlyArray<AttackStage> }
 
 export interface ExposureRead {
 	readonly _tag: "read"
@@ -446,7 +453,12 @@ export const readExposure = (tenant: TenantContext, window: SecurityWindow) =>
 			],
 			{ concurrency: 3 },
 		)
-		return { _tag: "read", signatures, exposed, sources } satisfies ExposureRead
+		return {
+			_tag: "read",
+			signatures,
+			exposed,
+			sources: Arr.map(sources, (row) => ({ ...row, stages: attackStagesOf(row) })),
+		} satisfies ExposureRead
 	}).pipe(
 		Effect.catch((error) =>
 			Effect.logWarning("Security Center read failed", error).pipe(
@@ -890,6 +902,19 @@ export const dependencyArea = (read: DependencyRead): AreaResult => {
 	}
 }
 
+/** One note naming every listed source that ran an automated attack chain, and why. */
+const attackChainNote = (sources: ReadonlyArray<SourceRow>): ReadonlyArray<string> => {
+	const chains = Arr.flatMap(sources, (row) => {
+		const reasons = attackChainReasons(row)
+		return reasons.length === 0 ? [] : [`${row.clientAddress} (${Arr.join(reasons, ", ")})`]
+	})
+	return chains.length === 0
+		? []
+		: [
+				`${plural(chains.length, "source")} ran an automated attack chain: ${Arr.join(chains, "; ")}. Block them at the edge and check what the services they reached answered.`,
+			]
+}
+
 export const exposureArea = (read: ExposureRead | AreaGate): AreaResult => {
 	if (read._tag !== "read") return gated("exposure", read)
 	if (read.signatures.length === 0 && read.sources.length === 0) {
@@ -912,6 +937,7 @@ export const exposureArea = (read: ExposureRead | AreaGate): AreaResult => {
 		summary: `${requests} probe requests against ${plural(new Set(Arr.map(probes, (row) => row.service)).size, "service")} from ${sources} sources; ${plural(rows.length, "probed path")} answered with a 2xx. Maple sees the status code, not the response body.`,
 		rows,
 		notes: [
+			...attackChainNote(read.sources),
 			...Arr.map(
 				catchAllServices(read.signatures),
 				(entry) =>

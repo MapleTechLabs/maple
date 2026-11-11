@@ -133,9 +133,10 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 					parameter: "query",
 				})
 			}
-			if (path !== undefined && unsafePath(path)) {
+			// The path becomes search qualifiers, so a space in it would start a qualifier of its own.
+			if (path !== undefined && (unsafePath(path) || /\s/.test(Str.trim(path)))) {
 				return yield* new McpInvalidInputError({
-					message: "path must be repository-relative",
+					message: "path must be repository-relative and contain no whitespace",
 					parameter: "path",
 				})
 			}

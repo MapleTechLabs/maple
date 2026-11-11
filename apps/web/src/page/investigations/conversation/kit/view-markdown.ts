@@ -3,7 +3,7 @@ import { type ChartSpec, normalizeUnit, parseChartSpec } from "@maple/domain/cha
 import { classifyCell, columnRole, type CellValue } from "./table-cell-value"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
-import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { SEVERITY_COLORS, getSeverityInk } from "@maple/ui/lib/severity"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -81,7 +81,14 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 				],
 			)
 		case "severity":
-			return h.span([h.Style({ color: SEVERITY_COLORS[value.label] ?? "" })], [value.label])
+			return h.span(
+				[
+					h.Style({
+						color: SEVERITY_COLORS[value.label] === undefined ? "" : getSeverityInk(value.label),
+					}),
+				],
+				[value.label],
+			)
 		case "flag":
 			return h.span(
 				[h.Class(value.severe ? "text-severity-error" : "text-muted-foreground")],

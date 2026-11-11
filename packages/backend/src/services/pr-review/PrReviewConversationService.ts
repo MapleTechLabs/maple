@@ -87,6 +87,14 @@ export interface PrReviewConversationServiceApi {
 	 * pull request's head is still the run's, its review starts as a trusted author's would. Never fails.
 	 */
 	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
+	/** The pull request a reply answers on, which its session's tools are held to. */
+	readonly replyTarget: (
+		orgId: OrgId,
+		replyId: PrReviewReplyId,
+	) => Effect.Effect<
+		Option.Option<{ readonly repository: string; readonly number: number }>,
+		PrReviewPersistenceError
+	>
 	/** Post the agent's answer, committing a `fix`'s staged edits first. */
 	readonly submitReply: (
 		orgId: OrgId,
@@ -302,6 +310,22 @@ export class PrReviewConversationService extends Context.Service<
 						: Effect.succeed(rows[0]),
 				),
 			)
+
+		const replyTarget: PrReviewConversationServiceApi["replyTarget"] = Effect.fn(
+			"PrReviewConversationService.replyTarget",
+		)(function* (orgId, replyId) {
+			const row = yield* getReply(orgId, replyId).pipe(
+				Effect.asSome,
+				Effect.catchTag("@maple/http/pr-review/PrReviewReplyNotFoundError", () =>
+					Effect.succeed(Option.none<PrReviewReplyRow>()),
+				),
+			)
+			if (Option.isNone(row)) return Option.none()
+			const repo = yield* repositories
+				.getRepositoryById(orgId, row.value.repositoryId)
+				.pipe(Effect.mapError(toPersistence))
+			return Option.map(repo, ({ fullName }) => ({ repository: fullName, number: row.value.number }))
+		})
 
 		/** Post on the pull request where the row says; a failure is logged, never thrown into the turn. */
 		const post = Effect.fn("PrReviewConversationService.post")(function* (
@@ -840,6 +864,7 @@ export class PrReviewConversationService extends Context.Service<
 		return {
 			onPullRequestComment,
 			onCiApproved,
+			replyTarget,
 			submitReply,
 			stageEdit,
 			failReply,

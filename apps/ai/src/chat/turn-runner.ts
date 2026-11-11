@@ -54,6 +54,7 @@ import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
 import { makeUnfinishedSettler, runAutonomousTurn, settleAbandonedTurn, settleRow } from "./autonomous-settle"
 import { AGENTS, isAutonomousTurn, sessionOf } from "./agents"
 import { profileForTurn } from "./profiles"
+import type { SessionRepositoryScope } from "./maple-toolkit"
 import { runChatTurn } from "./run"
 import { toTenantContext, turnTenant } from "./turn-actor"
 import { dataSourcesPromptSection } from "../mcp/lib/data-sources"
@@ -99,6 +100,7 @@ const METERING_TIMEOUT = "5 seconds"
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
+const PULL_REQUEST_UNREADABLE = "The pull request this session is about could not be read."
 
 /**
  * Meter what this turn spent into the org's AI usage.
@@ -361,7 +363,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				input.session.endTurn(input.messageId, { reason: "error", error: refusal.value.message })
 				return yield* annotateTurn()
 			}
-			// Read before the run: the diff tools are pinned to it. An unreadable target reviews unpinned.
+			// Read before the run: the diff and repository tools are held to it.
 			const target =
 				prReviewId === undefined
 					? Option.none()
@@ -376,6 +378,39 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 								),
 							),
 						)
+			const replyTarget =
+				prReplyId === undefined
+					? Option.none()
+					: yield* conversations.replyTarget(tenant.orgId, prReplyId).pipe(
+							Effect.catch((error) =>
+								Effect.logInfo("Could not read the reply's target").pipe(
+									Effect.annotateLogs({
+										sessionId: input.sessionId,
+										error: error.message,
+									}),
+									Effect.as(Option.none()),
+								),
+							),
+						)
+			// A session about a pull request reads that repository, or none when it cannot be named.
+			const pullRequest: SessionRepositoryScope | undefined =
+				prReviewId === undefined && prReplyId === undefined
+					? undefined
+					: Option.match(
+							Option.orElse(target, () => replyTarget),
+							{
+								onNone: (): SessionRepositoryScope => "unreadable",
+								onSome: ({ repository, number }) => ({ repository, number }),
+							},
+						)
+			// An unattended pass that cannot name its pull request has nothing it may read.
+			if (pullRequest === "unreadable" && autonomous) {
+				observability.outcome = "error"
+				yield* failUnfinished("start_failed", PULL_REQUEST_UNREADABLE)
+				observability.failureReason = "PullRequestUnreadable"
+				input.session.endTurn(input.messageId, { reason: "error", error: PULL_REQUEST_UNREADABLE })
+				return yield* annotateTurn()
+			}
 			// Clone the commit while the model reads the diff, rather than when its first source tool
 			// asks and waits on it. A child of the turn (no request Scope here, so `forkRequestScoped`
 			// parents it on this fiber): a clone still running when the turn ends carries on in the container.
@@ -564,10 +599,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					...(turn.closeOut === true ? { closeOut: true } : undefined),
 					...(turn.agent === undefined ? undefined : { agent: turn.agent }),
 					...(codeExecutor === undefined ? undefined : { codeExecutor }),
-					...Option.match(target, {
-						onNone: () => undefined,
-						onSome: ({ repository, number }) => ({ pullRequest: { repository, number } }),
-					}),
+					...(pullRequest === undefined ? undefined : { pullRequest }),
 					text: turn.text,
 					history: turn.history,
 					usage,

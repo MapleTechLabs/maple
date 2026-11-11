@@ -13,7 +13,12 @@ import {
 	runtimePosture,
 	runtimeProductOf,
 } from "@maple/domain/runtime-posture"
-import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
+import {
+	PROBE_CATEGORIES,
+	type ProbeCategoryInfo,
+	attackChainReasons,
+	probeCategoryOf,
+} from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Array as Arr, String as Str, Option } from "effect"
 import type { Exposure, Runtimes } from "./model"
@@ -43,6 +48,8 @@ export interface ExposureTotals {
 	readonly scannerRequests: number
 	readonly sources: number
 	readonly isSourcesCapped: boolean
+	/** Listed sources that ran an automated attack chain. */
+	readonly attackChains: number
 	/** The signature rows hit the query's cap, so request and service totals are floors. */
 	readonly isSignaturesCapped: boolean
 	readonly servicesProbed: number
@@ -56,6 +63,7 @@ export const exposureTotals = (exposure: Exposure): ExposureTotals => {
 		scannerRequests: sum(Arr.map(scanners, (row) => row.requests)),
 		sources: exposure.sources.length,
 		isSourcesCapped: exposure.sources.length >= SOURCES_SHOWN,
+		attackChains: Arr.filter(exposure.sources, (source) => attackChainReasons(source).length > 0).length,
 		isSignaturesCapped: exposure.signatures.length >= SIGNATURES_SHOWN,
 		servicesProbed: distinct(Arr.map(probes, (row) => row.service)),
 	}

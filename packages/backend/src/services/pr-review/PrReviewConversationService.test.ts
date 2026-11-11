@@ -365,6 +365,18 @@ describe("PrReviewConversationService", () => {
 			assert.deepEqual(recorded.posted, [
 				{ body: "Because two writers race on the cursor.", threadRootId: "800" },
 			])
+			// The session's tools are held to this pull request, whatever its comments name.
+			assert.deepEqual(
+				yield* conversations.replyTarget(orgId, outcome.replyId!),
+				Option.some({
+					repository: "octo/repo",
+					number: 612,
+				}),
+			)
+			assert.deepEqual(
+				yield* conversations.replyTarget(asOrgId("org_other"), outcome.replyId!),
+				Option.none(),
+			)
 			// Nothing staged on an ask, and a second submission posts nothing.
 			assert.include(
 				yield* conversations.stageEdit(orgId, outcome.replyId!, {

@@ -77,7 +77,7 @@ When you set `Endpoint` in code, it must include the signal path (`/v1/traces`, 
 
 The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
-For a console app or worker without a host, build the providers directly and dispose them on exit:
+For a console app or worker without a host, build the providers directly, with the same `ConfigureMaple` helper, and dispose them on exit:
 
 ```csharp
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()

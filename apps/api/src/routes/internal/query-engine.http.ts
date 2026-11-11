@@ -172,6 +172,7 @@ import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 import { advisoryTargetOf } from "@maple/domain/runtime-advisories"
+import { attackStagesOf } from "@maple/domain/security-telemetry"
 import { type RuntimeProduct, runtimeProductOf } from "@maple/domain/runtime-posture"
 import * as Integrations from "@maple/query-engine-integrations"
 import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
@@ -2276,6 +2277,8 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 									scanner: row.scanner,
 									userAgent: row.userAgent,
 									lastSeen: DateTime.formatIso(row.lastSeen),
+									stages: attackStagesOf(row),
+									agent: row.agent,
 								})),
 								timeline: Arr.map(timeline, (row) => ({
 									bucket: DateTime.formatIso(row.bucket),

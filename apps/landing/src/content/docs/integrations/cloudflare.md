@@ -9,7 +9,7 @@ The Cloudflare integration connects one or more Cloudflare accounts to Maple thr
 
 ## Prerequisites
 
-- You are an admin of the Maple organization.
+- You are an admin or engineer in the Maple organization.
 - You can authorize OAuth applications on the Cloudflare account.
 
 ## Connect

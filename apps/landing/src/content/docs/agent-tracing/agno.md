@@ -139,7 +139,7 @@ finally:
 
 ## Verify
 
-Run a conversation of two or three turns with one `session_id`, including a tool call, and open **Agent Sessions** filtered by your service name. You should see one session with your `session_id` as its id, framework **Agno**, one turn per `run()`, a transcript, and model calls such as `OpenRouter.invoke` with tokens. A session named `trace:...` means the run had no `session_id`. Cost shows in the sessions list only when your provider returns one, as OpenRouter does.
+Run a conversation of two or three turns with one `session_id`, including a tool call, and open **Agent sessions** filtered by your service name. You should see one session with your `session_id` as its id, framework **Agno**, one turn per `run()`, a transcript, and model calls such as `OpenRouter.invoke` with tokens. A session named `trace:...` means the run had no `session_id`. Cost shows in the sessions list only when your provider returns one, as OpenRouter does.
 
 ## Troubleshooting
 

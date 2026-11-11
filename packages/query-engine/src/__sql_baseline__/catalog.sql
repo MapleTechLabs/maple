@@ -5727,21 +5727,25 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- builder:security-telemetry:scannerSourcesQuery:default  [913fd82e]
+-- builder:security-telemetry:scannerSourcesQuery:default  [333eb8ec]
 SELECT
           scanner_requests.ClientAddress AS clientAddress,
           uniq(scanner_requests.TraceId) AS requests,
           uniqIf(scanner_requests.Signature, scanner_requests.Signature != '') AS signatures,
           max(scanner_requests.Scanner) AS scanner,
           argMax(scanner_requests.UserAgent, scanner_requests.Scanner) AS userAgent,
-          max(scanner_requests.Timestamp) AS lastSeen
+          max(scanner_requests.Timestamp) AS lastSeen,
+          maxIf(scanner_requests.Scanner, scanner_requests.Scanner IN ('ARTEX')) AS agent,
+          groupUniqArray(scanner_requests.Signature) AS probed,
+          uniqIf(scanner_requests.TraceId, (scanner_requests.HttpStatus = 401 OR scanner_requests.HttpStatus = 403 OR scanner_requests.HttpStatus = 429)) AS denied,
+          dateDiff('second', minIf(scanner_requests.Timestamp, (scanner_requests.HttpStatus = 401 OR scanner_requests.HttpStatus = 403 OR scanner_requests.HttpStatus = 429)), maxIf(scanner_requests.Timestamp, (scanner_requests.HttpStatus >= 200 AND scanner_requests.HttpStatus < 400))) AS passedDenialSeconds
         FROM scanner_requests
         WHERE scanner_requests.OrgId = 'org_sql_catalog'
           AND scanner_requests.Timestamp >= '2026-01-01 10:30:00'
           AND scanner_requests.Timestamp <= '2026-01-03 14:15:00'
           AND scanner_requests.ClientAddress != ''
         GROUP BY clientAddress
-        ORDER BY requests DESC, clientAddress ASC
+        ORDER BY agent DESC, requests DESC, clientAddress ASC
         LIMIT 20
         FORMAT JSON
 

@@ -24,7 +24,7 @@ Add these dependencies to `Cargo.toml`. The `opentelemetry*` crates must share o
 [dependencies]
 opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
-opentelemetry-otlp = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["reqwest-rustls"] }
 opentelemetry-appender-tracing = "0.31"
 tracing-opentelemetry = "0.32"
 tracing = "0.1"
@@ -32,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
-The default features of `opentelemetry-otlp` export OTLP over HTTP with protobuf encoding, using a blocking HTTP client on the SDK's own background threads.
+The default features of `opentelemetry-otlp` export OTLP over HTTP with protobuf encoding, using a blocking HTTP client on the SDK's own background threads. That client is built without TLS, so the `reqwest-rustls` feature is what lets it reach Maple's `https://` endpoint.
 
 ## Configure
 

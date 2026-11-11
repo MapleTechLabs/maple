@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 /** The lockup: `maple` in the display face, `local` in mono. */
 export const localLockup = <M>(h: HtmlBuilder<M>): Html =>
 	hstack(h, { as: "span", gap: "1.5", className: "shrink-0" }, [
-		icon(h, "MapleMark", { size: 16, className: "shrink-0 text-primary" }),
+		icon(h, "MapleMark", { size: 16, className: "shrink-0 text-brand-maple" }),
 		typography(
 			h,
 			{

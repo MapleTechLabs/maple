@@ -42,7 +42,7 @@ The connection adds audit logs and the `gcp.gce.*` metrics.
 
 ## Application output
 
-Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. Platform, request and audit logs are forwarded either way. For workloads that can't, click **Can't forward via OpenTelemetry** under **Log filter** and tick their runtimes.
+Application output is what the code of a runtime writes to stdout and stderr. The connection forwards none by default: send it over OpenTelemetry. Platform, request and audit logs are forwarded either way. For workloads that can't, click **Forward application output instead** under **Log filter** and tick their runtimes.
 
 | Runtime             | Left out when unticked                                                                                | Still forwarded                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -65,7 +65,7 @@ Other places your code runs have no tick and are always forwarded: Compute Engin
 
 ## Change the filter
 
-Open the menu on the connection's row and choose **Edit data**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Can't forward via OpenTelemetry** and tick its runtimes. Click **Continue to the script**, then copy the script and run it in Cloud Shell again.
+Open the menu on the connection's row and choose **Edit data**. Under **Log filter**, choose **Replace filter**. To forward application output, click **Forward application output instead** and tick its runtimes. Click **Save and continue**, then copy the script and run it in Cloud Shell again.
 
 | Log filter              | The sink forwards                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------------- |

@@ -65,7 +65,6 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"sandbox_list_files",
 	"sandbox_read_file",
 	"sandbox_exec",
-	"list_source_repositories",
 	"search_source_code",
 	"read_source_file",
 	"list_services",

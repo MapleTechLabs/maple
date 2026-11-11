@@ -804,7 +804,14 @@ export const securityFixtureRules = (): FixtureRule[] => [
 	},
 	{
 		match: (sql) => Str.includes("FROM scanner_requests")(sql) && Str.includes(" AS userAgent")(sql),
-		rows: Arr.map(SOURCES, (row) => ({ ...row, lastSeen: lastSeen(row.hoursAgo) })),
+		rows: Arr.map(SOURCES, (row) => ({
+			...row,
+			lastSeen: lastSeen(row.hoursAgo),
+			agent: "",
+			probed: ["/.env", "/.git/"],
+			denied: 0,
+			passedDenialSeconds: 0,
+		})),
 	},
 	{
 		match: (sql) => Str.includes("FROM scanner_requests")(sql) && Str.includes(" AS bucket")(sql),

@@ -1899,6 +1899,30 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		// The scanner view is recreated so the ARTEX and norma agent user agents are named
+		// scanners. No column change; stored rows keep the scanner name they were written with.
+		slug: "scanner-autonomous-agents",
+		description: "Recreate scanner_requests_mv so autonomous pentest agents are named scanners",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [dropViews("scanner_requests_mv")],
+		plan: [
+			[
+				"rebuild-scanner-requests-view",
+				"Drop and recreate scanner_requests_mv so spans from the ARTEX and norma agent user agents are kept and named",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "scanner_requests",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows are untouched; only spans ingested after the migration can carry the new scanner names.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

@@ -41,15 +41,15 @@ Accepted by every command, in any position (`maple --local traces` and `maple tr
 
 Most **query** commands also share a set of filter flags. Which ones apply is listed per command below; the shapes are always the same:
 
-| Flag               | Alias | Default | Description                                                  |
-| ------------------ | ----- | ------- | ------------------------------------------------------------ |
-| `--since <range>`  |       | `6h`    | Relative time range: `30m`, `1h`, `6h`, `24h`, `7d`          |
-| `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC (use with `--end`) |
-| `--end <time>`     |       |         | Absolute end, `YYYY-MM-DD HH:mm:ss` UTC                      |
-| `--service <name>` | `-s`  |         | Filter by service name                                       |
-| `--env <name>`     | `-e`  |         | Filter by deployment environment, e.g. `production`          |
-| `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                    |
-| `--offset <n>`     |       | `0`     | Pagination offset                                            |
+| Flag               | Alias | Default | Description                                                                             |
+| ------------------ | ----- | ------- | --------------------------------------------------------------------------------------- |
+| `--since <range>`  |       | `6h`    | Relative window ending now: a number and `m`, `h`, `d` or `w` (`30m`, `6h`, `7d`, `2w`) |
+| `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC or ISO-8601. Alone, the window runs to now    |
+| `--end <time>`     |       |         | Absolute end, same formats. Alone, the window is `--since` back from it                 |
+| `--service <name>` | `-s`  |         | Filter by service name                                                                  |
+| `--env <name>`     | `-e`  |         | Filter by deployment environment, e.g. `production`                                     |
+| `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                                               |
+| `--offset <n>`     |       | `0`     | Pagination offset                                                                       |
 
 ## Server commands
 

@@ -6,7 +6,7 @@ import { type ErrorSignal, densifySpark, surgeRatio } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { SEVERITY_TEXT } from "../../kit/issue-severity"
+import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
@@ -52,18 +52,20 @@ export const signalSpark = (
 			[],
 		)
 	}
-	const tone = surging
-		? "text-severity-error"
+	// Bars are marks, so they take the tone itself, not the ink a `text-severity-*` class gives.
+	const color = surging
+		? "var(--severity-error)"
 		: signal.severity === null
-			? "text-muted-foreground"
-			: SEVERITY_TEXT[signal.severity]
+			? "var(--muted-foreground)"
+			: `var(${SEVERITY_TOKEN[signal.severity]})`
 	return miniBars(h, {
 		values,
 		floor: Math.max(...values) > 0 ? 5 : 0,
 		minHeight: 12.5,
 		gap: 100 / (values.length * 3 - 1),
 		tail: 0.2,
-		className: cn("h-5 w-full overflow-visible", tone),
+		className: "h-5 w-full overflow-visible",
+		color,
 		label,
 	})
 }

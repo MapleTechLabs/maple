@@ -21,10 +21,17 @@
 	   reads on a white canvas. */
 	--primary: oklch(0.66 0.16 59);
 	--primary-foreground: oklch(0.21 0.008 67);
+	/* Ink: a tone as text. The fills above are tuned to be seen, and on a white canvas that
+	   leaves them near 3:1 as type, so `text-primary` and `text-severity-*` read these deeper
+	   steps of the same hue (the `--text-color-*` block below). Each clears 4.5:1 on white and
+	   on its own `-a2` wash. In dark the fills read as type already, so the inks there are the
+	   fills (trace and fatal aside). */
+	--primary-ink: oklch(0.52 0.14 55);
 	--secondary: oklch(0.967 0.001 286.375);
 	--secondary-foreground: oklch(0.21 0.006 285.885);
 	--muted: oklch(0.967 0.001 286.375);
-	--muted-foreground: oklch(0.552 0.016 285.938);
+	/* Deeper than zinc-500, so the subtle step mixed from it still clears 4.5:1 on white. */
+	--muted-foreground: oklch(0.5 0.016 286);
 	--accent: oklch(0.955 0.025 75);
 	--accent-foreground: oklch(0.21 0.006 285.885);
 	--destructive: oklch(0.577 0.245 27.325);
@@ -135,11 +142,17 @@
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
-	/* Deeper than amber-500 so WARN text clears a white canvas; hue 74 keeps it
-	   off the hue-59 primary. */
-	--severity-warn: oklch(0.7 0.17 74);
+	/* A yellow, well off the hue-59 primary: a WARN bar or dot must never read as a button,
+	   a link or the selected row. Its text is `--severity-warn-ink`. */
+	--severity-warn: oklch(0.73 0.165 88);
 	--severity-error: oklch(0.637 0.237 25.331); /* red-500 */
 	--severity-fatal: oklch(0.505 0.213 27.518); /* red-700 */
+	--severity-trace-ink: oklch(0.5 0.016 286);
+	--severity-debug-ink: oklch(0.52 0.2 260);
+	--severity-info-ink: oklch(0.51 0.13 160);
+	--severity-warn-ink: oklch(0.52 0.12 75);
+	--severity-error-ink: oklch(0.53 0.22 27);
+	--severity-fatal-ink: var(--severity-fatal);
 	--service-1: oklch(0.58 0.17 250); /* Blue */
 	--service-2: oklch(0.56 0.12 185); /* Teal */
 	--service-3: oklch(0.58 0.15 155); /* Green */
@@ -249,6 +262,7 @@
 	--popover-foreground: oklch(0.91 0.016 74);
 	--primary: oklch(0.714 0.154 59);
 	--primary-foreground: oklch(0.207 0.008 67);
+	--primary-ink: var(--primary);
 	--secondary: oklch(0.26 0.012 67);
 	--secondary-foreground: oklch(0.91 0.016 74);
 	--muted: oklch(0.26 0.012 67);
@@ -309,6 +323,13 @@
 	--severity-warn: oklch(0.8 0.15 84);
 	--severity-error: oklch(0.654 0.176 30); /* red-orange #E85D4A */
 	--severity-fatal: oklch(0.555 0.174 30); /* dark red #C43D2E */
+	--severity-trace-ink: var(--muted-foreground);
+	--severity-debug-ink: var(--severity-debug);
+	--severity-info-ink: var(--severity-info);
+	--severity-warn-ink: var(--severity-warn);
+	--severity-error-ink: var(--severity-error);
+	/* The fatal fill is the one dark tone too deep to read as type (3.4:1). */
+	--severity-fatal-ink: oklch(0.66 0.2 26);
 	--service-1: oklch(0.68 0.17 250); /* Blue */
 	--service-2: oklch(0.65 0.12 185); /* Teal */
 	--service-3: oklch(0.65 0.15 155); /* Green */
@@ -434,6 +455,18 @@
 	--color-severity-warn: var(--severity-warn);
 	--color-severity-error: var(--severity-error);
 	--color-severity-fatal: var(--severity-fatal);
+	/* A tone as text is its ink; fills, borders and strokes keep the tone itself. */
+	--text-color-primary: var(--primary-ink);
+	--text-color-sidebar-primary: var(--primary-ink);
+	--text-color-severity-trace: var(--severity-trace-ink);
+	--text-color-severity-debug: var(--severity-debug-ink);
+	--text-color-severity-info: var(--severity-info-ink);
+	--text-color-severity-warn: var(--severity-warn-ink);
+	--text-color-severity-error: var(--severity-error-ink);
+	--text-color-severity-fatal: var(--severity-fatal-ink);
+	--text-color-info: var(--severity-debug-ink);
+	--text-color-success: var(--severity-info-ink);
+	--text-color-warning: var(--severity-warn-ink);
 	--color-background: var(--background);
 	--color-service-1: var(--service-1);
 	--color-service-2: var(--service-2);
@@ -526,15 +559,18 @@
 	--color-destructive-foreground: var(--destructive-foreground);
 	/* The ladders, named. Text steps are solid (mixed into the page, never translucent), so a
 	   label reads the same grey on a tinted row: soft (body copy a step under foreground), subtle
-	   (secondary meta), faint (separators, placeholders, empty cells). Surfaces are translucent
-	   washes that read the same on any surface: faint, sunken (wells, row hover), strong (selected,
-	   pressed). Use these instead of `/NN` modifiers on the base colours. */
+	   (secondary meta, the last step that carries information: 4.5:1 on the page, a card and
+	   the washes below),
+	   faint (separators and empty cells; near 2:1, so never a value or a label).
+	   Surfaces are translucent washes that read the same on any surface: faint, sunken (wells,
+	   row hover), strong (selected, pressed). Use these instead of `/NN` modifiers on the base
+	   colours. */
 	--color-foreground-soft: color-mix(in oklab, var(--foreground) 80%, var(--background));
-	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 70%, var(--background));
+	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 94%, var(--background));
 	--color-foreground-faint: color-mix(in oklab, var(--muted-foreground) 45%, var(--background));
 	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
-	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
+	--color-surface-strong: color-mix(in oklab, var(--muted) 90%, transparent);
 	/* An inset well on a card (a code block, an input tray, an expanded row's body). */
 	--color-surface-well: color-mix(in oklab, var(--background) 60%, transparent);
 	/* A label or chip floating over a chart, map or media, under `backdrop-blur-sm`. */
