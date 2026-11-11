@@ -25,7 +25,7 @@ export const permissions = {
 	"anomalies:configure": { min: "engineer", action: "manage anomaly detector settings" },
 	"error_policy:manage": { min: "engineer", action: "manage error notifications and escalation" },
 	"ai_triage:configure": { min: "engineer", action: "manage AI triage settings" },
-	"security:manage": { min: "engineer", action: "read and triage security findings" },
+	"security:manage": { min: "engineer", action: "open the Security Center and triage its findings" },
 
 	// The organization, money and credentials: admins only.
 	"organization:manage": { min: "admin", action: "change the organization's settings" },
@@ -34,6 +34,7 @@ export const permissions = {
 	"api_keys:manage": { min: "admin", action: "manage API keys" },
 	"ingest_keys:roll": { min: "admin", action: "roll ingest keys" },
 	"status_pages:break_glass": { min: "admin", action: "manage status page break-glass tokens" },
+	"status_pages:access": { min: "admin", action: "change who can view status pages" },
 	"warehouse:manage": { min: "admin", action: "manage the data warehouse" },
 	"data_sources:manage": { min: "admin", action: "connect and manage data sources" },
 	"security_audit:run": { min: "admin", action: "configure and run code security audits" },

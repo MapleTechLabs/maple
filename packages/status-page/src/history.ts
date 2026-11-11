@@ -5,7 +5,7 @@ import {
 	STATUS_PAGE_WINDOW_DAYS,
 	type StatusPageDayBar,
 	type StatusPageIncidentHistoryEntry,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotComponent,
 	utcDay,
 } from "@maple/domain/status-page"
@@ -152,7 +152,7 @@ const toneOf = (entry: Pick<StatusPageIncidentHistoryEntry, "kind" | "impact">):
  * The year's incidents for the calendar: the index, with what the page lists (including
  * break-glass ones not yet imported) taking precedence. Upcoming maintenance has no days yet.
  */
-export const calendarEntries = (snapshot: StatusPageSnapshot): ReadonlyArray<CalendarEntry> => {
+export const calendarEntries = (snapshot: StatusPagePublicSnapshot): ReadonlyArray<CalendarEntry> => {
 	const listed = Arr.filter(
 		snapshot.incidents,
 		(incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"),

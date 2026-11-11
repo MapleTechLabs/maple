@@ -9,7 +9,7 @@ import type { PageContext } from "../../contract"
 import { NOW, ORG } from "../../kit/alert-test-rows"
 import { newStatusPageHref, statusPageHref } from "../shared/commands"
 import type { StatusPageSummary } from "../shared/derive"
-import { statusPage } from "../shared/test-pages"
+import { pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -67,6 +67,28 @@ describe("status pages list", () => {
 			given(withPages([], false)),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 			expectView(text("Ask an org admin to create one.")).toExist(),
+		)
+	})
+
+	test("each row says who can view the page; an internal one has no public address", () => {
+		const row = (page: ReturnType<typeof statusPage>): StatusPageSummary => ({
+			page,
+			overall: "operational",
+			componentCount: 1,
+			openIncidents: 0,
+		})
+		scene(
+			{ update: listUpdate, view },
+			given(
+				withPages([
+					row(statusPage({ visibility: "password", has_password: true })),
+					row(statusPage({ id: pageId(2), slug: "acme-internal", visibility: "internal" })),
+				]),
+			),
+			expectView(text("Password")).toExist(),
+			expectView(text("Internal")).toExist(),
+			expectView(text("Members only, in Maple")).toExist(),
+			expectView(text("/s/acme-internal")).not.toExist(),
 		)
 	})
 

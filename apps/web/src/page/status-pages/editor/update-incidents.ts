@@ -15,24 +15,29 @@ import * as Dialog from "@maple/views/ui/dialog"
 import {
 	CreateIncident,
 	DeleteIncident,
-	FocusEditorElement,
 	PostIncidentUpdate,
 	PublishIncident,
+	ReadEditorClock,
 	SaveIncident,
 } from "./command"
 import {
 	emptyIncidentForm,
+	endedIssue,
+	hasIncidentIssues,
 	type IncidentEditField,
 	incidentEditFormOf,
+	incidentEditIssues,
 	incidentEditPayload,
 	type IncidentTextField,
 	incidentIssues,
 	incidentPayload,
+	updateBodyLengthIssue,
 	type UpdateForm,
 	updateFormFor,
+	updatePayload,
 } from "../shared/form"
 import { Message } from "./message"
-import type { Model, UpdateFormState } from "./model"
+import type { Model } from "./model"
 import {
 	chain,
 	componentsOf,
@@ -47,16 +52,19 @@ import {
 } from "./reads"
 import { focusPanel } from "./update-components"
 
-/** The update form's message field: focused when Post update or Resolve opens it. */
-export const UPDATE_BODY_ID = "status-page-update-body"
-
-/** The details form's title field: focused when Edit opens it. */
-export const INCIDENT_EDIT_TITLE_ID = "status-page-incident-edit-title"
-
-// Incidents in the side panel: the composer, an update or a resolve, publishing a draft.
+// Incidents: the Post incident, Post update and Edit details dialogs, publishing a draft, deleting.
 
 const decodeImpact = Schema.decodeUnknownOption(StatusPageIncidentImpact)
 const decodeStatus = Schema.decodeUnknownOption(StatusPageIncidentStatus)
+
+/** The clock as of now: a typed time is checked against it, so it must not be one read minutes ago. */
+const nowOf = (model: Model): number => model.nowMs ?? 0
+
+/** A typed time re-reads the clock, so the not-in-the-future check holds the time it was typed. */
+const withClock = (result: Return): Return => ({
+	...result,
+	commands: [...(result.commands ?? []), ReadEditorClock()],
+})
 
 /** Incidents and the page revision change together: both are read again. */
 const reread = (model: Model, context: PageContext): Return =>
@@ -70,9 +78,33 @@ const IMPACT_OF_STATUS = {
 	major_outage: "critical",
 } as const satisfies Record<StatusPageComponentStatus, StatusPageIncidentImpact>
 
+export const composeDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
+	liftDialog(
+		model,
+		step,
+		(next, composeDialog) => ({ ...next, composeDialog }),
+		(message) => Message.GotComposeDialogMessage({ message }),
+	)
+
+export const updateDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
+	liftDialog(
+		model,
+		step,
+		(next, updateDialog) => ({ ...next, updateDialog }),
+		(message) => Message.GotUpdateDialogMessage({ message }),
+	)
+
+export const editIncidentDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return =>
+	liftDialog(
+		model,
+		step,
+		(next, editIncidentDialog) => ({ ...next, editIncidentDialog }),
+		(message) => Message.GotEditIncidentDialogMessage({ message }),
+	)
+
 /**
- * The composer in the side panel, prefilled: the selected component, or else every component
- * visitors already see as not operational, with the impact their worst status suggests.
+ * The Post incident dialog on its write step, prefilled: the selected component, or else every
+ * component visitors already see as not operational, with the impact their worst status suggests.
  */
 export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return => {
 	const components = componentsOf(model)
@@ -92,14 +124,10 @@ export const openComposer = (model: Model, kind: StatusPageIncidentKind): Return
 					componentIds: Arr.map(affected, (component) => component.id),
 					impact: IMPACT_OF_STATUS[worstStatus(Arr.map(affected, statusOf))],
 				}
-	return focusPanel({
-		...model,
-		panel: { _tag: "Compose" },
-		incidentForm: form,
-		incidentFailure: null,
-		incidentEdit: null,
-		incidentEditFailure: null,
-	})
+	return composeDialog(
+		{ ...model, incidentForm: form, composeStep: "write", incidentFailure: null },
+		Dialog.open(model.composeDialog),
+	)
 }
 
 /** Switching Incident and Maintenance keeps what was typed; only kind-specific defaults reset. */
@@ -127,6 +155,8 @@ export const changeIncident = (model: Model, field: IncidentTextField, value: st
 				onNone: () => ({ model }),
 				onSome: (status) => ({ model: { ...model, incidentForm: { ...form, status } } }),
 			})
+		case "startedAt":
+			return withClock({ model: { ...model, incidentForm: { ...form, startedAt: value } } })
 		default:
 			return { model: { ...model, incidentForm: { ...form, [field]: value } } }
 	}
@@ -147,20 +177,32 @@ export const toggleIncidentComponent = (model: Model, componentId: StatusPageCom
 	}
 }
 
-export const submitIncident = (model: Model, context: PageContext): Return =>
-	model.pageId === null ||
-	model.isCreatingIncident ||
-	incidentIssues(model.incidentForm, context.timeZone).length > 0
+/** Review is reached only with nothing missing; the footer names what is. */
+export const reviewIncident = (model: Model, context: PageContext): Return =>
+	hasIncidentIssues(incidentIssues(model.incidentForm, context.timeZone, nowOf(model)))
+		? { model }
+		: { model: { ...model, composeStep: "review", incidentFailure: null } }
+
+export const backToIncidentWrite = (model: Model): Return =>
+	model.isCreatingIncident ? { model } : { model: { ...model, composeStep: "write" } }
+
+/** Sent from the review step only: Publish (or Schedule) or Save as draft. */
+export const submitIncident = (model: Model, context: PageContext, isPublished: boolean): Return => {
+	const form = { ...model.incidentForm, isPublished }
+	return model.pageId === null ||
+		model.isCreatingIncident ||
+		model.composeStep !== "review" ||
+		hasIncidentIssues(incidentIssues(form, context.timeZone, nowOf(model)))
 		? { model }
 		: {
-				model: { ...model, isCreatingIncident: true, incidentFailure: null },
+				model: { ...model, incidentForm: form, isCreatingIncident: true, incidentFailure: null },
 				commands: [
-					CreateIncident({
-						payload: incidentPayload(model.incidentForm, model.pageId, context.timeZone),
-					}),
+					CreateIncident({ payload: incidentPayload(form, model.pageId, context.timeZone) }),
 				],
 			}
+}
 
+/** A created incident closes the dialog and opens in the panel; a refused one stays on review with why. */
 export const createdIncident = (
 	model: Model,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
@@ -170,12 +212,12 @@ export const createdIncident = (
 	return Result.match(result, {
 		onSuccess: (incident): Return => {
 			const noun = incident.kind === "incident" ? "Incident" : "Maintenance"
-			const refreshed = reread(
-				{ ...settled, panel: { _tag: "Incident", incidentId: incident.id }, updateForm: CLOSED },
-				context,
-			)
 			return {
-				...refreshed,
+				...chain(
+					{ ...settled, panel: { _tag: "Incident", incidentId: incident.id } },
+					(next) => composeDialog(next, Dialog.close(next.composeDialog)),
+					(next) => reread(next, context),
+				),
 				outMessage: toast(
 					"success",
 					incident.published ? `${noun} published` : `${noun} saved as a draft`,
@@ -187,41 +229,34 @@ export const createdIncident = (
 	})
 }
 
-/** Opens the incident in the panel, its update and details forms closed. */
+/** Opens the incident in the panel. */
 export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): Return =>
 	Arr.some(incidentsOf(model), (incident) => incident.id === incidentId)
-		? focusPanel({
-				...model,
-				panel: { _tag: "Incident", incidentId },
-				updateForm: CLOSED,
-				incidentEdit: null,
-				incidentEditFailure: null,
-			})
+		? focusPanel({ ...model, panel: { _tag: "Incident", incidentId } })
 		: { model }
 
+/** The Post update dialog on its write step: the next status along, or the closing one for Resolve. */
 export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isResolving: boolean): Return => {
 	const incident = Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === incidentId))
-	return incident === undefined || !isOpenIncident(incident)
+	return incident === undefined || !isOpenIncident(incident) || model.updateForm._tag === "Posting"
 		? { model }
-		: {
-				model: {
+		: updateDialog(
+				{
 					...model,
 					panel: { _tag: "Incident", incidentId },
-					updateForm: { _tag: "Editing", form: updateFormFor(incident, isResolving) },
-					incidentEdit: model.isSavingIncident ? model.incidentEdit : null,
+					updateForm: { _tag: "Writing", form: updateFormFor(incident, isResolving) },
 				},
-				commands: [FocusEditorElement({ id: UPDATE_BODY_ID })],
-			}
+				Dialog.open(model.updateDialog),
+			)
 }
 
-const CLOSED: UpdateFormState = { _tag: "Closed" }
-
-/** Edits apply while the form is open; a post in flight holds what it sends. */
-export const changeUpdate = (model: Model, field: "status" | "body", value: string): Return => {
+/** Edits apply while the update is being written. */
+export const changeUpdate = (model: Model, field: "status" | "body" | "endedAt", value: string): Return => {
 	const state = model.updateForm
-	if (state._tag === "Closed" || state._tag === "Posting") return { model }
+	if (state._tag !== "Writing") return { model }
 	const withForm = (form: UpdateForm): Return => ({ model: { ...model, updateForm: { ...state, form } } })
 	if (field === "body") return withForm({ ...state.form, body: value })
+	if (field === "endedAt") return withClock(withForm({ ...state.form, endedAt: value }))
 	const allowed: ReadonlyArray<string> = STATUSES_OF_KIND[state.form.kind]
 	return Option.match(decodeStatus(value), {
 		onNone: () => ({ model }),
@@ -229,41 +264,61 @@ export const changeUpdate = (model: Model, field: "status" | "body", value: stri
 	})
 }
 
-export const cancelUpdate = (model: Model): Return =>
-	model.updateForm._tag === "Posting" ? { model } : { model: { ...model, updateForm: CLOSED } }
-
-export const submitUpdate = (model: Model): Return => {
+/** Review is reached only with a message and an end time the API takes. */
+export const reviewUpdate = (model: Model, context: PageContext): Return => {
 	const state = model.updateForm
-	return state._tag === "Closed" || state._tag === "Posting" || Str.trim(state.form.body) === ""
+	if (state._tag !== "Writing") return { model }
+	const incident = Arr.findFirst(incidentsOf(model), (row) => row.id === state.form.incidentId)
+	return Option.isNone(incident) ||
+		Str.trim(state.form.body) === "" ||
+		updateBodyLengthIssue(state.form.body) !== null ||
+		endedIssue(state.form, incident.value.started_at, context.timeZone, nowOf(model)) !== null
+		? { model }
+		: { model: { ...model, updateForm: { _tag: "Reviewing", form: state.form } } }
+}
+
+/** Back to writing, from the review or a failed post; a post in flight holds what it sends. */
+export const backToUpdateWrite = (model: Model): Return => {
+	const state = model.updateForm
+	return state._tag === "Reviewing" || state._tag === "Failed"
+		? { model: { ...model, updateForm: { _tag: "Writing", form: state.form } } }
+		: { model }
+}
+
+export const submitUpdate = (model: Model, context: PageContext): Return => {
+	const state = model.updateForm
+	return state._tag !== "Reviewing" && state._tag !== "Failed"
 		? { model }
 		: {
-				model: {
-					...model,
-					updateForm: { _tag: "Posting", form: state.form, generation: model.nextUpdatePost },
-					nextUpdatePost: model.nextUpdatePost + 1,
-				},
+				model: { ...model, updateForm: { _tag: "Posting", form: state.form } },
 				commands: [
 					PostIncidentUpdate({
 						incidentId: state.form.incidentId,
-						generation: model.nextUpdatePost,
-						payload: { status: state.form.status, body: Str.trim(state.form.body) },
+						payload: updatePayload(state.form, context.timeZone),
 					}),
 				],
 			}
 }
 
-/** A post's result: the form settles only if it still shows that post; any success rereads. */
+/**
+ * A post's result: a success closes the dialog and rereads, a failure stays on the review with why.
+ * The dialog cannot close or move to another incident while it posts, so the form is the one sent.
+ */
 export const postedUpdate = (
 	model: Model,
-	generation: number,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
 	context: PageContext,
 ): Return => {
 	const state = model.updateForm
-	const isShown = state._tag === "Posting" && state.generation === generation
+	if (state._tag !== "Posting") return { model }
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({
-			...reread(isShown ? { ...model, updateForm: CLOSED } : model, context),
+			...chain(
+				// The form stays as it was reviewed while the dialog fades out.
+				{ ...model, updateForm: { _tag: "Reviewing", form: state.form } },
+				(next) => updateDialog(next, Dialog.close(next.updateDialog)),
+				(next) => reread(next, context),
+			),
 			outMessage: toast(
 				"success",
 				isOpenIncident(incident)
@@ -274,10 +329,9 @@ export const postedUpdate = (
 				incident.title,
 			),
 		}),
-		onFailure: (failure): Return =>
-			state._tag === "Posting" && isShown
-				? { model: { ...model, updateForm: { _tag: "Failed", form: state.form, failure } } }
-				: { model, outMessage: toast("error", "Couldn't post the update", failure.message) },
+		onFailure: (failure): Return => ({
+			model: { ...model, updateForm: { _tag: "Failed", form: state.form, failure } },
+		}),
 	})
 }
 
@@ -315,24 +369,28 @@ export const publishedIncident = (
 
 const nounOf = (kind: StatusPageIncidentKind): string => (kind === "incident" ? "Incident" : "Maintenance")
 
-/** The title, impact and components as saved, open for editing; the update form gives way. */
-export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId): Return =>
-	model.updateForm._tag === "Posting" || model.isSavingIncident
+/** The Edit details dialog on the incident as saved; over Post update when opened from it. */
+export const openIncidentEdit = (
+	model: Model,
+	incidentId: StatusPageIncidentId,
+	context: PageContext,
+): Return =>
+	model.isSavingIncident
 		? { model }
 		: Option.match(
 				Arr.findFirst(incidentsOf(model), (row) => row.id === incidentId),
 				{
 					onNone: (): Return => ({ model }),
-					onSome: (incident): Return => ({
-						model: {
-							...model,
-							panel: { _tag: "Incident", incidentId },
-							updateForm: CLOSED,
-							incidentEdit: incidentEditFormOf(incident),
-							incidentEditFailure: null,
-						},
-						commands: [FocusEditorElement({ id: INCIDENT_EDIT_TITLE_ID })],
-					}),
+					onSome: (incident): Return =>
+						editIncidentDialog(
+							{
+								...model,
+								panel: { _tag: "Incident", incidentId },
+								incidentEdit: incidentEditFormOf(incident, context.timeZone),
+								incidentEditFailure: null,
+							},
+							Dialog.open(model.editIncidentDialog),
+						),
 				},
 			)
 
@@ -340,12 +398,14 @@ export const openIncidentEdit = (model: Model, incidentId: StatusPageIncidentId)
 export const changeIncidentEdit = (model: Model, field: IncidentEditField, value: string): Return => {
 	const form = model.incidentEdit
 	if (form === null || model.isSavingIncident) return { model }
-	return field === "title"
-		? { model: { ...model, incidentEdit: { ...form, title: value } } }
-		: Option.match(decodeImpact(value), {
+	return field === "impact"
+		? Option.match(decodeImpact(value), {
 				onNone: () => ({ model }),
 				onSome: (impact) => ({ model: { ...model, incidentEdit: { ...form, impact } } }),
 			})
+		: field === "title"
+			? { model: { ...model, incidentEdit: { ...form, title: value } } }
+			: withClock({ model: { ...model, incidentEdit: { ...form, [field]: value } } })
 }
 
 export const toggleIncidentEditComponent = (model: Model, componentId: StatusPageComponentId): Return => {
@@ -365,22 +425,28 @@ export const toggleIncidentEditComponent = (model: Model, componentId: StatusPag
 			}
 }
 
-export const cancelIncidentEdit = (model: Model): Return =>
-	model.isSavingIncident
-		? { model }
-		: { model: { ...model, incidentEdit: null, incidentEditFailure: null } }
-
-export const submitIncidentEdit = (model: Model): Return => {
+export const submitIncidentEdit = (model: Model, context: PageContext): Return => {
 	const form = model.incidentEdit
-	return form === null || model.isSavingIncident || Str.trim(form.title) === ""
+	const incident =
+		form === null
+			? undefined
+			: Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === form.incidentId))
+	if (form === null || incident === undefined || model.isSavingIncident) return { model }
+	const issues = incidentEditIssues(form, context.timeZone, nowOf(model))
+	return issues.title !== null || issues.times !== null
 		? { model }
 		: {
 				model: { ...model, isSavingIncident: true, incidentEditFailure: null },
-				commands: [SaveIncident({ incidentId: form.incidentId, payload: incidentEditPayload(form) })],
+				commands: [
+					SaveIncident({
+						incidentId: form.incidentId,
+						payload: incidentEditPayload(form, incident, context.timeZone),
+					}),
+				],
 			}
 }
 
-/** A saved edit closes the form; a refused one keeps it open with the reason. */
+/** A saved edit closes the dialog; a refused one keeps it open with the reason. */
 export const savedIncident = (
 	model: Model,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
@@ -389,13 +455,14 @@ export const savedIncident = (
 	const settled = { ...model, isSavingIncident: false }
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({
-			...reread({ ...settled, incidentEdit: null }, context),
+			...chain(
+				settled,
+				(next) => editIncidentDialog(next, Dialog.close(next.editIncidentDialog)),
+				(next) => reread(next, context),
+			),
 			outMessage: toast("success", `${nounOf(incident.kind)} updated`, incident.title),
 		}),
-		onFailure: (incidentEditFailure): Return =>
-			settled.incidentEdit === null
-				? { model: settled, outMessage: errorToast("Couldn't save the changes", incidentEditFailure) }
-				: { model: { ...settled, incidentEditFailure } },
+		onFailure: (incidentEditFailure): Return => ({ model: { ...settled, incidentEditFailure } }),
 	})
 }
 
@@ -442,12 +509,7 @@ export const deletedIncident = (
 			const closed = deleteIncidentDialog(settled, Dialog.close(settled.deleteIncidentDialog))
 			const isShown =
 				closed.model.panel?._tag === "Incident" && closed.model.panel.incidentId === removedId
-			const refreshed = reread(
-				isShown
-					? { ...closed.model, panel: null, updateForm: CLOSED, incidentEdit: null }
-					: closed.model,
-				context,
-			)
+			const refreshed = reread(isShown ? { ...closed.model, panel: null } : closed.model, context)
 			return {
 				model: refreshed.model,
 				commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],

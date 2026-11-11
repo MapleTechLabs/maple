@@ -38,4 +38,6 @@ export interface StatusEnv {
 	readonly storage: StatusStorage
 	readonly nowMs: number
 	readonly randomId: () => string
+	/** Maple's own hosts for this Worker (its domain, workers.dev, local dev), which serve `/s/<slug>`. */
+	readonly isSharedHost: (hostname: string) => boolean
 }

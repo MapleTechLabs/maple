@@ -1,3 +1,4 @@
+import type { StatusPageVisibility } from "@maple/domain"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -83,6 +84,13 @@ const notEnabledState = (h: H): Html =>
 		"py-12",
 	)
 
+/** Who can read each page, at a glance. */
+const VISIBILITY_BADGE = {
+	public: { label: "Public", variant: "outline" },
+	password: { label: "Password", variant: "info" },
+	internal: { label: "Internal", variant: "secondary" },
+} as const satisfies Record<StatusPageVisibility, { label: string; variant: "outline" | "info" | "secondary" }>
+
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
 	if (page.draft)
@@ -123,11 +131,14 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 								},
 								[page.name],
 							),
-							typography(
-								h,
-								{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
-								[publicAddress(page.slug)],
-							),
+							hstack(h, { gap: "2", align: "center", className: "mt-0.5 min-w-0" }, [
+								badge(h, { variant: VISIBILITY_BADGE[page.visibility].variant, size: "sm" }, [
+									VISIBILITY_BADGE[page.visibility].label,
+								]),
+								typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
+									page.visibility === "internal" ? "Members only, in Maple" : publicAddress(page.slug),
+								]),
+							]),
 						],
 					),
 					h.span(

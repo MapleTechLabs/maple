@@ -1,6 +1,7 @@
 /**
  * The status Worker: serves customer status pages from edge storage alone (KV, R2, the colo
- * cache), so a page keeps its last known state while every other part of Maple is down.
+ * cache), so a page keeps its last known state while every other part of Maple is down. Custom
+ * domains reach it through a Worker route per hostname (docs/status-page-custom-domains.md).
  * No service bindings or Hyperdrive: serving never calls Maple. Traces export to Maple's ingest after
  * the response, best effort, so an outage loses them without touching the page.
  */
@@ -17,7 +18,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Clock, Effect } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import { handleRequest } from "./handler"
+import { handleRequest, sharedHostMatcher } from "./handler"
 import { nativeStorage } from "./storage"
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
@@ -28,7 +29,11 @@ const props = Effect.gen(function* () {
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),
-		env,
+		// The status domain serves `/s/<slug>`; every other host but workers.dev is a custom domain.
+		env: {
+			...env,
+			...(stack.domains.status === undefined ? undefined : { MAPLE_STATUS_HOST: stack.domains.status }),
+		},
 		// Pages are served at `/s/<slug>`; previews get a domain, prd stays on workers.dev until it has one.
 		domain: stack.domains.status,
 		workersDev: true,
@@ -61,10 +66,14 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
 					cache: caches.open("status-snapshots"),
 				})
 				const nowMs = yield* Clock.currentTimeMillis
+				const workerEnv = yield* Cloudflare.WorkerEnvironment
 				const response = yield* handleRequest(web, {
 					storage,
 					nowMs,
 					randomId: () => SecureRandom.uuidV4Unsafe(),
+					isSharedHost: sharedHostMatcher(
+						typeof workerEnv.MAPLE_STATUS_HOST === "string" ? workerEnv.MAPLE_STATUS_HOST : null,
+					),
 				})
 				yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
 				return HttpServerResponse.fromWeb(response)

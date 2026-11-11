@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "080d01de920ceff55fc21426f4c91a82b88ebd31125c59298f5df59d4a503eff",
+	"id": "5b4fe667734aff2259a2da2171c061eeb4987519f6d4a955344c77a9f5521c85",
 	"prevIds": [
 		"b1753874f4da924ce3c0da5a5dcedd540b54d8633b74fd4ebd37adb2e6bfcdb9"
 	],
@@ -287,16 +287,6 @@
 				"columns": [
 					"org_id",
 					"account_id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "cost_sources",
-			"primaryKey": {
-				"name": "cost_sources_pkey",
-				"columns": [
-					"id"
 				]
 			}
 		},
@@ -1118,6 +1108,16 @@
 				"name": "status_page_components_pkey",
 				"columns": [
 					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "status_page_custom_domains",
+			"primaryKey": {
+				"name": "status_page_custom_domains_pkey",
+				"columns": [
+					"page_id"
 				]
 			}
 		},
@@ -5670,196 +5670,6 @@
 			"position": 6,
 			"type": "text",
 			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "provider",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "connection_ref",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "account_id",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "enabled",
-			"position": 5,
-			"type": "boolean",
-			"notNull": true,
-			"default": "true",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "watermark_date",
-			"position": 6,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "backfill_date",
-			"position": 7,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "last_synced_at",
-			"position": 8,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "last_settled_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "last_error",
-			"position": 10,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "last_error_reason",
-			"position": 11,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "lease_until",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "next_attempt_at",
-			"position": 13,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "consecutive_failures",
-			"position": 14,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "requests_month",
-			"position": 15,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "requests_count",
-			"position": 16,
-			"type": "integer",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "created_at",
-			"position": 17,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_sources",
-			"name": "updated_at",
-			"position": 18,
-			"type": "timestamp with time zone",
-			"notNull": true,
 			"default": null,
 			"identity": null
 		},
@@ -16169,7 +15979,7 @@
 			"name": "slug",
 			"position": 3,
 			"type": "text",
-			"notNull": true,
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
@@ -16186,8 +15996,38 @@
 		{
 			"kind": "column",
 			"table": "status_page_cleanups",
-			"name": "created_at",
+			"name": "hostname",
 			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_hostname_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_route_id",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16306,6 +16146,126 @@
 		{
 			"kind": "column",
 			"table": "status_page_components",
+			"name": "updated_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "page_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "hostname",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_hostname_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_route_id",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "dns_records",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_error",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_checked_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "activated_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
 			"name": "updated_at",
 			"position": 11,
 			"type": "timestamp with time zone",
@@ -16666,7 +16626,7 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "privacy_url",
+			"name": "logo_dark_url",
 			"position": 7,
 			"type": "text",
 			"notNull": false,
@@ -16676,7 +16636,7 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "terms_url",
+			"name": "favicon_url",
 			"position": 8,
 			"type": "text",
 			"notNull": false,
@@ -16686,8 +16646,38 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "theme",
+			"name": "support_url",
 			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "privacy_url",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "terms_url",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "theme",
+			"position": 12,
 			"type": "jsonb",
 			"notNull": true,
 			"default": "'{\"preset\":\"default\",\"appearance\":\"auto\",\"accent\":null,\"background\":null,\"text\":null,\"card\":null,\"border\":null,\"radius\":\"md\",\"font\":\"sans\"}'",
@@ -16697,7 +16687,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "show_powered_by",
-			"position": 10,
+			"position": 13,
 			"type": "boolean",
 			"notNull": true,
 			"default": "true",
@@ -16707,7 +16697,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "auto_incidents",
-			"position": 11,
+			"position": 14,
 			"type": "text",
 			"notNull": true,
 			"default": "'off'",
@@ -16717,7 +16707,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "break_glass_token_sha256",
-			"position": 12,
+			"position": 15,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16727,7 +16717,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "break_glass_token_suffix",
-			"position": 13,
+			"position": 16,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16736,47 +16726,17 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "draft",
-			"position": 14,
-			"type": "boolean",
-			"notNull": true,
-			"default": "false",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "revision",
-			"position": 15,
-			"type": "bigint",
-			"notNull": true,
-			"default": "1",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "published_revision",
-			"position": 16,
-			"type": "bigint",
-			"notNull": true,
-			"default": "0",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_pages",
-			"name": "published_at",
+			"name": "visibility",
 			"position": 17,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
+			"type": "text",
+			"notNull": true,
+			"default": "'public'",
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "last_publish_error",
+			"name": "password_hash",
 			"position": 18,
 			"type": "text",
 			"notNull": false,
@@ -16786,8 +16746,58 @@
 		{
 			"kind": "column",
 			"table": "status_pages",
-			"name": "published_hash",
+			"name": "draft",
 			"position": 19,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "revision",
+			"position": 20,
+			"type": "bigint",
+			"notNull": true,
+			"default": "1",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_revision",
+			"position": 21,
+			"type": "bigint",
+			"notNull": true,
+			"default": "0",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_at",
+			"position": 22,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "last_publish_error",
+			"position": 23,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_pages",
+			"name": "published_hash",
+			"position": 24,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -16797,7 +16807,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "publish_attempted_at",
-			"position": 20,
+			"position": 25,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -16807,7 +16817,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "created_by",
-			"position": 21,
+			"position": 26,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -16817,7 +16827,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "created_at",
-			"position": 22,
+			"position": 27,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16827,7 +16837,7 @@
 			"kind": "column",
 			"table": "status_pages",
 			"name": "updated_at",
-			"position": 23,
+			"position": 28,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -19031,19 +19041,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "cost_sources",
-			"name": "cost_sources_org_provider_ref_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"provider\"",
-				"\"connection_ref\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "dashboard_shares",
 			"name": "dashboard_shares_id_idx",
 			"unique": false,
@@ -20645,6 +20642,39 @@
 		},
 		{
 			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_checked_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"last_checked_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_hostname_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"hostname\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "status_page_incident_components",
 			"name": "status_page_incident_components_component_idx",
 			"unique": false,
@@ -20687,6 +20717,17 @@
 				"\"alert_incident_id\""
 			],
 			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_incidents",
+			"name": "status_page_incidents_open_maintenance_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"scheduled_start\""
+			],
+			"where": "\"kind\" = 'maintenance' and \"resolved_at\" is null"
 		},
 		{
 			"kind": "index",
@@ -21231,6 +21272,20 @@
 			"kind": "foreign_key",
 			"table": "status_page_components",
 			"name": "status_page_components_page_id_status_pages_id_fk",
+			"columns": [
+				"page_id"
+			],
+			"foreignTable": "status_pages",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_page_id_status_pages_id_fk",
 			"columns": [
 				"page_id"
 			],

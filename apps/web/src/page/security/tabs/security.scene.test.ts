@@ -253,7 +253,7 @@ describe("security tabs", () => {
 		)
 	})
 
-	test("a member's findings are gated, the targets still show", () => {
+	test("a refused findings read is gated, the targets still show", () => {
 		const gated = Arr.reduce(
 			Rec.values(TARGET_IDS),
 			withTargets(),
@@ -274,7 +274,7 @@ describe("security tabs", () => {
 			{ update: pageUpdate, view },
 			given(gated),
 			expectView(text("acme/api-gateway")).toExist(),
-			expectView(text("Findings and reports are visible to org admins and engineers only")).toExist(),
+			expectView(text("Security is visible to org admins and engineers only")).toExist(),
 		)
 	})
 

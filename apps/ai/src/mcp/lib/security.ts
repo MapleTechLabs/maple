@@ -39,6 +39,7 @@ import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import * as Policy from "@maple/domain/policy"
+import { McpUnavailableError } from "../tools/types"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	type SecurityAuditOrgStore,
@@ -94,7 +95,18 @@ export const codeSeverityOf = (
 			? (row.estimatedSeverity ?? "unknown")
 			: "informational"
 
-/** Every target with its findings and latest run. Findings are admin-only, as in the dashboard. */
+/** The Security Center is for org admins and engineers (`security:manage`); members are refused. */
+export const requireSecurityReader = (tenant: TenantContext) =>
+	Policy.can(tenant.roles, "security:manage")
+		? Effect.void
+		: Effect.fail(
+				new McpUnavailableError({
+					message: Policy.denialFor("security:manage").message,
+					capability: "security_center",
+				}),
+			)
+
+/** Every target with its findings and latest run, for engineers and admins only, as in the dashboard. */
 export const readCode = (tenant: TenantContext) =>
 	Effect.gen(function* () {
 		const flags = yield* (yield* OrganizationFeatureFlagsService).flags(tenant.orgId)
@@ -145,10 +157,10 @@ export const readCode = (tenant: TenantContext) =>
 		),
 	)
 
-/** The org's audit store once the audit is enabled; `admin` says whether findings may be read. */
+/** The org's audit store once the audit is enabled, for engineers and admins only (`security:manage`). */
 export type AuditAccess =
-	| { readonly _tag: "read"; readonly store: SecurityAuditOrgStore; readonly admin: boolean }
-	| Extract<AreaGate, { readonly _tag: "not_enabled" }>
+	| { readonly _tag: "read"; readonly store: SecurityAuditOrgStore }
+	| Extract<AreaGate, { readonly _tag: "not_enabled" | "forbidden" }>
 
 export const auditAccess = (tenant: TenantContext) =>
 	Effect.gen(function* () {
@@ -159,11 +171,13 @@ export const auditAccess = (tenant: TenantContext) =>
 				message: "The code security audit is not enabled for this organization.",
 			} satisfies AuditAccess
 		}
-		return {
-			_tag: "read",
-			store: (yield* SecurityAuditStore).forOrg(tenant.orgId),
-			admin: Policy.can(tenant.roles, "security:manage"),
-		} satisfies AuditAccess
+		if (!Policy.can(tenant.roles, "security:manage")) {
+			return {
+				_tag: "forbidden",
+				message: Policy.denialFor("security:manage").message,
+			} satisfies AuditAccess
+		}
+		return { _tag: "read", store: (yield* SecurityAuditStore).forOrg(tenant.orgId) } satisfies AuditAccess
 	})
 
 /** A run as the tools show it; `counts` is absent for a caller who may not read findings. */
