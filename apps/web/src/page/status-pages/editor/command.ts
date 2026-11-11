@@ -1,5 +1,6 @@
 import { readClock } from "@maple/views/data/timing"
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
+import { UptimeMonitorKind } from "@maple/primitives"
 import {
 	StatusPageConfig,
 	StatusPageDraftComponent,
@@ -12,6 +13,7 @@ import {
 } from "@maple/domain/http/v2"
 import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
+import { trackProduct } from "../../../data/analytics"
 import {
 	applyPageConfig,
 	createIncident,
@@ -270,6 +272,16 @@ export const CreateEditorMonitor = Command.define("CreateStatusPageEditorMonitor
 		saveMonitor(null, monitorPayloadFor(url)).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreateMonitor({ session, result })),
+		),
+})
+
+/** A monitor created from the picker is the `uptime_monitor_created` product event. */
+export const TrackMonitorCreated = Command.define("TrackStatusPageEditorMonitorCreated", {
+	args: { kind: UptimeMonitorKind },
+	messages: [Message.CompletedTrackMonitorCreated],
+	execute: ({ kind }) =>
+		trackProduct("uptime_monitor_created", { kind }).pipe(
+			Effect.as(Message.CompletedTrackMonitorCreated()),
 		),
 })
 

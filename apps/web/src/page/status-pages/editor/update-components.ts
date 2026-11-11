@@ -28,6 +28,7 @@ import {
 	FocusEditorElement,
 	ReorderComponents,
 	SaveComponent,
+	TrackMonitorCreated,
 } from "./command"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -282,10 +283,11 @@ export const addMonitorCreated = (
 					data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 				},
 			}
+			const track = TrackMonitorCreated({ kind: monitor.kind })
 			// Closed or reopened while the monitor was created: keep the monitor, touch nothing else.
-			return isAddSession(model, session)
-				? submitAdd({ ...withMonitor, addPicker: monitorCreated(model.addPicker, monitor) })
-				: { model: withMonitor }
+			if (!isAddSession(model, session)) return { model: withMonitor, commands: [track] }
+			const next = submitAdd({ ...withMonitor, addPicker: monitorCreated(model.addPicker, monitor) })
+			return { ...next, commands: [...(next.commands ?? []), track] }
 		},
 		onFailure: (failure): Return =>
 			isAddSession(model, session)

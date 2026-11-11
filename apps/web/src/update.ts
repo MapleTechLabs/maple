@@ -60,7 +60,8 @@ import {
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
-import { identityOf, isSameIdentity } from "./platform/session-identity"
+import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
+import { getActivePlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -827,15 +828,20 @@ const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]
 	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
 	const access = accessOf(next.customer)
 	const settled = withSettledPlan(settle(next))
-	return access === "app" || access === "onboarding"
-		? {
-				model: settled.model,
-				commands: [
-					...(settled.commands ?? []),
-					SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" }),
-				],
-			}
-		: settled
+	const known = sessionIdentityOf(model)
+	const identity = sessionIdentityOf(next)
+	return {
+		model: settled.model,
+		commands: [
+			...(known === undefined || identity === undefined || isSameIdentity(known, identity)
+				? []
+				: [IdentifySession({ identity })]),
+			...(settled.commands ?? []),
+			...(access === "app" || access === "onboarding"
+				? [SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" })]
+				: []),
+		],
+	}
 }
 
 /** The signed-in org, on a shell route. */
@@ -928,13 +934,25 @@ const changedClerkSession = (model: Model, snapshot: ClerkSnapshot): UpdateRetur
 		? { model }
 		: appliedClerkSnapshot(snapshot, false)(model)
 
+/** The active org's Autumn plan id, once its own customer read (not another org's) found one. */
+const activePlanIdOf = (model: Model, snapshot: ClerkSnapshot): string | null =>
+	Option.getOrNull(snapshot.maybeOrgId) === model.customer.orgId
+		? (getActivePlan(customerOf(model.customer))?.planId ?? null)
+		: null
+
+/** The identity the model names; `undefined` before Clerk's first answer. */
+const sessionIdentityOf = (model: Model): SessionIdentity | null | undefined =>
+	model.clerkSnapshot === null
+		? undefined
+		: identityOf(model.clerkSnapshot, activePlanIdOf(model, model.clerkSnapshot))
+
 /** `useClerkAuthSettled`: a signed-out first answer waits for a refreshing session, except on public pages. */
 const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
 	(previous) => {
 		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
-		const identity = identityOf(snapshot)
-		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
+		const identity = identityOf(snapshot, activePlanIdOf(model, snapshot))
+		const known = sessionIdentityOf(previous)
 		const identify =
 			known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {

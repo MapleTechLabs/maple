@@ -151,12 +151,16 @@ describe("status page builder", () => {
 			{ name: "CreateStatusPageMonitor", args: { url: "https://api.acme.com" } },
 		])
 		const monitor = httpMonitor({ id: monitorId(8), name: "api.acme.com" })
-		const created = builderUpdate(
+		const answered = builderUpdate(
 			creating.model,
 			Message.CompletedCreateMonitor({ result: Result.succeed(monitor) }),
-		).model
+		)
+		const created = answered.model
 		expect(created.picker.rows.at(-1)).toMatchObject({ monitorId: monitor.id, isChecked: true })
 		expect(created.picker.url).toBe("")
+		expect(answered.commands).toContainEqual(
+			expect.objectContaining({ name: "TrackStatusPageMonitorCreated", args: { kind: "http" } }),
+		)
 	})
 
 	test("a URL the uptime form would refuse is refused here, without a create", () => {

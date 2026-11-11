@@ -44,5 +44,7 @@ export const Message = defineMessageUnion({
 	CompletedTest: { result: LoadOutcome(V2UptimeMonitorTestResult) },
 	ClickedSave: {},
 	CompletedSave: { result: LoadOutcome(V2UptimeMonitor) },
+	/** `trackProduct("uptime_monitor_created")` was handed to the session SDK. */
+	CompletedTrackCreated: {},
 })
 export type Message = typeof Message.Type

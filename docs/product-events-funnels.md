@@ -1,5 +1,7 @@
 # Product events + funnels: plan
 
+The names Maple itself emits, and how they are identified, are in `product-events-catalog.md`.
+
 Status: **implemented in code (2026-08-17), pending rollout.** Goal: answer "referral → signed
 up → started a plan" for any org (and for Maple itself), from browser, mobile and backend events,
 as a real funnel in the product rather than a hand-written `run_sql`.
@@ -204,7 +206,7 @@ is one row per (visitor,user) pair.
 `web_events` references; the page-view queries move here unchanged):
 
 - `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "session",
-windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
+  windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
   Step = `{ eventName } | { pagePath, host? } | { referrerHost | utmSource | ... }`. A
   session-dimension step (referral) becomes step 0's condition through the person's first
   `session_replays` row; event steps are `EventName = …` conditions on `product_events`.

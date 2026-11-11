@@ -245,6 +245,8 @@ export const ClerkSnapshot = Schema.Struct({
 	maybeOrganization: Schema.Option(ClerkOrganization),
 	/** `useOrganizationList({ userMemberships })`, the first page. */
 	memberships: Schema.Array(ClerkOrganization),
+	/** The user's membership role in the active org (`org:admin`), for the session's traits. */
+	maybeRole: Schema.Option(Schema.String),
 	/** The API treats a pending session as signed out, so the app shows the task instead. */
 	maybePendingTask: Schema.Option(PendingSessionTask),
 })
@@ -279,6 +281,13 @@ const toSnapshot = (resources: ClerkResources): Effect.Effect<ClerkSnapshot> =>
 		),
 		memberships: Arr.map(resources.user?.organizationMemberships ?? [], (membership) =>
 			toOrganization(membership.organization, nowMs),
+		),
+		maybeRole: Option.flatMap(
+			Arr.findFirst(
+				resources.user?.organizationMemberships ?? [],
+				(membership) => membership.organization.id === resources.organization?.id,
+			),
+			(membership) => Option.fromNullishOr(membership.role),
 		),
 		maybePendingTask: Option.filter(
 			Option.fromNullishOr(

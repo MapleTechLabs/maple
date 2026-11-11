@@ -127,3 +127,24 @@ export const signupCompletedEvent = (
 		},
 	}
 }
+
+/**
+ * A membership that started or ended → `member_joined` / `member_removed`, on
+ * the member and the org. A role change emits nothing: the identify trait
+ * carries the current role. `role` is Clerk's role key (`org:admin`), never a
+ * name or address.
+ */
+export const membershipProductEvent = (
+	event: ClerkMembershipEventType,
+	data: ClerkOrganizationMembershipData,
+	envelopeTimestamp: number | undefined,
+): ProductEventInput | undefined => {
+	if (event === "organizationMembership.updated") return undefined
+	return {
+		name: event === "organizationMembership.created" ? "member_joined" : "member_removed",
+		userId: data.public_user_data.user_id,
+		groupId: data.organization.id,
+		timestamp: envelopeTimestamp,
+		...(data.role !== undefined ? { attributes: { role: data.role } } : undefined),
+	}
+}

@@ -12,6 +12,7 @@ import {
 	LinkChatIdentity,
 	UnlinkChatIdentity,
 } from "./chat"
+import { TrackDisconnected } from "./command"
 import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -135,8 +136,13 @@ export const completedDisconnect = (
 		withCard(model, { busy: null, confirmId: null }),
 		Dialog.close(model.disconnect.dialog),
 	)
+	const connector = connectorOfPage(model)
 	return chain(closed.model, [
 		() => closed,
 		(next) => outcome(next, context, failure, disconnectSpec("chat")),
+		(next) =>
+			failure === null && connector !== null
+				? { model: next, commands: [TrackDisconnected({ provider: connector })] }
+				: { model: next },
 	])
 }

@@ -32,6 +32,8 @@ import {
 	FetchBuilderSession,
 	FocusBuilderField,
 	ReadBuilderClock,
+	TrackMonitorCreated,
+	TrackPageCreated,
 	WaitBuilderPreview,
 } from "./command"
 import { Message } from "./message"
@@ -215,15 +217,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerMessage: ({ message: child }) => pickerStep(model, child),
 		CompletedCreateMonitor: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (monitor): Return =>
-					edited({
+				onSuccess: (monitor): Return => {
+					const next = edited({
 						...model,
 						monitors: {
 							...model.monitors,
 							data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 						},
 						picker: monitorCreated(model.picker, monitor),
-					}),
+					})
+					return {
+						...next,
+						commands: [...(next.commands ?? []), TrackMonitorCreated({ kind: monitor.kind })],
+					}
+				},
 				onFailure: (failure): Return => ({
 					model: { ...model, picker: monitorFailed(model.picker, failure.message) },
 				}),
@@ -267,6 +274,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onSuccess: (page): Return => ({
 					model: { ...model, submitting: null },
+					commands: [TrackPageCreated()],
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
 						isReplace: true,
@@ -289,4 +297,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}
 						: { model: { ...model, submitting: null, createFailure: failure } },
 			}),
+		CompletedTrackProduct: () => ({ model }),
 	})

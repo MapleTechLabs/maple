@@ -270,7 +270,7 @@ describe("ClerkWebhookRouter", () => {
 
 	// Membership is changed in Clerk, never through Maple's API, so this receiver
 	// is the only writer of `affected_user`.
-	it.live("audits an organizationMembership.created delivery against the member", () =>
+	it.live("audits an organizationMembership.created delivery and emits member_joined", () =>
 		Effect.gen(function* () {
 			const events = recordingProductEvents()
 			const audit = recordingAudit()
@@ -303,6 +303,15 @@ describe("ClerkWebhookRouter", () => {
 				// here would be a guess, so the entry is Maple recording what it learned.
 				assert.strictEqual(entry.actor.type, "system")
 				assert.strictEqual(entry.source, "system")
+				assert.deepStrictEqual(events.tracked, [
+					{
+						name: "member_joined",
+						userId: "user_2abc",
+						groupId: "org_42",
+						timestamp: 1_700_000_000_000,
+						attributes: { role: "org:admin" },
+					},
+				])
 			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
 		}),
 	)
@@ -429,6 +438,11 @@ describe("ClerkWebhookRouter", () => {
 					"demote:org_9:user_9:org:member",
 					"revokeUser:user_9",
 				])
+				// The removal is a product event on the member and org; a role change is not.
+				assert.deepStrictEqual(
+					Arr.map(events.tracked, (event) => [event.name, event.userId, event.groupId]),
+					[["member_removed", "user_9", "org_9"]],
+				)
 
 				// No role in the payload: we cannot tell demotion from promotion, so
 				// the caches are evicted and nothing is revoked on a guess.
@@ -485,8 +499,11 @@ describe("ClerkWebhookRouter", () => {
 					yield* Clock.currentTimeMillis,
 					"msg_fail",
 				)
+				const before = events.tracked.length
 				const response = yield* post(broken.handler, "/webhooks/clerk", body, headers)
 				assert.strictEqual(response.status, 500)
+				// Clerk retries a 500, so the failed delivery must not emit member_removed.
+				assert.strictEqual(events.tracked.length, before)
 			}).pipe(Effect.ensuring(Effect.promise(broken.dispose)))
 		}),
 	)

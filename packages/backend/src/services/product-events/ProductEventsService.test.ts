@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Effect, Record as Rec, String as Str, Tracer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
+import { PRODUCT_EVENT_NAME_KEY } from "@maple/domain/tinybird/product-event-attributes"
 import { makeProductEvents, toProductEventLine } from "./ProductEventsService"
 
 interface Captured {
@@ -92,6 +93,32 @@ describe("ProductEventsService", () => {
 				user_id: "user_abc",
 				attributes: { email_domain: "example.com" },
 			})
+		}),
+	)
+
+	// A span carrying `maple.product_event.name` is itself projected into
+	// `product_events` as a `Source='trace'` row, so the span that posts an event
+	// must not carry it, or every server event lands twice.
+	it.effect("does not mark its own span as a trace-derived product event", () =>
+		Effect.gen(function* () {
+			const spans: Array<Tracer.NativeSpan> = []
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+			const { client } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+			})
+			yield* events.track({ name: "plan_started", groupId: "org_1" }).pipe(Effect.withTracer(tracer))
+			const trackSpan = Arr.findFirst(spans, (span) => span.name === "ProductEvents.track")
+			assert.isTrue(trackSpan._tag === "Some")
+			assert.isFalse(Arr.some(spans, (span) => span.attributes.has(PRODUCT_EVENT_NAME_KEY)))
 		}),
 	)
 

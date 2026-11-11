@@ -34,7 +34,14 @@ import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
-import { CompleteOAuthReturn, LoadCustomer, LoadSession, ReadClock, StripChatParams } from "./command"
+import {
+	CompleteOAuthReturn,
+	LoadCustomer,
+	LoadSession,
+	ReadClock,
+	StripChatParams,
+	TrackDisconnected,
+} from "./command"
 import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
 import { Message } from "./message"
@@ -317,6 +324,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				false,
 			),
 		CompletedTrackConnected: () => ({ model }),
+		CompletedTrackDisconnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
 		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings?tab=${encodeURIComponent(tab)}`, false),
@@ -631,6 +639,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 			return chain(settled, [
 				(next) => ({ model: next, commands: closed.commands, outMessage: toast }),
+				(next) =>
+					failure === null
+						? {
+								model: next,
+								commands: [
+									TrackDisconnected({
+										provider:
+											integration === "cloudflare-multi" ? "cloudflare" : integration,
+									}),
+								],
+							}
+						: { model: next },
 				...Arr.map(
 					failure === null ? spec.refresh : [],
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
