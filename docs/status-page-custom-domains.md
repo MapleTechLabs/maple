@@ -46,7 +46,7 @@ Done once per zone, by hand:
    Hostnames, Enable). It is billed per hostname past the free allowance.
 2. Create an API token scoped to the `maple.dev` zone with **SSL and Certificates: Edit** and
    **Workers Routes: Edit**.
-3. In Infisical (prd, and dev for previews) set `MAPLE_STATUS_DOMAINS_ZONE_ID` (the zone id)
+3. In Infisical (`prod`, and `preview` for PR previews) set `MAPLE_STATUS_DOMAINS_ZONE_ID` (the zone id)
    and `MAPLE_STATUS_DOMAINS_API_TOKEN` (the token).
 4. Deploy US prd. It declares `status-domains.maple.dev` and sets it as the fallback origin
    (`declareStatusDomainsOrigin`, `packages/infra/src/cloudflare/status-pages.ts`). The
