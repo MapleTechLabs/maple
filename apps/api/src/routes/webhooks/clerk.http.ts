@@ -10,6 +10,7 @@ import {
 	decodeClerkUserCreated,
 	decodeClerkUserDeleted,
 	isClerkMembershipEvent,
+	membershipProductEvent,
 	signupCompletedEvent,
 	type ClerkMembershipEventType,
 } from "@maple/backend/services/product-events/clerk-events"
@@ -20,7 +21,8 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
 /**
  * Clerk webhook receiver. Three jobs:
  *
- * - `user.created` → `signup_completed` product event.
+ * - `user.created` → `signup_completed` product event; membership created /
+ *   deleted → `member_joined` / `member_removed`.
  * - membership lifecycle → an org audit entry (`member.added` / `role_changed`
  *   / `removed`). Membership is the one org change the web app makes in Clerk
  *   rather than through Maple's API, so this receiver is the only writer of
@@ -73,6 +75,7 @@ const handler = Effect.gen(function* () {
 	const handleMembership = Effect.fn("ClerkWebhook.membership")(function* (
 		data: unknown,
 		event: ClerkMembershipEventType,
+		timestamp: number | undefined,
 	) {
 		const payload = yield* decodeClerkOrganizationMembership(data).pipe(Effect.option)
 		if (Option.isNone(payload)) {
@@ -103,7 +106,9 @@ const handler = Effect.gen(function* () {
 			affectedUserId: userId.value,
 			...(payload.value.role !== undefined ? { metadata: { role: payload.value.role } } : undefined),
 		})
+		const productEvent = membershipProductEvent(event, payload.value, timestamp)
 		if (event === "organizationMembership.created") {
+			if (productEvent !== undefined) yield* productEvents.track(productEvent)
 			yield* Effect.annotateCurrentSpan({
 				"http.response.status_code": 200,
 				"maple.webhook.outcome": "handled",
@@ -111,7 +116,11 @@ const handler = Effect.gen(function* () {
 			return webhookText("ok", 200)
 		}
 		if (event === "organizationMembership.deleted") {
-			return yield* revoke(revocation.revokeMembership(orgId.value, userId.value))
+			const response = yield* revoke(revocation.revokeMembership(orgId.value, userId.value))
+			// Only once the sweep succeeded: a 500 is retried by Clerk and would emit it twice.
+			if (response.status === 200 && productEvent !== undefined)
+				yield* productEvents.track(productEvent)
+			return response
 		}
 
 		// A role change is not just a cache eviction: CLI/MCP/device keys pin the
@@ -153,7 +162,7 @@ const handler = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({ "maple.webhook.event": envelope.value.type })
 
 		if (isClerkMembershipEvent(envelope.value.type)) {
-			return yield* handleMembership(envelope.value.data, envelope.value.type)
+			return yield* handleMembership(envelope.value.data, envelope.value.type, envelope.value.timestamp)
 		}
 		if (envelope.value.type === "user.deleted") {
 			const payload = yield* decodeClerkUserDeleted(envelope.value.data).pipe(Effect.option)

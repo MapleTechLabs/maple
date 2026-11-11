@@ -1,6 +1,7 @@
 import { SloId } from "@maple/domain"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { trackProduct } from "../../../data/analytics"
 import { recentServiceNames } from "../shared/services"
 import { retrieveSlo, saveSlo } from "../shared/slo-commands"
 import { Message } from "./message"
@@ -32,4 +33,10 @@ export const SaveSloDraft = Command.define("SaveSloDraft", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ result })),
 		),
+})
+
+/** A created SLO is the `slo_created` product event. */
+export const TrackSloCreated = Command.define("TrackSloCreated", {
+	messages: [Message.CompletedTrackCreated],
+	execute: trackProduct("slo_created").pipe(Effect.as(Message.CompletedTrackCreated())),
 })

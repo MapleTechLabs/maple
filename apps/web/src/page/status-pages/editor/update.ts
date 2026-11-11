@@ -436,6 +436,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddComponent: () => openAdd(model),
 		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
 		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
+		CompletedTrackMonitorCreated: () => ({ model }),
 		ClickedSubmitAdd: () => submitAdd(model),
 		CompletedAddComponents: ({ session, result }) => addedComponents(model, session, result, context),
 		// Incidents

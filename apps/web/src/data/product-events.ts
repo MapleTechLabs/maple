@@ -18,6 +18,20 @@ export type ProductEvent =
 	/** The org admin redeemed the onboarding-checklist credit from the top bar. */
 	| "onboarding_reward_claimed"
 	| "integration_connected"
+	/** An integration's connection was removed; `provider` as in `integration_connected`. */
+	| "integration_disconnected"
+	/** An admin invited a teammate to the org; `role` is the invited membership role. */
+	| "member_invited"
+	/** Someone acknowledged an open alert incident from the alerts inbox or the incident page. */
+	| "alert_incident_acknowledged"
+	/** An uptime monitor was created; `kind` is its check type (`http`, `tcp`, ...). */
+	| "uptime_monitor_created"
+	/** An SLO was created. */
+	| "slo_created"
+	/** A status page was created, as a draft or published. */
+	| "status_page_created"
+	/** The onboarding connect step saw the org's first telemetry arrive; `signal` is its kind. */
+	| "first_data_received"
 	| "alert_rule_created"
 	| "api_key_created"
 	| "dashboard_created"

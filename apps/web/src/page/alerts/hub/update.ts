@@ -44,6 +44,7 @@ import {
 	FetchHubSchedules,
 	DeleteChain,
 	AcknowledgeIncident,
+	TrackAcknowledged,
 	DeleteDestination,
 	FetchHubChains,
 	DeleteMonitor,
@@ -1169,6 +1170,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								? null
 								: withAcknowledgement(settled.incidents, incident),
 					},
+					commands: acknowledged ? [TrackAcknowledged()] : [],
 				}),
 				onFailure: (failure) => ({
 					model: settled,
@@ -1181,6 +1183,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			})
 		},
+		CompletedTrackAcknowledged: () => ({ model }),
 		ClickedToggleDestination: ({ destinationId }) => toggleDestination(model, destinationId),
 		CompletedUpdateDestination: ({ result }) =>
 			Result.match(result, {

@@ -1,7 +1,9 @@
 import { UptimeMonitorId } from "@maple/domain"
+import { UptimeMonitorKind } from "@maple/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
+import { trackProduct } from "../../../data/analytics"
 import { recentServiceNames } from "../shared/services"
 import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
@@ -49,4 +51,12 @@ export const SaveDraft = Command.define("SaveUptimeDraft", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ result })),
 		),
+})
+
+/** A created monitor is the `uptime_monitor_created` product event. */
+export const TrackCreated = Command.define("TrackUptimeMonitorCreated", {
+	args: { kind: UptimeMonitorKind },
+	messages: [Message.CompletedTrackCreated],
+	execute: ({ kind }) =>
+		trackProduct("uptime_monitor_created", { kind }).pipe(Effect.as(Message.CompletedTrackCreated())),
 })

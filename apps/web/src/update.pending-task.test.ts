@@ -49,6 +49,7 @@ const snapshotOf = (task: PendingSessionTask | null): ClerkSnapshot => ({
 	maybeUser: Option.some({ fullName: "Ada Lovelace", email: "ada@acme.test", imageUrl: "" }),
 	maybeOrganization: Option.none(),
 	memberships: [],
+	maybeRole: Option.none(),
 	maybePendingTask: Option.fromNullishOr(task),
 })
 

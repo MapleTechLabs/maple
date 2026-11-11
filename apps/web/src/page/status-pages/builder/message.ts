@@ -34,5 +34,7 @@ export const Message = defineMessageUnion({
 	},
 	ClickedSubmit: { mode: SubmitMode },
 	CompletedCreate: { mode: SubmitMode, result: LoadOutcome(V2StatusPage) },
+	/** A `trackProduct` call was handed to the session SDK. */
+	CompletedTrackProduct: {},
 })
 export type Message = typeof Message.Type
