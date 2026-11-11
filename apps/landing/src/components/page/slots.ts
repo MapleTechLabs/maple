@@ -23,6 +23,7 @@ import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro"
 import LiveLogStream from "../live/LiveLogStream.astro"
 import LiveMcpTranscript from "../live/LiveMcpTranscript.astro"
 import LiveServiceMap from "../live/LiveServiceMap.astro"
+import LiveStatusPage from "../live/LiveStatusPage.astro"
 import LiveUptime from "../live/LiveUptime.astro"
 import LogsVolume from "./artifacts/LogsVolume.astro"
 import PrReview from "./artifacts/PrReview.astro"
@@ -34,6 +35,7 @@ import K8sViews from "./sections/K8sViews.astro"
 import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
 import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
+import StatusPageFeeds from "./sections/StatusPageFeeds.astro"
 import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
 
 /**
@@ -55,6 +57,7 @@ export const ARTIFACTS = {
 	"pr-review": PrReview,
 	uptime: LiveUptime,
 	anomaly: LiveAnomaly,
+	"status-page": LiveStatusPage,
 } satisfies Record<ArtifactId, unknown>
 
 export const EXTRA_SECTIONS = {
@@ -66,4 +69,5 @@ export const EXTRA_SECTIONS = {
 	"github-ci": GitHubCi,
 	"github-after-merge": GitHubAfterMerge,
 	"uptime-check-trace": UptimeCheckTrace,
+	"status-page-feeds": StatusPageFeeds,
 } satisfies Record<SectionId, unknown>
