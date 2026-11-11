@@ -224,9 +224,9 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
 			alertsItem,
 			{
-				title: "Code review & CI",
+				title: "Review & CI",
 				href: "/code-review",
-				icon: "CodeIcon",
+				icon: "PullRequestIcon",
 				alsoActive: flags.securityAudit ? [] : ["/security"],
 			},
 			...(flags.securityAudit

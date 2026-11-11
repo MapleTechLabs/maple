@@ -261,7 +261,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					" of ",
 					String(active.length),
 					" ",
-					"repositories reviewed. Rules, models and analytics live on the Code review & CI page.",
+					"repositories reviewed. Rules, models and analytics live on the Review & CI page.",
 				],
 				control: [
 					linkButton(
