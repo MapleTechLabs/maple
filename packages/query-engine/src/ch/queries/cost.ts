@@ -14,9 +14,9 @@ import { orgIdParam, utcSecondsParam } from "../tables"
 export const COST_OTHER_KEY = "__other__"
 
 /**
- * Narrowing for a cost read: the values a dimension may take, inlined as escaped literals. An
- * empty or missing list does not narrow. `sourceIds` are the org's active sources: a disconnected
- * source keeps its rows, so a read that omits them counts those too.
+ * Narrowing for a cost read, inlined as escaped literals. `sourceIds` are the org's active sources:
+ * a disconnected source keeps its rows, so a read that omits them counts those too, and an empty
+ * list reads no rows. In `values`, an empty or missing list does not narrow its dimension.
  */
 export interface CostFilters {
 	readonly sourceIds?: ReadonlyArray<string>
@@ -93,7 +93,8 @@ function windowWhere($: DailyAccessor, filters: CostFilters, startParam: StartPa
 		$.OrgId.eq(orgIdParam),
 		$.Date.gte(utcSecondsParam(startParam)),
 		$.Date.lte(utcSecondsParam("endDate")),
-		CH.when(nonEmpty(filters.sourceIds), (ids) => CH.inList($.SourceId, ids)),
+		// An empty list is an org with no source: it reads nothing, never every source.
+		CH.when(filters.sourceIds, (ids) => CH.inList($.SourceId, ids)),
 	]
 }
 
