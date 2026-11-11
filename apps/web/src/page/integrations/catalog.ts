@@ -117,6 +117,11 @@ const PROVIDER_COPY = {
 		description:
 			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
 	},
+	vercel: {
+		category: "infrastructure",
+		isNew: true,
+		description: "Paste a Vercel token to drain request logs, traces and AI Gateway usage from a team.",
+	},
 	warpstream: {
 		category: "infrastructure",
 		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
@@ -158,6 +163,7 @@ const PROVIDER_ORDER: ReadonlyArray<ProviderId> = [
 	"aws",
 	"railway",
 	"supabase",
+	"vercel",
 	"warpstream",
 	"linear",
 	"github",

@@ -144,6 +144,7 @@ export const RUNTIMES_RUNTIMES: ReadonlyArray<ServiceRuntime> = [
 		railwayServiceId: "",
 		railwayEnvironmentId: "",
 		railwayEnvironmentName: "",
+		vercelProjectId: "",
 	},
 ]
 

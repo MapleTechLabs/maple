@@ -12,10 +12,11 @@ export const SERVICE_RUNTIME_KIND_IDS = [
 	"lambda",
 	"railway",
 	"cloudflareWorker",
+	"vercelProject",
 ] as const
 export type ServiceRuntimeKindId = (typeof SERVICE_RUNTIME_KIND_IDS)[number]
 
-export type ServiceRuntimeProvider = "gcp" | "aws" | "railway" | "cloudflare"
+export type ServiceRuntimeProvider = "gcp" | "aws" | "railway" | "cloudflare" | "vercel"
 
 export interface ServiceRuntimeKind {
 	readonly provider: ServiceRuntimeProvider
@@ -49,10 +50,19 @@ export const SERVICE_RUNTIME_KINDS = {
 		short: "Worker",
 		marker: "cloudflare.worker.cpu_time",
 	},
+	// Vercel sends no metrics: the project's spans mark it, and the runtimes query tags those rows
+	// with this marker.
+	vercelProject: {
+		provider: "vercel",
+		label: "Vercel project",
+		short: "Vercel",
+		marker: "vercel.project",
+	},
 } as const satisfies Record<ServiceRuntimeKindId, ServiceRuntimeKind>
 
+/** The marker gauges of the kinds that report metrics. */
 export const SERVICE_RUNTIME_MARKERS: ReadonlyArray<string> = Arr.map(
-	SERVICE_RUNTIME_KIND_IDS,
+	Arr.filter(SERVICE_RUNTIME_KIND_IDS, (kind) => kind !== "vercelProject"),
 	(kind) => SERVICE_RUNTIME_KINDS[kind].marker,
 )
 

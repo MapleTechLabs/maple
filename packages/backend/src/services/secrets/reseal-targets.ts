@@ -22,6 +22,7 @@ import {
 	RailwayConnections,
 	ScrapeTargets,
 	UptimeMonitors,
+	VercelConnections,
 } from "@maple/db/tables"
 import { Array as Arr, Effect, Schema } from "effect"
 import type { EncryptedValue } from "@maple/backend/platform/Crypto"
@@ -307,5 +308,13 @@ export const RESEAL_TARGETS = {
 		identity: ["orgId", "id"],
 		keys: Two,
 		ref: orgRow,
+	}),
+	vercelTokenSlot: tripleTarget({
+		slot: slots.vercelTokenSlot,
+		table: VercelConnections,
+		columns: { ciphertext: "tokenCiphertext", iv: "tokenIv", tag: "tokenTag" },
+		identity: ["orgId"],
+		keys: One,
+		ref: org,
 	}),
 } satisfies Record<keyof typeof slots, ResealTarget>

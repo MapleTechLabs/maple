@@ -45,6 +45,7 @@ import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeR
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { FetchHttpClient } from "effect/http"
 import { Layer } from "effect"
 import type { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
@@ -99,6 +100,7 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	IngestRuleService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
+	VercelIntegrationService.layer,
 	WarehouseQueryService.layer,
 ).pipe(
 	Layer.provide(

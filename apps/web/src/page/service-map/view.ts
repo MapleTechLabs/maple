@@ -29,7 +29,9 @@ import { DB_CHART_TOKENS } from "./view-db-charts"
 import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
 import type * as Scene3d from "./scene3d"
-import { scene3dView } from "./view-scene3d"
+import { scene3dView, topologyOf } from "./view-scene3d"
+import type * as Tiles from "./tiles/update"
+import * as TilesView from "./tiles/view"
 import { servicePanel } from "@maple/views/service-map/panel/service-panel"
 import { infrastructureTab } from "./view-service-infra"
 import { pickTimeSearch } from "../kit/view-tabs"
@@ -41,6 +43,7 @@ type H = HtmlBuilder<Message>
 const VIEW_OPTIONS = [
 	{ value: "2d", label: "2D" },
 	{ value: "3d", label: "3D" },
+	{ value: "tiles", label: "Tiles" },
 ] as const
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
@@ -70,7 +73,7 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	const views = segmentedSelect<"2d" | "3d", Message>(h, {
+	const views = segmentedSelect<"2d" | "3d" | "tiles", Message>(h, {
 		size: "sm",
 		ariaLabel: "Service map view",
 		options: VIEW_OPTIONS,
@@ -156,6 +159,30 @@ const detailPanel =
 	}
 
 const toScene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
+const toTiles = (message: Tiles.Message) => Message.GotTilesMessage({ message })
+
+/** The 3D or tile scene in place of the 2D canvas, or `undefined` for 2D. */
+const sceneOf = (h: H, model: Model, map: ServiceMap.Model): (() => Html) | undefined => {
+	switch (model.search.view) {
+		case "3d":
+			return () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d })
+		case "tiles":
+			return () =>
+				h.submodel({
+					slotId: "service-map-tiles",
+					model: model.tiles,
+					view: TilesView.view,
+					toParentMessage: toTiles,
+					viewInputs: {
+						topology: topologyOf(map),
+						selectedId: Option.getOrNull(map.selectedId),
+						reducedMotion: map.reducedMotion,
+					},
+				}) ?? h.div([], [])
+		default:
+			return undefined
+	}
+}
 
 /** The API dropped the database edges past their budget: say so rather than draw a map with no databases. */
 const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
@@ -189,8 +216,7 @@ const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 				return serviceMapLoading(h)
 			const map = model.map.value
 			return mapView(h, map, toMap, {
-				viewMode: model.search.view ?? "2d",
-				render3D: () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d }),
+				renderScene: sceneOf(h, model, map),
 				emptyState: serviceMapEmptyState(h, model, inputs.context.timeZone),
 				detailPanel: detailPanel(
 					h,

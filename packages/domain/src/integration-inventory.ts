@@ -7,6 +7,7 @@ export const INTEGRATION_PROVIDERS = [
 	"github",
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"prometheus",
 	"chat",

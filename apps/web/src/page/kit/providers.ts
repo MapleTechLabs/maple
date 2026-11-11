@@ -14,6 +14,7 @@ export type ProviderId =
 	| "gcp"
 	| "aws"
 	| "railway"
+	| "vercel"
 	| "supabase"
 	| "warpstream"
 	| "linear"
@@ -85,6 +86,15 @@ export const PROVIDERS = {
 		iconClassName: "text-foreground",
 		docsUrl: docsUrl("railway"),
 		infraHref: "/infra/railway",
+	},
+	vercel: {
+		id: "vercel",
+		name: "Vercel",
+		icon: "VercelIcon",
+		accent: "#000000",
+		iconClassName: "text-foreground",
+		docsUrl: docsUrl("vercel"),
+		infraHref: "/infra/vercel",
 	},
 	supabase: {
 		id: "supabase",

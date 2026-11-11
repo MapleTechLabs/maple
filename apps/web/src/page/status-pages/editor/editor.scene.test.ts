@@ -209,6 +209,27 @@ describe("status page editor", () => {
 		expect(names(afterIncidents.commands)).toContain("ReadStatusPageClock")
 	})
 
+	test("the preview reads monitor history even when the page lands after the components' debounce", () => {
+		const entered = init({ _tag: "StatusPage", pageId: PUBLIC_ID, search: {} }, context).model
+		const settle = (model: Model) =>
+			pageUpdate(model, Message.ElapsedPreviewDebounce({ generation: model.previewGeneration }))
+		const withComponents = pageUpdate(
+			entered,
+			Message.CompletedFetchComponents({
+				key: entered.components.key ?? "",
+				result: Result.succeed([component(1)]),
+			}),
+		).model
+		const early = settle(withComponents)
+		expect(names(early.commands)).toEqual([])
+		const withPage = pageUpdate(
+			early.model,
+			Message.CompletedFetchPage({ key: entered.page.key ?? "", result: Result.succeed(statusPage()) }),
+		)
+		expect(names(withPage.commands)).toContain("WaitStatusPageEditorPreview")
+		expect(names(settle(withPage.model).commands)).toEqual(["FetchStatusPageEditorPreview"])
+	})
+
 	test("an id that is not a page id shows not found without a read", () => {
 		const entered = init({ _tag: "StatusPage", pageId: "nope", search: {} }, context)
 		expect(names(entered.commands)).not.toContain("FetchStatusPage")

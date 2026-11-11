@@ -117,6 +117,11 @@ describe("renderPage", () => {
 		expect(html).toContain(`data-updated-at="${delayed.updatedAt}"`)
 	})
 
+	it("leaves the delayed banner out of a dashboard frame, where the page script would show it once the tab is 5 minutes old", () => {
+		const html = renderPage(makeSnapshot(), live, FIXTURE_NOW, { inDashboard: true })
+		expect(html).not.toContain('id="delayed"')
+	})
+
 	it("draws one bar per day coloured by that day's state, with a dated tooltip and the uptime", () => {
 		const snapshot = makeSnapshot({
 			components: [

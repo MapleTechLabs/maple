@@ -914,7 +914,8 @@ const inventoryEntry = (
  * when the entry's problem only summarizes its resources. A revoked OAuth grant is CFG-INTEG-01's.
  */
 const providerProblem = (entry: IntegrationEntry): string | null => {
-	if (entry.status === "disconnected" && entry.provider !== "railway") return null
+	if (entry.status === "disconnected" && entry.provider !== "railway" && entry.provider !== "vercel")
+		return null
 	return entry.problem !== null && entry.problem !== summarizeResources(entry.resources)
 		? entry.problem
 		: null
@@ -1181,6 +1182,23 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 							inventoryLosingData(config.integrationInventory, "cloudflare", now, kinds),
 						),
 					}
+		},
+	},
+	{
+		id: "CFG-INTEG-07",
+		category: "integrations",
+		title: "Vercel drains are forwarding",
+		severity: "warn",
+		fixHint:
+			"Settings → Integrations → Vercel: save a new access token if Vercel rejected it; a missing or errored drain is re-created on the next sync, and drains need a Pro or Enterprise team (Speed Insights needs Speed Insights Plus on the project, the audit log an Enterprise team).",
+		evaluate: ({ config, now }) => {
+			const affected = inventoryFindings(config.integrationInventory, "vercel", now)
+			return affected.length === 0
+				? PASS
+				: fail(
+						`Vercel has ${plural(affected.length, "problem")}: telemetry from the affected drains is not arriving.`,
+						affected,
+					)
 		},
 	},
 	{

@@ -32,6 +32,7 @@ const SOURCE_SURFACES = {
 	kubernetes: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 	cloudflare: ["cloudflare"],
 	railway: ["railway"],
+	vercel: ["vercel"],
 	supabase: ["supabase"],
 	planetscale: ["planetscale"],
 	gcp: ["gcp"],

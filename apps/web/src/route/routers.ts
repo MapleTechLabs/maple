@@ -387,6 +387,12 @@ const routers = {
 		search(Search.InfraRailwayServiceSearch),
 		Route.mapTo(AppRoute.InfraRailwayService),
 	),
+	InfraVercelProject: pipe(
+		path("infra", "vercel"),
+		slash(segment("projectId")),
+		search(Search.InfraVercelProjectSearch),
+		Route.mapTo(AppRoute.InfraVercelProject),
+	),
 	InfraSupabaseProject: pipe(
 		path("infra", "supabase"),
 		slash(segment("projectRef")),
@@ -464,6 +470,11 @@ const routers = {
 		path("infra", "railway"),
 		search(Search.InfraRailwaySearch),
 		Route.mapTo(AppRoute.InfraRailway),
+	),
+	InfraVercel: pipe(
+		path("infra", "vercel"),
+		search(Search.InfraVercelSearch),
+		Route.mapTo(AppRoute.InfraVercel),
 	),
 	InfraSupabase: pipe(
 		path("infra", "supabase"),
@@ -578,6 +589,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.InfraKubernetes,
 		routers.InfraPlanetscale,
 		routers.InfraRailway,
+		routers.InfraVercel,
 		routers.InfraSupabase,
 		routers.McpServerSession,
 		routers.McpServerSessions,

@@ -51,6 +51,12 @@ const _matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  */
 const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
 
+/**
+ * Platform proxies whose Server span is the direct parent of the next service's Server span, with
+ * no Client span between. Vercel's edge request span parents the project's `Invoke Function`.
+ */
+const PROXY_SERVICES: ReadonlyArray<string> = ["vercel.edge-network"]
+
 export interface ServiceDependenciesOpts {
 	deploymentEnv?: string
 }
@@ -151,7 +157,9 @@ function serviceMapEdgeJoinSource(opts: {
 			DeploymentEnv: $.DeploymentEnv,
 		}))
 		.where(($) => [
-			$.SpanKind.in_("Client", "Producer"),
+			$.SpanKind.in_("Client", "Producer").or(
+				$.SpanKind.eq("Server").and(CH.inList($.ServiceName, PROXY_SERVICES)),
+			),
 			$.Timestamp.gte(opts.rangeStart),
 			$.Timestamp.lt(opts.rangeEnd),
 			$.OrgId.eq(orgIdParam),

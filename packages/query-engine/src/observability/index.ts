@@ -42,6 +42,7 @@ export { searchLogs } from "./search-logs"
 export {
 	mineLogPatterns,
 	clusterLogPatterns,
+	makeLogTemplateMiner,
 	LOG_TEMPLATE_MASKS,
 	type ClusterableLogRow,
 } from "./mine-log-patterns"
