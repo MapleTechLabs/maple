@@ -12,6 +12,7 @@ import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	all,
 	attr,
+	change,
 	Command,
 	click,
 	expect as expectView,
@@ -47,7 +48,13 @@ import {
 	statusPageConfig,
 } from "../shared/test-pages"
 import { PickerMessage } from "../shared/picker"
-import { CheckCustomDomain, FocusEditorElement, RemoveCustomDomain, SetCustomDomain } from "./command"
+import {
+	CheckCustomDomain,
+	FocusEditorElement,
+	RemoveCustomDomain,
+	SaveVisibility,
+	SetCustomDomain,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -1601,6 +1608,69 @@ describe("settings and appearance views", () => {
 			expectView(
 				text("Store it outside Maple, in your password manager. It is not shown again."),
 			).not.toExist(),
+		)
+	})
+
+	test("a password is set before the page can be password-protected, and never rides a command's args", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings" })),
+			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
+			expectView(text("Set a password below first.")).toExist(),
+			click(role("button", { name: "Set password" })),
+			type(role("textbox", { name: "New password" }), "short"),
+			expectView(text("Use at least 8 characters")).toExist(),
+			expectView(role("button", { name: "Save password" })).toBeDisabled(),
+		)
+		const typed = pageUpdate(
+			pageUpdate(loaded({ tab: "settings" }), Message.ClickedChangePassword()).model,
+			Message.ChangedPassword({ value: "correct horse battery" }),
+		).model
+		const saving = pageUpdate(typed, Message.SubmittedPassword())
+		expect(saving.commands).toMatchObject([{ name: "SetStatusPagePassword" }])
+		expect(saving.commands?.[0]).not.toHaveProperty("args")
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedAccessChange({
+				action: "password",
+				result: Result.succeed(statusPage({ has_password: true })),
+			}),
+		).model
+		expect(saved.passwordDraft).toBeNull()
+		scene(
+			{ update: pageUpdate, view },
+			given(saved),
+			expectView(role("radio", { name: "Password-protected" })).not.toBeDisabled(),
+			change(role("radio", { name: "Password-protected" }), "on"),
+			Command.resolve(
+				SaveVisibility,
+				Message.CompletedAccessChange({
+					action: "visibility",
+					result: Result.succeed(statusPage({ has_password: true, visibility: "password" })),
+				}),
+			),
+			// A password page keeps its password: it can be changed, not removed.
+			expectView(role("button", { name: "Change password" })).toExist(),
+			expectView(role("button", { name: "Remove password" })).not.toExist(),
+		)
+	})
+
+	test("a page with a custom domain cannot go internal, and only admins change who can view", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings", customDomain: pendingDomain })),
+			expectView(role("radio", { name: "Internal" })).toBeDisabled(),
+			expectView(text("Remove the custom domain first.")).toExist(),
+		)
+		const engineer = loaded({ tab: "settings", grants: Policy.grantsOf(["org:engineer"]) })
+		scene(
+			{ update: pageUpdate, view },
+			given(engineer),
+			expectView(text("Only org admins can change who can view a status page.")).toExist(),
+			expectView(role("button", { name: "Set password" })).not.toExist(),
+		)
+		expect(names(pageUpdate(engineer, Message.PickedVisibility({ visibility: "internal" })).commands)).toEqual(
+			[],
 		)
 	})
 

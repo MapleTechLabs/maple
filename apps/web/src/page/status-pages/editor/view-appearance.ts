@@ -246,6 +246,7 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 			privacyUrl: orNull(form.privacyUrl),
 			termsUrl: orNull(form.termsUrl),
 			customDomain: null,
+			visibility: page.visibility,
 			showPoweredBy: form.showPoweredBy,
 			theme: previewTheme(themeOf(form.theme), model.previewScheme),
 		},

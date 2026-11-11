@@ -19,7 +19,7 @@ import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detai
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { type EditorView, statusPageHref, statusPagesHref } from "../shared/commands"
+import { type EditorView, statusPageHref, statusPagesHref, statusPageViewHref } from "../shared/commands"
 import { pageUrlOf } from "./update-domain"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -107,6 +107,11 @@ const publishButton = (h: H, model: Model): Html =>
 const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
 	const url = pageUrlOf(model, page)
 	const label = [icon(h, "ExternalLinkIcon"), "Open page"]
+	if (page.visibility === "internal")
+		return linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
+			icon(h, "EyeIcon"),
+			"Open page",
+		])
 	if (url !== null && !page.draft)
 		return linkButton(
 			h,

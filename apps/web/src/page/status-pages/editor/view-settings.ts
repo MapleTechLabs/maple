@@ -21,6 +21,7 @@ import {
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
+import { accessSection } from "./view-access"
 import { appearanceSection, previewPanel } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { pageUrlOf } from "./update-domain"
@@ -30,7 +31,7 @@ import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The Settings tab: the page's fields, the break-glass token and deleting the page.
+// The Settings tab: the page's fields, who can view it, the break-glass token and deleting the page.
 
 type H = HtmlBuilder<Message>
 
@@ -331,6 +332,7 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
+		accessSection(h, model, page),
 		customDomainSection(h, model),
 		breakGlassSection(h, model, page),
 		...(canManage(model) ? [deleteSection(h)] : []),

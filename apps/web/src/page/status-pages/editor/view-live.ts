@@ -7,7 +7,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { heading } from "@maple/views/ui/heading"
-import { statusPageHref } from "../shared/commands"
+import { statusPageHref, statusPageViewHref } from "../shared/commands"
 import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
 import { canBreakGlass, type Model } from "./model"
@@ -25,6 +25,12 @@ export const NO_DOMAIN_NOTE = "Public address appears once a status domain is co
 
 /** The header's address: a link to the public page, or the note while there is no status domain. */
 export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
+	if (page.visibility === "internal")
+		return typography(h, { size: "xs" }, [
+			textLink(h, { href: statusPageViewHref(page.id), tone: "muted" }, [
+				"Internal: only members can read it, in Maple",
+			]),
+		])
 	const url = pageUrlOf(model, page)
 	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
 	// A draft is never published, so its address does not resolve yet: text, not a link.

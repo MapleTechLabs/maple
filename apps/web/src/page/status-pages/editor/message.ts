@@ -1,4 +1,9 @@
-import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageIncidentId,
+	StatusPageIncidentKind,
+	StatusPageVisibility,
+} from "@maple/domain"
 import {
 	StatusPageConfig,
 	StatusPagePreviewParams,
@@ -29,6 +34,7 @@ import {
 	SettingsTextField,
 	ThemeColorField,
 } from "../shared/form"
+import { AccessAction } from "./model"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../shared/preview"
 import { LoadOutcome } from "../../kit/load-schemas"
@@ -139,6 +145,14 @@ export const Message = defineMessageUnion({
 	GotBreakGlassDialogMessage: { message: Dialog.Message },
 	GotTokenCopyMessage: { message: CopyButton.Message },
 	ClickedDismissToken: {},
+	// Access
+	PickedVisibility: { visibility: StatusPageVisibility },
+	ClickedChangePassword: {},
+	ChangedPassword: { value: Schema.String },
+	ClickedCancelPassword: {},
+	SubmittedPassword: {},
+	ClickedRemovePassword: {},
+	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
 	// Custom domain
 	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },
 	ChangedCustomDomain: { value: Schema.String },
