@@ -27,7 +27,7 @@ rather than by a separate `drop_web_events` migration.
    to set unless the datasource name differs.
 5. Publish `@maple-dev/effect-sdk` / `@maple-dev/browser` so customers' events start carrying
    identity; older builds keep writing (all new columns default).
-6. **Billing**: `bun run --cwd apps/api atmn push` (`scripts/atmn.sh` runs `atmn`
+6. **Billing**: `bun run --cwd apps/api atmn push` (`apps/api/scripts/atmn.sh` runs `atmn`
    through bunx) so the `product_events` feature and its `startup` plan item exist in
    Autumn before the gateway starts reserving against it. Until pushed, Autumn answers
    `allowed: false` for the unknown feature. That is a real denial, not an error, so `is_allowed`'s

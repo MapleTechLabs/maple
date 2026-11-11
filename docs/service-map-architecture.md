@@ -195,9 +195,10 @@ service inspector retain keyboard access.
 ## Where the client code lives
 
 The data-agnostic map is shared by the cloud app and Maple Local and lives in
-`packages/ui/src/components/service-map/`: node, edge, namespace box, minimap,
-particles, `buildFlowElements`, the ELK layout, declutter, and
-`ServiceMapFlowCanvas`, which owns selection, layout, the toolbar and the legend.
+`packages/views/src/service-map/`: `graph/` holds `buildFlowElements`, the ELK
+layout and declutter; `map/` holds the node, edge, namespace box, particles,
+toolbar, legend and `ServiceMapFlowCanvas` (`map/service-map.ts`), which owns
+selection and layout; `xyflow/` is the canvas binding.
 Hosts supply the rows, where drag positions and prefs are stored, and the
 selected-node panel. The dashboard's `/service-map` page (`apps/web/src/page/service-map/`) wires the warehouse bundle,
 per-org atoms, the 3D renderer and the integration panels. Maple Local

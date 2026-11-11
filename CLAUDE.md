@@ -91,7 +91,7 @@ truthiness.
   `parity.test.ts` fails when the tables and the migrations disagree.
 - One pool per invocation via `withPgConnectionScope`; connections never outlive the invocation.
   Fork DB work off a request only with `forkRequestScoped`.
-- Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
+- Tests use `createTestDb()` (PGlite, `packages/backend/src/testing/test-pglite.ts`).
 - **Migrations apply in the prd alchemy deploy.** `db:migrate` is for local databases; never point it at prd.
 - PR previews (only with the `preview` label) get their own Neon branch, migrated by the deploy (`docs/pr-previews.md`).
 
@@ -108,7 +108,7 @@ truthiness.
   `node_modules/alchemy/src/` for APIs at the installed version.
 - **Span status codes:** Title case: `"Ok"`, `"Error"`, `"Unset"`. Only 5xx is `Error` for server
   spans. Custom attributes use `maple.*`.
-- **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
+- **Self-tracing:** the API traces itself through ingest; keep the `TracerDisabledWhen` filters (`apps/api/src/http/api-observability.ts`) and avoid
   spans on hot paths like token validation.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
   Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`

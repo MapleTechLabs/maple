@@ -291,7 +291,7 @@ last 7 days, distinct callers, whether the service is deployed, error and auth-f
 that path. It ranks and annotates. It never changes a verdict or severity, which stay the skill's
 evidence-bound call.
 
-### Data model (Postgres, `packages/db/src/tables/security.ts`)
+### Data model (Postgres, `packages/db/src/tables/security-audit.ts`)
 
 - `security_audit_targets`: org, repository, branch, cadence (baseline, slices, revalidation),
   budget (max agent invocations per run and per month), enabled.
@@ -335,7 +335,7 @@ Exit: the skill finds a meaningful share of the known bugs, and we know the cost
 ### Phase 0 results (2026-10-24)
 
 Harness: `bun run --cwd apps/ai security:eval <cases.json>...` (`apps/ai/scripts/security-audit-eval.ts`,
-cases in `scripts/security-audit-eval/cases/`). A case is one scoped run at a commit that still holds
+cases in `apps/ai/scripts/security-audit-eval/cases/`). A case is one scoped run at a commit that still holds
 its known bugs; a bug is graded by hand against the run's records. Maple cases name only PR numbers,
 commits and paths; graded detail stays outside the repository. Source-only throughout (no sandbox),
 `quick` profile, budget 16 invocations, concurrency 3, discovery `anthropic/claude-sonnet-5.5`,

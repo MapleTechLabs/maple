@@ -186,7 +186,7 @@ on an agent reading a rule is not a guarantee.
 
 The agent-facing map of this flow lives in the `maple://instructions` MCP resource
 (`apps/ai/src/mcp/resources/instructions.ts`), and the
-`apps/ai/src/mcp/__evals__/issue-workflow.eval.ts` cases check a real model still picks these tools. Keep both in sync with
+error-issue tasks in `apps/ai/src/evals/tools/tasks.ts` check a real model still picks these tools. Keep both in sync with
 this page.
 
 ### 3. Post-merge verification
