@@ -309,6 +309,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-map-tiles",
+		title: "Service map tiles",
+		description:
+			"The service map as a landscape of hex tiles: touching tiles share a road, the rest go by rail. Deal the tiles and place them, or rearrange the automatic layout.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/agent-sessions",
 		title: "Agent sessions list",
 		description:
