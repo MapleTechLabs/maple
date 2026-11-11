@@ -8,6 +8,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { isSameFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
+import { listFooter } from "@maple/views/ui/list-footer"
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import type * as LogsStream from "@maple/views/ui/logs/logs-stream"
 import * as LogsStreamView from "@maple/views/ui/logs/logs-stream-view"
@@ -100,6 +101,18 @@ const streamArea = (
 					selectedIndex: model.selectedIndex ?? undefined,
 				},
 			}),
+			// A later page failed: said under the count, with the retry.
+			...(model.pagination.isFailed
+				? [
+						listFooter(h, {
+							isFailed: true,
+							onLoadMore: Message.ClickedRetryNextPage(),
+							align: "start",
+							className: "shrink-0 py-0",
+							children: [h.span([], ["Couldn't load more logs"])],
+						}),
+					]
+				: []),
 		],
 	)
 

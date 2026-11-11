@@ -130,9 +130,12 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				cached === undefined
 					? Option.getOrElse(firstPage, () => model.firstPage)
 					: { key: listKey, data: AsyncData.Success({ data: cached }) },
+			// A reload of the same list keeps its pages and lets a failed one be asked again.
 			pagination:
 				model.pagination.key === listKey
-					? model.pagination
+					? mode === "Refresh"
+						? { ...model.pagination, isFailed: false }
+						: model.pagination
 					: freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands,
@@ -141,22 +144,10 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
-/** The rendered window nears the end of the loaded rows. */
-const reachEnd = (model: Model, context: PageContext): Return => {
-	const lastIndex = Option.getOrElse(
-		Option.map(Arr.last(model.virtualRows), (row) => row.index),
-		() => -1,
-	)
-	const count = allRows(model).length
+/** Asks for the next page, one at a time; also the retry of a page that failed. */
+const fetchNext = (model: Model, context: PageContext): Return => {
 	const { window, pagination } = model
-	if (
-		lastIndex < 0 ||
-		window === null ||
-		pagination.key === null ||
-		pagination.isFetching ||
-		!hasNextPage(model) ||
-		lastIndex < count - FETCH_THRESHOLD
-	)
+	if (window === null || pagination.key === null || pagination.isFetching || !hasNextPage(model))
 		return { model }
 	return {
 		model: { ...model, pagination: fetchingNext(pagination) },
@@ -171,6 +162,17 @@ const reachEnd = (model: Model, context: PageContext): Return => {
 			}),
 		],
 	}
+}
+
+/** The rendered window nears the end of the loaded rows. A failed page waits for its retry. */
+const reachEnd = (model: Model, context: PageContext): Return => {
+	const lastIndex = Option.getOrElse(
+		Option.map(Arr.last(model.virtualRows), (row) => row.index),
+		() => -1,
+	)
+	if (lastIndex < 0 || model.pagination.isFailed || lastIndex < allRows(model).length - FETCH_THRESHOLD)
+		return { model }
+	return fetchNext(model, context)
 }
 
 const navigate = (model: Model, search: Search, isReplace = false): Return => ({
@@ -371,11 +373,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				offset !== nextOffset(current)
 			)
 				return { model }
-			// A failed page ends pagination, so the list stops asking (a backend offset cap).
+			// A failed page pauses pagination: the footer says so and offers the retry.
 			return settled({ ...model, pagination: appendedPage(current, result) }, context)
 		},
 		ChangedVirtualWindow: ({ rows, totalSize }) =>
 			reachEnd({ ...model, virtualRows: rows, totalSize }, context),
+		ClickedRetryNextPage: () => fetchNext(model, context),
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
