@@ -1,4 +1,5 @@
 import { Schema, Array as Arr, String as Str } from "effect"
+import type { OrganizationFeatureFlags } from "./organization-feature-flags"
 import {
 	type AwsAccountId,
 	type AwsConnectionId,
@@ -27,6 +28,8 @@ interface AwsModuleSpec {
 	readonly summary: string
 	/** Whether Maple reads anything with it yet. A planned module is not offered. */
 	readonly available: boolean
+	/** A module that is not `available` is still offered to an org with this rollout flag on. */
+	readonly rolloutFlag?: keyof OrganizationFeatureFlags
 	/** AWS managed policies attached when the module is on. Metadata only: never data reads. */
 	readonly managedPolicies: ReadonlyArray<string>
 	/** Actions of the module's own policy, beyond the managed ones. */
@@ -76,6 +79,7 @@ export const AWS_MODULE_SPECS = {
 		title: "Cost",
 		summary: "Spend by service and resource, and what to cut.",
 		available: false,
+		rolloutFlag: "cloudCost",
 		managedPolicies: [],
 		// Every cost read Maple plans to make: adding one later means each customer updates the stack.
 		actions: [
@@ -107,7 +111,17 @@ export const AWS_MODULE_SPECS = {
 	},
 } as const satisfies Record<AwsModule, AwsModuleSpec>
 
-export const isAwsModuleAvailable = (module: AwsModule) => AWS_MODULE_SPECS[module].available
+/** Whether an org with these rollout flags is offered the module, and may turn it on. */
+export const isAwsModuleAvailable = (module: AwsModule, flags: OrganizationFeatureFlags): boolean => {
+	const spec: AwsModuleSpec = AWS_MODULE_SPECS[module]
+	return spec.available || (spec.rolloutFlag !== undefined && flags[spec.rolloutFlag])
+}
+
+/** The rollout flag of a module that is built but offered only to orgs in its rollout. */
+export const awsModuleRolloutFlag = (module: AwsModule): keyof OrganizationFeatureFlags | undefined => {
+	const spec: AwsModuleSpec = AWS_MODULE_SPECS[module]
+	return spec.rolloutFlag
+}
 
 /** Every connection's role starts with it. The cleanup keeps the OIDC provider while one is left. */
 export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"

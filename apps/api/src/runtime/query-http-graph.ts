@@ -12,6 +12,7 @@ import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
@@ -43,6 +44,8 @@ export const QueryRoutes = Layer.mergeAll(
 			OrganizationRegionService.layer,
 			RuntimeReleaseCatalog.layer,
 			RuntimeAdvisoryCatalog.layer,
+			// The `cloudCost` rollout gate on the cost reads.
+			OrganizationFeatureFlagsService.layer,
 		),
 	),
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),

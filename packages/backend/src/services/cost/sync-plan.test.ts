@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Array as Arr, String as Str } from "effect"
+import { DateTime, Option, Array as Arr, String as Str } from "effect"
 import type { CostPullRow } from "./CostProvider"
 import {
 	advanceCostSync,
@@ -10,6 +10,7 @@ import {
 	historyFloor,
 	MONTHLY_REQUEST_BUDGET,
 	nextMonthStartMs,
+	oversizedDay,
 	planCostSync,
 	toCostDailyRows,
 	toWarehouseDateTime64,
@@ -186,13 +187,15 @@ describe("planCostSync", () => {
 		assert.strictEqual(planCostSync(state, now).mode, "head")
 	})
 
-	it("resumes from its watermark after a long hold, leaving no day unpulled", () => {
+	it("resumes a month before its watermark's after a long hold, so no day keeps a pre-final amount", () => {
 		const now = at("2026-11-20T03:00:00Z")
-		// Held for 60 days: the usual window would start on October 1 and skip the end of September.
+		// Last pulled on September 21, with September still open and August perhaps too. The usual
+		// window starts on October 1; from September 22 on, September 1 to 21 would never be final.
 		const held = pulled(now, "2026-06-01", { head: 60 * DAY_MS, settle: 61 * DAY_MS })
+		assert.strictEqual(held.watermarkDate, "2026-09-21")
 		assert.deepStrictEqual(planCostSync(held, now), {
 			mode: "settle",
-			startDay: "2026-09-22",
+			startDay: "2026-08-01",
 			endDay: "2026-11-20",
 		})
 		// Never further back than the history floor.
@@ -200,6 +203,43 @@ describe("planCostSync", () => {
 		assert.deepStrictEqual(planCostSync(ancient, now), {
 			mode: "settle",
 			startDay: historyFloor("2026-11-20"),
+			endDay: "2026-11-20",
+		})
+		// A month before the watermark's that reaches under the floor starts at the floor.
+		const nearFloor = { ...held, watermarkDate: "2025-10-15" }
+		assert.deepStrictEqual(
+			[historyFloor("2026-11-20"), planCostSync(nearFloor, now)],
+			["2025-10-01", { mode: "settle", startDay: "2025-10-01", endDay: "2026-11-20" }],
+		)
+	})
+
+	it("keeps the usual four day head while the watermark reaches it, and widens one day past it", () => {
+		const now = at("2026-11-20T03:00:00Z")
+		const headAfter = (days: number) =>
+			pulled(now, "2026-06-01", { head: days * DAY_MS, settle: days * DAY_MS })
+		// Pulled yesterday, and four days ago: the day after the watermark is the head's first day.
+		assert.deepStrictEqual(
+			[planCostSync(headAfter(1), now), headAfter(4).watermarkDate, planCostSync(headAfter(4), now)],
+			[
+				{ mode: "head", startDay: "2026-11-17", endDay: "2026-11-20" },
+				"2026-11-16",
+				{ mode: "head", startDay: "2026-11-17", endDay: "2026-11-20" },
+			],
+		)
+		// Five days ago: November 16 is in no head, so October and November are pulled whole.
+		assert.deepStrictEqual(
+			[headAfter(5).watermarkDate, planCostSync(headAfter(5), now)],
+			["2026-11-15", { mode: "head", startDay: "2026-10-01", endDay: "2026-11-20" }],
+		)
+	})
+
+	it("keeps the usual settle window while the watermark reaches it", () => {
+		const now = at("2026-11-20T03:00:00Z")
+		// A week since the last settle, a day since the head: November alone, as with no gap at all.
+		const settled = pulled(now, "2026-06-01", { head: DAY_MS, settle: 7 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(settled, now), {
+			mode: "settle",
+			startDay: "2026-11-01",
 			endDay: "2026-11-20",
 		})
 	})
@@ -522,6 +562,20 @@ describe("daysOfWindow", () => {
 		])
 		assert.deepStrictEqual(daysOfWindow({ startDay: "2026-11-02", endDay: "2026-11-01" }), [])
 	})
+
+	it("counts the days to the last one a four-digit year holds, where the day after sorts before it", () => {
+		assert.deepStrictEqual(daysOfWindow({ startDay: "9999-12-30", endDay: "9999-12-31" }), [
+			"9999-12-30",
+			"9999-12-31",
+		])
+		assert.deepStrictEqual(daysOfWindow({ startDay: "9999-12-31", endDay: "9999-12-31" }), ["9999-12-31"])
+		// 2024 is a leap year: 366 days, each once.
+		const year = daysOfWindow({ startDay: "2024-01-01", endDay: "2024-12-31" })
+		assert.deepStrictEqual(
+			[year.length, Arr.dedupe(year).length, year[59], year[365]],
+			[366, 366, "2024-02-29", "2024-12-31"],
+		)
+	})
 })
 
 describe("batchWholeDays", () => {
@@ -552,14 +606,18 @@ describe("batchWholeDays", () => {
 		assert.deepStrictEqual(daysIn(batchWholeDays(rows, 2)), ["0102", "03"])
 	})
 
-	it("splits only a day that is larger than a batch, apart from its neighbours", () => {
-		assert.deepStrictEqual(daysIn(batchWholeDays(rowsOf([1, 5, 1]), 2)), [
-			"01",
-			"0202",
-			"0202",
-			"02",
-			"03",
-		])
+	it("never splits a day, not even one larger than a batch: it is a batch of its own", () => {
+		assert.deepStrictEqual(daysIn(batchWholeDays(rowsOf([1, 5, 1]), 2)), ["01", "0202020202", "03"])
+	})
+
+	it("names the first day that is larger than a batch, and none when every day fits", () => {
+		assert.deepStrictEqual(
+			oversizedDay(rowsOf([1, 5, 6]), 4),
+			Option.some({ day: "2026-11-02", rows: 5 }),
+		)
+		// Exactly a batch still fits, and so do days that only together are larger than one.
+		assert.deepStrictEqual(oversizedDay(rowsOf([4, 4, 4]), 4), Option.none())
+		assert.deepStrictEqual(oversizedDay([], 4), Option.none())
 	})
 
 	it("keeps every row once", () => {

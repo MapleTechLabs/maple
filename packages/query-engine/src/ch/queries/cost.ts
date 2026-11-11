@@ -21,6 +21,11 @@ export const COST_OTHER_KEY = "__other__"
 export interface CostFilters {
 	readonly sourceIds?: ReadonlyArray<string>
 	readonly values?: Partial<Record<CostDimension, ReadonlyArray<string>>>
+	/**
+	 * Keeps only the rows billed in this currency, '' included. Nothing converts, so a read
+	 * without it adds every currency together: only `costCurrenciesQuery` may go without.
+	 */
+	readonly currency?: string
 }
 
 type DailyAccessor = ColumnAccessor<typeof Datasources.costDaily.columns>
@@ -132,6 +137,8 @@ function latestRows(filters: CostFilters, metric: CostMetric, startParam: StartP
 					CH.inList(pickDimension(dailyDimensions($), dimension), values),
 				),
 			),
+			// Here, not in `newestPulls`: a pull in another currency still supersedes the day.
+			CH.when(filters.currency, (currency) => $.Currency.eq(currency)),
 		])
 		.groupBy(
 			"date",
@@ -196,6 +203,42 @@ export function costTotalsQuery(opts: CostReadOpts = {}) {
 		.route("ingest")
 }
 
+export interface CostCurrenciesOutput {
+	readonly currency: string
+	/** 1 when a row of the window is billed in the currency, 0 when only the period before is. */
+	readonly inWindow: number
+	/** The window's cost billed in the currency. */
+	readonly cost: number
+	readonly previousCost: number
+}
+
+/**
+ * Every currency of the window and the equal-length period before it: those the window bills in
+ * first (a credit-only one too), its largest leading, then those of the period before alone. A
+ * read picks its one `currency` from it, so it ignores that filter. Params: orgId,
+ * previousStartDate, startDate, endDate.
+ */
+export function costCurrenciesQuery(opts: Omit<CostReadOpts, "currency"> = {}) {
+	const filters = { sourceIds: opts.sourceIds, values: opts.values }
+	return (
+		costLatest(filters, opts.metric ?? "billed", "previousStartDate")
+			.select(($) => {
+				const current = $.date.gte(utcSecondsParam("startDate"))
+				return {
+					currency: $.currency,
+					inWindow: CH.max_(CH.if_(current, CH.lit(1), CH.lit(0))),
+					cost: total(CH.sumIf($.cost, current)),
+					previousCost: total(CH.sumIf($.cost, CH.not(current))),
+				}
+			})
+			.groupBy("currency")
+			// A negative window cost must not rank below a currency with no row in the window at all.
+			.orderBy(["inWindow", "desc"], ["cost", "desc"], ["previousCost", "desc"], ["currency", "asc"])
+			.format("JSON")
+			.route("ingest")
+	)
+}
+
 export interface CostTimeseriesOpts extends CostReadOpts {
 	/** Splits each day by this dimension. Without it every day is one row with key ''. */
 	readonly dimension?: CostDimension
@@ -207,6 +250,8 @@ export interface CostTimeseriesOutput {
 	/** Midnight UTC of the usage day. */
 	readonly date: DateTime.Utc
 	readonly key: string
+	/** 1 for the row of the values outside `keys`: a value can be named `COST_OTHER_KEY` itself. */
+	readonly other: number
 	readonly cost: number
 	/** 1 while the provider may still restate the day. */
 	readonly estimated: number
@@ -218,18 +263,17 @@ export function costTimeseriesQuery(opts: CostTimeseriesOpts = {}) {
 	return costLatest(opts, opts.metric ?? "billed", "startDate")
 		.select(($) => {
 			const value = dimension === undefined ? CH.lit("") : pickDimension($, dimension)
+			const kept = dimension === undefined || keys === undefined ? undefined : CH.inList(value, keys)
 			return {
 				date: $.date,
-				key:
-					dimension === undefined || keys === undefined
-						? value
-						: CH.if_(CH.inList(value, keys), value, CH.lit(COST_OTHER_KEY)),
+				key: kept === undefined ? value : CH.if_(kept, value, CH.lit(COST_OTHER_KEY)),
+				other: kept === undefined ? CH.lit(0) : CH.if_(kept, CH.lit(0), CH.lit(1)),
 				cost: total(CH.sum($.cost)),
 				estimated: CH.max_($.estimated),
 			}
 		})
-		.groupBy("date", "key")
-		.orderBy(["date", "asc"], ["key", "asc"])
+		.groupBy("date", "key", "other")
+		.orderBy(["date", "asc"], ["key", "asc"], ["other", "asc"])
 		.format("JSON")
 		.route("ingest")
 }

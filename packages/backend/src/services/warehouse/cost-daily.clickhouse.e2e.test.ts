@@ -4,7 +4,8 @@
 //   - a key the provider dropped on restatement still counting (argMax per key would keep it),
 //   - an ingest retry's copy of a row counting twice (the seed keeps both copies unmerged),
 //   - a disconnected source's rows counting once the caller names the active sources,
-//   - the sync's zero marker row for an emptied day showing as a key of its own.
+//   - the sync's zero marker row for an emptied day showing as a key of its own,
+//   - two sources billing in different currencies adding up to one figure.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect, Order, Array as Arr, String as Str } from "effect"
@@ -90,6 +91,12 @@ const SEED: ReadonlyArray<SeedRow> = [
 	// An account that changed its billing currency between the period before and the window.
 	{ ...row("src_switched", 1, "EC2", "eu-central-1", 40, SECOND_PULL), currency: "EUR" },
 	row("src_switched", -2, "EC2", "eu-central-1", 15, SECOND_PULL),
+	// A service whose name is the key the split series fold the rest into.
+	row("src_literal", 0, CH.COST_OTHER_KEY, "us-east-1", 6, SECOND_PULL),
+	row("src_literal", 0, "EC2", "us-east-1", 2, SECOND_PULL),
+	// A credit is all the window holds, in USD; EUR was billed only before it.
+	row("src_credit", 1, "Refund", "us-east-1", -10, SECOND_PULL),
+	{ ...row("src_credit", -2, "EC2", "eu-central-1", 100, SECOND_PULL), currency: "EUR" },
 ]
 
 /** The copy of a second-pull row an ingest retry wrote again, in a block of its own. */
@@ -146,9 +153,20 @@ const breakdown = async (opts: CH.CostBreakdownOpts) => {
 	return Arr.map(await runJson(sql), (r) => [r.key, r.cost, r.previousCost])
 }
 
+const currencies = async (opts: Parameters<typeof CH.costCurrenciesQuery>[0], at = params) => {
+	const { sql } = Effect.runSync(CH.compile(CH.costCurrenciesQuery(opts), at))
+	return Arr.map(await runJson(sql), (r) => [r.currency, r.cost, r.previousCost])
+}
+
 const timeseries = async (opts: CH.CostTimeseriesOpts) => {
 	const { sql } = Effect.runSync(CH.compile(CH.costTimeseriesQuery(opts), params))
 	return Arr.map(await runJson(sql), (r) => [r.date, r.key, r.cost, r.estimated])
+}
+
+/** A split series' rows with what tells a kept value from the folded rest. */
+const splitSeries = async (opts: CH.CostTimeseriesOpts) => {
+	const { sql } = Effect.runSync(CH.compile(CH.costTimeseriesQuery(opts), params))
+	return Arr.map(await runJson(sql), (r) => [r.date, r.key, r.other, r.cost])
 }
 
 describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
@@ -194,8 +212,9 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 	})
 
 	it("counts a disconnected source only when the caller names no sources", async () => {
-		// Every source of the org: the active one, the disconnected, the emptied and the switched.
-		assert.strictEqual((await totals({}))?.cost, 1112)
+		// Every source of the org: the active one, the disconnected, the emptied and the switched
+		// (1112), the one with the literal key (8) and the credit (-10).
+		assert.strictEqual((await totals({}))?.cost, 1110)
 	})
 
 	it("reads nothing for an org whose source list is empty", async () => {
@@ -238,6 +257,42 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 		])
 	})
 
+	it("marks the folded rows, and only them", async () => {
+		assert.deepStrictEqual(await splitSeries({ ...ACTIVE, dimension: "cloud_service", keys: ["EC2"] }), [
+			[day(0), "EC2", 0, 12],
+			[day(0), CH.COST_OTHER_KEY, 1, 4],
+			[day(1), "EC2", 0, 20],
+			[day(1), CH.COST_OTHER_KEY, 1, 5],
+			[day(2), "EC2", 0, 30],
+			[day(2), CH.COST_OTHER_KEY, 1, 1],
+		])
+		// Nothing folds without keys to keep, or without a dimension.
+		assert.deepStrictEqual(
+			Arr.dedupe(
+				Arr.map(await splitSeries({ ...ACTIVE, dimension: "cloud_service" }), ([, , other]) => other),
+			),
+			[0],
+		)
+		assert.deepStrictEqual(
+			Arr.map(await splitSeries(ACTIVE), ([, , other]) => other),
+			[0, 0, 0],
+		)
+	})
+
+	it("keeps a value named like the folded key apart from the rows folded into it", async () => {
+		const literal = { sourceIds: ["src_literal"], dimension: "cloud_service" } as const
+		// The same day and the same key twice: the service called so, then the folded EC2.
+		assert.deepStrictEqual(await splitSeries({ ...literal, keys: [CH.COST_OTHER_KEY] }), [
+			[day(0), CH.COST_OTHER_KEY, 0, 6],
+			[day(0), CH.COST_OTHER_KEY, 1, 2],
+		])
+		// Kept the other way round, the literal value is what folds.
+		assert.deepStrictEqual(await splitSeries({ ...literal, keys: ["EC2"] }), [
+			[day(0), "EC2", 0, 2],
+			[day(0), CH.COST_OTHER_KEY, 1, 6],
+		])
+	})
+
 	it("ranks a dimension by cost and keeps a value that only cost money before", async () => {
 		assert.deepStrictEqual(await breakdown({ ...ACTIVE, dimension: "cloud_service" }), [
 			["EC2", 62, 8],
@@ -274,6 +329,103 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 			currency: "EUR",
 			currencies: 2,
 		})
+	})
+
+	// `src_a` bills in USD; `src_switched` in EUR inside the window and in USD before it.
+	const TWO_CURRENCIES = { sourceIds: ["src_a", "src_switched"] }
+
+	it("leaves the other currency's rows out of every read of one currency", async () => {
+		const usd = { ...TWO_CURRENCIES, currency: "USD" }
+		// The 40 EUR of day 1 is in none of them; the switched account's 15 USD is, before the window.
+		assert.deepStrictEqual(await totals(usd), {
+			cost: 72,
+			previousCost: 73,
+			estimatedDays: 1,
+			currency: "USD",
+			currencies: 1,
+		})
+		assert.deepStrictEqual(await timeseries(usd), [
+			[day(0), "", 16, 0],
+			[day(1), "", 25, 0],
+			[day(2), "", 31, 1],
+		])
+		assert.deepStrictEqual(await breakdown({ ...usd, dimension: "cloud_service" }), [
+			["EC2", 62, 23],
+			["ELB", 5, 0],
+			["S3", 4, 0],
+			["Route 53", 1, 0],
+			["RDS", 0, 50],
+		])
+	})
+
+	it("reads only the other currency's rows when asked for it", async () => {
+		const eur = { ...TWO_CURRENCIES, currency: "EUR" }
+		assert.deepStrictEqual(await totals(eur), {
+			cost: 40,
+			previousCost: 0,
+			estimatedDays: 0,
+			currency: "EUR",
+			currencies: 1,
+		})
+		assert.deepStrictEqual(await timeseries(eur), [[day(1), "", 40, 0]])
+		assert.deepStrictEqual(await breakdown({ ...eur, dimension: "cloud_service" }), [["EC2", 40, 0]])
+	})
+
+	it("reads nothing in a currency no row is billed in", async () => {
+		const gbp = { ...TWO_CURRENCIES, currency: "GBP" }
+		assert.strictEqual((await totals(gbp))?.cost, 0)
+		assert.deepStrictEqual(await timeseries(gbp), [])
+		assert.deepStrictEqual(await breakdown({ ...gbp, dimension: "cloud_service" }), [])
+	})
+
+	it("lists each currency with its own cost, the window's largest first", async () => {
+		assert.deepStrictEqual(await currencies(TWO_CURRENCIES), [
+			["USD", 72, 73],
+			["EUR", 40, 0],
+		])
+		assert.deepStrictEqual(await currencies({ ...TWO_CURRENCIES, metric: "effective" }), [
+			["USD", 70, 73],
+			["EUR", 40, 0],
+		])
+		// The window's cost decides, not the larger amount before it nor the name.
+		assert.deepStrictEqual(await currencies({ sourceIds: ["src_switched"] }), [
+			["EUR", 40, 0],
+			["USD", 0, 15],
+		])
+		assert.deepStrictEqual(await currencies({ ...TWO_CURRENCIES, values: { region: ["global"] } }), [
+			["USD", 1, 0],
+		])
+		assert.deepStrictEqual(await currencies({ sourceIds: [] }), [])
+	})
+
+	it("puts a currency the window only holds a credit in before one billed only before it", async () => {
+		// By cost alone EUR's 0 in the window would lead the -10 USD, and a read would show no cost.
+		const credit = { sourceIds: ["src_credit"] }
+		assert.deepStrictEqual(await currencies(credit), [
+			["USD", -10, 0],
+			["EUR", 0, 100],
+		])
+		assert.deepStrictEqual(await totals({ ...credit, currency: "USD" }), {
+			cost: -10,
+			previousCost: 0,
+			estimatedDays: 0,
+			currency: "USD",
+			currencies: 1,
+		})
+		// Among the currencies of the window the largest still leads.
+		assert.deepStrictEqual(await currencies({ sourceIds: ["src_credit", "src_switched"] }), [
+			["EUR", 40, 100],
+			["USD", -10, 15],
+		])
+	})
+
+	it("orders currencies with no cost in the window by their cost before it", async () => {
+		// The three days after the seed: every row falls in the period before.
+		const later = { ...params, previousStartDate: day(0), startDate: day(3), endDate: day(5) }
+		assert.deepStrictEqual(await currencies(TWO_CURRENCIES, later), [
+			["USD", 0, 72],
+			["EUR", 0, 40],
+		])
 	})
 
 	it("ranks by the size of the move in either direction", async () => {

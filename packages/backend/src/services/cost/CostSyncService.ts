@@ -9,10 +9,22 @@ import type { CostDailyRow } from "@maple/domain/tinybird"
 import { CostSourceId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections, CostSources, type CostSourceRow } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Result, Schedule, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schedule,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
@@ -27,11 +39,14 @@ import {
 	HEAD_INTERVAL_MS,
 	historyFloor,
 	nextMonthStartMs,
+	oversizedDay,
 	planCostSync,
 	toCostDailyRows,
 	toWarehouseDateTime64,
 	utcMonth,
 	utcToday,
+	BUDGET_REASON,
+	ROLLOUT_REASON,
 } from "./sync-plan"
 
 /** Longer than the lane's 15-minute deadline, so a live tick never loses its claim. */
@@ -47,9 +62,11 @@ const RATE_LIMIT_HOLD_MS = 60 * 60_000
 const TOO_LARGE_HOLD_MS = 24 * 60 * 60_000
 /** A source whose history waits on the month's request budget is looked at again this much later at most. */
 const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
-/** `lastErrorReason` while the month's request budget holds a source: a hold, not a failure. */
-const BUDGET_REASON = "budget"
 const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
+// Under the lane's hourly tick, so a flag that reads off is asked again on the next one: a failed
+// lookup reads as off too, and so costs one tick. No pull is made until the flag reads on.
+const ROLLOUT_HOLD_MS = 50 * 60_000
+const ROLLOUT_MESSAGE = "Cloud cost is not enabled for this organization."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
 const MAX_SOURCES_PER_TICK = 20
@@ -144,6 +161,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const warehouse = yield* WarehouseQueryService
+			const featureFlags = yield* OrganizationFeatureFlagsService
 			// One adapter per provider literal: a new provider does not compile until it has one.
 			const adapters = {
 				aws: yield* AwsCostProvider,
@@ -157,6 +175,10 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const leaseFree = ($: PG.ColumnAccessor<typeof CostSources.columns>, now: number) =>
 				// A live lease never reaches past now + LEASE_MS; anything further is a corrupt value.
 				leaseClaimable($.leaseUntil, now, 2 * LEASE_MS)
+
+			/** No hold or backoff stands on the row, give or take the tick's slack. */
+			const attemptDue = ($: PG.ColumnAccessor<typeof CostSources.columns>, now: number) =>
+				PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS))
 
 			type AwsConnectionColumns = PG.ColumnAccessor<typeof AwsConnections.columns>
 
@@ -310,7 +332,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 							.where(($) => [
 								$.enabled.eq(true),
 								leaseFree($, now),
-								PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS)),
+								attemptDue($, now),
 								PG.or(
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
@@ -346,7 +368,13 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								consecutiveFailures: candidate.consecutiveFailures + 1,
 								updatedAt: now,
 							})
-							.where(($) => [$.id.eq(candidate.id), $.enabled.eq(true), leaseFree($, now)])
+							.where(($) => [
+								$.id.eq(candidate.id),
+								$.enabled.eq(true),
+								leaseFree($, now),
+								// An overlapping tick may have held the row since this one loaded it as due.
+								attemptDue($, now),
+							])
 							.returning(),
 					),
 				).pipe(Effect.map((rows) => rows[0] ?? null))
@@ -407,7 +435,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				)
 
 			// A batch that still fails after its retries leaves the earlier batches newest until a re-pull.
-			// Batches hold whole days, so those are complete days; only a day above the batch size can split.
+			// Batches hold whole days, so those are complete days: a step with a day above the size is refused.
 			const write = (orgId: OrgId, rows: ReadonlyArray<CostDailyRow>) =>
 				Effect.forEach(
 					batchWholeDays(rows, INGEST_BATCH_ROWS),
@@ -499,6 +527,18 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 						}),
 					)
 				}
+				// Before any row is written: a day split over two requests could be published by halves.
+				const oversized = oversizedDay(rows, INGEST_BATCH_ROWS)
+				if (Option.isSome(oversized)) {
+					const { day, rows: dayRows } = oversized.value
+					yield* Effect.annotateCurrentSpan("maple.cost.oversized_day", day)
+					return done({
+						failure: {
+							reason: "too_large",
+							message: `${day} has ${dayRows} cost rows: the account has more cost rows a day than one pull stores (${INGEST_BATCH_ROWS}).`,
+						},
+					})
+				}
 				const written = yield* write(source.orgId, rows).pipe(Effect.result)
 				if (Result.isFailure(written)) {
 					return done({ failure: { reason: "write", message: written.failure.message } })
@@ -528,17 +568,44 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					? Effect.succeed(state)
 					: syncStep(state, state.plan).pipe(Effect.flatMap(runSteps))
 
+			/**
+			 * Releases a claim on an org that lost the `cloudCost` rollout: its reads answer 403, so a
+			 * pull would bill requests nobody can see. Nothing failed, so the claim's count is undone.
+			 */
+			const holdOutsideRollout = (claimed: CostSourceRow) =>
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					yield* finish(
+						claimed,
+						{
+							lastError: ROLLOUT_MESSAGE,
+							lastErrorReason: ROLLOUT_REASON,
+							nextAttemptAt: now + ROLLOUT_HOLD_MS,
+							consecutiveFailures: Math.max(0, claimed.consecutiveFailures - 1),
+						},
+						now,
+					)
+					yield* Effect.annotateCurrentSpan({
+						"maple.cost.outcome": "skipped",
+						"maple.cost.hold": ROLLOUT_REASON,
+					})
+					return SKIPPED
+				})
+
 			const syncSource = Effect.fn("CostSyncService.syncSource")(function* (
 				claimed: CostSourceRow,
 				claimedAt: number,
 			) {
-				const first = planCostSync(claimed, claimedAt)
 				yield* Effect.annotateCurrentSpan({
 					orgId: claimed.orgId,
 					"maple.cost.source_id": claimed.id,
 					"maple.cost.provider": claimed.provider,
-					"maple.cost.mode": first.mode,
 				})
+				// Checked on every claim, before a plan or a pull: the flag can be withdrawn at any time.
+				const flags = yield* featureFlags.flags(claimed.orgId)
+				if (!flags.cloudCost) return yield* holdOutsideRollout(claimed)
+				const first = planCostSync(claimed, claimedAt)
+				yield* Effect.annotateCurrentSpan("maple.cost.mode", first.mode)
 				const progress = yield* runSteps({
 					source: claimed,
 					plan: first,
@@ -619,15 +686,16 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 							)
 						: null
 				if (!stepped) {
-					const heldByBudget = source.lastErrorReason === BUDGET_REASON
+					const wasHeld =
+						source.lastErrorReason === BUDGET_REASON || source.lastErrorReason === ROLLOUT_REASON
 					yield* finish(
 						source,
 						{
 							nextAttemptAt: heldUntil,
 							consecutiveFailures: budget === "backfill" ? failuresBeforeClaim : 0,
-							// A new month ended the hold and nothing was due: the hold is not an error to keep.
-							lastError: heldByBudget ? null : source.lastError,
-							lastErrorReason: heldByBudget ? null : source.lastErrorReason,
+							// The hold ended (a new month, the rollout back) and nothing was due: it is no error to keep.
+							lastError: wasHeld ? null : source.lastError,
+							lastErrorReason: wasHeld ? null : source.lastErrorReason,
 						},
 						now,
 					)
@@ -700,6 +768,12 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AwsCostProvider.layer, WarehouseQueryService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				AwsCostProvider.layer,
+				WarehouseQueryService.layer,
+				OrganizationFeatureFlagsService.layer,
+			),
+		),
 	)
 }
