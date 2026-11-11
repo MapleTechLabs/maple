@@ -1049,6 +1049,42 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	const logsBuilderPreview = {
+		rule: {
+			name: "Logs builder preview",
+			severity: "warning",
+			signal_type: "builder_query",
+			query_builder_draft: { id: "q", name: "A", dataSource: "logs", aggregation: "count" },
+			comparator: "gt",
+			threshold: 10,
+			window_minutes: 5,
+			destination_ids: [],
+		},
+		start_time: "2026-01-01T00:00:00.000Z",
+		end_time: "2026-01-01T00:30:00.000Z",
+	}
+
+	it("refuses a logs builder preview to a key that reads only traces", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"])
+		const response = await harness.request(
+			"POST",
+			"/v2/alerts/rules/preview",
+			key.secret,
+			logsBuilderPreview,
+		)
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
 	it("refuses a raw SQL preview to a key missing one telemetry family", async () => {
 		let warehouseCalls = 0
 		const harness = makeHarness({

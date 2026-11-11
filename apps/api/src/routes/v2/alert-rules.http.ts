@@ -29,7 +29,6 @@ import {
 	missingReadScopes,
 	paginateArray,
 	scopeAllows,
-	TELEMETRY_READ_FAMILIES,
 	timestamp,
 	toV2Threshold,
 	V2ParameterInvalid,
@@ -38,6 +37,7 @@ import { AlertForbiddenError } from "@maple/domain/http"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema, String as Str } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
+import { ruleReadFamilies } from "@/routes/v2/alert-rule-read-families"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -429,33 +429,6 @@ const mergeUpsertRequest = (
 		})
 	})
 
-type TelemetryFamily = (typeof TELEMETRY_READ_FAMILIES)[number]
-
-const isTelemetryFamily = (source: string): source is TelemetryFamily =>
-	Arr.some(TELEMETRY_READ_FAMILIES, (family) => family === source)
-
-/** The telemetry a rule's query reads. Raw SQL, and a source that is not a family, read all of it. */
-const ruleReadFamilies = (rule: AlertRuleUpsertRequest): ReadonlyArray<TelemetryFamily> => {
-	switch (rule.signalType) {
-		case "error_rate":
-		case "p95_latency":
-		case "p99_latency":
-		case "apdex":
-		case "throughput":
-			return ["traces"]
-		case "anomaly":
-			return []
-		case "builder_query": {
-			const source = rule.queryBuilderDraft?.dataSource
-			return source !== undefined && isTelemetryFamily(source) ? [source] : TELEMETRY_READ_FAMILIES
-		}
-		case "raw_query":
-		case "uptime":
-		case "slo_burn_rate":
-			return TELEMETRY_READ_FAMILIES
-	}
-}
-
 /**
  * Preview and test run the rule's query and hand back what it measured, grouped by whatever
  * the caller chose: a telemetry read. A scoped key must be able to read that telemetry itself.
@@ -466,7 +439,10 @@ const requireRuleReadScopes = (scopes: ReadonlyArray<string> | undefined, rule: 
 		? Effect.void
 		: Effect.fail(
 				new AlertForbiddenError({
-					message: `Running this rule's query requires ${Arr.join(Arr.map(missing, (family) => `"${family}:read"`), ", ")}, because it returns the telemetry it reads.`,
+					message: `Running this rule's query requires ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}, because it returns the telemetry it reads.`,
 				}),
 			)
 }
