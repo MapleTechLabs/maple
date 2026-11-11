@@ -15,6 +15,7 @@ export const PROVIDER_KINDS = [
 	"cloudflare_workers",
 	"railway_services",
 	"planetscale_databases",
+	"vercel_projects",
 ] as const satisfies ReadonlyArray<InfraKind>
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
@@ -43,6 +44,8 @@ const TO_ENTITY = {
 	cloudflare_worker: "cloudflare_worker",
 	railway_service: "railway_service",
 	planetscale_database: "planetscale_database",
+	vercel_projects: "vercel_project",
+	vercel_project: "vercel_project",
 } as const satisfies Record<InfraKind | InfraEntityKind, InfraEntityKind>
 
 const TO_KIND = {
@@ -64,6 +67,8 @@ const TO_KIND = {
 	cloudflare_worker: "cloudflare_workers",
 	railway_service: "railway_services",
 	planetscale_database: "planetscale_databases",
+	vercel_projects: "vercel_projects",
+	vercel_project: "vercel_projects",
 } as const satisfies Record<InfraKind | InfraEntityKind, InfraKind>
 
 const EITHER = Schema.Literals([...INFRA_KINDS, ...ENTITY_KINDS])

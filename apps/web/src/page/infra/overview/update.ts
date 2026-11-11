@@ -87,6 +87,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			kubernetes: Keyed.idle(),
 			cloudflare: Keyed.idle(),
 			railway: Keyed.idle(),
+			vercel: Keyed.idle(),
 			supabase: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			gcp: Keyed.idle(),

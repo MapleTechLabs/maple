@@ -5,6 +5,7 @@ import {
 	GithubIntegrationStatus,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
+	VercelIntegrationStatus,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 } from "@maple/domain/http"
@@ -34,6 +35,7 @@ import { SupabaseCardModel } from "../infra-integrations/supabase/integration/su
 import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
 import { HubFilter } from "./catalog"
+import { VercelCardModel } from "../infra-integrations/vercel/integration/vercel-schema"
 
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
@@ -41,6 +43,7 @@ const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFa
 export const Statuses = Schema.Struct({
 	cloudflare: keyed(CloudflareIntegrationStatus),
 	railway: keyed(RailwayIntegrationStatus),
+	vercel: keyed(VercelIntegrationStatus),
 	planetscale: keyed(V2PlanetScaleIntegration),
 	planetscaleDatabases: keyed(V2PlanetScaleDatabaseList),
 	gcp: keyed(V2GcpIntegration),
@@ -77,6 +80,7 @@ export const Model = Schema.Struct({
 	cloudflareCard: CloudflareCardModel,
 	prometheusCard: PrometheusCardModel,
 	railwayCard: RailwayCardModel,
+	vercelCard: VercelCardModel,
 	planetscaleCard: PlanetscaleCardModel,
 	gcpCard: GcpCardModel,
 	awsCard: AwsCardModel,

@@ -14,6 +14,8 @@ export interface RenderOptions {
 	readonly publicUrl?: string
 	/** The dashboard's editor preview: components and incidents carry ids it can select by. Never public. */
 	readonly preview?: boolean
+	/** Drawn inside the dashboard from a one-off read: no delayed banner, which would only track how long the tab has been open. */
+	readonly inDashboard?: boolean
 }
 
 export const nonceAttr = (options: RenderOptions): string =>
@@ -45,7 +47,11 @@ const renderLogo = (snapshot: StatusPagePublicSnapshot, name: string): string | 
 }
 
 /** Logo (or name) linking home, the support and website links when set, then any `extra` links. */
-export const renderHeader = (snapshot: StatusPagePublicSnapshot, options: RenderOptions, extra = ""): string => {
+export const renderHeader = (
+	snapshot: StatusPagePublicSnapshot,
+	options: RenderOptions,
+	extra = "",
+): string => {
 	const name = escapeHtml(snapshot.page.name)
 	const logo = renderLogo(snapshot, name)
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])

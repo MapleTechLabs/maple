@@ -25,7 +25,7 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
+import { compile, compileUnion, unionAll, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
@@ -37,6 +37,7 @@ import { utcHourFloor } from "./query-helpers"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
 import {
+	SERVICE_RUNTIME_KINDS,
 	SERVICE_RUNTIME_MARKERS,
 	runtimeMetricServiceNames,
 	serviceRuntimeKindOfMarker,
@@ -228,6 +229,8 @@ export function serviceWorkloadsSQL(
 // Service ↔ platform runtime: a resource's marker gauge under the service's names, one row per
 // resource with the keys its infra page reads. `metrics_gauge` sorts by (OrgId, ServiceName,
 // MetricName), so this reads only these services' marker series.
+//
+// Vercel sends no metrics, so its branch reads the project id off the services' spans.
 
 export interface ServiceRuntimesOpts {
 	services: ReadonlyArray<string>
@@ -245,15 +248,31 @@ const ServiceRuntimesOutputSchema = Schema.Struct({
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
+	vercelProjectId: Schema.String,
 })
 
 export type ServiceRuntimesOutput = typeof ServiceRuntimesOutputSchema.Type
+
+/**
+ * Where a span names its Vercel project: Vercel's trace drain writes `vercel.projectId`,
+ * `@vercel/otel` `vercel.project_id`, the log drain's resources `vercel.project.id`.
+ */
+const VERCEL_PROJECT_ID_KEYS = ["vercel.projectId", "vercel.project_id", "vercel.project.id"] as const
+
+const vercelProjectIdOf = (attribute: (key: string) => CH.Expr<string>) =>
+	CH.multiIf(
+		[
+			[attribute("vercel.projectId").neq(""), attribute("vercel.projectId")],
+			[attribute("vercel.project_id").neq(""), attribute("vercel.project_id")],
+		],
+		attribute("vercel.project.id"),
+	)
 
 export function serviceRuntimesSQL(
 	opts: ServiceRuntimesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
-	const query = from(Datasources.metricsGauge)
+	const metricRuntimes = from(Datasources.metricsGauge)
 		.select(($) => ({
 			metricServiceName: $.ServiceName,
 			metricName: $.MetricName,
@@ -267,6 +286,7 @@ export function serviceRuntimesSQL(
 			railwayServiceId: $.ResourceAttributes.get("railway.service.id"),
 			railwayEnvironmentId: $.ResourceAttributes.get("railway.environment.id"),
 			railwayEnvironmentName: CH.max_($.ResourceAttributes.get("railway.environment.name")),
+			vercelProjectId: CH.lit(""),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -284,13 +304,36 @@ export function serviceRuntimesSQL(
 			"railwayServiceId",
 			"railwayEnvironmentId",
 		)
-		.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
-		// Rows are resources, a few per service; the cap is a backstop, not a page size.
-		.limit(10_000)
-		.format("JSON")
 
-	return compile(
-		query,
+	const vercelRuntimes = from(Datasources.traces)
+		.select(($) => ({
+			metricServiceName: $.ServiceName,
+			metricName: CH.lit(SERVICE_RUNTIME_KINDS.vercelProject.marker),
+			account: CH.lit(""),
+			region: CH.lit(""),
+			cluster: CH.lit(""),
+			railwayServiceId: CH.lit(""),
+			railwayEnvironmentId: CH.lit(""),
+			railwayEnvironmentName: CH.lit(""),
+			vercelProjectId: vercelProjectIdOf((key) => $.ResourceAttributes.get(key)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			CH.inList($.ServiceName, opts.services),
+			// Key tests let the `mapKeys(ResourceAttributes)` bloom index skip other services' granules.
+			CH.or(...Arr.map(VERCEL_PROJECT_ID_KEYS, (key) => CH.mapContains($.ResourceAttributes, key))),
+			vercelProjectIdOf((key) => $.ResourceAttributes.get(key)).neq(""),
+		])
+		.groupBy("metricServiceName", "vercelProjectId")
+
+	return compileUnion(
+		// Rows are resources, a few per service; the cap is a backstop, not a page size.
+		unionAll(metricRuntimes, vercelRuntimes)
+			.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
+			.limit(10_000)
+			.format("JSON"),
 		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
 		{ rowSchema: ServiceRuntimesOutputSchema },
 	)
@@ -305,6 +348,7 @@ export interface ServiceRuntimeResource {
 	readonly railwayServiceId: string
 	readonly railwayEnvironmentId: string
 	readonly railwayEnvironmentName: string
+	readonly vercelProjectId: string
 }
 
 /**
@@ -323,7 +367,9 @@ export const serviceRuntimeResources = (
 		const key =
 			kind === "railway"
 				? Arr.join(["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId], "|")
-				: Arr.join([kind, row.metricServiceName, row.account, row.region, row.cluster], "|")
+				: kind === "vercelProject"
+					? Arr.join(["vercelProject", serviceName, row.vercelProjectId], "|")
+					: Arr.join([kind, row.metricServiceName, row.account, row.region, row.cluster], "|")
 		const resource: ServiceRuntimeResource = {
 			serviceName,
 			kind,
@@ -333,6 +379,7 @@ export const serviceRuntimeResources = (
 			railwayServiceId: row.railwayServiceId,
 			railwayEnvironmentId: row.railwayEnvironmentId,
 			railwayEnvironmentName: row.railwayEnvironmentName,
+			vercelProjectId: row.vercelProjectId,
 		}
 		return [[key, resource] as const]
 	})

@@ -6627,7 +6627,8 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:service-infra:serviceRuntimesSQL:default  [4d718731]
+-- builder:service-infra:serviceRuntimesSQL:default  [a14d0031]
+SELECT * FROM (
 SELECT
           metrics_gauge.ServiceName AS metricServiceName,
           metrics_gauge.MetricName AS metricName,
@@ -6636,7 +6637,8 @@ SELECT
           metrics_gauge.Attributes['aws.dimension.cluster_name'] AS cluster,
           metrics_gauge.ResourceAttributes['railway.service.id'] AS railwayServiceId,
           metrics_gauge.ResourceAttributes['railway.environment.id'] AS railwayEnvironmentId,
-          max(metrics_gauge.ResourceAttributes['railway.environment.name']) AS railwayEnvironmentName
+          max(metrics_gauge.ResourceAttributes['railway.environment.name']) AS railwayEnvironmentName,
+          '' AS vercelProjectId
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
@@ -6644,9 +6646,29 @@ SELECT
           AND metrics_gauge.ServiceName IN ('api', 'cloudflare-worker/api', 'checkout', 'cloudflare-worker/checkout')
           AND metrics_gauge.MetricName IN ('gcp.cloud_run.container.instance.count', 'gcp.cloud_functions.instance.count', 'aws.ecs.cpu_utilization', 'aws.lambda.duration', 'railway.cpu.usage', 'cloudflare.worker.cpu_time')
         GROUP BY metricServiceName, metricName, account, region, cluster, railwayServiceId, railwayEnvironmentId
-        ORDER BY metricServiceName ASC, metricName ASC
-        LIMIT 10000
-        FORMAT JSON
+UNION ALL
+SELECT
+          traces.ServiceName AS metricServiceName,
+          'vercel.project' AS metricName,
+          '' AS account,
+          '' AS region,
+          '' AS cluster,
+          '' AS railwayServiceId,
+          '' AS railwayEnvironmentId,
+          '' AS railwayEnvironmentName,
+          multiIf(traces.ResourceAttributes['vercel.projectId'] != '', traces.ResourceAttributes['vercel.projectId'], traces.ResourceAttributes['vercel.project_id'] != '', traces.ResourceAttributes['vercel.project_id'], traces.ResourceAttributes['vercel.project.id']) AS vercelProjectId
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ServiceName IN ('api', 'checkout')
+          AND (mapContains(traces.ResourceAttributes, 'vercel.projectId') OR mapContains(traces.ResourceAttributes, 'vercel.project_id') OR mapContains(traces.ResourceAttributes, 'vercel.project.id'))
+          AND multiIf(traces.ResourceAttributes['vercel.projectId'] != '', traces.ResourceAttributes['vercel.projectId'], traces.ResourceAttributes['vercel.project_id'] != '', traces.ResourceAttributes['vercel.project_id'], traces.ResourceAttributes['vercel.project.id']) != ''
+        GROUP BY metricServiceName, vercelProjectId
+)
+ORDER BY metricServiceName ASC, metricName ASC
+LIMIT 10000
+FORMAT JSON
 
 -- builder:service-infra:serviceWorkloadsSQL:default  [e9f241ba]
 SELECT
@@ -6699,7 +6721,7 @@ SELECT
         GROUP BY hourTs
         FORMAT JSON
 
--- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [639f3369]
+-- builder:service-map-rollup:serviceMapEdgesRollupSQL:default  [aae9e2b8]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -6721,7 +6743,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7484,7 +7506,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesForServiceQuery:default  [211f518c]
+-- builder:service-map:serviceDependenciesForServiceQuery:default  [752efbf9]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -7526,7 +7548,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7553,7 +7575,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [cc329604]
+-- builder:service-map:serviceDependenciesInvolvingServiceQuery:default  [c67e0d85]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -7595,7 +7617,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7622,7 +7644,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:default  [5467ed65]
+-- builder:service-map:serviceDependenciesSQL:default  [a3800538]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -7663,7 +7685,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7689,7 +7711,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceDependenciesSQL:env-scoped  [1fd187fd]
+-- builder:service-map:serviceDependenciesSQL:env-scoped  [0f1a4626]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -7731,7 +7753,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7900,7 +7922,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [639f3369]
+-- builder:service-map:serviceMapEdgeJoinQuery:rollup-hour  [aae9e2b8]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -7922,7 +7944,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -7942,7 +7964,7 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [ebdcfe82]
+-- builder:service-map:serviceMapEdgeJoinQuery:scoped-to-service  [c274e1fd]
 SELECT
           p.OrgId AS OrgId,
           toStartOfHour(p.Timestamp) AS Hour,
@@ -7964,7 +7986,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'
@@ -16726,7 +16748,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- pipe:service_dependencies:default:baseline  [1fd187fd]
+-- pipe:service_dependencies:default:baseline  [0f1a4626]
 SELECT
           edges.sourceService AS sourceService,
           edges.targetService AS targetService,
@@ -16768,7 +16790,7 @@ SELECT
           service_map_spans.ServiceName AS ServiceName,
           service_map_spans.DeploymentEnv AS DeploymentEnv
         FROM service_map_spans
-        WHERE service_map_spans.SpanKind IN ('Client', 'Producer')
+        WHERE (service_map_spans.SpanKind IN ('Client', 'Producer') OR (service_map_spans.SpanKind = 'Server' AND service_map_spans.ServiceName IN ('vercel.edge-network')))
           AND service_map_spans.Timestamp >= toDateTime('2026-01-01 10:30:00')
           AND service_map_spans.Timestamp < toDateTime('2026-01-03 14:15:00')
           AND service_map_spans.OrgId = 'org_sql_catalog'

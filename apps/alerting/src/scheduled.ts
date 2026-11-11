@@ -31,6 +31,7 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
@@ -88,6 +89,7 @@ export const layerTick = (
 		PlanetScaleService.layer,
 		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
+		VercelIntegrationService.layer,
 		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
 		SecretResealService.layer,
@@ -411,6 +413,21 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const vercelTick = makeTick(
+	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs),
+	"vercel",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					deploymentsUpserted: result.deploymentsUpserted,
+					drainsRepaired: result.drainsRepaired,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
 const searchConsoleTick = makeTick(
 	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
 	"search_console",
@@ -565,6 +582,7 @@ const scheduledTicks = {
 	supabaseDiscovery: supabaseDiscoveryTick,
 	supabaseLogs: supabaseLogsTick,
 	supabaseInsights: supabaseInsightsTick,
+	vercel: vercelTick,
 }
 
 export type ScheduledTickName = keyof typeof scheduledTicks
@@ -610,6 +628,7 @@ const LANE_TICKS = {
 	supabase_insights: ["supabaseInsights"],
 	maintenance_windows: ["maintenanceWindows"],
 	search_console: ["searchConsole"],
+	vercel: ["vercel"],
 } as const satisfies Record<TickLane, ReadonlyArray<ScheduledTickName>>
 
 /** The program a lane runs: its ticks one after another. */

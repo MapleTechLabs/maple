@@ -15,7 +15,7 @@ mod rules_gateway;
 mod sources;
 mod task_protection;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -73,6 +73,10 @@ use maple_ingest::telemetry::{
     PipelineError, SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
+use maple_ingest::vercel_ai_gateway_drain;
+use maple_ingest::vercel_event_drains::{self, EventDrain};
+use maple_ingest::vercel_logs;
+use maple_ingest::vercel_traces;
 use maple_ingest::wal_store::WalSegmentStore;
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -1016,6 +1020,15 @@ struct AttributeMappingResolver {
     cache: Cache<String, Arc<Vec<AttributeMappingRule>>>,
 }
 
+/// Each org's Vercel project names by project id, for `vercel_traces::restate`.
+struct VercelProjectNameResolver {
+    store: Arc<dyn KeyStore>,
+    cache: Cache<String, Arc<HashMap<String, String>>>,
+}
+
+/// Short enough that a project the API's hourly poller discovers is named soon after.
+const VERCEL_PROJECT_NAMES_TTL: Duration = Duration::from_mins(5);
+
 struct ClickHouseTargetResolver {
     store: Arc<dyn KeyStore>,
     keyring: Option<SecretKeyring>,
@@ -1123,6 +1136,14 @@ trait KeyStore: Send + Sync {
         &self,
         org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String>;
+
+    /// `(project_id, name)` of the org's Vercel projects.
+    async fn fetch_vercel_project_names(
+        &self,
+        _org_id: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        Ok(Vec::new())
+    }
 
     /// The org's enabled ingest rules in `position` order, and its hash salt.
     async fn fetch_ingest_rules(&self, org_id: &str) -> Result<IngestRuleRows, String>;
@@ -1560,6 +1581,7 @@ struct AppState {
     gcp_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
     attribute_mapping_resolver: AttributeMappingResolver,
+    vercel_project_name_resolver: VercelProjectNameResolver,
     /// Each org's compiled ingest rules; inert unless `INGEST_RULES_ENABLED`.
     ingest_rule_resolver: IngestRuleResolver,
     /// Per-rule counts awaiting the next flush to `org_ingest_rule_stats`.
@@ -1766,6 +1788,35 @@ impl Signal {
             Self::Traces => OtlpSignal::Traces,
             Self::Logs => OtlpSignal::Logs,
             Self::Metrics => OtlpSignal::Metrics,
+        }
+    }
+}
+
+/// What a request body holds: an OTLP export, or a sender's own format that is
+/// mapped onto OTLP.
+#[derive(Clone, Copy)]
+enum Ingress {
+    Otlp(Signal),
+    VercelLogDrain,
+    VercelAiGatewayDrain,
+    VercelEventDrain(EventDrain),
+}
+
+impl Ingress {
+    fn signal(self) -> Signal {
+        match self {
+            Self::Otlp(signal) => signal,
+            Self::VercelLogDrain | Self::VercelEventDrain(_) => Signal::Logs,
+            Self::VercelAiGatewayDrain => Signal::Traces,
+        }
+    }
+
+    fn route(self) -> String {
+        match self {
+            Self::Otlp(signal) => format!("/v1/{}", signal.path()),
+            Self::VercelLogDrain => "/v1/logpush/vercel".to_owned(),
+            Self::VercelAiGatewayDrain => "/v1/vercel/ai-gateway".to_owned(),
+            Self::VercelEventDrain(drain) => drain.route().to_owned(),
         }
     }
 }
@@ -3139,6 +3190,13 @@ async fn main() {
             store: Arc::clone(&store),
             cache: attribute_mapping_cache,
         },
+        vercel_project_name_resolver: VercelProjectNameResolver {
+            store: Arc::clone(&store),
+            cache: Cache::builder()
+                .time_to_live(VERCEL_PROJECT_NAMES_TTL)
+                .max_capacity(10_000)
+                .build(),
+        },
         ingest_rule_resolver: IngestRuleResolver::new(
             Arc::clone(&store),
             config.ingest_rules_enabled,
@@ -3204,6 +3262,9 @@ async fn main() {
             post(handle_cloudflare_logpush_http_requests),
         )
         .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
+        .route("/v1/logpush/vercel", post(handle_vercel_logpush))
+        .route("/v1/vercel/ai-gateway", post(handle_vercel_ai_gateway))
+        .route("/v1/vercel/{drain}", post(handle_vercel_event_drain))
         .route(
             "/v1/firehose/aws/{connection_id}",
             post(handle_aws_firehose),
@@ -3554,7 +3615,13 @@ async fn decode_grpc_export(
         payload,
         decoded_bytes,
         memory,
-    } = decode_otlp_body(state, message, gzip, signal, PayloadFormat::Protobuf)
+    } = decode_otlp_body(
+        state,
+        message,
+        gzip,
+        Ingress::Otlp(signal),
+        PayloadFormat::Protobuf,
+    )
         .await
         .map_err(|DecodeRefusal { error, .. }| match error.status {
             StatusCode::PAYLOAD_TOO_LARGE => tonic::Status::resource_exhausted(error.message),
@@ -3988,7 +4055,7 @@ async fn handle_traces(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Traces).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Traces)).await
 }
 
 async fn handle_logs(
@@ -3996,7 +4063,7 @@ async fn handle_logs(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Logs).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Logs)).await
 }
 
 async fn handle_metrics(
@@ -4004,7 +4071,39 @@ async fn handle_metrics(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    handle_signal(state, headers, body, Signal::Metrics).await
+    handle_signal(state, headers, body, Ingress::Otlp(Signal::Metrics)).await
+}
+
+/// A Vercel log drain, authenticated by the org's ingest key like OTLP.
+async fn handle_vercel_logpush(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    handle_signal(state, headers, body, Ingress::VercelLogDrain).await
+}
+
+/// A Vercel AI Gateway drain, authenticated by the org's ingest key like OTLP.
+async fn handle_vercel_ai_gateway(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    handle_signal(state, headers, body, Ingress::VercelAiGatewayDrain).await
+}
+
+/// A Vercel Speed Insights, Web Analytics or Audit Log drain, authenticated by
+/// the org's ingest key like OTLP.
+async fn handle_vercel_event_drain(
+    State(state): State<Arc<AppState>>,
+    Path(drain): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(drain) = EventDrain::from_path(&drain) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    handle_signal(state, headers, body, Ingress::VercelEventDrain(drain)).await
 }
 
 // Session replay ingest
@@ -5276,15 +5375,16 @@ async fn handle_signal(
     state: Arc<AppState>,
     headers: HeaderMap,
     body: Bytes,
-    signal: Signal,
+    ingress: Ingress,
 ) -> Response {
     let start = Instant::now();
     let body_bytes = body.len();
+    let signal = ingress.signal();
 
     metrics::request_started();
     let _guard = InFlightGuard;
 
-    let route = format!("/v1/{}", signal.path());
+    let route = ingress.route();
     let otel_name = format!("POST {route}");
     let span = tracing::info_span!(
         "ingest",
@@ -5318,7 +5418,7 @@ async fn handle_signal(
     record_client_identity(&span, &headers);
     let span_handle = span.clone();
 
-    let result = handle_signal_inner(&state, &headers, body, signal)
+    let result = handle_signal_inner(&state, &headers, body, ingress)
         .instrument(span)
         .await;
     let duration = start.elapsed();
@@ -5455,8 +5555,9 @@ async fn handle_signal_inner(
     state: &AppState,
     headers: &HeaderMap,
     body: Bytes,
-    signal: Signal,
+    ingress: Ingress,
 ) -> Result<(Response, usize, String, usize), (ApiError, &'static str)> {
+    let signal = ingress.signal();
     let ingest_key = extract_ingest_key(headers).ok_or_else(|| {
         warn!("Missing ingest key");
         (ApiError::unauthorized("Missing ingest key"), "auth")
@@ -5579,10 +5680,17 @@ async fn handle_signal_inner(
         .unwrap_or("application/x-protobuf")
         .to_ascii_lowercase();
 
-    let payload_format = detect_payload_format(&content_type).map_err(|e| {
-        warn!(content_type = %content_type, "Unsupported content type");
-        (e, "unsupported_media")
-    })?;
+    // A drain's JSON is mapped to OTLP and sent on as protobuf, whatever
+    // content type it was labelled with.
+    let payload_format = match ingress {
+        Ingress::Otlp(_) => detect_payload_format(&content_type).map_err(|e| {
+            warn!(content_type = %content_type, "Unsupported content type");
+            (e, "unsupported_media")
+        })?,
+        Ingress::VercelLogDrain | Ingress::VercelAiGatewayDrain | Ingress::VercelEventDrain(_) => {
+            PayloadFormat::Protobuf
+        }
+    };
     Span::current().record("maple.ingest.payload_format", payload_format.label());
 
     let content_encoding = headers
@@ -5622,7 +5730,7 @@ async fn handle_signal_inner(
         payload: mut decoded,
         decoded_bytes,
         memory: _decode_memory,
-    } = decode_otlp_body(state, body, gzip, signal, payload_format)
+    } = decode_otlp_body(state, body, gzip, ingress, payload_format)
         .await
         .map_err(|DecodeRefusal { error, stage }| {
             warn!(
@@ -5645,6 +5753,7 @@ async fn handle_signal_inner(
     debug!(decoded_bytes, "Payload decoded");
     metrics::decoded_body_bytes(signal.path(), decoded_bytes as u64);
 
+    apply_header_source_claim(&mut decoded, headers, &resolved_key);
     let mut claims = verify_claims_and_enrich(state, &mut decoded, &resolved_key).await;
     if claims.all_paused {
         // Like a paused token source: success to the sender, nothing written or billed.
@@ -5654,6 +5763,24 @@ async fn handle_signal_inner(
             resolved_key.org_id.clone(),
             0,
         ));
+    }
+    match ingress {
+        Ingress::VercelLogDrain => stamp_drain_source(&mut decoded, vercel_logs::INGEST_SOURCE),
+        Ingress::VercelAiGatewayDrain => {
+            stamp_drain_source(&mut decoded, vercel_ai_gateway_drain::INGEST_SOURCE);
+        }
+        Ingress::VercelEventDrain(drain) => stamp_drain_source(&mut decoded, drain.ingest_source()),
+        Ingress::Otlp(_) => {
+            if let DecodedPayload::Traces(request) = &mut decoded {
+                if vercel_traces::has_runtime_resources(request) {
+                    let names = state
+                        .vercel_project_name_resolver
+                        .resolve(&resolved_key.org_id)
+                        .await;
+                    vercel_traces::restate(request, &names);
+                }
+            }
+        }
     }
     let kept_claim = claims.kept_claim;
     let item_count = decoded.item_count();
@@ -7111,12 +7238,14 @@ fn otlp_decode_cost(
         }
         PayloadFormat::Json => decode_budget::json_cost(payload, heap_budget),
     }
-    .map_err(|decode_budget::OverBudget| {
-        ApiError::payload_too_large(format!(
-            "Request decodes past the {} MiB the gateway allows one request; send smaller batches",
-            heap_budget / (1024 * 1024)
-        ))
-    })
+    .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget))
+}
+
+fn over_decode_budget(heap_budget: u64) -> ApiError {
+    ApiError::payload_too_large(format!(
+        "Request decodes past the {} MiB the gateway allows one request; send smaller batches",
+        heap_budget / (1024 * 1024)
+    ))
 }
 
 /// Why `decode_otlp_body` refused a body, and the stage that refused it, named as
@@ -7150,9 +7279,10 @@ async fn decode_otlp_body(
     state: &AppState,
     body: Bytes,
     gzip: bool,
-    signal: Signal,
+    ingress: Ingress,
     payload_format: PayloadFormat,
 ) -> Result<DecodedBody, DecodeRefusal> {
+    let signal = ingress.signal();
     let mut reservation = state.decode_memory.reservation();
     let (max_decoded, heap_budget) = (
         state.config.max_decoded_body_bytes,
@@ -7207,14 +7337,26 @@ async fn decode_otlp_body(
         let parse_span =
             parent.in_scope(|| parse_internal_span(payload_format.label(), signal.path()));
         let _guard = parse_span.enter();
-        let estimate = otlp_decode_cost(signal, payload_format, &payload, heap_budget)
-            .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
+        // A drain's body is JSON whatever `payload_format` it is forwarded as.
+        let estimate = match ingress {
+            Ingress::Otlp(_) => otlp_decode_cost(signal, payload_format, &payload, heap_budget),
+            Ingress::VercelLogDrain
+            | Ingress::VercelAiGatewayDrain
+            | Ingress::VercelEventDrain(_) => decode_budget::json_cost(&payload, heap_budget)
+                .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget)),
+        }
+        .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
         parse_span.record("maple.ingest.decode_heap_estimate", estimate);
         if !reservation.try_add(estimate) {
             return Err(refuse(&parse_span, busy(), "decode_busy"));
         }
-        let decoded = decode_otlp_payload(signal, payload_format, &payload)
-            .map_err(|error| refuse(&parse_span, error, "enrich"))?;
+        let decoded = match ingress {
+            Ingress::Otlp(_) => decode_otlp_payload(signal, payload_format, &payload),
+            Ingress::VercelLogDrain => decode_vercel_logs(&payload),
+            Ingress::VercelAiGatewayDrain => decode_vercel_ai_gateway(&payload),
+            Ingress::VercelEventDrain(drain) => decode_vercel_event_drain(drain, &payload),
+        }
+        .map_err(|error| refuse(&parse_span, error, "enrich"))?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
         // Only the decoded form outlives this closure; the buffers go with it.
         let decoded_bytes = payload.len();
@@ -7276,6 +7418,120 @@ fn decode_otlp_payload(
             let request: ExportMetricsServiceRequest =
                 decode_otlp_json(payload, "metrics", "resourceMetrics")?;
             Ok(DecodedPayload::Metrics(request))
+        }
+    }
+}
+
+fn decode_vercel_logs(payload: &[u8]) -> Result<DecodedPayload, ApiError> {
+    let parsed = vercel_logs::parse(payload)
+        .map_err(|e| ApiError::bad_request(format!("Invalid Vercel log drain payload: {e}")))?;
+    if parsed.malformed_lines > 0 {
+        warn!(
+            malformed_lines = parsed.malformed_lines,
+            "Vercel log drain delivery had lines that are not JSON; skipped them"
+        );
+    }
+    Ok(DecodedPayload::Logs(vercel_logs::build_logs_request(
+        &parsed.entries,
+        current_time_unix_nano(),
+    )))
+}
+
+fn decode_vercel_ai_gateway(payload: &[u8]) -> Result<DecodedPayload, ApiError> {
+    let parsed = vercel_logs::parse(payload).map_err(|e| {
+        ApiError::bad_request(format!("Invalid Vercel AI Gateway drain payload: {e}"))
+    })?;
+    if parsed.malformed_lines > 0 {
+        warn!(
+            malformed_lines = parsed.malformed_lines,
+            "Vercel AI Gateway drain delivery had lines that are not JSON; skipped them"
+        );
+    }
+    Ok(DecodedPayload::Traces(
+        vercel_ai_gateway_drain::build_traces_request(&parsed.entries),
+    ))
+}
+
+fn decode_vercel_event_drain(
+    drain: EventDrain,
+    payload: &[u8],
+) -> Result<DecodedPayload, ApiError> {
+    let label = drain.label();
+    let parsed = vercel_logs::parse(payload)
+        .map_err(|e| ApiError::bad_request(format!("Invalid Vercel {label} drain payload: {e}")))?;
+    if parsed.malformed_lines > 0 {
+        warn!(
+            malformed_lines = parsed.malformed_lines,
+            drain = label,
+            "Vercel drain delivery had lines that are not JSON; skipped them"
+        );
+    }
+    Ok(DecodedPayload::Logs(
+        vercel_event_drains::build_logs_request(drain, &parsed.entries, current_time_unix_nano()),
+    ))
+}
+
+/// The drain's source replaces the OTLP gateway's that enrichment stamps.
+fn stamp_drain_source(decoded: &mut DecodedPayload, source: &str) {
+    let resources: Vec<&mut Option<Resource>> = match decoded {
+        DecodedPayload::Logs(request) => request
+            .resource_logs
+            .iter_mut()
+            .map(|resource_log| &mut resource_log.resource)
+            .collect(),
+        DecodedPayload::Traces(request) => request
+            .resource_spans
+            .iter_mut()
+            .map(|resource_span| &mut resource_span.resource)
+            .collect(),
+        DecodedPayload::Metrics(_) => return,
+    };
+    for resource in resources.into_iter().flatten() {
+        upsert_string_attribute(&mut resource.attributes, "maple_ingest_source", source);
+    }
+}
+
+/// Names the sender's source for senders that cannot set resource attributes (Vercel drains).
+const SOURCE_ID_HEADER: &str = "x-maple-source-id";
+
+/// Copies the `x-maple-source-id` header onto every resource without a `maple_source_id`
+/// of its own, so it is verified and stamped exactly like an attribute claim.
+fn apply_header_source_claim(
+    decoded: &mut DecodedPayload,
+    headers: &HeaderMap,
+    resolved_key: &ResolvedIngestKey,
+) {
+    if !resolved_key.accepts_source_claims() {
+        return;
+    }
+    let Some(claim) = headers
+        .get(SOURCE_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|claim| !claim.is_empty() && claim.len() <= MAX_PUBLIC_ID_LEN)
+    else {
+        return;
+    };
+    let resources: Vec<&mut Resource> = match decoded {
+        DecodedPayload::Traces(request) => request
+            .resource_spans
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+        DecodedPayload::Logs(request) => request
+            .resource_logs
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+        DecodedPayload::Metrics(request) => request
+            .resource_metrics
+            .iter_mut()
+            .map(|r| r.resource.get_or_insert_with(Resource::default))
+            .collect(),
+    };
+    for resource in resources {
+        if source_id_claim(&resource.attributes).is_none() {
+            upsert_string_attribute(&mut resource.attributes, SOURCE_ID_ATTRIBUTE, claim);
         }
     }
 }
@@ -8855,6 +9111,32 @@ impl AttributeMappingResolver {
     }
 }
 
+impl VercelProjectNameResolver {
+    /// A failed lookup is not cached, and names nothing: the spans keep Vercel's service.
+    async fn resolve(&self, org_id: &str) -> Arc<HashMap<String, String>> {
+        if let Some(names) = self.cache.get(org_id).await {
+            return names;
+        }
+        match self.store.fetch_vercel_project_names(org_id).await {
+            Ok(rows) => {
+                let names = Arc::new(rows.into_iter().collect::<HashMap<_, _>>());
+                self.cache
+                    .insert(org_id.to_owned(), Arc::clone(&names))
+                    .await;
+                names
+            }
+            Err(error) => {
+                warn!(
+                    org_id,
+                    error = %error,
+                    "Vercel project name lookup failed; keeping Vercel's runtime service name"
+                );
+                Arc::default()
+            }
+        }
+    }
+}
+
 /// The schema revision this binary needs an org's ClickHouse to be at, as a
 /// number. Non-numeric (legacy hash) revisions parse to 0, which is older than
 /// every real migration — the same "not ready" answer they get today.
@@ -9470,6 +9752,30 @@ impl KeyStore for PostgresKeyStore {
                 target_key: row.get("target_key"),
                 operation: row.get("operation"),
             })
+            .collect())
+    }
+
+    async fn fetch_vercel_project_names(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT project_id, name FROM vercel_projects WHERE org_id = $1",
+                &[&org_id],
+            )
+            .instrument(postgres_client_span(
+                "fetch_vercel_project_names",
+                "SELECT",
+                "vercel_projects",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres fetch_vercel_project_names failed: {error}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get("project_id"), row.get("name")))
             .collect())
     }
 
@@ -10946,6 +11252,113 @@ mod tests {
         }
     }
 
+    #[test]
+    fn vercel_ai_gateway_requests_reach_agent_sessions_as_gateway_calls() {
+        let mut decoded = decode_vercel_ai_gateway(
+            br#"[{"eventType":"request","generationId":"gen_1","gatewayTimestamp":1794307651806,"requestDurationMs":1315,"responseStatusCode":200,"provider":"openai","model":"openai/gpt-4o-mini","modelType":"language","inputTokens":107,"outputTokens":33,"cost":"0.00022785","costCurrency":"USD"}]"#,
+        )
+        .expect("a drain delivery decodes");
+        enrich_decoded_payload(&mut decoded, &test_key(), &[]);
+        stamp_drain_source(&mut decoded, vercel_ai_gateway_drain::INGEST_SOURCE);
+        let DecodedPayload::Traces(request) = decoded else {
+            panic!("an AI Gateway delivery decodes to traces");
+        };
+        let resource_spans = &request.resource_spans[0];
+        let string_value = |attributes: &[KeyValue], key: &str| {
+            attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .and_then(|attribute| match attribute.value.clone()?.value? {
+                    any_value::Value::StringValue(value) => Some(value),
+                    _ => None,
+                })
+        };
+        let resource = &resource_spans.resource.as_ref().unwrap().attributes;
+        assert_eq!(
+            string_value(resource, "maple_ingest_source").as_deref(),
+            Some(vercel_ai_gateway_drain::INGEST_SOURCE)
+        );
+        let span = &resource_spans.scope_spans[0].spans[0];
+        assert_eq!(
+            string_value(&span.attributes, ai_session::VENDOR_ID_ATTR).as_deref(),
+            Some("vercel_ai_gateway")
+        );
+        assert_eq!(
+            string_value(&span.attributes, "gen_ai.usage.cost").as_deref(),
+            Some("0.00022785")
+        );
+    }
+
+    #[test]
+    fn vercel_logs_keep_the_drain_source_through_enrichment() {
+        let mut decoded = decode_vercel_logs(br#"{"projectId":"prj_1"}"#)
+            .expect("a drain delivery decodes");
+        // The handler's order: enrichment, then the drain's own source.
+        enrich_decoded_payload(&mut decoded, &test_key(), &[]);
+        stamp_drain_source(&mut decoded, vercel_logs::INGEST_SOURCE);
+        let DecodedPayload::Logs(request) = decoded else {
+            panic!("a drain delivery decodes to logs");
+        };
+        let attributes = &request.resource_logs[0]
+            .resource
+            .as_ref()
+            .unwrap()
+            .attributes;
+        let value = |key: &str| {
+            attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .and_then(|attribute| attribute.value.clone()?.value)
+        };
+        assert_eq!(
+            value("maple_ingest_source"),
+            Some(any_value::Value::StringValue(
+                vercel_logs::INGEST_SOURCE.to_owned()
+            ))
+        );
+        assert_eq!(
+            value("maple_org_id"),
+            Some(any_value::Value::StringValue("org_real".to_owned()))
+        );
+    }
+
+    #[test]
+    fn vercel_event_drains_reach_logs_under_their_own_source() {
+        let mut decoded = decode_vercel_event_drain(
+            EventDrain::AuditLog,
+            br#"[{"schema":"vercel.audit_log.v1","id":"evt_1","teamId":"team_1","action":"drain-created","timestamp":1694723400000,"actor":{"type":"user","id":"usr_1","name":"Test User"}}]"#,
+        )
+        .expect("a drain delivery decodes");
+        enrich_decoded_payload(&mut decoded, &test_key(), &[]);
+        stamp_drain_source(&mut decoded, EventDrain::AuditLog.ingest_source());
+        let DecodedPayload::Logs(request) = decoded else {
+            panic!("an Audit Log delivery decodes to logs");
+        };
+        let resource_logs = &request.resource_logs[0];
+        let attributes = &resource_logs.resource.as_ref().unwrap().attributes;
+        let value = |key: &str| {
+            attributes
+                .iter()
+                .find(|attribute| attribute.key == key)
+                .and_then(|attribute| attribute.value.clone()?.value)
+        };
+        let string = |value: &str| Some(any_value::Value::StringValue(value.to_owned()));
+        assert_eq!(
+            value("maple_ingest_source"),
+            string("vercel_audit_log_drain")
+        );
+        assert_eq!(value("service.name"), string("vercel-audit-log"));
+        assert_eq!(value("maple_org_id"), string("org_real"));
+        assert_eq!(
+            resource_logs.scope_logs[0].log_records[0]
+                .body
+                .clone()
+                .unwrap()
+                .value,
+            string("drain-created by Test User")
+        );
+    }
+
     fn decode_json(signal: Signal, payload: &str) -> Result<DecodedPayload, ApiError> {
         decode_otlp_payload(signal, PayloadFormat::Json, payload.as_bytes()).map(|mut decoded| {
             enrich_decoded_payload(&mut decoded, &test_key(), &[]);
@@ -12038,6 +12451,13 @@ mod tests {
                     .max_capacity(16)
                     .build(),
             },
+            vercel_project_name_resolver: VercelProjectNameResolver {
+                store: Arc::clone(&key_store),
+                cache: Cache::builder()
+                    .time_to_live(VERCEL_PROJECT_NAMES_TTL)
+                    .max_capacity(16)
+                    .build(),
+            },
             ingest_rule_resolver: IngestRuleResolver::new(
                 Arc::clone(&key_store),
                 false,
@@ -12825,7 +13245,7 @@ mod tests {
 
         let mut headers = test_headers(raw_key);
         headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
-        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Signal::Logs)
+        let (error, error_kind) = handle_signal_inner(&state, &headers, bomb(), Ingress::Otlp(Signal::Logs))
             .await
             .expect_err("OTLP must refuse a gzip bomb");
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
@@ -12878,7 +13298,7 @@ mod tests {
             ("gzip protobuf", gzip_headers, gzip_bytes(&protobuf)),
             ("json", json_headers, Bytes::from(json)),
         ] {
-            let (error, error_kind) = handle_signal_inner(&state, &headers, body, Signal::Logs)
+            let (error, error_kind) = handle_signal_inner(&state, &headers, body, Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err(case);
             assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
@@ -12891,7 +13311,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(many_empty_attributes(100).encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("a batch within the budget is accepted");
@@ -12928,7 +13348,7 @@ mod tests {
         let mut others = memory.reservation();
         assert!(others.try_add(memory.total_bytes()));
         let (error, error_kind) =
-            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err("no memory is free");
         assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -12938,7 +13358,7 @@ mod tests {
 
         drop(others);
         let (response, item_count, _, _) =
-            handle_signal_inner(&state, &test_headers(raw_key), batch(), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), batch(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("accepted once memory frees up");
         assert_eq!((response.status(), item_count), (StatusCode::OK, 1));
@@ -12965,7 +13385,7 @@ mod tests {
         underdeclared[at..].copy_from_slice(&1_u32.to_le_bytes());
         for (case, body) in [("over", overdeclared), ("under", underdeclared)] {
             let (error, error_kind) =
-                handle_signal_inner(&state, &headers, Bytes::from(body), Signal::Logs)
+                handle_signal_inner(&state, &headers, Bytes::from(body), Ingress::Otlp(Signal::Logs))
                     .await
                     .expect_err(case);
             assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE, "{case}");
@@ -12975,7 +13395,7 @@ mod tests {
         let mut two_members = gzip.to_vec();
         two_members.extend_from_slice(&gzip);
         let (error, error_kind) =
-            handle_signal_inner(&state, &headers, Bytes::from(two_members), Signal::Logs)
+            handle_signal_inner(&state, &headers, Bytes::from(two_members), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err("two members");
         assert_eq!((error.status, error_kind), (StatusCode::BAD_REQUEST, "decode"));
@@ -14586,7 +15006,7 @@ mod tests {
             &state,
             &headers,
             Bytes::from_static(UNDECODABLE_BODY),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect_err("a denied org must be refused");
@@ -14599,7 +15019,7 @@ mod tests {
             &state,
             &test_headers("maple_sk_test_otlp_allowed"),
             Bytes::from(test_log_request("allowed").encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("an allowed org is accepted");
@@ -14616,12 +15036,91 @@ mod tests {
             &state,
             &headers,
             Bytes::from_static(UNDECODABLE_BODY),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect_err("an undecodable body is refused");
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
         assert_eq!(error_kind, "decode");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn vercel_log_drain_maps_each_delivery_format_onto_otlp_logs() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("vercel-log-drain");
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_vercel",
+            KeyRow {
+                org_id: "org_vercel".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(5),
+        )
+        .await;
+        let headers = |encoding: Option<&str>| {
+            let mut headers = test_headers("maple_sk_test_vercel");
+            headers.insert(CONTENT_TYPE, "application/x-ndjson".parse().unwrap());
+            if let Some(encoding) = encoding {
+                headers.insert(CONTENT_ENCODING, encoding.parse().unwrap());
+            }
+            headers
+        };
+        let log = r#"{"id":"1","projectId":"prj_1","deploymentId":"dpl_1","source":"lambda","level":"info","message":"hi","timestamp":1573817187330}"#;
+        let ndjson = format!("{log}\n{log}\n");
+        let gzipped_array = encode_payload(format!("[{log}]").as_bytes(), Some("gzip")).unwrap();
+
+        // The drain's test delivery is an empty batch.
+        for (body, encoding, rows) in [
+            (ndjson.into_bytes(), None, 2),
+            (gzipped_array, Some("gzip"), 1),
+            (b"[]".to_vec(), None, 0),
+        ] {
+            let (response, item_count, org_id, _) = handle_signal_inner(
+                &state,
+                &headers(encoding),
+                Bytes::from(body),
+                Ingress::VercelLogDrain,
+            )
+            .await
+            .expect("a drain delivery is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!((item_count, org_id.as_str()), (rows, "org_vercel"));
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the delivery is forwarded")
+                .expect("forward channel should stay open");
+            assert_eq!(forwarded.content_type, "application/x-protobuf");
+        }
+
+        let (error, error_kind) = handle_signal_inner(
+            &state,
+            &headers(None),
+            Bytes::from_static(b"{\"projectId\":"),
+            Ingress::VercelLogDrain,
+        )
+        .await
+        .expect_err("malformed JSON is refused");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(error_kind, "enrich");
+
+        let (error, _) = handle_signal_inner(
+            &state,
+            &HeaderMap::new(),
+            Bytes::from_static(b"[]"),
+            Ingress::VercelLogDrain,
+        )
+        .await
+        .expect_err("a delivery without the ingest key is refused");
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -14662,7 +15161,7 @@ mod tests {
             let mut headers = HeaderMap::new();
             headers.insert(name, value.parse().unwrap());
             headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
-            let (error, _) = handle_signal_inner(&state, &headers, body(), Signal::Logs)
+            let (error, _) = handle_signal_inner(&state, &headers, body(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err("a blocked key must be refused");
             assert_eq!(error.status, StatusCode::UNAUTHORIZED, "{name}: {value:?}");
@@ -14674,7 +15173,7 @@ mod tests {
         }
 
         let (response, ..) =
-            handle_signal_inner(&state, &test_headers(allowed), body(), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(allowed), body(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("an unblocked key still ingests");
         assert_eq!(response.status(), StatusCode::OK);
@@ -15470,7 +15969,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(test_log_request("span tree").encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .instrument(server_span)
         .await
@@ -15553,7 +16052,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(first_payload),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("non-ready request should be accepted through forward path");
@@ -15599,7 +16098,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(second_payload),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("ready request should be accepted through ClickHouse path");
@@ -16230,7 +16729,7 @@ mod tests {
         let body = Bytes::from(test_log_request("refused").encode_to_vec());
 
         let (response, decoded_bytes, org_id, items) =
-            handle_signal_inner(&state, &test_headers(paused), body.clone(), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(paused), body.clone(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("a paused key is answered with success");
         assert_eq!(response.status(), StatusCode::OK);
@@ -16251,7 +16750,7 @@ mod tests {
         );
 
         let (error, error_kind) =
-            handle_signal_inner(&state, &test_headers(expired), body, Signal::Logs)
+            handle_signal_inner(&state, &test_headers(expired), body, Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err("an expired key is refused");
         assert_eq!(error.status, StatusCode::UNAUTHORIZED);
@@ -16397,8 +16896,12 @@ mod tests {
         .await;
         let body = Bytes::from(test_log_request("refused").encode_to_vec());
 
-        let (response, _items, _org_id, metered_bytes) =
-            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+        let (response, _items, _org_id, metered_bytes) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            body,
+            Ingress::Otlp(Signal::Logs),
+        )
                 .await
                 .expect("a collector 4xx is relayed, not raised");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -16458,7 +16961,7 @@ mod tests {
 
         // Request 1: accepted, with the override in the forwarded payload.
         let (response, _, org_id, _) =
-            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("an allowed signal is accepted");
         assert_eq!(response.status(), StatusCode::OK);
@@ -16484,7 +16987,7 @@ mod tests {
 
         // A signal outside the allow-list is 403 on every transport.
         let (error, error_kind) =
-            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Traces)
+            handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Ingress::Otlp(Signal::Traces))
                 .await
                 .expect_err("traces are not allowed");
         assert_eq!(error.status, StatusCode::FORBIDDEN);
@@ -16513,11 +17016,11 @@ mod tests {
         assert_eq!(status.code(), tonic::Code::PermissionDenied);
 
         // Request 2 spends the last token of the 2 rps burst; request 3 is 429.
-        handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+        handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Ingress::Otlp(Signal::Logs))
             .await
             .expect("the second request fits the burst");
         let (error, error_kind) =
-            handle_signal_inner(&state, &test_headers(raw_key), body, Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), body, Ingress::Otlp(Signal::Logs))
                 .await
                 .expect_err("the third request is over the limit");
         assert_eq!(error.status, StatusCode::TOO_MANY_REQUESTS);
@@ -16892,7 +17395,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(request.encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("default key traffic is accepted");
@@ -16930,7 +17433,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             Bytes::from(test_log_request("no claims").encode_to_vec()),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("default key traffic is accepted");
@@ -16940,6 +17443,143 @@ mod tests {
             vec![
                 INTEGRATION_SOURCE_UUID.to_owned(),
                 DEFAULT_SOURCE_UUID.to_owned()
+            ]
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    fn header_claimed_logs(header: Option<&str>, own_claim: Option<&str>) -> DecodedPayload {
+        let mut request = test_log_request("header claim");
+        let mut claimed = request.resource_logs[0].clone();
+        if let Some(own_claim) = own_claim {
+            claimed
+                .resource
+                .as_mut()
+                .expect("resource")
+                .attributes
+                .push(string_attribute("maple_source_id", own_claim));
+        }
+        request.resource_logs.push(claimed);
+        request.resource_logs.push(ResourceLogs::default());
+        let mut decoded = DecodedPayload::Logs(request);
+        let mut headers = HeaderMap::new();
+        if let Some(header) = header {
+            headers.insert(SOURCE_ID_HEADER, header.parse().expect("header value"));
+        }
+        apply_header_source_claim(&mut decoded, &headers, &test_key());
+        decoded
+    }
+
+    fn resource_claims(decoded: &DecodedPayload) -> Vec<Option<String>> {
+        let DecodedPayload::Logs(request) = decoded else {
+            panic!("logs");
+        };
+        request
+            .resource_logs
+            .iter()
+            .map(|r| {
+                r.resource
+                    .as_ref()
+                    .and_then(|resource| source_id_claim(&resource.attributes))
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_source_header_claims_every_resource_without_its_own() {
+        let header = public_id(INTEGRATION_SOURCE_UUID);
+        let own = public_id(SOURCE_UUID);
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some(&header), Some(&own))),
+            vec![Some(header.clone()), Some(own), Some(header)]
+        );
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some("  "), None)),
+            vec![None, None, None]
+        );
+        let oversized = "s".repeat(MAX_PUBLIC_ID_LEN + 1);
+        assert_eq!(
+            resource_claims(&header_claimed_logs(Some(&oversized), None)),
+            vec![None, None, None]
+        );
+    }
+
+    #[test]
+    fn the_source_header_is_ignored_for_source_tokens() {
+        let mut decoded = DecodedPayload::Logs(test_log_request("token"));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            SOURCE_ID_HEADER,
+            public_id(INTEGRATION_SOURCE_UUID)
+                .parse()
+                .expect("header value"),
+        );
+        let token = ResolvedIngestKey {
+            key_type: IngestKeyType::Source,
+            ..test_key()
+        };
+        apply_header_source_claim(&mut decoded, &headers, &token);
+        assert_eq!(resource_claims(&decoded), vec![None]);
+    }
+
+    #[tokio::test]
+    async fn header_claims_are_verified_like_attribute_claims() {
+        let (forward_url, mut forward_rx) = spawn_capturing_logs_collector().await;
+        let queue_dir = unique_main_test_dir("header-source-claim");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_header_source_claim";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_header_claim".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        store.insert_source_row("org_header_claim", DEFAULT_SOURCE_UUID, "default");
+        store.insert_source_row("org_header_claim", INTEGRATION_SOURCE_UUID, "integration");
+        store.insert_source_row("org_someone_else", SOURCE_UUID, "token");
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let mut stamped = Vec::new();
+        for header in [public_id(INTEGRATION_SOURCE_UUID), public_id(SOURCE_UUID)] {
+            let mut headers = test_headers(raw_key);
+            headers.insert(SOURCE_ID_HEADER, header.parse().expect("header value"));
+            let (response, ..) = handle_signal_inner(
+                &state,
+                &headers,
+                Bytes::from(test_log_request("header claim").encode_to_vec()),
+                Ingress::Otlp(Signal::Logs),
+            )
+            .await
+            .expect("default key traffic is accepted");
+            assert_eq!(response.status(), StatusCode::OK);
+            let forwarded = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+                .await
+                .expect("the export is forwarded")
+                .expect("forward channel should stay open");
+            let forwarded =
+                ExportLogsServiceRequest::decode(forwarded).expect("forwarded protobuf");
+            let resource = forwarded.resource_logs[0]
+                .resource
+                .as_ref()
+                .expect("resource");
+            stamped.push(string_attributes(&resource.attributes)["maple_source_id"].clone());
+        }
+        // The org's own source is kept; another org's id gives way to the default source.
+        assert_eq!(
+            stamped,
+            vec![
+                public_id(INTEGRATION_SOURCE_UUID),
+                public_id(DEFAULT_SOURCE_UUID)
             ]
         );
 
@@ -16997,7 +17637,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             request_with(&[paused.clone(), Some(public_id(SOURCE_UUID)), None]),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("default key traffic is accepted");
@@ -17025,7 +17665,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             request_with(&[paused.clone(), paused.clone()]),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("a paused source's batch is acked");
@@ -17043,7 +17683,7 @@ mod tests {
             &state,
             &test_headers(raw_key),
             request_with(&[paused, None]),
-            Signal::Logs,
+            Ingress::Otlp(Signal::Logs),
         )
         .await
         .expect("default key traffic is accepted");
@@ -17109,7 +17749,7 @@ mod tests {
                     state,
                     &test_headers(raw_key),
                     Bytes::from(body),
-                    Signal::Logs,
+                    Ingress::Otlp(Signal::Logs),
                 )
                 .await
                 .expect("default key traffic is accepted");
@@ -17235,7 +17875,7 @@ mod tests {
 
         for _ in 0..2 {
             let (response, ..) =
-                handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Signal::Logs)
+                handle_signal_inner(&state, &test_headers(raw_key), body.clone(), Ingress::Otlp(Signal::Logs))
                     .await
                     .expect("default key traffic is accepted");
             assert_eq!(response.status(), StatusCode::OK);
@@ -17504,7 +18144,7 @@ mod tests {
         let state = with_ingest_rules(state, &store);
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
-        let (response, ..) = handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+        let (response, ..) = handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs))
             .await
             .expect("accepted");
         assert_eq!(response.status(), StatusCode::OK);
@@ -17532,7 +18172,7 @@ mod tests {
 
         let body = log_request_at("noisy debug line", 5).encode_to_vec();
         let (response, item_count, _, metered) =
-            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("a fully dropped batch is still acked");
         assert_eq!(response.status(), StatusCode::OK);
@@ -17566,7 +18206,7 @@ mod tests {
         let body = request.encode_to_vec();
         let received = body.len();
         let (_, item_count, _, metered) =
-            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("accepted");
         assert_eq!(item_count, 1);
@@ -17588,7 +18228,7 @@ mod tests {
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
         let (_, _, _, metered) =
-            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body.clone()), Signal::Logs)
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body.clone()), Ingress::Otlp(Signal::Logs))
                 .await
                 .expect("accepted");
         assert_eq!(metered, body.len());
@@ -17645,7 +18285,7 @@ mod tests {
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
         let Err((error, _)) =
-            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs)).await
         else {
             panic!("an unredactable payload must not be accepted");
         };
@@ -17673,7 +18313,7 @@ mod tests {
     ) -> (ApiError, &'static str) {
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
         let Err((error, kind)) =
-            handle_signal_inner(state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await
+            handle_signal_inner(state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs)).await
         else {
             panic!("the payload must be refused");
         };
@@ -17725,7 +18365,7 @@ mod tests {
         );
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
-        handle_signal_inner(&state, &test_headers(other_key), Bytes::from(body), Signal::Logs)
+        handle_signal_inner(&state, &test_headers(other_key), Bytes::from(body), Ingress::Otlp(Signal::Logs))
             .await
             .expect("another org's rules still apply");
         let forwarded = next_forwarded_logs(&mut forward_rx).await;
@@ -17792,7 +18432,7 @@ mod tests {
 
         let body = log_request_at("login from jane@example.com", 9).encode_to_vec();
         let accepted =
-            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Signal::Logs).await;
+            handle_signal_inner(&state, &test_headers(raw_key), Bytes::from(body), Ingress::Otlp(Signal::Logs)).await;
         assert!(
             accepted.map_or(true, |(response, ..)| !response.status().is_success()),
             "the collector refused the batch"

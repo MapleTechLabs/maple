@@ -112,42 +112,38 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(
-				h,
-				{ padded: "sm", className: "space-y-1 group-hover:bg-surface-sunken" },
-				[
-					eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
-						icon(h, link.icon, { size: 12 }),
-						h.span([], [link.label]),
-					]),
-					hstack(h, { gap: "2", justify: "between" }, [
-						typography(
-							h,
-							{
-								size: "xs",
-								tone: "foreground",
-								weight: "medium",
-								mono: true,
-								truncate: true,
-								as: "p",
-								className: "min-w-0",
-							},
-							[link.name],
-						),
-						icon(h, "ArrowRightIcon", {
-							size: 12,
-							className: "shrink-0 text-muted-foreground group-hover:text-primary",
-						}),
-					]),
-					...(link.location.length === 0
-						? []
-						: [
-								typography(h, { size: "3xs", tone: "muted", truncate: true, as: "p" }, [
-									Arr.join(link.location, " · "),
-								]),
+			panel(h, { padded: "sm", className: "space-y-1 group-hover:bg-surface-sunken" }, [
+				eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
+					icon(h, link.icon, { size: 12 }),
+					h.span([], [link.label]),
+				]),
+				hstack(h, { gap: "2", justify: "between" }, [
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							as: "p",
+							className: "min-w-0",
+						},
+						[link.name],
+					),
+					icon(h, "ArrowRightIcon", {
+						size: 12,
+						className: "shrink-0 text-muted-foreground group-hover:text-primary",
+					}),
+				]),
+				...(link.location.length === 0
+					? []
+					: [
+							typography(h, { size: "3xs", tone: "muted", truncate: true, as: "p" }, [
+								Arr.join(link.location, " · "),
 							]),
-				],
-			),
+						]),
+			]),
 		],
 	)
 
@@ -165,7 +161,7 @@ const infraEmptyState = (h: H): Html =>
 			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 				"Set ",
 				inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
-				" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
+				" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure. A Vercel project links once its team is connected.",
 			]),
 			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 				"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",
