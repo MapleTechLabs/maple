@@ -5,9 +5,12 @@ import { TestClock } from "effect/testing"
 import { decodeStatusPageSnapshotJson, StatusPageKeys, utcDay } from "@maple/domain/status-page"
 import { StatusPageId } from "@maple/primitives"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
+import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
 import { STATUS_PAGE_SWEEP_BATCH, StatusPagePublisher } from "./StatusPagePublisher"
+import { StatusPageSnapshotBuilder } from "./StatusPageSnapshotBuilder"
 import { StatusPageStore, type InMemoryStatusPageStore, type StatusPageStoreApi } from "./StatusPageStore"
 import {
+	type InMemoryCustomHostnames,
 	bumpRevision,
 	cleanupRows,
 	DAY_MS,
@@ -18,6 +21,7 @@ import {
 	seedComponent,
 	seedDaily,
 	seedMonitor,
+	seedCustomDomain,
 	seedPage,
 } from "./status-page-test-support"
 
@@ -29,6 +33,7 @@ const withPublisher = <A, E>(
 	body: (ctx: {
 		readonly testDb: TestDb
 		readonly store: InMemoryStatusPageStore
+		readonly cloudflare: InMemoryCustomHostnames
 		readonly publisher: StatusPagePublisher["Service"]
 	}) => Effect.Effect<A, E>,
 	/** Wraps the store the publisher sees, to land a concurrent change mid-publish. */
@@ -38,13 +43,16 @@ const withPublisher = <A, E>(
 		yield* TestClock.setTime(NOW)
 		const testDb = createTestDb(trackedDbs)
 		const store = yield* StatusPageStore.makeInMemory
-		const layer = StatusPagePublisher.layer.pipe(
+		const cloudflare = yield* CloudflareCustomHostnames.makeInMemory()
+		const layer = Layer.effect(StatusPagePublisher, StatusPagePublisher.make).pipe(
+			Layer.provide(StatusPageSnapshotBuilder.layer),
+			Layer.provide(Layer.succeed(CloudflareCustomHostnames, cloudflare.api)),
 			Layer.provide(Layer.succeed(StatusPageStore, wrap(store.api, testDb))),
 			Layer.provide(testDb.layer),
 		)
-		return yield* StatusPagePublisher.use((publisher) => body({ testDb, store, publisher })).pipe(
-			Effect.provide(layer),
-		)
+		return yield* StatusPagePublisher.use((publisher) =>
+			body({ testDb, store, cloudflare, publisher }),
+		).pipe(Effect.provide(layer))
 	})
 
 describe("StatusPagePublisher.publish", () => {
@@ -237,6 +245,87 @@ describe("StatusPagePublisher.publish", () => {
 				yield* store.setFailing(false)
 				yield* publisher.publish(pageId)
 				assert.isNull((yield* readPage(testDb, pageId))?.last_publish_error)
+			}),
+		),
+	)
+})
+
+describe("StatusPagePublisher visibility", () => {
+	const setVisibility = (testDb: TestDb, pageId: StatusPageId, visibility: string) =>
+		Effect.promise(() =>
+			executeSql(testDb, "UPDATE status_pages SET visibility = $2 WHERE id = $1", [pageId, visibility]),
+		).pipe(Effect.andThen(bumpRevision(testDb, pageId)))
+
+	it.effect("takes an internal page off the edge, and writes it again once it is public", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-internal" })
+				yield* publisher.publish(pageId)
+
+				yield* setVisibility(testDb, pageId, "internal")
+				const hidden = yield* publisher.publish(pageId)
+				assert.isFalse(hidden.written)
+				const { kv, objects } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.slug("acme-internal")))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject("acme-internal")))
+				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
+				assert.strictEqual((yield* readPage(testDb, pageId))?.published_revision, "2")
+
+				// Nothing else changed, yet the page must go back up.
+				yield* setVisibility(testDb, pageId, "public")
+				const shown = yield* publisher.publish(pageId)
+				assert.isTrue(shown.written)
+				const after = yield* store.contents
+				assert.strictEqual(after.kv.get(StatusPageKeys.slug("acme-internal")), pageId)
+				assert.isTrue(after.kv.has(StatusPageKeys.snapshot(pageId)))
+			}),
+		),
+	)
+
+	it.effect("publishes the password hash only while the page is password-protected", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, {
+					id: pageId,
+					slug: "acme-locked",
+					visibility: "password",
+					passwordHash: "pbkdf2-sha256$1$c2FsdA$a2V5",
+				})
+				yield* publisher.publish(pageId)
+				const published = () =>
+					store.contents.pipe(
+						Effect.map(({ kv }) =>
+							Option.getOrUndefined(
+								decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId))),
+							),
+						),
+					)
+				const locked = yield* published()
+				assert.strictEqual(locked?.passwordHash, "pbkdf2-sha256$1$c2FsdA$a2V5")
+				assert.strictEqual(locked?.page.visibility, "password")
+
+				yield* setVisibility(testDb, pageId, "public")
+				yield* publisher.publish(pageId)
+				assert.isNull((yield* published())?.passwordHash)
+			}),
+		),
+	)
+
+	it.effect("leaves an internal page out of the stale republish", () =>
+		withPublisher(({ testDb, publisher }) =>
+			Effect.gen(function* () {
+				yield* seedPage(testDb, {
+					id: newPageId(),
+					slug: "stale-internal",
+					visibility: "internal",
+					revision: 1,
+					publishedRevision: 1,
+					publishedAt: NOW - 20 * 60_000,
+				})
+				assert.strictEqual((yield* publisher.sweep(NOW)).due, 0)
 			}),
 		),
 	)
@@ -495,6 +584,290 @@ describe("StatusPagePublisher.sweep edge cleanups", () => {
 				assert.isTrue(kv.has(StatusPageKeys.overlayEntry(other, "e3")))
 				assert.isTrue(kv.has(StatusPageKeys.snapshot(other)))
 				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+})
+
+describe("StatusPagePublisher custom domains", () => {
+	it.effect("routes an active custom domain to the page and names it in the snapshot", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status: "active" })
+
+				yield* publisher.publish(pageId)
+				const { kv, objects } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+				assert.strictEqual(objects.get(StatusPageKeys.hostObject("status.acme.com")), pageId)
+				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				const snapshot = decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId)))
+				assert.strictEqual(Option.getOrNull(snapshot)?.page.customDomain, "status.acme.com")
+			}),
+		),
+	)
+
+	it.effect("routes nothing for a domain still waiting on DNS", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "pending_dns",
+				})
+
+				yield* publisher.publish(pageId)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				const snapshot = decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId)))
+				assert.isNull(Option.getOrNull(snapshot)?.page.customDomain)
+			}),
+		),
+	)
+
+	it.effect("restores a host route lost at the edge on an unchanged republish", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, { pageId, hostname: "status.acme.com", status: "active" })
+				yield* publisher.publish(pageId)
+				yield* store.api.deleteHostRoute("status.acme.com")
+
+				const result = yield* publisher.publish(pageId)
+				assert.isFalse(result.written)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+			}),
+		),
+	)
+
+	it.effect("takes a removed domain down at Cloudflare and at the edge, keeping the page", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* Effect.promise(() =>
+					executeSql(testDb, `DELETE FROM status_page_custom_domains WHERE page_id = $1`, [pageId]),
+				)
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleaned, 1)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 0)
+				assert.strictEqual((yield* cloudflare.routes).size, 0)
+				const { kv, objects } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.isFalse(objects.has(StatusPageKeys.hostObject("status.acme.com")))
+				assert.strictEqual(kv.get(StatusPageKeys.slug("acme")), pageId)
+				assert.isTrue(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("takes a deleted page's custom domain down with it", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* Effect.promise(async () => {
+					await executeSql(
+						testDb,
+						`INSERT INTO status_page_cleanups (id, org_id, page_id, slug, delete_snapshot,
+							hostname, cloudflare_hostname_id, cloudflare_route_id, created_at)
+						 SELECT gen_random_uuid()::text, p.org_id, p.id, p.slug, true,
+							d.hostname, d.cloudflare_hostname_id, d.cloudflare_route_id, now()
+						 FROM status_pages p LEFT JOIN status_page_custom_domains d ON d.page_id = p.id
+						 WHERE p.id = $1`,
+						[pageId],
+					)
+					await executeSql(testDb, `DELETE FROM status_pages WHERE id = $1`, [pageId])
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 0)
+				assert.strictEqual((yield* cloudflare.routes).size, 0)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("keeps a hostname another page claimed since, with the Cloudflare pieces it took over", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const oldPage = newPageId()
+				const newPage = newPageId()
+				yield* seedPage(testDb, { id: oldPage, slug: "old-acme" })
+				yield* seedPage(testDb, { id: newPage, slug: "new-acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId: newPage,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				yield* seedCleanup(testDb, {
+					pageId: oldPage,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+				assert.strictEqual((yield* cloudflare.routes).size, 1)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), newPage)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("keeps the route of a domain removed and added back before its cleanup drained", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				// Added back, the domain took over the queued removal's Cloudflare pieces and is active again.
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+				})
+				yield* publisher.publish(pageId)
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleaned, 1)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+				assert.strictEqual((yield* cloudflare.routes).size, 1)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("drops the removed page's route when the hostname's new claim is still pending", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const oldPage = newPageId()
+				const newPage = newPageId()
+				yield* seedPage(testDb, { id: oldPage, slug: "old-acme" })
+				yield* seedPage(testDb, { id: newPage, slug: "new-acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				yield* seedCustomDomain(testDb, {
+					pageId: oldPage,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* publisher.sweep(NOW)
+				assert.strictEqual(
+					(yield* store.contents).kv.get(StatusPageKeys.host("status.acme.com")),
+					oldPage,
+				)
+				// The old page lets the hostname go and another page claims it before its DNS lands.
+				yield* Effect.promise(() =>
+					executeSql(testDb, `DELETE FROM status_page_custom_domains WHERE page_id = $1`, [
+						oldPage,
+					]),
+				)
+				yield* seedCustomDomain(testDb, {
+					pageId: newPage,
+					hostname: "status.acme.com",
+					status: "pending_dns",
+				})
+				yield* seedCleanup(testDb, {
+					pageId: oldPage,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+
+				yield* publisher.sweep(NOW + 60_000)
+				const { kv } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.host("status.acme.com")))
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("keeps the cleanup queued while Cloudflare is failing", () =>
+		withPublisher(({ testDb, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+					cloudflareHostnameId: hostname.id,
+				})
+				yield* cloudflare.setFailing(true)
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleanupsFailed, 1)
+				assert.strictEqual((yield* cleanupRows(testDb)).length, 1)
 			}),
 		),
 	)

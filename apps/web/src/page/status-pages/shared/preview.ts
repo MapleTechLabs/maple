@@ -4,7 +4,7 @@ import {
 	isActiveIncident,
 	isListedIncident as isListedSnapshotIncident,
 	StatusPageDayBar,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
@@ -31,7 +31,7 @@ export const PreviewHistory = Schema.Array(
 export type PreviewHistory = typeof PreviewHistory.Type
 
 /** The preview answers one component per one sent, in order: pair them back up by monitor. */
-export const historyFrom = (sent: StatusPagePreviewParams, snapshot: StatusPageSnapshot): PreviewHistory =>
+export const historyFrom = (sent: StatusPagePreviewParams, snapshot: StatusPagePublicSnapshot): PreviewHistory =>
 	Arr.flatMap(sent.components, (component, index) => {
 		const days = snapshot.components[index]?.days ?? []
 		return component.monitor_id === null || component.monitor_id === undefined || days.length === 0
@@ -223,20 +223,40 @@ const markFirst = (html: string, selectedIds: ReadonlyArray<string>): string => 
 }
 
 export type PreviewDocumentOptions = Readonly<{
-	snapshot: StatusPageSnapshot
+	snapshot: StatusPagePublicSnapshot
 	nowMs: number
 	/** The editor's preview: components and incidents can be clicked, and the selection drawn. */
 	isSelectable: boolean
 	selectedIds: ReadonlyArray<string>
+	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */
+	publicUrl: string | null
+	/**
+	 * The page read for real (the viewer): absolute http(s) links open in a new tab. The editor's
+	 * previews keep every link in place. Its frame needs `previewFrame`'s `opensLinks` too.
+	 */
+	opensLinks?: boolean
 }>
+
+/**
+ * A srcdoc frame resolves links against the dashboard's URL, so following one loads the dashboard
+ * inside the frame. In-page links scroll instead; other links and form posts stay put, except an
+ * absolute http(s) link when `opensLinks`, which opens in a new tab.
+ */
+const stayInFrameScript = (opensLinks: boolean): string =>
+	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
-	const html = renderPage(options.snapshot, { _tag: "live", updatedAt: options.nowMs }, options.nowMs, {
-		preview: options.isSelectable,
-	})
-	if (!options.isSelectable) return html
-	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>`
+	const preview = options.isSelectable
+	const html = renderPage(
+		options.snapshot,
+		{ _tag: "live", updatedAt: options.nowMs },
+		options.nowMs,
+		options.publicUrl === null ? { preview } : { preview, publicUrl: options.publicUrl },
+	)
+	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script>`
+	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
+	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(markFirst(html, options.selectedIds))
 }
 
@@ -338,6 +358,8 @@ export const previewFrame = <M>(
 		title: string
 		className?: string
 		isSelectable?: boolean
+		/** Lets the document's `opensLinks` open a new tab, outside the sandbox. */
+		opensLinks?: boolean
 		width?: PreviewWidth
 	}>,
 ): Html =>
@@ -345,7 +367,13 @@ export const previewFrame = <M>(
 		[
 			...(options.isSelectable === true ? [h.Id(PREVIEW_FRAME_ID)] : []),
 			h.Title(options.title),
-			h.Sandbox("allow-scripts"),
+			h.Sandbox(
+				options.opensLinks === true
+					? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
+					: "allow-scripts",
+			),
+			// The Slack command's Copy button; without it the button selects the command instead.
+			h.Allow("clipboard-write"),
 			h.Srcdoc(options.document),
 			h.DataAttribute("width", options.width ?? "desktop"),
 			h.Class(

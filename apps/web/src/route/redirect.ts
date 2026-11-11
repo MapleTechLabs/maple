@@ -156,7 +156,7 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		() => Option.none(),
 	)
 
-const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage"])
+const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage", "StatusPageView"])
 
 /** A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`). */
 export const flaggedRouteRedirect = (

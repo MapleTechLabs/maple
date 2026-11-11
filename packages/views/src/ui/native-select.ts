@@ -1,5 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
-import { nativeSelectIconStyles, nativeSelectStyles, nativeSelectWrapperStyles } from "./native-select.styles"
+import {
+	nativeSelectIconStyles,
+	nativeSelectLeadingStyles,
+	nativeSelectStyles,
+	nativeSelectWrapperStyles,
+} from "./native-select.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { Array as Arr } from "effect"
@@ -40,6 +45,8 @@ export const nativeSelect = <Message>(
 		className?: string
 		defaultValue?: string
 		isDisabled?: boolean
+		/** A mark before the value (the picked option's status dot); decorative, the value names it. */
+		leading?: Html
 		attributes?: ReadonlyArray<Attribute<Message>>
 	}>,
 	entries: ReadonlyArray<NativeSelectEntry>,
@@ -52,10 +59,14 @@ export const nativeSelect = <Message>(
 			h.DataAttribute("slot", "native-select-wrapper"),
 		],
 		[
+			...(options.leading === undefined
+				? []
+				: [h.span([h.AriaHidden(true), h.Class(nativeSelectLeadingStyles)], [options.leading])]),
 			h.select(
 				[
 					...(options.attributes ?? []),
 					h.Class(nativeSelectStyles),
+					...(options.leading === undefined ? [] : [h.DataAttribute("leading", "")]),
 					h.DataAttribute("size", size),
 					h.DataAttribute("slot", "native-select"),
 					...(options.isDisabled === true ? [h.Disabled(true)] : []),

@@ -1,0 +1,455 @@
+---
+/**
+ * LiveStatusPage: a public status page as visitors see it, with `Checkout API` going
+ * from Operational to Partial outage when its linked monitor fails.
+ *
+ * Pure CSS on one shared 14s loop, like LiveUptime. The base (unanimated) state is the
+ * final frame (partial outage, incident posted), which is what `prefers-reduced-motion`
+ * shows. Labels mirror `@maple/status-page`: the hero sentences, component statuses,
+ * incident statuses and the 90-day bars.
+ */
+
+interface Component {
+	name: string;
+	uptime: string;
+	/** Indexes of days with downtime in the 90-day strip. */
+	down: number[];
+}
+
+const DAYS = 90;
+const TODAY = DAYS - 1;
+
+/** The component the loop takes down. Its linked monitor fails today. */
+const CHECKOUT: Component = { name: "Checkout API", uptime: "99.71%", down: [23, 61] };
+
+const AUTH: Component = { name: "Auth", uptime: "99.98%", down: [47] };
+
+/** Shown without bars: `show_uptime` is off for this group's components. */
+const DASHBOARD: Component[] = [
+	{ name: "Web app", uptime: "100%", down: [] },
+	{ name: "Webhooks", uptime: "99.95%", down: [] },
+];
+---
+
+<div class="live-frame">
+	<div class="live-frame__head">
+		<span>status.acme.com</span>
+		<span class="live-frame__live">
+			<span class="live-frame__live-dot"></span>
+			LIVE
+		</span>
+	</div>
+
+	<div class="sp-page">
+		<div class="sp-top">
+			<span class="sp-brand"><span class="sp-logo" aria-hidden="true"></span>Acme</span>
+			<span class="sp-subscribe">Subscribe to updates</span>
+		</div>
+
+		<div class="sp-hero">
+			<!-- One stable sentence for assistive tech; the animated pair is visual only. -->
+			<span class="sr-only">We're experiencing a partial outage</span>
+			<span class="sp-hero__line sp-hero__line--ok sp-anim" aria-hidden="true">We're fully operational</span>
+			<span class="sp-hero__line sp-hero__line--outage sp-anim" aria-hidden="true">
+				We're experiencing a partial outage
+			</span>
+		</div>
+
+		<div class="sp-incident sp-anim">
+			<div class="sp-incident__head">
+				<span class="sp-incident__status">Investigating</span>
+				<span>Nov 11, 14:34 UTC</span>
+			</div>
+			<div class="sp-incident__title">Failed payments at checkout</div>
+			<div class="sp-incident__body">
+				Some card payments are failing. We're looking into it and will post again within 30 minutes.
+			</div>
+			<div class="sp-incident__meta">Affects Checkout API</div>
+		</div>
+
+		<div class="sp-group">
+			<div class="sp-group__name">API</div>
+			<div class="sp-component">
+				<div class="sp-component__row">
+					<span class="sp-component__name">{CHECKOUT.name}</span>
+					<span class="sp-pills">
+						<span class="sr-only">Partial outage</span>
+						<span class="sp-pill sp-pill--ok sp-anim" aria-hidden="true">Operational</span>
+						<span class="sp-pill sp-pill--outage sp-anim" aria-hidden="true">Partial outage</span>
+					</span>
+				</div>
+				<div class="sp-bars" aria-hidden="true">
+					{
+						Array.from({ length: DAYS }, (_, i) => (
+							<span
+								class:list={[
+									"sp-bar",
+									CHECKOUT.down.includes(i) && "sp-bar--down",
+									i === TODAY && "sp-bar--today sp-anim",
+								]}
+							/>
+						))
+					}
+				</div>
+				<div class="sp-axis"><span>90 days ago</span><span>{CHECKOUT.uptime} uptime</span><span>Today</span></div>
+			</div>
+			<div class="sp-component">
+				<div class="sp-component__row">
+					<span class="sp-component__name">{AUTH.name}</span>
+					<span class="sp-pill sp-pill--ok">Operational</span>
+				</div>
+				<div class="sp-bars" aria-hidden="true">
+					{
+						Array.from({ length: DAYS }, (_, i) => (
+							<span class:list={["sp-bar", AUTH.down.includes(i) && "sp-bar--down"]} />
+						))
+					}
+				</div>
+			</div>
+		</div>
+
+		<div class="sp-group">
+			<div class="sp-group__name">Dashboard</div>
+			{
+				DASHBOARD.map((component) => (
+					<div class="sp-component">
+						<div class="sp-component__row">
+							<span class="sp-component__name">{component.name}</span>
+							<span class="sp-component__uptime">{component.uptime} uptime</span>
+							<span class="sp-pill sp-pill--ok">Operational</span>
+						</div>
+					</div>
+				))
+			}
+		</div>
+
+		<div class="sp-maintenance">
+			<span class="sp-maintenance__tag">Scheduled</span>
+			<span class="sp-maintenance__title">Database upgrade</span>
+			<span class="sp-maintenance__when">Sat 02:00 to 03:00 UTC</span>
+		</div>
+	</div>
+
+	<div
+		class="flex justify-between gap-4 border-t border-border bg-bg-elevated px-3.5 py-2.5 text-[10px] uppercase tracking-wider text-fg-muted"
+	>
+		<span>status from monitor checkout-api</span>
+		<span class="hidden sm:inline">rss · atom · status.json · badge.svg</span>
+	</div>
+</div>
+
+<style>
+	.sp-page {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding: 14px;
+		font-size: 11px;
+		color: var(--foreground);
+	}
+	.sp-top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.sp-brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.sp-logo {
+		width: 16px;
+		height: 16px;
+		border-radius: 4px;
+		background: color-mix(in oklab, var(--foreground) 70%, transparent);
+	}
+	.sp-subscribe {
+		padding: 3px 9px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+
+	/* ── Overall status ───────────────────────────────────────────── */
+	.sp-hero {
+		display: grid;
+		padding: 10px 12px;
+		border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+		border-radius: 6px;
+		background: color-mix(in oklab, var(--bg-elevated) 70%, transparent);
+		font-size: 13px;
+	}
+	.sp-hero > * {
+		grid-area: 1 / 1;
+	}
+	.sp-hero__line--ok {
+		opacity: 0;
+		color: var(--severity-info);
+	}
+	.sp-hero__line--outage {
+		color: var(--severity-warn);
+	}
+
+	/* ── Incident ─────────────────────────────────────────────────── */
+	.sp-incident {
+		padding: 10px 12px;
+		border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+		border-left: 2px solid var(--severity-warn);
+		border-radius: 6px;
+	}
+	.sp-incident__head {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.sp-incident__status {
+		color: var(--severity-warn);
+	}
+	.sp-incident__title {
+		margin-top: 6px;
+		font-size: 12px;
+	}
+	.sp-incident__body {
+		margin-top: 3px;
+		font-size: 10.5px;
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+	.sp-incident__meta {
+		margin-top: 6px;
+		font-size: 10px;
+		color: var(--muted-foreground);
+	}
+
+	/* ── Components ───────────────────────────────────────────────── */
+	.sp-group {
+		border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+		border-radius: 6px;
+	}
+	.sp-group__name {
+		padding: 7px 12px;
+		border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+		background: color-mix(in oklab, var(--bg-elevated) 70%, transparent);
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.sp-component {
+		padding: 9px 12px;
+	}
+	.sp-component + .sp-component {
+		border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+	}
+	.sp-component__row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.sp-component__name {
+		flex: 1;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.sp-component__uptime {
+		display: none;
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	@media (min-width: 640px) {
+		.sp-component__uptime {
+			display: block;
+		}
+	}
+
+	.sp-pills {
+		display: grid;
+		justify-items: end;
+	}
+	.sp-pills > * {
+		grid-area: 1 / 1;
+	}
+	.sp-pill {
+		width: fit-content;
+		font-size: 9px;
+		letter-spacing: 0.04em;
+		padding: 2px 7px;
+		border-radius: 999px;
+		border: 1px solid;
+		white-space: nowrap;
+	}
+	.sp-pill--ok {
+		color: var(--severity-info);
+		border-color: color-mix(in oklab, var(--severity-info) 40%, transparent);
+		background: color-mix(in oklab, var(--severity-info) 8%, transparent);
+	}
+	.sp-pill--ok.sp-anim {
+		opacity: 0;
+	}
+	.sp-pill--outage {
+		color: var(--severity-warn);
+		border-color: color-mix(in oklab, var(--severity-warn) 45%, transparent);
+		background: color-mix(in oklab, var(--severity-warn) 10%, transparent);
+	}
+
+	/* ── 90 days, one bar per day ─────────────────────────────────── */
+	.sp-bars {
+		display: flex;
+		gap: 2px;
+		margin-top: 8px;
+	}
+	.sp-bar {
+		flex: 1;
+		min-width: 2px;
+		height: 18px;
+		border-radius: 1.5px;
+		background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+	}
+	.sp-bar--down,
+	.sp-bar--today {
+		background: var(--severity-warn);
+	}
+	/* Narrow screens keep the last 30 days. */
+	@media (max-width: 559px) {
+		.sp-bar:nth-child(-n + 60) {
+			display: none;
+		}
+	}
+	.sp-axis {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+		margin-top: 5px;
+		font-size: 9.5px;
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+	}
+	@media (max-width: 559px) {
+		.sp-axis > :first-child {
+			visibility: hidden;
+		}
+	}
+
+	/* ── Scheduled maintenance ────────────────────────────────────── */
+	.sp-maintenance {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+		padding: 9px 12px;
+		border: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+		border-radius: 6px;
+		font-size: 10.5px;
+	}
+	.sp-maintenance__tag {
+		font-size: 9px;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.sp-maintenance__when {
+		margin-left: auto;
+		color: var(--muted-foreground);
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* ── Choreography, one shared 14s loop ────────────────────────────
+	   0–24%   everything operational
+	   26%     the monitor fails: today's bar, the pill and the banner flip
+	   36–42%  the incident is posted
+	   94–100% everything rewinds for the next loop                    */
+	.sp-anim {
+		animation-duration: 14s;
+		animation-timing-function: linear;
+		animation-iteration-count: infinite;
+	}
+	.sp-hero__line--ok,
+	.sp-pill--ok.sp-anim {
+		animation-name: sp-before;
+	}
+	.sp-hero__line--outage,
+	.sp-pill--outage {
+		animation-name: sp-after;
+	}
+	@keyframes sp-before {
+		0%,
+		25% {
+			opacity: 1;
+		}
+		26%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
+	@keyframes sp-after {
+		0%,
+		25% {
+			opacity: 0;
+		}
+		26%,
+		96% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	.sp-bar--today {
+		animation-name: sp-today;
+	}
+	@keyframes sp-today {
+		0%,
+		25% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+		26%,
+		94% {
+			background: var(--severity-warn);
+		}
+		100% {
+			background: color-mix(in oklab, var(--severity-info) 70%, transparent);
+		}
+	}
+
+	.sp-incident {
+		animation-name: sp-incident-in;
+	}
+	@keyframes sp-incident-in {
+		0%,
+		36% {
+			opacity: 0;
+			transform: translateY(5px);
+		}
+		42%,
+		96% {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		100% {
+			opacity: 0;
+			transform: translateY(5px);
+		}
+	}
+
+	/* Reduced motion: the base state is the final frame (partial outage, incident posted). */
+	@media (prefers-reduced-motion: reduce) {
+		.sp-anim {
+			animation: none !important;
+		}
+	}
+</style>

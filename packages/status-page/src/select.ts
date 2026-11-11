@@ -1,6 +1,6 @@
 import {
 	isActiveIncident,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotComponent,
 	type StatusPageSnapshotIncident,
 	worstStatus,
@@ -9,12 +9,12 @@ import type { StatusPageComponentStatus } from "@maple/primitives"
 import { Array as Arr } from "effect"
 
 /** Open incidents and maintenance underway, newest first. */
-export const activeIncidents = (snapshot: StatusPageSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
+export const activeIncidents = (snapshot: StatusPagePublicSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
 	Arr.filter(snapshot.incidents, isActiveIncident)
 
 /** Maintenance announced but not started, soonest first. */
 export const upcomingMaintenance = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 ): ReadonlyArray<StatusPageSnapshotIncident> =>
 	Arr.filter(
 		snapshot.incidents,
@@ -22,7 +22,7 @@ export const upcomingMaintenance = (
 	).sort((a, b) => (a.scheduledStart ?? a.startedAt) - (b.scheduledStart ?? b.startedAt))
 
 /** Resolved incidents and completed maintenance, newest first. */
-export const pastIncidents = (snapshot: StatusPageSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
+export const pastIncidents = (snapshot: StatusPagePublicSnapshot): ReadonlyArray<StatusPageSnapshotIncident> =>
 	Arr.filter(
 		snapshot.incidents,
 		(incident) => incident.status === "resolved" || incident.status === "completed",
@@ -55,7 +55,7 @@ export const groupComponents = (
 	)
 
 /** The newest moment anything on the page changed. */
-export const latestActivityAt = (snapshot: StatusPageSnapshot): number =>
+export const latestActivityAt = (snapshot: StatusPagePublicSnapshot): number =>
 	Arr.reduce(snapshot.incidents, snapshot.generatedAt, (latest, incident) =>
 		Math.max(latest, incident.startedAt, ...Arr.map(incident.updates, (update) => update.at)),
 	)

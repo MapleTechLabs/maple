@@ -10,6 +10,7 @@ import {
 	sha256Base64Url,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
+import { verifyStatusPagePassword } from "@maple/domain/status-page-access"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { StatusPagesService, type CreateStatusPageIncidentInput } from "./StatusPagesService"
 
@@ -481,6 +482,168 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("backdates an incident's start and records when it ended, refusing impossible times", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const now = Date.UTC(2026, 10, 11, 15)
+			yield* TestClock.setTime(now)
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const base: CreateStatusPageIncidentInput = {
+				kind: "incident",
+				title: "Elevated errors",
+				impact: "major",
+				status: "investigating",
+				body: "Looking",
+				componentIds: [],
+				source: "dashboard",
+			}
+			const refused = (effect: Effect.Effect<unknown, { readonly _tag: string }>) =>
+				Effect.flip(effect).pipe(
+					Effect.map((error) =>
+						assert.strictEqual(error._tag, "@maple/http/errors/StatusPageValidationError"),
+					),
+				)
+			yield* refused(service.createIncident(ORG, page.id, { ...base, startedAt: now + 60_000 }))
+			yield* refused(
+				service.createIncident(ORG, page.id, {
+					...base,
+					kind: "maintenance",
+					status: "scheduled",
+					scheduledStart: now + DAY,
+					scheduledEnd: now + 2 * DAY,
+					startedAt: now - 60_000,
+				}),
+			)
+
+			const began = now - 55 * 60_000
+			const incident = yield* service.createIncident(ORG, page.id, { ...base, startedAt: began })
+			assert.strictEqual(incident.startedAt, began)
+
+			const close = (resolvedAt: number) =>
+				service.postUpdate(ORG, incident.id, {
+					status: "resolved",
+					body: "Fixed",
+					source: "api",
+					resolvedAt,
+				})
+			yield* refused(close(began - 1))
+			yield* refused(close(now + 1))
+			yield* refused(
+				service.postUpdate(ORG, incident.id, {
+					status: "monitoring",
+					body: "Watching",
+					source: "api",
+					resolvedAt: now,
+				}),
+			)
+			const ended = now - 10 * 60_000
+			const resolved = yield* close(ended)
+			assert.deepStrictEqual([resolved.startedAt, resolved.resolvedAt], [began, ended])
+
+			yield* refused(service.updateIncident(ORG, incident.id, { startedAt: ended + 1 }))
+			yield* refused(service.updateIncident(ORG, incident.id, { resolvedAt: now + 1 }))
+			const corrected = yield* service.updateIncident(ORG, incident.id, {
+				startedAt: began - 60_000,
+				resolvedAt: ended + 60_000,
+			})
+			assert.deepStrictEqual(
+				[corrected.startedAt, corrected.resolvedAt],
+				[began - 60_000, ended + 60_000],
+			)
+
+			const open = yield* service.createIncident(ORG, page.id, base)
+			yield* refused(service.updateIncident(ORG, open.id, { resolvedAt: now }))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("caps an update at 20,000 characters", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const open = (body: string) =>
+				service.createIncident(ORG, page.id, {
+					kind: "incident",
+					title: "Long",
+					impact: "minor",
+					status: "investigating",
+					body,
+					componentIds: [],
+					source: "api",
+				})
+			const incident = yield* open(Str.repeat(20_000)("x"))
+			assert.strictEqual(incident.updates[0]?.body.length, 20_000)
+			const tooLong = yield* Effect.flip(open(Str.repeat(20_001)("x")))
+			assert.strictEqual(tooLong._tag, "@maple/http/errors/StatusPageValidationError")
+			const tooLongUpdate = yield* Effect.flip(
+				service.postUpdate(ORG, incident.id, {
+					status: "identified",
+					body: Str.repeat(20_001)("x"),
+					source: "api",
+				}),
+			)
+			assert.strictEqual(tooLongUpdate._tag, "@maple/http/errors/StatusPageValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("edits a maintenance window only within what its status allows", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const now = Date.UTC(2026, 10, 11, 15)
+			const HOUR = 3_600_000
+			yield* TestClock.setTime(now)
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const maintenance = yield* service.createIncident(ORG, page.id, {
+				kind: "maintenance",
+				title: "Database upgrade",
+				impact: "none",
+				status: "scheduled",
+				body: "Planned",
+				componentIds: [],
+				source: "dashboard",
+				scheduledStart: now + HOUR,
+				scheduledEnd: now + 2 * HOUR,
+			})
+			const edit = (patch: { scheduledStart?: number; scheduledEnd?: number }) =>
+				service.updateIncident(ORG, maintenance.id, patch)
+			const refusedWith = (patch: { scheduledStart?: number; scheduledEnd?: number }) =>
+				Effect.flip(edit(patch)).pipe(Effect.map((error) => error.message))
+
+			assert.include(yield* refusedWith({ scheduledStart: now - HOUR }), "can't start in the past")
+			assert.include(yield* refusedWith({ scheduledEnd: now + HOUR }), "end after it starts")
+			const moved = yield* edit({ scheduledStart: now + 3 * HOUR, scheduledEnd: now + 4 * HOUR })
+			assert.deepStrictEqual(
+				[moved.scheduledStart, moved.scheduledEnd, moved.startedAt],
+				[now + 3 * HOUR, now + 4 * HOUR, now + 3 * HOUR],
+			)
+
+			yield* service.postUpdate(ORG, maintenance.id, {
+				status: "in_progress",
+				body: "Started early",
+				source: "dashboard",
+			})
+			assert.include(yield* refusedWith({ scheduledStart: now + HOUR }), "can't move into the future")
+			assert.include(
+				yield* refusedWith({ scheduledStart: now - HOUR, scheduledEnd: now - 1 }),
+				"end in the future",
+			)
+			const extended = yield* edit({ scheduledStart: now - HOUR, scheduledEnd: now + 5 * HOUR })
+			assert.strictEqual(extended.scheduledEnd, now + 5 * HOUR)
+
+			yield* service.postUpdate(ORG, maintenance.id, {
+				status: "completed",
+				body: "Done",
+				source: "dashboard",
+			})
+			assert.include(yield* refusedWith({ scheduledEnd: now + 6 * HOUR }), "keeps its window")
+			// Sending the saved window back is no change, so it is not refused.
+			const unchanged = yield* edit({ scheduledStart: now - HOUR, scheduledEnd: now + 5 * HOUR })
+			assert.strictEqual(unchanged.status, "completed")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("rotates a break-glass token, storing only its hash and suffix", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -506,6 +669,61 @@ describe("StatusPagesService", () => {
 			yield* service.revokeBreakGlassToken(ORG, page.id)
 			assert.isNull((yield* pageRow(testDb, page.id))?.break_glass_token_sha256)
 			assert.isNull((yield* service.get(ORG, page.id)).breakGlassTokenSuffix)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores only a slow hash of the page password and checks visibility against it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const early = yield* Effect.flip(service.update(ORG, page.id, { visibility: "password" }))
+			assert.include(early.message, "Set a page password")
+			const short = yield* Effect.flip(service.setPassword(ORG, page.id, "seven77"))
+			assert.strictEqual(short._tag, "@maple/http/errors/StatusPageValidationError")
+
+			const before = yield* revision(testDb, page.id)
+			const withPassword = yield* service.setPassword(ORG, page.id, "correct horse battery")
+			assert.isTrue(withPassword.hasPassword)
+			assert.strictEqual(yield* revision(testDb, page.id), before + 1)
+			const stored = yield* Effect.promise(() =>
+				testDb.pglite.query<{ password_hash: string; dump: string }>(
+					`SELECT password_hash, row_to_json(p)::text AS dump FROM status_pages p WHERE id = $1`,
+					[page.id],
+				),
+			)
+			const row = stored.rows[0]
+			assert.isTrue(
+				yield* verifyStatusPagePassword("correct horse battery", row?.password_hash ?? ""),
+			)
+			assert.isFalse(Str.includes("correct horse battery")(row?.dump ?? ""))
+
+			const locked = yield* service.update(ORG, page.id, { visibility: "password" })
+			assert.strictEqual(locked.visibility, "password")
+			const removing = yield* Effect.flip(service.removePassword(ORG, page.id))
+			assert.include(removing.message, "before removing its password")
+
+			yield* service.update(ORG, page.id, { visibility: "internal" })
+			assert.isFalse((yield* service.removePassword(ORG, page.id)).hasPassword)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses to make a page with a custom domain internal", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_page_custom_domains (page_id, org_id, hostname, status, created_at, updated_at)
+					 VALUES ($1, $2, 'status.acme.example', 'active', now(), now())`,
+					[page.id, ORG],
+				),
+			)
+			const refused = yield* Effect.flip(service.update(ORG, page.id, { visibility: "internal" }))
+			assert.include(refused.message, "Remove the custom domain")
+			assert.strictEqual((yield* service.get(ORG, page.id)).visibility, "public")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -619,10 +837,14 @@ describe("StatusPagesService", () => {
 					description: null,
 					website_url: null,
 					logo_url: null,
+					logo_dark_url: null,
+					favicon_url: null,
+					support_url: null,
 					privacy_url: null,
 					terms_url: null,
 					show_powered_by: true,
 					auto_incidents: "off",
+					visibility: "public",
 					theme: DEFAULT_STATUS_PAGE_THEME,
 					components: Arr.map([api, web, docs], (component) => ({
 						id: component.id,
@@ -634,6 +856,43 @@ describe("StatusPagesService", () => {
 						show_uptime: true,
 					})),
 				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("applies branding links, reads them back and refuses ones that are not https", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const branded = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{
+						...config,
+						logo_dark_url: " https://acme.test/logo-dark.svg ",
+						favicon_url: "https://acme.test/favicon.png",
+						support_url: "https://acme.test/help",
+					},
+					USER,
+				)
+				assert.deepStrictEqual(branded.changes.fields, [
+					"logo_dark_url",
+					"favicon_url",
+					"support_url",
+				])
+				const read = yield* service.getConfig(ORG, page.id)
+				assert.strictEqual(read.logo_dark_url, "https://acme.test/logo-dark.svg")
+				const stored = yield* service.get(ORG, page.id)
+				assert.strictEqual(stored.faviconUrl, "https://acme.test/favicon.png")
+				assert.strictEqual(stored.supportUrl, "https://acme.test/help")
+
+				const insecure = yield* Effect.flip(
+					service.update(ORG, page.id, { supportUrl: "http://acme.test/help" }),
+				)
+				assert.strictEqual(insecure._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(insecure.message, "Support URL")
+				const cleared = yield* service.update(ORG, page.id, { faviconUrl: null })
+				assert.isNull(cleared.faviconUrl)
+				assert.strictEqual(cleared.logoDarkUrl, "https://acme.test/logo-dark.svg")
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
@@ -743,6 +1002,23 @@ describe("StatusPagesService", () => {
 				assert.deepStrictEqual(applied.config, config)
 				assert.deepStrictEqual(applied.changes, NO_CHANGES)
 				assert.strictEqual(yield* revision(testDb, page.id), before)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("a document without a visibility keeps the page's, so it never opens a page", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const internal = yield* service.applyConfig(ORG, page.id, { ...config, visibility: "internal" }, USER)
+				assert.deepStrictEqual(internal.changes.fields, ["visibility"])
+				const { visibility: _visibility, ...withoutVisibility } = config
+				const kept = yield* service.applyConfig(ORG, page.id, withoutVisibility, USER)
+				assert.strictEqual(kept.config.visibility, "internal")
+				assert.deepStrictEqual(kept.changes, NO_CHANGES)
+				const refused = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...config, visibility: "password" }, USER),
+				)
+				assert.include(refused.message, "Set a page password")
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

@@ -3,6 +3,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import {
 	StatusPageComponents,
+	StatusPageCustomDomains,
 	StatusPageIncidentComponents,
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
@@ -49,6 +50,7 @@ import {
 	type StatusPageIncidentKind,
 	type StatusPageIncidentStatus,
 	type StatusPageUpdateSource,
+	type StatusPageVisibility,
 	type UptimeMonitorId,
 	type UserId,
 } from "@maple/primitives"
@@ -61,7 +63,13 @@ import {
 	sha256Base64Url,
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
+	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "@maple/domain/status-page"
+import {
+	hashStatusPagePassword,
+	STATUS_PAGE_PASSWORD_MAX_LENGTH,
+	STATUS_PAGE_PASSWORD_MIN_LENGTH,
+} from "@maple/domain/status-page-access"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -75,6 +83,9 @@ export interface CreateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly logoDarkUrl?: string | null
+	readonly faviconUrl?: string | null
+	readonly supportUrl?: string | null
 	readonly privacyUrl?: string | null
 	readonly termsUrl?: string | null
 	readonly theme?: StatusPageTheme
@@ -93,12 +104,16 @@ export interface UpdateStatusPageInput {
 	readonly description?: string | null
 	readonly websiteUrl?: string | null
 	readonly logoUrl?: string | null
+	readonly logoDarkUrl?: string | null
+	readonly faviconUrl?: string | null
+	readonly supportUrl?: string | null
 	readonly privacyUrl?: string | null
 	readonly termsUrl?: string | null
 	/** Merged onto the stored theme under the page's row lock, so concurrent partial edits both land. */
 	readonly theme?: Partial<StatusPageTheme>
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
+	readonly visibility?: StatusPageVisibility
 }
 
 export interface CreateStatusPageComponentInput {
@@ -136,6 +151,8 @@ export interface CreateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Incident only: when it began, if before now; defaults to now. */
+	readonly startedAt?: number
 	readonly source: StatusPageUpdateSource
 	readonly createdBy?: UserId | null
 }
@@ -149,6 +166,8 @@ export interface PostStatusPageIncidentUpdateInput {
 	readonly createdBy?: UserId | null
 	/** Publishes a draft in the same write, so the update and its visibility never split. */
 	readonly publish?: boolean
+	/** With a closing status: when it ended; defaults to now. */
+	readonly resolvedAt?: number
 }
 
 export interface UpdateStatusPageIncidentInput {
@@ -157,6 +176,10 @@ export interface UpdateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Incident only. */
+	readonly startedAt?: number
+	/** A closed incident or maintenance only. */
+	readonly resolvedAt?: number
 	readonly componentIds?: ReadonlyArray<StatusPageComponentId>
 }
 
@@ -188,6 +211,17 @@ export interface StatusPagesServiceApi {
 	/** Returns the new raw token; only its hash and last 6 characters are stored. */
 	readonly rotateBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<string, PageError>
 	readonly revokeBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<void, PageError>
+	/** Stores only a slow hash; a new password signs every visitor out. */
+	readonly setPassword: (
+		orgId: OrgId,
+		pageId: StatusPageId,
+		password: string,
+	) => Effect.Effect<StatusPageRecord, PageWriteError>
+	/** Refused while the page is `password`: it would have nothing to check. */
+	readonly removePassword: (
+		orgId: OrgId,
+		pageId: StatusPageId,
+	) => Effect.Effect<StatusPageRecord, PageWriteError>
 	readonly listComponents: (
 		orgId: OrgId,
 		pageId: StatusPageId,
@@ -386,11 +420,48 @@ const validateWindow = (
 		: Effect.fail(invalid("Maintenance must end after it starts"))
 }
 
+/**
+ * A window edit on maintenance: completed keeps its window, an open one must end in the future, a
+ * scheduled one cannot start in the past and one in progress cannot start in the future.
+ */
+const validateWindowEdit = (
+	current: StatusPageIncidentRow,
+	scheduledStart: number,
+	scheduledEnd: number,
+	now: number,
+) => {
+	if (isClosedStatus(current.status)) return Effect.fail(invalid("Completed maintenance keeps its window"))
+	if (scheduledEnd <= now)
+		return Effect.fail(invalid("Maintenance must end in the future; complete it to end it now"))
+	if (current.status === "scheduled" && scheduledStart !== current.scheduledStart && scheduledStart < now)
+		return Effect.fail(
+			invalid("Scheduled maintenance can't start in the past; post In progress to start it now"),
+		)
+	if (current.status === "in_progress" && scheduledStart > now)
+		return Effect.fail(
+			invalid("Maintenance in progress has started; its start can't move into the future"),
+		)
+	return Effect.void
+}
+
+const validateStartedAt = (kind: StatusPageIncidentKind, startedAt: number, now: number) => {
+	if (kind === "maintenance")
+		return Effect.fail(invalid("Maintenance starts at its scheduled start; change its window instead"))
+	return startedAt > now ? Effect.fail(invalid("An incident can't start in the future")) : Effect.void
+}
+
+const validateResolvedAt = (resolvedAt: number, startedAt: number, now: number) => {
+	if (resolvedAt > now) return Effect.fail(invalid("It can't end in the future"))
+	return resolvedAt < startedAt ? Effect.fail(invalid("It can't end before it started")) : Effect.void
+}
+
+const UPDATE_MAX_LENGTH_LABEL = STATUS_PAGE_UPDATE_MAX_LENGTH.toLocaleString("en-US")
+
 const validateUpdateBody = (raw: string) => {
 	const body = Str.trim(raw)
 	if (body.length === 0) return Effect.fail(invalid("An update needs a message"))
-	if (body.length > MAX_TEXT_LENGTH)
-		return Effect.fail(invalid(`An update must be at most ${MAX_TEXT_LENGTH} characters`))
+	if (body.length > STATUS_PAGE_UPDATE_MAX_LENGTH)
+		return Effect.fail(invalid(`An update must be at most ${UPDATE_MAX_LENGTH_LABEL} characters`))
 	return Effect.succeed(body)
 }
 
@@ -402,12 +473,17 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	description: row.description,
 	websiteUrl: row.websiteUrl,
 	logoUrl: row.logoUrl,
+	logoDarkUrl: row.logoDarkUrl,
+	faviconUrl: row.faviconUrl,
+	supportUrl: row.supportUrl,
 	privacyUrl: row.privacyUrl,
 	termsUrl: row.termsUrl,
 	theme: row.theme,
 	showPoweredBy: row.showPoweredBy,
 	autoIncidents: row.autoIncidents,
 	breakGlassTokenSuffix: row.breakGlassTokenSuffix,
+	visibility: row.visibility,
+	hasPassword: row.passwordHash !== null,
 	draft: row.draft,
 	revision: row.revision,
 	publishedRevision: row.publishedRevision,
@@ -525,6 +601,31 @@ const lockPage = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
 			),
 		)
 
+/**
+ * A password page needs a password to check, and an internal page cannot keep a custom domain:
+ * it is served on no address, so the domain would point at nothing.
+ */
+const ensureVisibilityAllowed = Effect.fnUntraced(function* (
+	db: MapleDb,
+	page: StatusPageRow,
+	visibility: StatusPageVisibility,
+) {
+	if (visibility === page.visibility) return
+	if (visibility === "password" && page.passwordHash === null)
+		return yield* invalid("Set a page password before making the page password-protected")
+	if (visibility !== "internal") return
+	const domains = yield* db.run(
+		PG.from(StatusPageCustomDomains)
+			.select("hostname")
+			.where(($) => [$.orgId.eq(page.orgId), $.pageId.eq(page.id)])
+			.limit(1),
+	)
+	if (domains.length > 0)
+		return yield* invalid(
+			"Remove the custom domain before making the page internal: an internal page is served on no address",
+		)
+})
+
 const tooManyComponents = () =>
 	invalid(`A status page can have at most ${MAX_STATUS_PAGE_COMPONENTS} components`)
 
@@ -636,10 +737,14 @@ const contentOf = (
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	logo_dark_url: page.logoDarkUrl,
+	favicon_url: page.faviconUrl,
+	support_url: page.supportUrl,
 	privacy_url: page.privacyUrl,
 	terms_url: page.termsUrl,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
+	visibility: page.visibility,
 	theme: page.theme,
 	components: Arr.map(components, (component) => ({
 		id: component.id,
@@ -739,6 +844,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
+				const logoDarkUrl = yield* validateHttpsUrl(input.logoDarkUrl ?? null, "Dark mode logo URL")
+				const faviconUrl = yield* validateHttpsUrl(input.faviconUrl ?? null, "Favicon URL")
+				const supportUrl = yield* validateHttpsUrl(input.supportUrl ?? null, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme ?? DEFAULT_STATUS_PAGE_THEME)
@@ -765,6 +873,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									description,
 									websiteUrl,
 									logoUrl,
+									logoDarkUrl,
+									faviconUrl,
+									supportUrl,
 									privacyUrl,
 									termsUrl,
 									theme,
@@ -828,6 +939,18 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					patch.logoUrl === undefined
 						? undefined
 						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
+				const logoDarkUrl =
+					patch.logoDarkUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.logoDarkUrl, "Dark mode logo URL")
+				const faviconUrl =
+					patch.faviconUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.faviconUrl, "Favicon URL")
+				const supportUrl =
+					patch.supportUrl === undefined
+						? undefined
+						: yield* validateHttpsUrl(patch.supportUrl, "Support URL")
 				const privacyUrl =
 					patch.privacyUrl === undefined
 						? undefined
@@ -841,8 +964,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					db.transaction(
 						Effect.gen(function* () {
 							const current = yield* findPage(db, orgId, pageId, {
-								lock: patch.theme !== undefined,
+								lock: patch.theme !== undefined || patch.visibility !== undefined,
 							})
+							if (patch.visibility !== undefined)
+								yield* ensureVisibilityAllowed(db, current, patch.visibility)
 							const theme =
 								patch.theme === undefined
 									? undefined
@@ -859,6 +984,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
+										...(logoDarkUrl === undefined ? undefined : { logoDarkUrl }),
+										...(faviconUrl === undefined ? undefined : { faviconUrl }),
+										...(supportUrl === undefined ? undefined : { supportUrl }),
 										...(privacyUrl === undefined ? undefined : { privacyUrl }),
 										...(termsUrl === undefined ? undefined : { termsUrl }),
 										...(theme === undefined ? undefined : { theme }),
@@ -868,6 +996,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(patch.autoIncidents === undefined
 											? undefined
 											: { autoIncidents: patch.autoIncidents }),
+										...(patch.visibility === undefined ? undefined : { visibility: patch.visibility }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -977,6 +1106,63 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						}),
 					),
 				)
+			})
+
+			const setPassword = Effect.fn("StatusPagesService.setPassword")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+				password: string,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				if (
+					password.length < STATUS_PAGE_PASSWORD_MIN_LENGTH ||
+					password.length > STATUS_PAGE_PASSWORD_MAX_LENGTH
+				)
+					return yield* invalid(
+						`A page password has ${STATUS_PAGE_PASSWORD_MIN_LENGTH} to ${STATUS_PAGE_PASSWORD_MAX_LENGTH} characters`,
+					)
+				const passwordHash = yield* hashStatusPagePassword(password)
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* findPage(db, orgId, pageId)
+							yield* db.run(
+								PG.update(StatusPages)
+									.set({ passwordHash, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
+							)
+							// The edge checks the published hash, so a new password must republish.
+							yield* bumpPage(db, orgId, pageId)
+						}),
+					),
+				)
+				return yield* requirePage(orgId, pageId)
+			})
+
+			const removePassword = Effect.fn("StatusPagesService.removePassword")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const current = yield* findPage(db, orgId, pageId, { lock: true })
+							if (current.visibility === "password")
+								return yield* invalid(
+									"Make the page public or internal before removing its password",
+								)
+							yield* db.run(
+								PG.update(StatusPages)
+									.set({ passwordHash: null, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
+							)
+						}),
+					),
+				)
+				return yield* requirePage(orgId, pageId)
 			})
 
 			const selectComponents = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
@@ -1252,6 +1438,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* validateWindow(input.kind, scheduledStart, scheduledEnd)
 				const componentIds = [...new Set(input.componentIds)]
 				const now = yield* Clock.currentTimeMillis
+				if (input.startedAt !== undefined) yield* validateStartedAt(input.kind, input.startedAt, now)
 				const id = StatusPageIncidentId.make(randomUUID())
 				const createdBy = input.createdBy ?? null
 				yield* dbExecute((db) =>
@@ -1272,7 +1459,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									alertIncidentId: null,
 									scheduledStart,
 									scheduledEnd,
-									startedAt: scheduledStart ?? now,
+									startedAt: input.startedAt ?? scheduledStart ?? now,
 									resolvedAt: isClosedStatus(input.status) ? now : null,
 									createdBy,
 									createdAt: now,
@@ -1324,6 +1511,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							if (componentIds !== undefined)
 								yield* ensureComponentsOnPage(db, orgId, current.pageId, componentIds)
 							const closed = isClosedStatus(input.status)
+							if (input.resolvedAt !== undefined) {
+								if (!closed) return yield* invalid("Only a closing update sets when it ended")
+								yield* validateResolvedAt(input.resolvedAt, current.startedAt, now)
+							}
 							yield* db.run(
 								PG.update(StatusPageIncidents)
 									.set({
@@ -1332,7 +1523,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 											? undefined
 											: { impact: input.impact }),
 										...(input.publish === true ? { published: true } : undefined),
-										resolvedAt: closed ? (current.resolvedAt ?? now) : null,
+										resolvedAt: closed
+											? (input.resolvedAt ?? current.resolvedAt ?? now)
+											: null,
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1381,9 +1574,24 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 							const scheduledEnd =
 								patch.scheduledEnd === undefined ? current.scheduledEnd : patch.scheduledEnd
 							const windowChanged =
-								patch.scheduledStart !== undefined || patch.scheduledEnd !== undefined
-							if (windowChanged)
+								scheduledStart !== current.scheduledStart ||
+								scheduledEnd !== current.scheduledEnd
+							if (windowChanged) {
 								yield* validateWindow(current.kind, scheduledStart, scheduledEnd)
+								if (scheduledStart !== null && scheduledEnd !== null)
+									yield* validateWindowEdit(current, scheduledStart, scheduledEnd, now)
+							}
+							const startedAt = patch.startedAt ?? current.startedAt
+							if (patch.startedAt !== undefined)
+								yield* validateStartedAt(current.kind, patch.startedAt, now)
+							if (patch.resolvedAt !== undefined && current.resolvedAt === null)
+								return yield* invalid("Only a closed incident has an end time")
+							const resolvedAt = patch.resolvedAt ?? current.resolvedAt
+							if (
+								resolvedAt !== null &&
+								(patch.startedAt !== undefined || patch.resolvedAt !== undefined)
+							)
+								yield* validateResolvedAt(resolvedAt, startedAt, now)
 							if (componentIds !== undefined)
 								yield* ensureComponentsOnPage(db, orgId, current.pageId, componentIds)
 							yield* db.run(
@@ -1402,6 +1610,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										scheduledStart !== null
 											? { startedAt: scheduledStart }
 											: undefined),
+										...(patch.startedAt === undefined ? undefined : { startedAt }),
+										...(patch.resolvedAt === undefined ? undefined : { resolvedAt }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)]),
@@ -1471,6 +1681,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const description = yield* validateText(input.description, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
 				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
+				const logoDarkUrl = yield* validateHttpsUrl(input.logo_dark_url, "Dark mode logo URL")
+				const faviconUrl = yield* validateHttpsUrl(input.favicon_url, "Favicon URL")
+				const supportUrl = yield* validateHttpsUrl(input.support_url, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacy_url, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")
 				const theme = yield* validateTheme(input.theme)
@@ -1488,13 +1701,17 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const monitorIds = [
 					...new Set(Arr.flatMap(components, (c) => (c.monitorId === null ? [] : [c.monitorId]))),
 				]
-				// The document as it will be stored; new components have no id yet.
-				const written: StatusPageConfig = {
+				// The document as it will be stored; new components have no id yet. Visibility is
+				// filled in under the lock: omitted, the page keeps its own, so no document opens it by default.
+				const document: Omit<StatusPageConfig, "visibility"> = {
 					name,
 					slug,
 					description,
 					website_url: websiteUrl,
 					logo_url: logoUrl,
+					logo_dark_url: logoDarkUrl,
+					favicon_url: faviconUrl,
+					support_url: supportUrl,
 					privacy_url: privacyUrl,
 					terms_url: termsUrl,
 					show_powered_by: input.show_powered_by,
@@ -1528,6 +1745,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									message:
 										"The page's config changed since it was read. Read the config again and redo the edit on it.",
 								})
+							const visibility = config.visibility ?? current.visibility
+							yield* ensureVisibilityAllowed(db, current, visibility)
+							const written: StatusPageConfig = { ...document, visibility }
 							const byId = new Map(Arr.map(existing, (row) => [row.id, row]))
 							const foreign = Option.getOrUndefined(
 								Arr.findFirst(listedIds, (id) => !byId.has(id)),
@@ -1553,11 +1773,15 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										description,
 										websiteUrl,
 										logoUrl,
+										logoDarkUrl,
+										faviconUrl,
+										supportUrl,
 										privacyUrl,
 										termsUrl,
 										theme,
 										showPoweredBy: input.show_powered_by,
 										autoIncidents: input.auto_incidents,
+										visibility,
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -1648,6 +1872,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				makePublic,
 				rotateBreakGlassToken,
 				revokeBreakGlassToken,
+				setPassword,
+				removePassword,
 				listComponents,
 				createComponent,
 				updateComponent,

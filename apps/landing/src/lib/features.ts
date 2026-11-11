@@ -514,7 +514,7 @@ export const features: Feature[] = [
 			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
-		related: ["error-tracking", "uptime-monitoring", "product-events"],
+		related: ["uptime-monitoring", "status-pages", "product-events"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -551,7 +551,48 @@ export const features: Feature[] = [
 				body: m.feat_uptime_cap_6_body,
 			},
 		],
-		related: ["alerts", "distributed-tracing", "service-catalog"],
+		related: ["alerts", "status-pages", "distributed-tracing"],
+		relatedUseCases: ["api-performance"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "status-pages",
+		// No engraving yet: the prompt is in public/art/features/status-pages-prompt.md.
+		navLabel: m.nav_status_pages,
+		navDesc: m.nav_desc_status_pages,
+		seoTitle: m.feat_status_seo_title,
+		seoDescription: m.feat_status_seo_desc,
+		heroTitle: m.feat_status_hero_title,
+		heroLede: m.feat_status_hero_lede,
+		// No panel: there is no status page capture yet. TODO: a real capture of a published
+		// page (components, bars, an open incident) as the panel plate. Until then the live
+		// page carries the surface, and the feeds section shows what it publishes for code.
+		panel: null,
+		artifact: {
+			id: "status-page",
+			title: m.feat_status_artifact_title,
+			lede: m.feat_status_artifact_lede,
+			wide: true,
+		},
+		extraSections: ["status-page-feeds"],
+		gallery: [],
+		capTitle: m.feat_status_cap_title,
+		capabilities: [
+			{ op: "CNAME", title: m.feat_status_cap_1_title, body: m.feat_status_cap_1_body },
+			{ op: "group", title: m.feat_status_cap_2_title, body: m.feat_status_cap_2_body },
+			{ op: "write / review", title: m.feat_status_cap_3_title, body: m.feat_status_cap_3_body },
+			{ op: "maintenance", title: m.feat_status_cap_4_title, body: m.feat_status_cap_4_body },
+			{ op: "theme", title: m.feat_status_cap_5_title, body: m.feat_status_cap_5_body },
+			{ op: "password · internal", title: m.feat_status_cap_6_title, body: m.feat_status_cap_6_body },
+			{ op: "break glass", title: m.feat_status_cap_7_title, body: m.feat_status_cap_7_body },
+			{
+				op: "post_status_page_update()",
+				title: m.feat_status_cap_8_title,
+				body: m.feat_status_cap_8_body,
+			},
+		],
+		related: ["uptime-monitoring", "alerts", "ai-mcp-integration"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
