@@ -15,7 +15,14 @@ import {
 import { Array as Arr, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { VITAL_THRESHOLDS, type VitalRating, vitalRating, vitalsByKey, WEB_VITALS } from "../list-model"
+import {
+	VITAL_EXPLAINERS,
+	VITAL_THRESHOLDS,
+	type VitalRating,
+	vitalRating,
+	vitalsByKey,
+	WEB_VITALS,
+} from "../list-model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { columnClass } from "@maple/views/ui/column"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -26,6 +33,9 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { type TypographyTone, typography } from "@maple/views/ui/typography"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
+import { HINTED_LABEL } from "../../../kit/data-table"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { cn } from "@maple/ui/lib/utils"
 import { thresholdScale } from "../../../kit/threshold-scale"
 import { drainNotice } from "../sections"
 import { dataOf, failureOf } from "../view-parts"
@@ -211,7 +221,13 @@ const vitalRows = (h: H, data: VercelSpeedInsightsResponse): ReadonlyArray<Html>
 						hstack(h, { gap: "3" }, [
 							typography(
 								h,
-								{ size: "xs", tone: "soft", mono: true, className: "w-10 shrink-0" },
+								{
+									size: "xs",
+									tone: "soft",
+									mono: true,
+									className: cn("w-10 shrink-0", HINTED_LABEL),
+									attributes: tooltipTrigger(h, VITAL_EXPLAINERS[metric]),
+								},
 								[metric],
 							),
 							typography(

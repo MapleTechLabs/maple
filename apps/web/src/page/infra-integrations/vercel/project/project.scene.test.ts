@@ -366,6 +366,11 @@ describe("vercel project", () => {
 			themeResolved(),
 			expectView(text("/products/[slug]")).toExist(),
 			expectView(text("https://news.ycombinator.com")).toExist(),
+			// Each vital explains itself on hover, in the tiles and the table heads alike.
+			expectView(text("LCP", { exact: true })).toHaveAttr(
+				"data-tooltip",
+				"Largest Contentful Paint: how long until the main content of the page shows up.",
+			),
 		)
 	})
 

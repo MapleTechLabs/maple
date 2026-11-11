@@ -30,6 +30,7 @@ import {
 	vitalRating,
 	vitalsByKey,
 	type VitalRating,
+	VITAL_EXPLAINERS,
 	WEB_VITALS,
 } from "./list-model"
 import { deploymentStateLabel, deploymentTone, percentOf } from "./integration/vercel-model"
@@ -534,7 +535,12 @@ const vitalsTable = <M>(
 				[
 					columnHead(h, { label: keyLabel, width: "w-0 flex-1 min-w-[160px]" }),
 					...Arr.map(WEB_VITALS, (metric) =>
-						columnHead(h, { label: metric, width: "w-[64px]", align: "right" }),
+						columnHead(h, {
+							label: metric,
+							width: "w-[64px]",
+							align: "right",
+							tooltip: VITAL_EXPLAINERS[metric],
+						}),
 					),
 					columnHead(h, {
 						label: "Samples",
@@ -622,6 +628,7 @@ export const speedInsightsSection = <M>(
 						const rating = p75 === undefined ? null : vitalRating(metric, p75)
 						return statRailItem(h, {
 							eyebrow: metric,
+							eyebrowTooltip: VITAL_EXPLAINERS[metric],
 							value: vitalText(metric, p75),
 							tone: rating === null ? "neutral" : RATING_TONE[rating],
 							subline: rating === null ? "no readings" : RATING_LABEL[rating],

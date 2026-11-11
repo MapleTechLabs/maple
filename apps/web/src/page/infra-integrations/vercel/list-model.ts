@@ -250,6 +250,15 @@ export const isFailedBuild = (deployment: VercelDeploymentSummary): boolean => {
 /** The Web Vitals in the order Speed Insights shows them. */
 export const WEB_VITALS: ReadonlyArray<VercelWebVital> = ["LCP", "INP", "CLS", "FCP", "TTFB"]
 
+/** What each vital measures, for its hover: one plain sentence, no jargon. */
+export const VITAL_EXPLAINERS = {
+	LCP: "Largest Contentful Paint: how long until the main content of the page shows up.",
+	INP: "Interaction to Next Paint: how quickly the page responds when someone clicks, taps or types.",
+	CLS: "Cumulative Layout Shift: how much the page jumps around while it loads. Lower is steadier.",
+	FCP: "First Contentful Paint: how long until anything at all appears on screen.",
+	TTFB: "Time to First Byte: how long the server takes to start sending the page.",
+} as const satisfies Record<VercelWebVital, string>
+
 /** web.dev's thresholds at p75: good at or under the first, poor over the second. */
 export const VITAL_THRESHOLDS = {
 	LCP: [2500, 4000],
