@@ -183,18 +183,31 @@ const freeName = (name: string, mark: string, taken: ReadonlyArray<string>): str
 		(candidate) => !Arr.contains(taken, candidate),
 	).pipe(Option.getOrElse(() => name))
 
+/** The columns of a chart row that are not series: the day, and whether it is still open. */
+const ROW_FIELDS: ReadonlyArray<string> = ["bucket", "partial"]
+
 /**
  * Each series' name in the chart, in order: the folded tail reads "Other", an empty key its
- * placeholder. A name is a chart column, so one a real key already has is told apart from it.
+ * placeholder. A name is a chart column, so one a real key or the row itself already has is
+ * told apart from it.
  */
 export const seriesLabels = (
 	dimension: CostGroupBy,
 	series: ReadonlyArray<SeriesKey>,
 ): ReadonlyArray<string> => {
 	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [entry.key]))
-	const empty = freeName(DIMENSIONS[dimension].empty, "empty", named)
-	const other = freeName(OTHER_LABEL, "the rest", [...named, empty])
-	return Arr.map(series, (entry) => (entry.other ? other : entry.key === "" ? empty : entry.key))
+	const taken = [...named, ...ROW_FIELDS]
+	const empty = freeName(DIMENSIONS[dimension].empty, "empty", taken)
+	const other = freeName(OTHER_LABEL, "the rest", [...taken, empty])
+	return Arr.map(series, (entry) =>
+		entry.other
+			? other
+			: entry.key === ""
+				? empty
+				: Arr.contains(ROW_FIELDS, entry.key)
+					? freeName(entry.key, "series", [...taken, empty, other])
+					: entry.key,
+	)
 }
 
 /**

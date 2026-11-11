@@ -472,6 +472,22 @@ describe("cost page", () => {
 		expect(Rec.keys(chartRows(marked, "region")[0] ?? {})).toHaveLength(7)
 	})
 
+	test("a key named like a field of the chart row leaves the day and its open mark alone", () => {
+		const response = Schema.decodeSync(CostTimeseriesResponse)({
+			days: ["2026-11-09"],
+			series: [
+				{ key: "bucket", other: false, total: 5, points: [5] },
+				{ key: "partial", other: false, total: 4, points: [4] },
+			],
+			// The day is still open to a restatement.
+			estimatedFrom: "2026-11-09",
+			currency: "USD",
+		})
+		expect(chartRows(response, "usage_type")).toEqual([
+			{ bucket: "2026-11-09T00:00:00Z", "bucket (series)": 5, "partial (series)": 4, partial: true },
+		])
+	})
+
 	test("the rows keep their currency when the totals read failed, and compare with nothing", () => {
 		const step = entered({ groupBy: "region" }, [source()]).model
 		const model = Arr.reduce(
