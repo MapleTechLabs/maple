@@ -16,6 +16,7 @@ import {
 	QueryEngineValidationError,
 	type TenantContext,
 } from "@maple/domain/http"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
 import { Queries } from "@maple/query-engine/registry"
 import {
@@ -165,12 +166,19 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 		})
 
 	/**
-	 * What every warehouse read carries, or null for an org with no source, which needs no read.
+	 * The window over the org's sources, or null for an org with no source, which needs no read.
 	 * A disconnected source keeps its rows, so a read always names the org's own sources.
 	 */
 	const windowOf = (tenant: TenantContext, payload: CostWindowRequest) =>
 		Effect.gen(function* () {
 			const sources = yield* sourcesInRollout(tenant.orgId)
+			// Flooring moves a reversed window's end up to its start day: it would read as that one day.
+			if (parseWarehouseDateTime(payload.startTime) > parseWarehouseDateTime(payload.endTime)) {
+				return yield* new QueryEngineValidationError({
+					message: "A cost window must not start after it ends.",
+					details: [],
+				})
+			}
 			// Every day of the window is a point of every series: an unbounded range is not a read.
 			if (Queries.wholeDayWindow(payload).days > COST_MAX_WINDOW_DAYS) {
 				return yield* new QueryEngineValidationError({
@@ -189,42 +197,71 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 					}
 		})
 
+	/**
+	 * The window narrowed to the one currency a read sums, or null for an org with no source.
+	 * Nothing converts, so every warehouse read of money carries `window.currency`: the one asked
+	 * for, else the largest in the window. One nobody bills in reads zeros; "" is no cost at all.
+	 */
+	const inOneCurrency = (tenant: TenantContext, payload: CostWindowRequest) =>
+		Effect.gen(function* () {
+			const window = yield* windowOf(tenant, payload)
+			if (window === null) return null
+			const rows = yield* runQuery(Queries.costCurrencies, tenant, window)
+			const found = Arr.map(rows, (row) => row.currency)
+			const currency = payload.currency ?? Option.getOrElse(Arr.head(found), () => "")
+			yield* Effect.annotateCurrentSpan({
+				"maple.cost.currency": currency,
+				"maple.cost.currencies": found.length,
+			})
+			return {
+				window: { ...window, currency },
+				currency,
+				/** What the warehouse holds, the read's own first when it is one of them. */
+				currencies: Arr.appendAll(
+					Arr.filter(found, (other) => other === currency),
+					Arr.filter(found, (other) => other !== currency),
+				),
+			}
+		})
+
 	const totals = Effect.fn("CostReads.totals")(function* (
 		tenant: TenantContext,
 		payload: CostTotalsRequest,
 	) {
-		const window = yield* windowOf(tenant, payload)
+		const read = yield* inOneCurrency(tenant, payload)
 		const days = Queries.wholeDayWindow(payload).days
-		const row = window === null ? null : yield* runQueryFirst(Queries.costTotals, tenant, window)
-		if (row === null) {
-			return { cost: 0, previousCost: 0, estimatedDays: 0, currency: "", mixedCurrencies: false, days }
-		}
+		const row = read === null ? null : yield* runQueryFirst(Queries.costTotals, tenant, read.window)
 		return {
-			cost: row.cost,
-			previousCost: row.previousCost,
-			estimatedDays: row.estimatedDays,
-			currency: row.currency,
-			mixedCurrencies: row.currencies > 1,
+			cost: row?.cost ?? 0,
+			previousCost: row?.previousCost ?? 0,
+			estimatedDays: row?.estimatedDays ?? 0,
+			currency: read?.currency ?? "",
+			currencies: read?.currencies ?? [],
 			days,
 		}
 	})
 
 	/**
-	 * Daily cost. Split by a dimension it is two reads: the top keys by cost in the window, then
-	 * the days with every other key folded into one series.
+	 * Daily cost. Split by a dimension it is two reads in the one currency: the top keys by cost
+	 * in the window, then the days with every other key folded into one series.
 	 */
 	const timeseries = Effect.fn("CostReads.timeseries")(function* (
 		tenant: TenantContext,
 		payload: CostTimeseriesRequest,
 	) {
-		const window = yield* windowOf(tenant, payload)
+		const read = yield* inOneCurrency(tenant, payload)
 		const days = windowDays(payload)
-		const empty = { days, series: [], estimatedFrom: null }
-		if (window === null) return empty
+		if (read === null) return { currency: "", days, series: [], estimatedFrom: null }
+		const { window, currency } = read
 		const groupBy = payload.groupBy
 		if (groupBy === undefined) {
 			const rows = yield* runQuery(Queries.costTimeseries, tenant, window)
-			return { days, series: toSeries(days, rows, false), estimatedFrom: estimatedFromOf(rows) }
+			return {
+				currency,
+				days,
+				series: toSeries(days, rows, false),
+				estimatedFrom: estimatedFromOf(rows),
+			}
 		}
 		const top = yield* runQuery(Queries.costBreakdown, tenant, {
 			...window,
@@ -234,28 +271,29 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 		})
 		yield* Effect.annotateCurrentSpan({ "maple.cost.series_keys": top.length })
 		// No key in the window or the period before it: there is nothing to draw, and no key to name.
-		if (top.length === 0) return empty
+		if (top.length === 0) return { currency, days, series: [], estimatedFrom: null }
 		const rows = yield* runQuery(Queries.costTimeseries, tenant, {
 			...window,
 			groupBy,
 			keys: Arr.map(top, (row) => row.key),
 		})
-		return { days, series: toSeries(days, rows, true), estimatedFrom: estimatedFromOf(rows) }
+		return { currency, days, series: toSeries(days, rows, true), estimatedFrom: estimatedFromOf(rows) }
 	})
 
 	const breakdown = Effect.fn("CostReads.breakdown")(function* (
 		tenant: TenantContext,
 		payload: CostBreakdownRequest,
 	) {
-		const window = yield* windowOf(tenant, payload)
-		if (window === null) return { rows: [] }
+		const read = yield* inOneCurrency(tenant, payload)
+		if (read === null) return { currency: "", rows: [] }
 		const rows = yield* runQuery(Queries.costBreakdown, tenant, {
-			...window,
+			...read.window,
 			groupBy: payload.groupBy,
 			sortBy: payload.sortBy,
 			limit: payload.limit ?? COST_BREAKDOWN_DEFAULT_LIMIT,
 		})
 		return {
+			currency: read.currency,
 			rows: Arr.map(rows, (row) => ({ key: row.key, cost: row.cost, previousCost: row.previousCost })),
 		}
 	})

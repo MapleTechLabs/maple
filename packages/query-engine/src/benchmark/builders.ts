@@ -1252,7 +1252,16 @@ const costFilters = {
 	values: { region: ["us-east-1", "global"] },
 }
 
+/** What the page reads: the same filters, in the one currency it picked. */
+const costRead = { ...costFilters, currency: "USD" }
+
 const costFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "cost",
+		name: "costCurrenciesQuery",
+		label: "filtered",
+		compile: () => CH.compileUnsafe(CH.costCurrenciesQuery(costFilters), costWindow),
+	},
 	{
 		module: "cost",
 		name: "costTotalsQuery",
@@ -1261,12 +1270,18 @@ const costFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "cost",
+		name: "costTotalsQuery",
+		label: "inOneCurrency",
+		compile: () => CH.compileUnsafe(CH.costTotalsQuery(costRead), costWindow),
+	},
+	{
+		module: "cost",
 		name: "costTimeseriesQuery",
 		label: "byCloudServiceTopKeys",
 		compile: () =>
 			CH.compileUnsafe(
 				CH.costTimeseriesQuery({
-					...costFilters,
+					...costRead,
 					dimension: "cloud_service",
 					keys: ["Amazon Elastic Compute Cloud - Compute", "Amazon Elastic Load Balancing"],
 				}),
@@ -1280,7 +1295,7 @@ const costFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.costBreakdownQuery({
-					...costFilters,
+					...costRead,
 					dimension: "usage_type",
 					metric: "effective",
 					sortBy: "change",

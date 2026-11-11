@@ -2759,6 +2759,9 @@ const CostWindowDateTime = TinybirdDateTime.check(
 	}),
 )
 
+/** An ISO 4217 code as the providers bill it. The query inlines it, so nothing else gets through. */
+const CostCurrency = Schema.String.check(Schema.isPattern(/^[A-Z]{3}$/u))
+
 /** The window is floored to whole UTC days, both ends inclusive. */
 const CostWindowFields = {
 	startTime: CostWindowDateTime,
@@ -2766,6 +2769,11 @@ const CostWindowFields = {
 	/** Defaults to `billed`. */
 	metric: Schema.optionalKey(CostMetric),
 	filters: Schema.optionalKey(CostFilters),
+	/**
+	 * The one currency to read: nothing converts, so no read adds two together. Without it, the
+	 * currency with the most cost in the window.
+	 */
+	currency: Schema.optionalKey(CostCurrency),
 } as const
 
 export class CostTotalsRequest extends Schema.Class<CostTotalsRequest>("CostTotalsRequest")(
@@ -2778,9 +2786,10 @@ export class CostTotalsResponse extends Schema.Class<CostTotalsResponse>("CostTo
 	previousCost: Schema.Number,
 	/** Days of the window the provider has not finalized yet. */
 	estimatedDays: Schema.Number,
-	/** One billing currency of the rows, "" with none; with `mixedCurrencies` the sums mix several. */
+	/** The currency every figure is in; "" when the window and the period before have no cost. */
 	currency: Schema.String,
-	mixedCurrencies: Schema.Boolean,
+	/** Every currency the window and the period before are billed in, `currency` first. */
+	currencies: Schema.Array(Schema.String),
 	/** Days in the window. */
 	days: Schema.Number,
 }) {}
@@ -2813,6 +2822,8 @@ export const CostSeries = Schema.Struct({
 export type CostSeries = typeof CostSeries.Type
 
 export class CostTimeseriesResponse extends Schema.Class<CostTimeseriesResponse>("CostTimeseriesResponse")({
+	/** The currency every point is in; "" when the window and the period before have no cost. */
+	currency: Schema.String,
 	/** Every day of the window as `YYYY-MM-DD`, ascending. */
 	days: Schema.Array(Schema.String),
 	/** By `total`, largest first. */
@@ -2849,6 +2860,8 @@ export const CostBreakdownRow = Schema.Struct({
 export type CostBreakdownRow = typeof CostBreakdownRow.Type
 
 export class CostBreakdownResponse extends Schema.Class<CostBreakdownResponse>("CostBreakdownResponse")({
+	/** The currency every row is in; "" when the window and the period before have no cost. */
+	currency: Schema.String,
 	rows: Schema.Array(CostBreakdownRow),
 }) {}
 

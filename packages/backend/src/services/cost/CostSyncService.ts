@@ -13,6 +13,7 @@ import { Clock, Context, Effect, Layer, Result, Schedule, Schema, Array as Arr, 
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
@@ -50,6 +51,10 @@ const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
 /** `lastErrorReason` while the month's request budget holds a source: a hold, not a failure. */
 const BUDGET_REASON = "budget"
 const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
+/** An org outside the `cloudCost` rollout is asked about again this much later: a hold, not a failure. */
+const ROLLOUT_HOLD_MS = 6 * 60 * 60_000
+const ROLLOUT_REASON = "rollout"
+const ROLLOUT_MESSAGE = "Cloud cost is not enabled for this organization."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
 const MAX_SOURCES_PER_TICK = 20
@@ -144,6 +149,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const warehouse = yield* WarehouseQueryService
+			const featureFlags = yield* OrganizationFeatureFlagsService
 			// One adapter per provider literal: a new provider does not compile until it has one.
 			const adapters = {
 				aws: yield* AwsCostProvider,
@@ -528,17 +534,44 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					? Effect.succeed(state)
 					: syncStep(state, state.plan).pipe(Effect.flatMap(runSteps))
 
+			/**
+			 * Releases a claim on an org that lost the `cloudCost` rollout: its reads answer 403, so a
+			 * pull would bill requests nobody can see. Nothing failed, so the claim's count is undone.
+			 */
+			const holdOutsideRollout = (claimed: CostSourceRow) =>
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					yield* finish(
+						claimed,
+						{
+							lastError: ROLLOUT_MESSAGE,
+							lastErrorReason: ROLLOUT_REASON,
+							nextAttemptAt: now + ROLLOUT_HOLD_MS,
+							consecutiveFailures: Math.max(0, claimed.consecutiveFailures - 1),
+						},
+						now,
+					)
+					yield* Effect.annotateCurrentSpan({
+						"maple.cost.outcome": "skipped",
+						"maple.cost.hold": ROLLOUT_REASON,
+					})
+					return SKIPPED
+				})
+
 			const syncSource = Effect.fn("CostSyncService.syncSource")(function* (
 				claimed: CostSourceRow,
 				claimedAt: number,
 			) {
-				const first = planCostSync(claimed, claimedAt)
 				yield* Effect.annotateCurrentSpan({
 					orgId: claimed.orgId,
 					"maple.cost.source_id": claimed.id,
 					"maple.cost.provider": claimed.provider,
-					"maple.cost.mode": first.mode,
 				})
+				// Checked on every claim, before a plan or a pull: the flag can be withdrawn at any time.
+				const flags = yield* featureFlags.flags(claimed.orgId)
+				if (!flags.cloudCost) return yield* holdOutsideRollout(claimed)
+				const first = planCostSync(claimed, claimedAt)
+				yield* Effect.annotateCurrentSpan("maple.cost.mode", first.mode)
 				const progress = yield* runSteps({
 					source: claimed,
 					plan: first,
@@ -619,15 +652,16 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 							)
 						: null
 				if (!stepped) {
-					const heldByBudget = source.lastErrorReason === BUDGET_REASON
+					const wasHeld =
+						source.lastErrorReason === BUDGET_REASON || source.lastErrorReason === ROLLOUT_REASON
 					yield* finish(
 						source,
 						{
 							nextAttemptAt: heldUntil,
 							consecutiveFailures: budget === "backfill" ? failuresBeforeClaim : 0,
-							// A new month ended the hold and nothing was due: the hold is not an error to keep.
-							lastError: heldByBudget ? null : source.lastError,
-							lastErrorReason: heldByBudget ? null : source.lastErrorReason,
+							// The hold ended (a new month, the rollout back) and nothing was due: it is no error to keep.
+							lastError: wasHeld ? null : source.lastError,
+							lastErrorReason: wasHeld ? null : source.lastErrorReason,
 						},
 						now,
 					)
@@ -700,6 +734,12 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(AwsCostProvider.layer, WarehouseQueryService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				AwsCostProvider.layer,
+				WarehouseQueryService.layer,
+				OrganizationFeatureFlagsService.layer,
+			),
+		),
 	)
 }
