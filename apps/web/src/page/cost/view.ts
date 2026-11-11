@@ -96,6 +96,8 @@ const onRamp = (h: H): Html =>
 const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const isWaiting = Arr.some(sources, (source) => source.status === "pending")
 	const isFailing = Arr.some(sources, (source) => source.status === "error")
+	// Held before its first pull: nothing failed and nothing is paused, the row says why it waits.
+	const isHeld = Arr.some(sources, (source) => source.status === "held")
 	return empty(
 		h,
 		[
@@ -110,14 +112,18 @@ const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 							? "Waiting for the first sync"
 							: isFailing
 								? "The first sync failed"
-								: "No source supplies cost",
+								: isHeld
+									? "No cost read yet"
+									: "No source supplies cost",
 					]),
 					emptyDescription(h, [
 						isWaiting
-							? "The first sync runs within the hour. It brings in the last few days, and older days fill in after that."
+							? "The first sync runs within the hour. It brings in this month and the last, and older months fill in after that."
 							: isFailing
 								? "Maple tries again within the hour. The source below shows what went wrong."
-								: "Each source below is paused. Turn the Cost module back on for a connection to read its cost.",
+								: isHeld
+									? "The sync is on hold. The source below says why."
+									: "Each source below is paused. Turn the Cost module back on for a connection to read its cost.",
 					]),
 				],
 				"max-w-md",

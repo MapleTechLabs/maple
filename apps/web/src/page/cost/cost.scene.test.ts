@@ -390,6 +390,28 @@ describe("cost page", () => {
 		)
 	})
 
+	test("a source held before its first pull is not called paused", () => {
+		const step = entered({}, [
+			source({
+				status: "held",
+				watermarkDate: null,
+				backfillDate: null,
+				lastSyncedAt: null,
+				lastError: "Cloud cost is not enabled for this organization.",
+				lastErrorReason: "rollout",
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(step.model),
+			resolveTheme,
+			expectView(text("No cost read yet")).toExist(),
+			expectView(text("The sync is on hold. The source below says why.")).toExist(),
+			expectView(text("Cloud cost is not enabled for this organization.")).toExist(),
+			expectView(text(/Each source below is paused/)).not.toExist(),
+		)
+	})
+
 	test("a source the sync holds says why, and does not read as failing", () => {
 		const step = entered({}, [
 			source({
