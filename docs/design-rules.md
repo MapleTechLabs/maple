@@ -84,7 +84,14 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 
 - Text greys are solid steps: `foreground`, `foreground-soft`, `muted-foreground`,
   `foreground-subtle`, `foreground-faint`. They read the same on a tinted row. Text never takes a
-  `/NN` opacity, grey or tone (`maple/no-faded-text`).
+  `/NN` opacity, grey or tone (`maple/no-faded-text`). `foreground-subtle` is the last step that
+  carries information (4.5:1 on the page and on a card); `foreground-faint` is near 2:1, so it is
+  for separators and empty cells, never a value, a label or a placeholder.
+- A tone as text is its ink. `text-primary`, `text-severity-*`, `text-success`, `text-warning` and
+  `text-info` resolve to the tone's `--*-ink` (the `--text-color-*` block in tokens.css): a deeper
+  step of the hue in light, where the fill itself is near 3:1 as type, and the fill in dark. Fills,
+  borders and strokes keep the tone. Write the utility; never a fill token as `color` in a style
+  object.
 - Washes are translucent and read the same on any surface: `surface-faint`, `surface-sunken`,
   `surface-strong`.
 - A see-through surface is a token, never `bg-background/NN` or `bg-card/NN`

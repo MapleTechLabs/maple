@@ -9,7 +9,7 @@ import type {
 } from "@maple/domain/chat-annotations"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -242,7 +242,10 @@ const severityBadge = <M>(h: HtmlBuilder<M>, severity: string): Html => {
 			variant: "secondary",
 			className: "font-mono text-3xs uppercase shrink-0",
 			attributes: [
-				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+				h.Style({
+					color: getSeverityInk(label),
+					"background-color": `color-mix(in oklch, ${color} 10%, transparent)`,
+				}),
 			],
 		},
 		[label],

@@ -1,5 +1,5 @@
 import { rankCounts, severityBreakdown, splitTemplate } from "../../lib/log-patterns"
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, getSeverityInk } from "@maple/ui/lib/severity"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { pressable } from "@maple/views/ui/pressable"
@@ -73,7 +73,7 @@ const patternRow = (h: HtmlBuilder<Message>, pattern: LogPattern, share: number)
 												numeric: true,
 												className: "uppercase",
 												attributes: [
-													h.Style({ color: getSeverityColor(entry.name) }),
+													h.Style({ color: getSeverityInk(entry.name) }),
 												],
 											},
 											[entry.name, " ", entry.count.toLocaleString()],

@@ -105,7 +105,7 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 		{
 			gap: "3",
 			align: "center",
-			className: "w-full rounded-md border border-primary-a4 bg-primary/[0.06] p-3 text-left",
+			className: "w-full rounded-md border border-primary-a4 bg-primary-a1 p-3 text-left",
 		},
 		[
 			stepBadge(h, 1),

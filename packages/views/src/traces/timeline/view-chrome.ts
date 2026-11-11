@@ -31,7 +31,7 @@ export const searchBar = (h: H, model: Model, matchCount: number, totalCount: nu
 			icon(h, "MagnifierIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
 			bareInput(h, {
 				className:
-					"flex-1 font-mono text-xs text-foreground placeholder:text-foreground-faint pointer-coarse:text-base",
+					"flex-1 font-mono text-xs text-foreground placeholder:text-foreground-subtle pointer-coarse:text-base",
 				attributes: [
 					h.Placeholder("Search spans…"),
 					h.Type("text"),
