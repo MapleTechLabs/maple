@@ -141,6 +141,28 @@ describe("pullCostExplorer", () => {
 		}),
 	)
 
+	it.effect("stops at the page cap as too large, counting the pages it read", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			// Thirty services on one day, a group a page: more pages than a three-day window reads.
+			fake.items = Arr.map(Arr.range(1, 30), (n) => ({
+				day: FIXTURE_WINDOW.startDay,
+				service: `Invented Service ${n}`,
+				region: "eu-central-1",
+				usageType: "Invented-Usage",
+				cost: 1,
+				quantity: 1,
+				unit: "Hrs",
+			}))
+			fake.options = { pageSize: 1 }
+			const error = yield* Effect.flip(pull(fake))
+
+			assert.strictEqual(error.reason, "too_large")
+			assert.strictEqual(error.requests, 20)
+			assert.lengthOf(fake.requests, 20)
+		}),
+	)
+
 	it.effect("reports a role without the cost policy as not ready", () =>
 		Effect.gen(function* () {
 			const fake = makeFake()
