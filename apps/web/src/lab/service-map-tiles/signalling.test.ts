@@ -8,6 +8,7 @@ import {
 	type Line,
 	makeSignalBox,
 	makeTrain,
+	roomFor,
 	signalsOf,
 	tailOf,
 	type Train,
@@ -149,16 +150,34 @@ describe("two trains over one stretch of track", () => {
 		expect(signals[1]?.along).toBeGreaterThan(8)
 	})
 
-	it("keeps a train at its platform when the stretch begins inside its station", () => {
-		const near: ReadonlyArray<Block> = [{ section: "throat", from: 0.5, to: 3 }]
-		const [a, b] = [train(line(near)), train(line(near))]
+	it("is never on it while it stands at a station, however long a train was asked for", () => {
+		// The stretch runs close to both stations: three wagons would reach into it when parked.
+		const close: ReadonlyArray<Block> = [{ section: "middle", from: 2, to: 10 }]
+		const [a, b] = [train(line(close, 3)), train(line(close, 3))]
 		const box = makeSignalBox([a, b])
-		const waits: Array<number> = []
-		runFor(box, 12, () => {
-			if (b.isWaiting) waits.push(b.along)
+		const parked = new Set<boolean>()
+		const clash = { ever: false }
+		runFor(box, 120, () => {
+			Arr.forEach([a, b], (subject) => {
+				if (subject.phase === "home" || subject.phase === "far") parked.add(isIn(subject, "middle"))
+			})
+			clash.ever = clash.ever || (isIn(a, "middle") && isIn(b, "middle"))
 		})
-		expect(waits.length).toBeGreaterThan(0)
-		expect(new Set(waits)).toEqual(new Set([homeOf(b.line)]))
+		expect([...parked]).toEqual([false])
+		expect(clash.ever).toBe(false)
+	})
+
+	it("sheds wagons until the train stands clear at both stations", () => {
+		expect(roomFor(line([{ section: "middle", from: 4, to: 8 }], 3))).toBe(3)
+		expect(roomFor(line([{ section: "middle", from: 2, to: 10 }], 3))).toBe(1)
+		expect(roomFor(line([{ section: "middle", from: 4, to: 10 }], 3))).toBe(1)
+		expect(train(line([{ section: "middle", from: 2, to: 10 }], 3)).line.wagons).toBe(1)
+		// A line with no shared track keeps every wagon.
+		expect(roomFor(line([], 3))).toBe(3)
+	})
+
+	it("runs no train where not even an engine could stand clear of the stretch", () => {
+		expect(makeTrain(line([{ section: "throat", from: 0.5, to: 3 }]), 0)).toBeNull()
 	})
 })
 

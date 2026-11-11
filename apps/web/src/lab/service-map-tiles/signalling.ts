@@ -6,7 +6,8 @@ import type { Block } from "./rails"
 // first section on its way and waits there until every section between it and its destination
 // is free, then takes them all at once and gives each back as its last wagon leaves it. A
 // waiting train stands on its own line and holds nothing, so two trains can never each be
-// waiting for track the other is on.
+// waiting for track the other is on. A train is only as long as will stand clear of shared
+// track at both its stations, so a parked train is never in another's way either.
 
 /** One line and the train that works it. */
 export interface Line {
@@ -59,7 +60,7 @@ const sectionsOf = (line: Line): ReadonlyArray<string> =>
 	Arr.dedupe(Arr.map(line.blocks, (block) => block.section))
 
 /** Where a train with no road yet must stop: short of the first section it meets going out, or
- * of the last one going back. A section that starts inside the station keeps it at its platform. */
+ * of the last one going back. */
 const signalStop = (line: Line, direction: 1 | -1): number => {
 	if (line.blocks.length === 0) return direction === 1 ? farOf(line) : homeOf(line)
 	const first = Math.min(...Arr.map(line.blocks, (block) => block.from))
@@ -89,12 +90,36 @@ export const signalsOf = (line: Line): ReadonlyArray<Signal> => {
 	]
 }
 
-/** A train for `line`, standing at home with `rest` seconds to go; `null` when the line is too
- * short for the train to move at all. */
-export const makeTrain = (line: Line, rest: number): Train | null =>
-	farOf(line) - homeOf(line) <= 0.2
+/** The most wagons a train on `line` can pull and still stand clear of shared track at both its
+ * stations, signal gap included. Below zero, not even an engine on its own can. */
+export const roomFor = (line: Line): number => {
+	if (line.blocks.length === 0) return line.wagons
+	const first = Math.min(...Arr.map(line.blocks, (block) => block.from))
+	const last = Math.max(...Arr.map(line.blocks, (block) => block.to))
+	// At home the nose must stop short of the first block; at the far station the tail must
+	// have left the last one.
+	const tail = Math.min(first - NOSE - AIR - 0.1, line.length - NOSE - 0.11 - AIR - last)
+	return Math.min(line.wagons, Math.floor((tail - 0.27) / COUPLING + 1e-9))
+}
+
+/** A train for `line`, standing at home with `rest` seconds to go. It sheds wagons until it
+ * stands clear of shared track at both stations. `null` when not even an engine can, or when
+ * the line is too short to run on. */
+export const makeTrain = (line: Line, rest: number): Train | null => {
+	const wagons = roomFor(line)
+	const fitted: Line = { ...line, wagons }
+	return wagons < 0 || farOf(fitted) - homeOf(fitted) <= 0.2
 		? null
-		: { line, along: homeOf(line), speed: 0, phase: "home", rest, isWaiting: false, hasRoad: false }
+		: {
+				line: fitted,
+				along: homeOf(fitted),
+				speed: 0,
+				phase: "home",
+				rest,
+				isWaiting: false,
+				hasRoad: false,
+			}
+}
 
 /** Whether the train is carrying: loaded at home, emptied halfway through its stand at the far station. */
 export const isLoaded = (train: Train): boolean =>

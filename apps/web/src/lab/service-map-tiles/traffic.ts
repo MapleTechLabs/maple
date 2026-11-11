@@ -272,15 +272,19 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		if (train === null) return []
 		const slot = next.engine++
 		meshes.engine.setColorAt(slot, new THREE.Color(route.color))
-		const drawn = Arr.flatMap(Arr.range(1, route.count), (wagon): Array<Body> => {
-			const at = next.wagon++
-			meshes.wagon.setColorAt(at, white)
-			meshes.wagonLoad.setColorAt(at, new THREE.Color(route.load))
-			return [
-				{ mesh: meshes.wagon, index: at, behind: wagon * COUPLING, isLoad: false },
-				{ mesh: meshes.wagonLoad, index: at, behind: wagon * COUPLING, isLoad: true },
-			]
-		})
+		// The train may be shorter than asked: it sheds wagons to stand clear at its stations.
+		const drawn = Arr.flatMap(
+			Arr.makeBy(train.line.wagons, (index) => index + 1),
+			(wagon): Array<Body> => {
+				const at = next.wagon++
+				meshes.wagon.setColorAt(at, white)
+				meshes.wagonLoad.setColorAt(at, new THREE.Color(route.load))
+				return [
+					{ mesh: meshes.wagon, index: at, behind: wagon * COUPLING, isLoad: false },
+					{ mesh: meshes.wagonLoad, index: at, behind: wagon * COUPLING, isLoad: true },
+				]
+			},
+		)
 		return [
 			{
 				linkId: route.linkId,
@@ -304,6 +308,14 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		engineOn,
 	)
 	const movers: ReadonlyArray<Mover> = [...roadGoing, ...engines]
+	// Only what was built is drawn: a road too short for carts, or a line with no train, would
+	// otherwise leave a spare body standing at the middle of the board.
+	meshes.cart.count = next.cart
+	meshes.cartLoad.count = next.cart
+	meshes.engine.count = next.engine
+	meshes.wagon.count = next.wagon
+	meshes.wagonLoad.count = next.wagon
+	steam.count = next.engine * PUFFS
 	const box = makeSignalBox(Arr.map(engines, (engine) => engine.train))
 	const pose = new THREE.Object3D()
 	const now = () => performance.now() / 1000
