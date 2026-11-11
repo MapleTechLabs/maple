@@ -113,7 +113,8 @@ export const buildWild = ({ key, biome, feature, palette }: WildSpec): WildTile 
 			placed(barn(palette, biome, random), { position: [0.2, 0, -0.1], turn: random() * Math.PI }),
 			placed(cottage(palette, biome, random), { position: [-0.45, 0, 0.3], turn: random() * Math.PI }),
 		]
-		taken.push([0, 0])
+		// The barn and the cottage: no tree is planted in either.
+		taken.push([0.2, -0.1], [-0.45, 0.3])
 		const trim = Arr.flatMap(yard, (built) => built.trim)
 		panes.push(...Arr.filter(trim, isPane))
 		flat.push(

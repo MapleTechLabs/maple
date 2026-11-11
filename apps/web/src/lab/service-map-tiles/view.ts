@@ -183,6 +183,8 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 		[
 			h.canvas([
 				h.Class("block"),
+				// Focusable from code only: the map takes the focus while a tile is moved by keyboard.
+				h.Attribute("tabindex", "-1"),
 				h.Attribute(STYLE_ATTRIBUTE, model.style),
 				h.Attribute(TOPOLOGY_ATTRIBUTE, TOPOLOGY_JSON),
 				h.Attribute(CELLS_ATTRIBUTE, encodeJson(model.cells)),

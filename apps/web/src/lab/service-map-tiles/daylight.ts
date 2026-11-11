@@ -139,12 +139,14 @@ export const daylightAt = (clock: Clock): Daylight => {
 	const look = blend(blend(NIGHT, isMorning ? DAWN : DUSK, up), DAY, high)
 	// The sun crosses from one side of the board to the other; the moon stands still behind it.
 	const across = Math.min(1, Math.max(0, (hour - rise) / length))
-	const isSunUp = elevation > -3
-	// Kept off the horizon, or the shadows would run off the edge of the board.
-	const height = (Math.max(isSunUp ? elevation : 48, 11) * Math.PI) / 180
-	const [x, z] = isSunUp ? [-Math.cos(Math.PI * across), 0.42] : [0.55, -0.6]
-	const flat = Math.hypot(x, z)
-	// The light dips as the sun hands over to the moon, so the change of direction is not seen.
+	// The light turns from the sun's side to the moon's as the sun goes under, a little at a
+	// time, so no shadow jumps from one side of a house to the other.
+	const moon = 1 - smooth(-6, 0, elevation)
+	// The sun is kept off the horizon, or the shadows would run off the edge of the board.
+	const height = (mix(Math.max(elevation, 11), 48, moon) * Math.PI) / 180
+	const [x, z] = [mix(-Math.cos(Math.PI * across), 0.55, moon), mix(0.42, -0.6, moon)]
+	const flat = Math.max(1e-6, Math.hypot(x, z))
+	// The light also dips while it turns, so the turn itself is hardly seen.
 	const handover = 0.4 + 0.6 * Math.min(1, Math.abs(elevation + 3) / 9)
 	return {
 		timeOfDay: elevation < -3 ? "night" : elevation > 14 ? "day" : isMorning ? "dawn" : "dusk",

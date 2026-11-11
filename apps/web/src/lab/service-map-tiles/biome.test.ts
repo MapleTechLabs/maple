@@ -32,7 +32,36 @@ describe("biomesFor", () => {
 		expect(used).toHaveLength(many.length)
 	})
 
-	it("falls back to a biome for a namespace that is not on the map", () => {
-		expect(Arr.map(BIOMES, (biome) => biome.id)).toContain(biomeOf(biomesFor(seven), "nowhere").id)
+	it("keeps a namespace's biome when one that sorts before it joins and asks for another", () => {
+		const alone = biomeOf(biomesFor(["checkout"]), "checkout").id
+		// Names that sort ahead of every namespace on the map and hash to some other biome.
+		const ahead = Arr.filter(
+			Arr.makeBy(12, (index) => `a-team-${index}`),
+			(name) => biomeOf(biomesFor([name]), name).id !== alone,
+		)
+		expect(ahead.length).toBeGreaterThan(0)
+		expect(Arr.map(ahead, (name) => biomeOf(biomesFor([name, "checkout"]), "checkout").id)).toEqual(
+			Arr.map(ahead, () => alone),
+		)
+	})
+
+	it("leaves every namespace that asked first where it was when others join asking for other biomes", () => {
+		const before = biomesFor(seven)
+		const solo = (name: string) => biomeOf(biomesFor([name]), name).id
+		const firsts = Arr.filter(seven, (name) => solo(name) === biomeOf(before, name).id)
+		const held = new Set(Arr.map(firsts, solo))
+		const joiners = Arr.filter(
+			Arr.makeBy(20, (index) => `a-team-${index}`),
+			(name) => !held.has(solo(name)),
+		)
+		expect(joiners.length).toBeGreaterThan(0)
+		const after = biomesFor([...seven, ...joiners])
+		expect(Arr.map(firsts, (name) => biomeOf(after, name).id)).toEqual(
+			Arr.map(firsts, (name) => biomeOf(before, name).id),
+		)
+	})
+
+	it("falls back to the meadow for a namespace that is not on the map", () => {
+		expect(biomeOf(biomesFor(seven), "nowhere").id).toBe("meadow")
 	})
 })

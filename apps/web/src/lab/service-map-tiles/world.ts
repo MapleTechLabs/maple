@@ -103,6 +103,10 @@ export const isTyping = (event: KeyboardEvent): boolean =>
 	(event.target instanceof HTMLElement &&
 		(event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)))
 
+/** Whether a key press landed on a button or a link, which Enter is meant to press. */
+export const isOnControl = (event: KeyboardEvent): boolean =>
+	event.target instanceof Element && event.target.closest("button, a[href], [role=button]") !== null
+
 /** Where a keyboard step takes the held tile: one place on in `direction` (a vector on the board)
  * from the place it is over, or from its own cell; a tile off the stack starts at the place
  * nearest the middle of the board. */

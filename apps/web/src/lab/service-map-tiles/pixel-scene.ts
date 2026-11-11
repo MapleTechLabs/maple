@@ -40,6 +40,7 @@ import { featureOf } from "./wild"
 import {
 	arrowOf,
 	derive,
+	isOnControl,
 	isTyping,
 	keyedTarget,
 	type SceneEvents,
@@ -1420,10 +1421,13 @@ export function startPixelScene(
 		const arrow = arrowOf(event.key)
 		if (arrow !== null) {
 			event.preventDefault()
+			// The map takes the focus, so that Enter puts the tile down and presses no button.
+			canvas.focus({ preventScroll: true })
 			setHover(keyedTarget(state.derived, state.hoverCell, acrossBoard(arrow)))
 			return invalidate()
 		}
-		if (event.key === "Enter" && state.hoverCell !== null) {
+		// Enter on a button or a link presses it: the tile stays in hand.
+		if (event.key === "Enter" && state.hoverCell !== null && !isOnControl(event)) {
 			event.preventDefault()
 			events.onPlace(input.heldId, state.hoverCell)
 		}

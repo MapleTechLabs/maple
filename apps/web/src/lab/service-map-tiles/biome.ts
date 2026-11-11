@@ -163,21 +163,30 @@ const hashOf = (text: string): number =>
 		(hash, char) => Math.imul(hash ^ Option.getOrElse(Str.codePointAt(char, 0), () => 0), 16777619) >>> 0,
 	)
 
-/** One biome per namespace. A namespace keeps asking for the same biome whatever else is on the
- * map; two that ask for the same one are told apart by name, the later taking the next free
- * biome, so namespaces only share a biome once there are more of them than biomes. */
+/** One biome per namespace. A namespace asks for the biome its name hashes to, and the first to
+ * ask for one (by name) has it: nothing that asks for another biome can move it. One that asks
+ * for a biome already spoken for takes one nobody asked for, so namespaces only share a biome
+ * once there are more of them than biomes. */
 export const biomesFor = (namespaces: ReadonlyArray<string>): ReadonlyMap<string, Biome> => {
 	const names = Arr.sort(Arr.dedupe(namespaces), Order.String)
-	const taken = new Set<number>()
+	const wanted = new Map(Arr.map(names, (name) => [name, hashOf(name) % BIOMES.length] as const))
+	const asked = new Set(wanted.values())
+	const owned = new Set<number>()
+	const spare = new Set<number>()
 	const assigned = new Map<string, Biome>()
 	Arr.forEach(names, (name) => {
-		const wanted = hashOf(name) % BIOMES.length
+		const own = wanted.get(name) ?? 0
+		if (!owned.has(own)) {
+			owned.add(own)
+			assigned.set(name, BIOMES[own] ?? MEADOW)
+			return
+		}
 		const free = Arr.findFirst(
-			Arr.makeBy(BIOMES.length, (step) => (wanted + step) % BIOMES.length),
-			(index) => !taken.has(index),
+			Arr.makeBy(BIOMES.length, (step) => (own + step) % BIOMES.length),
+			(index) => !asked.has(index) && !spare.has(index),
 		)
-		const index = Option.getOrElse(free, () => wanted)
-		taken.add(index)
+		const index = Option.getOrElse(free, () => own)
+		spare.add(index)
 		assigned.set(name, BIOMES[index] ?? MEADOW)
 	})
 	return assigned
