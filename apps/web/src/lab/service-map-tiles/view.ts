@@ -68,6 +68,10 @@ const KIND_BUILDING = {
 
 const PANEL_CLASS = "rounded-md border bg-surface-float text-popover-foreground shadow-popup backdrop-blur-sm"
 
+/** The card at the foot of the map (the tile in hand, a clicked cart or train). Its width is
+ * capped so that, centred, it always clears the camera controls in the bottom left corner. */
+const CARD_CLASS = `absolute bottom-3 left-1/2 w-96 max-w-[calc(100%-6.5rem)] -translate-x-1/2 p-3 ${PANEL_CLASS}`
+
 const healthDot = (h: H, errorRate: number): Html =>
 	statusDot(h, {
 		tone: "custom",
@@ -164,7 +168,6 @@ const labels = (h: H, model: Model): ReadonlyArray<Html> => {
 				{
 					onClick: Message.PickedNode({ nodeId: isSelected ? null : node.id }),
 					isSelected,
-					label: `Select ${node.label}`,
 					className: `absolute top-0 left-0 flex max-w-36 items-center gap-1 rounded-sm border px-1.5 py-px font-mono text-4xs whitespace-nowrap ${model.isBuilding ? "pointer-events-none" : "pointer-events-auto"} ${isSelected ? "border-primary bg-popover text-popover-foreground" : "bg-popover text-popover-foreground hover:border-border-strong active:border-border-strong"} ${faded ? "opacity-40" : ""}`,
 					attributes: [
 						h.Key(node.id),
@@ -239,7 +242,7 @@ const tileCard = (h: H, model: Model, cells: Placements, node: Node3D): Html => 
 		h,
 		{
 			gap: "2",
-			className: `absolute bottom-3 left-1/2 w-96 max-w-full -translate-x-1/2 p-3 ${PANEL_CLASS}`,
+			className: CARD_CLASS,
 			attributes: [h.AriaLabel("Tile in hand"), h.AriaLive("polite")],
 		},
 		[
@@ -310,7 +313,7 @@ const linkCard = (h: H, cells: Placements, link: Link): Html => {
 		h,
 		{
 			gap: "2",
-			className: `absolute bottom-3 left-1/2 w-96 max-w-full -translate-x-1/2 p-3 ${PANEL_CLASS}`,
+			className: CARD_CLASS,
 			attributes: [h.AriaLabel("Connection"), h.AriaLive("polite")],
 		},
 		[
@@ -452,7 +455,6 @@ const linkRow = (h: H, link: Link, state: LinkState, towards: string): Html =>
 		h,
 		{
 			onClick: Message.PickedNode({ nodeId: towards }),
-			label: `Inspect ${labelOf(towards)}`,
 			className: ROW_CLASS,
 			attributes: [h.Key(link.id)],
 		},
