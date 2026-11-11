@@ -87,6 +87,18 @@ describe("StatusPageCustomDomainsService", () => {
 		),
 	)
 
+	it.effect("refuses a domain for an internal page, which is served on no address", () =>
+		withDomains(({ testDb, cloudflare, domains }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme", visibility: "internal" })
+				const refused = yield* Effect.flip(domains.set(ORG, pageId, "status.acme.com"))
+				assert.strictEqual(refused._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.strictEqual((yield* cloudflare.hostnames).size, 0)
+			}),
+		),
+	)
+
 	it.effect("moves through DNS and certificate to active on the poll, and republishes the page", () =>
 		withDomains(({ testDb, cloudflare, domains }) =>
 			Effect.gen(function* () {

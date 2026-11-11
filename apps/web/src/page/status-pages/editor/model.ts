@@ -53,6 +53,10 @@ export type JsonEdit = typeof JsonEdit.Type
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
 
+/** What the Access section is saving: a visibility, a new password, or the password's removal. */
+export const AccessAction = Schema.Literals(["visibility", "password", "removePassword"])
+export type AccessAction = typeof AccessAction.Type
+
 /** A freshly issued break-glass token: shown once, never read back. */
 export const RevealedToken = Schema.Struct({ token: Schema.String, suffix: Schema.String })
 
@@ -142,6 +146,11 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
+	// Access
+	accessAction: Schema.NullOr(AccessAction),
+	/** The new page password as typed; `null` while its field is closed. */
+	passwordDraft: Schema.NullOr(Schema.String),
+	accessFailure: Schema.NullOr(LoadFailure),
 	// Custom domain
 	/** The page's custom domain and whether this deployment offers them; read with the page. */
 	customDomain: KeyedSchema(V2StatusPageCustomDomain, LoadFailure),
@@ -167,6 +176,10 @@ export type Model = typeof Model.Type
 /** The viewer may change what this page edits (`status_pages:edit`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "status_pages:edit")
+
+/** The viewer may change who can read the page, its password included (`status_pages:access`). */
+export const canChangeAccess = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:access")
 
 /** The viewer may rotate or revoke the break-glass token (`status_pages:break_glass`). */
 export const canBreakGlass = (model: Pick<Model, "grants">): boolean =>

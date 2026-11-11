@@ -6,6 +6,7 @@ import {
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
+	StatusPageVisibility,
 } from "@maple/primitives"
 
 export const StatusPageRow = Schema.Struct({
@@ -14,6 +15,8 @@ export const StatusPageRow = Schema.Struct({
 	name: Schema.String,
 	slug: Schema.String,
 	autoIncidents: StatusPageAutoIncidents,
+	/** `password` pages need a password at the edge; `internal` ones are only shown inside Maple. */
+	visibility: StatusPageVisibility,
 	/** A draft is not public until it is published. */
 	draft: Schema.Boolean,
 	revision: Schema.Number,

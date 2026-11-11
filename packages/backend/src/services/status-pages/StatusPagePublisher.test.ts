@@ -250,6 +250,87 @@ describe("StatusPagePublisher.publish", () => {
 	)
 })
 
+describe("StatusPagePublisher visibility", () => {
+	const setVisibility = (testDb: TestDb, pageId: StatusPageId, visibility: string) =>
+		Effect.promise(() =>
+			executeSql(testDb, "UPDATE status_pages SET visibility = $2 WHERE id = $1", [pageId, visibility]),
+		).pipe(Effect.andThen(bumpRevision(testDb, pageId)))
+
+	it.effect("takes an internal page off the edge, and writes it again once it is public", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-internal" })
+				yield* publisher.publish(pageId)
+
+				yield* setVisibility(testDb, pageId, "internal")
+				const hidden = yield* publisher.publish(pageId)
+				assert.isFalse(hidden.written)
+				const { kv, objects } = yield* store.contents
+				assert.isFalse(kv.has(StatusPageKeys.slug("acme-internal")))
+				assert.isFalse(objects.has(StatusPageKeys.slugObject("acme-internal")))
+				assert.isFalse(kv.has(StatusPageKeys.snapshot(pageId)))
+				assert.isFalse(objects.has(StatusPageKeys.snapshotObject(pageId)))
+				assert.strictEqual((yield* readPage(testDb, pageId))?.published_revision, "2")
+
+				// Nothing else changed, yet the page must go back up.
+				yield* setVisibility(testDb, pageId, "public")
+				const shown = yield* publisher.publish(pageId)
+				assert.isTrue(shown.written)
+				const after = yield* store.contents
+				assert.strictEqual(after.kv.get(StatusPageKeys.slug("acme-internal")), pageId)
+				assert.isTrue(after.kv.has(StatusPageKeys.snapshot(pageId)))
+			}),
+		),
+	)
+
+	it.effect("publishes the password hash only while the page is password-protected", () =>
+		withPublisher(({ testDb, store, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, {
+					id: pageId,
+					slug: "acme-locked",
+					visibility: "password",
+					passwordHash: "pbkdf2-sha256$1$c2FsdA$a2V5",
+				})
+				yield* publisher.publish(pageId)
+				const published = () =>
+					store.contents.pipe(
+						Effect.map(({ kv }) =>
+							Option.getOrUndefined(
+								decodeStatusPageSnapshotJson(kv.get(StatusPageKeys.snapshot(pageId))),
+							),
+						),
+					)
+				const locked = yield* published()
+				assert.strictEqual(locked?.passwordHash, "pbkdf2-sha256$1$c2FsdA$a2V5")
+				assert.strictEqual(locked?.page.visibility, "password")
+
+				yield* setVisibility(testDb, pageId, "public")
+				yield* publisher.publish(pageId)
+				assert.isNull((yield* published())?.passwordHash)
+			}),
+		),
+	)
+
+	it.effect("leaves an internal page out of the stale republish", () =>
+		withPublisher(({ testDb, publisher }) =>
+			Effect.gen(function* () {
+				yield* seedPage(testDb, {
+					id: newPageId(),
+					slug: "stale-internal",
+					visibility: "internal",
+					revision: 1,
+					publishedRevision: 1,
+					publishedAt: NOW - 20 * 60_000,
+				})
+				assert.strictEqual((yield* publisher.sweep(NOW)).due, 0)
+			}),
+		),
+	)
+})
+
 describe("StatusPagePublisher.sweep", () => {
 	it.effect("publishes only lagging or stale pages", () =>
 		withPublisher(({ testDb, store, publisher }) =>

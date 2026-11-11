@@ -112,6 +112,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 			privacyUrl: page.privacy_url,
 			termsUrl: page.terms_url,
 			customDomain: null,
+			visibility: page.visibility,
 			showPoweredBy: page.show_powered_by,
 			theme: previewTheme(page.theme, model.previewScheme),
 		},

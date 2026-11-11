@@ -29,6 +29,7 @@ import type {
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
+	StatusPageVisibility,
 } from "@maple/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
@@ -53,8 +54,9 @@ import {
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
 // Page settings and components need an engineer: they change what the public sees about the
-// whole org. The break-glass token is a credential, so it stays admin-only. Incidents stay open
-// to any writer, so responders can post.
+// whole org. The break-glass token is a credential, so it stays admin-only, as do the page
+// password and visibility: they decide who can read the page. Incidents stay open to any writer,
+// so responders can post.
 
 /** The caller's tenant, once its org is in the `statusPages` rollout. */
 const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
@@ -86,6 +88,8 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	break_glass_token_suffix: page.breakGlassTokenSuffix,
+	visibility: page.visibility,
+	has_password: page.hasPassword,
 	draft: page.draft,
 	revision: page.revision,
 	published_revision: page.publishedRevision,
@@ -164,6 +168,7 @@ const pageAuditDiff = auditDiff({
 		"theme",
 		"show_powered_by",
 		"auto_incidents",
+		"visibility",
 	],
 })
 
@@ -198,6 +203,16 @@ const parseTimestamp = (value: string | null | undefined) =>
 	value === undefined ? undefined : value === null ? null : timestampMs(value)
 
 const publishFailed = (message: string) => new StatusPagePersistenceError({ message })
+
+/** Changing who can read a page is an admin's call, whichever endpoint carries it. */
+const checkVisibilityChange = (
+	roles: ReadonlyArray<string>,
+	current: StatusPageVisibility,
+	next: StatusPageVisibility | undefined,
+) =>
+	next === undefined || next === current
+		? Effect.void
+		: Policy.check(roles, "status_pages:access", (denial) => V2InsufficientPermissions.make(denial.message))
 
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
@@ -246,6 +261,29 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 								Effect.fail(publishFailed(error.message)),
 							),
 						)
+				}),
+			)
+			.handle("view", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					// The page must be this org's: the builder reads by id alone.
+					yield* service.get(tenant.orgId, params.id)
+					const nowMs = yield* Clock.currentTimeMillis
+					const snapshot = yield* snapshotBuilder.build(params.id, nowMs).pipe(
+						Effect.catchTags({
+							"@maple/backend/status-pages/StatusPageGoneError": () =>
+								Effect.fail(
+									new StatusPageNotFoundError({
+										pageId: params.id,
+										message: "Status page not found",
+									}),
+								),
+							"@maple/backend/status-pages/StatusPagePublishDbError": (error) =>
+								Effect.fail(publishFailed(error.message)),
+						}),
+					)
+					// Credentials stay with the edge; members only read the page.
+					return { ...snapshot, breakGlassTokenSha256: null, passwordHash: null }
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
@@ -336,6 +374,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
+					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
 					const updated = yield* service.update(tenant.orgId, params.id, {
 						...(payload.name === undefined ? undefined : { name: payload.name }),
 						...(payload.slug === undefined ? undefined : { slug: payload.slug }),
@@ -367,6 +406,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						...(payload.auto_incidents === undefined
 							? undefined
 							: { autoIncidents: payload.auto_incidents }),
+						...(payload.visibility === undefined ? undefined : { visibility: payload.visibility }),
 					})
 					yield* recordHttpAudit("status_page.updated", {
 						resourceId: updated.id,
@@ -492,6 +532,28 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					return toV2StatusPage(page)
 				}),
 			)
+			.handle("setPassword", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const page = yield* service.setPassword(tenant.orgId, params.id, payload.password)
+					yield* recordHttpAudit("status_page.password_set", { resourceId: params.id })
+					return toV2StatusPage(page)
+				}),
+			)
+			.handle("removePassword", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const page = yield* service.removePassword(tenant.orgId, params.id)
+					yield* recordHttpAudit("status_page.password_removed", { resourceId: params.id })
+					return toV2StatusPage(page)
+				}),
+			)
 			.handle("getCustomDomain", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
@@ -554,6 +616,8 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
+					const current = yield* service.get(tenant.orgId, params.id)
+					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,

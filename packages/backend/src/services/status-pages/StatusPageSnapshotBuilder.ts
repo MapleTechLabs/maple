@@ -23,6 +23,7 @@ import {
 	type StatusPageIncidentKind,
 	type StatusPageIncidentStatus,
 	type StatusPageUpdateSource,
+	type StatusPageVisibility,
 	type UptimeMonitorId,
 	type UptimeMonitorStatus,
 } from "@maple/primitives"
@@ -70,6 +71,9 @@ export interface SnapshotPageInput {
 	readonly theme: StatusPageTheme
 	readonly showPoweredBy: boolean
 	readonly breakGlassTokenSha256: string | null
+	readonly visibility: StatusPageVisibility
+	/** Published only while the page is `password`: the hash of a page made public stays home. */
+	readonly passwordHash: string | null
 	readonly revision: number
 	/** The page's custom domain once it serves traffic; null otherwise. */
 	readonly customDomain: string | null
@@ -266,8 +270,10 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			privacyUrl: input.page.privacyUrl,
 			termsUrl: input.page.termsUrl,
 			customDomain: input.page.customDomain,
+			visibility: input.page.visibility,
 		},
 		breakGlassTokenSha256: input.page.breakGlassTokenSha256,
+		passwordHash: input.page.visibility === "password" ? input.page.passwordHash : null,
 		components,
 		incidents,
 		incidentHistory,
@@ -276,7 +282,10 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 
 /** A page that has no row yet: what the builder previews before anything is saved. */
 export interface StatusPageDraft {
-	readonly page: Omit<SnapshotPageInput, "id" | "breakGlassTokenSha256" | "revision" | "customDomain">
+	readonly page: Omit<
+		SnapshotPageInput,
+		"id" | "breakGlassTokenSha256" | "passwordHash" | "revision" | "customDomain"
+	>
 	readonly components: ReadonlyArray<Omit<SnapshotComponentInput, "id" | "monitorStatus">>
 }
 
@@ -314,6 +323,7 @@ export const toStatusPageDraft = (params: StatusPagePreviewParams): StatusPageDr
 			termsUrl: httpsOrNull(config.terms_url),
 			theme,
 			showPoweredBy: config.show_powered_by,
+			visibility: config.visibility,
 		},
 		components: Arr.map(config.components, (component) => ({
 			name: component.name,
@@ -422,6 +432,8 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								theme: $.theme,
 								showPoweredBy: $.showPoweredBy,
 								breakGlassTokenSha256: $.breakGlassTokenSha256,
+								visibility: $.visibility,
+								passwordHash: $.passwordHash,
 								revision: $.revision,
 							}))
 							.where(($) => [$.id.eq(pageId)])
@@ -571,6 +583,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 					...draft.page,
 					id: DRAFT_PAGE_ID,
 					breakGlassTokenSha256: null,
+					passwordHash: null,
 					revision: 0,
 					customDomain: null,
 				},

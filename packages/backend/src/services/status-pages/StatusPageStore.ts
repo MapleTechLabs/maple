@@ -78,6 +78,8 @@ export interface StatusPageStoreApi {
 	readonly deleteRoutes: (routes: StatusPageRoutes) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes one custom hostname's route from KV and R2. */
 	readonly deleteHostRoute: (hostname: string) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes the snapshot from KV and R2; break-glass entries stay for the reconciler to import. */
+	readonly deleteSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes the snapshot (KV and R2) and every break-glass entry of the page. */
 	readonly deletePage: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	readonly putHeartbeat: (
@@ -195,6 +197,14 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 				]),
 			],
 			{ concurrency: 4, discard: true },
+		),
+	deleteSnapshot: (pageId) =>
+		Effect.all(
+			[
+				backend.kvDelete(StatusPageKeys.snapshot(pageId)),
+				backend.objectDelete(StatusPageKeys.snapshotObject(pageId)),
+			],
+			{ concurrency: 2, discard: true },
 		),
 	deletePage: (pageId) =>
 		Effect.all(

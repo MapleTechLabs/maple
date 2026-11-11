@@ -28,6 +28,8 @@ const page = (n: number, fields: Partial<V2StatusPage>): V2StatusPage => ({
 	theme: DEFAULT_STATUS_PAGE_THEME,
 	show_powered_by: true,
 	auto_incidents: "draft",
+	visibility: "public",
+	has_password: false,
 	draft: false,
 	break_glass_token_suffix: null,
 	revision: 3,

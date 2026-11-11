@@ -1,5 +1,5 @@
 import { readClock } from "@maple/views/data/timing"
-import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
+import { StatusPageComponentId, StatusPageId, StatusPageIncidentId, StatusPageVisibility } from "@maple/domain"
 import {
 	StatusPageConfig,
 	StatusPageDraftComponent,
@@ -25,6 +25,7 @@ import {
 	previewPage,
 	publishPage,
 	removeCustomDomain,
+	removePagePassword,
 	reorderComponents,
 	retrieveCustomDomain,
 	retrievePage,
@@ -33,6 +34,7 @@ import {
 	rotateBreakGlass,
 	saveComponent,
 	setCustomDomain,
+	setPagePassword,
 	updateIncident,
 	updatePage,
 } from "../shared/commands"
@@ -211,6 +213,38 @@ export const RevokeToken = Command.define("RevokeStatusPageBreakGlassToken", {
 		revokeBreakGlass(pageId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedRevokeToken({ result })),
+		),
+})
+
+export const SaveVisibility = Command.define("SaveStatusPageVisibility", {
+	args: { pageId: StatusPageId, visibility: StatusPageVisibility },
+	messages: [Message.CompletedAccessChange],
+	execute: ({ pageId, visibility }) =>
+		updatePage(pageId, { visibility }).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedAccessChange({ action: "visibility", result })),
+		),
+})
+
+/**
+ * Built by hand, not with `Command.define`: a defined Command's args become its span's
+ * attributes, and the password must not reach a trace.
+ */
+export const SetPassword = (pageId: StatusPageId, password: string) => ({
+	name: "SetStatusPagePassword",
+	effect: setPagePassword(pageId, password).pipe(
+		Effect.result,
+		Effect.map((result) => Message.CompletedAccessChange({ action: "password", result })),
+	),
+})
+
+export const RemovePassword = Command.define("RemoveStatusPagePassword", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedAccessChange],
+	execute: ({ pageId }) =>
+		removePagePassword(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedAccessChange({ action: "removePassword", result })),
 		),
 })
 

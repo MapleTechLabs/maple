@@ -36,7 +36,7 @@ in place), and certificate TXTs only if Cloudflare asks for them.
 
 Hostnames are validated at the API boundary (`customDomainIssue`): a subdomain (an apex
 cannot CNAME), no IPs, no `maple.dev`, `workers.dev` or other reserved names. One domain per
-page, unique across orgs.
+page, unique across orgs. An internal page has no custom domain (`status-page-visibility.md`).
 
 ## Operator setup
 

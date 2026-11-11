@@ -124,6 +124,25 @@ export const rotateBreakGlass = (id: StatusPageId) =>
 		return yield* client.statusPages.rotateBreakGlass({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
+export const setPagePassword = (id: StatusPageId, password: string) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.setPassword({ params: { id }, payload: { password } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const removePagePassword = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.removePassword({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+/** The page as visitors would see it now, whatever its visibility: how members read an internal page. */
+export const viewPage = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.view({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const retrieveCustomDomain = (id: StatusPageId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -250,6 +269,10 @@ export const statusPageHref = (id: StatusPageId, view?: EditorView): string =>
 			search: view === undefined ? {} : { view },
 		}),
 	)
+
+/** The page as members read it inside Maple: an internal page's only address. */
+export const statusPageViewHref = (id: StatusPageId): string =>
+	hrefOf(AppRoute.StatusPageView({ pageId: encodePublicId(id) }))
 
 export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 

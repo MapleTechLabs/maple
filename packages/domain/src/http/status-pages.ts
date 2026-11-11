@@ -11,6 +11,7 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 	UptimeMonitorId,
 	UserId,
 } from "@maple/primitives"
@@ -226,6 +227,9 @@ export const StatusPageRecord = Schema.Struct({
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
 	breakGlassTokenSuffix: Schema.NullOr(Schema.String),
+	visibility: StatusPageVisibility,
+	/** Whether a password is set; the hash itself never leaves the service. */
+	hasPassword: Schema.Boolean,
 	/** Not public until published; the publisher skips a draft. */
 	draft: Schema.Boolean,
 	revision: Schema.Number,

@@ -10,6 +10,7 @@ import {
 	sha256Base64Url,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
+import { verifyStatusPagePassword } from "@maple/domain/status-page-access"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { StatusPagesService, type CreateStatusPageIncidentInput } from "./StatusPagesService"
 
@@ -671,6 +672,61 @@ describe("StatusPagesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("stores only a slow hash of the page password and checks visibility against it", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			const early = yield* Effect.flip(service.update(ORG, page.id, { visibility: "password" }))
+			assert.include(early.message, "Set a page password")
+			const short = yield* Effect.flip(service.setPassword(ORG, page.id, "seven77"))
+			assert.strictEqual(short._tag, "@maple/http/errors/StatusPageValidationError")
+
+			const before = yield* revision(testDb, page.id)
+			const withPassword = yield* service.setPassword(ORG, page.id, "correct horse battery")
+			assert.isTrue(withPassword.hasPassword)
+			assert.strictEqual(yield* revision(testDb, page.id), before + 1)
+			const stored = yield* Effect.promise(() =>
+				testDb.pglite.query<{ password_hash: string; dump: string }>(
+					`SELECT password_hash, row_to_json(p)::text AS dump FROM status_pages p WHERE id = $1`,
+					[page.id],
+				),
+			)
+			const row = stored.rows[0]
+			assert.isTrue(
+				yield* verifyStatusPagePassword("correct horse battery", row?.password_hash ?? ""),
+			)
+			assert.isFalse(Str.includes("correct horse battery")(row?.dump ?? ""))
+
+			const locked = yield* service.update(ORG, page.id, { visibility: "password" })
+			assert.strictEqual(locked.visibility, "password")
+			const removing = yield* Effect.flip(service.removePassword(ORG, page.id))
+			assert.include(removing.message, "before removing its password")
+
+			yield* service.update(ORG, page.id, { visibility: "internal" })
+			assert.isFalse((yield* service.removePassword(ORG, page.id)).hasPassword)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses to make a page with a custom domain internal", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* StatusPagesService
+			const page = yield* createPage("acme")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO status_page_custom_domains (page_id, org_id, hostname, status, created_at, updated_at)
+					 VALUES ($1, $2, 'status.acme.example', 'active', now(), now())`,
+					[page.id, ORG],
+				),
+			)
+			const refused = yield* Effect.flip(service.update(ORG, page.id, { visibility: "internal" }))
+			assert.include(refused.message, "Remove the custom domain")
+			assert.strictEqual((yield* service.get(ORG, page.id)).visibility, "public")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("bumps the page revision on every visible mutation", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -788,6 +844,7 @@ describe("StatusPagesService", () => {
 					terms_url: null,
 					show_powered_by: true,
 					auto_incidents: "off",
+					visibility: "public",
 					theme: DEFAULT_STATUS_PAGE_THEME,
 					components: Arr.map([api, web, docs], (component) => ({
 						id: component.id,
@@ -945,6 +1002,23 @@ describe("StatusPagesService", () => {
 				assert.deepStrictEqual(applied.config, config)
 				assert.deepStrictEqual(applied.changes, NO_CHANGES)
 				assert.strictEqual(yield* revision(testDb, page.id), before)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("a document without a visibility keeps the page's, so it never opens a page", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const internal = yield* service.applyConfig(ORG, page.id, { ...config, visibility: "internal" }, USER)
+				assert.deepStrictEqual(internal.changes.fields, ["visibility"])
+				const { visibility: _visibility, ...withoutVisibility } = config
+				const kept = yield* service.applyConfig(ORG, page.id, withoutVisibility, USER)
+				assert.strictEqual(kept.config.visibility, "internal")
+				assert.deepStrictEqual(kept.changes, NO_CHANGES)
+				const refused = yield* Effect.flip(
+					service.applyConfig(ORG, page.id, { ...config, visibility: "password" }, USER),
+				)
+				assert.include(refused.message, "Set a page password")
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

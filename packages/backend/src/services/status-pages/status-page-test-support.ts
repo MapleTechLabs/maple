@@ -36,13 +36,16 @@ export const seedPage = (
 		readonly publishedAt?: number | null
 		readonly publishAttemptedAt?: number | null
 		readonly draft?: boolean
+		readonly visibility?: "public" | "password" | "internal"
+		readonly passwordHash?: string | null
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, break_glass_token_sha256,
-			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at, draft)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13)`,
+			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at, draft,
+			visibility, password_hash)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15)`,
 		[
 			input.id,
 			ORG,
@@ -59,6 +62,8 @@ export const seedPage = (
 				? null
 				: iso(input.publishAttemptedAt),
 			input.draft ?? false,
+			input.visibility ?? "public",
+			input.passwordHash ?? null,
 		],
 	)
 

@@ -7,6 +7,7 @@ import {
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 	type UptimeMonitorStatus,
 } from "@maple/primitives"
 
@@ -712,6 +713,11 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	 * canonical address: feeds, the Slack command and emails link there.
 	 */
 	customDomain: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/**
+	 * Who may read the page. A password page has no feeds or subscribe options (feed readers
+	 * cannot sign in); an internal one is never served at the edge. Absent before visibility existed.
+	 */
+	visibility: StatusPageVisibility.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed("public" as const))),
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>
 
@@ -724,6 +730,11 @@ export const StatusPageSnapshot = Schema.Struct({
 	page: StatusPageSnapshotPage,
 	/** SHA-256 (base64url) of the break-glass token; null when none is issued. */
 	breakGlassTokenSha256: Schema.NullOr(Schema.String),
+	/**
+	 * The password hash (`status-page-access.ts`) of a password page, null otherwise. The status
+	 * Worker checks posted passwords and signs access cookies with it; nothing renders it.
+	 */
+	passwordHash: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	components: Schema.Array(StatusPageSnapshotComponent),
 	/** Open incidents, upcoming and active maintenance, and recently resolved ones; newest first. */
 	incidents: Schema.Array(StatusPageSnapshotIncident),

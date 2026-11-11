@@ -235,7 +235,7 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			db
 				.run(
 					PG.from(StatusPages)
-						.select(($) => ({ id: $.id }))
+						.select(($) => ({ id: $.id, visibility: $.visibility }))
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)])
 						.limit(1)
 						.forUpdate(),
@@ -478,7 +478,13 @@ export class StatusPageCustomDomainsService extends Context.Service<
 			)((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* findPage(db, orgId, pageId)
+						const page = yield* findPage(db, orgId, pageId)
+						// Locked with the page, so it cannot go internal while the domain is added.
+						if (page.visibility === "internal")
+							return yield* new StatusPageValidationError({
+								message:
+									"An internal page is served on no address, so it cannot have a custom domain. Make it public or password-protected first.",
+							})
 						const existing = yield* readDomain(db, pageId)
 						if (existing?.hostname === hostname) return null
 						const [owner] = yield* db.run(

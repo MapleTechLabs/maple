@@ -343,6 +343,40 @@ describe("v2 status pages", () => {
 			expect(revoked.body.break_glass_token_suffix).toBeNull()
 		}))
 
+	it("leaves the password and visibility to admins, never returns the password, and shows members the page", () =>
+		withHarness(async (harness) => {
+			const { secret: admin } = await harness.bootstrapKey()
+			const { secret: engineer } = await harness.bootstrapKey(ORG, { ...MEMBER, roles: ["org:engineer"] })
+			const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
+			const page = await harness.request("POST", "/v2/status_pages", admin, {
+				name: "Acme",
+				slug: "acme-locked",
+			})
+			const path = `/v2/status_pages/${page.body.id}`
+			const password = "correct horse battery"
+
+			expect((await harness.request("PUT", `${path}/password`, engineer, { password })).status).toBe(403)
+			expect((await harness.request("PATCH", path, engineer, { visibility: "internal" })).status).toBe(403)
+			// An engineer may still edit everything else.
+			expect((await harness.request("PATCH", path, engineer, { name: "Acme Inc" })).status).toBe(200)
+
+			const short = await harness.request("PUT", `${path}/password`, admin, { password: "short" })
+			expect(short.status).toBe(400)
+			const set = await harness.request("PUT", `${path}/password`, admin, { password })
+			expect(set.body.has_password).toBe(true)
+			expect(JSON.stringify(set.body)).not.toContain(password)
+			const locked = await harness.request("PATCH", path, admin, { visibility: "password" })
+			expect(locked.body.visibility).toBe("password")
+			const removing = await harness.request("DELETE", `${path}/password`, admin)
+			expect(removing.status).toBe(400)
+
+			const view = await harness.request("GET", `${path}/view`, member)
+			expect(view.status).toBe(200)
+			expect(view.body.page.visibility).toBe("password")
+			expect(view.body.passwordHash).toBeNull()
+			expect(JSON.stringify(view.body)).not.toContain("pbkdf2")
+		}))
+
 	it("adds, reorders, updates and removes components", () =>
 		withHarness(async (harness) => {
 			const { secret: token } = await harness.bootstrapKey()

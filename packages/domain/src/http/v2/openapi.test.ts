@@ -110,6 +110,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/status_pages/{id}/break_glass",
 			"DELETE /v2/status_pages/{id}/components/{component_id}",
 			"DELETE /v2/status_pages/{id}/custom_domain",
+			"DELETE /v2/status_pages/{id}/password",
 			"DELETE /v2/uptime_monitors/{id}",
 			"DELETE /v2/widget_credentials/{installation_id}",
 			"GET /v2/agent_feedback",
@@ -213,6 +214,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/status_pages/{id}/components",
 			"GET /v2/status_pages/{id}/config",
 			"GET /v2/status_pages/{id}/custom_domain",
+			"GET /v2/status_pages/{id}/view",
 			"GET /v2/support/slack_channel",
 			"GET /v2/traces/{trace_id}",
 			"GET /v2/traces/{trace_id}/spans/{span_id}",
@@ -348,6 +350,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PUT /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"PUT /v2/status_pages/{id}/config",
 			"PUT /v2/status_pages/{id}/custom_domain",
+			"PUT /v2/status_pages/{id}/password",
 			"PUT /v2/widget_credentials/{installation_id}",
 		])
 	})

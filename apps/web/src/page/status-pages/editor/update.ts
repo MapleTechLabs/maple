@@ -8,7 +8,13 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
+import {
+	type EditorView,
+	pageIdFromUrl,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+	statusPageViewHref,
+} from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -99,6 +105,15 @@ import {
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
+import {
+	cancelPassword,
+	changedAccess,
+	changePassword,
+	openPassword,
+	pickVisibility,
+	removePassword,
+	submitPassword,
+} from "./update-access"
 import {
 	appliedJson,
 	applyJson,
@@ -191,6 +206,9 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		tokenCopy: CopyButton.init(),
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
+		accessAction: null,
+		passwordDraft: null,
+		accessFailure: null,
 		customDomain: Keyed.idle(),
 		customDomainDraft: null,
 		customDomainAction: null,
@@ -307,6 +325,9 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
 		case "public":
+			// An internal page has no public address: members read it inside Maple.
+			if (Option.exists(pageOf(model), (page) => page.visibility === "internal"))
+				return navigate(statusPageViewHref(model.pageId))
 			return Option.match(
 				Option.flatMap(pageOf(model), (page) => Option.fromNullishOr(pageUrlOf(model, page))),
 				{
@@ -518,6 +539,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: child }) => updateTokenCopy(model, child),
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
+		// Access
+		PickedVisibility: ({ visibility }) => pickVisibility(model, visibility),
+		ClickedChangePassword: () => openPassword(model),
+		ChangedPassword: ({ value }) => changePassword(model, value),
+		ClickedCancelPassword: () => cancelPassword(model),
+		SubmittedPassword: () => submitPassword(model),
+		ClickedRemovePassword: () => removePassword(model),
+		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
 		// Custom domain
 		CompletedFetchCustomDomain: ({ key, result }) => ({
 			model: { ...model, customDomain: Keyed.accept(model.customDomain, key, result) },
