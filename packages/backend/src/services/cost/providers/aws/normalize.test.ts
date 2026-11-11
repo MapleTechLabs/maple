@@ -138,6 +138,29 @@ describe("usageReconciles", () => {
 		assert.isFalse(usageReconciles([], byRegion, "eu-central-1"))
 	})
 
+	it("compares each service, so a charge and an equal credit do not hide a miss of both", () => {
+		const of = (service: string, costGroup: CostGroup): CostGroup => ({ ...costGroup, service })
+		const netZero = [
+			of("Invented Compute", group("eu-central-1", 100)),
+			of("Invented Credit", group("eu-central-1", -100)),
+			of("Invented Storage", group("eu-central-1", 5)),
+		]
+		// The day nets to 5 either way: a pull missing the charge and its credit must not pass.
+		assert.isFalse(usageReconciles([of("Invented Storage", usage(5))], netZero, "eu-central-1"))
+		assert.isTrue(
+			usageReconciles(
+				[
+					of("Invented Compute", usage(60)),
+					of("Invented Compute", usage(40)),
+					of("Invented Credit", usage(-100)),
+					of("Invented Storage", usage(5)),
+				],
+				netZero,
+				"eu-central-1",
+			),
+		)
+	})
+
 	it("compares day by day, so a miss on one day is not hidden by the window", () => {
 		const on = (day: string, costGroup: CostGroup): CostGroup => ({ ...costGroup, day })
 		const twoDays = [
@@ -221,7 +244,7 @@ describe("cost rows", () => {
 			resourceId: "",
 			resourceType: "",
 			serviceName: "",
-			chargeCategory: "usage",
+			chargeCategory: "unknown",
 			basis: "billed",
 			currency: "USD",
 			billedCost: 4.8,
@@ -252,7 +275,9 @@ describe("cost rows", () => {
 			Arr.map(tax, (row) => [row.cloudService, row.region, row.day, row.billedCost]),
 			[["Tax", "", "2026-03-01", 1.9]],
 		)
-		assert.isTrue(Arr.every(rows, (row) => row.cloudService === "Tax" || row.chargeCategory === "usage"))
+		assert.isTrue(
+			Arr.every(rows, (row) => row.cloudService === "Tax" || row.chargeCategory === "unknown"),
+		)
 	})
 
 	it("drops a usage type that cost nothing", () => {

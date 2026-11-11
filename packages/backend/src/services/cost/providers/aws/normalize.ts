@@ -2,7 +2,7 @@
  * Pure shaping of Cost Explorer answers into cost rows. No Effect services and no SDK import: the
  * shapes below are the parts of a `GetCostAndUsage` answer a pull reads.
  */
-import { Array as Arr, Number as Num, Option, Order, Result, String as Str } from "effect"
+import { Array as Arr, Number as Num, Option, Order, Record as Rec, Result, String as Str } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import type { CostPullRow, CostPullWindow } from "../../CostProvider"
 
@@ -155,14 +155,14 @@ export const detailedRegions = (groups: ReadonlyArray<CostGroup>, days: number):
 	)
 }
 
-/** A hundredth of a cent, or a millionth of the day's cost: rounding passes, a missing charge does not. */
+/** A hundredth of a cent, or a millionth of the amount: rounding passes, a missing charge does not. */
 const reconcileTolerance = (cost: number) => Math.max(0.0001, Math.abs(cost) * 0.000001)
 
 /**
- * Whether a region's pull by usage type holds the same money, on every day, as its rows in the
- * `SERVICE` x `REGION` answer. Rows replace a day at a time, so days are compared one by one: a
- * window total would hide a charge missing on one day. When a day does not match, the region
- * keeps its service-level rows, so each day still sums to what Cost Explorer reports.
+ * Whether a region's pull by usage type holds the same money, for every day and service, as its
+ * rows in the `SERVICE` x `REGION` answer. Rows replace a day at a time, so a window total would
+ * hide a charge missing on one day. When a cell does not match, the region keeps its
+ * service-level rows, so each day still sums to what Cost Explorer reports.
  */
 export const usageReconciles = (
 	usage: ReadonlyArray<CostGroup>,
@@ -170,22 +170,26 @@ export const usageReconciles = (
 	region: string,
 ): boolean => {
 	const ofRegion = Arr.filter(byRegion, (group) => group.key === region)
-	const sumOn = (groups: ReadonlyArray<CostGroup>, day: string, pick: (group: CostGroup) => number) =>
-		Num.sumAll(
-			Arr.map(
-				Arr.filter(groups, (group) => group.day === day),
-				pick,
-			),
+	// Per day and service, not per day: a charge and an equal credit cancel in a day's total, and
+	// a pull missing both would pass while the service breakdown was lost.
+	const cell = (group: CostGroup) => `${group.day}\u0000${group.service}`
+	const sums = (groups: ReadonlyArray<CostGroup>) =>
+		Rec.map(
+			Arr.groupBy(groups, cell),
+			(members) =>
+				[
+					Num.sumAll(Arr.map(members, (group) => group.billedCost)),
+					Num.sumAll(Arr.map(members, (group) => group.effectiveCost)),
+				] as const,
 		)
-	const matches = (day: string, pick: (group: CostGroup) => number) => {
-		const expected = sumOn(ofRegion, day, pick)
-		return Math.abs(sumOn(usage, day, pick) - expected) <= reconcileTolerance(expected)
-	}
-	const days = Arr.dedupe(Arr.map(Arr.appendAll(ofRegion, usage), (group) => group.day))
-	return Arr.every(
-		days,
-		(day) => matches(day, (group) => group.billedCost) && matches(day, (group) => group.effectiveCost),
-	)
+	const expected = sums(ofRegion)
+	const actual = sums(usage)
+	const close = (a: number, b: number) => Math.abs(a - b) <= reconcileTolerance(b)
+	return Arr.every(Arr.dedupe(Arr.appendAll(Rec.keys(expected), Rec.keys(actual))), (key) => {
+		const [billed, effective] = expected[key] ?? [0, 0]
+		const [usageBilled, usageEffective] = actual[key] ?? [0, 0]
+		return close(usageBilled, billed) && close(usageEffective, effective)
+	})
 }
 
 const CATEGORY_KEYWORDS: ReadonlyArray<readonly [category: string, keywords: ReadonlyArray<string>]> = [
@@ -226,8 +230,9 @@ const rowOf = (
 	resourceId: "",
 	resourceType: "",
 	serviceName: "",
-	// Cost Explorer nets credits and refunds into the service rows: only tax stands apart.
-	chargeCategory: group.service === "Tax" ? "tax" : "usage",
+	// Cost Explorer nets credits, refunds and commitment fees into a service's rows and names no
+	// charge type on them: only tax, a service of its own, is known for what it is.
+	chargeCategory: group.service === "Tax" ? "tax" : "unknown",
 	basis: "billed",
 	currency: group.currency,
 	billedCost: group.billedCost,
