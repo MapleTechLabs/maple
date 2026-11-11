@@ -166,6 +166,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cost",
+		title: "Cost",
+		description:
+			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/search-console",
 		title: "Google Search Console",
 		description:

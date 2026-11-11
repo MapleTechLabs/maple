@@ -182,12 +182,13 @@ const alertsItem: NavItem = {
 
 /** The org rollout flags that gate a nav row each. */
 export type NavFlags = Readonly<{
+	cloudCost: boolean
 	releases: boolean
 	securityAudit: boolean
 	statusPages: boolean
 }>
 
-/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
+/** `navGroups(flags)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a row each. */
 export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
@@ -205,6 +206,9 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
 			infrastructureItem,
+			...(flags.cloudCost
+				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
+				: []),
 		],
 	},
 	{

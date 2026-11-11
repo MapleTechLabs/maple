@@ -1,0 +1,158 @@
+import type {
+	CostBreakdownSortBy,
+	CostFilters,
+	CostSourceSummary,
+	CostTimeseriesResponse,
+} from "@maple/domain/http"
+import { EMPTY_VALUE } from "@maple/ui/lib/format"
+import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
+import { Array as Arr, Record as Rec } from "effect"
+import { COST_GROUP_BYS } from "../../route/search"
+import type { Search } from "./model"
+
+// What the cost page reads off its URL and its answers: the grouping, the filters, money and days.
+
+export type CostGroupBy = (typeof COST_GROUP_BYS)[number]
+
+export const DEFAULT_GROUP_BY: CostGroupBy = "cloud_service"
+
+/** Each dimension's name in the control, the chips and the table, and what an empty key reads as. */
+export const DIMENSIONS = {
+	cloud_service: { label: "Service", noun: "service", empty: "Unassigned" },
+	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
+	region: { label: "Region", noun: "region", empty: "No region" },
+	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
+	account: { label: "Account", noun: "account", empty: "No account" },
+} as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>
+
+export const groupByOf = (search: Search): CostGroupBy => search.groupBy ?? DEFAULT_GROUP_BY
+
+export const sortOf = (search: Search): CostBreakdownSortBy => search.sort ?? "cost"
+
+/** A key as the page shows it: the provider's own text, or the dimension's placeholder for "". */
+export const keyLabel = (dimension: CostGroupBy, key: string): string =>
+	key === "" ? DIMENSIONS[dimension].empty : key
+
+export type ActiveFilter = Readonly<{ dimension: CostGroupBy; value: string }>
+
+/** Every filter in the URL, one per value, in the control's dimension order. */
+export const activeFilters = (search: Search): ReadonlyArray<ActiveFilter> =>
+	Arr.flatMap(COST_GROUP_BYS, (dimension) =>
+		Arr.map(search[dimension] ?? [], (value) => ({ dimension, value })),
+	)
+
+export const hasFilter = (search: Search, filter: ActiveFilter): boolean =>
+	Arr.contains(search[filter.dimension] ?? [], filter.value)
+
+/** An emptied dimension leaves the URL. */
+const withValues = (search: Search, dimension: CostGroupBy, values: ReadonlyArray<string>): Search => ({
+	...search,
+	[dimension]: values.length === 0 ? undefined : values,
+})
+
+export const withFilter = (search: Search, filter: ActiveFilter): Search =>
+	hasFilter(search, filter)
+		? search
+		: withValues(search, filter.dimension, Arr.append(search[filter.dimension] ?? [], filter.value))
+
+export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
+	withValues(
+		search,
+		filter.dimension,
+		Arr.filter(search[filter.dimension] ?? [], (value) => value !== filter.value),
+	)
+
+/** The range, grouping and order stay; the filters go. */
+export const withoutFilters = (search: Search): Search => ({
+	startTime: search.startTime,
+	endTime: search.endTime,
+	timePreset: search.timePreset,
+	groupBy: search.groupBy,
+	sort: search.sort,
+})
+
+/** The filters as a read carries them, or undefined with none (the key then stays out of the body). */
+export const requestFilters = (search: Search): CostFilters | undefined => {
+	const entries = Arr.flatMap(COST_GROUP_BYS, (dimension) => {
+		const values = search[dimension] ?? []
+		return values.length === 0 ? [] : [[dimension, values] as const]
+	})
+	return entries.length === 0 ? undefined : Rec.fromEntries(entries)
+}
+
+/** A source has cost to read once its first pull landed. */
+export const hasSynced = (sources: ReadonlyArray<CostSourceSummary>): boolean =>
+	Arr.some(sources, (source) => source.watermarkDate !== null)
+
+const PLAIN_MONEY = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const moneyFormats = new Map<string, Intl.NumberFormat>()
+
+/** `Intl.NumberFormat` throws on a malformed code, so only a three-letter one is passed to it. */
+const moneyFormatOf = (currency: string): Intl.NumberFormat => {
+	if (!/^[A-Za-z]{3}$/u.test(currency)) return PLAIN_MONEY
+	const cached = moneyFormats.get(currency)
+	if (cached !== undefined) return cached
+	const format = new Intl.NumberFormat("en-US", { style: "currency", currency })
+	moneyFormats.set(currency, format)
+	return format
+}
+
+/** An amount in the rows' billing currency, to the cent; a plain number when there is no currency. */
+export const formatMoney = (amount: number, currency: string): string =>
+	Number.isFinite(amount) ? moneyFormatOf(currency).format(amount) : EMPTY_VALUE
+
+/** A change with its sign; under half a cent either way reads as zero, unsigned. */
+export const formatMoneyChange = (amount: number, currency: string): string => {
+	if (!Number.isFinite(amount)) return EMPTY_VALUE
+	if (Math.abs(amount) < 0.005) return formatMoney(0, currency)
+	return amount > 0 ? `+${formatMoney(amount, currency)}` : formatMoney(amount, currency)
+}
+
+const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+const DAY_WITH_YEAR = new Intl.DateTimeFormat("en-US", {
+	month: "short",
+	day: "numeric",
+	year: "numeric",
+	timeZone: "UTC",
+})
+
+/** A UTC day (`YYYY-MM-DD`) as "Nov 9", with its year when asked; unreadable text is shown as is. */
+export const formatDay = (day: string, withYear = false): string => {
+	const date = new Date(`${day}T00:00:00Z`)
+	if (Number.isNaN(date.getTime())) return day
+	return (withYear ? DAY_WITH_YEAR : DAY).format(date)
+}
+
+export type ChartRow = Readonly<Record<string, string | number | boolean>>
+
+/** A series' name in the chart: the folded tail reads "Other", an empty key its placeholder. */
+export const seriesLabel = (
+	dimension: CostGroupBy,
+	series: Readonly<{ key: string; other: boolean }>,
+): string => (series.other ? OTHER_LABEL : keyLabel(dimension, series.key))
+
+/**
+ * One row per UTC day for the bar chart: a column per series in the answer's order (largest
+ * first, "Other" last), and `partial` from the first day the provider may still restate.
+ */
+export const chartRows = (
+	response: CostTimeseriesResponse,
+	dimension: CostGroupBy,
+): ReadonlyArray<ChartRow> =>
+	Arr.map(response.days, (day, index) => ({
+		bucket: `${day}T00:00:00Z`,
+		...Rec.fromEntries(
+			Arr.map(response.series, (series) => [seriesLabel(dimension, series), series.points[index] ?? 0]),
+		),
+		...(response.estimatedFrom !== null && day >= response.estimatedFrom ? { partial: true } : undefined),
+	}))
+
+/** No day of the window has cost. */
+export const isEmptySeries = (response: CostTimeseriesResponse): boolean =>
+	!Arr.some(response.series, (series) => Arr.some(series.points, (point) => point !== 0))
+
+/** AWS bills each Cost Explorer request USD 0.01. */
+const REQUEST_COST_USD = 0.01
+
+/** What a source's provider requests cost its account this month. */
+export const requestsCost = (requests: number): string => `USD ${(requests * REQUEST_COST_USD).toFixed(2)}`
