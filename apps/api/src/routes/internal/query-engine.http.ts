@@ -870,19 +870,24 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* warehouse.warmRoute(tenant)
-						const [paths, errors] = yield* Effect.all(
+						const [paths, errorLogs] = yield* Effect.all(
 							[
 								runQuery(Queries.vercelInfraTopPaths, tenant, payload),
-								runQuery(Queries.vercelInfraTopErrors, tenant, payload),
+								runQuery(Queries.vercelInfraErrorLogs, tenant, payload),
 							],
 							{ concurrency: 2 },
 						)
+						const patterns = Integrations.clusterVercelErrorLogs(
+							Arr.map(errorLogs, (row) => ({ ...row, timestamp: DateTime.formatIso(row.timestamp) })),
+						)
 						return new VercelInfraProjectDetailResponse({
 							paths,
-							errors: Arr.map(errors, (row) => ({
-								...row,
-								lastSeen: DateTime.formatIso(row.lastSeen),
+							errors: Arr.map(patterns, (pattern) => ({
+								...pattern,
+								search: Integrations.errorPatternSearch(pattern.pattern),
 							})),
+							errorLogsSampled: errorLogs.length,
+							errorLogsCapped: errorLogs.length >= Integrations.VERCEL_ERROR_LOG_SAMPLE,
 						})
 					}),
 				)

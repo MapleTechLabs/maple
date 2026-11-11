@@ -5867,6 +5867,26 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
+-- builder:vercel-infra:vercelProjectErrorLogsSQL:default
+SELECT
+          logs.Timestamp AS timestamp,
+          leftUTF8(logs.Body, 2000) AS body,
+          logs.LogAttributes['vercel.source'] AS source,
+          logs.TraceId AS traceId,
+          logs.SpanId AS spanId
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.SeverityNumber >= 17
+        ORDER BY timestamp DESC
+        LIMIT 2000
+        FORMAT JSON
+
 -- builder:vercel-infra:vercelProjectLatencySQL:default
 SELECT
           traces.ResourceAttributes['vercel.projectId'] AS projectId,
@@ -5909,26 +5929,6 @@ SELECT
         GROUP BY projectId
         ORDER BY requests DESC
         LIMIT 1000
-        FORMAT JSON
-
--- builder:vercel-infra:vercelProjectTopErrorsSQL:default
-SELECT
-          leftUTF8(logs.Body, 200) AS message,
-          count() AS occurrences,
-          any(logs.LogAttributes['vercel.source']) AS source,
-          max(logs.Timestamp) AS lastSeen
-        FROM logs
-        WHERE logs.OrgId = 'org_sql_catalog'
-          AND logs.TimestampTime >= '2026-01-01 10:30:00'
-          AND logs.TimestampTime <= '2026-01-03 14:15:00'
-          AND logs.Timestamp >= '2026-01-01 10:30:00'
-          AND logs.Timestamp <= '2026-01-03 14:15:00'
-          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
-          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
-          AND logs.SeverityNumber >= 17
-        GROUP BY message
-        ORDER BY occurrences DESC
-        LIMIT 20
         FORMAT JSON
 
 -- builder:vercel-infra:vercelProjectTopPathsSQL:default

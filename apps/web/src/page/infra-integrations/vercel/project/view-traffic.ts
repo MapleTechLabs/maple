@@ -189,6 +189,10 @@ export const signals = (
 		),
 		xDomain: Arr.map(options.buckets, (bucket) => bucket.bucket),
 		markers: options.deploys.markers,
+		deploys: {
+			markers: options.deploys.commits,
+			plotOf: (chartId) => (model.charts[chartId] ?? Chart.init()).plot,
+		},
 		isWaiting: options.isWaiting,
 		theme: options.theme,
 		timeZone: options.timeZone,
@@ -449,75 +453,134 @@ export const breakdownPanel = (h: H, model: Model): Html => {
 
 // Top error logs
 
+/** The error levels the logs explorer filters on for "error and fatal". */
+const ERROR_SEVERITIES = ["ERROR", "FATAL"]
+
+/** The logs explorer at this project's error and fatal logs, narrowed to a pattern's shared text. */
+const patternLogsHref = (projectId: string, time: TimeSearch, search: string | null): string => {
+	const errorLogs = { ...time, attrs: [...vercelProjectLogAttrs(projectId)], severities: ERROR_SEVERITIES }
+	return hrefOf(AppRoute.Logs({ search: search === null ? errorLogs : { ...errorLogs, search } }))
+}
+
+type ErrorPattern = VercelInfraProjectDetailResponse["errors"][number]
+
+const errorRow = (h: H, error: ErrorPattern, projectId: string, time: TimeSearch, clock: Clock): Html =>
+	h.div(
+		[h.Key(`${error.source}:${error.pattern}`), h.Class(cn(ROW_CLASS, "items-start"))],
+		[
+			vstack(h, { gap: "1", className: LEAD_COLUMN }, [
+				hstack(h, { gap: "2", align: "baseline", className: "min-w-0" }, [
+					...(error.source === ""
+						? []
+						: [badge(h, { variant: "muted", size: "xs", mono: true }, [error.source])]),
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							mono: true,
+							truncate: true,
+							attributes: [h.Title(error.pattern)],
+						},
+						[error.pattern === "" ? "(empty message)" : error.pattern],
+					),
+				]),
+				// The newest line in full: the pattern hides the ids and values that tell lines apart.
+				typography(
+					h,
+					{
+						size: "2xs",
+						tone: "muted",
+						mono: true,
+						className: "line-clamp-3 break-all whitespace-pre-wrap",
+						attributes: [h.Title(error.sample)],
+					},
+					[error.sample],
+				),
+			]),
+			h.span([h.Class(cn(NUMERIC_CELL, "w-16", TONE_TEXT.crit))], [formatNumber(error.occurrences)]),
+			h.span(
+				[h.Class("w-18 text-right")],
+				[
+					relativeTime(h, {
+						value: error.lastSeen,
+						...clock,
+						variant: "short",
+						mono: true,
+						className: typographyClass({ size: "2xs", tone: "muted" }),
+					}),
+				],
+			),
+			hstack(h, { gap: "3", justify: "end", className: "w-28" }, [
+				...(error.traceId === null
+					? []
+					: [
+							typography(h, { size: "xs" }, [
+								textLink(
+									h,
+									{
+										href: hrefOf(AppRoute.Trace({ traceId: error.traceId, search: {} })),
+										attributes: [h.AriaLabel(`Newest trace: ${error.pattern}`)],
+									},
+									["Trace"],
+								),
+							]),
+						]),
+				typography(h, { size: "xs" }, [
+					textLink(
+						h,
+						{
+							href: patternLogsHref(projectId, time, error.search),
+							attributes: [h.AriaLabel(`Logs: ${error.pattern}`)],
+						},
+						["Logs"],
+					),
+				]),
+			]),
+		],
+	)
+
 export const topErrors = (
 	h: H,
-	errors: VercelInfraProjectDetailResponse["errors"],
-	clock: Clock,
-	logsHref: string,
+	options: Readonly<{
+		errors: VercelInfraProjectDetailResponse["errors"]
+		/** The window had more error logs than the patterns were clustered from. */
+		capped: boolean
+		sampled: number
+		projectId: string
+		time: TimeSearch
+		clock: Clock
+	}>,
 ): Html =>
 	h.section(
 		[h.Class("min-w-0 space-y-3")],
 		[
 			sectionHeading(h, {
-				title: "Top error logs",
-				hint: "error and fatal, grouped by message",
-				count: String(errors.length),
+				title: "Top errors",
+				hint:
+					options.capped
+						? `error and fatal logs grouped by pattern, from the newest ${formatNumber(options.sampled)}`
+						: "error and fatal logs grouped by pattern",
+				count: String(options.errors.length),
 				actions: typography(h, { size: "xs" }, [
-					textLink(h, { href: logsHref, tone: "muted" }, ["Open in Logs"]),
+					textLink(h, { href: patternLogsHref(options.projectId, options.time, null), tone: "muted" }, [
+						"Open in Logs",
+					]),
 				]),
 			}),
 			dataTable(
 				h,
-				{ ariaLabel: "Top error logs" },
+				{ ariaLabel: "Top errors" },
 				[
-					columnHead(h, { label: "Message", width: LEAD_COLUMN }),
+					columnHead(h, { label: "Pattern · newest line", width: LEAD_COLUMN }),
 					columnHead(h, { label: "Count", width: "w-16", align: "right" }),
 					columnHead(h, { label: "Last seen", width: "w-18", align: "right" }),
+					columnHead(h, { label: "Investigate", width: "w-28", align: "right" }),
 				],
-				errors.length === 0
+				options.errors.length === 0
 					? [dataTableEmpty(h, ["No error logs in this window"])]
-					: Arr.map(errors, (error) =>
-							h.div(
-								[h.Key(`${error.source}:${error.message}`), h.Class(ROW_CLASS)],
-								[
-									hstack(h, { gap: "2", align: "baseline", className: LEAD_COLUMN }, [
-										...(error.source === ""
-											? []
-											: [
-													badge(h, { variant: "muted", size: "xs", mono: true }, [
-														error.source,
-													]),
-												]),
-										typography(
-											h,
-											{
-												size: "xs",
-												tone: "foreground",
-												mono: true,
-												truncate: true,
-												attributes: [h.Title(error.message)],
-											},
-											[error.message === "" ? "(empty message)" : error.message],
-										),
-									]),
-									h.span(
-										[h.Class(cn(NUMERIC_CELL, "w-16", TONE_TEXT.crit))],
-										[formatNumber(error.occurrences)],
-									),
-									h.span(
-										[h.Class("w-18 text-right")],
-										[
-											relativeTime(h, {
-												value: error.lastSeen,
-												...clock,
-												variant: "short",
-												mono: true,
-												className: typographyClass({ size: "2xs", tone: "muted" }),
-											}),
-										],
-									),
-								],
-							),
+					: Arr.map(options.errors, (error) =>
+							errorRow(h, error, options.projectId, options.time, options.clock),
 						),
 			),
 		],

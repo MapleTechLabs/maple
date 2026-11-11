@@ -364,24 +364,38 @@ export const VERCEL_API_DETAIL = new VercelInfraProjectDetailResponse({
 	),
 	errors: [
 		{
-			message: "Error: connect ETIMEDOUT 10.0.4.12:5432 at TCPConnectWrap.afterConnect",
+			pattern: "Error: connect ETIMEDOUT <ip>:5432 at TCPConnectWrap.afterConnect",
+			sample: "Error: connect ETIMEDOUT 10.0.4.12:5432 at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1606:16)",
 			occurrences: 1_840,
 			source: "lambda",
 			lastSeen: new Date(NOW - 4 * MINUTE).toISOString(),
+			traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+			spanId: "00f067aa0ba902b7",
+			search: "at TCPConnectWrap.afterConnect",
 		},
 		{
-			message: "Task timed out after 10.02 seconds",
+			pattern: "START RequestId: <uuid> [GET] /api/quote?page=<*> status=500 END RequestId: <uuid>",
+			sample: "START RequestId: 9610b6ff-ae05-4e9a-b8c8-061ed8fe0787 [GET] /api/quote?page=pricing status=500 END RequestId: 9610b6ff-ae05-4e9a-b8c8-061ed8fe0787 REPORT RequestId: 9610b6ff-ae05-4e9a-b8c8-061ed8fe0787 Duration: 412.11 ms",
 			occurrences: 612,
 			source: "lambda",
 			lastSeen: new Date(NOW - 18 * MINUTE).toISOString(),
+			traceId: null,
+			spanId: null,
+			search: "[GET] /api/quote?page=",
 		},
 		{
-			message: "TypeError: Cannot read properties of undefined (reading 'sku')",
+			pattern: "TypeError: Cannot read properties of undefined (reading 'sku')",
+			sample: "TypeError: Cannot read properties of undefined (reading 'sku')\n    at priceOf (/var/task/api/cart.js:41:22)",
 			occurrences: 344,
 			source: "edge",
 			lastSeen: new Date(NOW - 2 * HOUR).toISOString(),
+			traceId: "0af7651916cd43dd8448eb211c80319c",
+			spanId: "b7ad6b7169203331",
+			search: "TypeError: Cannot read properties of undefined (reading 'sku')",
 		},
 	],
+	errorLogsSampled: 2_000,
+	errorLogsCapped: true,
 })
 
 /** The age that makes a READY deployment go live `offsetMs` into bucket `i` (it is ready 94s after creation). */

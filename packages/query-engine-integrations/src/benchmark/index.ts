@@ -854,9 +854,9 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "vercel-infra",
-		name: "vercelProjectTopErrorsSQL",
+		name: "vercelProjectErrorLogsSQL",
 		label: "default",
-		compile: () => compileUnsafe(CH.vercelProjectTopErrorsSQL(), vercelProject),
+		compile: () => compileUnsafe(CH.vercelProjectErrorLogsSQL(), vercelProject),
 	},
 	{
 		module: "vercel-infra",

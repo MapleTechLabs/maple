@@ -201,7 +201,7 @@ const vercelProjectView = Submodel.defineView<VercelProject.Model, VercelProject
 	(project, inputs, h) =>
 		withRail(
 			h,
-			h.div([h.Class("space-y-6")], projectPage(h, project, inputs.timeZone)),
+			projectPage(h, project, inputs.timeZone),
 			projectRail(h, project, { nowMs: project.nowMs, timeZone: inputs.timeZone }, "#"),
 		),
 )

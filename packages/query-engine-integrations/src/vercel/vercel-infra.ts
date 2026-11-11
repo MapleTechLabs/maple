@@ -200,22 +200,30 @@ export function vercelProjectTopPathsSQL() {
 }
 
 /** Error and fatal log lines of one project, grouped by their first 200 characters. */
-export function vercelProjectTopErrorsSQL() {
+/** How many of the window's newest error logs the error patterns are clustered from. */
+export const VERCEL_ERROR_LOG_SAMPLE = 2000
+
+/**
+ * The project's newest error and fatal logs, for `clusterVercelErrorLogs`. A raw message makes a
+ * poor group key (request ids, call ids and timings differ on every line), so the rows are
+ * clustered into templates after the read, and each keeps the trace of its newest line.
+ */
+export function vercelProjectErrorLogsSQL() {
 	return from(Datasources.logs)
 		.select(($) => ({
-			message: leftUTF8($.Body, CH.lit(200)),
-			occurrences: CH.count(),
-			source: CH.any_($.LogAttributes.get("vercel.source")),
-			lastSeen: CH.max_($.Timestamp),
+			timestamp: $.Timestamp,
+			body: leftUTF8($.Body, CH.lit(2000)),
+			source: $.LogAttributes.get("vercel.source"),
+			traceId: $.TraceId,
+			spanId: $.SpanId,
 		}))
 		.where(($) => [
 			...vercelLogsWhere($),
 			$.ResourceAttributes.get("vercel.project.id").eq(param.string("projectId")),
 			$.SeverityNumber.gte(ERROR_SEVERITY),
 		])
-		.groupBy("message")
-		.orderBy(["occurrences", "desc"])
-		.limit(20)
+		.orderBy(["timestamp", "desc"])
+		.limit(VERCEL_ERROR_LOG_SAMPLE)
 		.format("JSON")
 }
 

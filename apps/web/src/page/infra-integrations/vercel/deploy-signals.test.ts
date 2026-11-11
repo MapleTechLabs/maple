@@ -1,7 +1,14 @@
 import { VercelDeploymentSummary, type VercelInfraRequestBucket } from "@maple/domain/http"
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { deployMarkers, deployRegressions, productionDeploysIn } from "./deploy-signals"
+import {
+	deployCommitMarkers,
+	deployLabel,
+	deployRegressions,
+	deployTitle,
+	productionDeploysIn,
+	regressionBands,
+} from "./deploy-signals"
 
 const BUCKET_MS = 15 * 60_000
 const T0 = new Date("2026-11-10T00:00:00.000Z").getTime()
@@ -79,16 +86,39 @@ describe("productionDeploysIn", () => {
 	})
 })
 
-describe("deployMarkers", () => {
-	it("marks a regression critical across its window and a failed build as a warning", () => {
+describe("regressionBands", () => {
+	it("shades each regression's window without a label of its own", () => {
 		const bad = deploy("bad1234", T0 + 10 * BUCKET_MS + 60_000)
+		const bands = regressionBands(deployRegressions(BUCKETS, [bad], BUCKET_MS))
+		expect(Arr.map(bands, (b) => [b.id, b.tone, b.label])).toEqual([["bad1234", "crit", ""]])
+		expect(bands[0]?.endsAt).toBeDefined()
+	})
+})
+
+describe("deployCommitMarkers", () => {
+	it("puts each deploy at the moment it went live, a failed build named as one", () => {
+		const shipped = deploy("ok12345", T0 + 3 * BUCKET_MS)
 		const failed = deploy("err9999", T0 + 4 * BUCKET_MS, "ERROR")
-		const regressions = deployRegressions(BUCKETS, [bad], BUCKET_MS)
-		const markers = deployMarkers([failed, bad], regressions)
-		expect(Arr.map(markers, (m) => [m.label, m.tone])).toEqual([
-			["err9999", "warn"],
-			["bad1234", "crit"],
+		const markers = deployCommitMarkers([shipped, failed])
+		expect(Arr.map(markers, (m) => [m.bucket, m.label])).toEqual([
+			[new Date(T0 + 3 * BUCKET_MS).toISOString(), "ok12345"],
+			// A failed build never went live: it sits where it was created.
+			[new Date(T0 + 4 * BUCKET_MS - 60_000).toISOString(), "failed · err9999"],
 		])
-		expect(markers[1]?.endsAt).toBeDefined()
+	})
+})
+
+describe("deployTitle", () => {
+	it("reads the commit's first line, and a short id for a deploy with no commit", () => {
+		const cli = new VercelDeploymentSummary({
+			...deploy("x", T0),
+			id: "dpl_FcAuGdT6Dfebn3txnja7jnno5D55",
+			commitSha: null,
+		})
+		expect(deployLabel(cli)).toBe("dpl_FcAuGdT")
+		expect(deployTitle(cli)).toBe("dpl_FcAuGdT")
+		expect(
+			deployTitle(new VercelDeploymentSummary({ ...deploy("y", T0), commitMessage: "Fix the cart\n\nLong body" })),
+		).toBe("Fix the cart")
 	})
 })

@@ -11,7 +11,7 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
@@ -297,7 +297,18 @@ const errorLogs = (h: H, model: Model, time: TimeSearch, clock: Clock): Readonly
 			}),
 		]
 	const detail = dataOf(model.detail.data)
-	return detail === null ? [] : [topErrors(h, detail.errors, clock, errorLogsHref(model.projectId, time))]
+	return detail === null
+		? []
+		: [
+				topErrors(h, {
+					errors: detail.errors,
+					capped: detail.errorLogsCapped,
+					sampled: detail.errorLogsSampled,
+					projectId: model.projectId,
+					time,
+					clock,
+				}),
+			]
 }
 
 const functionsStats = (h: H, row: VercelProjectRow | null): Html =>
@@ -405,11 +416,19 @@ const tabBody = (h: H, model: Model, time: TimeSearch, clock: Clock): ReadonlyAr
 	}
 }
 
-/** `VercelProjectPage`'s main column below the top bar: the header, the tabs, then the active tab. */
-export const projectPage = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
+/**
+ * `VercelProjectPage`'s main column below the top bar: the header, the tabs, then the active tab.
+ * One column on purpose: the page's scroll area is a flex column, and its direct children that clip
+ * (the tab strip, the chart panels) would shrink to nothing once the page is taller than the view.
+ */
+export const projectPage = (h: H, model: Model, timeZone: string): Html => {
 	const time = pickTimeSearch(model.search)
 	const clock = { nowMs: model.nowMs, timeZone }
-	return [header(h, model, time, clock), tabStrip(h, model, time), ...tabBody(h, model, time, clock)]
+	return vstack(h, { gap: "6", className: "min-w-0" }, [
+		header(h, model, time, clock),
+		tabStrip(h, model, time),
+		...tabBody(h, model, time, clock),
+	])
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -420,7 +439,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
-					scrollClassName: "gap-6",
 					actions: pageTime(h, {
 						search: model.search,
 						defaultPreset: DEFAULT_PRESET,
@@ -438,7 +456,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						serviceMapHref(model, pickTimeSearch(model.search)),
 					),
 				},
-				projectPage(h, model, timeZone),
+				[projectPage(h, model, timeZone)],
 			),
 		],
 	)

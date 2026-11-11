@@ -4,7 +4,7 @@ import { OrgId } from "@maple/domain"
 import {
 	vercelProjectLatencySQL,
 	vercelProjectRequestsSQL,
-	vercelProjectTopErrorsSQL,
+	vercelProjectErrorLogsSQL,
 	vercelProjectTopPathsSQL,
 	vercelRequestTimeseriesSQL,
 } from "./vercel-infra"
@@ -86,12 +86,12 @@ describe("vercelProjectTopPathsSQL", () => {
 	})
 })
 
-describe("vercelProjectTopErrorsSQL", () => {
-	it("groups error and fatal lines by their truncated message", () => {
-		const { sql } = compileUnsafe(vercelProjectTopErrorsSQL(), project)
-		expect(sql).toContain("leftUTF8(logs.Body, 200) AS message")
+describe("vercelProjectErrorLogsSQL", () => {
+	it("reads the newest error and fatal lines with their traces, ungrouped", () => {
+		const { sql } = compileUnsafe(vercelProjectErrorLogsSQL(), project)
 		expect(sql).toContain("logs.SeverityNumber >= 17")
-		expect(sql).toContain("GROUP BY message")
+		expect(sql).toContain("LIMIT 2000")
+		expect(sql).not.toContain("GROUP BY")
 	})
 })
 

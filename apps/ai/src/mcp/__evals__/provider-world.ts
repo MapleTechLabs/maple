@@ -201,15 +201,14 @@ export const providerFixtureRules = (): FixtureRule[] => [
 		],
 	},
 	{
-		match: (sql) => vercelLogs(sql) && has(sql, "occurrences"),
-		rows: [
-			{
-				message: "Error: connect ETIMEDOUT 10.0.4.12:5432",
-				occurrences: 3_600,
-				source: "lambda",
-				lastSeen: "2026-10-01 11:58:00",
-			},
-		],
+		match: (sql) => vercelLogs(sql) && has(sql, "spanId"),
+		rows: Arr.map(Arr.range(1, 40), (i) => ({
+			timestamp: `2026-10-01 11:${Str.padStart(2, "0")(String(58 - i))}:00.000000000`,
+			body: `Error: connect ETIMEDOUT 10.0.4.${i}:5432`,
+			source: "lambda",
+			traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+			spanId: "00f067aa0ba902b7",
+		})),
 	},
 	// Cloudflare zones: the fleet list, then single-zone views.
 	{

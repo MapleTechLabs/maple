@@ -1,5 +1,6 @@
 import type { VercelDeploymentSummary, VercelInfraRequestBucket } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { CommitMarker } from "../../kit/service-metrics/marker-layout"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import { Array as Arr, Order, String as Str } from "effect"
 
@@ -103,36 +104,44 @@ export function deployRegressions(
 	})
 }
 
-/** The commit's short sha, or the deployment id when Vercel has no commit. */
+/**
+ * The commit's short sha, or a short deployment id (`dpl_` and seven characters) when Vercel has no
+ * commit: a CLI deploy. Vercel's full ids run 32 characters and overflow every place they show.
+ */
 export const deployLabel = (deployment: VercelDeploymentSummary): string =>
-	deployment.commitSha === null ? deployment.id : Str.slice(0, 7)(deployment.commitSha)
+	deployment.commitSha === null
+		? Str.slice(0, 11)(deployment.id)
+		: Str.slice(0, 7)(deployment.commitSha)
+
+/** What the deploy shipped, in words: the commit's first line, else its short label. */
+export const deployTitle = (deployment: VercelDeploymentSummary): string => {
+	const message = deployment.commitMessage === null ? "" : Str.trim(Str.split(deployment.commitMessage, "\n")[0] ?? "")
+	return message === "" ? deployLabel(deployment) : message
+}
 
 /**
- * The chart markers for production deploys: a regression is critical and spans its window, a
- * failed build is a warning, the rest are neutral.
+ * The deploys as commit markers (`page/kit/service-metrics`, the service charts' deploy markers): a
+ * dash at the moment each went live, labelled with what it shipped. Labels that would collide merge
+ * into one with a `+N`, and a dense window draws dashes only.
  */
-export function deployMarkers(
+export const deployCommitMarkers = (
 	deploys: ReadonlyArray<VercelDeploymentSummary>,
-	regressions: ReadonlyArray<DeployRegression>,
-	labelOf: (deployment: VercelDeploymentSummary) => string = deployLabel,
-): ReadonlyArray<ChartEventMarker> {
-	const regressed = new Map(Arr.map(regressions, (r) => [r.deployment.id, r] as const))
-	return Arr.map(deploys, (deployment) => {
-		const regression = regressed.get(deployment.id)
-		const at = new Date(deployedAt(deployment)).toISOString()
-		if (regression !== undefined)
-			return {
-				id: deployment.id,
-				at,
-				label: labelOf(deployment),
-				tone: "crit" as const,
-				endsAt: new Date(regression.endsAtMs).toISOString(),
-			}
-		return {
-			id: deployment.id,
-			at,
-			label: labelOf(deployment),
-			tone: deployment.state === "ERROR" ? ("warn" as const) : ("neutral" as const),
-		}
-	})
-}
+	labelOf: (deployment: VercelDeploymentSummary) => string = deployTitle,
+): ReadonlyArray<CommitMarker> =>
+	Arr.map(deploys, (deployment) => ({
+		// An exact time, not a bucket: the overlay maps any timestamp onto the plot.
+		bucket: new Date(deployedAt(deployment)).toISOString(),
+		label: deployment.state === "ERROR" ? `failed · ${labelOf(deployment)}` : labelOf(deployment),
+		commits: [{ sha: deployment.commitSha ?? deployment.id, count: 1 }],
+	}))
+
+/** A critical band over each regression's window, drawn in the chart under the commit markers. */
+export const regressionBands = (regressions: ReadonlyArray<DeployRegression>): ReadonlyArray<ChartEventMarker> =>
+	Arr.map(regressions, (regression) => ({
+		id: regression.deployment.id,
+		at: new Date(deployedAt(regression.deployment)).toISOString(),
+		// The commit marker above names the deploy; the band only shades its window.
+		label: "",
+		tone: "crit" as const,
+		endsAt: new Date(regression.endsAtMs).toISOString(),
+	}))

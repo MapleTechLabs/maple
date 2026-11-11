@@ -347,12 +347,12 @@ const vercelInfraTopPaths = defineQuery({
 		}),
 })
 
-const vercelInfraTopErrors = defineQuery({
-	id: "vercelInfraTopErrors",
-	profile: "aggregation",
+const vercelInfraErrorLogs = defineQuery({
+	id: "vercelInfraErrorLogs",
+	profile: "list",
 	cache: 15,
 	compile: (payload: VercelInfraProjectDetailRequest, orgId: OrgId) =>
-		CH.compile(Integrations.vercelProjectTopErrorsSQL(), {
+		CH.compile(Integrations.vercelProjectErrorLogsSQL(), {
 			...vercelWindow(payload, orgId),
 			projectId: payload.projectId,
 		}),
@@ -1232,7 +1232,7 @@ export const Queries = {
 	vercelInfraFunctionTimeseries,
 	vercelInfraBreakdown,
 	vercelInfraTopPaths,
-	vercelInfraTopErrors,
+	vercelInfraErrorLogs,
 	vercelAiGatewaySummary,
 	vercelAiGatewayByModel,
 	vercelAiGatewayByProject,

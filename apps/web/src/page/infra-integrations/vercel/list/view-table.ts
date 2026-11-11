@@ -5,7 +5,7 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { deployLabel } from "../deploy-signals"
+import { deployLabel, deployTitle } from "../deploy-signals"
 import type { VercelProjectRow } from "../list-model"
 import {
 	COLD_START_HEAVY_PERCENT,
@@ -35,7 +35,7 @@ import { Message } from "./model"
 type H = HtmlBuilder<Message>
 
 const NAME = "w-0 flex-1 min-w-52"
-const DEPLOY = "hidden w-32 lg:flex"
+const DEPLOY = "hidden w-48 min-w-0 lg:flex"
 const MIX = "hidden w-28 md:flex"
 
 export const HEALTH_TONE = {
@@ -62,21 +62,36 @@ const deployCell = (h: H, deployment: VercelDeploymentSummary | null, clock: Clo
 	if (deployment === null)
 		return typography(h, { size: "2xs", tone: "muted", className: DEPLOY }, ["no deploys recorded"])
 	const failed = Str.toUpperCase(deployment.state) === "ERROR"
+	const title = deployTitle(deployment)
+	const label = deployLabel(deployment)
 	return vstack(h, { gap: "0.5", className: DEPLOY }, [
-		hstack(h, { gap: "1.5" }, [
+		hstack(h, { gap: "1.5", className: "min-w-0" }, [
 			statusDot(h, { tone: failed ? "crit" : "ok" }),
-			typography(h, { size: "2xs", tone: "soft", mono: true }, [deployLabel(deployment)]),
+			typography(
+				h,
+				{
+					size: "2xs",
+					tone: "soft",
+					mono: title === label,
+					truncate: true,
+					attributes: [h.Title(`${title} · ${deployment.id}`)],
+				},
+				[title],
+			),
 		]),
-		hstack(h, { gap: "1", className: "pl-3" }, [
-			typography(h, { size: "3xs", tone: failed ? "warning" : "muted", mono: true }, [
+		hstack(h, { gap: "1", className: "min-w-0 pl-3" }, [
+			typography(h, { size: "3xs", tone: failed ? "warning" : "muted", mono: true, className: "shrink-0" }, [
 				`${Str.toLowerCase(deployment.state)} ·`,
 			]),
 			relativeTime(h, {
 				value: deployment.createdAt,
 				...clock,
 				mono: true,
-				className: "text-3xs text-muted-foreground",
+				className: "shrink-0 text-3xs text-muted-foreground",
 			}),
+			...(title === label
+				? []
+				: [typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [`· ${label}`])]),
 		]),
 	])
 }

@@ -281,7 +281,19 @@ describe("vercel project", () => {
 			expectView(text("Cold starts")).toExist(),
 			expectView(text("/api/checkout")).toExist(),
 			expectView(text("(none)")).toExist(),
-			expectView(text("Task timed out after 10.02 seconds")).toExist(),
+			// Errors are grouped by pattern; each keeps its newest line and links to it.
+			expectView(text("Error: connect ETIMEDOUT <ip>:5432 at TCPConnectWrap.afterConnect")).toExist(),
+			expectView(text(/^Error: connect ETIMEDOUT 10\.0\.4\.12:5432/)).toExist(),
+			expectView(role("link", { name: /^Newest trace: Error: connect ETIMEDOUT/ })).toHaveAttr(
+				"href",
+				"/traces/4bf92f3577b34da6a3ce929d0e0e4736",
+			),
+			expectView(role("link", { name: /^Logs: START RequestId/ })).toHaveAttr(
+				"href",
+				"/logs?severities=%5B%22ERROR%22%2C%22FATAL%22%5D&attrs=%5B%22res%3Avercel.project.id%3Dprj_api%22%5D&search=%5BGET%5D+%2Fapi%2Fquote%3Fpage%3D",
+			),
+			// A pattern whose newest line carried no trace has no trace link.
+			expectView(role("link", { name: /^Newest trace: START RequestId/ })).not.toExist(),
 			expectView(text("Slowest functions")).toExist(),
 			expectView(text("/api/products/[id]")).toExist(),
 			expectView(text("api.stripe.com")).toExist(),

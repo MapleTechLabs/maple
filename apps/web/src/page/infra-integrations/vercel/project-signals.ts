@@ -7,12 +7,14 @@ import type {
 	VercelInfraRequestBucket,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { CommitMarker } from "../../kit/service-metrics/marker-layout"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import type { LongRow } from "@maple/views/charts/infra-metric-series"
 import { Array as Arr } from "effect"
 import {
 	type DeployRegression,
-	deployMarkers,
+	deployCommitMarkers,
+	regressionBands,
 	deployRegressions,
 	productionDeploysIn,
 } from "./deploy-signals"
@@ -94,7 +96,10 @@ export const projectTotals = (
 
 export type DeploySignals = Readonly<{
 	regressions: ReadonlyArray<DeployRegression>
+	/** The regressions' bands, drawn in the charts. */
 	markers: ReadonlyArray<ChartEventMarker>
+	/** Every deploy in the window, as the commit-marker overlay's dashes and labels. */
+	commits: ReadonlyArray<CommitMarker>
 }>
 
 /**
@@ -111,5 +116,5 @@ export const projectDeploySignals = (
 		endMs: toEpochMs(window.endTime),
 	})
 	const regressions = deployRegressions(buckets, deploys, window.bucketSeconds * 1000)
-	return { regressions, markers: deployMarkers(deploys, regressions) }
+	return { regressions, markers: regressionBands(regressions), commits: deployCommitMarkers(deploys) }
 }

@@ -815,7 +815,7 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 							"mcpVercelProjectPaths",
 						),
 						run(
-							CH.compile(Integrations.vercelProjectTopErrorsSQL(), project),
+							CH.compile(Integrations.vercelProjectErrorLogsSQL(), project),
 							"mcpVercelProjectErrors",
 						),
 					],
@@ -853,12 +853,17 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 						},
 						{
 							title: "Top error logs",
-							keyLabel: "Message (source)",
+							keyLabel: "Message pattern (source, newest trace)",
 							valueLabels: ["Occurrences"],
-							rows: Arr.map(errors, (row) => ({
-								key: `${row.message === "" ? "(empty)" : row.message} (${row.source || "-"})`,
-								values: [row.occurrences],
-							})),
+							rows: Arr.map(
+								Integrations.clusterVercelErrorLogs(
+									Arr.map(errors, (row) => ({ ...row, timestamp: DateTime.formatIso(row.timestamp) })),
+								),
+								(row) => ({
+									key: `${row.pattern} (${row.source || "-"}${row.traceId === null ? "" : `, trace ${row.traceId}`})`,
+									values: [row.occurrences],
+								}),
+							),
 						},
 					],
 				} satisfies ProviderInspectResult

@@ -4,6 +4,7 @@ import type {
 	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { CommitMarker } from "../../../kit/service-metrics/marker-layout"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import { Array as Arr } from "effect"
 import type { DeployRegression } from "../deploy-signals"
@@ -24,7 +25,10 @@ export type Overview = Readonly<{
 	buckets: ReadonlyArray<VercelInfraRequestBucket>
 	/** Null while it loads, after its read failed, or with the traces drain off. */
 	latency: ReadonlyArray<VercelInfraLatencyBucket> | null
+	/** The regressions' bands, drawn in the charts. */
 	markers: ReadonlyArray<ChartEventMarker>
+	/** Every production deploy in the window, as commit markers over the strips. */
+	commits: ReadonlyArray<CommitMarker>
 	regressions: ReadonlyArray<DeployRegression>
 	projectName: (projectId: string) => string
 }>
@@ -69,6 +73,7 @@ export const overviewOf = (model: Model, status: VercelIntegrationStatus): Overv
 				? null
 				: fillBuckets(latency, series, zeroLatencyBucket),
 		markers: signals.markers,
+		commits: signals.commits,
 		regressions: signals.regressions,
 		projectName,
 	}

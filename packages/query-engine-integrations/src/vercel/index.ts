@@ -4,7 +4,8 @@
 export {
 	vercelProjectLatencySQL,
 	vercelProjectRequestsSQL,
-	vercelProjectTopErrorsSQL,
+	vercelProjectErrorLogsSQL,
+	VERCEL_ERROR_LOG_SAMPLE,
 	vercelProjectTopPathsSQL,
 	vercelRequestTimeseriesSQL,
 	vercelProjectBreakdownSQL,
@@ -14,6 +15,12 @@ export {
 	type VercelBreakdownStatus,
 	type VercelProjectScope,
 } from "./vercel-infra"
+export {
+	clusterVercelErrorLogs,
+	errorPatternSearch,
+	type VercelErrorLogRow,
+	type VercelErrorPattern,
+} from "./vercel-errors"
 export {
 	vercelFunctionRoutesSQL,
 	vercelFunctionTimeseriesSQL,

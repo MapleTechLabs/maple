@@ -16,7 +16,11 @@ import { panel } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import type { PlotGeometry } from "@maple/views/charts/chart"
+import type { CommitMarker } from "../../kit/service-metrics/marker-layout"
+import { markerLayout } from "../../kit/service-metrics/markers"
+import { markersOverlay } from "../../kit/service-metrics/markers-view"
 
 // Signals stacked on one time axis under one linked cursor, each with its label, source and window
 // summary.
@@ -40,7 +44,17 @@ export type StripSeries = Readonly<{
 export type CorrelationStripsOptions<M> = Readonly<{
 	strips: ReadonlyArray<StripSeries>
 	xDomain: ReadonlyArray<string>
+	/** Bands and lines drawn in each chart (a regression's window). */
 	markers?: ReadonlyArray<ChartEventMarker>
+	/**
+	 * Deploys as the service charts' commit markers: their labels once, in a lane above the strips
+	 * (merged with a `+N` where they would collide), and a dash through every strip.
+	 */
+	deploys?: Readonly<{
+		markers: ReadonlyArray<CommitMarker>
+		/** A strip chart's reported plot geometry (`Chart.Model.plot`). */
+		plotOf: (chartId: string) => Option.Option<PlotGeometry>
+	}>
 	isWaiting?: boolean
 	theme: ThemeColors
 	timeZone: string
@@ -76,8 +90,50 @@ const lastValue = <M>(
 	})
 }
 
+const LANE_HEIGHT = 20
+
+const chartIdOf = (strip: StripSeries): string => `strip-${strip.id}`
+
+/**
+ * The deploy labels above the strips, laid out over the first strip's plot; empty until that chart
+ * reports its geometry, so the strips don't shift when the labels arrive.
+ */
+const deployLane = <M>(
+	h: HtmlBuilder<M>,
+	markers: ReadonlyArray<CommitMarker>,
+	plot: Option.Option<PlotGeometry>,
+): Html =>
+	h.div(
+		[h.Key("deploys"), h.Class(hstackClass({ gap: "4", className: "px-4 pt-3" }))],
+		[
+			typography(h, { size: "3xs", tone: "muted", mono: true, className: "w-36 shrink-0" }, ["deploys"]),
+			h.div(
+				[h.Class("relative min-w-0 flex-1"), h.Style({ height: `${LANE_HEIGHT}px` })],
+				Option.match(plot, {
+					onNone: () => [],
+					onSome: (geometry) => [
+						markersOverlay(h, markerLayout(markers, geometry), { ...geometry, y: LANE_HEIGHT }, 2, "labels"),
+					],
+				}),
+			),
+		],
+	)
+
+/** A strip chart's dashes, once it reports its plot. */
+const deployDashes = <M>(
+	h: HtmlBuilder<M>,
+	markers: ReadonlyArray<CommitMarker>,
+	plot: Option.Option<PlotGeometry>,
+): Html | undefined =>
+	Option.match(plot, {
+		onNone: () => undefined,
+		onSome: (geometry) => markersOverlay(h, markerLayout(markers, geometry), geometry, 0, "dashes"),
+	})
+
 export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStripsOptions<M>): Html => {
 	const isWaiting = options.isWaiting === true
+	const deploys = options.deploys === undefined || options.deploys.markers.length === 0 ? null : options.deploys
+	const first = options.strips[0]
 	return panel(
 		h,
 		{
@@ -88,7 +144,11 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 				options.mountCursor,
 			],
 		},
-		Arr.map(options.strips, (strip, index) => {
+		[
+			...(deploys === null || first === undefined
+				? []
+				: [deployLane(h, deploys.markers, deploys.plotOf(chartIdOf(first)))]),
+			...Arr.map(options.strips, (strip, index) => {
 			const spec = InfraMetricChart.infraMetricSpec({
 				rows: strip.rows,
 				unit: strip.unit,
@@ -118,17 +178,23 @@ export const correlationStrips = <M>(h: HtmlBuilder<M>, options: CorrelationStri
 					h.div(
 						[h.Class("min-w-0 flex-1")],
 						[
-							options.chart(`strip-${strip.id}`, {
+							options.chart(chartIdOf(strip), {
 								spec,
 								linkedChartId: `lens-${strip.id}`,
 								height: STRIP_HEIGHT,
 								isWaiting,
 								header: strip.summary === undefined ? lastValue(h, strip, spec) : undefined,
+								reportPlot: deploys !== null,
+								overlay:
+									deploys === null
+										? undefined
+										: deployDashes(h, deploys.markers, deploys.plotOf(chartIdOf(strip))),
 							}),
 						],
 					),
 				],
 			)
 		}),
+		],
 	)
 }

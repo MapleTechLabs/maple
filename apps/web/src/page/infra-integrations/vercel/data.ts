@@ -17,10 +17,10 @@ import {
 	getVercelSpeedInsights,
 	getVercelWebAnalytics,
 } from "@maple/web-data/warehouse/vercel-infra"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
-import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
 // The Vercel reads as Effects; each page wraps them in its own Commands.
@@ -37,11 +37,25 @@ export type SeriesInput = typeof SeriesInput.Type
 /** Both pages' default window; matches the API's. */
 export const DEFAULT_PRESET = "24h"
 
-/** The window's series input, bucketed for about a hundred points. */
+const BUCKET_STEPS = [10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21_600, 43_200, 86_400]
+
+/**
+ * About 120 points over the window. Finer than the shared infra rule (five minutes at least, for
+ * scraped metrics): the drains send every request, so a ten-minute window still draws a line.
+ */
+export const vercelBucketSeconds = (window: Pick<TimeWindow, "startTime" | "endTime">): number => {
+	const seconds = Math.max(0, (toEpochMs(window.endTime) - toEpochMs(window.startTime)) / 1000)
+	return Option.getOrElse(
+		Arr.findFirst(BUCKET_STEPS, (step) => step * 120 >= seconds),
+		() => 86_400,
+	)
+}
+
+/** The window's series input, bucketed for about 120 points. */
 export const seriesInput = (window: TimeWindow): SeriesInput => ({
 	startTime: window.startTime,
 	endTime: window.endTime,
-	bucketSeconds: chartBucketSeconds(window.startTime, window.endTime),
+	bucketSeconds: vercelBucketSeconds(window),
 })
 
 /** The Speed Insights and Web Analytics reads: the window, for one project or all. */

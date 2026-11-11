@@ -9,12 +9,12 @@ const startMs = toEpochMs(VERCEL_BUCKETS[0]?.bucket ?? "")
 const endMs = toEpochMs(VERCEL_BUCKETS[VERCEL_BUCKETS.length - 1]?.bucket ?? "") + BUCKET_MS
 
 describe("teamDeploySignals", () => {
-	it("marks the production deploy before the team's 5xx spike critical, labelled with its project", () => {
+	it("bands the deploy before the team's 5xx spike and labels every deploy with its project and commit", () => {
 		const names = new Map([
 			["prj_api", "api"],
 			["prj_storefront", "storefront"],
 		])
-		const { markers, regressions } = teamDeploySignals({
+		const { markers, commits, regressions } = teamDeploySignals({
 			deployments: VERCEL_TEAM_DEPLOYMENTS,
 			buckets: VERCEL_BUCKETS,
 			window: { startMs, endMs },
@@ -22,11 +22,11 @@ describe("teamDeploySignals", () => {
 			projectName: (id) => names.get(id) ?? id,
 		})
 		expect(Arr.map(regressions, (r) => r.deployment.id)).toEqual(["api-z3"])
-		expect(Arr.map(markers, (m) => [m.id, m.tone])).toEqual([
-			["api-z3", "crit"],
-			["api-z4", "neutral"],
-			["storefront-k2", "neutral"],
+		expect(Arr.map(markers, (m) => [m.id, m.tone])).toEqual([["api-z3", "crit"]])
+		expect(Arr.map(commits, (c) => c.label)).toEqual([
+			"api · Cache product prices at the edge",
+			"api · Revert: cache product prices at the edge",
+			expect.stringMatching(/^storefront · /),
 		])
-		expect(markers[0]?.label).toBe("api apiz39f")
 	})
 })

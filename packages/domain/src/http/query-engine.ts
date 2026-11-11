@@ -886,12 +886,21 @@ export const VercelInfraPath = Schema.Struct({
 })
 export type VercelInfraPath = typeof VercelInfraPath.Type
 
+/** One error message template on a Vercel project, from its newest error logs. */
 export const VercelInfraErrorMessage = Schema.Struct({
-	message: Schema.String,
+	/** The message with its variable parts as `<*>` (or `<uuid>`, `<ip>`...). */
+	pattern: Schema.String,
+	/** The newest line in the pattern, in full (up to 2000 characters). */
+	sample: Schema.String,
 	occurrences: Schema.Number,
 	source: Schema.String,
-	/** ISO-8601. */
+	/** ISO-8601, of the newest line. */
 	lastSeen: Schema.String,
+	/** The newest line's trace, when it carried one. */
+	traceId: Schema.NullOr(Schema.String),
+	spanId: Schema.NullOr(Schema.String),
+	/** The pattern's longest literal part, for a logs body search; null when none is distinctive. */
+	search: Schema.NullOr(Schema.String),
 })
 export type VercelInfraErrorMessage = typeof VercelInfraErrorMessage.Type
 
@@ -900,6 +909,10 @@ export class VercelInfraProjectDetailResponse extends Schema.Class<VercelInfraPr
 )({
 	paths: Schema.Array(VercelInfraPath),
 	errors: Schema.Array(VercelInfraErrorMessage),
+	/** Error logs the patterns were clustered from: the window's newest, up to the sample cap. */
+	errorLogsSampled: Schema.Number,
+	/** True when the window had more error logs than the sample holds. */
+	errorLogsCapped: Schema.Boolean,
 }) {}
 
 const VercelAiGatewayUsageFields = {

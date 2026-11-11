@@ -183,6 +183,7 @@ export const overviewStrips = (
 				Order.String,
 			),
 			markers: o.markers,
+			deploys: { markers: o.commits, plotOf: (chartId) => (model.charts[chartId] ?? Chart.init()).plot },
 			theme: ctx.theme,
 			timeZone: ctx.timeZone,
 			mountCursor: h.OnMount(MountLinkedCursor()),

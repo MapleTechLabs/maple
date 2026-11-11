@@ -7,13 +7,15 @@ import type {
 	VercelInfraRequestBucket,
 } from "@maple/domain/http"
 import { ERROR_RATE_WARN } from "@maple/ui/lib/error-rate"
+import type { CommitMarker } from "../../kit/service-metrics/marker-layout"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import { Array as Arr, Order, String as Str } from "effect"
 import type { VercelProjectScope } from "@/route/search"
 import {
 	type DeployRegression,
-	deployLabel,
-	deployMarkers,
+	deployTitle,
+	deployCommitMarkers,
+	regressionBands,
 	deployRegressions,
 	productionDeploysIn,
 } from "./deploy-signals"
@@ -158,14 +160,18 @@ export const teamDeploySignals = (
 		bucketMs: number
 		projectName: (projectId: string) => string
 	}>,
-): Readonly<{ markers: ReadonlyArray<ChartEventMarker>; regressions: ReadonlyArray<DeployRegression> }> => {
+): Readonly<{
+	markers: ReadonlyArray<ChartEventMarker>
+	commits: ReadonlyArray<CommitMarker>
+	regressions: ReadonlyArray<DeployRegression>
+}> => {
 	const deploys = productionDeploysIn(inputs.deployments, inputs.window)
 	const regressions = deployRegressions(inputs.buckets, deploys, inputs.bucketMs)
 	return {
-		markers: deployMarkers(
+		markers: regressionBands(regressions),
+		commits: deployCommitMarkers(
 			deploys,
-			regressions,
-			(deployment) => `${inputs.projectName(deployment.projectId)} ${deployLabel(deployment)}`,
+			(deployment) => `${inputs.projectName(deployment.projectId)} · ${deployTitle(deployment)}`,
 		),
 		regressions,
 	}
