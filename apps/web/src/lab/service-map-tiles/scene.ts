@@ -668,11 +668,15 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			(input.selectedId !== null &&
 				link.source !== input.selectedId &&
 				link.target !== input.selectedId)
+		// How busy each road is beside the others: the quietest is a footpath, the busiest a highway.
+		const loads = Arr.map(network.roads, ({ link }) => Math.log10(1 + link.callsPerSecond))
+		const [quietest, busiest] = [Math.min(...loads), Math.max(...loads)]
 		Arr.forEach(network.roads, ({ link, from, to }) => {
 			const dimmed = isDimmed(link)
 			const level = health(link.errorRate)
 			const busy = Math.log10(1 + link.callsPerSecond)
-			const road = buildRoad(from, to, palette)
+			const share = busiest > quietest ? (busy - quietest) / (busiest - quietest) : 0.5
+			const road = buildRoad(from, to, palette, share)
 			;(dimmed ? roads.faded : roads.solid).push(road.geometry)
 			if (link.callsPerSecond > 0)
 				routes.push({
