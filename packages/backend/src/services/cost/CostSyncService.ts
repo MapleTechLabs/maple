@@ -1,4 +1,4 @@
-// Cost sync: each tick brings `cost_sources` in step with the provider connections that grant cost,
+// Cost sync: each tick brings `cost_sources` in step with the provider connections that supply cost,
 // then claims due sources and runs a few plan steps each: HEAD (the trailing days), SETTLE (the open
 // months) or BACKFILL (a month toward the floor). A step pulls its window through the provider's
 // adapter and writes it whole under one `IngestedAt`; a failure backs the source off.
@@ -26,6 +26,7 @@ import {
 	type CostSyncStep,
 	HEAD_INTERVAL_MS,
 	historyFloor,
+	nextMonthStartMs,
 	planCostSync,
 	toCostDailyRows,
 	toWarehouseDateTime64,
@@ -33,8 +34,8 @@ import {
 	utcToday,
 } from "./sync-plan"
 
-/** Longer than the lane deadline, so a live tick never loses its claim. */
-const LEASE_MS = 15 * 60_000
+/** Longer than the lane's 15-minute deadline, so a live tick never loses its claim. */
+const LEASE_MS = 20 * 60_000
 /** Backoff after a claim: doubles per consecutive failure, up to a day. */
 const BACKOFF_BASE_MS = 15 * 60_000
 const BACKOFF_MAX_MS = 24 * 60 * 60_000
@@ -42,13 +43,18 @@ const BACKOFF_MAX_MS = 24 * 60 * 60_000
 const SETUP_HOLD_MS = 6 * 60 * 60_000
 /** A throttled provider sits the source out at least this long. */
 const RATE_LIMIT_HOLD_MS = 60 * 60_000
+/** A source whose history waits on the month's request budget is looked at again this much later at most. */
+const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
+/** `lastErrorReason` while the month's request budget holds a source: a hold, not a failure. */
+const BUDGET_REASON = "budget"
+const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
 const MAX_SOURCES_PER_TICK = 20
 const SOURCE_CONCURRENCY = 2
 /** Plan steps one claim runs, so a new source gets its open months and two months of history at once. */
 const MAX_STEPS_PER_CLAIM = 3
-/** Sources one tick creates, and removes, per provider. */
+/** Sources one tick creates, turns on, turns off and removes, each, per provider. */
 const RECONCILE_LIMIT = 200
 /** Rows per `ingest` request, so a large window splits into bounded Events API bodies. */
 const INGEST_BATCH_ROWS = 10_000
@@ -102,6 +108,8 @@ interface SyncProgress {
 	readonly source: CostSourceRow
 	readonly plan: CostSyncPlan
 	readonly steps: number
+	/** Steps whose rows were written and whose frontier moved. */
+	readonly advanced: number
 	readonly rowsWritten: number
 	readonly requests: number
 	readonly failure: StepFailure | null
@@ -146,12 +154,65 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				// A live lease never reaches past now + LEASE_MS; anything further is a corrupt value.
 				leaseClaimable($.leaseUntil, now, 2 * LEASE_MS)
 
+			type AwsConnectionColumns = PG.ColumnAccessor<typeof AwsConnections.columns>
+
+			/** The org asked for cost and the deployed role grants it. Never NULL, so it can be negated. */
+			const awsSuppliesCost = (
+				connection: Pick<AwsConnectionColumns, "verifiedAt" | "modules" | "grantedModules">,
+			) => {
+				const cost = encodeJson(["cost"])
+				return PG.and(
+					connection.verifiedAt.isNotNull(),
+					PG.sql.cond`${connection.modules} @> ${cost}::jsonb`,
+					PG.sql.cond`coalesce(${connection.grantedModules} @> ${cost}::jsonb, false)`,
+				)
+			}
+
+			/** AWS sources whose `enabled` is not what their connection supplies, set to it. */
+			const setAwsEnabled = (enabled: boolean, now: number) =>
+				dbExecute((db) =>
+					db.run(
+						PG.from(CostSources, "s")
+							.innerJoin(AwsConnections, "c", (source, connection) =>
+								source.orgId.eq(connection.orgId).and(source.connectionRef.eq(connection.id)),
+							)
+							.select(($) => ({ id: $.id }))
+							.where(($) => [
+								$.provider.eq("aws"),
+								$.enabled.eq(!enabled),
+								enabled ? awsSuppliesCost($.c) : PG.not(awsSuppliesCost($.c)),
+							])
+							.orderBy(["id", "asc"])
+							.limit(RECONCILE_LIMIT),
+					),
+				).pipe(
+					Effect.flatMap((sources) =>
+						Arr.isReadonlyArrayNonEmpty(sources)
+							? dbExecute((db) =>
+									db.run(
+										PG.update(CostSources)
+											.set({ enabled, updatedAt: now })
+											.where(($) => [
+												$.provider.eq("aws"),
+												PG.inList(
+													$.id,
+													Arr.map(sources, (source) => source.id),
+												),
+											])
+											.returning(($) => ({ id: $.id })),
+									),
+								)
+							: Effect.succeed([]),
+					),
+					Effect.map((changed) => changed.length),
+				)
+
 			/**
-			 * AWS: a source for every verified connection whose role grants `cost`, and none for a
-			 * connection that is gone or lost the grant. Joined by org, so a ref never crosses orgs.
+			 * AWS: a source for every connection that supplies cost, off while it does not (so a grant
+			 * lost for a tick keeps its id, state and history), gone only with the connection. Joined by
+			 * org, so a ref never crosses orgs.
 			 */
 			const reconcileAws = Effect.fn("CostSyncService.reconcileAws")(function* (now: number) {
-				const grantsCost = encodeJson(["cost"])
 				const missing = yield* dbExecute((db) =>
 					db.run(
 						PG.from(AwsConnections, "c")
@@ -162,11 +223,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 									.and(source.connectionRef.eq(connection.id)),
 							)
 							.select(($) => ({ id: $.id, orgId: $.orgId, accountId: $.accountId }))
-							.where(($) => [
-								$.verifiedAt.isNotNull(),
-								PG.sql.cond`${$.grantedModules} @> ${grantsCost}::jsonb`,
-								$.s.id.isNull(),
-							])
+							.where(($) => [awsSuppliesCost($), $.s.id.isNull()])
 							.orderBy(["id", "asc"])
 							.limit(RECONCILE_LIMIT),
 					),
@@ -194,27 +251,21 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 						),
 					),
 				)
-				const stale = yield* dbExecute((db) =>
+				const disabled = yield* setAwsEnabled(false, now)
+				const enabled = yield* setAwsEnabled(true, now)
+				const orphaned = yield* dbExecute((db) =>
 					db.run(
 						PG.from(CostSources, "s")
 							.leftJoin(AwsConnections, "c", (source, connection) =>
 								source.orgId.eq(connection.orgId).and(source.connectionRef.eq(connection.id)),
 							)
 							.select(($) => ({ id: $.id }))
-							.where(($) => [
-								$.provider.eq("aws"),
-								// Also true for a connection that was never checked: its grant is null.
-								PG.or(
-									$.c.id.isNull(),
-									PG.sql
-										.cond`NOT coalesce(${$.c.grantedModules} @> ${grantsCost}::jsonb, false)`,
-								),
-							])
+							.where(($) => [$.provider.eq("aws"), $.c.id.isNull()])
 							.orderBy(["id", "asc"])
 							.limit(RECONCILE_LIMIT),
 					),
 				)
-				const removed = Arr.isReadonlyArrayNonEmpty(stale)
+				const removed = Arr.isReadonlyArrayNonEmpty(orphaned)
 					? yield* dbExecute((db) =>
 							db.run(
 								PG.deleteFrom(CostSources)
@@ -222,7 +273,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 										$.provider.eq("aws"),
 										PG.inList(
 											$.id,
-											Arr.map(stale, (source) => source.id),
+											Arr.map(orphaned, (source) => source.id),
 										),
 									])
 									.returning(($) => ({ id: $.id })),
@@ -232,6 +283,8 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				yield* Effect.annotateCurrentSpan({
 					"maple.cost.provider": "aws",
 					"maple.cost.sources_created": Arr.flatten(created).length,
+					"maple.cost.sources_disabled": disabled,
+					"maple.cost.sources_enabled": enabled,
 					"maple.cost.sources_removed": removed.length,
 				})
 			})
@@ -239,7 +292,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			/** One function per provider; each owns the sources of its own connection table. */
 			const reconcile = (now: number) => Effect.all([reconcileAws(now)], { discard: true })
 
-			/** Sources with a pull due and no backoff, healthy ones first. */
+			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
 				const floor = historyFloor(utcToday(now))
 				return dbExecute((db) =>
@@ -251,6 +304,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								consecutiveFailures: $.consecutiveFailures,
 							}))
 							.where(($) => [
+								$.enabled.eq(true),
 								leaseFree($, now),
 								PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS)),
 								PG.or(
@@ -258,6 +312,8 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 									$.lastSyncedAt.isNull(),
 									$.lastSyncedAt.lte(now - HEAD_INTERVAL_MS),
 									$.backfillDate.gt(floor),
+									// A budget hold that ran out is claimed once more, if only to clear it.
+									$.lastErrorReason.eq(BUDGET_REASON),
 								),
 							])
 							.orderBy(($) => [
@@ -286,7 +342,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								consecutiveFailures: candidate.consecutiveFailures + 1,
 								updatedAt: now,
 							})
-							.where(($) => [$.id.eq(candidate.id), leaseFree($, now)])
+							.where(($) => [$.id.eq(candidate.id), $.enabled.eq(true), leaseFree($, now)])
 							.returning(),
 					),
 				).pipe(Effect.map((rows) => rows[0] ?? null))
@@ -416,7 +472,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					return done({ failure: { reason, message } })
 				}
 				// Readers keep only the newest `IngestedAt` per source and day, so each must be a whole pull.
-				const rows = toCostDailyRows(
+				const { rows, outsideWindow } = toCostDailyRows(
 					{
 						orgId: source.orgId,
 						sourceId: source.id,
@@ -426,6 +482,19 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					pulled.success.rows,
 					step,
 				)
+				yield* Effect.annotateCurrentSpan("maple.cost.rows_outside_window", outsideWindow)
+				if (outsideWindow > 0) {
+					yield* Effect.logWarning("cost pull returned rows outside its window").pipe(
+						Effect.annotateLogs({
+							orgId: source.orgId,
+							sourceId: source.id,
+							provider: source.provider,
+							startDay: step.startDay,
+							endDay: step.endDay,
+							rowsOutsideWindow: outsideWindow,
+						}),
+					)
+				}
 				const written = yield* write(source.orgId, rows).pipe(Effect.result)
 				if (Result.isFailure(written)) {
 					return done({ failure: { reason: "write", message: written.failure.message } })
@@ -436,7 +505,12 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				if (!(yield* updateLeased(source, advanced, now)))
 					return done({ rowsWritten, leaseLost: true })
 				const next = { ...source, ...counted, ...advanced }
-				return done({ source: next, rowsWritten, plan: planCostSync(next, now) })
+				return done({
+					source: next,
+					rowsWritten,
+					advanced: progress.advanced + 1,
+					plan: planCostSync(next, now),
+				})
 			})
 
 			/** Step after step, re-planning from what the last one wrote, until idle, a failure or the cap. */
@@ -465,12 +539,14 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					source: claimed,
 					plan: first,
 					steps: 0,
+					advanced: 0,
 					rowsWritten: 0,
 					requests: 0,
 					failure: null,
 					leaseLost: false,
 				})
-				const { source, failure, rowsWritten, requests } = progress
+				const { source, failure, plan, rowsWritten, requests } = progress
+				const budget = plan.mode === "idle" ? plan.budget : undefined
 				const now = yield* Clock.currentTimeMillis
 				const outcome = (status: SourceOutcome["status"]) =>
 					Effect.annotateCurrentSpan({
@@ -478,30 +554,89 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 						"maple.cost.rows_written": rowsWritten,
 						"maple.cost.requests": requests,
 						"maple.cost.outcome": status,
+						"maple.cost.budget": budget ?? "none",
 					}).pipe(Effect.as({ status, rowsWritten, requests } satisfies SourceOutcome))
 				if (progress.leaseLost) return yield* outcome("skipped")
 				if (failure !== null) {
 					yield* observeFailure(source, failure)
-					// The claim already counted this failure and set its backoff; some reasons wait longer.
-					const backoffUntil = source.nextAttemptAt ?? now + BACKOFF_BASE_MS
+					// The claim already counted this failure and set its backoff. A claim that moved a frontier
+					// first is not a failing source: its count starts over and the rest waits the base backoff.
+					const progressed = progress.advanced > 0
+					const backoffUntil = progressed
+						? now + BACKOFF_BASE_MS
+						: (source.nextAttemptAt ?? now + BACKOFF_BASE_MS)
 					yield* finish(
 						source,
 						{
 							lastError: Str.slice(0, LAST_ERROR_MAX_CHARS)(failure.message),
 							lastErrorReason: failure.reason,
+							// Some reasons wait longer than the backoff.
 							nextAttemptAt: Math.max(backoffUntil, now + holdMs(failure.reason)),
+							consecutiveFailures: progressed ? 0 : source.consecutiveFailures,
 						},
 						now,
 					)
 					return yield* outcome("failed")
 				}
-				if (progress.steps === 0) {
-					yield* finish(source, { nextAttemptAt: null, consecutiveFailures: 0 }, now)
+				const stepped = progress.steps > 0
+				// A budget hold is not a failure: a claim that only met it leaves the count as it found it.
+				const failuresBeforeClaim = Math.max(0, source.consecutiveFailures - 1)
+				if (budget === "monthly") {
+					yield* Effect.logWarning("cost sync held by the monthly request budget").pipe(
+						Effect.annotateLogs({
+							orgId: source.orgId,
+							sourceId: source.id,
+							provider: source.provider,
+							requestsMonth: source.requestsMonth,
+							requestsCount: source.requestsCount,
+						}),
+					)
+					// Until the month's count starts over; without the hold every tick would claim it again.
+					yield* finish(
+						source,
+						{
+							lastError: BUDGET_MESSAGE,
+							lastErrorReason: BUDGET_REASON,
+							nextAttemptAt: nextMonthStartMs(now),
+							consecutiveFailures: stepped ? 0 : failuresBeforeClaim,
+						},
+						now,
+					)
+					return yield* outcome(stepped ? "synced" : "skipped")
+				}
+				// History waits for next month: look again when the head is next due, a day on at most.
+				const heldUntil =
+					budget === "backfill"
+						? Math.min(
+								now + BACKFILL_BUDGET_HOLD_MS,
+								source.lastSyncedAt === null
+									? now + BACKFILL_BUDGET_HOLD_MS
+									: source.lastSyncedAt + HEAD_INTERVAL_MS,
+							)
+						: null
+				if (!stepped) {
+					const heldByBudget = source.lastErrorReason === BUDGET_REASON
+					yield* finish(
+						source,
+						{
+							nextAttemptAt: heldUntil,
+							consecutiveFailures: budget === "backfill" ? failuresBeforeClaim : 0,
+							// A new month ended the hold and nothing was due: the hold is not an error to keep.
+							lastError: heldByBudget ? null : source.lastError,
+							lastErrorReason: heldByBudget ? null : source.lastErrorReason,
+						},
+						now,
+					)
 					return yield* outcome("skipped")
 				}
 				yield* finish(
 					source,
-					{ lastError: null, lastErrorReason: null, nextAttemptAt: null, consecutiveFailures: 0 },
+					{
+						lastError: null,
+						lastErrorReason: null,
+						nextAttemptAt: heldUntil,
+						consecutiveFailures: 0,
+					},
 					now,
 				)
 				return yield* outcome("synced")

@@ -3,8 +3,8 @@ import { CostProvider } from "@maple/domain/cost"
 import { CostSourceId, OrgId } from "@maple/primitives"
 
 // One row per provider connection an org's cloud cost is pulled from. The cost sync creates it
-// when the connection grants cost and removes it when the grant goes; its rows in `cost_daily`
-// stay. The poll-state columns belong to the sync.
+// when the connection supplies cost, turns it off while it does not, and removes it with the
+// connection; its rows in `cost_daily` stay. The poll-state columns belong to the sync.
 export const CostSources = PG.table("cost_sources", {
 	columns: {
 		id: PG.brand(PG.text, CostSourceId),
@@ -15,6 +15,9 @@ export const CostSources = PG.table("cost_sources", {
 		connectionRef: PG.column(PG.text, { name: "connection_ref" }),
 		// The provider's account, as the connection named it when the source was made.
 		accountId: PG.column(PG.text, { name: "account_id" }),
+		// False while the connection does not supply cost (not asked for, or not granted); the sync
+		// skips it, its state and history stay. The sync sets it, and deletes the row with the connection.
+		enabled: PG.column(PG.bool, { default: true }),
 		// HEAD frontier: the newest UTC day (YYYY-MM-DD) pulled, usually today and still estimated.
 		// Null until the first pull.
 		watermarkDate: PG.column(PG.nullable(PG.text), { name: "watermark_date" }),
@@ -26,7 +29,8 @@ export const CostSources = PG.table("cost_sources", {
 		// Last re-pull of the open months, which picks up what the provider restated.
 		lastSettledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_settled_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
-		// The `CostProviderError` reason of `lastError`, or "write" when the warehouse write failed.
+		// The `CostProviderError` reason of `lastError`, "write" when the warehouse write failed, or
+		// "budget" while the month's request budget holds the source.
 		lastErrorReason: PG.column(PG.nullable(PG.text), { name: "last_error_reason" }),
 		// Overlap guard: a tick claims the row by moving this past now; a tick that fails to claim skips it.
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),

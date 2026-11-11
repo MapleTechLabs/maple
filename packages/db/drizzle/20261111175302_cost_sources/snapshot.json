@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "07d18406bc4792b3f25bd3fb926686de0aba2c86e88f34041d68b2de25f8a956",
+	"id": "080d01de920ceff55fc21426f4c91a82b88ebd31125c59298f5df59d4a503eff",
 	"prevIds": [
 		"b1753874f4da924ce3c0da5a5dcedd540b54d8633b74fd4ebd37adb2e6bfcdb9"
 	],
@@ -5726,17 +5726,17 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "watermark_date",
+			"name": "enabled",
 			"position": 5,
-			"type": "text",
-			"notNull": false,
-			"default": null,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
 			"identity": null
 		},
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "backfill_date",
+			"name": "watermark_date",
 			"position": 6,
 			"type": "text",
 			"notNull": false,
@@ -5746,9 +5746,9 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "last_synced_at",
+			"name": "backfill_date",
 			"position": 7,
-			"type": "timestamp with time zone",
+			"type": "text",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -5756,7 +5756,7 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "last_settled_at",
+			"name": "last_synced_at",
 			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -5766,9 +5766,9 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "last_error",
+			"name": "last_settled_at",
 			"position": 9,
-			"type": "text",
+			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -5776,7 +5776,7 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "last_error_reason",
+			"name": "last_error",
 			"position": 10,
 			"type": "text",
 			"notNull": false,
@@ -5786,9 +5786,9 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "lease_until",
+			"name": "last_error_reason",
 			"position": 11,
-			"type": "timestamp with time zone",
+			"type": "text",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -5796,7 +5796,7 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "next_attempt_at",
+			"name": "lease_until",
 			"position": 12,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -5806,8 +5806,18 @@
 		{
 			"kind": "column",
 			"table": "cost_sources",
-			"name": "consecutive_failures",
+			"name": "next_attempt_at",
 			"position": 13,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cost_sources",
+			"name": "consecutive_failures",
+			"position": 14,
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
@@ -5817,7 +5827,7 @@
 			"kind": "column",
 			"table": "cost_sources",
 			"name": "requests_month",
-			"position": 14,
+			"position": 15,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -5827,7 +5837,7 @@
 			"kind": "column",
 			"table": "cost_sources",
 			"name": "requests_count",
-			"position": 15,
+			"position": 16,
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
@@ -5837,7 +5847,7 @@
 			"kind": "column",
 			"table": "cost_sources",
 			"name": "created_at",
-			"position": 16,
+			"position": 17,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -5847,7 +5857,7 @@
 			"kind": "column",
 			"table": "cost_sources",
 			"name": "updated_at",
-			"position": 17,
+			"position": 18,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,

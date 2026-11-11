@@ -3,10 +3,13 @@ import { DateTime, Array as Arr, String as Str } from "effect"
 import type { CostPullRow } from "./CostProvider"
 import {
 	advanceCostSync,
+	BACKFILL_REQUEST_BUDGET,
 	batchWholeDays,
 	type CostSyncState,
 	daysOfWindow,
 	historyFloor,
+	MONTHLY_REQUEST_BUDGET,
+	nextMonthStartMs,
 	planCostSync,
 	toCostDailyRows,
 	toWarehouseDateTime64,
@@ -23,6 +26,8 @@ const NEW: CostSyncState = {
 	backfillDate: null,
 	lastSyncedAt: null,
 	lastSettledAt: null,
+	requestsMonth: null,
+	requestsCount: 0,
 }
 
 /**
@@ -33,11 +38,20 @@ const pulled = (
 	now: number,
 	backfillDate: string,
 	ago: { readonly head: number; readonly settle: number },
-) => ({
+): CostSyncState => ({
 	watermarkDate: utcToday(now - ago.head),
 	backfillDate,
 	lastSyncedAt: now - ago.head,
 	lastSettledAt: now - ago.settle,
+	requestsMonth: null,
+	requestsCount: 0,
+})
+
+/** `state` after `count` billable requests in the UTC month of `now`. */
+const billed = (state: CostSyncState, now: number, count: number): CostSyncState => ({
+	...state,
+	requestsMonth: utcMonth(now),
+	requestsCount: count,
 })
 
 describe("planCostSync", () => {
@@ -83,16 +97,55 @@ describe("planCostSync", () => {
 		})
 	})
 
-	it("settles both open months through the tenth, and only this month from the eleventh", () => {
+	it("settles both open months through the tenth", () => {
 		const tenth = at("2026-11-10T23:59:59Z")
 		assert.deepStrictEqual(
 			planCostSync(pulled(tenth, "2026-10-01", { head: DAY_MS, settle: 7 * DAY_MS }), tenth),
 			{ mode: "settle", startDay: "2026-10-01", endDay: "2026-11-10" },
 		)
-		const eleventh = at("2026-11-11T00:00:00Z")
+	})
+
+	it("settles the previous month once more after it closed, then only this month", () => {
+		// Last settled on the 4th, while October was still open: the 12th takes October again.
+		const twelfth = at("2026-11-12T03:00:00Z")
 		assert.deepStrictEqual(
-			planCostSync(pulled(eleventh, "2026-10-01", { head: DAY_MS, settle: 7 * DAY_MS }), eleventh),
-			{ mode: "settle", startDay: "2026-11-01", endDay: "2026-11-11" },
+			planCostSync(pulled(twelfth, "2026-06-01", { head: DAY_MS, settle: 8 * DAY_MS }), twelfth),
+			{ mode: "settle", startDay: "2026-10-01", endDay: "2026-11-12" },
+		)
+		// That settle was after the 10th, so the next one leaves October alone.
+		const nineteenth = at("2026-11-19T03:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(pulled(nineteenth, "2026-06-01", { head: DAY_MS, settle: 7 * DAY_MS }), nineteenth),
+			{ mode: "settle", startDay: "2026-11-01", endDay: "2026-11-19" },
+		)
+	})
+
+	it("counts a settle as after the close from the first moment of the eleventh", () => {
+		const now = at("2026-11-18T12:00:00Z")
+		const state = pulled(now, "2026-06-01", { head: DAY_MS, settle: 0 })
+		const settledAt = (iso: string) => planCostSync({ ...state, lastSettledAt: at(iso) }, now)
+		assert.deepStrictEqual(settledAt("2026-11-10T23:59:59Z"), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-18",
+		})
+		assert.deepStrictEqual(settledAt("2026-11-11T00:00:00Z"), {
+			mode: "settle",
+			startDay: "2026-11-01",
+			endDay: "2026-11-18",
+		})
+	})
+
+	it("settles December once more in mid January, then only January", () => {
+		const twelfth = at("2027-01-12T03:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(pulled(twelfth, "2026-06-01", { head: DAY_MS, settle: 8 * DAY_MS }), twelfth),
+			{ mode: "settle", startDay: "2026-12-01", endDay: "2027-01-12" },
+		)
+		const nineteenth = at("2027-01-19T03:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(pulled(nineteenth, "2026-06-01", { head: DAY_MS, settle: 7 * DAY_MS }), nineteenth),
+			{ mode: "settle", startDay: "2027-01-01", endDay: "2027-01-19" },
 		)
 	})
 
@@ -120,11 +173,11 @@ describe("planCostSync", () => {
 
 	it("resumes from its watermark after a long hold, leaving no day unpulled", () => {
 		const now = at("2026-11-20T03:00:00Z")
-		// Held for 40 days: the usual window would start on November 1 and skip most of October.
-		const held = pulled(now, "2026-06-01", { head: 40 * DAY_MS, settle: 41 * DAY_MS })
+		// Held for 60 days: the usual window would start on October 1 and skip the end of September.
+		const held = pulled(now, "2026-06-01", { head: 60 * DAY_MS, settle: 61 * DAY_MS })
 		assert.deepStrictEqual(planCostSync(held, now), {
 			mode: "settle",
-			startDay: "2026-10-12",
+			startDay: "2026-09-22",
 			endDay: "2026-11-20",
 		})
 		// Never further back than the history floor.
@@ -187,6 +240,60 @@ describe("planCostSync", () => {
 		const now = at("2026-11-11T12:00:00Z")
 		const state = { ...pulled(now, "2026-10-01", { head: HOUR_MS, settle: HOUR_MS }), backfillDate: null }
 		assert.deepStrictEqual(planCostSync(state, now), { mode: "idle" })
+	})
+})
+
+describe("planCostSync request budgets", () => {
+	const now = at("2026-11-11T12:00:00Z")
+	const current = { head: HOUR_MS, settle: HOUR_MS }
+	const walking = pulled(now, "2026-10-01", current)
+	const headDue = pulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
+
+	it("stops walking history at the backfill budget, not one request under it", () => {
+		assert.strictEqual(
+			planCostSync(billed(walking, now, BACKFILL_REQUEST_BUDGET - 1), now).mode,
+			"backfill",
+		)
+		assert.deepStrictEqual(planCostSync(billed(walking, now, BACKFILL_REQUEST_BUDGET), now), {
+			mode: "idle",
+			budget: "backfill",
+		})
+	})
+
+	it("still pulls the head and settles past the backfill budget", () => {
+		assert.deepStrictEqual(planCostSync(billed(headDue, now, BACKFILL_REQUEST_BUDGET + 200), now), {
+			mode: "head",
+			startDay: "2026-11-08",
+			endDay: "2026-11-11",
+		})
+	})
+
+	it("names no budget when history is done anyway", () => {
+		const done = pulled(now, historyFloor("2026-11-11"), current)
+		assert.deepStrictEqual(planCostSync(billed(done, now, BACKFILL_REQUEST_BUDGET), now), {
+			mode: "idle",
+		})
+	})
+
+	it("pulls nothing at the monthly budget: no first pull, no head, no history", () => {
+		const held = { mode: "idle", budget: "monthly" }
+		assert.deepStrictEqual(planCostSync(billed(NEW, now, MONTHLY_REQUEST_BUDGET), now), held)
+		assert.deepStrictEqual(planCostSync(billed(headDue, now, MONTHLY_REQUEST_BUDGET), now), held)
+		assert.deepStrictEqual(planCostSync(billed(walking, now, MONTHLY_REQUEST_BUDGET + 1), now), held)
+		assert.strictEqual(planCostSync(billed(headDue, now, MONTHLY_REQUEST_BUDGET - 1), now).mode, "head")
+	})
+
+	it("starts both budgets over with the next UTC month", () => {
+		const december = nextMonthStartMs(now)
+		assert.strictEqual(december, at("2026-12-01T00:00:00Z"))
+		const spent = billed(walking, now, MONTHLY_REQUEST_BUDGET)
+		// The count is November's: in December the head is due again and history may walk.
+		assert.strictEqual(planCostSync(spent, december).mode, "settle")
+		assert.strictEqual(
+			planCostSync({ ...spent, lastSyncedAt: december - HOUR_MS }, december).mode,
+			"backfill",
+		)
+		assert.strictEqual(nextMonthStartMs(at("2026-12-31T23:59:59Z")), at("2027-01-01T00:00:00Z"))
 	})
 })
 
@@ -269,7 +376,7 @@ describe("toCostDailyRows", () => {
 	it("stamps the org, source, provider and pull version on a provider row", () => {
 		const window = { startDay: "2026-11-10", endDay: "2026-11-10" }
 		assert.deepStrictEqual(
-			toCostDailyRows(CONTEXT, [pullRow("2026-11-10", { estimated: true })], window),
+			toCostDailyRows(CONTEXT, [pullRow("2026-11-10", { estimated: true })], window).rows,
 			[
 				{
 					OrgId: "org_a",
@@ -302,7 +409,7 @@ describe("toCostDailyRows", () => {
 
 	it("adds one zero row for each day of the window the pull left empty, and none for the others", () => {
 		const window = { startDay: "2026-10-30", endDay: "2026-11-02" }
-		const rows = toCostDailyRows(
+		const { rows } = toCostDailyRows(
 			CONTEXT,
 			[pullRow("2026-10-30"), pullRow("2026-10-30", { resourceId: "i-0def" }), pullRow("2026-11-01")],
 			window,
@@ -345,7 +452,7 @@ describe("toCostDailyRows", () => {
 	})
 
 	it("marks every day of a window the provider answered nothing for", () => {
-		const rows = toCostDailyRows(CONTEXT, [], { startDay: "2026-02-27", endDay: "2026-03-01" })
+		const { rows } = toCostDailyRows(CONTEXT, [], { startDay: "2026-02-27", endDay: "2026-03-01" })
 		assert.deepStrictEqual(
 			Arr.map(rows, (row) => row.Date),
 			["2026-02-27 00:00:00", "2026-02-28 00:00:00", "2026-03-01 00:00:00"],
@@ -357,9 +464,38 @@ describe("toCostDailyRows", () => {
 		const [row] = toCostDailyRows(CONTEXT, [pullRow("2026-11-10", { tags })], {
 			startDay: "2026-11-10",
 			endDay: "2026-11-10",
-		})
+		}).rows
 		assert.notStrictEqual(row?.Tags, tags)
 		assert.deepStrictEqual(row?.Tags, tags)
+	})
+
+	it("drops rows of days outside the window, counts them, and marks a day left empty by it", () => {
+		const { rows, outsideWindow } = toCostDailyRows(
+			CONTEXT,
+			[
+				pullRow("2026-11-09", { resourceId: "i-before" }),
+				pullRow("2026-11-10"),
+				pullRow("2026-11-12", { resourceId: "i-after" }),
+				pullRow("2026-11-12", { resourceId: "i-after-2" }),
+			],
+			{ startDay: "2026-11-10", endDay: "2026-11-11" },
+		)
+		assert.strictEqual(outsideWindow, 3)
+		assert.deepStrictEqual(
+			Arr.map(rows, (row) => [row.Date, row.ResourceId, row.ChargeCategory]),
+			[
+				["2026-11-10 00:00:00", "i-0abc", "usage"],
+				["2026-11-11 00:00:00", "", "none"],
+			],
+		)
+	})
+
+	it("counts nothing outside a window the pull kept to", () => {
+		const window = { startDay: "2026-11-10", endDay: "2026-11-11" }
+		assert.strictEqual(
+			toCostDailyRows(CONTEXT, [pullRow("2026-11-10"), pullRow("2026-11-11")], window).outsideWindow,
+			0,
+		)
 	})
 })
 
@@ -382,7 +518,7 @@ describe("batchWholeDays", () => {
 				Arr.makeBy(count, (n) => pullRow(`2026-11-0${index + 1}`, { resourceId: `i-${n}` })),
 			),
 			window,
-		)
+		).rows
 	/** Each batch as the day-of-month of its rows, in order. */
 	const daysIn = (batches: ReadonlyArray<ReadonlyArray<{ readonly Date: string }>>) =>
 		Arr.map(batches, (batch) =>

@@ -15,7 +15,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
-import { daysOfWindow } from "./sync-plan"
+import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
 
@@ -55,6 +55,8 @@ interface FakeProviderOptions {
 	readonly failWindowsFrom?: ReadonlyArray<string>
 	/** Days the provider answers no rows for. */
 	readonly emptyDays?: ReadonlyArray<string>
+	/** Days the provider answers a row for in every pull, whatever window was asked. */
+	readonly strayDays?: ReadonlyArray<string>
 	/** Another tick takes the row over while the pull is in flight. */
 	readonly stealLease?: boolean
 	/** A second passes during each pull, so every step reads its own clock. */
@@ -135,7 +137,13 @@ const harness = (options: FakeProviderOptions = {}) => {
 				}
 				return {
 					rows: Arr.map(
-						Arr.filter(daysOfWindow(window), (day) => options.emptyDays?.includes(day) !== true),
+						[
+							...Arr.filter(
+								daysOfWindow(window),
+								(day) => options.emptyDays?.includes(day) !== true,
+							),
+							...(options.strayDays ?? []),
+						],
 						pullRow,
 					),
 					requests: REQUESTS_PER_PULL,
@@ -170,11 +178,12 @@ const harness = (options: FakeProviderOptions = {}) => {
 		Layer.provide(Layer.mergeAll(Layer.succeed(AwsCostProvider, adapter), warehouse)),
 		Layer.provide(testDb.layer),
 	)
-	/** An AWS connection; `granted` null is a role no check has read yet. */
+	/** An AWS connection asking for cost; `granted` null is a role no check has read yet. */
 	const connect = (connection: {
 		readonly id: string
 		readonly orgId?: string
 		readonly account?: string
+		readonly modules?: ReadonlyArray<string>
 		readonly granted?: ReadonlyArray<string> | null
 		readonly verified?: boolean
 	}) =>
@@ -186,13 +195,14 @@ const harness = (options: FakeProviderOptions = {}) => {
 				testDb,
 				`INSERT INTO aws_connections
 				   (id, org_id, source_id, account_id, modules, granted_modules, verified_at, created_by, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4, '["cost"]'::jsonb, $5::jsonb, ${connection.verified === false ? "NULL" : "now()"}, 'user_a', now(), now())`,
+				 VALUES ($1, $2, $3, $4, $6::jsonb, $5::jsonb, ${connection.verified === false ? "NULL" : "now()"}, 'user_a', now(), now())`,
 				[
 					connection.id,
 					orgId,
 					sourceId,
 					connection.account ?? "123456789012",
 					granted === null ? null : JSON.stringify(granted),
+					JSON.stringify(connection.modules ?? ["inventory", "cost"]),
 				],
 			)
 		})
@@ -213,6 +223,14 @@ const harness = (options: FakeProviderOptions = {}) => {
 			["org_a", CONNECTION_A],
 		),
 	)
+	/** The id and switch of `org_a`'s source: what must survive a pause. */
+	const sourceIdentity = Effect.promise(() =>
+		queryFirstRow<{ id: string; enabled: boolean }>(
+			testDb,
+			"SELECT id, enabled FROM cost_sources WHERE org_id = $1 AND connection_ref = $2",
+			["org_a", CONNECTION_A],
+		),
+	)
 	const writtenRows = () => Arr.flatten(writes)
 	const windows = () => Arr.map(pulls, (pull) => [pull.startDay, pull.endDay])
 	return {
@@ -227,6 +245,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 		connect,
 		sourceRefs,
 		sourceState,
+		sourceIdentity,
 	}
 }
 
@@ -260,7 +279,7 @@ const settleWithClock = <A, E>(fiber: Fiber.Fiber<A, E>) =>
 	})
 
 describe("CostSyncService sources", () => {
-	it.effect("makes a source only for a verified connection whose role grants cost", () => {
+	it.effect("makes a source only for a verified connection that asks for cost and is granted it", () => {
 		const h = harness()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
@@ -280,6 +299,12 @@ describe("CostSyncService sources", () => {
 				account: "444444444444",
 				verified: false,
 			})
+			// The role still grants cost, but the org no longer asks for it.
+			yield* h.connect({
+				id: "0190f2b3-0000-7000-8000-0000000000a5",
+				account: "555555555555",
+				modules: ["inventory"],
+			})
 			const summary = yield* poll
 			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "111111111111"]])
 			assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
@@ -289,21 +314,75 @@ describe("CostSyncService sources", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
-	it.effect("removes the source when the grant goes away, and when the connection does", () => {
+	it.effect("pauses a source whose grant is lost for a tick, and resumes the same source after", () => {
+		const h = harness()
+		const setGrant = (granted: string) =>
+			h.sql("UPDATE aws_connections SET granted_modules = $2::jsonb WHERE id = $1", [
+				CONNECTION_A,
+				granted,
+			])
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			const identity = yield* h.sourceIdentity
+			const state = yield* h.sourceState
+			assert.strictEqual(identity?.enabled, true)
+
+			yield* setGrant('["inventory"]')
+			yield* TestClock.adjust("1 hour")
+			const pullsBefore = h.pulls.length
+			const paused = yield* poll
+			assert.deepStrictEqual([paused.due, h.pulls.length], [0, pullsBefore])
+			assert.deepStrictEqual(yield* h.sourceIdentity, { id: identity?.id, enabled: false })
+			assert.deepStrictEqual(yield* h.sourceState, state)
+
+			// The grant is back: the same source walks on from its frontier, not from the start.
+			yield* setGrant('["inventory", "cost"]')
+			yield* TestClock.adjust("1 hour")
+			const resumed = yield* poll
+			assert.strictEqual(resumed.synced, 1)
+			assert.deepStrictEqual(h.windows().slice(pullsBefore), [
+				["2026-07-01", "2026-07-31"],
+				["2026-06-01", "2026-06-30"],
+				["2026-05-01", "2026-05-31"],
+			])
+			assert.deepStrictEqual(yield* h.sourceIdentity, { id: identity?.id, enabled: true })
+			assert.strictEqual(new Set(Arr.map(h.writtenRows(), (row) => row.SourceId)).size, 1)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("pauses a source when the org stops asking for cost, though the role still grants it", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			const identity = yield* h.sourceIdentity
+			yield* h.sql(`UPDATE aws_connections SET modules = '["inventory"]'::jsonb WHERE id = $1`, [
+				CONNECTION_A,
+			])
+			yield* TestClock.adjust("1 hour")
+			const pullsBefore = h.pulls.length
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, h.pulls.length], [0, pullsBefore])
+			assert.deepStrictEqual(yield* h.sourceIdentity, { id: identity?.id, enabled: false })
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("removes a source only when its connection is gone", () => {
 		const h = harness()
 		return Effect.gen(function* () {
 			yield* connectA(h)
 			yield* h.connect({ id: CONNECTION_B, account: "222222222222" })
 			yield* poll
 			assert.lengthOf(yield* h.sourceRefs, 2)
-			yield* h.sql(
-				`UPDATE aws_connections SET granted_modules = '["inventory"]'::jsonb WHERE id = $1`,
-				[CONNECTION_A],
-			)
+			// One loses its grant and stays; the other loses its connection and goes.
+			yield* h.sql(`UPDATE aws_connections SET granted_modules = NULL WHERE id = $1`, [CONNECTION_A])
 			yield* h.sql("DELETE FROM aws_connections WHERE id = $1", [CONNECTION_B])
+			yield* TestClock.adjust("1 hour")
 			const pullsBefore = h.pulls.length
 			const summary = yield* poll
-			assert.deepStrictEqual(yield* h.sourceRefs, [])
+			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
+			assert.strictEqual((yield* h.sourceIdentity)?.enabled, false)
 			assert.deepStrictEqual([summary.due, h.pulls.length], [0, pullsBefore])
 		}).pipe(Effect.provide(h.layer))
 	})
@@ -493,6 +572,24 @@ describe("CostSyncService", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
+	it.effect("writes no row of a day the provider returned outside the window it was asked for", () => {
+		// Today's row comes back with the history pulls too: written, it would replace today with one row.
+		const h = harness({ strayDays: ["2026-11-11"], emptyDays: ["2026-11-11"] })
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			const summary = yield* poll
+			assert.lengthOf(h.pulls, 3)
+			assert.strictEqual(summary.rowsWritten, 42 + 30 + 31)
+			assert.deepStrictEqual(
+				Arr.map(
+					Arr.filter(h.writtenRows(), (row) => row.Date === "2026-11-11 00:00:00"),
+					(row) => row.IngestedAt,
+				),
+				["2026-11-11 12:00:00.000"],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
 	it.effect("leaves a source another tick holds, and two concurrent ticks sync it once", () => {
 		const h = harness()
 		return Effect.gen(function* () {
@@ -647,6 +744,41 @@ describe("CostSyncService failures", () => {
 		}).pipe(Effect.provide(h.layer))
 	})
 
+	it.effect("a claim that moved a frontier before failing starts the backoff over", () => {
+		const h = harness({ failWindowsFrom: ["2026-09-01"] })
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			// A source that failed three times in a row: its next claim would wait two hours.
+			yield* h.sql(
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, consecutive_failures, created_at, updated_at)
+				 VALUES ('0190f2b3-0000-7000-8000-00000000000a', 'org_a', 'aws', $1, '123456789012', 3, now(), now())`,
+				[CONNECTION_A],
+			)
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.failures, summary.rowsWritten], [1, 42])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.failures, state?.next, state?.reason, state?.error],
+				["2026-11-11", 0, String(NOW + 15 * 60_000), "upstream", "The provider answered upstream"],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a claim that failed before moving anything keeps counting", () => {
+		const h = harness({ failReason: "upstream" })
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* h.sql(
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, consecutive_failures, created_at, updated_at)
+				 VALUES ('0190f2b3-0000-7000-8000-00000000000a', 'org_a', 'aws', $1, '123456789012', 3, now(), now())`,
+				[CONNECTION_A],
+			)
+			yield* poll
+			const state = yield* h.sourceState
+			assert.deepStrictEqual([state?.failures, state?.next], [4, String(NOW + 2 * HOUR_MS)])
+		}).pipe(Effect.provide(h.layer))
+	})
+
 	it.effect("adds requests within a month and starts over in the next", () => {
 		const h = harness()
 		return Effect.gen(function* () {
@@ -662,6 +794,145 @@ describe("CostSyncService failures", () => {
 			yield* poll
 			const december = yield* h.sourceState
 			assert.deepStrictEqual([december?.month, december?.requests], ["2026-12", 3 * REQUESTS_PER_PULL])
+		}).pipe(Effect.provide(h.layer))
+	})
+})
+
+describe("CostSyncService request budgets", () => {
+	const setRequests = (h: ReturnType<typeof harness>, count: number) =>
+		h.sql("UPDATE cost_sources SET requests_count = $1", [count])
+
+	it.effect("stops walking history once the backfill budget is reached, mid-claim", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			// Two more pulls reach the budget; the third step of the claim is not taken.
+			yield* setRequests(h, BACKFILL_REQUEST_BUDGET - 2 * REQUESTS_PER_PULL)
+			yield* TestClock.adjust("1 hour")
+			const before = h.pulls.length
+			const summary = yield* poll
+			assert.deepStrictEqual(h.windows().slice(before), [
+				["2026-07-01", "2026-07-31"],
+				["2026-06-01", "2026-06-30"],
+			])
+			assert.strictEqual(summary.synced, 1)
+			const state = yield* h.sourceState
+			// Held until the head is next due; not an error, not a failure.
+			assert.deepStrictEqual(
+				[state?.backfill, state?.requests, state?.next, state?.failures, state?.error, state?.reason],
+				["2026-06-01", BACKFILL_REQUEST_BUDGET, String(NOW + 23 * HOUR_MS), 0, null, null],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("past the backfill budget it is claimed once, then only for its daily head", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			yield* setRequests(h, BACKFILL_REQUEST_BUDGET)
+			yield* h.sql("UPDATE cost_sources SET consecutive_failures = 2")
+			yield* TestClock.adjust("1 hour")
+			const before = h.pulls.length
+			const held = yield* poll
+			assert.deepStrictEqual([held.due, held.skipped, held.failures, h.pulls.length], [1, 1, 0, before])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.next, state?.failures, state?.error, state?.reason, state?.lease],
+				[String(NOW + 23 * HOUR_MS), 2, null, null, null],
+			)
+			// Not selected again while it waits.
+			yield* TestClock.adjust("1 hour")
+			assert.strictEqual((yield* poll).due, 0)
+			// The head still runs when it is due, and history stays where it was.
+			yield* TestClock.adjust("21 hours")
+			const head = yield* poll
+			assert.strictEqual(head.synced, 1)
+			assert.deepStrictEqual(h.windows().slice(before), [["2026-11-09", "2026-11-12"]])
+			assert.strictEqual((yield* h.sourceState)?.backfill, "2026-08-01")
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("at the monthly budget it pulls nothing until the next month, then starts over", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			yield* setRequests(h, MONTHLY_REQUEST_BUDGET)
+			yield* h.sql("UPDATE cost_sources SET consecutive_failures = 2")
+			yield* TestClock.adjust("1 hour")
+			const before = h.pulls.length
+			const held = yield* poll
+			assert.deepStrictEqual([held.due, held.skipped, held.failures, h.pulls.length], [1, 1, 0, before])
+			const december = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-12-01T00:00:00Z"))
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.next, state?.failures, state?.reason, state?.lease, state?.watermark],
+				[String(december), 2, "budget", null, "2026-11-11"],
+			)
+			assert.include(state?.error, "budget")
+			// Not even the head, a day and a week on.
+			yield* TestClock.adjust("1 day")
+			assert.strictEqual((yield* poll).due, 0)
+			yield* TestClock.adjust("7 days")
+			assert.deepStrictEqual([(yield* poll).due, h.pulls.length], [0, before])
+
+			// The first hour of December: the count starts over and the source catches up.
+			yield* TestClock.setTime(december)
+			const resumed = yield* poll
+			assert.strictEqual(resumed.synced, 1)
+			assert.deepStrictEqual(h.windows()[before], ["2026-11-01", "2026-12-01"])
+			const after = yield* h.sourceState
+			assert.deepStrictEqual(
+				[after?.month, after?.requests, after?.next, after?.failures, after?.error, after?.reason],
+				["2026-12", 3 * REQUESTS_PER_PULL, null, 0, null, null],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("reaching the monthly budget mid-claim keeps what was pulled and holds the rest", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* connectA(h)
+			yield* poll
+			// The head is due and its pull spends the last of the budget: no history step follows.
+			yield* setRequests(h, MONTHLY_REQUEST_BUDGET - REQUESTS_PER_PULL)
+			yield* TestClock.adjust("23 hours")
+			const before = h.pulls.length
+			const summary = yield* poll
+			assert.deepStrictEqual(h.windows().slice(before), [["2026-11-09", "2026-11-12"]])
+			assert.deepStrictEqual([summary.synced, summary.failures], [1, 0])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual(
+				[state?.watermark, state?.requests, state?.reason, state?.failures],
+				["2026-11-12", MONTHLY_REQUEST_BUDGET, "budget", 0],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("a hold that ends with nothing due does not stay on as an error", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-29T20:00:00Z")))
+			yield* h.connect({ id: CONNECTION_A })
+			yield* poll
+			// History is done, and the next day's head spends the last of the budget.
+			yield* h.sql("UPDATE cost_sources SET backfill_date = '2025-10-01'")
+			yield* setRequests(h, MONTHLY_REQUEST_BUDGET - REQUESTS_PER_PULL)
+			yield* TestClock.adjust("1 day")
+			yield* poll
+			assert.strictEqual((yield* h.sourceState)?.reason, "budget")
+			// December's first hour: the head is four hours old, so there is nothing to pull.
+			yield* TestClock.adjust("4 hours")
+			const before = h.pulls.length
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.skipped, h.pulls.length], [1, 1, before])
+			const state = yield* h.sourceState
+			assert.deepStrictEqual([state?.error, state?.reason, state?.next], [null, null, null])
+			// Cleared once: it is not claimed again until its head is due.
+			yield* TestClock.adjust("1 hour")
+			assert.strictEqual((yield* poll).due, 0)
 		}).pipe(Effect.provide(h.layer))
 	})
 })

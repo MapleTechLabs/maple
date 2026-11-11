@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS "cost_sources" (
 	"provider" text NOT NULL,
 	"connection_ref" text NOT NULL,
 	"account_id" text NOT NULL,
+	"enabled" boolean NOT NULL DEFAULT true,
 	"watermark_date" text,
 	"backfill_date" text,
 	"last_synced_at" timestamp with time zone,
