@@ -36,7 +36,7 @@ const STATUS_NOTE = {
 	pending_dns:
 		"Add the records below at your DNS provider. Maple checks every minute for the first hour, then every ten minutes.",
 	pending_ssl: "DNS is in place. Cloudflare is issuing the certificate, usually within a few minutes.",
-	active: "The page is live on this domain, and its feeds and emails link here.",
+	active: "The page is live on this domain, and its feeds link here.",
 	failed: "The domain stopped. Fix what is described below, then check again.",
 } as const satisfies Record<DomainStatus, string>
 

@@ -17,7 +17,6 @@ import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
 import { HttpEmailPublicLive } from "@/routes/email-public.http"
-import { HttpStatusPageSubscriptionsPublicLive } from "@/routes/status-page-subscriptions-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
@@ -138,7 +137,6 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthSessionLive),
 	Layer.provide(HttpBillingPublicLive),
 	Layer.provide(HttpEmailPublicLive),
-	Layer.provide(HttpStatusPageSubscriptionsPublicLive),
 	Layer.provide(ApiErrorBoundaryLive),
 )
 

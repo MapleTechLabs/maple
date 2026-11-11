@@ -26,10 +26,11 @@ export const previewIdAttr = (options: RenderOptions, kind: "component" | "incid
 export const pageHref = (options: RenderOptions, path: string): string =>
 	escapeHtml(`${options.basePath ?? ""}${path}`)
 
-/** The logo (or the name behind a monogram) linking to the page's home. */
-export const renderBrand = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
+/** Logo (or name) linking home, the customer's website when set, then any `extra` links. */
+export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOptions, extra = ""): string => {
 	const name = escapeHtml(snapshot.page.name)
 	const logo = safeUrl(snapshot.page.logoUrl, ["https:"])
+	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
 	// Without a logo, a monogram in the theme's brand colour stands in for one.
 	const initial = escapeHtml(
 		Option.match(Arr.head(Array.from(Str.trim(snapshot.page.name))), {
@@ -41,17 +42,11 @@ export const renderBrand = (snapshot: StatusPageSnapshot, options: RenderOptions
 		logo === null
 			? `<span class="mono-mark" aria-hidden="true">${initial}</span>${name}`
 			: `<img src="${escapeHtml(logo)}" alt="${name}">`
-	return `<a class="brand" href="${pageHref(options, "/")}">${mark}</a>`
-}
-
-/** Logo (or name) linking home, the customer's website when set, then any `extra` links. */
-export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOptions, extra = ""): string => {
-	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
 	const site =
 		website === null
 			? ""
 			: `<a class="site" href="${escapeHtml(website)}" rel="noopener">Visit website</a>`
-	return `<header class="top">${renderBrand(snapshot, options)}${site}${extra}</header>`
+	return `<header class="top"><a class="brand" href="${pageHref(options, "/")}">${mark}</a>${site}${extra}</header>`
 }
 
 export const renderDocument = (input: {

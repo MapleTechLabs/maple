@@ -378,9 +378,8 @@ export default Alchemy.Stack(
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
 
-		// Public status pages, served from edge storage alone so they outlive a Maple outage. Binds api
-		// as `API` for the subscribe forms only.
-		const statusWorker = yield* Effect.provideService(StatusWorker, ApiWorker, api)
+		// Public status pages, served from edge storage alone so they outlive a Maple outage.
+		const statusWorker = yield* StatusWorker
 		yield* serveWorker("status", statusWorker)
 		// Custom domains' CNAME target and the zone's fallback origin: one per zone, owned by US prd.
 		if (!isDevServer && stage.kind === "prd" && region === "us") yield* declareStatusDomainsOrigin

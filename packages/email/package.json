@@ -6,7 +6,6 @@
 		"./weekly-digest": "./src/weekly-digest.ts",
 		"./weekly-digest-core": "./src/weekly-digest-core.ts",
 		"./alert-notification": "./src/alert-notification.ts",
-		"./status-page-subscription": "./src/status-page-subscription.ts",
 		"./web-analytics-digest": "./src/web-analytics-digest.ts",
 		"./web-analytics-digest-core": "./src/web-analytics-digest-core.ts"
 	},

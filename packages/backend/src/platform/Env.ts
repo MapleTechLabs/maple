@@ -55,11 +55,6 @@ export interface EnvConfig {
 	 */
 	readonly MAPLE_API_BASE_URL: string
 	/**
-	 * The status Worker's origin; pages live at `<origin>/s/<slug>`. Every link in a status page
-	 * subscriber email is built from it. Unset: email subscriptions are refused.
-	 */
-	readonly MAPLE_STATUS_PAGE_BASE_URL: Option.Option<string>
-	/**
 	 * Status page custom domains (Cloudflare for SaaS, docs/status-page-custom-domains.md): the
 	 * zone holding the custom hostnames, a token that may edit its custom hostnames and Worker
 	 * routes, the hostname customers CNAME to, and the status Worker's script name for the
@@ -262,7 +257,6 @@ const envConfig = Config.all({
 	MAPLE_INGEST_PUBLIC_URL: stringWithDefault("MAPLE_INGEST_PUBLIC_URL", "http://127.0.0.1:3474"),
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
-	MAPLE_STATUS_PAGE_BASE_URL: optionalString("MAPLE_STATUS_PAGE_BASE_URL"),
 	MAPLE_STATUS_DOMAINS_ZONE_ID: optionalString("MAPLE_STATUS_DOMAINS_ZONE_ID"),
 	MAPLE_STATUS_DOMAINS_API_TOKEN: optionalRedacted("MAPLE_STATUS_DOMAINS_API_TOKEN"),
 	MAPLE_STATUS_DOMAINS_CNAME_TARGET: optionalString("MAPLE_STATUS_DOMAINS_CNAME_TARGET"),

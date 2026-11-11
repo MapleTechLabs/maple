@@ -15,8 +15,6 @@ export const htmlCsp = (nonce: string): string =>
 			`style-src 'nonce-${nonce}'`,
 			`script-src 'nonce-${nonce}'`,
 			"img-src https: data:",
-			// The subscribe dialog posts its form in place.
-			"connect-src 'self'",
 			"form-action 'self'",
 			"base-uri 'none'",
 			"frame-ancestors 'none'",

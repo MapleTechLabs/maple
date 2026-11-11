@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "59fab7d35efb4feb66ce8e82638b64b7ab50e279610606b7228de1799dba4e70",
+	"id": "62558102968e2bb995d1e7f5a029e825166541cb95ad4e898fc0ed460e70112d",
 	"prevIds": [
 		"b1753874f4da924ce3c0da5a5dcedd540b54d8633b74fd4ebd37adb2e6bfcdb9"
 	],
@@ -1113,6 +1113,16 @@
 		},
 		{
 			"kind": "table",
+			"name": "status_page_custom_domains",
+			"primaryKey": {
+				"name": "status_page_custom_domains_pkey",
+				"columns": [
+					"page_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "status_page_incident_components",
 			"primaryKey": {
 				"name": "status_page_incident_components_pk",
@@ -1139,26 +1149,6 @@
 				"name": "status_page_incidents_pkey",
 				"columns": [
 					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "status_page_subscribers",
-			"primaryKey": {
-				"name": "status_page_subscribers_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "status_page_update_notifications",
-			"primaryKey": {
-				"name": "status_page_update_notifications_pkey",
-				"columns": [
-					"update_id"
 				]
 			}
 		},
@@ -15989,7 +15979,7 @@
 			"name": "slug",
 			"position": 3,
 			"type": "text",
-			"notNull": true,
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},
@@ -16006,8 +15996,38 @@
 		{
 			"kind": "column",
 			"table": "status_page_cleanups",
-			"name": "created_at",
+			"name": "hostname",
 			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_hostname_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "cloudflare_route_id",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_cleanups",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -16126,6 +16146,126 @@
 		{
 			"kind": "column",
 			"table": "status_page_components",
+			"name": "updated_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "page_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "hostname",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_hostname_id",
+			"position": 4,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "cloudflare_route_id",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "dns_records",
+			"position": 6,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_error",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "last_checked_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "activated_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
+			"name": "created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "status_page_custom_domains",
 			"name": "updated_at",
 			"position": 11,
 			"type": "timestamp with time zone",
@@ -16408,176 +16548,6 @@
 			"table": "status_page_incidents",
 			"name": "updated_at",
 			"position": 15,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "page_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "email",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "component_ids",
-			"position": 4,
-			"type": "jsonb",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "confirmed_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "confirm_token_sha256",
-			"position": 6,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "confirm_expires_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "confirmation_sent_at",
-			"position": 8,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "created_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_subscribers",
-			"name": "updated_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "update_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "page_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "last_subscriber_id",
-			"position": 3,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "completed_at",
-			"position": 4,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "status_page_update_notifications",
-			"name": "created_at",
-			"position": 5,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20622,6 +20592,39 @@
 		},
 		{
 			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_checked_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"last_checked_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_hostname_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"hostname\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
 			"table": "status_page_incident_components",
 			"name": "status_page_incident_components_component_idx",
 			"unique": false,
@@ -20676,40 +20679,6 @@
 				"\"started_at\""
 			],
 			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "status_page_subscribers",
-			"name": "status_page_subscribers_confirm_token_unq",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"confirm_token_sha256\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "status_page_subscribers",
-			"name": "status_page_subscribers_page_email_unq",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"page_id\"",
-				"\"email\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "status_page_update_notifications",
-			"name": "status_page_update_notifications_pending_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"created_at\""
-			],
-			"where": "completed_at IS NULL"
 		},
 		{
 			"kind": "index",
@@ -21254,6 +21223,20 @@
 		},
 		{
 			"kind": "foreign_key",
+			"table": "status_page_custom_domains",
+			"name": "status_page_custom_domains_page_id_status_pages_id_fk",
+			"columns": [
+				"page_id"
+			],
+			"foreignTable": "status_pages",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
 			"table": "status_page_incident_components",
 			"name": "status_page_incident_components_Bnqlt6wwKJty_fk",
 			"columns": [
@@ -21302,34 +21285,6 @@
 				"page_id"
 			],
 			"foreignTable": "status_pages",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "status_page_subscribers",
-			"name": "status_page_subscribers_page_id_status_pages_id_fk",
-			"columns": [
-				"page_id"
-			],
-			"foreignTable": "status_pages",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "status_page_update_notifications",
-			"name": "status_page_update_notifications_TAITGL8oaHOK_fk",
-			"columns": [
-				"update_id"
-			],
-			"foreignTable": "status_page_incident_updates",
 			"foreignColumns": [
 				"id"
 			],

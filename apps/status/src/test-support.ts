@@ -8,21 +8,9 @@ import {
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { handleRequest, sharedHostMatcher } from "./handler"
-import {
-	type CachedValue,
-	type StatusEnv,
-	type StatusStorage,
-	StatusStorageError,
-	type StatusSubscriptions,
-	type SubscriptionOutcome,
-} from "./ports"
+import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-/** What the fake Maple answers the next subscription call with. */
-interface NextSubscriptionOutcome {
-	next: SubscriptionOutcome
-}
 
 /** In-memory KV, R2, colo cache and rate limiter; each store can be made to fail. */
 interface ListHook {
@@ -84,38 +72,7 @@ export const makeFakeStorage = () => {
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
-	// Every call to Maple's subscription endpoints, and what the next one answers.
-	const subscriptionCalls = new Array<{
-		readonly action: string
-		readonly pageId: string
-		readonly input: unknown
-	}>()
-	const subscriptionOutcome: NextSubscriptionOutcome = { next: { _tag: "ok" } }
-	const record = (action: string, pageId: string, input: unknown) =>
-		Effect.sync(() => {
-			subscriptionCalls.push({ action, pageId, input })
-			return subscriptionOutcome.next
-		})
-	const subscriptions: StatusSubscriptions = {
-		subscribe: (pageId, input) => record("subscribe", pageId, input),
-		confirm: (pageId, token) => record("confirm", pageId, token),
-		unsubscribe: (pageId, token) => record("unsubscribe", pageId, token),
-	}
-	return {
-		storage,
-		kv,
-		kvReads,
-		r2,
-		cache,
-		failing,
-		limits,
-		unlisted,
-		duringList,
-		ids,
-		subscriptions,
-		subscriptionCalls,
-		subscriptionOutcome,
-	}
+	return { storage, kv, kvReads, r2, cache, failing, limits, unlisted, duringList, ids }
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
@@ -165,7 +122,6 @@ export const send = (
 ): Promise<Response> => {
 	const env: StatusEnv = {
 		storage: fake.storage,
-		subscriptions: fake.subscriptions,
 		nowMs: options.nowMs ?? FIXTURE_NOW,
 		randomId: () => `id-${++fake.ids.next}`,
 		isSharedHost: sharedHostMatcher(null),

@@ -39,23 +39,13 @@ footer a{color:var(--secondary)}
 @media (max-width:560px){.wrap{padding:24px 16px 40px}}
 `
 
-/** Line icons, and the buttons the subscribe dialog and the subscription pages share. */
-const controlStyles = `
-.i{flex:none;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.i circle{fill:currentColor;stroke:none}
-.i.alert path{fill:var(--major);stroke:var(--major)}
-.i.alert .glyph{fill:none;stroke:var(--card);stroke-width:1.6}
-.btn{display:inline-block;font:inherit;font-size:14px;font-weight:500;line-height:20px;padding:8px 12px;border-radius:calc(var(--radius)*.75);border:0;background:var(--primary);color:var(--primary-fg);text-decoration:none;cursor:pointer}
-.btn.quiet{background:color-mix(in srgb,var(--fg) 10%,var(--card));color:var(--fg)}
-.btn:disabled{opacity:.6;cursor:default}
-.btn:focus-visible{outline:2px solid var(--link);outline-offset:2px}
-`
-
 /**
  * The subscribe dialog. It opens as the `#subscribe` target until the script marks the body `js`,
  * then on the script's `open` class; its tabs are radios, so they switch without script too.
  */
 const dialogStyles = `
+.i{flex:none;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.i circle{fill:currentColor;stroke:none}
 .sub-open{font-size:14px;font-weight:500;line-height:20px;padding:6px 12px;border:1px solid var(--line);border-radius:calc(var(--radius)*.75);background:var(--card);color:var(--fg);text-decoration:none}
 .sub-open:focus-visible{outline:2px solid var(--link);outline-offset:2px}
 .modal{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:84px 16px 24px}
@@ -72,45 +62,16 @@ body:has(.modal.open),body:not(.js):has(.modal:target){overflow:hidden}
 .tablist{display:flex;flex-wrap:wrap;margin:16px 16px 0;border-bottom:1px solid var(--line)}
 .tablist label{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;user-select:none}
 .tablist label:hover{color:var(--fg)}
-#sub-email:checked~.tablist [for=sub-email],#sub-rss:checked~.tablist [for=sub-rss],#sub-slack:checked~.tablist [for=sub-slack]{color:var(--fg);border-bottom-color:var(--fg)}
-#sub-email:focus-visible~.tablist [for=sub-email],#sub-rss:focus-visible~.tablist [for=sub-rss],#sub-slack:focus-visible~.tablist [for=sub-slack]{outline:2px solid var(--link);outline-offset:-2px}
+#sub-rss:checked~.tablist [for=sub-rss],#sub-slack:checked~.tablist [for=sub-slack]{color:var(--fg);border-bottom-color:var(--fg)}
+#sub-rss:focus-visible~.tablist [for=sub-rss],#sub-slack:focus-visible~.tablist [for=sub-slack]{outline:2px solid var(--link);outline-offset:-2px}
 .pane{display:none}
-#sub-email:checked~.pane-email,#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
-.sub-body{display:grid;gap:24px;padding:16px}
-.pane-rss .sub-body,.pane-slack .sub-body{gap:12px}
+#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
+.sub-body{display:grid;gap:12px;padding:16px}
 .sub-body p{margin:0}
-.sub-done.sub-body{gap:8px}
-.field{display:grid;gap:12px;font-weight:500}
-.pane-rss .field{gap:8px}
-.field input[type=email]{font:inherit;font-weight:400;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:8px 12px;width:100%}
-.field input::placeholder{color:var(--muted);opacity:.7}
-.field input:focus,.copy:focus-within{outline:none;border-color:color-mix(in srgb,var(--fg) 40%,var(--line))}
-.field-error{margin:0;font-size:12px;font-weight:400;color:var(--major)}
-.scope{border:0;margin:0;padding:0;min-width:0;display:grid;gap:8px}
-.scope legend{padding:0;margin-bottom:8px;font-weight:500}
-.choice{display:block;border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;font-weight:500}
-.choice:has(>input:checked),.choice:has(>label>input:checked){border-color:var(--fg)}
-.choice>label,label.choice{display:flex;align-items:center;gap:8px;cursor:pointer}
-.choice input,.check input{margin:0;width:16px;height:16px;flex:none;accent-color:var(--fg);cursor:pointer}
-.picks{display:grid;gap:12px;padding:12px 0 0 24px}
-.choice-some:not(:has(input[value=some]:checked)) .picks{display:none}
-.picks-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:16px;font-weight:400;color:var(--muted)}
-.picks-head>span:last-child{display:flex;gap:12px}
-.picks-head button{font:inherit;padding:0;border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer}
-.picks-head button:hover{color:var(--fg)}
-.check{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0;overflow-wrap:anywhere}
-.pick-group{display:grid;gap:8px}
-.pick-group-items{display:grid;gap:12px;padding-left:12px;border-left:1px solid var(--line);margin-left:7px}
-.pick-group-name{font-weight:500;color:var(--muted)}
-.sub-note{display:flex;gap:12px;padding:12px;border-radius:var(--radius);background:color-mix(in srgb,var(--fg) 7%,var(--card));color:var(--fg)}
-.sub-note .i{margin-top:2px;color:var(--muted)}
-.sub-note p span{display:block}
+.field{display:grid;gap:8px;font-weight:500}
 .fine{color:var(--muted)}
-.fine a{color:inherit}
-.sub-form:has(input[value=some]:checked) .for-all,.sub-form:not(:has(input[value=some]:checked)) .for-some{display:none}
-.sub-alert{padding:12px;border-radius:var(--radius);background:var(--major-tint);color:var(--fg)}
-.sub-foot{display:flex;justify-content:flex-end;padding:16px;border-top:1px solid var(--line)}
 .copy{display:flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.copy:focus-within{border-color:color-mix(in srgb,var(--fg) 40%,var(--line))}
 .copy input{flex:1;min-width:0;font:inherit;font-weight:400;color:var(--fg);background:none;border:0;padding:8px;outline:none;text-overflow:ellipsis}
 .copy-btn{display:grid;place-items:center;width:46px;flex:none;padding:0;border:0;border-left:1px solid var(--line);background:none;color:var(--muted);cursor:pointer}
 .copy-btn:hover{color:var(--fg)}
@@ -119,7 +80,7 @@ body:has(.modal.open),body:not(.js):has(.modal:target){overflow:hidden}
 @media (max-width:560px){.modal{padding:72px 0 0}}
 `
 
-export const pageStyles = `${controlStyles}
+export const pageStyles = `
 .sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .ico{flex:none;display:block}
 .ico circle{fill:var(--c)}
@@ -193,23 +154,6 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .s-notice{--c:var(--muted)}
 ${dialogStyles}
 @media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
-`
-
-/** The subscription pages: the logo over one centred card. */
-export const subscriptionStyles = `${controlStyles}
-.solo{display:flex;justify-content:center;margin-bottom:32px}
-.solo .brand{margin:0}
-.result{margin:0 auto;max-width:624px;min-height:265px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:36px 24px;text-align:center;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow,none)}
-.result .ico,.result .i{width:24px;height:24px}
-.result .ico circle{fill:var(--c)}
-.result .ico path{fill:none;stroke:var(--card);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.result .i{color:var(--muted)}
-.result h1{margin:0;font-size:18px;line-height:28px;font-weight:500}
-.result p{margin:0;max-width:440px;font-size:14px;color:var(--muted)}
-.result form{margin-top:4px}
-.result .btn.quiet{margin-top:4px}
-.home{font-size:12px;color:var(--fg);text-decoration:none}
-.home:hover{text-decoration:underline}
 `
 
 export const manageStyles = `

@@ -330,7 +330,7 @@ export const renderPage = (
 	const body = Arr.join(
 		[
 			renderHeader(snapshot, options, SUBSCRIBE_LINK),
-			renderSubscribeDialog(snapshot, options),
+			renderSubscribeDialog(options),
 			`<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
 			renderHero(
 				overall,

@@ -32,7 +32,6 @@ import { SupabaseInsightsService } from "@maple/backend/services/integrations/Su
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
 import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
-import { StatusPageNotifier } from "@maple/backend/services/status-pages/StatusPageNotifier"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
@@ -99,7 +98,6 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
-		StatusPageNotifier.layer,
 		// Unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
 		StatusPageCustomDomainsService.layer,
 		statusPagesLayerIfBound(statusPages),
@@ -486,7 +484,7 @@ const prReviewPostMergeTick = makeTick(
 /**
  * Imports break-glass updates, repairs auto incidents, checks custom domains due a check, then
  * sweeps: edge cleanups, lagging pages and the heartbeat (written by the sweep only once it
- * reached the database), then emails new incident updates to subscribers. Each step isolated.
+ * reached the database). Each step isolated.
  */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
@@ -531,18 +529,6 @@ const statusPagesTick = Effect.gen(function* () {
 					statusPageCleanupFailures: result.cleanupsFailed,
 				}
 			: undefined,
-	)
-	yield* makeTick(
-		StatusPageNotifier.use((notifier) => notifier.sweep(nowMs)),
-		"status_page_notify",
-		(result) =>
-			result.queued + result.sent + result.failed > 0
-				? {
-						statusPageUpdatesQueued: result.queued,
-						statusPageEmailsSent: result.sent,
-						statusPageEmailsFailed: result.failed,
-					}
-				: undefined,
 	)
 })
 

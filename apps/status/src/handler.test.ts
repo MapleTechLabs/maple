@@ -515,9 +515,6 @@ describe("custom domains", () => {
 		expect(await page.text()).toContain("<title>Acme status</title>")
 		for (const path of ["/feed.atom", "/feed.rss", "/api/v1/status.json", "/badge.svg", "/_manage"])
 			expect((await send(fake, `${CUSTOM}${path}`)).status, path).toBe(200)
-		const subscribe = await send(fake, postForm(`${CUSTOM}/subscribe`, [["email", "ana@example.com"]]))
-		expect(subscribe.status).toBe(200)
-		expect(Arr.map(fake.subscriptionCalls, (call) => call.pageId)).toEqual([FIXTURE_PAGE_ID])
 	})
 
 	it("links feeds, status.json and the Slack command to the custom domain, wherever the page is read", async () => {

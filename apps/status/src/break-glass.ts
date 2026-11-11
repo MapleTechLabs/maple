@@ -92,7 +92,7 @@ const readCapped = (
 		}),
 	)
 
-export const readFormData = (request: Request): Effect.Effect<FormData, BreakGlassRejected> =>
+const readFormData = (request: Request): Effect.Effect<FormData, BreakGlassRejected> =>
 	Effect.gen(function* () {
 		if (Number(request.headers.get("content-length") ?? "0") > MAX_FORM_BYTES) {
 			return yield* reject(413, TOO_LARGE)
