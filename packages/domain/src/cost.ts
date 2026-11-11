@@ -16,3 +16,25 @@ export const CostDimension = Schema.Literals([
 	"service",
 ])
 export type CostDimension = typeof CostDimension.Type
+
+/** Providers Maple reads cost from. One literal per built adapter. */
+export const CostProvider = Schema.Literals(["aws"])
+export type CostProvider = typeof CostProvider.Type
+
+/** `billed`: the provider reported the money. `estimated`: usage times list price. */
+export const CostBasis = Schema.Literals(["billed", "estimated"])
+export type CostBasis = typeof CostBasis.Type
+
+/**
+ * What kind of charge a row is, after FOCUS `ChargeCategory`. `unknown`: the source does not split
+ * charge types, so the row may net credits and purchases into usage.
+ */
+export const CostChargeCategory = Schema.Literals([
+	"usage",
+	"purchase",
+	"tax",
+	"credit",
+	"adjustment",
+	"unknown",
+])
+export type CostChargeCategory = typeof CostChargeCategory.Type
