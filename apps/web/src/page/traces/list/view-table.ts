@@ -182,6 +182,14 @@ const loadedTable = (
 ): Html => {
 	const count = allRows(model).length
 	const hidden = hiddenCount(model)
+	const tally = {
+		shown: count,
+		noun: "traces",
+		isCapped: count >= MAX_RETAINED_TRACES,
+		hasMore: hasNextPage(model),
+		align: "start",
+		className: "p-0",
+	} as const
 	return h.div(
 		[
 			h.Class(cn("flex min-h-0 flex-1 flex-col gap-4", refreshingClass(isWaiting))),
@@ -206,14 +214,15 @@ const loadedTable = (
 				h,
 				{ align: "center", wrap: true, className: "shrink-0 gap-x-1 text-xs text-muted-foreground" },
 				[
-					listFooter(h, {
-						shown: count,
-						noun: "traces",
-						isCapped: count >= MAX_RETAINED_TRACES,
-						hasMore: hasNextPage(model),
-						align: "start",
-						className: "p-0",
-					}),
+					// A later page that failed is said here, with its retry.
+					model.pagination.isFailed
+						? listFooter(h, {
+								...tally,
+								isFailed: true,
+								onLoadMore: Message.ClickedRetryNextPage(),
+								children: [h.span([], ["Couldn't load more traces"])],
+							})
+						: listFooter(h, tally),
 					hidden > 0 ? noiseNote(h, hidden) : null,
 				],
 			),

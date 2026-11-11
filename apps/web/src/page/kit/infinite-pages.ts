@@ -1,8 +1,8 @@
 import { Array as Arr, Result, Schema } from "effect"
 
 // An infinite list's pages after the first: owned by one first page (`generation`), one fetch in
-// flight at a time, stopped by a failed page. Traces, logs and replays share it; each page keeps its
-// own cursor (an offset, a log cursor, a replay cursor) and its own "has more" rule.
+// flight at a time, paused by a failed page until a retry. Traces, logs and replays share it; each
+// page keeps its own cursor (an offset, a log cursor, a replay cursor) and its own "has more" rule.
 
 /** The later pages' fields; a page whose pages are keyed by the first-page request adds `key`. */
 export const laterPagesFields = <P extends Schema.Top>(page: P) => ({
@@ -10,7 +10,9 @@ export const laterPagesFields = <P extends Schema.Top>(page: P) => ({
 	generation: Schema.Number,
 	pages: Schema.Array(page),
 	isFetching: Schema.Boolean,
-	/** A page failed: the list stops asking until the first page or filters change. */
+	/** The last page request failed: the list asks again only on a retry, and its footer says so. */
+	isFailed: Schema.Boolean,
+	/** A page said the list ends here (replays: a repeated cursor). */
 	isStopped: Schema.Boolean,
 })
 
@@ -18,6 +20,7 @@ export type LaterPages<A> = Readonly<{
 	generation: number
 	pages: ReadonlyArray<A>
 	isFetching: boolean
+	isFailed: boolean
 	isStopped: boolean
 }>
 
@@ -26,15 +29,20 @@ export const freshLaterPages = (generation: number): LaterPages<never> => ({
 	generation,
 	pages: [],
 	isFetching: false,
+	isFailed: false,
 	isStopped: false,
 })
 
-/** The next page's request went out. */
-export const fetchingNext = <S extends LaterPages<unknown>>(pages: S): S => ({ ...pages, isFetching: true })
+/** The next page's request went out; a retry clears the failure it answers. */
+export const fetchingNext = <S extends LaterPages<unknown>>(pages: S): S => ({
+	...pages,
+	isFetching: true,
+	isFailed: false,
+})
 
 /**
- * A next page answered: appended, or a failure stops paging. `stopsAt` decides `isStopped` from a
- * page that succeeded (replays stop on a repeated cursor); without it the flag is kept.
+ * A next page answered: appended, or the failure is kept for the footer's retry. `stopsAt` decides
+ * `isStopped` from a page that succeeded (replays stop on a repeated cursor); without it the flag is kept.
  */
 export const appendedPage = <A, S extends LaterPages<A>>(
 	pages: S,
@@ -48,7 +56,7 @@ export const appendedPage = <A, S extends LaterPages<A>>(
 			isFetching: false,
 			isStopped: stopsAt === undefined ? pages.isStopped : stopsAt(page),
 		}),
-		onFailure: () => ({ ...pages, isFetching: false, isStopped: true }),
+		onFailure: () => ({ ...pages, isFetching: false, isFailed: true }),
 	})
 
 /** The first page's rows then every later page's, capped. */

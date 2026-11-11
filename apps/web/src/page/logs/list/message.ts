@@ -43,6 +43,8 @@ export const Message = defineMessageUnion({
 	MountedFilterRail: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
+	/** "Try again" under the stream, after a later page failed. */
+	ClickedRetryNextPage: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	TickedAutoRefresh: {},
 	ClickedJumpToLatest: {},
