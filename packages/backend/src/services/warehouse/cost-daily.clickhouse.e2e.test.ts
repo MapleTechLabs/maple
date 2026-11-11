@@ -50,6 +50,8 @@ interface SeedRow {
 	readonly pulledAt: string
 	/** The sync's zero row for a day a pull returned nothing for: every string empty. */
 	readonly marker?: boolean
+	/** Defaults to USD. */
+	readonly currency?: string
 }
 
 const row = (
@@ -85,6 +87,9 @@ const SEED: ReadonlyArray<SeedRow> = [
 	row("src_emptied", 0, "Vanished", "us-east-1", 7, FIRST_PULL),
 	{ ...row("src_emptied", 0, "", "", 0, SECOND_PULL), marker: true },
 	row("src_emptied", -1, "Lambda", "us-east-1", 9, SECOND_PULL),
+	// An account that changed its billing currency between the period before and the window.
+	{ ...row("src_switched", 1, "EC2", "eu-central-1", 40, SECOND_PULL), currency: "EUR" },
+	row("src_switched", -2, "EC2", "eu-central-1", 15, SECOND_PULL),
 ]
 
 /** The copy of a second-pull row an ingest retry wrote again, in a block of its own. */
@@ -95,7 +100,7 @@ const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value
 const values = (seed: SeedRow): string =>
 	seed.marker === true
 		? `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '', ${quote(day(seed.day))}, '', '', '', '', '', '', '', 'none', 'billed', '', 0, 0, 0, 0, '', map(), 0, ${quote(seed.pulledAt)})`
-		: `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', 'USD', ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
+		: `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', ${quote(seed.currency ?? "USD")}, ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
 
 const insert = (rows: ReadonlyArray<SeedRow>): Promise<string> =>
 	clickhouseExec(
@@ -189,7 +194,8 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 	})
 
 	it("counts a disconnected source only when the caller names no sources", async () => {
-		assert.strictEqual((await totals({}))?.cost, 1072)
+		// Every source of the org: the active one, the disconnected, the emptied and the switched.
+		assert.strictEqual((await totals({}))?.cost, 1112)
 	})
 
 	it("reads nothing for an org whose source list is empty", async () => {
@@ -252,10 +258,22 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 			cost: 0,
 			previousCost: 9,
 			estimatedDays: 0,
+			// No row in the window: the label and the count come from the period before.
 			currency: "USD",
-			currencies: 0,
+			currencies: 1,
 		})
 		assert.deepStrictEqual(await timeseries({ ...emptied, dimension: "cloud_service" }), [])
+	})
+
+	it("labels the window's cost with the window's currency, and flags a change before it", async () => {
+		assert.deepStrictEqual(await totals({ sourceIds: ["src_switched"] }), {
+			cost: 40,
+			previousCost: 15,
+			estimatedDays: 0,
+			// Not the USD of the period before, and two currencies: the amounts do not compare.
+			currency: "EUR",
+			currencies: 2,
+		})
 	})
 
 	it("ranks by the size of the move in either direction", async () => {
