@@ -12,7 +12,6 @@
 		"@maple/infra": "workspace:*",
 		"@maple/primitives": "workspace:*",
 		"@maple/status-page": "workspace:*",
-		"@maple/strings": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},
