@@ -1,6 +1,6 @@
 import { Array as Arr, Order } from "effect"
 import * as THREE from "three"
-import type { Node3DKind } from "../../page/service-map/three/types"
+import type { Node3DKind } from "../three/types"
 import type { Biome, TreeKind } from "./biome"
 import { corners, HEX_SIZE, ORIGIN, type Point } from "./hex"
 import type { TilePalette } from "./palette"

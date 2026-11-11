@@ -1,29 +1,17 @@
-import {
-	Array as Arr,
-	Clock as EffectClock,
-	Effect,
-	Option,
-	Queue,
-	Record as Rec,
-	Schema,
-	Stream,
-} from "effect"
+import { Array as Arr, Effect, Option, Order, Queue, Record as Rec, Schema, Stream } from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { SceneStartError, Topology } from "../../page/service-map/scene3d"
-import type { Resources } from "../../platform/resources"
-import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
+import { SceneStartError, Topology } from "../scene3d"
+import type { Topology3D } from "../three/types"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
 import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
-import { Cell, ORIGIN } from "./hex"
+import { Cell, cellKey, ORIGIN } from "./hex"
 import type { SceneEvents, SceneHandle, SceneInput } from "./world"
 
-// `/lab/service-map-tiles`: the service map as a landscape of hex tiles. The page keeps the
-// board (which tile stands on which cell, and the stack still to deal); the scene runs in a Mount
-// that `import()`s `./scene`, so three stays out of the lab's first chunk.
-
-export const topology = SERVICE_MAP_3D_TOPOLOGY
-export const links = linksOf(topology)
+// The service map as a landscape of hex tiles, over whatever topology the parent passes in (the
+// live map on the page, a fixture in the lab). This keeps the board: which tile stands on which
+// cell, and the stack still to deal. The scene runs in a Mount that `import()`s `./scene`, so
+// three stays out of the startup bundle. Selection belongs to the parent.
 
 const CameraCommand = Schema.Struct({
 	action: Schema.Literals(["reset", "in", "out"]),
@@ -33,6 +21,11 @@ const CameraCommand = Schema.Struct({
 export const Model = Schema.Struct({
 	/** Tiles on the board, by node id. */
 	cells: Schema.Record(Schema.String, Cell),
+	/** The services `cells` was laid out for (`layoutKeyOf`); `null` before the first layout. */
+	layoutKey: Schema.NullOr(Schema.String),
+	/** Where tiles stood when their service left the map (a filter, a quiet window), so they come
+	 * back to the same cell. Cleared by a new deal or Auto-arrange. */
+	remembered: Schema.Record(Schema.String, Cell),
 	/** Tiles still to deal, the next one first. Empty once the map is complete. */
 	stack: Schema.Array(Schema.String),
 	/** A tile lifted off the board while rearranging. */
@@ -43,22 +36,20 @@ export const Model = Schema.Struct({
 	hover: Schema.NullOr(Cell),
 	/** Roads the last move gained or lost. */
 	lastGain: Schema.NullOr(Schema.Number),
-	selectedId: Schema.NullOr(Schema.String),
 	/** The link whose cart or train was last poked: its card shows until something else is picked. */
 	pokedLinkId: Schema.NullOr(Schema.String),
 	/** The map's noises are off. */
 	isMuted: Schema.Boolean,
 	/** How the map is lit: by the viewer's clock, or held at one time of day. */
 	light: LightMode,
-	/** The viewer's clock, read at the start and again every minute. */
-	clock: Clock,
+	/** The viewer's clock, read on mount and again every minute; `null` until read. */
+	clock: Schema.NullOr(Clock),
 	/** The traffic toggle; `null` until clicked, so it follows the reduced-motion setting. */
 	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
 	/** The `<html>` theme, read by a Mount; `null` until it ran. */
 	isDark: Schema.NullOr(Schema.Boolean),
 	isFailed: Schema.Boolean,
-	reducedMotion: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -76,7 +67,7 @@ export const Message = defineMessageUnion({
 	PokedLink: { linkId: Schema.String },
 	ClosedLinkCard: {},
 	ClickedCamera: { action: Schema.Literals(["reset", "in", "out"]) },
-	/** A service picked on the map, in the rail or by its label; `null` clears the selection. */
+	/** A service picked on the map or by its label; `null` clears the selection. */
 	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
 	PickedUpTile: { nodeId: Schema.String },
 	PlacedTile: { nodeId: Schema.String, cell: Cell },
@@ -87,26 +78,22 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export const Flags = Schema.Struct({ reducedMotion: Schema.Boolean, clock: Clock })
-export type Flags = typeof Flags.Type
+/** The parent owns the selection: the page opens its service panel, the lab its inspector. */
+export const OutMessage = defineMessageUnion({
+	Selected: { nodeId: Schema.NullOr(Schema.String) },
+})
+export type OutMessage = typeof OutMessage.Type
 
 /** The viewer's clock now, in their own time zone. */
-const readClock = Effect.map(EffectClock.currentTimeMillis, (nowMs) =>
-	clockOf(new Date(nowMs), Intl.DateTimeFormat().resolvedOptions().timeZone),
-)
-
-export const flags = Effect.map(readClock, (clock): Flags => ({
-	reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-	clock,
-}))
+const readClock = (): Clock => clockOf(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone)
 
 /** The clock the map is lit for: the viewer's own, or theirs with the hour held. */
-export const litClockOf = (model: Pick<Model, "light" | "clock">): Clock => ({
-	...model.clock,
-	hour: hourFor(model.light, model.clock),
+export const litClockOf = (model: Pick<Model, "light">, clock: Clock): Clock => ({
+	...clock,
+	hour: hourFor(model.light, clock),
 })
 
-type Return = Update.Return<Model, Message, Resources>
+type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
 const toRecord = (cells: Placements): Record<string, Cell> => Rec.fromEntries(cells)
 export const placementsOf = (model: Pick<Model, "cells">): Placements => new Map(Rec.toEntries(model.cells))
@@ -115,43 +102,97 @@ export const placementsOf = (model: Pick<Model, "cells">): Placements => new Map
 export const heldIdOf = (model: Pick<Model, "pickedId" | "stack">): string | null =>
 	model.pickedId ?? model.stack[0] ?? null
 
-export const init = (flags: Flags): Return => ({
-	model: {
-		cells: toRecord(autoLayout(topology)),
-		stack: [],
-		pickedId: null,
-		isBuilding: false,
+const layoutKeys = new WeakMap<Topology3D, string>()
+
+/** The set of services on a map, the key a layout is kept under; once per topology object. */
+const layoutKeyOf = (topology: Topology3D): string => {
+	const known = layoutKeys.get(topology)
+	if (known !== undefined) return known
+	const key = Arr.join(
+		Arr.sort(
+			Arr.map(topology.nodes, (node) => node.id),
+			Order.String,
+		),
+		"\n",
+	)
+	layoutKeys.set(topology, key)
+	return key
+}
+
+/**
+ * The board for this topology. A tile whose service is still on the map keeps its cell, a
+ * service new to the map is laid out round them (or joins the stack during a deal), and a tile
+ * whose service left goes. Unchanged services return the model as it is.
+ */
+export const sync = (model: Model, topology: Topology3D): Model => {
+	const key = layoutKeyOf(topology)
+	if (key === model.layoutKey) return model
+	const ids = new Set(Arr.map(topology.nodes, (node) => node.id))
+	const staying = Arr.filter(Rec.toEntries(model.cells), ([id]) => ids.has(id))
+	const gone = Arr.filter(Rec.toEntries(model.cells), ([id]) => !ids.has(id))
+	const stack = Arr.filter(model.stack, (id) => ids.has(id))
+	const dealing = model.layoutKey !== null && stack.length > 0
+	// A returning service takes its old cell back, unless another tile stands there now.
+	const taken = new Set(Arr.map(staying, ([, cell]) => cellKey(cell)))
+	const returning = Arr.filter(Rec.toEntries(model.remembered), ([id, cell]) => {
+		if (dealing || !ids.has(id) || taken.has(cellKey(cell))) return false
+		taken.add(cellKey(cell))
+		return true
+	})
+	const kept: Placements = new Map([...staying, ...returning])
+	const newcomers = Arr.filter(dealOrder(topology, new Set(kept.keys())), (id) => !Arr.contains(stack, id))
+	const pickedId = model.pickedId !== null && ids.has(model.pickedId) ? model.pickedId : null
+	return {
+		...model,
+		layoutKey: key,
+		remembered: Rec.filter({ ...model.remembered, ...Rec.fromEntries(gone) }, (_, id) => !ids.has(id)),
+		cells: toRecord(dealing ? kept : autoLayout(topology, kept)),
+		stack: dealing ? [...stack, ...newcomers] : [],
+		pickedId: dealing ? null : pickedId,
 		hover: null,
 		lastGain: null,
-		selectedId: null,
-		pokedLinkId: null,
-		isMuted: false,
-		light: "clock",
-		clock: flags.clock,
-		traffic: null,
-		command: { action: "reset", serial: 0 },
-		isDark: null,
-		isFailed: false,
-		reducedMotion: flags.reducedMotion,
-	},
+	}
+}
+
+export const init = (): Model => ({
+	cells: {},
+	layoutKey: null,
+	remembered: {},
+	stack: [],
+	pickedId: null,
+	isBuilding: false,
+	hover: null,
+	lastGain: null,
+	pokedLinkId: null,
+	isMuted: false,
+	light: "clock",
+	clock: null,
+	traffic: null,
+	command: { action: "reset", serial: 0 },
+	isDark: null,
+	isFailed: false,
 })
 
-export const update = (model: Model, message: Message): Return =>
-	Message.match<Return>(message, {
+const deselect: OutMessage = OutMessage.Selected({ nodeId: null })
+
+/** One step of the board over `topology`, laid out for it first (`sync`). */
+export const update = (current: Model, message: Message, topology: Topology3D): Return => {
+	const model = sync(current, topology)
+	return Message.match<Return>(message, {
 		// A deal in progress is always rearranging: there is a tile in hand until the stack is empty.
-		ClickedRearrange: () => ({
-			model:
-				model.stack.length > 0
-					? model
-					: {
+		ClickedRearrange: () =>
+			model.stack.length > 0
+				? { model }
+				: {
+						model: {
 							...model,
 							isBuilding: !model.isBuilding,
 							pokedLinkId: null,
 							pickedId: null,
 							hover: null,
-							selectedId: null,
 						},
-		}),
+						outMessage: deselect,
+					},
 		// The best connected tile starts in the middle; the rest come off the stack one at a time.
 		ClickedDeal: () => {
 			const order = dealOrder(topology)
@@ -160,20 +201,22 @@ export const update = (model: Model, message: Message): Return =>
 				model: {
 					...model,
 					cells: first === undefined ? {} : { [first]: ORIGIN },
+					remembered: {},
 					stack: Arr.drop(order, 1),
 					pickedId: null,
 					isBuilding: true,
 					pokedLinkId: null,
 					hover: null,
 					lastGain: null,
-					selectedId: null,
 				},
+				outMessage: deselect,
 			}
 		},
 		ClickedAutoArrange: () => ({
 			model: {
 				...model,
 				cells: toRecord(autoLayout(topology)),
+				remembered: {},
 				stack: [],
 				pickedId: null,
 				isBuilding: false,
@@ -202,26 +245,29 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		TickedClock: ({ clock }) => ({ model: { ...model, clock } }),
 		PokedLink: ({ linkId }) => ({
-			model: Arr.some(links, (link) => link.id === linkId) ? { ...model, pokedLinkId: linkId } : model,
+			model: Arr.some(linksOf(topology), (link) => link.id === linkId)
+				? { ...model, pokedLinkId: linkId }
+				: model,
 		}),
 		ClosedLinkCard: () => ({ model: { ...model, pokedLinkId: null } }),
 		ClickedCamera: ({ action }) => ({
 			model: { ...model, command: { action, serial: model.command.serial + 1 } },
 		}),
-		PickedNode: ({ nodeId }) => ({ model: { ...model, selectedId: nodeId, pokedLinkId: null } }),
-		PickedUpTile: ({ nodeId }) => ({
-			model:
-				model.isBuilding && model.stack.length === 0 && nodeId in model.cells
-					? { ...model, pickedId: nodeId, hover: null, selectedId: null }
-					: model,
+		PickedNode: ({ nodeId }) => ({
+			model: { ...model, pokedLinkId: null },
+			outMessage: OutMessage.Selected({ nodeId }),
 		}),
+		PickedUpTile: ({ nodeId }) =>
+			model.isBuilding && model.stack.length === 0 && nodeId in model.cells
+				? { model: { ...model, pickedId: nodeId, hover: null }, outMessage: deselect }
+				: { model },
 		PlacedTile: ({ nodeId, cell }) => {
 			if (nodeId !== heldIdOf(model)) return { model }
 			const cells = placementsOf(model)
 			return Option.match(
 				Option.all({
 					next: placeTile(cells, nodeId, cell),
-					outcome: prospect(links, cells, nodeId, cell),
+					outcome: prospect(linksOf(topology), cells, nodeId, cell),
 				}),
 				{
 					onNone: () => ({ model }),
@@ -244,6 +290,7 @@ export const update = (model: Model, message: Message): Return =>
 		FailedScene: () => ({ model: { ...model, isFailed: true } }),
 		ResolvedTheme: ({ isDark }) => ({ model: { ...model, isDark } }),
 	})
+}
 
 // Scene input: the Mount reads it from data attributes, so a re-render patches, never remounts.
 
@@ -388,27 +435,17 @@ export const MountScene = Mount.defineStream("MountServiceMapTiles", {
 				),
 })
 
-/** The viewer's clock, read again every minute, so a map left open goes from day to night. */
+/** The viewer's clock on mount and again every minute, so a map left open goes from day to night. */
 export const WatchClock = Mount.defineStream("WatchServiceMapTilesClock", {
 	messages: [Message.TickedClock],
 	execute: () =>
 		Stream.callback<ReturnType<typeof Message.TickedClock>>((queue) =>
 			Effect.acquireRelease(
-				Effect.sync(() =>
-					window.setInterval(
-						() =>
-							Queue.offerUnsafe(
-								queue,
-								Message.TickedClock({
-									clock: clockOf(
-										new Date(),
-										Intl.DateTimeFormat().resolvedOptions().timeZone,
-									),
-								}),
-							),
-						60_000,
-					),
-				),
+				Effect.sync(() => {
+					const tick = () => Queue.offerUnsafe(queue, Message.TickedClock({ clock: readClock() }))
+					tick()
+					return window.setInterval(tick, 60_000)
+				}),
 				(timer) => Effect.sync(() => window.clearInterval(timer)),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),

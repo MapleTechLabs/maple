@@ -16,6 +16,8 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
+import * as Tiles from "./tiles/update"
+import { topologyOf } from "./view-scene3d"
 import {
 	CompleteReloadSpin,
 	LoadSignalPresence,
@@ -77,6 +79,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
 		scene3d: Scene3d.init(),
+		tiles: Tiles.init(),
 		presence: SignalPresenceData.Loading(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -211,12 +214,23 @@ const applyUrlFocus = (result: Return, context: PageContext): Return =>
 			),
 	})
 
-/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
+/** Lays the tile board out for the map as it changes, once the Tiles view has been opened. */
+const syncTiles = (result: Return): Return => {
+	const { model } = result
+	if (Option.isNone(model.map) || (model.search.view !== "tiles" && model.tiles.layoutKey === null))
+		return result
+	const tiles = Tiles.sync(model.tiles, topologyOf(model.map.value))
+	return tiles === model.tiles ? result : { ...result, model: { ...model, tiles } }
+}
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
 	context: PageContext,
-): Return => {
+): Return => syncTiles(searchChanged(model, route, context))
+
+/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
+const searchChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// The 3D viewport remounts when the view switches to it: its view state starts over, its world stays.
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
@@ -236,7 +250,10 @@ export const routeChanged = (
 }
 
 /** The namespace pin scopes the rows on the client: rebuild the graph. A new zone re-resolves "today". */
-export const contextChanged = (model: Model, context: PageContext): Return => {
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	syncTiles(scopeChanged(model, context))
+
+const scopeChanged = (model: Model, context: PageContext): Return => {
 	const synced = syncMap(context)({ model })
 	const isNewZone = model.windowZone !== null && model.windowZone !== context.timeZone
 	if (!isNewZone) return synced
@@ -293,6 +310,22 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 	})
 }
 
+/** The tile view's step over the live map; a pick becomes the map's `onSelect`. */
+const withTiles = (model: Model, message: Tiles.Message, context: PageContext): Return =>
+	Option.match(model.map, {
+		onNone: () => ({ model }),
+		onSome: (map) => {
+			const next = Tiles.update(model.tiles, message, topologyOf(map))
+			const lifted: Return = { model: { ...model, tiles: next.model } }
+			if (next.outMessage === undefined) return lifted
+			const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
+			return merge(
+				lifted,
+				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+			)
+		},
+	})
+
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	// A preset: the absolute bounds leave the URL.
 	return pickerStep(
@@ -309,6 +342,9 @@ const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return 
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	syncTiles(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
 			// The facets window is minted once per visit and kept.
@@ -392,6 +428,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotScene3dMessage: ({ message: inner }) => withScene3d(model, inner, context),
+		GotTilesMessage: ({ message: inner }) => withTiles(model, inner, context),
 		// An answer for another org (the user switched while it was in flight) is dropped.
 		CompletedLoadWorld: ({ orgId, result }) =>
 			orgId === context.orgId

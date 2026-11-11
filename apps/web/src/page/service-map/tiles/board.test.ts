@@ -1,7 +1,7 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Edge3D, Node3D } from "../../page/service-map/three/types"
-import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
+import type { Edge3D, Node3D } from "../three/types"
+import { SERVICE_MAP_3D_TOPOLOGY } from "../../../lab/service-map-3d/fixture"
 import {
 	autoLayout,
 	dealOrder,
@@ -107,6 +107,23 @@ describe("autoLayout", () => {
 
 	it("is the same on every run", () => {
 		expect([...autoLayout(SERVICE_MAP_3D_TOPOLOGY)]).toEqual([...autoLayout(SERVICE_MAP_3D_TOPOLOGY)])
+	})
+
+	it("lays out a large map with every node on its own cell and every chain link by road", () => {
+		// Past the exhaustive swap limit: twenty chains of five, one namespace each.
+		const chains = Arr.map(Arr.range(0, 19), (chain) =>
+			Arr.map(Arr.range(0, 4), (link) => `c${chain}-${link}`),
+		)
+		const topology = {
+			nodes: Arr.flatMap(chains, (ids, chain) => Arr.map(ids, (id) => node(id, `ns${chain}`))),
+			edges: Arr.flatMap(chains, (ids) =>
+				Arr.flatMap(Arr.range(1, ids.length - 1), (i) => [edge(ids[i - 1] ?? "", ids[i] ?? "")]),
+			),
+		}
+		const cells = autoLayout(topology)
+		expect(cells.size).toBe(100)
+		expect(new Set(Arr.map([...cells.values()], cellKey)).size).toBe(100)
+		expect(tally(linksOf(topology), cells)).toMatchObject({ roads: 80, rails: 0 })
 	})
 })
 

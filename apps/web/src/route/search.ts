@@ -290,7 +290,7 @@ export const SelectPlanSearch = Schema.Struct({
 })
 
 export const ServiceMapSearch = Schema.Struct({
-	view: Schema.optional(Schema.Literals(["2d", "3d"])),
+	view: Schema.optional(Schema.Literals(["2d", "3d", "tiles"])),
 	environment: StringParam,
 	focusService: StringParam,
 	focusHops: Schema.optional(Schema.Literals([1, 2])),

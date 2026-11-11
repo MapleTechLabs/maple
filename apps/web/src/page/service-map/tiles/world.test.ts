@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Node3D } from "../../page/service-map/three/types"
+import type { Node3D } from "../three/types"
 import { type Cell, cellKey, hexDistance } from "./hex"
 import { derive, keyedTarget, type SceneInput } from "./world"
 
