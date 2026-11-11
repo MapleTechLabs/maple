@@ -7,7 +7,9 @@ import type { Node3D, Topology3D } from "../../page/service-map/three/types"
 import { quacker } from "../../page/service-map/three/quack"
 import { type Biome, biomeOf, biomesFor } from "./biome"
 import { lakesOf, type Link, linksOf, type Placements, targetsFor, type Targets } from "./board"
+import { makeSky } from "./birds"
 import { makeFlock } from "./ducks"
+import { makeFlourishes } from "./flourish"
 import {
 	type Cell,
 	cellKey,
@@ -24,7 +26,8 @@ import { buildLake } from "./lake"
 import { type Network, networkOf } from "./network"
 import { type TilePalette, tilePalette } from "./palette"
 import { band, creases, fuse, type Vec3 } from "./solid"
-import { buildTile, type Tile, TILE_DEPTH, tileOutline } from "./tile"
+import { makeSounds } from "./sounds"
+import { buildTile, landmarkAt, type Tile, TILE_DEPTH, tileOutline } from "./tile"
 import { buildRail, buildRoad } from "./tracks"
 import { makeTraffic, type Route, type Traffic } from "./traffic"
 
@@ -48,6 +51,8 @@ export interface SceneInput {
 	readonly building: boolean
 	readonly flowing: boolean
 	readonly dark: boolean
+	/** The map's noises are off: quacks, whistles, bells. */
+	readonly muted: boolean
 	readonly command: CameraCommand
 }
 
@@ -58,6 +63,8 @@ export interface SceneEvents {
 	/** The cell the held tile would land on, or `null` away from every target. */
 	readonly onHover: (cell: Cell | null) => void
 	readonly onCancel: () => void
+	/** A cart or a train was poked: the link it runs on. */
+	readonly onPokeLink: (linkId: string) => void
 }
 
 export interface SceneHandle {
@@ -225,11 +232,14 @@ interface TileView {
 	readonly ring: { key: string; mesh: THREE.Mesh | null }
 }
 
+/** Which tile a mesh under the pointer belongs to. */
+const tileIds = new WeakMap<THREE.Object3D, string>()
+
 const makeTile = (tile: Tile, id: string, key: string, materials: Materials): TileView => {
 	const mesh = new THREE.Mesh(tile.geometry, materials.land)
 	mesh.castShadow = true
 	mesh.receiveShadow = true
-	mesh.userData.pickId = id
+	tileIds.set(mesh, id)
 	const lines = new THREE.LineSegments(tile.ink, materials.ink)
 	const group = new THREE.Group()
 	group.add(mesh, lines)
@@ -325,8 +335,20 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	scene.add(hover)
 	const tiles = new Map<string, TileView>()
 	const flock = makeFlock(tilePalette(initial.dark), materials.land)
-	scene.add(flock.root)
+	const birds = makeSky()
+	const flourishes = makeFlourishes()
+	// The outline of the tile under the pointer: it says the tile can be clicked.
+	const outline = new THREE.Mesh(
+		band(tileOutline, 0.045, 0.9, 0.985, tilePalette(initial.dark).snow),
+		materials.slot,
+	)
+	outline.visible = false
+	outline.renderOrder = 4
+	scene.add(flock.root, birds.root, flourishes.root, outline)
 	const quacks = quacker()
+	const sounds = makeSounds(() => state.derived.input.muted)
+	/** Windmills spun by a click, and until when (seconds). */
+	const spun = new Map<string, number>()
 	const state = {
 		derived: derive(initial, null),
 		size: measure(container),
@@ -539,6 +561,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			;(dimmed ? roads.faded : roads.solid).push(road.geometry)
 			if (link.callsPerSecond > 0)
 				routes.push({
+					linkId: link.id,
 					kind: "cart",
 					points: road.track,
 					count: Math.min(4, 1 + Math.floor(busy)),
@@ -556,6 +579,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			;(dimmed ? rails.faded : rails.solid).push(rail.geometry)
 			if (link.callsPerSecond > 0)
 				routes.push({
+					linkId: link.id,
 					kind: "train",
 					points: rail.track,
 					count: Math.min(3, 1 + Math.floor(busy / 1.5)),
@@ -794,15 +818,21 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		state.last = now
 		state.pending = Math.max(0, state.pending - 1)
 		rig()
-		if (carryHeld(delta)) invalidate()
-		// A poked duck hops or flies on a paused map too: keep drawing until it settles.
-		if (flock.frame(delta, input.flowing)) invalidate()
-		if (input.flowing) {
-			state.traffic?.frame(delta)
-			tiles.forEach((view) => {
-				if (view.sails !== null) view.sails.rotation.z += delta * 0.9
-			})
-		}
+		const seconds = now / 1000
+		// What a click set off plays out on a paused map too: keep drawing until it all settles.
+		const playing = [
+			carryHeld(delta),
+			flock.frame(delta, input.flowing),
+			birds.frame(delta, input.flowing, state.derived.centre, state.derived.radius),
+			flourishes.frame(),
+			state.traffic?.frame(delta, input.flowing) ?? false,
+			Arr.some([...spun.values()], (until) => until > seconds),
+		]
+		if (Arr.some(playing, Boolean)) invalidate()
+		tiles.forEach((view, id) => {
+			const pace = (input.flowing ? 0.9 : 0) + ((spun.get(id) ?? 0) > seconds ? 8 : 0)
+			if (view.sails !== null) view.sails.rotation.z += delta * pace
+		})
 		renderer.render(scene, camera)
 		placeLabels()
 	}
@@ -827,11 +857,56 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 				false,
 			),
 		)
-		return Option.match(hit, {
-			onNone: () => null,
-			onSome: ({ object }) =>
-				typeof object.userData.pickId === "string" ? object.userData.pickId : null,
-		})
+		return Option.getOrNull(Option.flatMapNullishOr(hit, ({ object }) => tileIds.get(object)))
+	}
+	/** The tile under the pointer and the point of it that was hit, in the tile's own frame. */
+	const hitTile = (event: MouseEvent): { readonly id: string; readonly at: Vec3 } | null => {
+		aim(event)
+		const hit = Arr.head(
+			raycaster.intersectObjects(
+				Arr.map([...tiles.values()], (view) => view.mesh),
+				false,
+			),
+		)
+		return Option.getOrNull(
+			Option.flatMap(hit, ({ object, point }) => {
+				const id = tileIds.get(object)
+				const view = id === undefined ? undefined : tiles.get(id)
+				if (id === undefined || view === undefined) return Option.none()
+				const local = point.clone().sub(view.group.position)
+				return Option.some({ id, at: [local.x, local.y, local.z] as const })
+			}),
+		)
+	}
+	/** Where the pointer meets a lake's water, if it does. */
+	const hitWater = (event: MouseEvent): Point | null => {
+		aim(event)
+		const hit = Arr.head(raycaster.intersectObjects(layers.lakes.children, false))
+		return Option.getOrNull(
+			Option.flatMap(hit, ({ object, point }) =>
+				Math.hypot(point.x - object.position.x, point.z - object.position.z) < INRADIUS * 0.72
+					? Option.some([point.x, point.z] as const)
+					: Option.none(),
+			),
+		)
+	}
+	/** What a landmark does when it is clicked: a windmill spins, a church rings its bell and
+	 * the birds leave the tower, a lighthouse sounds its horn and sweeps its beam. */
+	const flourish = (id: string, at: Vec3) => {
+		const view = tiles.get(id)
+		const landmark = view === undefined ? null : landmarkAt(view.tile, at)
+		if (view === undefined || landmark === null) return
+		const { x, z } = view.group.position
+		const top: Vec3 = [x + landmark.top[0], landmark.top[1], z + landmark.top[2]]
+		if (landmark.kind === "queue") spun.set(id, performance.now() / 1000 + 4)
+		if (landmark.kind === "service") {
+			sounds.bell()
+			birds.flush(top)
+		}
+		if (landmark.kind === "edge") {
+			sounds.horn()
+			flourishes.beam(top, state.derived.palette.lamp)
+		}
 	}
 	const pickGround = (event: MouseEvent): Point | null => {
 		aim(event)
@@ -865,9 +940,21 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const { input } = state.derived
 		if (input.heldId === null) {
 			aim(event)
-			canvas.style.cursor = flock.under(raycaster) !== null || pickTile(event) !== null ? "pointer" : ""
+			const id = pickTile(event)
+			const lively =
+				flock.under(raycaster) !== null ||
+				birds.under(raycaster) !== null ||
+				(!input.building && state.traffic?.under(raycaster.ray) != null) ||
+				hitWater(event) !== null
+			canvas.style.cursor = lively || id !== null ? "pointer" : ""
+			const home = id === null ? null : pointOf(id)
+			const shown = home !== null && !lively
+			if (shown !== outline.visible || (home !== null && outline.position.x !== home[0])) invalidate()
+			outline.visible = shown
+			if (home !== null) outline.position.set(home[0], 0, home[1])
 			return
 		}
+		outline.visible = false
 		const point = pickGround(event)
 		state.heldPoint = point
 		setHover(targetAt(point))
@@ -887,16 +974,47 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const duck = flock.under(raycaster)
 		if (duck !== null) {
 			// Two "wak"s for a poke, three when the duck takes fright; one that is away stays silent.
-			Option.map(flock.poke(duck), (poke) => quacks.quack(poke.alarm ? 3 : 2))
+			Option.map(flock.poke(duck), (poke) =>
+				input.muted ? undefined : quacks.quack(poke.alarm ? 3 : 2),
+			)
 			invalidate()
 			return
 		}
-		const id = pickTile(event)
-		if (input.building) {
-			if (id !== null) events.onPickUp(id)
+		const flight = birds.under(raycaster)
+		if (flight !== null) {
+			birds.startle(flight)
+			sounds.chirp(4)
+			invalidate()
 			return
 		}
-		events.onSelect(id === null || id === input.selectedId ? null : id)
+		// While rearranging, a click on a tile lifts it, whatever is driving across it.
+		const vehicle = input.building ? null : (state.traffic?.under(raycaster.ray) ?? null)
+		if (vehicle !== null) {
+			state.traffic?.poke(vehicle.index)
+			if (vehicle.kind === "train") sounds.whistle()
+			else sounds.ding()
+			events.onPokeLink(vehicle.linkId)
+			invalidate()
+			return
+		}
+		const hit = hitTile(event)
+		if (input.building) {
+			if (hit !== null) events.onPickUp(hit.id)
+			return
+		}
+		const water = hit === null ? hitWater(event) : null
+		if (water !== null) {
+			flourishes.ripple(water, state.derived.palette.snow)
+			sounds.splash()
+			invalidate()
+			return
+		}
+		if (hit !== null) flourish(hit.id, hit.at)
+		events.onSelect(hit === null || hit.id === input.selectedId ? null : hit.id)
+	}
+	const onPointerLeave = () => {
+		outline.visible = false
+		invalidate()
 	}
 	const onKeyDown = (event: KeyboardEvent) => {
 		if (event.key === "Escape" && state.derived.input.heldId !== null) events.onCancel()
@@ -911,6 +1029,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	canvas.addEventListener("pointerdown", onPointerDown)
 	canvas.addEventListener("pointermove", onPointerMove)
 	canvas.addEventListener("click", onClick)
+	canvas.addEventListener("pointerleave", onPointerLeave)
 	canvas.addEventListener("contextmenu", onContextMenu)
 	window.addEventListener("keydown", onKeyDown)
 	labelsRoot.addEventListener("wheel", onWheel, { passive: false })
@@ -924,6 +1043,16 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		update: (input) => {
 			const previous = state.derived
 			state.derived = derive(input, previous)
+			// A tile coming down sends the birds up from where it lands.
+			const landed =
+				previous.input.heldId === null ? undefined : state.derived.cells.get(previous.input.heldId)
+			const before =
+				previous.input.heldId === null ? undefined : previous.cells.get(previous.input.heldId)
+			if (landed !== undefined && (before === undefined || !sameCell(before, landed))) {
+				const [x, z] = cellToPoint(landed)
+				birds.flush([x, 0.5, z])
+			}
+			if (input.heldId !== null) outline.visible = false
 			if (previous.input.heldId !== input.heldId || previous.input.cells !== input.cells) {
 				state.hoverCell = null
 				state.heldPoint = null
@@ -937,13 +1066,18 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			canvas.removeEventListener("pointerdown", onPointerDown)
 			canvas.removeEventListener("pointermove", onPointerMove)
 			canvas.removeEventListener("click", onClick)
+			canvas.removeEventListener("pointerleave", onPointerLeave)
 			canvas.removeEventListener("contextmenu", onContextMenu)
 			window.removeEventListener("keydown", onKeyDown)
 			labelsRoot.removeEventListener("wheel", onWheel)
 			orbit.dispose()
 			state.traffic?.dispose()
 			flock.dispose()
+			birds.dispose()
+			flourishes.dispose()
 			quacks.close()
+			sounds.close()
+			outline.geometry.dispose()
 			freeAll(scene)
 			hover.geometry.dispose()
 			Arr.forEach(Rec.values(materials), (material) => material.dispose())

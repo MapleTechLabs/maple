@@ -42,12 +42,29 @@ export interface Tile {
 	readonly ink: THREE.BufferGeometry
 	/** The tallest thing on the tile. */
 	readonly height: number
+	/** What stands out on the tile, for a click on it: where it is, how much room it takes and
+	 * where its top is (a spire, a lamp). `null` for a village too small to have one. */
+	readonly landmark: Landmark | null
 	/** A windmill's sails, turning with the traffic: where the hub is and which way it faces. */
 	readonly sails: {
 		readonly geometry: THREE.BufferGeometry
 		readonly hub: Vec3
 		readonly turn: number
 	} | null
+}
+
+export interface Landmark {
+	readonly kind: Node3DKind
+	readonly at: Point
+	readonly radius: number
+	readonly top: Vec3
+}
+
+/** The landmark a point on the tile belongs to: within its room, and off the ground. */
+export const landmarkAt = (tile: Pick<Tile, "landmark">, [x, y, z]: Vec3): Landmark | null => {
+	const { landmark } = tile
+	if (landmark === null || y < 0.12) return null
+	return Math.hypot(x - landmark.at[0], z - landmark.at[1]) <= landmark.radius ? landmark : null
 }
 
 type Parts = ReadonlyArray<THREE.BufferGeometry>
@@ -452,6 +469,15 @@ export const buildTile = (spec: TileSpec): Tile => {
 		geometry: fuse([block, ...ground, inked]),
 		ink,
 		height: plan.height,
+		landmark:
+			plan.landmark.length === 0
+				? null
+				: {
+						kind: spec.kind,
+						at: landmark,
+						radius: plan.clearing,
+						top: [landmark[0], plan.height - 0.2, landmark[1]],
+					},
 		sails:
 			spec.kind === "queue"
 				? { geometry: sailsOf(palette), hub: [landmark[0] + hub.x, hub.y, landmark[1] + hub.z], turn }

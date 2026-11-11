@@ -104,6 +104,15 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 				size: "sm",
 				variant: "ghost",
 				className: "ml-auto",
+				attributes: [h.AriaPressed(String(!model.isMuted)), h.OnClick(Message.ClickedSound())],
+			},
+			[model.isMuted ? "Sound off" : "Sound on"],
+		),
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "ghost",
 				attributes: [
 					h.AriaPressed(String(flowing)),
 					h.OnClick(Message.ClickedTraffic({ isFlowing: flowing })),
@@ -133,6 +142,7 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 						building: model.isBuilding,
 						flowing,
 						dark: isDark,
+						muted: model.isMuted,
 					}),
 				),
 				h.Attribute(COMMAND_ATTRIBUTE, encodeJson(model.command)),
@@ -280,6 +290,63 @@ const tileCard = (h: H, model: Model, cells: Placements, node: Node3D): Html => 
 	)
 }
 
+/** The cart or train that was clicked: what it carries, between which two services, and how the link is doing. */
+const linkCard = (h: H, cells: Placements, link: Link): Html => {
+	const state = linkState(cells, link)
+	const source = nodesById.get(link.source)
+	const produce = biomeOf(biomes, source?.namespace ?? "").produce.label
+	const stop = (id: string) =>
+		button(
+			h,
+			{
+				size: "xs",
+				variant: "outline",
+				className: "min-w-0",
+				attributes: [h.OnClick(Message.PickedNode({ nodeId: id }))],
+			},
+			[middleTruncate(h, { text: labelOf(id), tail: 8 })],
+		)
+	return vstack(
+		h,
+		{
+			gap: "2",
+			className: `absolute bottom-3 left-1/2 w-96 max-w-full -translate-x-1/2 p-3 ${PANEL_CLASS}`,
+			attributes: [h.AriaLabel("Connection"), h.AriaLive("polite")],
+		},
+		[
+			hstack(h, { gap: "2", align: "center" }, [
+				healthDot(h, link.errorRate),
+				typography(
+					h,
+					{ size: "sm", weight: "semibold", truncate: true, className: "min-w-0 flex-1" },
+					[`${state === "rail" ? "Train" : "Cart"} of ${produce}`],
+				),
+				badge(h, { variant: state === "road" ? "secondary" : "outline", size: "sm" }, [
+					STATE_LABEL[state],
+				]),
+			]),
+			typography(h, { size: "xs", tone: "muted", numeric: true, as: "p" }, [
+				`${formatRate(link.callsPerSecond)} · ${formatErrorRate(link.errorRate)} errors · ${HEALTH_LABEL[health(link.errorRate)]}`,
+			]),
+			hstack(h, { gap: "2", align: "center" }, [
+				stop(link.source),
+				typography(h, { size: "xs", tone: "muted" }, ["→"]),
+				stop(link.target),
+				button(
+					h,
+					{
+						size: "xs",
+						variant: "ghost",
+						className: "ml-auto",
+						attributes: [h.OnClick(Message.ClosedLinkCard())],
+					},
+					["Close"],
+				),
+			]),
+		],
+	)
+}
+
 const cameraControls = (h: H): Html => {
 	const camera = (action: "reset" | "in" | "out") => h.OnClick(Message.ClickedCamera({ action }))
 	return h.fieldset(
@@ -313,6 +380,7 @@ const viewport = (h: H, model: Model, flowing: boolean): Html => {
 	const cells = placementsOf(model)
 	const heldId = heldIdOf(model)
 	const held = heldId === null ? undefined : nodesById.get(heldId)
+	const poked = Option.getOrUndefined(Arr.findFirst(links, (link) => link.id === model.pokedLinkId))
 	return h.section(
 		[
 			h.Class("relative min-h-0 flex-1 overflow-hidden bg-background"),
@@ -330,6 +398,7 @@ const viewport = (h: H, model: Model, flowing: boolean): Html => {
 			scorePanel(h, model, cells),
 			cameraControls(h),
 			...(held === undefined ? [] : [tileCard(h, model, cells, held)]),
+			...(held === undefined && poked !== undefined ? [linkCard(h, cells, poked)] : []),
 		],
 	)
 }
@@ -354,7 +423,7 @@ const footer = (h: H, model: Model): Html =>
 							: "Click a pale cell or another tile · Esc puts it back"
 						: model.isBuilding
 							? "Click a tile to lift it · drag to pan · right-drag to turn"
-							: "Drag to pan · right-drag to turn · scroll to zoom",
+							: "Click anything · drag to pan · right-drag to turn",
 				],
 			),
 			hstack(h, { gap: "3", wrap: true, as: "span" }, [

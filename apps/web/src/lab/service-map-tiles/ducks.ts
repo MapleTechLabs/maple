@@ -98,6 +98,8 @@ export interface Flock {
 
 export const makeFlock = (palette: TilePalette, material: THREE.Material): Flock => {
 	const root = new THREE.Group()
+	// A little bigger than life, so a duck can be found and clicked from the whole-map view.
+	root.scale.setScalar(1.4)
 	const geometry = duckGeometry(palette)
 	const wing = new THREE.BoxGeometry(0.11, 0.014, 0.17)
 	const wingMaterial = new THREE.MeshLambertMaterial({ color: palette.duck, flatShading: true })

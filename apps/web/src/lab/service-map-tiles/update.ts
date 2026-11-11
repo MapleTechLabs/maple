@@ -34,6 +34,10 @@ export const Model = Schema.Struct({
 	/** Roads the last move gained or lost. */
 	lastGain: Schema.NullOr(Schema.Number),
 	selectedId: Schema.NullOr(Schema.String),
+	/** The link whose cart or train was last poked: its card shows until something else is picked. */
+	pokedLinkId: Schema.NullOr(Schema.String),
+	/** The map's noises are off. */
+	isMuted: Schema.Boolean,
 	/** The traffic toggle; `null` until clicked, so it follows the reduced-motion setting. */
 	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
@@ -50,6 +54,10 @@ export const Message = defineMessageUnion({
 	ClickedAutoArrange: {},
 	ClickedPlaceRest: {},
 	ClickedTraffic: { isFlowing: Schema.Boolean },
+	ClickedSound: {},
+	/** A cart or a train was clicked on the map. */
+	PokedLink: { linkId: Schema.String },
+	ClosedLinkCard: {},
 	ClickedCamera: { action: Schema.Literals(["reset", "in", "out"]) },
 	/** A service picked on the map, in the rail or by its label; `null` clears the selection. */
 	PickedNode: { nodeId: Schema.NullOr(Schema.String) },
@@ -87,6 +95,8 @@ export const init = (flags: Flags): Return => ({
 		hover: null,
 		lastGain: null,
 		selectedId: null,
+		pokedLinkId: null,
+		isMuted: false,
 		traffic: null,
 		command: { action: "reset", serial: 0 },
 		isDark: null,
@@ -105,6 +115,7 @@ export const update = (model: Model, message: Message): Return =>
 					: {
 							...model,
 							isBuilding: !model.isBuilding,
+							pokedLinkId: null,
 							pickedId: null,
 							hover: null,
 							selectedId: null,
@@ -121,6 +132,7 @@ export const update = (model: Model, message: Message): Return =>
 					stack: Arr.drop(order, 1),
 					pickedId: null,
 					isBuilding: true,
+					pokedLinkId: null,
 					hover: null,
 					lastGain: null,
 					selectedId: null,
@@ -150,10 +162,15 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
+		ClickedSound: () => ({ model: { ...model, isMuted: !model.isMuted } }),
+		PokedLink: ({ linkId }) => ({
+			model: Arr.some(links, (link) => link.id === linkId) ? { ...model, pokedLinkId: linkId } : model,
+		}),
+		ClosedLinkCard: () => ({ model: { ...model, pokedLinkId: null } }),
 		ClickedCamera: ({ action }) => ({
 			model: { ...model, command: { action, serial: model.command.serial + 1 } },
 		}),
-		PickedNode: ({ nodeId }) => ({ model: { ...model, selectedId: nodeId } }),
+		PickedNode: ({ nodeId }) => ({ model: { ...model, selectedId: nodeId, pokedLinkId: null } }),
 		PickedUpTile: ({ nodeId }) => ({
 			model:
 				model.isBuilding && model.stack.length === 0 && nodeId in model.cells
@@ -198,6 +215,7 @@ export const SceneState = Schema.Struct({
 	building: Schema.Boolean,
 	flowing: Schema.Boolean,
 	dark: Schema.Boolean,
+	muted: Schema.Boolean,
 })
 
 export const TOPOLOGY_ATTRIBUTE = "data-tiles-topology"
@@ -244,6 +262,7 @@ type SceneMessage =
 	| ReturnType<typeof Message.PlacedTile>
 	| ReturnType<typeof Message.HoveredCell>
 	| ReturnType<typeof Message.CancelledHold>
+	| ReturnType<typeof Message.PokedLink>
 	| ReturnType<typeof Message.FailedScene>
 
 type StartScene = (canvas: HTMLCanvasElement, initial: SceneInput, events: SceneEvents) => SceneHandle
@@ -264,6 +283,7 @@ const attach = (
 			onPlace: (nodeId, cell) => emit(Message.PlacedTile({ nodeId, cell })),
 			onHover: (cell) => emit(Message.HoveredCell({ cell })),
 			onCancel: () => emit(Message.CancelledHold()),
+			onPokeLink: (linkId) => emit(Message.PokedLink({ linkId })),
 		})
 		const observer = new MutationObserver(() =>
 			Option.map(readInput(canvas, memo), (input) => handle.update(input)),
@@ -287,6 +307,7 @@ export const MountScene = Mount.defineStream("MountServiceMapTiles", {
 		Message.PlacedTile,
 		Message.HoveredCell,
 		Message.CancelledHold,
+		Message.PokedLink,
 		Message.FailedScene,
 	],
 	execute: ({ element }) =>

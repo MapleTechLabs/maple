@@ -1,7 +1,7 @@
 import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import { targetsFor } from "./board"
-import { heldIdOf, init, Message, type Model, placementsOf, topology, update } from "./update"
+import { heldIdOf, init, links, Message, type Model, placementsOf, topology, update } from "./update"
 
 const start = (): Model => init({ reducedMotion: false }).model
 const step = (model: Model, message: Message): Model => update(model, message).model
@@ -66,6 +66,21 @@ describe("the tile board", () => {
 		const traded = step(lifted, Message.PlacedTile({ nodeId: a, cell: model.cells[b] ?? { q: 0, r: 0 } }))
 		expect([traded.cells[a], traded.cells[b]]).toEqual([model.cells[b], model.cells[a]])
 		expect(heldIdOf(traded)).toBeNull()
+	})
+
+	it("shows the connection of a poked cart or train until a service is picked", () => {
+		const linkId = links[0]?.id ?? ""
+		const poked = step(start(), Message.PokedLink({ linkId }))
+		expect(poked.pokedLinkId).toBe(linkId)
+		expect(
+			step(poked, Message.PickedNode({ nodeId: topology.nodes[0]?.id ?? null })).pokedLinkId,
+		).toBeNull()
+		expect(step(poked, Message.ClosedLinkCard()).pokedLinkId).toBeNull()
+		expect(step(poked, Message.ClickedRearrange()).pokedLinkId).toBeNull()
+	})
+
+	it("ignores a poke for a link that is not on the map", () => {
+		expect(step(start(), Message.PokedLink({ linkId: "nowhere" }))).toEqual(start())
 	})
 
 	it("puts a lifted tile back on Escape", () => {
