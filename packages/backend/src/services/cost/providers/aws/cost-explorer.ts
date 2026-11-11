@@ -100,6 +100,15 @@ export const pullCostExplorer = (
 					duration: REQUEST_TIMEOUT,
 					orElse: () => fail("upstream", "GetCostAndUsage: AWS did not answer in time"),
 				}),
+				// A client span per billed call: `peer.service` draws Cost Explorer on the service map.
+				Effect.withSpan("CostExplorer.GetCostAndUsage", {
+					kind: "client",
+					attributes: {
+						"peer.service": "aws-cost-explorer",
+						"maple.cost.aws.filtered_region": input.Filter?.Dimensions?.Values?.[0] ?? "",
+						"maple.cost.aws.page": input.NextPageToken === undefined ? "first" : "next",
+					},
+				}),
 			)
 
 		const pages = (

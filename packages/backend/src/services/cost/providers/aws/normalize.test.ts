@@ -137,6 +137,37 @@ describe("usageReconciles", () => {
 		assert.isFalse(usageReconciles([usage(30, 20)], byRegion, "eu-central-1"))
 		assert.isFalse(usageReconciles([], byRegion, "eu-central-1"))
 	})
+
+	it("compares day by day, so a miss on one day is not hidden by the window", () => {
+		const on = (day: string, costGroup: CostGroup): CostGroup => ({ ...costGroup, day })
+		const twoDays = [
+			on("2026-03-01", group("eu-central-1", 1000)),
+			on("2026-03-02", group("eu-central-1", 1000)),
+		]
+		// A charge of 0.50 missing on one day is far under a thousandth of the window's 2,000.
+		assert.isFalse(
+			usageReconciles(
+				[on("2026-03-01", usage(1000)), on("2026-03-02", usage(999.5))],
+				twoDays,
+				"eu-central-1",
+			),
+		)
+		// Two days whose misses cancel in the window total still do not match.
+		assert.isFalse(
+			usageReconciles(
+				[on("2026-03-01", usage(1010)), on("2026-03-02", usage(990))],
+				twoDays,
+				"eu-central-1",
+			),
+		)
+		assert.isTrue(
+			usageReconciles(
+				[on("2026-03-01", usage(1000)), on("2026-03-02", usage(1000))],
+				twoDays,
+				"eu-central-1",
+			),
+		)
+	})
 })
 
 describe("cost rows", () => {
