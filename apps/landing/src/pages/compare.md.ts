@@ -113,7 +113,7 @@ export const GET: APIRoute = ({ site }) => {
 				],
 				[
 					m.bill_row_selfhost(),
-					m.bill_v_supported(),
+					m.bill_v_selfhost_maple(),
 					m.bill_v_no(),
 					m.bill_v_no(),
 					m.bill_v_oss_only(),

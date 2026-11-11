@@ -1111,6 +1111,15 @@
 	}
 	[data-scrollstory] [data-inline] {
 		display: block !important;
+		max-width: 42rem;
+	}
+	/* With the pane gone the steps take the full row: left in their narrow
+	   track they sit beside an empty column, 18rem apart. */
+	[data-scrollstory] .story-steps {
+		grid-column: 1 / -1;
+	}
+	[data-scrollstory] .story-steps [data-step] {
+		--story-step-pad: 3rem;
 	}
 	[data-scrollstory] .story-steps [data-step]::after {
 		display: none !important;
