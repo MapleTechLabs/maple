@@ -9,7 +9,18 @@ import type { CostDailyRow } from "@maple/domain/tinybird"
 import { CostSourceId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections, CostSources, type CostSourceRow } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Result, Schedule, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schedule,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
@@ -28,6 +39,7 @@ import {
 	HEAD_INTERVAL_MS,
 	historyFloor,
 	nextMonthStartMs,
+	oversizedDay,
 	planCostSync,
 	toCostDailyRows,
 	toWarehouseDateTime64,
@@ -51,8 +63,9 @@ const TOO_LARGE_HOLD_MS = 24 * 60 * 60_000
 /** A source whose history waits on the month's request budget is looked at again this much later at most. */
 const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
 const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
-/** An org outside the `cloudCost` rollout is asked about again this much later: a hold, not a failure. */
-const ROLLOUT_HOLD_MS = 6 * 60 * 60_000
+// Under the lane's hourly tick, so a flag that reads off is asked again on the next one: a failed
+// lookup reads as off too, and so costs one tick. No pull is made until the flag reads on.
+const ROLLOUT_HOLD_MS = 50 * 60_000
 const ROLLOUT_MESSAGE = "Cloud cost is not enabled for this organization."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
@@ -162,6 +175,10 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const leaseFree = ($: PG.ColumnAccessor<typeof CostSources.columns>, now: number) =>
 				// A live lease never reaches past now + LEASE_MS; anything further is a corrupt value.
 				leaseClaimable($.leaseUntil, now, 2 * LEASE_MS)
+
+			/** No hold or backoff stands on the row, give or take the tick's slack. */
+			const attemptDue = ($: PG.ColumnAccessor<typeof CostSources.columns>, now: number) =>
+				PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS))
 
 			type AwsConnectionColumns = PG.ColumnAccessor<typeof AwsConnections.columns>
 
@@ -315,7 +332,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 							.where(($) => [
 								$.enabled.eq(true),
 								leaseFree($, now),
-								PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS)),
+								attemptDue($, now),
 								PG.or(
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
@@ -351,7 +368,13 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								consecutiveFailures: candidate.consecutiveFailures + 1,
 								updatedAt: now,
 							})
-							.where(($) => [$.id.eq(candidate.id), $.enabled.eq(true), leaseFree($, now)])
+							.where(($) => [
+								$.id.eq(candidate.id),
+								$.enabled.eq(true),
+								leaseFree($, now),
+								// An overlapping tick may have held the row since this one loaded it as due.
+								attemptDue($, now),
+							])
 							.returning(),
 					),
 				).pipe(Effect.map((rows) => rows[0] ?? null))
@@ -412,7 +435,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				)
 
 			// A batch that still fails after its retries leaves the earlier batches newest until a re-pull.
-			// Batches hold whole days, so those are complete days; only a day above the batch size can split.
+			// Batches hold whole days, so those are complete days: a step with a day above the size is refused.
 			const write = (orgId: OrgId, rows: ReadonlyArray<CostDailyRow>) =>
 				Effect.forEach(
 					batchWholeDays(rows, INGEST_BATCH_ROWS),
@@ -503,6 +526,18 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 							rowsOutsideWindow: outsideWindow,
 						}),
 					)
+				}
+				// Before any row is written: a day split over two requests could be published by halves.
+				const oversized = oversizedDay(rows, INGEST_BATCH_ROWS)
+				if (Option.isSome(oversized)) {
+					const { day, rows: dayRows } = oversized.value
+					yield* Effect.annotateCurrentSpan("maple.cost.oversized_day", day)
+					return done({
+						failure: {
+							reason: "too_large",
+							message: `${day} has ${dayRows} cost rows: the account has more cost rows a day than one pull stores (${INGEST_BATCH_ROWS}).`,
+						},
+					})
 				}
 				const written = yield* write(source.orgId, rows).pipe(Effect.result)
 				if (Result.isFailure(written)) {
