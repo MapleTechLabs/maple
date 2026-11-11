@@ -6,7 +6,7 @@ import { Array as Arr, type DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { CostDimension, CostMetric } from "@maple/domain/cost"
+import { COST_EMPTY_DAY_CATEGORY, type CostDimension, type CostMetric } from "@maple/domain/cost"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
 
@@ -124,6 +124,8 @@ function latestRows(filters: CostFilters, metric: CostMetric, startParam: StartP
 		}))
 		.where(($) => [
 			...windowWhere($, filters, startParam),
+			// The empty-day row counts as a pull above, so it supersedes the day, and is no cost row here.
+			$.ChargeCategory.neq(COST_EMPTY_DAY_CATEGORY),
 			...Arr.map(DIMENSIONS, (dimension) =>
 				CH.when(nonEmpty(filters.values?.[dimension]), (values) =>
 					CH.inList(pickDimension(dailyDimensions($), dimension), values),

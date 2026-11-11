@@ -1186,7 +1186,7 @@ SELECT
         GROUP BY containerName, hostName) AS containers
         FORMAT JSON
 
--- builder:cost:costBreakdownQuery:byUsageTypeEffectiveByChange  [d3712319]
+-- builder:cost:costBreakdownQuery:byUsageTypeEffectiveByChange  [bb94d89c]
 SELECT
           latest.usageType AS key,
           ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
@@ -1222,6 +1222,7 @@ SELECT
           AND cost_daily.Date >= '2026-09-01 00:00:00'
           AND cost_daily.Date <= '2026-10-30 00:00:00'
           AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
           AND cost_daily.Region IN ('us-east-1', 'global')
         GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
         GROUP BY key
@@ -1244,7 +1245,7 @@ SELECT
         ORDER BY sourceId ASC
         FORMAT JSON
 
--- builder:cost:costTimeseriesQuery:byCloudServiceTopKeys  [c1618ed6]
+-- builder:cost:costTimeseriesQuery:byCloudServiceTopKeys  [7a63013d]
 SELECT
           latest.date AS date,
           if(latest.cloudService IN ('Amazon Elastic Compute Cloud - Compute', 'Amazon Elastic Load Balancing'), latest.cloudService, '__other__') AS key,
@@ -1280,13 +1281,14 @@ SELECT
           AND cost_daily.Date >= '2026-10-01 00:00:00'
           AND cost_daily.Date <= '2026-10-30 00:00:00'
           AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
           AND cost_daily.Region IN ('us-east-1', 'global')
         GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
         GROUP BY date, key
         ORDER BY date ASC, key ASC
         FORMAT JSON
 
--- builder:cost:costTotalsQuery:filtered  [69ada9b4]
+-- builder:cost:costTotalsQuery:filtered  [6d83eab5]
 SELECT
           ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
           ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost,
@@ -1323,6 +1325,7 @@ SELECT
           AND cost_daily.Date >= '2026-09-01 00:00:00'
           AND cost_daily.Date <= '2026-10-30 00:00:00'
           AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
           AND cost_daily.Region IN ('us-east-1', 'global')
         GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
         FORMAT JSON

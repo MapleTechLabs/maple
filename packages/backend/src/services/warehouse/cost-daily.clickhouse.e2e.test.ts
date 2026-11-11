@@ -3,7 +3,8 @@
 // compiled SQL alone cannot show that a restated day replaces the older pull. Seeded to catch:
 //   - a key the provider dropped on restatement still counting (argMax per key would keep it),
 //   - an ingest retry's copy of a row counting twice,
-//   - a disconnected source's rows counting once the caller names the active sources.
+//   - a disconnected source's rows counting once the caller names the active sources,
+//   - the sync's zero marker row for an emptied day showing as a key of its own.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { Effect, Array as Arr, String as Str } from "effect"
@@ -47,6 +48,8 @@ interface SeedRow {
 	readonly effective?: number
 	readonly estimated?: boolean
 	readonly pulledAt: string
+	/** The sync's zero row for a day a pull returned nothing for: every string empty. */
+	readonly marker?: boolean
 }
 
 const row = (
@@ -79,12 +82,18 @@ const SEED: ReadonlyArray<SeedRow> = [
 	row("src_a", -1, "RDS", "us-east-1", 50, SECOND_PULL),
 	// A disconnected source keeps its rows.
 	row("src_gone", 1, "EC2", "us-east-1", 1000, SECOND_PULL),
+	// A day whose only cost vanished on restatement: the second pull wrote the zero marker row.
+	row("src_emptied", 0, "Vanished", "us-east-1", 7, FIRST_PULL),
+	{ ...row("src_emptied", 0, "", "", 0, SECOND_PULL), marker: true },
+	row("src_emptied", -1, "Lambda", "us-east-1", 9, SECOND_PULL),
 ]
 
 const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const values = (seed: SeedRow): string =>
-	`(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', 'USD', ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
+	seed.marker === true
+		? `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '', ${quote(day(seed.day))}, '', '', '', '', '', '', '', 'none', 'billed', '', 0, 0, 0, 0, '', map(), 0, ${quote(seed.pulledAt)})`
+		: `(${quote(ORG_ID)}, ${quote(seed.source)}, 'aws', '123456789012', ${quote(day(seed.day))}, ${quote(seed.service)}, '', 'Usage', ${quote(seed.region)}, '', '', '', 'usage', 'billed', 'USD', ${seed.billed}, ${seed.effective ?? seed.billed}, 0, 0, '', map(), ${seed.estimated === true ? 1 : 0}, ${quote(seed.pulledAt)})`
 
 const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
@@ -183,6 +192,22 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 			["Route 53", 1, 0],
 			["RDS", 0, 50],
 		])
+	})
+
+	it("reads an emptied day as no cost, in every query", async () => {
+		const emptied = { sourceIds: ["src_emptied"] }
+		// The marker supersedes `Vanished`, and is itself no row: no '' key, no second currency.
+		assert.deepStrictEqual(await breakdown({ ...emptied, dimension: "cloud_service" }), [
+			["Lambda", 0, 9],
+		])
+		assert.deepStrictEqual(await totals(emptied), {
+			cost: 0,
+			previousCost: 9,
+			estimatedDays: 0,
+			currency: "USD",
+			currencies: 0,
+		})
+		assert.deepStrictEqual(await timeseries({ ...emptied, dimension: "cloud_service" }), [])
 	})
 
 	it("ranks by the size of the move in either direction", async () => {

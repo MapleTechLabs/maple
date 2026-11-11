@@ -48,8 +48,9 @@ export const ALERTING_SCHEDULE = {
 		deadline: "10 minutes",
 	},
 	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
+	// `cost_sync` pulls cloud cost: a source's head once a day, a few months of history per tick until done.
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal", "cost_sync"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>
