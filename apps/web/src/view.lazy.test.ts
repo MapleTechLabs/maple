@@ -50,6 +50,7 @@ const SAMPLE_PATHS = [
 	"/alerts/escalation-chains/esc_gQtGH2s65G6a7sJmuayXL6",
 	"/alerts/uptime/upm_abc",
 	"/status-pages",
+	"/cost",
 	"/status-pages/new",
 	"/status-pages/stp_abc",
 	"/status-pages/stp_abc/view",
