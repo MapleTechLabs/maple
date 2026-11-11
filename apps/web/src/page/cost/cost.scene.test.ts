@@ -439,6 +439,30 @@ describe("cost page", () => {
 		)
 	})
 
+	test("a paused source with cost and short history holds the comparison back; one that never synced does not", () => {
+		const withPaused = (paused: Partial<SourceWire>) =>
+			answered(
+				entered({ groupBy: "region" }, [
+					source(),
+					source({ id: "0190f2b3-0000-7000-8000-00000000c058", status: "paused", ...paused }),
+				]).model,
+			)
+		// The window starts Oct 12 and covers 30 days: the period before starts Sep 12.
+		scene(
+			{ update: pageUpdate, view },
+			given(withPaused({ backfillDate: "2026-10-01", historyComplete: false })),
+			resolveTheme,
+			expectView(text("The 30 days before start earlier than the history read")).toExist(),
+			expectView(text("+$200.00")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withPaused({ backfillDate: null, watermarkDate: null, historyComplete: false })),
+			resolveTheme,
+			expectView(text("+$200.00")).toExist(),
+		)
+	})
+
 	test("a key named like the folded tail or the empty placeholder keeps its own chart column", () => {
 		const response = Schema.decodeSync(CostTimeseriesResponse)({
 			days: ["2026-11-09"],
@@ -553,6 +577,9 @@ describe("cost page", () => {
 			isUnderADay({ startTime, endTime, timePreset: undefined })
 		expect(custom("2026-10-14 08:00:00", "2026-10-14 20:00:00")).toBe(true)
 		expect(custom("2026-10-14 00:00:00", "2026-10-15 00:00:00")).toBe(false)
+		// One day picked in the custom tab runs 00:00 to 23:59, and 22:59 long where clocks go forward.
+		expect(custom("2026-10-14 00:00:00", "2026-10-14 23:59:00")).toBe(false)
+		expect(custom("2026-03-29 00:00:00", "2026-03-29 22:59:00")).toBe(false)
 		expect(isUnderADay({ startTime: undefined, endTime: undefined, timePreset: "today" })).toBe(false)
 	})
 

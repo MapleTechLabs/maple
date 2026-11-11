@@ -80,6 +80,8 @@ export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
 	)
 
 const DAY_SECONDS = 24 * 60 * 60
+// A day picked whole in the custom tab runs 00:00 to 23:59, and an hour less where clocks go forward.
+const SHORTEST_CUSTOM_DAY_SECONDS = 22 * 60 * 60
 
 type TimeRange = Pick<Search, "startTime" | "endTime" | "timePreset">
 
@@ -95,7 +97,8 @@ export const isUnderADay = (range: TimeRange): boolean => {
 	return (
 		range.startTime !== undefined &&
 		range.endTime !== undefined &&
-		parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime) < DAY_SECONDS * 1000
+		parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime) <
+			SHORTEST_CUSTOM_DAY_SECONDS * 1000
 	)
 }
 
@@ -242,10 +245,10 @@ const DAY_MS = 86_400_000
 export type PreviousPeriod = "synced" | "syncing" | "beyond"
 
 /**
- * Whether every syncing source has history back to the start of the period before the window.
+ * Whether every source with cost has history back to the start of the period before the window.
  * Short of that the period reads as cheaper than it was, so no change is shown against it: while
- * a source backfills, and for good once its history is complete and still starts later. A paused
- * source no longer syncs and does not hold the comparison back.
+ * a source backfills, and for good once its history is complete or it is paused, which cannot
+ * fill the gap. A paused source that never synced has no cost and holds nothing back.
  */
 export const previousPeriodOf = (
 	sources: ReadonlyArray<CostSourceSummary>,
@@ -256,14 +259,13 @@ export const previousPeriodOf = (
 	const firstDay = new Date(`${Str.slice(0, 10)(window.startTime)}T00:00:00Z`).getTime()
 	if (!Number.isFinite(firstDay)) return "synced"
 	const previousStart = Str.slice(0, 10)(new Date(firstDay - days * DAY_MS).toISOString())
-	const short = Arr.filter(
-		sources,
-		(source) =>
-			source.status !== "paused" &&
-			!(source.backfillDate !== null && source.backfillDate <= previousStart),
+	const short = Arr.filter(sources, (source) =>
+		source.backfillDate === null ? source.status !== "paused" : source.backfillDate > previousStart,
 	)
 	if (short.length === 0) return "synced"
-	return Arr.some(short, (source) => !source.historyComplete) ? "syncing" : "beyond"
+	return Arr.some(short, (source) => source.status !== "paused" && !source.historyComplete)
+		? "syncing"
+		: "beyond"
 }
 
 /** AWS bills each Cost Explorer request USD 0.01. */
