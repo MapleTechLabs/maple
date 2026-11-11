@@ -163,6 +163,27 @@ describe("pullCostExplorer", () => {
 		}),
 	)
 
+	it.effect("reads two pages per day of a longer window before it gives up", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			// Forty services on the first of twelve days, a group a page: the cap is 24, not the floor of 20.
+			fake.items = Arr.map(Arr.range(1, 40), (n) => ({
+				day: "2026-03-01",
+				service: `Invented Service ${n}`,
+				region: "eu-central-1",
+				usageType: "Invented-Usage",
+				cost: 1,
+				quantity: 1,
+				unit: "Hrs",
+			}))
+			fake.options = { pageSize: 1 }
+			const error = yield* Effect.flip(pull(fake, { startDay: "2026-03-01", endDay: "2026-03-12" }))
+
+			assert.strictEqual(error.reason, "too_large")
+			assert.strictEqual(error.requests, 24)
+		}),
+	)
+
 	it.effect("reports a role without the cost policy as not ready", () =>
 		Effect.gen(function* () {
 			const fake = makeFake()
