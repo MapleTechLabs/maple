@@ -119,6 +119,10 @@ import {
 	SearchConsoleTimeseriesResponse,
 	SearchConsoleTopPagesResponse,
 	SearchConsoleTopQueriesResponse,
+	CostBreakdownResponse,
+	CostSourcesResponse,
+	CostTimeseriesResponse,
+	CostTotalsResponse,
 	CommitSha,
 	FingerprintHash,
 	SpanName,
@@ -168,6 +172,9 @@ import {
 	withServiceApiFallback,
 } from "@maple/backend/queries/dashboard-reads"
 import { makeSearchConsoleReads } from "@maple/backend/queries/search-console-reads"
+import { makeCostReads } from "@maple/backend/queries/cost-reads"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { runQueryEngineBatch } from "@/routes/query-engine-batch"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
@@ -346,6 +353,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 		const { runQuery, runQueryFirst } = reads
 		const serve = makeServeRows(runQuery, runQueryFirst)
 		const searchConsole = makeSearchConsoleReads({ warehouse, queryEngine })
+		const database = yield* Database
+		const featureFlags = yield* OrganizationFeatureFlagsService
+		const cost = makeCostReads({ warehouse, queryEngine, database, featureFlags })
 
 		const dbEdgesWithinBudget = <A, P, E extends QueryEngineDirectError, R>(
 			rollup: (tenant: TenantContext, payload: P) => Effect.Effect<ReadonlyArray<A>, E, R>,
@@ -2235,6 +2245,35 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle(
 					"searchConsoleLandingPages",
 					serveData(searchConsole.landingPages, SearchConsoleLandingPagesResponse),
+				)
+				// Cloud cost: each read refuses an org outside the `cloudCost` rollout before it reads.
+				.handle("costTotals", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* cost.totals(tenant, payload)
+						return new CostTotalsResponse(data)
+					}),
+				)
+				.handle("costTimeseries", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* cost.timeseries(tenant, payload)
+						return new CostTimeseriesResponse(data)
+					}),
+				)
+				.handle("costBreakdown", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* cost.breakdown(tenant, payload)
+						return new CostBreakdownResponse(data)
+					}),
+				)
+				.handle("costSources", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const data = yield* cost.sources(tenant)
+						return new CostSourcesResponse(data)
+					}),
 				)
 				// No raw fallback, like the crawler tab: a cluster without migration 0050 answers 502.
 				.handle("securityExposure", ({ payload }) =>

@@ -4,6 +4,7 @@ import { ConfigProvider, Effect, Layer, Number as Num, Schema, Array as Arr } fr
 import { HttpClient } from "effect/http"
 import { AwsAccountId, OrgId, UserId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AwsConnectionService } from "../../../integrations/AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws } from "../../../integrations/aws/fake-aws"
@@ -44,6 +45,7 @@ const makeWorld = (config: Record<string, string> = mapleAws) => {
 		Layer.effect(AwsCostProvider, AwsCostProvider.make),
 		Layer.effect(AwsConnectionService, AwsConnectionService.make),
 	).pipe(
+		Layer.provide(OrganizationFeatureFlagsService.allEnabled),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, costExplorer.client)),

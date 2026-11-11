@@ -50,6 +50,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/CliDeviceExpiredError",
 	"@maple/http/errors/CliDeviceNotFoundError",
 	"@maple/http/errors/CliDeviceRateLimitError",
+	"@maple/http/errors/CloudCostDisabledError",
 	"@maple/http/errors/DashboardConcurrencyError",
 	"@maple/http/errors/DashboardNotFoundError",
 	"@maple/http/errors/DashboardTemplateNotFoundError",

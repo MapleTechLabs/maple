@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/http"
+import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
@@ -13,6 +13,8 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { MAPLE_TEST_OIDC_KEY } from "@maple/backend/services/integrations/aws/fake-aws"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -89,7 +91,13 @@ const makeHarness = (
 			HttpV2AwsIntegrationsLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
-						AwsConnectionService.layer,
+						// Outside the `cloudCost` rollout, so `cost` is still a planned module here.
+						Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
+							Layer.provide([
+								FetchHttpClient.layer,
+								OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+							]),
+						),
 						Layer.effect(AwsIngestService, AwsIngestService.make),
 					),
 				),

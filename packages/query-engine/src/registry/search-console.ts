@@ -8,42 +8,16 @@ import {
 	type SearchConsoleTopQueriesRequest,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "../datetime"
 import * as CH from "../ch"
 import { timeRangeCache } from "../runtime/cache-policy"
+import { wholeDayWindow } from "./day-window"
 import { defineQuery, windowParams } from "./query-definition"
 
 // Search Console reads. Google reports whole days, so the page's window is floored to the
 // midnight-UTC `Date` rows it covers, both ends inclusive, and ends at the last complete day.
 
-const DAY_MS = 86_400_000
-
-const floorDay = (value: string): number => Math.floor(parseWarehouseDateTime(value) / DAY_MS) * DAY_MS
-
-/**
- * The days a window covers, capped at `completeThrough` so a partial day never counts, and the
- * equal-length run of days before them. A window wholly past the cap covers no day.
- */
-export const searchConsoleDays = (window: {
-	readonly startTime: string
-	readonly endTime: string
-	readonly completeThrough?: string
-}) => {
-	const start = floorDay(window.startTime)
-	const requestedEnd = Math.max(start, floorDay(window.endTime))
-	const end =
-		window.completeThrough === undefined
-			? requestedEnd
-			: Math.min(requestedEnd, parseWarehouseDateTime(`${window.completeThrough} 00:00:00`))
-	const days = Math.max(0, Math.round((end - start) / DAY_MS) + 1)
-	return {
-		startDate: formatWarehouseDateTime(start),
-		endDate: formatWarehouseDateTime(end),
-		/** The last second of the end day, for reads over timestamps rather than days. */
-		endOfDay: formatWarehouseDateTime(end + DAY_MS - 1000),
-		previousStartDate: formatWarehouseDateTime(start - days * DAY_MS),
-	}
-}
+/** The whole (Pacific) days a Search Console window covers; see `wholeDayWindow`. */
+export const searchConsoleDays = wholeDayWindow
 
 type Window = {
 	readonly siteUrl: string

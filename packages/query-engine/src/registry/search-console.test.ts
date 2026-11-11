@@ -10,6 +10,7 @@ describe("searchConsoleDays", () => {
 			endDate: "2026-11-08 00:00:00",
 			endOfDay: "2026-11-08 23:59:59",
 			previousStartDate: "2026-10-10 00:00:00",
+			days: 15,
 		})
 	})
 
@@ -19,6 +20,7 @@ describe("searchConsoleDays", () => {
 			endDate: "2026-11-05 00:00:00",
 			endOfDay: "2026-11-05 23:59:59",
 			previousStartDate: "2026-10-13 00:00:00",
+			days: 12,
 		})
 	})
 

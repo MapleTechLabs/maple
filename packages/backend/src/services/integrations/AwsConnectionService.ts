@@ -23,6 +23,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
+import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
 import {
 	AWS_MODULES,
 	type AwsAccountId,
@@ -40,6 +41,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	createIntegrationSource,
 	deleteSourcesOf,
@@ -225,17 +227,20 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 	}
 }
 
-const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = Arr.map(AWS_MODULES, (module) => ({
-	module,
-	title: AWS_MODULE_SPECS[module].title,
-	summary: AWS_MODULE_SPECS[module].summary,
-	available: isAwsModuleAvailable(module),
-}))
+/** The modules as an org with these rollout flags is offered them. */
+const moduleInfo = (flags: OrganizationFeatureFlags): ReadonlyArray<AwsModuleInfo> =>
+	Arr.map(AWS_MODULES, (module) => ({
+		module,
+		title: AWS_MODULE_SPECS[module].title,
+		summary: AWS_MODULE_SPECS[module].summary,
+		available: isAwsModuleAvailable(module, flags),
+	}))
 
 const validateModules = (
 	modules: ReadonlyArray<AwsModule>,
+	flags: OrganizationFeatureFlags,
 ): Effect.Effect<ReadonlyArray<AwsModule>, ModulesError> => {
-	const planned = Arr.filter(modules, (module) => !isAwsModuleAvailable(module))
+	const planned = Arr.filter(modules, (module) => !isAwsModuleAvailable(module, flags))
 	return planned.length === 0
 		? Effect.succeed(normalizeModules(modules))
 		: Effect.fail(
@@ -344,6 +349,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const database = yield* Database
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
+			const featureFlags = yield* OrganizationFeatureFlagsService
 			const dbExecute = makeDbExecute(database, "AwsConnectionService", toPersistenceError)
 			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 			const keyring = yield* secretKeyringFromEnv(env, persistence)
@@ -409,9 +415,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
+				const flags = yield* featureFlags.flags(orgId)
 				return {
 					available: signer !== undefined,
-					modules: MODULE_INFO,
+					modules: moduleInfo(flags),
 					connections: Arr.map(rows, connectionOf),
 				}
 			})
@@ -427,7 +434,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.account_id": input.accountId })
 				if (signer === undefined) return yield* unavailable()
-				const modules = yield* validateModules(input.modules)
+				const flags = yield* featureFlags.flags(orgId)
+				const modules = yield* validateModules(input.modules, flags)
 				const id = AwsConnectionId.make(randomUUID())
 				const streamSecret = yield* mintStreamSecret({ orgId, id })
 				const now = yield* Clock.currentTimeMillis
@@ -484,8 +492,9 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
+				const flags = yield* featureFlags.flags(orgId)
 				const modules =
-					patch.modules === undefined ? undefined : yield* validateModules(patch.modules)
+					patch.modules === undefined ? undefined : yield* validateModules(patch.modules, flags)
 				const updatedAt = yield* Clock.currentTimeMillis
 				const changes = {
 					...(modules !== undefined && { modules }),
@@ -809,5 +818,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide([FetchHttpClient.layer, OrganizationFeatureFlagsService.layer]),
+	)
 }

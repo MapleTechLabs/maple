@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
+import { CostDimension, CostMetric, CostProvider } from "../cost"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { ATTACK_STAGES } from "../security-telemetry"
@@ -9,6 +10,7 @@ import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
 	CommitSha,
+	CostSourceId,
 	DeploymentEnvironment,
 	FingerprintHash,
 	SearchConsoleSiteUrl,
@@ -2686,6 +2688,179 @@ export class SearchConsoleLandingPagesResponse extends Schema.Class<SearchConsol
 	data: Schema.Array(SearchConsoleLandingPage),
 }) {}
 
+// Cloud cost: provider spend synced into the ingest-pinned `cost_daily`, read per whole UTC day.
+// Every endpoint answers `CloudCostDisabledError` for an org outside the `cloudCost` rollout.
+
+/** The org is not in the `cloudCost` rollout. */
+export class CloudCostDisabledError extends HttpTaggedError<CloudCostDisabledError>()(
+	"@maple/http/errors/CloudCostDisabledError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "cloud_cost_disabled",
+		title: "Cloud cost is not enabled",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
+/** The application database could not be read for the org's cost sources. */
+export class CloudCostPersistenceError extends HttpTaggedError<CloudCostPersistenceError>()(
+	"@maple/http/errors/CloudCostPersistenceError",
+	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+	{
+		status: 503,
+		code: "cloud_cost_persistence_unavailable",
+		title: "Cloud cost is temporarily unavailable",
+		message: "Cloud cost is temporarily unavailable. Retry in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
+) {}
+
+/** Values per dimension a cost read may narrow to; the query inlines them, so both sizes are capped. */
+export const COST_FILTER_MAX_VALUES = 50
+export const COST_FILTER_MAX_VALUE_LENGTH = 300
+
+const CostFilterValues = Schema.Array(
+	Schema.String.check(Schema.isMaxLength(COST_FILTER_MAX_VALUE_LENGTH)),
+).check(Schema.isMaxLength(COST_FILTER_MAX_VALUES))
+
+/** One optional value list per `CostDimension`; an empty or missing list does not narrow. */
+export const CostFilters = Schema.Struct({
+	provider: Schema.optionalKey(CostFilterValues),
+	account: Schema.optionalKey(CostFilterValues),
+	cloud_service: Schema.optionalKey(CostFilterValues),
+	service_category: Schema.optionalKey(CostFilterValues),
+	usage_type: Schema.optionalKey(CostFilterValues),
+	region: Schema.optionalKey(CostFilterValues),
+	resource: Schema.optionalKey(CostFilterValues),
+	service: Schema.optionalKey(CostFilterValues),
+} satisfies Record<CostDimension, Schema.Top>)
+export type CostFilters = typeof CostFilters.Type
+
+/** The window is floored to whole UTC days, both ends inclusive. */
+const CostWindowFields = {
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Defaults to `billed`. */
+	metric: Schema.optionalKey(CostMetric),
+	filters: Schema.optionalKey(CostFilters),
+} as const
+
+export class CostTotalsRequest extends Schema.Class<CostTotalsRequest>("CostTotalsRequest")(
+	CostWindowFields,
+) {}
+
+export class CostTotalsResponse extends Schema.Class<CostTotalsResponse>("CostTotalsResponse")({
+	cost: Schema.Number,
+	/** The equal-length run of days just before the window. */
+	previousCost: Schema.Number,
+	/** Days of the window the provider has not finalized yet. */
+	estimatedDays: Schema.Number,
+	/** One billing currency of the rows, "" with none; with `mixedCurrencies` the sums mix several. */
+	currency: Schema.String,
+	mixedCurrencies: Schema.Boolean,
+	/** Days in the window. */
+	days: Schema.Number,
+}) {}
+
+/** Series a split timeseries names when the request sets no limit. */
+export const COST_TIMESERIES_DEFAULT_LIMIT = 8
+
+const CostSeriesLimit = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThanOrEqualTo(1),
+	Schema.isLessThanOrEqualTo(20),
+)
+
+export class CostTimeseriesRequest extends Schema.Class<CostTimeseriesRequest>("CostTimeseriesRequest")({
+	...CostWindowFields,
+	/** Splits each day by this dimension; without it there is one series with key "". */
+	groupBy: Schema.optionalKey(CostDimension),
+	/** With `groupBy`: the top keys by cost that get their own series; the rest fold into one. */
+	limit: Schema.optionalKey(CostSeriesLimit),
+}) {}
+
+export const CostSeries = Schema.Struct({
+	key: Schema.String,
+	/** The series every key outside the top ones folds into; always last. */
+	other: Schema.Boolean,
+	total: Schema.Number,
+	/** One value per entry of `days`, 0 for a day without cost. */
+	points: Schema.Array(Schema.Number),
+})
+export type CostSeries = typeof CostSeries.Type
+
+export class CostTimeseriesResponse extends Schema.Class<CostTimeseriesResponse>("CostTimeseriesResponse")({
+	/** Every day of the window as `YYYY-MM-DD`, ascending. */
+	days: Schema.Array(Schema.String),
+	/** By `total`, largest first. */
+	series: Schema.Array(CostSeries),
+	/** The first day the provider may still restate, or null when every day is final. */
+	estimatedFrom: Schema.NullOr(Schema.String),
+}) {}
+
+export const CostBreakdownSortBy = Schema.Literals(["cost", "change"])
+export type CostBreakdownSortBy = typeof CostBreakdownSortBy.Type
+
+/** Rows a breakdown returns when the request names no limit. */
+export const COST_BREAKDOWN_DEFAULT_LIMIT = 50
+
+const CostBreakdownLimit = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isGreaterThanOrEqualTo(1),
+	Schema.isLessThanOrEqualTo(200),
+)
+
+export class CostBreakdownRequest extends Schema.Class<CostBreakdownRequest>("CostBreakdownRequest")({
+	...CostWindowFields,
+	groupBy: CostDimension,
+	/** `cost` (the default): largest first. `change`: largest move against the period before. */
+	sortBy: Schema.optionalKey(CostBreakdownSortBy),
+	limit: Schema.optionalKey(CostBreakdownLimit),
+}) {}
+
+export const CostBreakdownRow = Schema.Struct({
+	key: Schema.String,
+	cost: Schema.Number,
+	previousCost: Schema.Number,
+})
+export type CostBreakdownRow = typeof CostBreakdownRow.Type
+
+export class CostBreakdownResponse extends Schema.Class<CostBreakdownResponse>("CostBreakdownResponse")({
+	rows: Schema.Array(CostBreakdownRow),
+}) {}
+
+/** `pending`: never pulled. `syncing`: still backfilling history. `error`: the last sync failed. */
+export const CostSourceStatus = Schema.Literals(["pending", "syncing", "ok", "error"])
+export type CostSourceStatus = typeof CostSourceStatus.Type
+
+export const CostSourceSummary = Schema.Struct({
+	id: CostSourceId,
+	provider: CostProvider,
+	accountId: Schema.String,
+	status: CostSourceStatus,
+	/** The newest and oldest UTC day pulled, `YYYY-MM-DD`; null before the first pull. */
+	watermarkDate: Schema.NullOr(Schema.String),
+	backfillDate: Schema.NullOr(Schema.String),
+	/** The backfill reached the oldest day the sync keeps. */
+	historyComplete: Schema.Boolean,
+	/** Epoch ms. */
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+	lastErrorReason: Schema.NullOr(Schema.String),
+	/** Billable provider API requests made for the source this UTC month. */
+	requestsThisMonth: Schema.Number,
+})
+export type CostSourceSummary = typeof CostSourceSummary.Type
+
+export class CostSourcesResponse extends Schema.Class<CostSourcesResponse>("CostSourcesResponse")({
+	sources: Schema.Array(CostSourceSummary),
+}) {}
+
 // Security Center telemetry: scanner probes from `scanner_requests`, runtime versions from
 // `service_runtimes_hourly` with the endoflife.date release cycles they are judged against.
 
@@ -3519,6 +3694,12 @@ const queryEngineEndpointErrors = [
 	...warehouseHttpErrors,
 ] as const
 
+const costEndpointErrors = [
+	CloudCostDisabledError,
+	CloudCostPersistenceError,
+	...queryEngineEndpointErrors,
+] as const
+
 const validatedQueryEndpointErrors = [
 	QueryEngineValidationError,
 	QueryEngineExecutionError,
@@ -4251,6 +4432,33 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			payload: SearchConsoleLandingPagesRequest,
 			success: SearchConsoleLandingPagesResponse,
 			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("costTotals", "/cost-totals", {
+			payload: CostTotalsRequest,
+			success: CostTotalsResponse,
+			error: costEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("costTimeseries", "/cost-timeseries", {
+			payload: CostTimeseriesRequest,
+			success: CostTimeseriesResponse,
+			error: costEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("costBreakdown", "/cost-breakdown", {
+			payload: CostBreakdownRequest,
+			success: CostBreakdownResponse,
+			error: costEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("costSources", "/cost-sources", {
+			success: CostSourcesResponse,
+			error: [CloudCostDisabledError, CloudCostPersistenceError] as const,
 		}),
 	)
 	.add(
