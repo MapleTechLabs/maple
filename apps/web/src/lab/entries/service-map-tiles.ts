@@ -1,5 +1,4 @@
-import { Flags, flags, init, Message, Model, update } from "../service-map-tiles/update"
-import { view } from "../service-map-tiles/view"
+import { Flags, flags, init, Message, Model, update, view } from "../service-map-tiles-lab"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/service-map-tiles` inside the real shell.

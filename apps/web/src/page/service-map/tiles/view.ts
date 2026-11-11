@@ -12,61 +12,73 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option, Order, String as Str } from "effect"
-import { Mount } from "foldkit"
+import { Mount, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pageBody, pageContent } from "../../page/kit/dashboard-page"
-import { WatchTheme } from "../../page/service-map/scene3d"
-import {
-	connectedIds,
-	formatLatency,
-	formatRate,
-	health,
-	HEALTH_COLOR,
-	HEALTH_LABEL,
-} from "../../page/service-map/three/spatial-layout"
-import type { Node3D } from "../../page/service-map/three/types"
-import { biomeOf, biomesFor } from "./biome"
-import { type Link, type LinkState, linkState, type Placements, prospect, tally } from "./board"
+import { WatchTheme } from "../scene3d"
+import { connectedIds, formatRate, health, HEALTH_COLOR, HEALTH_LABEL } from "../three/spatial-layout"
+import type { Node3D, Topology3D } from "../three/types"
+import { type Biome, biomeOf, biomesFor } from "./biome"
+import { type Link, type LinkState, linkState, linksOf, type Placements, prospect, tally } from "./board"
 import { daylightAt } from "./daylight"
 import {
 	CELLS_ATTRIBUTE,
 	COMMAND_ATTRIBUTE,
 	heldIdOf,
-	links,
 	litClockOf,
 	Message,
 	type Model,
 	MountScene,
 	placementsOf,
 	STATE_ATTRIBUTE,
-	topology,
 	TOPOLOGY_ATTRIBUTE,
 	WatchClock,
 } from "./update"
 
-// The page: a toolbar, the landscape with its labels and overlays, and a side rail of connections.
+// The landscape column: a toolbar, the map with its labels and overlays, and a footer. The parent
+// passes the topology and the selection, and draws its own side panel for the selected service.
 
 type H = HtmlBuilder<Message>
 
-const TOPOLOGY_JSON = encodeJson(topology)
-const nodesById = new Map(Arr.map(topology.nodes, (node) => [node.id, node] as const))
-const labelOf = (id: string): string => nodesById.get(id)?.label ?? id
-const biomes = biomesFor(Arr.map(topology.nodes, (node) => node.namespace))
+export interface ViewInputs {
+	readonly topology: Topology3D
+	readonly selectedId: string | null
+	readonly reducedMotion: boolean
+}
 
-const KIND_LABEL = {
+/** What every part of the view reads from the topology, worked out once per distinct topology. */
+export interface Board {
+	readonly topology: Topology3D
+	readonly json: string
+	readonly links: ReadonlyArray<Link>
+	readonly nodesById: ReadonlyMap<string, Node3D>
+	readonly biomes: ReadonlyMap<string, Biome>
+}
+
+const boards = new WeakMap<Topology3D, Board>()
+
+/** The board for `topology`, worked out once per topology object (the page keeps one per graph). */
+export const boardOf = (topology: Topology3D): Board => {
+	const known = boards.get(topology)
+	if (known !== undefined) return known
+	const board: Board = {
+		topology,
+		json: encodeJson(topology),
+		links: linksOf(topology),
+		nodesById: new Map(Arr.map(topology.nodes, (node) => [node.id, node] as const)),
+		biomes: biomesFor(Arr.map(topology.nodes, (node) => node.namespace)),
+	}
+	boards.set(topology, board)
+	return board
+}
+
+export const labelOf = (board: Board, id: string): string => board.nodesById.get(id)?.label ?? id
+
+export const KIND_LABEL = {
 	edge: "Entry point",
 	service: "Service",
 	database: "Database",
 	queue: "Queue",
 	external: "External",
-} as const
-
-const KIND_BUILDING = {
-	edge: "a lighthouse by a pond",
-	service: "a village",
-	database: "an observatory",
-	queue: "a windmill",
-	external: "a keep",
 } as const
 
 const PANEL_CLASS = "rounded-md border bg-surface-float text-popover-foreground shadow-popup backdrop-blur-sm"
@@ -75,7 +87,7 @@ const PANEL_CLASS = "rounded-md border bg-surface-float text-popover-foreground 
  * capped so that, centred, it always clears the camera controls in the bottom left corner. */
 const CARD_CLASS = `absolute bottom-3 left-1/2 w-96 max-w-[calc(100%-6.5rem)] -translate-x-1/2 p-3 ${PANEL_CLASS}`
 
-const healthDot = (h: H, errorRate: number): Html =>
+export const healthDot = <M>(h: HtmlBuilder<M>, errorRate: number): Html =>
 	statusDot(h, {
 		tone: "custom",
 		attributes: [h.Style({ "background-color": HEALTH_COLOR[health(errorRate)] })],
@@ -138,7 +150,7 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 					variant: "ghost",
 					attributes: [
 						h.Title(
-							model.light === "clock"
+							model.light === "clock" && model.clock !== null
 								? `Following your local time: ${Str.toLowerCase(TIME_OF_DAY[daylightAt(model.clock).timeOfDay])} now. Click for dawn, day, dusk, night.`
 								: "Step through: your local time, dawn, day, dusk, night",
 						),
@@ -163,7 +175,16 @@ const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 	)
 }
 
-const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
+interface CanvasInputs {
+	readonly model: Model
+	readonly board: Board
+	readonly selectedId: string | null
+	readonly flowing: boolean
+	readonly isDark: boolean
+	readonly clock: NonNullable<Model["clock"]>
+}
+
+const canvas = (h: H, { model, board, selectedId, flowing, isDark, clock }: CanvasInputs): Html =>
 	h.div(
 		[h.Key("tiles-canvas"), h.Class("absolute inset-0 overflow-hidden")],
 		[
@@ -171,18 +192,18 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 				h.Class("block"),
 				// Focusable from code only: the map takes the focus while a tile is moved by keyboard.
 				h.Attribute("tabindex", "-1"),
-				h.Attribute(TOPOLOGY_ATTRIBUTE, TOPOLOGY_JSON),
+				h.Attribute(TOPOLOGY_ATTRIBUTE, board.json),
 				h.Attribute(CELLS_ATTRIBUTE, encodeJson(model.cells)),
 				h.Attribute(
 					STATE_ATTRIBUTE,
 					encodeJson({
-						selectedId: model.selectedId,
+						selectedId,
 						heldId: heldIdOf(model),
 						building: model.isBuilding,
 						flowing,
 						dark: isDark,
 						muted: model.isMuted,
-						clock: litClockOf(model),
+						clock: litClockOf(model, clock),
 					}),
 				),
 				h.Attribute(COMMAND_ATTRIBUTE, encodeJson(model.command)),
@@ -192,11 +213,11 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 	)
 
 /** One name plate per tile on the board. The scene moves them; a plate starts hidden. */
-const labels = (h: H, model: Model): ReadonlyArray<Html> => {
-	const related = connectedIds(topology, model.selectedId)
-	return Arr.flatMap(topology.nodes, (node) => {
+const labels = (h: H, model: Model, board: Board, selectedId: string | null): ReadonlyArray<Html> => {
+	const related = connectedIds(board.topology, selectedId)
+	return Arr.flatMap(board.topology.nodes, (node) => {
 		if (!(node.id in model.cells)) return []
-		const isSelected = model.selectedId === node.id
+		const isSelected = selectedId === node.id
 		const faded = related !== null && !related.has(node.id)
 		return [
 			pressable(
@@ -225,14 +246,15 @@ const labels = (h: H, model: Model): ReadonlyArray<Html> => {
 	})
 }
 
-const scorePanel = (h: H, model: Model, cells: Placements): Html => {
-	const score = tally(links, cells)
+const scorePanel = (h: H, model: Model, board: Board, cells: Placements): Html => {
+	const score = tally(board.links, cells)
 	const gain = model.lastGain
 	return vstack(
 		h,
 		{
 			gap: "1.5",
-			className: `absolute top-3 left-3 w-64 p-3 ${PANEL_CLASS}`,
+			// Narrow, only the headline: the full panel would cover the top of the board.
+			className: `absolute top-3 left-3 px-3 py-2 @xl/page:w-64 @xl/page:p-3 ${PANEL_CLASS}`,
 			attributes: [h.AriaLabel("Map score")],
 		},
 		[
@@ -259,24 +281,26 @@ const scorePanel = (h: H, model: Model, cells: Placements): Html => {
 					),
 				]),
 			]),
-			meter(h, { value: score.roads, max: Math.max(1, score.total), label: "Connections by road" }),
-			typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-				score.waiting > 0
-					? `${model.stack.length} tiles in the stack · ${score.rails} by rail`
-					: `${score.rails} by rail · ${Math.round(score.roadTraffic * 100)}% of traffic goes by road`,
+			vstack(h, { gap: "1.5", className: "hidden @xl/page:flex" }, [
+				meter(h, { value: score.roads, max: Math.max(1, score.total), label: "Connections by road" }),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					score.waiting > 0
+						? `${model.stack.length} tiles in the stack · ${score.rails} by rail`
+						: `${score.rails} by rail · ${Math.round(score.roadTraffic * 100)}% of traffic goes by road`,
+				]),
 			]),
 		],
 	)
 }
 
 /** The tile in hand: what it is, how many of its neighbours are down, and what this cell would give it. */
-const tileCard = (h: H, model: Model, cells: Placements, node: Node3D): Html => {
-	const own = Arr.filter(links, (link) => link.source === node.id || link.target === node.id)
+const tileCard = (h: H, model: Model, board: Board, cells: Placements, node: Node3D): Html => {
+	const own = Arr.filter(board.links, (link) => link.source === node.id || link.target === node.id)
 	const onBoard = Arr.filter(own, (link) =>
 		cells.has(link.source === node.id ? link.target : link.source),
 	).length
 	const here = Option.flatMap(Option.fromNullishOr(model.hover), (cell) =>
-		prospect(links, cells, node.id, cell),
+		prospect(board.links, cells, node.id, cell),
 	)
 	const dealing = model.pickedId === null
 	return vstack(
@@ -334,11 +358,17 @@ const tileCard = (h: H, model: Model, cells: Placements, node: Node3D): Html => 
 	)
 }
 
+export const STATE_LABEL = { road: "Road", rail: "Rail", waiting: "In stack" } satisfies Record<
+	LinkState,
+	string
+>
+const STATE_RANK = { rail: 0, waiting: 1, road: 2 } satisfies Record<LinkState, number>
+
 /** The cart or train that was clicked: what it carries, between which two services, and how the link is doing. */
-const linkCard = (h: H, cells: Placements, link: Link): Html => {
+const linkCard = (h: H, board: Board, cells: Placements, link: Link): Html => {
 	const state = linkState(cells, link)
-	const source = nodesById.get(link.source)
-	const produce = biomeOf(biomes, source?.namespace ?? "").produce.label
+	const source = board.nodesById.get(link.source)
+	const produce = biomeOf(board.biomes, source?.namespace ?? "").produce.label
 	const stop = (id: string) =>
 		button(
 			h,
@@ -348,7 +378,7 @@ const linkCard = (h: H, cells: Placements, link: Link): Html => {
 				className: "min-w-0",
 				attributes: [h.OnClick(Message.PickedNode({ nodeId: id }))],
 			},
-			[middleTruncate(h, { text: labelOf(id), tail: 8 })],
+			[middleTruncate(h, { text: labelOf(board, id), tail: 8 })],
 		)
 	return vstack(
 		h,
@@ -415,16 +445,16 @@ const sceneFailed = (h: H): Html =>
 		[
 			typography(h, { size: "sm", as: "p" }, ["3D rendering is unavailable."]),
 			typography(h, { size: "sm", tone: "muted", as: "p" }, [
-				"The connections are listed beside the map. Reload to try again.",
+				"The 2D view shows the same services and connections. Reload to try again.",
 			]),
 		],
 	)
 
-const viewport = (h: H, model: Model, flowing: boolean): Html => {
+const viewport = (h: H, model: Model, board: Board, inputs: ViewInputs, flowing: boolean): Html => {
 	const cells = placementsOf(model)
 	const heldId = heldIdOf(model)
-	const held = heldId === null ? undefined : nodesById.get(heldId)
-	const poked = Option.getOrUndefined(Arr.findFirst(links, (link) => link.id === model.pokedLinkId))
+	const held = heldId === null ? undefined : board.nodesById.get(heldId)
+	const poked = Option.getOrUndefined(Arr.findFirst(board.links, (link) => link.id === model.pokedLinkId))
 	return h.section(
 		[
 			h.Class("relative min-h-0 flex-1 overflow-hidden bg-background"),
@@ -435,14 +465,23 @@ const viewport = (h: H, model: Model, flowing: boolean): Html => {
 		[
 			model.isFailed
 				? sceneFailed(h)
-				: model.isDark === null
+				: model.isDark === null || model.clock === null
 					? h.div([], [])
-					: canvas(h, model, flowing, model.isDark),
-			layer(h, { clip: true, attributes: [h.AriaLabel("Services on the map")] }, [...labels(h, model)]),
-			scorePanel(h, model, cells),
+					: canvas(h, {
+							model,
+							board,
+							selectedId: inputs.selectedId,
+							flowing,
+							isDark: model.isDark,
+							clock: model.clock,
+						}),
+			layer(h, { clip: true, attributes: [h.AriaLabel("Services on the map")] }, [
+				...labels(h, model, board, inputs.selectedId),
+			]),
+			scorePanel(h, model, board, cells),
 			cameraControls(h),
-			...(held === undefined ? [] : [tileCard(h, model, cells, held)]),
-			...(held === undefined && poked !== undefined ? [linkCard(h, cells, poked)] : []),
+			...(held === undefined ? [] : [tileCard(h, model, board, cells, held)]),
+			...(held === undefined && poked !== undefined ? [linkCard(h, board, cells, poked)] : []),
 		],
 	)
 }
@@ -485,43 +524,13 @@ const footer = (h: H, model: Model): Html =>
 		],
 	)
 
-const STATE_LABEL = { road: "Road", rail: "Rail", waiting: "In stack" } satisfies Record<LinkState, string>
-const STATE_RANK = { rail: 0, waiting: 1, road: 2 } satisfies Record<LinkState, number>
-
-const ROW_CLASS =
-	"flex w-full flex-col gap-1 px-4 py-2 text-left hover:bg-surface-strong active:bg-surface-strong focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
-
-const linkRow = (h: H, link: Link, state: LinkState, towards: string): Html =>
-	pressable(
-		h,
-		{
-			onClick: Message.PickedNode({ nodeId: towards }),
-			className: ROW_CLASS,
-			attributes: [h.Key(link.id)],
-		},
-		[
-			hstack(h, { gap: "2", align: "center", className: "w-full" }, [
-				healthDot(h, link.errorRate),
-				typography(h, { size: "xs", truncate: true, className: "min-w-0 flex-1" }, [
-					`${labelOf(link.source)} → ${labelOf(link.target)}`,
-				]),
-				badge(h, { variant: state === "road" ? "secondary" : "outline", size: "sm" }, [
-					STATE_LABEL[state],
-				]),
-			]),
-			typography(h, { size: "2xs", tone: "muted", numeric: true, className: "pl-3.5" }, [
-				`${formatRate(link.callsPerSecond)} · ${formatErrorRate(link.errorRate)} errors`,
-			]),
-		],
-	)
-
-interface LinkEntry {
+export interface LinkEntry {
 	readonly link: Link
 	readonly state: LinkState
 }
 
 /** Railways first (the ones a better layout would fix), then by traffic. */
-const sortedLinks = (cells: Placements, own: ReadonlyArray<Link>): ReadonlyArray<LinkEntry> =>
+export const sortedLinks = (cells: Placements, own: ReadonlyArray<Link>): ReadonlyArray<LinkEntry> =>
 	Arr.sort(
 		Arr.map(own, (link): LinkEntry => ({ link, state: linkState(cells, link) })),
 		Order.combine(
@@ -530,125 +539,16 @@ const sortedLinks = (cells: Placements, own: ReadonlyArray<Link>): ReadonlyArray
 		),
 	)
 
-const RAIL_CLASS =
-	"flex max-h-120 min-h-80 flex-col overflow-y-auto border-t bg-background xl:max-h-none xl:min-h-0 xl:border-t-0 xl:border-l"
-
-const inspector = (h: H, cells: Placements, node: Node3D): Html => {
-	const own = sortedLinks(
-		cells,
-		Arr.filter(links, (link) => link.source === node.id || link.target === node.id),
-	)
-	return h.aside(
-		[h.Class(RAIL_CLASS), h.AriaLabel("Service inspector")],
-		[
-			vstack(h, { gap: "2", className: "border-b p-4" }, [
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "xs",
-						className: "-ml-2 self-start text-muted-foreground",
-						attributes: [h.OnClick(Message.PickedNode({ nodeId: null }))],
-					},
-					["← All connections"],
-				),
-				hstack(h, { gap: "2", align: "center" }, [
-					healthDot(h, node.errorRate),
-					typography(h, { size: "sm", weight: "semibold", className: "min-w-0 break-all" }, [
-						node.label,
-					]),
-				]),
-				typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					`${KIND_LABEL[node.kind]} in ${node.namespace}: ${KIND_BUILDING[node.kind]} in ${Str.toLowerCase(biomeOf(biomes, node.namespace).label)} country, sending ${biomeOf(biomes, node.namespace).produce.label}`,
-				]),
-			]),
-			h.dl(
-				[h.Class("grid grid-cols-3 gap-3 border-b p-4")],
-				Arr.map(
-					[
-						["Throughput", formatRate(node.throughput)],
-						["Errors", formatErrorRate(node.errorRate)],
-						["p95", formatLatency(node.p95LatencyMs)],
-					] as const,
-					([term, value]) =>
-						h.div(
-							[h.Key(term)],
-							[
-								h.dt([], [typography(h, { size: "2xs", tone: "muted" }, [term])]),
-								h.dd([], [typography(h, { size: "sm", numeric: true }, [value])]),
-							],
-						),
-				),
-			),
-			typography(h, { size: "xs", tone: "muted", as: "p", className: "px-4 pt-4 pb-2" }, [
-				`${own.length} connections`,
-			]),
-			...Arr.map(own, ({ link, state }) =>
-				linkRow(h, link, state, link.source === node.id ? link.target : link.source),
-			),
-		],
+/** The landscape column over the parent's topology, for the parent to place beside its own panels. */
+export const mapColumn = (model: Model, inputs: ViewInputs, h: H): Html => {
+	const board = boardOf(inputs.topology)
+	const flowing = model.traffic ?? !inputs.reducedMotion
+	return vstack(
+		h,
+		{ className: "h-full min-h-0", attributes: [h.DataAttribute("service-map-renderer", "tiles")] },
+		[toolbar(h, model, flowing), viewport(h, model, board, inputs, flowing), footer(h, model)],
 	)
 }
 
-/** Which country each namespace is, and what its tiles send down the road. */
-const biomeLegend = (h: H): Html =>
-	vstack(h, { gap: "1.5", className: "border-b p-4", attributes: [h.AriaLabel("Namespaces")] }, [
-		typography(h, { size: "xs", weight: "semibold" }, ["Namespaces"]),
-		...Arr.map([...biomes], ([namespace, biome]) =>
-			hstack(h, { gap: "2", align: "center", attributes: [h.Key(namespace)] }, [
-				statusDot(h, {
-					tone: "custom",
-					attributes: [h.Style({ "background-color": biome.swatch })],
-				}),
-				typography(h, { size: "xs", truncate: true, className: "min-w-0 flex-1" }, [namespace]),
-				typography(h, { size: "2xs", tone: "muted", className: "whitespace-nowrap" }, [
-					`${biome.label} · ${biome.produce.label}`,
-				]),
-			]),
-		),
-	])
-
-const connections = (h: H, cells: Placements): Html => {
-	const all = sortedLinks(cells, links)
-	const rails = Arr.filter(all, (entry) => entry.state === "rail").length
-	return h.aside(
-		[h.Class(RAIL_CLASS), h.AriaLabel("Connections")],
-		[
-			vstack(h, { gap: "1", className: "border-b p-4" }, [
-				typography(h, { size: "xs", weight: "semibold" }, ["Connections"]),
-				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-					rails === 0
-						? "Every connection on the board goes by road."
-						: `${rails} still go by rail. Rearrange to put their tiles side by side.`,
-				]),
-			]),
-			biomeLegend(h),
-			...Arr.map(all, ({ link, state }) => linkRow(h, link, state, link.source)),
-		],
-	)
-}
-
-export const view = (model: Model, h: H): Html => {
-	const flowing = model.traffic ?? !model.reducedMotion
-	const cells = placementsOf(model)
-	const selected = model.selectedId === null ? undefined : nodesById.get(model.selectedId)
-	return pageBody(h, [
-		pageContent(h, [
-			h.div(
-				[
-					h.Class(
-						"grid h-full min-h-0 grid-cols-1 overflow-y-auto xl:grid-cols-[minmax(0,1fr)_288px] xl:overflow-hidden",
-					),
-				],
-				[
-					vstack(h, { className: "h-[640px] min-h-0 xl:h-auto" }, [
-						toolbar(h, model, flowing),
-						viewport(h, model, flowing),
-						footer(h, model),
-					]),
-					selected === undefined ? connections(h, cells) : inspector(h, cells, selected),
-				],
-			),
-		]),
-	])
-}
+/** `mapColumn` as a submodel view, for a parent with its own Message. */
+export const view = Submodel.defineView<Model, Message, ViewInputs>(mapColumn)

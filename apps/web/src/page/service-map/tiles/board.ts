@@ -1,5 +1,5 @@
 import { Array as Arr, Option, Order } from "effect"
-import type { Topology3D } from "../../page/service-map/three/types"
+import type { Topology3D } from "../three/types"
 import { type Cell, cellKey, cellToPoint, hexDistance, neighbours, ORIGIN, type Point, sameCell } from "./hex"
 
 // The tile game over a topology: every service is one hex tile, and a call between two services
@@ -146,6 +146,11 @@ const NAMESPACE_BONUS = 0.6
 /** What it costs a tile to stand beside one it has nothing to do with: another namespace's, with
  * no link between them. It leaves gaps of open country between unrelated services. */
 const STRANGER_COST = 0.45
+/** Up to this many tiles, every pair is tried for a swap. Past it, a tile only trades with the
+ * tiles near its own links or itself: trying every pair grows with the square of the board, and a
+ * swap far from both cannot shorten its roads. */
+const EXHAUSTIVE_SWAPS = 60
+const SWAP_REACH = 2
 
 /** Lays every node out on the board. `pinned` tiles stay where they are. Greedy first (each tile
  * goes where the most of its links become roads), then moves and swaps while they shorten the connections. */
@@ -154,6 +159,10 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 	const namespaces = new Map(Arr.map(topology.nodes, (node) => [node.id, node.namespace] as const))
 	const cells = new Map(Arr.filter([...pinned], ([id]) => namespaces.has(id)))
 	const taken = takenOf(cells)
+	const linkedTo = new Map(
+		Arr.map([...adjacency], ([id, list]) => [id, new Set(Arr.map(list, (next) => next.other))] as const),
+	)
+	const noLinks: ReadonlySet<string> = new Set()
 	/** What `id` costs standing on `cell`, given everything else on the board. */
 	const cost = (id: string, cell: Cell): number => {
 		const reach = Arr.reduce(adjacency.get(id) ?? [], 0, (sum, next) => {
@@ -166,7 +175,7 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 				occupant !== undefined && occupant !== id && namespaces.get(occupant) === namespaces.get(id)
 			)
 		}).length
-		const linked = new Set(Arr.map(adjacency.get(id) ?? [], (next) => next.other))
+		const linked = linkedTo.get(id) ?? noLinks
 		const strangers = Arr.filter(neighbours(cell), (next) => {
 			const occupant = taken.get(cellKey(next))
 			return (
@@ -189,16 +198,15 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 		cells.set(id, cell)
 		taken.set(cellKey(cell), id)
 	}
+	/** The option `id` costs least on, ties to the cell nearest the middle (`byCell`). */
 	const cheapest = (id: string, options: ReadonlyArray<Cell>): Option.Option<Cell> =>
-		Arr.head(
-			Arr.sort(
-				options,
-				Order.combine(
-					Order.mapInput(Order.Number, (cell: Cell) => cost(id, cell)),
-					byCell,
-				),
-			),
-		)
+		Arr.reduce(options, Option.none<{ readonly cell: Cell; readonly cost: number }>(), (best, cell) => {
+			const here = cost(id, cell)
+			return Option.isSome(best) &&
+				(best.value.cost < here || (best.value.cost === here && byCell(best.value.cell, cell) <= 0))
+				? best
+				: Option.some({ cell, cost: here })
+		}).pipe(Option.map((best) => best.cell))
 	Arr.forEach(dealOrder(topology, new Set(cells.keys())), (id) =>
 		Option.map(cheapest(id, frontier(taken, cells)), (cell) => put(id, cell)),
 	)
@@ -206,6 +214,19 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 		Arr.filter([...cells.keys()], (id) => !pinned.has(id)),
 		Order.String,
 	)
+	/** Who `id` may trade places with: everyone on a small board, else the tiles near it or its links. */
+	const partnersOf = (id: string): ReadonlyArray<string> => {
+		if (movable.length <= EXHAUSTIVE_SWAPS) return movable
+		const anchors = Arr.flatMap([id, ...(linkedTo.get(id) ?? noLinks)], (other) =>
+			Option.toArray(Option.fromNullishOr(cells.get(other))),
+		)
+		return Arr.filter(movable, (other) => {
+			const there = cells.get(other)
+			return (
+				there !== undefined && Arr.some(anchors, (anchor) => hexDistance(anchor, there) <= SWAP_REACH)
+			)
+		})
+	}
 	for (let round = 0; round < 10; round++) {
 		let improved = false
 		for (const id of movable) {
@@ -221,7 +242,7 @@ export const autoLayout = (topology: Topology, pinned: Placements = new Map()): 
 				improved = true
 				continue
 			}
-			for (const other of movable) {
+			for (const other of partnersOf(id)) {
 				const there = cells.get(other)
 				const current = cells.get(id)
 				if (other === id || there === undefined || current === undefined) continue
