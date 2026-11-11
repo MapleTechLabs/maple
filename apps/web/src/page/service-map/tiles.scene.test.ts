@@ -10,7 +10,7 @@ import { Message } from "./message"
 import { MapBundle, type Model } from "./model"
 import * as Scene3d from "./scene3d"
 import * as Tiles from "./tiles/update"
-import { init, update } from "./update"
+import { contextChanged, init, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -114,6 +114,16 @@ describe("service map tiles", () => {
 		expect(after.tiles.cells["checkout"]).toEqual(before.tiles.cells["checkout"])
 		expect(after.tiles.cells["payments"]).toEqual(before.tiles.cells["payments"])
 		expect(after.tiles.cells["ledger"]).toBeDefined()
+	})
+
+	test("pinning a namespace lays the board out for the services left on the map", () => {
+		const pinned = contextChanged(loaded(), { ...context, pinnedNamespace: "billing" }).model
+		const onMap = Option.match(pinned.map, {
+			onNone: () => [],
+			onSome: (map) => Arr.map(map.graph.nodes, (node) => node.id),
+		})
+		expect(onMap).not.toContain("checkout")
+		expect(Arr.sort(Rec.keys(pinned.tiles.cells), Order.String)).toEqual(Arr.sort(onMap, Order.String))
 	})
 
 	test("the landscape replaces the canvas, and a name plate opens the service panel", () => {

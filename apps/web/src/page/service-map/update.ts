@@ -214,7 +214,6 @@ const applyUrlFocus = (result: Return, context: PageContext): Return =>
 			),
 	})
 
-/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
 /** Lays the tile board out for the map as it changes, once the Tiles view has been opened. */
 const syncTiles = (result: Return): Return => {
 	const { model } = result
@@ -230,6 +229,7 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => syncTiles(searchChanged(model, route, context))
 
+/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
 const searchChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// The 3D viewport remounts when the view switches to it: its view state starts over, its world stays.
@@ -250,7 +250,10 @@ const searchChanged = (model: Model, route: { readonly search: Search }, context
 }
 
 /** The namespace pin scopes the rows on the client: rebuild the graph. A new zone re-resolves "today". */
-export const contextChanged = (model: Model, context: PageContext): Return => {
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	syncTiles(scopeChanged(model, context))
+
+const scopeChanged = (model: Model, context: PageContext): Return => {
 	const synced = syncMap(context)({ model })
 	const isNewZone = model.windowZone !== null && model.windowZone !== context.timeZone
 	if (!isNewZone) return synced
