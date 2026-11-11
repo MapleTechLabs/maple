@@ -1318,13 +1318,13 @@ export function startPixelScene(
 	const onPointerDown = (event: PointerEvent) => {
 		state.pressed = { x: event.clientX, y: event.clientY }
 	}
-	/** The camera can move under a still pointer (it glides on after a drag, or zooms): the place
-	 * the pointer chose for the held tile is worked out again, so a click lands where it shows. */
+	/** The camera can move under a still pointer (it glides on after a drag, or zooms): what the
+	 * pointer is over is worked out again, so a click lands on what the map shows. A place chosen
+	 * for a held tile with the arrow keys is left alone. */
 	const retarget = () => {
-		if (state.derived.input.heldId === null || state.isKeyed || state.pointerAt === null) return
-		const point = groundUnder(state.pointerAt)
-		state.heldPoint = point
-		setHover(targetAt(point))
+		if (state.pointerAt === null) return
+		if (state.derived.input.heldId !== null && state.isKeyed) return
+		follow(state.pointerAt)
 	}
 	/** The tile whose landmark the pointer is on. A tall one stands in front of the tile behind
 	 * it, so the ground under the pointer would name the wrong tile. */
@@ -1347,18 +1347,21 @@ export function startPixelScene(
 		return Option.getOrNull(Arr.head(Arr.sort(hit, Order.mapInput(Order.Number, away))))
 	}
 	const onPointerMove = (event: PointerEvent) => {
-		const { input } = state.derived
-		const point = groundAt(event)
 		state.pointerAt = pointerOf(event)
+		state.isKeyed = false
+		follow(state.pointerAt)
+	}
+	/** Works out what the pointer is over: where a held tile would go, or which tile is ringed. */
+	const follow = (pointer: Point) => {
+		const { input } = state.derived
+		const point = groundUnder(pointer)
 		if (input.heldId !== null) {
 			pointed.visible = false
-			state.isKeyed = false
 			state.heldPoint = point
 			setHover(targetAt(point))
 			canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 			return invalidate()
 		}
-		const pointer = pointerOf(event)
 		const id = landmarkAt(pointer)?.id ?? serviceAt(point)
 		const lively =
 			(!input.building && moverAt(pointer) !== null) ||

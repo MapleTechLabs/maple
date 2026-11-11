@@ -1020,7 +1020,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			camera,
 		)
 	}
-	const pickTile = (event: MouseEvent): string | null => {
+	const pickTile = (event: Aim): string | null => {
 		aim(event)
 		const hit = Arr.head(
 			raycaster.intersectObjects(
@@ -1050,7 +1050,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		)
 	}
 	/** Where the pointer meets a lake's water, if it does. */
-	const hitWater = (event: MouseEvent): Point | null => {
+	const hitWater = (event: Aim): Point | null => {
 		aim(event)
 		const hit = Arr.head(raycaster.intersectObjects(layers.lakes.children, false))
 		return Option.getOrNull(
@@ -1108,8 +1108,13 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		state.pressed = { x: event.clientX, y: event.clientY }
 	}
 	const onPointerMove = (event: PointerEvent) => {
-		const { input } = state.derived
 		state.pointerAt = { clientX: event.clientX, clientY: event.clientY }
+		state.isKeyed = false
+		follow(state.pointerAt)
+	}
+	/** Works out what the pointer is over: which tile is ringed, or where a held tile would go. */
+	const follow = (event: Aim) => {
+		const { input } = state.derived
 		if (input.heldId === null) {
 			aim(event)
 			const id = pickTile(event)
@@ -1127,20 +1132,19 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			return
 		}
 		outline.visible = false
-		state.isKeyed = false
 		const point = pickGround(event)
 		state.heldPoint = point
 		setHover(targetAt(point))
 		canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 		invalidate()
 	}
-	/** The camera can move under a still pointer (it glides on after a drag, or zooms): the place
-	 * the pointer chose for the held tile is worked out again, so a click lands where it shows. */
+	/** The camera can move under a still pointer (it glides on after a drag, or zooms): what the
+	 * pointer is over is worked out again, so a click lands on what the map shows. A place chosen
+	 * for a held tile with the arrow keys is left alone. */
 	const retarget = () => {
-		if (state.derived.input.heldId === null || state.isKeyed || state.pointerAt === null) return
-		const point = pickGround(state.pointerAt)
-		state.heldPoint = point
-		setHover(targetAt(point))
+		if (state.pointerAt === null) return
+		if (state.derived.input.heldId !== null && state.isKeyed) return
+		follow(state.pointerAt)
 	}
 	const onClick = (event: MouseEvent) => {
 		if (Math.hypot(event.clientX - state.pressed.x, event.clientY - state.pressed.y) > DRAG_TOLERANCE)
