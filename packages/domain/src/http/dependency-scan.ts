@@ -139,21 +139,25 @@ export class DependencyScanApiGroup extends HttpApiGroup.make("dependencyScan")
 	.add(
 		HttpApiEndpoint.get("listRepositories", "/repositories", {
 			success: DependencyScanRepositoriesResponse,
-			error: DependencyScanPersistenceError,
+			error: [DependencyScanPersistenceError, DependencyScanForbiddenError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("scanRepository", "/repositories/:repositoryId/scan", {
 			params: { repositoryId: VcsRepositoryId },
 			success: DependencyScanQueued,
-			error: [DependencyScanPersistenceError, DependencyScanRepositoryNotFoundError],
+			error: [
+				DependencyScanPersistenceError,
+				DependencyScanForbiddenError,
+				DependencyScanRepositoryNotFoundError,
+			],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("listFindings", "/findings", {
 			query: DependencyFindingsQuery,
 			success: DependencyFindingsResponse,
-			error: DependencyScanPersistenceError,
+			error: [DependencyScanPersistenceError, DependencyScanForbiddenError],
 		}),
 	)
 	.add(

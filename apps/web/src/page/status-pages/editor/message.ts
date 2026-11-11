@@ -1,10 +1,16 @@
-import { StatusPageComponentId, StatusPageIncidentId, StatusPageIncidentKind } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageIncidentId,
+	StatusPageIncidentKind,
+	StatusPageVisibility,
+} from "@maple/domain"
 import {
 	StatusPageConfig,
 	StatusPagePreviewParams,
 	V2StatusPage,
 	V2StatusPageBreakGlassToken,
 	V2StatusPageComponent,
+	V2StatusPageCustomDomain,
 	V2StatusPageIncident,
 	V2StatusPagePublishResult,
 	V2UptimeMonitor,
@@ -13,7 +19,7 @@ import {
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
-	StatusPageSnapshot,
+	StatusPagePublicSnapshot,
 	StatusPageThemeRadius,
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
@@ -28,12 +34,13 @@ import {
 	SettingsTextField,
 	ThemeColorField,
 } from "../shared/form"
+import { AccessAction } from "./model"
 import { PickerMessage } from "../shared/picker"
 import { PreviewScheme, PreviewSelection, PreviewState, PreviewWidth } from "../shared/preview"
 import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
-export const UpdateTextField = Schema.Literals(["status", "body"])
+export const UpdateTextField = Schema.Literals(["status", "body", "endedAt"])
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
@@ -48,13 +55,12 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
-	OpenedPublicPage: {},
 	// Preview and selection
 	ElapsedPreviewDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: {
 		generation: Schema.Number,
 		draft: StatusPagePreviewParams,
-		result: LoadOutcome(StatusPageSnapshot),
+		result: LoadOutcome(StatusPagePublicSnapshot),
 	},
 	ReceivedPreviewSelection: { kind: PreviewSelection.fields.kind, id: Schema.String },
 	ClickedComponent: { componentId: StatusPageComponentId },
@@ -85,25 +91,29 @@ export const Message = defineMessageUnion({
 	},
 	// Incidents
 	ClickedNewIncident: { kind: StatusPageIncidentKind },
+	GotComposeDialogMessage: { message: Dialog.Message },
 	ChangedIncidentKind: { kind: StatusPageIncidentKind },
 	ChangedIncidentField: { field: IncidentTextField, value: Schema.String },
 	ToggledIncidentComponent: { componentId: StatusPageComponentId },
-	PickedIncidentPublished: { isPublished: Schema.Boolean },
-	SubmittedIncident: {},
+	SubmittedIncidentWrite: {},
+	ClickedIncidentBack: {},
+	/** `isPublished`: Publish (or Schedule) rather than Save as draft. */
+	SubmittedIncident: { isPublished: Schema.Boolean },
 	CompletedCreateIncident: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPostUpdate: { incidentId: StatusPageIncidentId, isResolving: Schema.Boolean },
+	GotUpdateDialogMessage: { message: Dialog.Message },
 	ChangedUpdateField: { field: UpdateTextField, value: Schema.String },
+	SubmittedUpdateWrite: {},
+	ClickedUpdateBack: {},
 	SubmittedUpdate: {},
-	ClickedCancelUpdate: {},
-	/** `generation`: which post answered; the form may have moved on to another one. */
-	CompletedPostUpdate: { generation: Schema.Number, result: LoadOutcome(V2StatusPageIncident) },
+	CompletedPostUpdate: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: LoadOutcome(V2StatusPageIncident) },
 	ClickedEditIncident: { incidentId: StatusPageIncidentId },
+	GotEditIncidentDialogMessage: { message: Dialog.Message },
 	ChangedIncidentEditField: { field: IncidentEditField, value: Schema.String },
 	ToggledIncidentEditComponent: { componentId: StatusPageComponentId },
 	SubmittedIncidentEdit: {},
-	ClickedCancelIncidentEdit: {},
 	CompletedSaveIncident: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedDeleteIncident: { incidentId: StatusPageIncidentId },
 	ClickedConfirmDeleteIncident: {},
@@ -135,6 +145,27 @@ export const Message = defineMessageUnion({
 	GotBreakGlassDialogMessage: { message: Dialog.Message },
 	GotTokenCopyMessage: { message: CopyButton.Message },
 	ClickedDismissToken: {},
+	// Access
+	PickedVisibility: { visibility: StatusPageVisibility },
+	ClickedChangePassword: {},
+	ChangedPassword: { value: Schema.String },
+	ClickedCancelPassword: {},
+	SubmittedPassword: {},
+	ClickedRemovePassword: {},
+	CompletedAccessChange: { action: AccessAction, result: LoadOutcome(V2StatusPage) },
+	// Custom domain
+	CompletedFetchCustomDomain: { key: Schema.String, result: LoadOutcome(V2StatusPageCustomDomain) },
+	ChangedCustomDomain: { value: Schema.String },
+	SubmittedCustomDomain: {},
+	CompletedSetCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedCheckCustomDomain: {},
+	CompletedCheckCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	ClickedRemoveCustomDomain: {},
+	ClickedConfirmRemoveCustomDomain: {},
+	CompletedRemoveCustomDomain: { result: LoadOutcome(V2StatusPageCustomDomain) },
+	GotRemoveCustomDomainDialogMessage: { message: Dialog.Message },
+	/** `key` names the copied DNS value: one copy status serves every row. */
+	GotDnsCopyMessage: { key: Schema.String, message: CopyButton.Message },
 	// Page
 	ClickedDeletePage: {},
 	ClickedConfirmDeletePage: {},

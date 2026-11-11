@@ -1,4 +1,7 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Schema } from "effect"
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /** Edge-cacheable for 15s, served stale for a day if this Worker errors. */
 export const PUBLIC_CACHE_CONTROL = "public, max-age=15, stale-while-revalidate=60, stale-if-error=86400"
 
@@ -47,6 +50,18 @@ export const asset = (body: string, contentType: string, extra: Record<string, s
 		},
 	})
 
+/** A JSON API error, `{ "error": message }`, readable cross-origin like the API itself. */
+export const jsonError = (status: number, message: string): Response =>
+	new Response(encodeJson({ error: message }), {
+		status,
+		headers: {
+			...COMMON_HEADERS,
+			"content-type": "application/json; charset=utf-8",
+			"cache-control": "no-store",
+			"access-control-allow-origin": "*",
+		},
+	})
+
 export const plain = (body: string, status: number, cacheControl = "no-store"): Response =>
 	new Response(body, {
 		status,
@@ -57,8 +72,11 @@ export const plain = (body: string, status: number, cacheControl = "no-store"): 
 		},
 	})
 
-export const redirect = (location: string): Response =>
-	new Response(null, { status: 303, headers: { ...COMMON_HEADERS, location, "cache-control": "no-store" } })
+export const redirect = (location: string, extra: Record<string, string> = {}): Response =>
+	new Response(null, {
+		status: 303,
+		headers: { ...COMMON_HEADERS, location, "cache-control": "no-store", ...extra },
+	})
 
 const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Status page not found</title></head><body><h1>Status page not found</h1><p>There is no status page at this address.</p></body></html>`
 

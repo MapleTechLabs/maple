@@ -51,6 +51,7 @@
 		"./integration-inventory": "./src/integration-inventory.ts",
 		"./source-health": "./src/source-health.ts",
 		"./status-page": "./src/status-page.ts",
+		"./status-page-access": "./src/status-page-access.ts",
 		"./uptime": "./src/uptime.ts",
 		"./slo": "./src/slo.ts",
 		"./search-console": "./src/search-console.ts",

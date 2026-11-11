@@ -3,6 +3,12 @@ import { Effect, Schema } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { OrgId, StatusPageId } from "@maple/primitives"
 import { executeSql, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import type { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
+
+/** The Cloudflare test double with its handles. */
+export type InMemoryCustomHostnames = Effect.Success<
+	ReturnType<typeof CloudflareCustomHostnames.makeInMemory>
+>
 
 export const ORG = Schema.decodeSync(OrgId)("org_status_pages")
 export const USER = "user_status_pages"
@@ -30,13 +36,16 @@ export const seedPage = (
 		readonly publishedAt?: number | null
 		readonly publishAttemptedAt?: number | null
 		readonly draft?: boolean
+		readonly visibility?: "public" | "password" | "internal"
+		readonly passwordHash?: string | null
 	},
 ) =>
 	sql(
 		testDb,
 		`INSERT INTO status_pages (id, org_id, name, slug, auto_incidents, break_glass_token_sha256,
-			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at, draft)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13)`,
+			revision, published_revision, published_at, created_by, created_at, updated_at, publish_attempted_at, draft,
+			visibility, password_hash)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14, $15)`,
 		[
 			input.id,
 			ORG,
@@ -53,6 +62,8 @@ export const seedPage = (
 				? null
 				: iso(input.publishAttemptedAt),
 			input.draft ?? false,
+			input.visibility ?? "public",
+			input.passwordHash ?? null,
 		],
 	)
 
@@ -168,6 +179,7 @@ export const seedIncident = (
 		readonly published?: boolean
 		readonly startedAt: number
 		readonly resolvedAt?: number | null
+		readonly scheduledStart?: number | null
 		readonly scheduledEnd?: number | null
 		readonly componentIds?: ReadonlyArray<string>
 		readonly alertIncidentId?: string | null
@@ -176,8 +188,8 @@ export const seedIncident = (
 	sql(
 		testDb,
 		`INSERT INTO status_page_incidents (id, org_id, page_id, kind, title, impact, status, published,
-			scheduled_end, started_at, resolved_at, created_at, updated_at, alert_incident_id)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10, $12)`,
+			scheduled_end, started_at, resolved_at, created_at, updated_at, alert_incident_id, scheduled_start)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $10, $12, $13)`,
 		[
 			input.id,
 			ORG,
@@ -191,6 +203,9 @@ export const seedIncident = (
 			iso(input.startedAt),
 			input.resolvedAt === undefined || input.resolvedAt === null ? null : iso(input.resolvedAt),
 			input.alertIncidentId ?? null,
+			input.scheduledStart === undefined || input.scheduledStart === null
+				? null
+				: iso(input.scheduledStart),
 		],
 	).pipe(
 		Effect.andThen(
@@ -260,16 +275,62 @@ export const seedCleanup = (
 	testDb: TestDb,
 	input: {
 		readonly pageId: string
-		readonly slug: string
+		readonly slug: string | null
 		readonly deleteSnapshot: boolean
 		readonly at: number
+		readonly hostname?: string
+		readonly cloudflareHostnameId?: string
+		readonly cloudflareRouteId?: string
 	},
 ) =>
 	sql(
 		testDb,
-		`INSERT INTO status_page_cleanups (id, org_id, page_id, slug, delete_snapshot, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		[SecureRandom.uuidV4Unsafe(), ORG, input.pageId, input.slug, input.deleteSnapshot, iso(input.at)],
+		`INSERT INTO status_page_cleanups (id, org_id, page_id, slug, delete_snapshot, created_at,
+			hostname, cloudflare_hostname_id, cloudflare_route_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		[
+			SecureRandom.uuidV4Unsafe(),
+			ORG,
+			input.pageId,
+			input.slug,
+			input.deleteSnapshot,
+			iso(input.at),
+			input.hostname ?? null,
+			input.cloudflareHostnameId ?? null,
+			input.cloudflareRouteId ?? null,
+		],
+	)
+
+/** A custom domain row, as the custom domains service would leave it. */
+export const seedCustomDomain = (
+	testDb: TestDb,
+	input: {
+		readonly pageId: string
+		readonly hostname: string
+		readonly status: "pending_dns" | "pending_ssl" | "active" | "failed"
+		readonly cloudflareHostnameId?: string | null
+		readonly cloudflareRouteId?: string | null
+		readonly lastCheckedAt?: number | null
+		readonly createdAt?: number
+	},
+) =>
+	sql(
+		testDb,
+		`INSERT INTO status_page_custom_domains (page_id, org_id, hostname, status, cloudflare_hostname_id,
+			cloudflare_route_id, last_checked_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+		[
+			input.pageId,
+			ORG,
+			input.hostname,
+			input.status,
+			input.cloudflareHostnameId ?? null,
+			input.cloudflareRouteId ?? null,
+			input.lastCheckedAt === undefined || input.lastCheckedAt === null
+				? null
+				: iso(input.lastCheckedAt),
+			iso(input.createdAt ?? NOW - DAY_MS),
+		],
 	)
 
 export const cleanupRows = (testDb: TestDb) =>

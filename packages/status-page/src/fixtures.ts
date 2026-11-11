@@ -94,6 +94,7 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 			showPoweredBy: true,
 			privacyUrl: null,
 			termsUrl: null,
+			customDomain: null,
 		},
 		breakGlassTokenSha256: null,
 		components: [

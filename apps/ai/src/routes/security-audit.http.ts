@@ -113,8 +113,8 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 					),
 				),
 			)
-		/** Reading and triaging findings. */
-		const findingsAccess = accessFor("security:manage")
+		/** Anything that reads or triages: the whole Security Center is for engineers and admins. */
+		const readAccess = accessFor("security:manage")
 		/** Anything that spends the audit budget: targets, settings, starting or stopping runs. */
 		const auditAccess = accessFor("security_audit:run")
 
@@ -257,7 +257,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("getSettings", () =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { store } = yield* readAccess
 					return yield* orgSettings(store)
 				}).pipe(Effect.withSpan("HttpSecurityAudit.getSettings")),
 			)
@@ -272,7 +272,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listTargets", () =>
 				Effect.gen(function* () {
-					const { store } = yield* orgAccess
+					const { store } = yield* readAccess
 					const rows = yield* orUnavailable(store.listTargets)
 					return { targets: Arr.map(rows, securityAuditTargetView) }
 				}).pipe(Effect.withSpan("HttpSecurityAudit.listTargets")),
@@ -374,13 +374,11 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRuns", ({ query }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* orgAccess
+					const { store } = yield* readAccess
 					const rows = yield* orUnavailable(
 						store.listRuns(query.targetId === undefined ? {} : { targetId: query.targetId }),
 					)
 					const runs = Arr.map(rows, securityAuditRunView)
-					// Members may list runs but not read findings, so only engineers and admins see what each reported.
-					if (!Policy.can(tenant.roles, "security:manage")) return { runs }
 					const findingCounts = yield* orUnavailable(
 						store.countRunFindings(Arr.map(rows, (r) => r.id)),
 					)
@@ -389,7 +387,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("getRun", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* findingsAccess
+					const { store } = yield* readAccess
 					const run = yield* requireRun(store, params.runId)
 					const unitCounts = yield* orUnavailable(store.countUnits(run.id))
 					return {
@@ -434,7 +432,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunUnits", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* findingsAccess
+					const { store } = yield* readAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listUnitSummaries(run.id))
 					return { units: Arr.map(rows, securityAuditUnitView) }
@@ -442,7 +440,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunEvents", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* findingsAccess
+					const { store } = yield* readAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(
 						store.listEvents(run.id, {
@@ -456,7 +454,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listRunFindings", ({ params }) =>
 				Effect.gen(function* () {
-					const { store } = yield* findingsAccess
+					const { store } = yield* readAccess
 					const run = yield* requireRun(store, params.runId)
 					const rows = yield* orUnavailable(store.listRunFindingViews(run.id))
 					return { findings: Arr.map(rows, securityAuditFindingView) }
@@ -464,7 +462,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("listFindings", ({ params, query }) =>
 				Effect.gen(function* () {
-					const { store } = yield* findingsAccess
+					const { store } = yield* readAccess
 					const target = yield* requireTarget(store, params.targetId)
 					const rows = yield* orUnavailable(store.listFindings(target.id))
 					const includeRejected = query.includeRejected === "true"
@@ -478,7 +476,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			)
 			.handle("updateFindingStatus", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const { tenant, store } = yield* findingsAccess
+					const { tenant, store } = yield* readAccess
 					const updated = yield* orUnavailable(
 						store.setFindingStatus(
 							params.targetId,

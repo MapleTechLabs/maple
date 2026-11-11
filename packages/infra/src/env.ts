@@ -4,7 +4,12 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { optionalString } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
-import { PRD_DOMAINS, prdOrigin, resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
+import {
+	PRD_DOMAINS,
+	prdOrigin,
+	resolveDeploymentEnvironment,
+	resolveWorkerName,
+} from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -165,6 +170,29 @@ export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv>
 		plainWithDefault("EMAIL_FROM", `Maple <${NOTIFICATIONS_SENDER_ADDRESS}>`),
 	)
 
+/**
+ * The hostname customers CNAME a status page's custom domain to. It is also the zone's Cloudflare
+ * for SaaS fallback origin, declared by the US prd deploy (`declareStatusDomainsOrigin` in
+ * `cloudflare/status-pages.ts`), and shared by every stage and instance on the zone.
+ */
+export const STATUS_DOMAINS_CNAME_TARGET = "status-domains.maple.dev"
+
+/**
+ * Status page custom domains (docs/status-page-custom-domains.md): the zone and a token that may
+ * edit its custom hostnames and Worker routes. Either unset (every dev stage by default) leaves
+ * custom domains unavailable. The status Worker's name is where per-hostname routes point.
+ */
+export const statusDomainsEnv = (
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): Config.Config<WorkerEnv> =>
+	merge(
+		optionalPlain("MAPLE_STATUS_DOMAINS_ZONE_ID"),
+		optionalSecret("MAPLE_STATUS_DOMAINS_API_TOKEN"),
+		plainWithDefault("MAPLE_STATUS_DOMAINS_CNAME_TARGET", STATUS_DOMAINS_CNAME_TARGET),
+		derived("MAPLE_STATUS_WORKER_NAME", resolveWorkerName("status", stage, region)),
+	)
+
 /** The Worker's own OTLP export, stamped with its revision ({@link commitShaEnv}). */
 export const selfObservabilityEnv = (
 	stage: MapleStage,
@@ -242,6 +270,7 @@ export const mapleServerEnv = (
 		authEnv,
 		ingestKeyCryptoEnv,
 		appUrlsEnv(domains),
+		statusDomainsEnv(stage, region),
 		selfObservabilityEnv(stage, region),
 		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),

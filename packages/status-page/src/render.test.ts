@@ -21,6 +21,7 @@ import {
 	renderBadgeSvg,
 	renderManagePage,
 	renderPage,
+	renderRssFeed,
 	renderStatusJson,
 } from "./index"
 
@@ -71,6 +72,7 @@ const hostileSnapshot = makeSnapshot({
 		showPoweredBy: false,
 		privacyUrl: "javascript:alert(1)",
 		termsUrl: null,
+		customDomain: null,
 	},
 	components: [makeComponent(0, { name: HOSTILE, group: HOSTILE, description: HOSTILE })],
 	incidents: [
@@ -209,6 +211,24 @@ describe("renderPage", () => {
 		expect(section("past")).toContain("Login outage")
 		expect(section("past")).not.toContain("Elevated errors")
 		expect(html).toContain("Updated 2 min ago")
+	})
+
+	it("dates a past incident from when it started to when it ended, with how long it lasted", () => {
+		const startedAt = Date.UTC(2026, 9, 27, 14, 5)
+		const snapshot = makeSnapshot({
+			incidents: [
+				makeIncident("old", {
+					title: "Login outage",
+					status: "resolved",
+					startedAt,
+					resolvedAt: startedAt + 75 * 60_000,
+				}),
+			],
+		})
+		const past = between(renderPage(snapshot, live, FIXTURE_NOW), `id="h-past"`, "</section>")
+		expect(past).toContain(
+			`<time datetime="2026-10-27T14:05:00.000Z">Oct 27, 2026, 14:05 UTC</time> to <time datetime="2026-10-27T15:20:00.000Z">Oct 27, 2026, 15:20 UTC</time> (1 h 15 min)`,
+		)
 	})
 })
 
@@ -597,7 +617,7 @@ describe("renderStatusJson", () => {
 	]
 	it.each(cases)("maps a worst component of %s to indicator %s", (status, indicator) => {
 		const snapshot = makeSnapshot({ components: [makeComponent(0), makeComponent(1, { status })] })
-		expect(renderStatusJson(snapshot, live).status.indicator).toBe(indicator)
+		expect(renderStatusJson(snapshot, live, "https://status.acme.com").status.indicator).toBe(indicator)
 	})
 
 	it("lists only unresolved incidents and reports a delayed page", () => {
@@ -607,8 +627,11 @@ describe("renderStatusJson", () => {
 				makeIncident("done", { status: "resolved", resolvedAt: FIXTURE_NOW }),
 			],
 		})
-		const json = renderStatusJson(snapshot, delayed)
+		const json = renderStatusJson(snapshot, delayed, "https://status.acme.com")
 		expect(Arr.map(json.incidents, (incident) => incident.id)).toEqual(["open"])
+		expect(json.incidents[0]?.started_at).toBe(
+			new Date(snapshot.incidents[0]?.startedAt ?? 0).toISOString(),
+		)
 		expect(json.status.delayed).toBe(true)
 		expect(json.updated_at).toBe("2026-10-28T11:00:00.000Z")
 	})
@@ -646,6 +669,61 @@ describe("renderAtomFeed", () => {
 		])
 		expect(xml).toContain('<content type="text">Fixed &lt;now&gt;</content>')
 		expect(xml).toContain('href="https://status.acme.example/#incident-a"')
+	})
+})
+
+describe("renderRssFeed", () => {
+	const snapshot = makeSnapshot({
+		incidents: [
+			makeIncident("a", {
+				title: "Errors & timeouts",
+				updates: [
+					update("a2", FIXTURE_NOW - 60_000, "Fixed <now>", "resolved"),
+					update("a1", FIXTURE_NOW - 600_000, "Looking"),
+				],
+			}),
+			makeIncident("b", { updates: [update("b1", FIXTURE_NOW - 300_000, "Other")] }),
+		],
+	})
+
+	it("has one item per update, newest first, with escaped text and RFC 822 dates", () => {
+		const xml = renderRssFeed(snapshot, "https://status.acme.example/")
+		const items = Arr.map(
+			allMatches(
+				xml,
+				/<item><title>([^<]*)<\/title>.*?<pubDate>([^<]*)<\/pubDate><guid isPermaLink="false">([^<]*)<\/guid><\/item>/gu,
+			),
+			(match) => [match[1], match[2], match[3]],
+		)
+		expect(items).toEqual([
+			[
+				"Errors &amp; timeouts: Resolved",
+				"Wed, 28 Oct 2026 11:59:00 GMT",
+				`urn:maple:status:${snapshot.pageId}:a:a2`,
+			],
+			[
+				"Incident b: Investigating",
+				"Wed, 28 Oct 2026 11:55:00 GMT",
+				`urn:maple:status:${snapshot.pageId}:b:b1`,
+			],
+			[
+				"Errors &amp; timeouts: Investigating",
+				"Wed, 28 Oct 2026 11:50:00 GMT",
+				`urn:maple:status:${snapshot.pageId}:a:a1`,
+			],
+		])
+		expect(xml).toContain("<description>Fixed &amp;lt;now&amp;gt;</description>")
+		expect(xml).toContain("<link>https://status.acme.example/#incident-a</link>")
+		expect(xml).toContain('<atom:link href="https://status.acme.example/feed.rss" rel="self"')
+	})
+
+	it("is advertised next to the Atom feed in the page head", () => {
+		const head = between(
+			renderPage(snapshot, live, FIXTURE_NOW, { basePath: "/s/acme" }),
+			"<head>",
+			"</head>",
+		)
+		expect(head).toContain('type="application/rss+xml" title="Acme status" href="/s/acme/feed.rss"')
 	})
 })
 
@@ -874,5 +952,131 @@ describe("previewSnapshot with history", () => {
 		})
 		expect(snapshot.components[0]?.days).toEqual(days)
 		expect(renderPage(snapshot, live, FIXTURE_NOW)).toContain("100% uptime")
+	})
+})
+
+describe("branding", () => {
+	const page = makeSnapshot().page
+	const headerOf = (html: string): string => between(html, `<header class="top">`, "</header>")
+	const withPage = (fields: Partial<StatusPageSnapshot["page"]>) =>
+		renderPage(makeSnapshot({ page: { ...page, ...fields } }), live, FIXTURE_NOW)
+	const LIGHT = "https://acme.example/logo.svg"
+	const DARK = "https://acme.example/logo-dark.svg"
+
+	it("swaps to the dark logo with the visitor's scheme on an auto page", () => {
+		const header = headerOf(withPage({ logoUrl: LIGHT, logoDarkUrl: DARK }))
+		expect(header).toContain(
+			`<picture><source srcset="${DARK}" media="(prefers-color-scheme: dark)"><img src="${LIGHT}" alt="Acme"></picture>`,
+		)
+	})
+
+	it("shows the one logo a forced mode needs, and either logo alone in every mode", () => {
+		const forced = (appearance: "light" | "dark") =>
+			headerOf(
+				withPage({
+					logoUrl: LIGHT,
+					logoDarkUrl: DARK,
+					theme: { ...DEFAULT_STATUS_PAGE_THEME, appearance },
+				}),
+			)
+		expect(forced("dark")).toContain(`<img src="${DARK}"`)
+		expect(forced("dark")).not.toContain(LIGHT)
+		expect(forced("light")).toContain(`<img src="${LIGHT}"`)
+		expect(forced("light")).not.toContain(DARK)
+		const darkOnly = headerOf(withPage({ logoDarkUrl: DARK }))
+		expect(darkOnly).toContain(`<img src="${DARK}" alt="Acme">`)
+		expect(darkOnly).not.toContain("mono-mark")
+	})
+
+	it("drops a logo, favicon or support link that is not https", () => {
+		const html = withPage({
+			logoDarkUrl: "http://acme.example/dark.svg",
+			faviconUrl: "javascript:alert(1)",
+			supportUrl: "http://acme.example/help",
+		})
+		expect(headerOf(html)).toContain("mono-mark")
+		expect(html).not.toContain(`rel="icon"`)
+		expect(html).not.toContain("Contact support")
+	})
+
+	it("links the favicon and puts the support link in the header", () => {
+		const html = withPage({
+			faviconUrl: "https://acme.example/favicon.png",
+			supportUrl: "https://acme.example/help",
+		})
+		expect(html).toContain(`<link rel="icon" href="https://acme.example/favicon.png">`)
+		expect(headerOf(html)).toContain(
+			`<a class="site" href="https://acme.example/help" rel="noopener">Contact support</a>`,
+		)
+	})
+})
+
+describe("link previews", () => {
+	const metaOf = (html: string, key: string): string =>
+		captured(html, new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)">`, "u"), 1)
+
+	it("describes the overall status and names the active incidents", () => {
+		const html = renderPage(
+			makeSnapshot({
+				components: [makeComponent(0, { status: "partial_outage" })],
+				incidents: [makeIncident("inc-1", { title: "API errors" })],
+			}),
+			live,
+			FIXTURE_NOW,
+			{ publicUrl: "https://status.acme.example" },
+		)
+		expect(metaOf(html, "og:title")).toBe("Acme status")
+		expect(metaOf(html, "og:site_name")).toBe("Acme")
+		expect(metaOf(html, "og:description")).toBe(
+			"We&#39;re experiencing a partial outage. Active incident: API errors.",
+		)
+		expect(metaOf(html, "twitter:description")).toBe(metaOf(html, "og:description"))
+		expect(metaOf(html, "twitter:card")).toBe("summary")
+		expect(metaOf(html, "og:url")).toBe("https://status.acme.example/")
+		expect(html).toContain(`<link rel="canonical" href="https://status.acme.example/">`)
+		// The page's own description stays the search snippet.
+		expect(metaOf(html, "description")).toBe("Status of Acme services")
+	})
+
+	it("falls back to the status for the description, and uses the logo as the image", () => {
+		const page = makeSnapshot().page
+		const html = renderPage(
+			makeSnapshot({ page: { ...page, description: null, logoUrl: "https://acme.example/logo.png" } }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(metaOf(html, "description")).toBe("We&#39;re fully operational.")
+		expect(metaOf(html, "og:image")).toBe("https://acme.example/logo.png")
+		expect(metaOf(html, "twitter:image")).toBe("https://acme.example/logo.png")
+		// No public address to point at: a static copy names none.
+		expect(html).not.toContain("og:url")
+		expect(html).not.toContain(`rel="canonical"`)
+	})
+
+	it("escapes customer text in the tags", () => {
+		const html = renderPage(
+			makeSnapshot({ incidents: [makeIncident("inc-1", { title: `"><script>x</script>` })] }),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(metaOf(html, "og:description")).toContain("&quot;&gt;&lt;script&gt;x&lt;/script&gt;")
+	})
+})
+
+describe("times", () => {
+	it("marks every time with its instant, so the script can show it in the visitor's zone", () => {
+		const at = Date.UTC(2026, 9, 28, 11, 30)
+		const html = renderPage(
+			makeSnapshot({
+				incidents: [
+					makeIncident("inc-1", { startedAt: at, updates: [update("u-1", at, "Looking")] }),
+				],
+			}),
+			live,
+			FIXTURE_NOW,
+		)
+		expect(
+			allMatches(html, /<time datetime="2026-10-28T11:30:00.000Z">Oct 28, 2026, 11:30 UTC<\/time>/gu),
+		).toHaveLength(2)
 	})
 })

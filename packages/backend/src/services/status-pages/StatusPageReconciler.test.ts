@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr, DateTime } from "effect"
+import { Effect, Layer, Option, Array as Arr, DateTime } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { overlayIncidentId, StatusPageKeys, type StatusPageOverlayEntry } from "@maple/domain/status-page"
@@ -424,5 +424,129 @@ describe("StatusPageReconciler.repairAutoIncidents", () => {
 				assert.strictEqual(yield* reconciler.repairAutoIncidents, 0)
 			}),
 		),
+	)
+})
+
+describe("StatusPageReconciler.advanceMaintenance", () => {
+	const statusOf = (testDb: TestDb, pageId: string, id: string) =>
+		incidentsOf(testDb, pageId).pipe(
+			Effect.map((rows) =>
+				Option.getOrNull(
+					Option.map(
+						Arr.findFirst(rows, (row) => row.id === id),
+						(row) => [row.status, row.resolved],
+					),
+				),
+			),
+		)
+
+	it.effect("starts maintenance at its window start and completes it at its end, once each", () =>
+		withReconciler(({ testDb, reconciler }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme-maintenance" })
+				const upgrade = SecureRandom.uuidV4Unsafe()
+				const later = SecureRandom.uuidV4Unsafe()
+				const incident = SecureRandom.uuidV4Unsafe()
+				yield* seedIncident(testDb, {
+					id: upgrade,
+					pageId,
+					title: "Database upgrade",
+					kind: "maintenance",
+					status: "scheduled",
+					startedAt: NOW,
+					scheduledStart: NOW + 60_000,
+					scheduledEnd: NOW + 120_000,
+				})
+				yield* seedIncident(testDb, {
+					id: later,
+					pageId,
+					title: "Network work",
+					kind: "maintenance",
+					status: "scheduled",
+					startedAt: NOW,
+					scheduledStart: NOW + DAY_MS,
+					scheduledEnd: NOW + DAY_MS + 60_000,
+				})
+				yield* seedIncident(testDb, {
+					id: incident,
+					pageId,
+					title: "Errors",
+					status: "investigating",
+					startedAt: NOW,
+				})
+				const revision = () =>
+					readPage(testDb, pageId).pipe(Effect.map((row) => Number(row?.revision)))
+				const before = yield* revision()
+
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 0)
+				yield* TestClock.adjust("1 minute")
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 1)
+				assert.deepStrictEqual(yield* statusOf(testDb, pageId, upgrade), ["in_progress", false])
+				assert.strictEqual(yield* revision(), before + 1)
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 0)
+
+				yield* TestClock.adjust("1 minute")
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 1)
+				assert.deepStrictEqual(yield* statusOf(testDb, pageId, upgrade), ["completed", true])
+				assert.deepStrictEqual(
+					Arr.map(yield* updatesOf(testDb, upgrade), (u) => [u.source, u.status]),
+					[
+						["dashboard", "scheduled"],
+						["auto", "in_progress"],
+						["auto", "completed"],
+					],
+				)
+				assert.strictEqual(yield* revision(), before + 2)
+				assert.strictEqual(yield* reconciler.advanceMaintenance, 0)
+				assert.deepStrictEqual(yield* statusOf(testDb, pageId, later), ["scheduled", false])
+				assert.deepStrictEqual(yield* statusOf(testDb, pageId, incident), ["investigating", false])
+			}),
+		),
+	)
+
+	it.effect(
+		"posts both updates, in order, for a window missed whole; leaves completed maintenance alone",
+		() =>
+			withReconciler(({ testDb, reconciler }) =>
+				Effect.gen(function* () {
+					const pageId = newPageId()
+					yield* seedPage(testDb, { id: pageId, slug: "acme-missed-window" })
+					const missed = SecureRandom.uuidV4Unsafe()
+					const done = SecureRandom.uuidV4Unsafe()
+					yield* seedIncident(testDb, {
+						id: missed,
+						pageId,
+						title: "Missed",
+						kind: "maintenance",
+						status: "scheduled",
+						startedAt: NOW - 3 * 3_600_000,
+						scheduledStart: NOW - 2 * 3_600_000,
+						scheduledEnd: NOW - 3_600_000,
+					})
+					yield* seedIncident(testDb, {
+						id: done,
+						pageId,
+						title: "Done early",
+						kind: "maintenance",
+						status: "completed",
+						startedAt: NOW - 2 * 3_600_000,
+						resolvedAt: NOW - 90 * 60_000,
+						scheduledStart: NOW - 2 * 3_600_000,
+						scheduledEnd: NOW - 3_600_000,
+					})
+
+					assert.strictEqual(yield* reconciler.advanceMaintenance, 1)
+					assert.deepStrictEqual(yield* statusOf(testDb, pageId, missed), ["completed", true])
+					assert.deepStrictEqual(
+						Arr.map(yield* updatesOf(testDb, missed), (u) => u.status),
+						["scheduled", "in_progress", "completed"],
+					)
+					assert.deepStrictEqual(
+						Arr.map(yield* updatesOf(testDb, done), (u) => u.status),
+						["completed"],
+					)
+				}),
+			),
 	)
 })

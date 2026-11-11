@@ -90,6 +90,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"StatusPageIncidentUpdates",
 	"StatusPageIncidents",
 	"StatusPageComponents",
+	// Its Cloudflare hostname and route were queued for removal with the pages above.
+	"StatusPageCustomDomains",
 	"StatusPages",
 	// A surviving monitor keeps Maple probing the org's endpoints, and its heartbeat token
 	// keeps accepting pings. The state rows also go with the monitor by foreign key.
