@@ -28,15 +28,16 @@ import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography } from "@maple/views/ui/typography"
 import {
-	type CostGroupBy,
 	DIMENSIONS,
 	formatMoney,
 	formatMoneyChange,
 	groupByOf,
 	hasFilter,
+	isPreviousPeriodSynced,
 	keyLabel,
 	seriesLabel,
 	sortOf,
+	type CostGroupBy,
 	withFilter,
 } from "./derive"
 import { Message } from "./message"
@@ -102,6 +103,17 @@ const row = (
 ): Html => {
 	const totals = Option.getOrUndefined(AsyncData.getData(model.totals.data))
 	const currency = totals === undefined ? "" : totals.currency
+	// While a source still backfills the period before, its cost there is too low to compare with.
+	const previousSynced =
+		totals === undefined ||
+		isPreviousPeriodSynced(
+			Option.match(AsyncData.getData(model.sources.data), {
+				onNone: () => [],
+				onSome: (response) => response.sources,
+			}),
+			model.window,
+			totals.days,
+		)
 	const label = keyLabel(dimension, entry.key)
 	const filter = { dimension, value: entry.key }
 	const color = colors.get(entry.key)
@@ -143,21 +155,25 @@ const row = (
 					: EMPTY_VALUE,
 			]),
 			numericTableCell(h, [
-				typography(h, { tone: "muted" }, [formatMoney(entry.previousCost, currency)]),
+				typography(h, { tone: "muted" }, [
+					previousSynced ? formatMoney(entry.previousCost, currency) : EMPTY_VALUE,
+				]),
 			]),
 			numericTableCell(
 				h,
-				[
-					hstack(h, { gap: "2", justify: "end" }, [
-						formatMoneyChange(entry.cost - entry.previousCost, currency),
-						delta(h, {
-							current: entry.cost,
-							previous: entry.previousCost,
-							invert: true,
-							className: "w-16 justify-end",
-						}),
-					]),
-				],
+				previousSynced
+					? [
+							hstack(h, { gap: "2", justify: "end" }, [
+								formatMoneyChange(entry.cost - entry.previousCost, currency),
+								delta(h, {
+									current: entry.cost,
+									previous: entry.previousCost,
+									invert: true,
+									className: "w-16 justify-end",
+								}),
+							]),
+						]
+					: [EMPTY_VALUE],
 				LAST,
 			),
 		],

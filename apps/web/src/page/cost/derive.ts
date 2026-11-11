@@ -6,7 +6,7 @@ import type {
 } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
 
@@ -97,14 +97,17 @@ const moneyFormatOf = (currency: string): Intl.NumberFormat => {
 	return format
 }
 
+/** Under half a cent either way is no amount: it reads and plots as zero, never as "-$0.00". */
+const isNegligible = (amount: number): boolean => Math.abs(amount) < 0.005
+
 /** An amount in the rows' billing currency, to the cent; a plain number when there is no currency. */
 export const formatMoney = (amount: number, currency: string): string =>
-	Number.isFinite(amount) ? moneyFormatOf(currency).format(amount) : EMPTY_VALUE
+	Number.isFinite(amount) ? moneyFormatOf(currency).format(isNegligible(amount) ? 0 : amount) : EMPTY_VALUE
 
 /** A change with its sign; under half a cent either way reads as zero, unsigned. */
 export const formatMoneyChange = (amount: number, currency: string): string => {
 	if (!Number.isFinite(amount)) return EMPTY_VALUE
-	if (Math.abs(amount) < 0.005) return formatMoney(0, currency)
+	if (isNegligible(amount)) return formatMoney(0, currency)
 	return amount > 0 ? `+${formatMoney(amount, currency)}` : formatMoney(amount, currency)
 }
 
@@ -142,7 +145,11 @@ export const chartRows = (
 	Arr.map(response.days, (day, index) => ({
 		bucket: `${day}T00:00:00Z`,
 		...Rec.fromEntries(
-			Arr.map(response.series, (series) => [seriesLabel(dimension, series), series.points[index] ?? 0]),
+			Arr.map(response.series, (series) => {
+				// A fraction of a cent of credit would stretch the axis below zero for nothing.
+				const point = series.points[index] ?? 0
+				return [seriesLabel(dimension, series), isNegligible(point) ? 0 : point]
+			}),
 		),
 		...(response.estimatedFrom !== null && day >= response.estimatedFrom ? { partial: true } : undefined),
 	}))
@@ -150,6 +157,29 @@ export const chartRows = (
 /** No day of the window has cost. */
 export const isEmptySeries = (response: CostTimeseriesResponse): boolean =>
 	!Arr.some(response.series, (series) => Arr.some(series.points, (point) => point !== 0))
+
+const DAY_MS = 86_400_000
+
+/**
+ * Whether every syncing source has history back to the start of the period before the window.
+ * While one is still backfilling, that period reads as cheaper than it was, so the change against
+ * it is not shown. A paused source no longer syncs and does not hold the comparison back.
+ */
+export const isPreviousPeriodSynced = (
+	sources: ReadonlyArray<CostSourceSummary>,
+	window: Readonly<{ startTime: string }> | null,
+	days: number,
+): boolean => {
+	if (window === null) return true
+	const firstDay = new Date(`${Str.slice(0, 10)(window.startTime)}T00:00:00Z`).getTime()
+	if (!Number.isFinite(firstDay)) return true
+	const previousStart = Str.slice(0, 10)(new Date(firstDay - days * DAY_MS).toISOString())
+	return Arr.every(
+		Arr.filter(sources, (source) => source.status !== "paused"),
+		(source) =>
+			source.historyComplete || (source.backfillDate !== null && source.backfillDate <= previousStart),
+	)
+}
 
 /** AWS bills each Cost Explorer request USD 0.01. */
 const REQUEST_COST_USD = 0.01

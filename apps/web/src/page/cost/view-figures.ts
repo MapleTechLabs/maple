@@ -1,6 +1,6 @@
 import type { CostTotalsResponse } from "@maple/domain/http"
-import { pluralize } from "@maple/ui/lib/format"
-import { Array as Arr } from "effect"
+import { EMPTY_VALUE, pluralize } from "@maple/ui/lib/format"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta } from "@maple/views/ui/delta"
@@ -8,7 +8,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { formatMoney, formatMoneyChange } from "./derive"
+import { formatMoney, formatMoneyChange, isPreviousPeriodSynced } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -36,7 +36,7 @@ const notes = (totals: CostTotalsResponse): ReadonlyArray<string> => [
 		: []),
 ]
 
-const figures = (h: H, totals: CostTotalsResponse): Html => {
+const figures = (h: H, totals: CostTotalsResponse, previousSynced: boolean): Html => {
 	const currency = totals.currency
 	const change = totals.cost - totals.previousCost
 	const lines = notes(totals)
@@ -50,9 +50,11 @@ const figures = (h: H, totals: CostTotalsResponse): Html => {
 			}),
 			statRailItem(h, {
 				eyebrow: "Change",
-				value: formatMoneyChange(change, currency),
-				subline:
-					totals.previousCost > 0
+				// A period still being backfilled reads as cheaper than it was: no change is shown against it.
+				value: previousSynced ? formatMoneyChange(change, currency) : EMPTY_VALUE,
+				subline: !previousSynced
+					? `The ${daysText(totals.days)} before are still syncing`
+					: totals.previousCost > 0
 						? hstack(h, { gap: "1.5", as: "span", inline: true }, [
 								// Rising cost is not good news: the delta reads it as the worse direction.
 								delta(h, {
@@ -96,5 +98,17 @@ export const figuresRow = (h: H, model: Model): Html =>
 				title: "Couldn't load cost totals",
 				onRetry: Message.ClickedRetry(),
 			}),
-		onData: (totals) => figures(h, totals),
+		onData: (totals) =>
+			figures(
+				h,
+				totals,
+				isPreviousPeriodSynced(
+					Option.match(AsyncData.getData(model.sources.data), {
+						onNone: () => [],
+						onSome: (response) => response.sources,
+					}),
+					model.window,
+					totals.days,
+				),
+			),
 	})

@@ -390,6 +390,41 @@ describe("cost page", () => {
 		)
 	})
 
+	test("no change is shown against a period a source is still backfilling", () => {
+		// The window starts Oct 12 and covers 30 days: the period before starts Sep 12.
+		const backfilling = (backfillDate: string) =>
+			answered(
+				entered({ groupBy: "region" }, [
+					source({ status: "syncing", historyComplete: false, backfillDate }),
+				]).model,
+			)
+		scene(
+			{ update: pageUpdate, view },
+			given(backfilling("2026-10-01")),
+			resolveTheme,
+			expectView(text("The 30 days before are still syncing")).toExist(),
+			expectView(text("+$200.00")).not.toExist(),
+			expectView(text("+$300.00")).not.toExist(),
+		)
+		// History that reaches the start of the period before is enough, complete or not.
+		scene(
+			{ update: pageUpdate, view },
+			given(backfilling("2026-09-01")),
+			resolveTheme,
+			expectView(text("+$200.00")).toExist(),
+			expectView(text("The 30 days before are still syncing")).not.toExist(),
+		)
+	})
+
+	test("a fraction of a cent of credit reads as zero, not as a negative zero", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(populated({ groupBy: "region" }, totals({ cost: -0.0004, previousCost: 0 }))),
+			resolveTheme,
+			expectView(text("-$0.00")).not.toExist(),
+		)
+	})
+
 	test("a changed time zone resolves the day window again before it reads anything", () => {
 		// The presets are whole days in the reader's zone: the old window would be the wrong days.
 		const moved: PageContext = { ...context, timeZone: "Pacific/Auckland" }
