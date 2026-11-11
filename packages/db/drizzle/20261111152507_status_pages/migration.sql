@@ -1,16 +1,4 @@
 -- metadata
-ALTER TABLE "status_page_subscribers" DROP CONSTRAINT IF EXISTS "status_page_subscribers_page_id_status_pages_id_fk";
---> statement-breakpoint
--- metadata
-ALTER TABLE "status_page_update_notifications" DROP CONSTRAINT IF EXISTS "status_page_update_notifications_TAITGL8oaHOK_fk";
---> statement-breakpoint
--- destructive
-DROP TABLE IF EXISTS "status_page_subscribers";
---> statement-breakpoint
--- destructive
-DROP TABLE IF EXISTS "status_page_update_notifications";
---> statement-breakpoint
--- metadata
 CREATE TABLE IF NOT EXISTS "status_page_custom_domains" (
 	"page_id" text NOT NULL,
 	"org_id" text NOT NULL,
@@ -37,6 +25,21 @@ ALTER TABLE "status_page_cleanups" ADD COLUMN IF NOT EXISTS "cloudflare_hostname
 ALTER TABLE "status_page_cleanups" ADD COLUMN IF NOT EXISTS "cloudflare_route_id" text;
 --> statement-breakpoint
 -- metadata
+ALTER TABLE "status_pages" ADD COLUMN IF NOT EXISTS "logo_dark_url" text;
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "status_pages" ADD COLUMN IF NOT EXISTS "favicon_url" text;
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "status_pages" ADD COLUMN IF NOT EXISTS "support_url" text;
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "status_pages" ADD COLUMN IF NOT EXISTS "visibility" text NOT NULL DEFAULT 'public';
+--> statement-breakpoint
+-- metadata
+ALTER TABLE "status_pages" ADD COLUMN IF NOT EXISTS "password_hash" text;
+--> statement-breakpoint
+-- metadata
 ALTER TABLE "status_page_cleanups" ALTER COLUMN "slug" DROP NOT NULL;
 --> statement-breakpoint
 -- metadata
@@ -47,6 +50,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "status_page_custom_domains_hostname_unq" ON "
 --> statement-breakpoint
 -- metadata
 CREATE INDEX IF NOT EXISTS "status_page_custom_domains_org_idx" ON "status_page_custom_domains" USING btree ("org_id");
+--> statement-breakpoint
+-- metadata
+CREATE INDEX IF NOT EXISTS "status_page_incidents_open_maintenance_idx" ON "status_page_incidents" USING btree ("scheduled_start") WHERE "kind" = 'maintenance' and "resolved_at" is null;
 --> statement-breakpoint
 -- metadata
 ALTER TABLE "status_page_custom_domains" ADD CONSTRAINT "status_page_custom_domains_page_id_status_pages_id_fk" FOREIGN KEY ("page_id") REFERENCES "status_pages" ("id") ON DELETE CASCADE;
