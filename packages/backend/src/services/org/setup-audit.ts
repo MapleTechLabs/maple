@@ -17,6 +17,7 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
+import { cloudflareDatasetUnavailable } from "@maple/domain/cloudflare-analytics"
 import { Option, Order, pipe, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 import type {
 	IntegrationEntry,
@@ -145,6 +146,7 @@ export interface ConfigAuditInputs {
 	} | null
 	readonly integrations: ReadonlyArray<{ readonly provider: string; readonly revokedAt: number | null }>
 	readonly cloudflareAnalytics: ReadonlyArray<{
+		readonly settingsJson?: string | null
 		readonly dataset: string
 		readonly zoneName: string | null
 		readonly lastSuccessAt: number | null
@@ -1034,10 +1036,19 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 		fixHint:
 			"A permission error means the token lacks a scope: reconnect Cloudflare in Sources and grant Analytics and Firewall read access. A 5xx from Cloudflare is retried every few minutes; reconnect if it lasts more than a few hours.",
 		evaluate: ({ config, now }) => {
+			// A dataset whose settings mark it unavailable (the plan does not include it)
+			// is not collected on purpose: keep it visible as unavailable rather than reporting its
+			// silence as a failure.
+			const unavailable = Arr.filter(config.cloudflareAnalytics, (state) =>
+				cloudflareDatasetUnavailable(state.settingsJson),
+			)
 			// An error is current only when no success landed after it; older ones were recovered from.
 			const failing = Arr.filter(
 				config.cloudflareAnalytics,
-				(state) => state.lastErrorAt !== null && state.lastErrorAt > (state.lastSuccessAt ?? 0),
+				(state) =>
+					!cloudflareDatasetUnavailable(state.settingsJson) &&
+					state.lastErrorAt !== null &&
+					state.lastErrorAt > (state.lastSuccessAt ?? 0),
 			)
 			// One poll failure is stamped on every dataset of a connection at once, so group by dataset
 			// and message rather than listing each zone.
@@ -1075,7 +1086,19 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 						: `${error}, ${success}`,
 				}
 			})
-			if (affected.length === 0) return PASS
+			const unavailableEntities = Arr.map(unavailable, (state): AuditAffectedEntity => ({
+				kind: "integration",
+				name: state.zoneName ? `${state.dataset} · ${state.zoneName}` : state.dataset,
+				note: "unavailable — Cloudflare dataset settings deny collection",
+			}))
+			const capability =
+				unavailable.length === 0
+					? ""
+					: ` ${unavailable.length} unavailable (Cloudflare dataset settings deny collection).`
+			if (affected.length === 0)
+				return unavailable.length === 0
+					? PASS
+					: { status: "pass", detail: capability.trim(), affected: unavailableEntities }
 			// The detail states the dataset count; affectedCount stays the row count v2 clients expect.
 			return {
 				...fail(
@@ -1083,8 +1106,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 						losing
 							? `, ${losingCount === failing.length ? "all" : losingCount} for over ${DATA_LOSS_HOURS} hours, so that data is missing`
 							: ""
-					}.`,
-					affected,
+					}.${capability}`,
+					[...affected, ...unavailableEntities],
 				),
 				...(losing
 					? {
