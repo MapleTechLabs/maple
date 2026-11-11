@@ -43,6 +43,8 @@ const BACKOFF_MAX_MS = 24 * 60 * 60_000
 const SETUP_HOLD_MS = 6 * 60 * 60_000
 /** A throttled provider sits the source out at least this long. */
 const RATE_LIMIT_HOLD_MS = 60 * 60_000
+/** A pull too large to read fails the same way on a retry, and bills again: one try a day. */
+const TOO_LARGE_HOLD_MS = 24 * 60 * 60_000
 /** A source whose history waits on the month's request budget is looked at again this much later at most. */
 const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
 /** `lastErrorReason` while the month's request budget holds a source: a hold, not a failure. */
@@ -129,7 +131,9 @@ const holdMs = (reason: FailureReason): number =>
 		? SETUP_HOLD_MS
 		: reason === "rate_limited"
 			? RATE_LIMIT_HOLD_MS
-			: 0
+			: reason === "too_large"
+				? TOO_LARGE_HOLD_MS
+				: 0
 
 const SKIPPED: SourceOutcome = { status: "skipped", rowsWritten: 0, requests: 0 }
 const FAILED: SourceOutcome = { status: "failed", rowsWritten: 0, requests: 0 }
