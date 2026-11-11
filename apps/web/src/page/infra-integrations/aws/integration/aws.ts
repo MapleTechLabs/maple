@@ -6,7 +6,7 @@ import {
 	type V2AwsIntegration,
 	V2AwsSetup,
 } from "@maple/domain/http/v2"
-import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace } from "@maple/primitives"
+import { AWS_METRIC_NAMESPACES, AwsConnectionId, AwsMetricNamespace, AwsModule } from "@maple/primitives"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
@@ -51,6 +51,14 @@ export const AwsMetricsEdit = Schema.Union([
 ])
 export type AwsMetricsEdit = typeof AwsMetricsEdit.Type
 
+/** One connection's module change: `Saving` while its write runs, `Refused` with why it failed. */
+export const AwsModuleSave = Schema.Union([
+	Schema.TaggedStruct("Idle", {}),
+	Schema.TaggedStruct("Saving", { id: AwsConnectionId }),
+	Schema.TaggedStruct("Refused", { id: AwsConnectionId, error: Schema.String }),
+])
+export type AwsModuleSave = typeof AwsModuleSave.Type
+
 export const AwsCardModel = Schema.Struct({
 	accountId: Field.Model,
 	isCreating: Schema.Boolean,
@@ -73,6 +81,9 @@ export const AwsCardModel = Schema.Struct({
 	isDisconnecting: Schema.Boolean,
 	removed: Schema.Array(AwsRemovedStack),
 	metrics: AwsMetricsEdit,
+	moduleSave: AwsModuleSave,
+	/** The modules ticked for the account the connect flow is about to connect. */
+	newModules: Schema.Array(AwsModule),
 	/** What each streaming connection stored in the last hour, by connection id. */
 	ingest: Schema.Record(Schema.String, KeyedSchema(V2AwsIngest, LoadFailure)),
 })
@@ -97,6 +108,8 @@ export const initAwsCard = (): AwsCardModel => ({
 	isDisconnecting: false,
 	removed: [],
 	metrics: { _tag: "Idle" },
+	moduleSave: { _tag: "Idle" },
+	newModules: [],
 	ingest: {},
 })
 
@@ -140,6 +153,29 @@ export const isSelectionSaved = (connection: V2AwsConnection, selection: AwsSele
 		same(stream.namespaces, selection.namespaces)
 	)
 }
+
+export type AwsModuleInfo = V2AwsIntegration["modules"][number]
+
+/** The module as the status offers it to this org; none for one the org cannot turn on. */
+export const offeredModule = (
+	status: V2AwsIntegration | null,
+	module: AwsModule,
+): Option.Option<AwsModuleInfo> =>
+	Arr.findFirst(status?.modules ?? [], (info) => info.module === module && info.available)
+
+/** `ungranted`: asked for, and the last check did not find its policy on the role. */
+export type AwsModuleState = "off" | "ungranted" | "granted"
+
+export const moduleStateOf = (connection: V2AwsConnection, module: AwsModule): AwsModuleState =>
+	!connection.modules.includes(module)
+		? "off"
+		: (connection.granted_modules ?? []).includes(module)
+			? "granted"
+			: "ungranted"
+
+/** Why this connection's last module change was refused, if it was. */
+export const moduleErrorOf = (save: AwsModuleSave, id: AwsConnectionId): string | null =>
+	save._tag === "Refused" && save.id === id ? save.error : null
 
 export const METRIC_SELECTION_HINT = "Pick at least one region and one service."
 
@@ -189,6 +225,26 @@ export const UpdateAwsMetricStream = Command.define("UpdateAwsMetricStream", {
 						error: messageOf(error, "Couldn't turn on the metric stream."),
 					}),
 				onSuccess: (connection) => Message.CompletedAwsMetricStream({ id, connection, error: null }),
+			}),
+		),
+})
+
+export const UpdateAwsModules = Command.define("UpdateAwsModules", {
+	args: { id: AwsConnectionId, modules: Schema.Array(AwsModule) },
+	messages: [Message.CompletedAwsModules],
+	execute: ({ id, modules }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			return yield* client.awsIntegration.updateConnection({ params: { id }, payload: { modules } })
+		}).pipe(
+			Effect.match({
+				onFailure: (error) =>
+					Message.CompletedAwsModules({
+						id,
+						connection: null,
+						error: messageOf(error, "Couldn't change what Maple reads."),
+					}),
+				onSuccess: (connection) => Message.CompletedAwsModules({ id, connection, error: null }),
 			}),
 		),
 })

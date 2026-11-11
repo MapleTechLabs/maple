@@ -86,6 +86,7 @@ export const AppRoute = defineRouteUnion({
 	Analytics: { search: Search.AnalyticsSearch },
 	Anomalies: { search: Search.AnomaliesSearch },
 	CodeReview: { search: Search.CodeReviewSearch },
+	Cost: { search: Search.CostSearch },
 	Dashboards: { search: Search.DashboardsSearch },
 	Errors: { search: Search.ErrorsSearch },
 	Infra: { search: Search.InfraSearch },

@@ -2,7 +2,18 @@ import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2AwsIntegration } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	change,
+	click,
+	Command,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
+import * as Field from "@maple/views/ui/field"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { ScrollToTop } from "./command"
@@ -51,7 +62,17 @@ const connection = (overrides: Record<string, unknown> = {}) => ({
 
 const VERIFIED = { verified_at: "2026-10-23T08:00:00.000Z", last_checked_at: "2026-10-23T08:58:00.000Z" }
 
-const withConnections = (connections: ReadonlyArray<Record<string, unknown>>): Model => {
+const COST_MODULE = {
+	module: "cost",
+	title: "Cost",
+	summary: "Daily spend by service, read from Cost Explorer. AWS bills each request USD 0.01.",
+	available: true,
+}
+
+const withConnections = (
+	connections: ReadonlyArray<Record<string, unknown>>,
+	modules: ReadonlyArray<Record<string, unknown>> = [],
+): Model => {
 	const entered = init({ _tag: "SourcesNew", search: { integration: "aws" } }, context).model
 	return inner(
 		inner(entered, IntegrationMessage.CompletedReadClock({ nowMs: NOW })),
@@ -61,13 +82,29 @@ const withConnections = (connections: ReadonlyArray<Record<string, unknown>>): M
 				Schema.decodeUnknownSync(V2AwsIntegration)({
 					object: "aws_integration",
 					available: true,
-					modules: [],
+					modules,
 					connections,
 				}),
 			),
 		}),
 	)
 }
+
+const withAccountId = (model: Model, value: string): Model =>
+	inner(
+		model,
+		IntegrationMessage.GotAwsAccountIdMessage({ message: Field.Message.ChangedValue({ value }) }),
+	)
+
+/** What submitting the account form sends. */
+const submitted = (model: Model) =>
+	Arr.map(
+		pageUpdate(
+			model,
+			Message.GotIntegrationsMessage({ message: IntegrationMessage.SubmittedAwsAccount() }),
+		).commands ?? [],
+		({ name, args }) => ({ name, args }),
+	)
 
 const continued = (model: Model, times: number): Model =>
 	times === 0 ? model : continued(pageUpdate(model, Message.ClickedContinue()).model, times - 1)
@@ -236,5 +273,60 @@ describe("aws connect flow", () => {
 			expectView(text("No metrics arriving")).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live: needs attention" })).toExist(),
 		)
+	})
+	describe("the Cost choice", () => {
+		const costChoice = role("checkbox", { name: "Cost" })
+
+		test("it starts unticked, and an account connected without it asks for no module", () => {
+			const model = withAccountId(withConnections([], [COST_MODULE]), "123456789012")
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(costChoice).not.toBeChecked(),
+				expectView(text(COST_MODULE.summary)).toExist(),
+				expectView(text("Cost policy")).not.toExist(),
+			)
+			expect(submitted(model)).toEqual([
+				{ name: "CreateAwsConnection", args: { request: { account_id: "123456789012" } } },
+			])
+		})
+
+		test("ticked, the connection is created with the cost module and the stack lists its policy", () => {
+			const model = withAccountId(withConnections([], [COST_MODULE]), "123456789012")
+			const ticked = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "cost" }))
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				change(costChoice, "on"),
+				expectView(costChoice).toBeChecked(),
+				expectView(text("Cost policy")).toExist(),
+				// Ticking again takes it back out.
+				change(costChoice, "on"),
+				expectView(costChoice).not.toBeChecked(),
+			)
+			expect(submitted(ticked)).toEqual([
+				{
+					name: "CreateAwsConnection",
+					args: { request: { account_id: "123456789012", modules: ["cost"] } },
+				},
+			])
+		})
+
+		test("an org the module is not offered to gets no choice and sends nothing new", () => {
+			const unavailable = [{ ...COST_MODULE, available: false }]
+			const model = withAccountId(withConnections([], unavailable), "123456789012")
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("button", { name: "Build the role stack" })).toBeEnabled(),
+				expectView(costChoice).not.toExist(),
+				expectView(text(COST_MODULE.summary)).not.toExist(),
+			)
+			// A tick left over from before the module was withdrawn is not sent either.
+			const stale = inner(model, IntegrationMessage.ToggledAwsNewModule({ module: "cost" }))
+			expect(submitted(stale)).toEqual([
+				{ name: "CreateAwsConnection", args: { request: { account_id: "123456789012" } } },
+			])
+		})
 	})
 })

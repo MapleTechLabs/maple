@@ -39,6 +39,7 @@ import {
 import {
 	AwsConnectionId,
 	AwsMetricNamespace,
+	AwsModule,
 	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
@@ -335,6 +336,14 @@ export const Message = defineMessageUnion({
 		connection: Schema.NullOr(V2AwsConnection),
 		error: Schema.NullOr(Schema.String),
 	},
+	ToggledAwsModule: { id: AwsConnectionId, module: AwsModule },
+	CompletedAwsModules: {
+		id: AwsConnectionId,
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
+	/** The connect flow's opt-in for a module on the account about to be connected. */
+	ToggledAwsNewModule: { module: AwsModule },
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},

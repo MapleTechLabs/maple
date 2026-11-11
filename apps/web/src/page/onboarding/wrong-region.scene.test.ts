@@ -17,6 +17,7 @@ const organization: ClerkOrganization = {
 	isRegionOpen: false,
 	flags: {
 		aiAutoTriage: false,
+		cloudCost: false,
 		dataSources: false,
 		releases: false,
 		securityAudit: false,

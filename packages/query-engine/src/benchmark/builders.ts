@@ -1240,7 +1240,80 @@ const searchConsoleFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const costWindow = {
+	orgId: ORG_ID,
+	previousStartDate: "2026-09-01 00:00:00",
+	startDate: "2026-10-01 00:00:00",
+	endDate: "2026-10-30 00:00:00",
+}
+
+const costFilters = {
+	sourceIds: ["0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11"],
+	values: { region: ["us-east-1", "global"] },
+}
+
+/** What the page reads: the same filters, in the one currency it picked. */
+const costRead = { ...costFilters, currency: "USD" }
+
+const costFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "cost",
+		name: "costCurrenciesQuery",
+		label: "filtered",
+		compile: () => CH.compileUnsafe(CH.costCurrenciesQuery(costFilters), costWindow),
+	},
+	{
+		module: "cost",
+		name: "costTotalsQuery",
+		label: "filtered",
+		compile: () => CH.compileUnsafe(CH.costTotalsQuery(costFilters), costWindow),
+	},
+	{
+		module: "cost",
+		name: "costTotalsQuery",
+		label: "inOneCurrency",
+		compile: () => CH.compileUnsafe(CH.costTotalsQuery(costRead), costWindow),
+	},
+	{
+		module: "cost",
+		name: "costTimeseriesQuery",
+		label: "byCloudServiceTopKeys",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.costTimeseriesQuery({
+					...costRead,
+					dimension: "cloud_service",
+					keys: ["Amazon Elastic Compute Cloud - Compute", "Amazon Elastic Load Balancing"],
+				}),
+				costWindow,
+			),
+	},
+	{
+		module: "cost",
+		name: "costBreakdownQuery",
+		label: "byUsageTypeEffectiveByChange",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.costBreakdownQuery({
+					...costRead,
+					dimension: "usage_type",
+					metric: "effective",
+					sortBy: "change",
+					limit: 25,
+				}),
+				costWindow,
+			),
+	},
+	{
+		module: "cost",
+		name: "costSourceCoverageQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.costSourceCoverageQuery(costFilters), costWindow),
+	},
+]
+
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
+	...costFixtures,
 	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,

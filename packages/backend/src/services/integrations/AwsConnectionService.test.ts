@@ -4,7 +4,12 @@ import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "../../platform/credential-tokens"
 import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	type OrganizationFeatureFlags,
+} from "@maple/domain/organization-feature-flags"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -12,7 +17,7 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
-import { AwsConnectionService } from "./AwsConnectionService"
+import { AwsConnectionService, type AwsModuleInfo } from "./AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws, OTHER_TEST_OIDC_KEY, type FakeAws } from "./aws/fake-aws"
 
 const trackedDbs: TestDb[] = []
@@ -35,8 +40,17 @@ const baseConfig = {
 
 const mapleAws = { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey }
 
-const makeLayer = (testDb: TestDb, aws: FakeAws, config: Record<string, string> = mapleAws) =>
+/** `cloudCost` is off unless a test turns it on: the `cost` module is a rollout. */
+const makeLayer = (
+	testDb: TestDb,
+	aws: FakeAws,
+	config: Record<string, string> = mapleAws,
+	flags: Partial<OrganizationFeatureFlags> = {},
+) =>
 	Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
+		Layer.provide(
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
+		),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
@@ -77,6 +91,12 @@ const countSources = (testDb: TestDb) =>
 			"SELECT count(*)::int AS count FROM sources WHERE platform = 'aws'",
 		),
 	).pipe(Effect.map((row) => row?.count))
+
+const offeredModules = (status: { readonly modules: ReadonlyArray<AwsModuleInfo> }) =>
+	Arr.map(
+		Arr.filter(status.modules, (module) => module.available),
+		(module) => module.module,
+	)
 
 describe("AwsConnectionService", () => {
 	it.effect("connects an account once the stack it renders is deployed", () => {
@@ -223,6 +243,12 @@ describe("AwsConnectionService", () => {
 				service.create(orgId, userId, { accountId: account, modules: ["security"] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.include(error.message, "does not read security")
+			// Cost is built: an org outside its rollout is told so, not to wait for it.
+			const gated = yield* Effect.flip(
+				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+			)
+			assert.include(gated.message, "not enabled for this organization")
 			assert.strictEqual(yield* countSources(testDb), 0)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
@@ -242,6 +268,40 @@ describe("AwsConnectionService", () => {
 			const unpatched = yield* Effect.flip(service.update(otherOrgId, created.id, {}))
 			assert.strictEqual(unpatched._tag, "@maple/http/errors/IntegrationsNotFoundError")
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("leaves the cost module planned for an org outside the cloudCost rollout", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), [])
+			const refused = yield* Effect.flip(
+				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+			)
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.strictEqual(yield* countSources(testDb), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("offers and accepts the cost module for an org in the cloudCost rollout", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost"])
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: ["cost"] })
+			assert.deepStrictEqual(created.modules, ["cost"])
+			const cleared = yield* service.update(orgId, created.id, { modules: [] })
+			assert.deepStrictEqual(cleared.modules, [])
+			const restored = yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.deepStrictEqual(restored.modules, ["cost"])
+			// The flag opens `cost` alone: the other planned modules stay refused.
+			const refused = yield* Effect.flip(
+				service.update(orgId, created.id, { modules: ["cost", "security"] }),
+			)
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
 	})
 
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {

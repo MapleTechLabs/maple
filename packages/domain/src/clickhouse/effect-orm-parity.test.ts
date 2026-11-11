@@ -90,6 +90,7 @@ const KNOWN_DIFFERENCES = {
 	session_replays: "ENGINE = ReplacingMergeTree(Version)",
 	// Ingest-pinned to managed Tinybird, which keeps the version; self-managed copies stay empty.
 	search_console_daily: "ENGINE = ReplacingMergeTree(IngestedAt)",
+	cost_daily: "ENGINE = ReplacingMergeTree(IngestedAt)",
 } satisfies Record<string, string>
 
 describe("effect-orm DDL parity", () => {

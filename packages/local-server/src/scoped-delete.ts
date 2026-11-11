@@ -119,6 +119,10 @@ export const TABLE_DELETE_PLAN = {
 	metrics_sum: raw("TimeUnix"),
 	product_events: derived("Timestamp", { env: null }),
 	scanner_requests: derived("Timestamp", { env: null }),
+	cost_daily: {
+		strategy: "excluded",
+		reason: "pulled from cloud provider billing data, not telemetry; local mode never writes it",
+	},
 	search_console_daily: {
 		strategy: "excluded",
 		reason: "imported from Google Search Console, not telemetry; local mode never writes it",

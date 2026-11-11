@@ -166,6 +166,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/cost",
+		title: "Cost",
+		description:
+			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/vercel",
 		title: "Vercel integration",
 		description:
@@ -424,6 +432,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Settings dialogs",
 		description:
 			"The integration disconnect, dashboard delete, key create and alert destination dialogs, open, and the settings danger zones and save bars (General, Profile, a source's Settings) over fixtures. Pick one with ?item=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/aws-connection",
+		title: "AWS connection",
+		description:
+			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|flow|flow-before).",
 		kind: "lab",
 		session: "none",
 	},

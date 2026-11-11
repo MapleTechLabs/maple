@@ -1186,6 +1186,239 @@ SELECT
         GROUP BY containerName, hostName) AS containers
         FORMAT JSON
 
+-- builder:cost:costBreakdownQuery:byUsageTypeEffectiveByChange  [539cbf8f]
+SELECT
+          latest.usageType AS key,
+          ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
+          ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost,
+          greatest(ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) - ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0), ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) - ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0)) AS changeSize
+        FROM (SELECT
+          cost_daily.Date AS date,
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Provider AS provider,
+          cost_daily.AccountId AS account,
+          cost_daily.CloudService AS cloudService,
+          cost_daily.ServiceCategory AS serviceCategory,
+          cost_daily.UsageType AS usageType,
+          cost_daily.Region AS region,
+          cost_daily.ResourceId AS resource,
+          cost_daily.ServiceName AS service,
+          cost_daily.ChargeCategory AS chargeCategory,
+          cost_daily.Currency AS currency,
+          max(cost_daily.EffectiveCost) AS cost,
+          max(cost_daily.Estimated) AS estimated
+        FROM cost_daily
+        INNER JOIN (SELECT
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Date AS date,
+          max(cost_daily.IngestedAt) AS ingestedAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId, date) AS newest ON ((cost_daily.SourceId = newest.sourceId AND cost_daily.Date = newest.date) AND cost_daily.IngestedAt = newest.ingestedAt)
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
+          AND cost_daily.Region IN ('us-east-1', 'global')
+          AND cost_daily.Currency = 'USD'
+        GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
+        GROUP BY key
+        ORDER BY changeSize DESC, key ASC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:cost:costCurrenciesQuery:filtered  [0cb5938a]
+SELECT
+          latest.currency AS currency,
+          max(if(latest.date >= '2026-10-01 00:00:00', 1, 0)) AS inWindow,
+          ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
+          ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost
+        FROM (SELECT
+          cost_daily.Date AS date,
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Provider AS provider,
+          cost_daily.AccountId AS account,
+          cost_daily.CloudService AS cloudService,
+          cost_daily.ServiceCategory AS serviceCategory,
+          cost_daily.UsageType AS usageType,
+          cost_daily.Region AS region,
+          cost_daily.ResourceId AS resource,
+          cost_daily.ServiceName AS service,
+          cost_daily.ChargeCategory AS chargeCategory,
+          cost_daily.Currency AS currency,
+          max(cost_daily.BilledCost) AS cost,
+          max(cost_daily.Estimated) AS estimated
+        FROM cost_daily
+        INNER JOIN (SELECT
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Date AS date,
+          max(cost_daily.IngestedAt) AS ingestedAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId, date) AS newest ON ((cost_daily.SourceId = newest.sourceId AND cost_daily.Date = newest.date) AND cost_daily.IngestedAt = newest.ingestedAt)
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
+          AND cost_daily.Region IN ('us-east-1', 'global')
+        GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
+        GROUP BY currency
+        ORDER BY inWindow DESC, cost DESC, previousCost DESC, currency ASC
+        FORMAT JSON
+
+-- builder:cost:costSourceCoverageQuery:default  [8dac47d3]
+SELECT
+          cost_daily.SourceId AS sourceId,
+          min(cost_daily.Date) AS firstDate,
+          max(cost_daily.Date) AS lastDate,
+          max(cost_daily.IngestedAt) AS lastPulledAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-10-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId
+        ORDER BY sourceId ASC
+        FORMAT JSON
+
+-- builder:cost:costTimeseriesQuery:byCloudServiceTopKeys  [92e3d568]
+SELECT
+          latest.date AS date,
+          if(latest.cloudService IN ('Amazon Elastic Compute Cloud - Compute', 'Amazon Elastic Load Balancing'), latest.cloudService, '__other__') AS key,
+          if(latest.cloudService IN ('Amazon Elastic Compute Cloud - Compute', 'Amazon Elastic Load Balancing'), 0, 1) AS other,
+          ifNull(sum(latest.cost), 0) AS cost,
+          max(latest.estimated) AS estimated
+        FROM (SELECT
+          cost_daily.Date AS date,
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Provider AS provider,
+          cost_daily.AccountId AS account,
+          cost_daily.CloudService AS cloudService,
+          cost_daily.ServiceCategory AS serviceCategory,
+          cost_daily.UsageType AS usageType,
+          cost_daily.Region AS region,
+          cost_daily.ResourceId AS resource,
+          cost_daily.ServiceName AS service,
+          cost_daily.ChargeCategory AS chargeCategory,
+          cost_daily.Currency AS currency,
+          max(cost_daily.BilledCost) AS cost,
+          max(cost_daily.Estimated) AS estimated
+        FROM cost_daily
+        INNER JOIN (SELECT
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Date AS date,
+          max(cost_daily.IngestedAt) AS ingestedAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-10-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId, date) AS newest ON ((cost_daily.SourceId = newest.sourceId AND cost_daily.Date = newest.date) AND cost_daily.IngestedAt = newest.ingestedAt)
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-10-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
+          AND cost_daily.Region IN ('us-east-1', 'global')
+          AND cost_daily.Currency = 'USD'
+        GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
+        GROUP BY date, key, other
+        ORDER BY date ASC, key ASC, other ASC
+        FORMAT JSON
+
+-- builder:cost:costTotalsQuery:filtered  [479224e0]
+SELECT
+          ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
+          ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost,
+          uniqIf(latest.date, (latest.date >= '2026-10-01 00:00:00' AND latest.estimated = 1)) AS estimatedDays,
+          if(anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00') != '', anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00'), any(latest.currency)) AS currency,
+          uniq(latest.currency) AS currencies
+        FROM (SELECT
+          cost_daily.Date AS date,
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Provider AS provider,
+          cost_daily.AccountId AS account,
+          cost_daily.CloudService AS cloudService,
+          cost_daily.ServiceCategory AS serviceCategory,
+          cost_daily.UsageType AS usageType,
+          cost_daily.Region AS region,
+          cost_daily.ResourceId AS resource,
+          cost_daily.ServiceName AS service,
+          cost_daily.ChargeCategory AS chargeCategory,
+          cost_daily.Currency AS currency,
+          max(cost_daily.BilledCost) AS cost,
+          max(cost_daily.Estimated) AS estimated
+        FROM cost_daily
+        INNER JOIN (SELECT
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Date AS date,
+          max(cost_daily.IngestedAt) AS ingestedAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId, date) AS newest ON ((cost_daily.SourceId = newest.sourceId AND cost_daily.Date = newest.date) AND cost_daily.IngestedAt = newest.ingestedAt)
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
+          AND cost_daily.Region IN ('us-east-1', 'global')
+        GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
+        FORMAT JSON
+
+-- builder:cost:costTotalsQuery:inOneCurrency  [6f3d120d]
+SELECT
+          ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
+          ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost,
+          uniqIf(latest.date, (latest.date >= '2026-10-01 00:00:00' AND latest.estimated = 1)) AS estimatedDays,
+          if(anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00') != '', anyIf(latest.currency, latest.date >= '2026-10-01 00:00:00'), any(latest.currency)) AS currency,
+          uniq(latest.currency) AS currencies
+        FROM (SELECT
+          cost_daily.Date AS date,
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Provider AS provider,
+          cost_daily.AccountId AS account,
+          cost_daily.CloudService AS cloudService,
+          cost_daily.ServiceCategory AS serviceCategory,
+          cost_daily.UsageType AS usageType,
+          cost_daily.Region AS region,
+          cost_daily.ResourceId AS resource,
+          cost_daily.ServiceName AS service,
+          cost_daily.ChargeCategory AS chargeCategory,
+          cost_daily.Currency AS currency,
+          max(cost_daily.BilledCost) AS cost,
+          max(cost_daily.Estimated) AS estimated
+        FROM cost_daily
+        INNER JOIN (SELECT
+          cost_daily.SourceId AS sourceId,
+          cost_daily.Date AS date,
+          max(cost_daily.IngestedAt) AS ingestedAt
+        FROM cost_daily
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+        GROUP BY sourceId, date) AS newest ON ((cost_daily.SourceId = newest.sourceId AND cost_daily.Date = newest.date) AND cost_daily.IngestedAt = newest.ingestedAt)
+        WHERE cost_daily.OrgId = 'org_sql_catalog'
+          AND cost_daily.Date >= '2026-09-01 00:00:00'
+          AND cost_daily.Date <= '2026-10-30 00:00:00'
+          AND cost_daily.SourceId IN ('0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11')
+          AND cost_daily.ChargeCategory != 'none'
+          AND cost_daily.Region IN ('us-east-1', 'global')
+          AND cost_daily.Currency = 'USD'
+        GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
+        FORMAT JSON
+
 -- builder:errors:errorCooccurringFingerprintsQuery:default  [e257ab78]
 SELECT
           toString(error_events_by_time.FingerprintHash) AS fingerprintHash,

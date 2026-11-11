@@ -384,6 +384,16 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 		],
 	)
 
+/** The quick-select ranges a page offers: none shorter than its minimum. "today" is a whole day. */
+export const quickSelectOf = (inputs: Pick<ViewInputs, "minRangeSeconds">): ReadonlyArray<string> => {
+	const minimum = inputs.minRangeSeconds
+	if (minimum === undefined) return QUICK_SELECT
+	return Arr.filter(QUICK_SELECT, (value) => {
+		const seconds = relativeRangeSeconds(value)
+		return seconds === null || seconds >= minimum
+	})
+}
+
 const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("space-y-2")],
@@ -391,7 +401,7 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div" }, ["Quick select"]),
 			h.div(
 				[h.Class("grid grid-cols-4 gap-1.5")],
-				Arr.map(QUICK_SELECT, (value) =>
+				Arr.map(quickSelectOf(inputs), (value) =>
 					h.button(
 						[
 							h.Key(value),
@@ -420,7 +430,9 @@ export type ViewInputs = Readonly<{
 	startTime?: string
 	endTime?: string
 	/** A wider pick is refused with a toast. */
-	maxRangeSeconds?: number
+	maxRangeSeconds?: number | undefined
+	/** Quick-select ranges shorter than this are not offered: a page that reads whole days. */
+	minRangeSeconds?: number | undefined
 }>
 
 /** Type a duration, Enter applies it. */
