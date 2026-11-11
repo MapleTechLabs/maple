@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "9badca67268ff27e6b8a995ef4fa82235b418ed6e13b2ed8f8a9b0be1d1d91b7",
+	"id": "48bfea234767f5f4288d14c81fa83ff976829eb6a70140d1f826f752fb6088c5",
 	"prevIds": [
-		"5b4fe667734aff2259a2da2171c061eeb4987519f6d4a955344c77a9f5521c85"
+		"a22c2ae84317d25bf2af33e9cc3a8c5d9e29cab35f77cd55b796d498370869a3"
 	],
 	"entities": [
 		{
@@ -1268,6 +1268,36 @@
 			"name": "vcs_repository_branches",
 			"primaryKey": {
 				"name": "vcs_repository_branches_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "vercel_connections",
+			"primaryKey": {
+				"name": "vercel_connections_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "vercel_deployments",
+			"primaryKey": {
+				"name": "vercel_deployments_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "vercel_projects",
+			"primaryKey": {
+				"name": "vercel_projects_pkey",
 				"columns": [
 					"id"
 				]
@@ -18474,6 +18504,696 @@
 			"identity": null
 		},
 		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "source_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "team_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "team_slug",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "team_name",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "token_ciphertext",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "token_iv",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "token_tag",
+			"position": 8,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "connected_by_user_id",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "project_scope",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "project_ids",
+			"position": 11,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'[]'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "sampling_rate",
+			"position": 12,
+			"type": "double precision",
+			"notNull": true,
+			"default": "1",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "logs_enabled",
+			"position": 13,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "traces_enabled",
+			"position": 14,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "ai_gateway_enabled",
+			"position": 15,
+			"type": "boolean",
+			"notNull": true,
+			"default": "true",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "speed_insights_enabled",
+			"position": 16,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "web_analytics_enabled",
+			"position": 17,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_enabled",
+			"position": 18,
+			"type": "boolean",
+			"notNull": true,
+			"default": "false",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "log_drain_id",
+			"position": 19,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "trace_drain_id",
+			"position": 20,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "ai_gateway_drain_id",
+			"position": 21,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "speed_insights_drain_id",
+			"position": 22,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "web_analytics_drain_id",
+			"position": 23,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_drain_id",
+			"position": 24,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "log_drain_state",
+			"position": 25,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "trace_drain_state",
+			"position": 26,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "ai_gateway_drain_state",
+			"position": 27,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "speed_insights_drain_state",
+			"position": 28,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "web_analytics_drain_state",
+			"position": 29,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "audit_log_drain_state",
+			"position": 30,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "drain_key_hash",
+			"position": 31,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "auth_failed_at",
+			"position": 32,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "discovered_at",
+			"position": 33,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "deployments_watermark_at",
+			"position": 34,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "lease_until",
+			"position": 35,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "last_success_at",
+			"position": 36,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "last_error",
+			"position": 37,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "last_error_at",
+			"position": 38,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "created_at",
+			"position": 39,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_connections",
+			"name": "updated_at",
+			"position": 40,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "project_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "deployment_id",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "url",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "target",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "state",
+			"position": 7,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "branch",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "commit_sha",
+			"position": 9,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "commit_message",
+			"position": 10,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "creator",
+			"position": 11,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "error_code",
+			"position": 12,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "error_message",
+			"position": 13,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "created_at_vercel",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "building_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "ready_at",
+			"position": 16,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "inspector_url",
+			"position": 17,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_deployments",
+			"name": "updated_at",
+			"position": 18,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "project_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "framework",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "production_deployment_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "created_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vercel_projects",
+			"name": "updated_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
 			"kind": "index",
 			"table": "actors",
 			"name": "actors_org_agent_name_idx",
@@ -21228,6 +21948,65 @@
 			"where": null
 		},
 		{
+			"kind": "index",
+			"table": "vercel_connections",
+			"name": "vercel_connections_org_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "vercel_connections",
+			"name": "vercel_connections_source_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"source_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "vercel_deployments",
+			"name": "vercel_deployments_org_deployment_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"deployment_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "vercel_deployments",
+			"name": "vercel_deployments_org_project_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"project_id\"",
+				"\"created_at_vercel\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "vercel_projects",
+			"name": "vercel_projects_org_project_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"project_id\""
+			],
+			"where": null
+		},
+		{
 			"kind": "foreign_key",
 			"table": "alert_escalation_runs",
 			"name": "alert_escalation_runs_incident_id_alert_incidents_id_fk",
@@ -21653,6 +22432,20 @@
 			"kind": "foreign_key",
 			"table": "vcs_installations",
 			"name": "vcs_installations_source_id_sources_id_fk",
+			"columns": [
+				"source_id"
+			],
+			"foreignTable": "sources",
+			"foreignColumns": [
+				"id"
+			],
+			"onDelete": "CASCADE",
+			"onUpdate": "NO ACTION"
+		},
+		{
+			"kind": "foreign_key",
+			"table": "vercel_connections",
+			"name": "vercel_connections_source_id_sources_id_fk",
 			"columns": [
 				"source_id"
 			],
