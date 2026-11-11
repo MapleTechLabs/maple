@@ -28,6 +28,7 @@ const SOURCE_A = "0190f2b3-0000-7000-8000-00000000000a"
 const SOURCE_B = "0190f2b3-0000-7000-8000-00000000000b"
 const SOURCE_C = "0190f2b3-0000-7000-8000-00000000000c"
 const SOURCE_D = "0190f2b3-0000-7000-8000-00000000000d"
+const SOURCE_E = "0190f2b3-0000-7000-8000-00000000000e"
 const FOREIGN_SOURCE = "0190f2b3-0000-7000-8000-0000000000ff"
 
 // History reaches back to 2025-10-01 from here.
@@ -91,6 +92,7 @@ interface SourceFixture {
 	readonly lastErrorReason?: string
 	readonly requestsMonth?: string
 	readonly requestsCount?: number
+	readonly enabled?: boolean
 }
 
 /** Rows are created a second apart in the order given, which is the order the reads list them. */
@@ -101,9 +103,9 @@ const insertSources = (testDb: TestDb, sources: ReadonlyArray<SourceFixture>) =>
 				testDb,
 				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, watermark_date,
 				   backfill_date, last_synced_at, last_error, last_error_reason, requests_month,
-				   requests_count, created_at, updated_at)
+				   requests_count, created_at, updated_at, enabled)
 				 VALUES ($1, $2, 'aws', $1, $3, $4, $5, $6::timestamptz, $7, $8, $9, $10,
-				   '2026-11-01T00:00:00Z'::timestamptz + make_interval(secs => $11), now())`,
+				   '2026-11-01T00:00:00Z'::timestamptz + make_interval(secs => $11), now(), $12)`,
 				[
 					source.id,
 					source.orgId ?? ORG,
@@ -116,6 +118,7 @@ const insertSources = (testDb: TestDb, sources: ReadonlyArray<SourceFixture>) =>
 					source.requestsMonth ?? null,
 					source.requestsCount ?? 0,
 					index,
+					source.enabled ?? true,
 				],
 			),
 		),
@@ -419,6 +422,15 @@ describe("makeCostReads", () => {
 						requestsMonth: "2026-11",
 						requestsCount: 3,
 					},
+					// Paused with an old error: it reads as paused, and its history is still listed.
+					{
+						id: SOURCE_E,
+						enabled: false,
+						watermarkDate: "2026-11-02",
+						backfillDate: "2025-10-01",
+						lastError: "The role may not read cost.",
+						lastErrorReason: "auth",
+					},
 					{ id: FOREIGN_SOURCE, orgId: OTHER_ORG },
 				])
 				const { reads, statements } = yield* makeHarness(testDb)
@@ -436,6 +448,7 @@ describe("makeCostReads", () => {
 					// Last month's count is not this month's.
 					{ id: SOURCE_C, status: "ok", historyComplete: true, requestsThisMonth: 0 },
 					{ id: SOURCE_D, status: "error", historyComplete: true, requestsThisMonth: 3 },
+					{ id: SOURCE_E, status: "paused", historyComplete: true, requestsThisMonth: 0 },
 				])
 				expect(sources[1]).toMatchObject({
 					provider: "aws",

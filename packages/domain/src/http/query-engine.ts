@@ -2834,8 +2834,11 @@ export class CostBreakdownResponse extends Schema.Class<CostBreakdownResponse>("
 	rows: Schema.Array(CostBreakdownRow),
 }) {}
 
-/** `pending`: never pulled. `syncing`: still backfilling history. `error`: the last sync failed. */
-export const CostSourceStatus = Schema.Literals(["pending", "syncing", "ok", "error"])
+/**
+ * `paused`: the connection no longer supplies cost; its history stays. `pending`: never pulled.
+ * `syncing`: still backfilling history. `error`: the last sync failed.
+ */
+export const CostSourceStatus = Schema.Literals(["paused", "pending", "syncing", "ok", "error"])
 export type CostSourceStatus = typeof CostSourceStatus.Type
 
 export const CostSourceSummary = Schema.Struct({

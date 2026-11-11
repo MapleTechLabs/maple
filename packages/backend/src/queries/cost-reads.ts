@@ -114,8 +114,9 @@ const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary =
 		id: row.id,
 		provider: row.provider,
 		accountId: row.accountId,
-		status:
-			row.lastError !== null
+		status: !row.enabled
+			? "paused"
+			: row.lastError !== null
 				? "error"
 				: row.watermarkDate === null
 					? "pending"
