@@ -1,8 +1,8 @@
 /**
- * Infrastructure from connected integrations: Cloudflare zones and Workers, Railway services and
- * PlanetScale databases, read from the metrics their pollers and scrapes write. Same queries as the
- * web app's /infra/cloudflare, /infra/railway and /infra/planetscale pages, flattened onto the
- * shared infra row.
+ * Infrastructure from connected integrations: Cloudflare zones and Workers, Railway services,
+ * PlanetScale databases and Vercel projects, read from the metrics their pollers and scrapes write
+ * (Vercel: the logs its drain delivers). Same queries as the web app's /infra/* pages, flattened
+ * onto the shared infra row.
  */
 import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
 import { CH } from "@maple/query-engine"
@@ -122,6 +122,36 @@ const railwayRow = (row: Integrations.RailwayServicesOutput): InfraEntityRow => 
 	}
 }
 
+/** The fields of a `vercelProjectRequestsSQL` row read here. */
+interface VercelProjectRequests {
+	readonly projectId: string
+	readonly projectName: string
+	readonly serviceName: string
+	readonly requests: number
+	readonly requests4xx: number
+	readonly requests5xx: number
+	readonly cacheHits: number
+	readonly cacheLookups: number
+	readonly errorLogs: number
+	readonly lastSeen: DateTime.Utc
+}
+
+const vercelName = (row: VercelProjectRequests) => row.projectName || row.serviceName || row.projectId
+
+const vercelRow = (row: VercelProjectRequests): InfraEntityRow => {
+	const cacheHitRate = ratio(row.cacheHits, row.cacheLookups)
+	return {
+		name: vercelName(row),
+		lastSeen: iso(row.lastSeen),
+		requests: row.requests,
+		errors: row.requests5xx,
+		errors4xx: row.requests4xx,
+		errorRate: ratio(row.requests5xx, row.requests) ?? 0,
+		...(cacheHitRate === undefined ? undefined : { cacheHitRate }),
+		errorLogs: row.errorLogs,
+	}
+}
+
 interface PlanetScaleParts {
 	readonly gauges?: Integrations.PlanetScaleDatabaseStatsOutput | undefined
 	readonly connections?: Integrations.PlanetScaleConnectionsOutput | undefined
@@ -196,6 +226,13 @@ const fetchProviderRows = (kind: ProviderKind, window: InfraWindow) =>
 				)
 				return Arr.map(rows, railwayRow)
 			}
+			case "vercel_projects": {
+				const rows = yield* run(
+					CH.compile(Integrations.vercelProjectRequestsSQL(), params),
+					"mcpVercelProjects",
+				)
+				return Arr.map(rows, vercelRow)
+			}
 			case "planetscale_databases": {
 				const [gauges, connections, storage] = yield* Effect.all(
 					[
@@ -242,6 +279,7 @@ export const PROVIDER_ENTITY_KINDS = [
 	"cloudflare_worker",
 	"railway_service",
 	"planetscale_database",
+	"vercel_project",
 ] as const
 export type ProviderEntityKind = (typeof PROVIDER_ENTITY_KINDS)[number]
 export const isProviderEntityKind = (kind: string): kind is ProviderEntityKind =>
@@ -253,6 +291,7 @@ export const PROVIDER_OF = {
 	cloudflare_workers: "cloudflare",
 	railway_services: "railway",
 	planetscale_databases: "planetscale",
+	vercel_projects: "vercel",
 } as const satisfies Record<ProviderKind, string>
 
 /** Traffic kinds have no limits: hot and at_limit read as the error-rate thresholds statusOf flags. */
@@ -284,7 +323,8 @@ export const listProviderKind = (kind: ProviderKind, options: ListProviderOption
 	Effect.gen(function* () {
 		const rows = yield* fetchProviderRows(kind, options.window)
 		const { filters } = options
-		const traffic = kind === "cloudflare_zones" || kind === "cloudflare_workers"
+		const traffic =
+			kind === "cloudflare_zones" || kind === "cloudflare_workers" || kind === "vercel_projects"
 		const scoped = Arr.filter(
 			Arr.filter(rows, matchesSearch(filters.search)),
 			(row) => filters.environment === undefined || row.environment === filters.environment,
@@ -748,6 +788,83 @@ export const inspectProvider = (target: ProviderInspectTarget, window: InfraWind
 							spec("replicas", "count"),
 							utcPoints(rows, (r) => r.replicas),
 						),
+					],
+				} satisfies ProviderInspectResult
+			}
+			case "vercel_project": {
+				const projects = yield* run(
+					CH.compile(Integrations.vercelProjectRequestsSQL(), params),
+					"mcpVercelProjects",
+				)
+				const match = Option.getOrUndefined(
+					Arr.findFirst(projects, (row) => vercelName(row) === target.name),
+				)
+				if (match === undefined) return NOT_FOUND
+				const project = { ...params, projectId: match.projectId, bucketSeconds }
+				const [series, paths, errors] = yield* Effect.all(
+					[
+						run(
+							CH.compile(
+								Integrations.vercelRequestTimeseriesSQL({ projectId: match.projectId }),
+								project,
+							),
+							"mcpVercelProjectTimeseries",
+						),
+						run(
+							CH.compile(Integrations.vercelProjectTopPathsSQL(), project),
+							"mcpVercelProjectPaths",
+						),
+						run(
+							CH.compile(Integrations.vercelProjectErrorLogsSQL(), project),
+							"mcpVercelProjectErrors",
+						),
+					],
+					{ concurrency: 3 },
+				)
+				const points = (pick: (row: (typeof series)[number]) => number) =>
+					Arr.flatMap(series, (row) => isoPoint(row.bucket, pick(row)))
+				return {
+					found: true,
+					entity: vercelRow(match),
+					details: { "Project id": match.projectId },
+					series: [
+						...seriesStats(
+							spec("requests per bucket", "count"),
+							points((r) => r.requests),
+						),
+						...seriesStats(
+							spec("5xx per bucket", "count"),
+							points((r) => r.requests5xx),
+						),
+						...seriesStats(
+							spec("error logs per bucket", "count"),
+							points((r) => r.errorLogs),
+						),
+					],
+					breakdowns: [
+						{
+							title: "Busiest paths",
+							keyLabel: "Path",
+							valueLabels: ["Requests", "4xx", "5xx", "Cache hits"],
+							rows: Arr.map(paths, (row) => ({
+								key: row.path === "" ? "(none)" : row.path,
+								values: [row.requests, row.requests4xx, row.requests5xx, row.cacheHits],
+							})),
+						},
+						{
+							title: "Top error logs",
+							keyLabel: "Message pattern (source, newest trace)",
+							valueLabels: ["Occurrences"],
+							rows: Arr.map(
+								Integrations.clusterVercelErrorLogs(
+									Arr.map(errors, (row) => ({ ...row, timestamp: DateTime.formatIso(row.timestamp) })),
+								),
+								(row) => ({
+									key: `${row.pattern} (${row.source || "-"}${row.traceId === null ? "" : `, trace ${row.traceId}`})`,
+									values: [row.occurrences],
+								}),
+							),
+						},
 					],
 				} satisfies ProviderInspectResult
 			}

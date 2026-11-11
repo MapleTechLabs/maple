@@ -46,6 +46,7 @@ export const PLATFORMS = {
 	gcp: provider("gcp", "Logs, metrics and resources"),
 	aws: provider("aws", "A read-only role in an account"),
 	railway: provider("railway", "Service metrics"),
+	vercel: provider("vercel", "Logs, traces and deployments"),
 	planetscale: provider("planetscale", "Database metrics"),
 	github: provider("github", "Repositories, CI and deploys"),
 	supabase: provider("supabase", "Project and Postgres metrics"),

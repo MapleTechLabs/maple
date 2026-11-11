@@ -38,6 +38,7 @@ const VERB_ICONS = {
 	claimed: "PlusIcon",
 	install_started: "PlusIcon",
 	connect_started: "PlusIcon",
+	connected: "PlusIcon",
 	identity_link_started: "LinkIcon",
 	updated: "PencilIcon",
 	settings_updated: "PencilIcon",

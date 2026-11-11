@@ -80,6 +80,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/icon-button.ts` `iconButton`: An icon-only Button that always carries a name and, by default, a tooltip.
 - `packages/views/src/ui/icon.ts` `icon`, `iconNode`, `rowIcon`, `iconColor`: A generated icon with its size, class, style and attributes.
 - `packages/views/src/ui/identity-label.ts` `identityLabel`: `IdentityLabel`: the name-over-detail text beside an avatar in an account or org trigger, a grid of truncating lines that fills the rest of the row.
+- `packages/views/src/ui/info-hint.ts` `infoHint`: `InfoHint`: a small question mark beside a label that explains it in the app's tooltip, on hover or keyboard focus.
 - `packages/views/src/ui/inline-code.ts` `inlineCodeClassName`, `inlineCode`: `InlineCode`: inline monospace for identifiers and commands inside prose.
 - `packages/views/src/ui/inline-rename-input.ts` `inlineRenameInput`: `InlineRenameInput`: the text input that stands in for a title while it is renamed, an underline with no box.
 - `packages/views/src/ui/input-group.ts` `inputGroup`, `inputGroupAddon`, `inputGroupText`, `inputGroupButton`, `inputGroupInput`: One bordered control holding addons and an unstyled input.
@@ -173,6 +174,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/toast.ts` `titleId`, `descriptionId`, `nextToastId`, `add`, `close`, `isExpanded` (stateful: Model, init, update): The toast manager of `@maple/ui/toast` (Base UI Toast) as a Submodel the app root owns: one list, newest first, with Base UI's limit, timeouts, measured heights and enter/exit t...
 - `packages/views/src/ui/toggle-group.ts` `view`, `controlledView` (stateful: Model, init, update): Base UI `ToggleGroup`: the pressed values and the roving tab stop (the composite's highlighted index).
 - `packages/views/src/ui/toggle.ts` `togglePrimitive`, `toggle`, `segmentItemHeight` (stateful: Model, init, update): Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not.
+- `packages/views/src/ui/tone-bars.ts` `toneBars`: `ToneBars`.
 - `packages/views/src/ui/tone-box.ts` `toneBoxClass`: `toneBoxClass`: a box (badge, pill, chip) tinted in one tone: its `-a2` fill, `-a3` edge and the tone's text, for an element whose shape another kit piece draws.
 - `packages/views/src/ui/tooltip-host.ts` `tooltipTrigger`, `triggerEvents`, `whileEngaged`, `isEngaged`, `view` (stateful: Model, init, update): The app's one tooltip: any element carrying `tooltipTrigger` opens it, through events delegated on `document`, so stateless kit helpers get Base UI's tooltip without a Model of...
 - `packages/views/src/ui/tooltip.ts` `view` (stateful: Model, init, update): Base UI `Tooltip` (`@maple/ui/tooltip`): opens after the pointer rests on a trigger (600 ms), closes when it leaves (no close delay), on a press of the trigger and on Escape.
@@ -297,6 +299,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/stat-rail.ts` `statRail`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 - `apps/web/src/page/kit/switch-row.ts` `switchRow`: A settings row whose control is a switch: the row is the switch's field, so a checked switch marks the row, label and description filled.
 - `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `isNumericString`, `compareValues`, `urlSortPatch`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.
+- `apps/web/src/page/kit/threshold-scale.ts` `thresholdScale`: `ThresholdScale`: a good / needs-work / poor track split at two thresholds, with a marker at the reading (a Web Vital's p75 against web.dev's thresholds).
 - `apps/web/src/page/kit/time-controls.ts` `isPresetValue`, `searchPreset`, `timeControls`, `timeRangeTriggerContent`, `canWidenTimeRange`: The time range header controls: the picker trigger, the reset for a custom range, and Reload.
 - `apps/web/src/page/kit/time-frame-step.ts` `liftFrame`, `resolveFrame`, `routeFrame`: A page's `GotFrameMessage` handler: runs the frame's update, then lets the page act on a resolved window (request its data) or a new time search (navigate), keeping the frame's...
 - `apps/web/src/page/kit/time-frame.ts` `resolveWindowCommand`, `controls`, `resolve` (stateful: Model, init, update): A page's time scope (the infra pages embed it whole): the resolved window, Reload (re-resolves unsnapped and spins 600 ms) and the header's time controls.

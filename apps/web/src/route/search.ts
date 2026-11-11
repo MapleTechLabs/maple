@@ -775,6 +775,50 @@ export const InfraRailwayServiceSearch = Schema.Struct({
 	environmentId: LenientString,
 })
 
+export const VercelProjectTab = Schema.Literals(["traffic", "functions", "builds", "users", "aiGateway"])
+export type VercelProjectTab = typeof VercelProjectTab.Type
+
+/** Tabs folded into others; old links still decode: `dependencies` → functions, the event drains → users. */
+export const RetiredVercelProjectTab = Schema.Literals(["dependencies", "speedInsights", "webAnalytics"])
+export type RetiredVercelProjectTab = typeof RetiredVercelProjectTab.Type
+
+/** What the traffic tab's breakdown groups a project's requests by. */
+export const VercelBreakdownBy = Schema.Literals([
+	"path",
+	"host",
+	"region",
+	"source",
+	"cache",
+	"waf",
+	"status",
+])
+export type VercelBreakdownBy = typeof VercelBreakdownBy.Type
+
+export const InfraVercelProjectSearch = Schema.Struct({
+	/** `traffic` when absent. */
+	tab: Schema.optional(
+		Schema.Literals([...VercelProjectTab.literals, ...RetiredVercelProjectTab.literals]),
+	),
+	/** The breakdown's grouping; `path` when absent. */
+	by: Schema.optional(VercelBreakdownBy),
+	/** Narrows the breakdown to failing requests. */
+	status: Schema.optional(Schema.Literals(["4xx", "5xx"])),
+	/** Narrows the functions tab's charts to one route (the edge request's `http.route`). */
+	route: StringParam,
+	/** Narrows the functions tab's charts to invocations that called this host. */
+	host: StringParam,
+	/** Narrows the traffic tab to one breakdown value: the dimension, then `filterValue`. */
+	filterBy: Schema.optional(VercelBreakdownBy),
+	filterValue: StringParam,
+	/** Narrows Speed Insights to one route or device type. */
+	vitalsBy: Schema.optional(Schema.Literals(["route", "device"])),
+	vitalsValue: StringParam,
+	/** Narrows Web Analytics to one page, referrer or country. */
+	visitsBy: Schema.optional(Schema.Literals(["page", "referrer", "country"])),
+	visitsValue: StringParam,
+	...TimeRangeSearchFields,
+})
+
 export const InfraSupabaseProjectSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
@@ -861,6 +905,19 @@ export const InfraPlanetscaleSearch = Schema.Struct({
 
 export const InfraRailwaySearch = Schema.Struct({
 	q: StringParam,
+	...TimeRangeSearchFields,
+})
+
+/** The overview's health filters on the projects table. */
+export const VercelProjectScope = Schema.Literals(["erroring", "failedDeploys", "slow", "coldStarts"])
+export type VercelProjectScope = typeof VercelProjectScope.Type
+
+export const InfraVercelSearch = Schema.Struct({
+	q: StringParam,
+	/** Retired: the overview and projects list are one page now. Old links still decode. */
+	view: Schema.optional(Schema.Literals(["projects", "aiGateway"])),
+	/** A health filter on the projects table. */
+	scope: Schema.optional(VercelProjectScope),
 	...TimeRangeSearchFields,
 })
 

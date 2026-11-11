@@ -27,6 +27,7 @@ import { IntegrationInventoryService } from "@maple/backend/services/integration
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
@@ -76,6 +77,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(SourcesService)({}),
 	Layer.mock(ExternalDataSourceService)({}),
 	Layer.mock(RailwayMetricsService)({}),
+	Layer.mock(VercelIntegrationService)({}),
 	Layer.mock(ScrapeTargetsService)({}),
 	Layer.mock(SearchConsoleService)({}),
 	Layer.mock(VcsCommitService)({}),

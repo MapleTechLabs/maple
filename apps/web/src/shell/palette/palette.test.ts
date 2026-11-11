@@ -141,6 +141,7 @@ describe("command palette", () => {
 			"Connect AWS",
 			"Connect Railway",
 			"Connect Supabase",
+			"Connect Vercel",
 			"Connect Google Search Console",
 		])
 	})

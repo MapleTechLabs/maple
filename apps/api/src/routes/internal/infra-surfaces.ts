@@ -6,6 +6,7 @@ interface InfraSurfaceValues {
 	readonly surfaces: ReadonlyArray<InfraSurfaceLiteral>
 	readonly cloudflare: boolean
 	readonly railway: boolean
+	readonly vercel: boolean
 	readonly planetscale: boolean
 	readonly gcp: boolean
 	readonly supabase: boolean
@@ -33,6 +34,7 @@ export const settleInfraSurfaces = <Errors extends Record<keyof InfraSurfaceValu
 			surfaces: settle("presence", lookups.surfaces),
 			cloudflare: settle("cloudflare", lookups.cloudflare),
 			railway: settle("railway", lookups.railway),
+			vercel: settle("vercel", lookups.vercel),
 			planetscale: settle("planetscale", lookups.planetscale),
 			gcp: settle("gcp", lookups.gcp),
 			supabase: settle("supabase", lookups.supabase),

@@ -30,6 +30,11 @@ import { linearCard } from "./view-linear"
 import { searchConsoleCard } from "./view-search-console"
 import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
 import { railwayCard } from "../infra-integrations/railway/integration/view-railway"
+import {
+	vercelCard,
+	vercelHeaderActions,
+	vercelHeaderStatus,
+} from "../infra-integrations/vercel/integration/view-vercel"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { supabaseCard } from "../infra-integrations/supabase/integration/view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
@@ -79,6 +84,8 @@ export const cardView = (
 			return [cloudflareCard(h, model, timeZone)]
 		case "railway":
 			return [railwayCard(h, model, timeZone)]
+		case "vercel":
+			return vercelCard(h, model, timeZone)
 		case "supabase":
 			return [supabaseCard(h, model, timeZone)]
 		case "planetscale":
@@ -113,8 +120,18 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				entry,
 				{
 					connect: connectButton(h, model, integration),
-					actions: integration === "cloudflare" ? cloudflareHeaderActions(h, model) : undefined,
-					statusLine: integration === "gcp" ? gcpHeaderStatus(h, model) : undefined,
+					actions:
+						integration === "cloudflare"
+							? cloudflareHeaderActions(h, model)
+							: integration === "vercel"
+								? vercelHeaderActions(h, model)
+								: undefined,
+					statusLine:
+						integration === "gcp"
+							? gcpHeaderStatus(h, model)
+							: integration === "vercel"
+								? vercelHeaderStatus(h, model, timeZone)
+								: undefined,
 				},
 				timeZone,
 			),

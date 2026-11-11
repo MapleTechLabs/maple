@@ -39,6 +39,9 @@ export const ALERTING_SCHEDULE = {
 		],
 		deadline: "270 seconds",
 	},
+	// Offset by two minutes: `*/5` is at the six-lane limit, and a fire of its own keeps the
+	// Vercel poller off the Railway and Cloudflare pollers' minute.
+	"2-59/5 * * * *": { lanes: ["vercel"], deadline: "270 seconds" },
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
