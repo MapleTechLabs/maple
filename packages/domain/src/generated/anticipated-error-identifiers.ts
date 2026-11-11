@@ -11,6 +11,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/anomalies/AnomalyForbiddenError",
 	"@maple/http/anomalies/AnomalyIncidentNotFoundError",
 	"@maple/http/anomalies/AnomalyLinkedIssueNotFoundError",
+	"@maple/http/audit-trail/AuditTrailForbiddenError",
 	"@maple/http/data-sources/CatalogEntryNotFoundError",
 	"@maple/http/data-sources/DataSourceInvalidError",
 	"@maple/http/data-sources/DataSourceNotFoundError",

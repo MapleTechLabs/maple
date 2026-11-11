@@ -255,9 +255,10 @@ export interface TableInfo extends TableSummary {
  * The audit log records every member's activity and origin IP and is served
  * only through the admin-gated `GET /v2/audit_log`; letting `run_sql` or a
  * dashboard widget read it would bypass that gate (and let the log observe
- * itself being read).
+ * itself being read). The unified audit trail carries the same kind of data
+ * for every connected platform and sits behind the same permission.
  */
-const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log"])
+const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log", "audit_trail_events"])
 
 function collectDatasources() {
 	// `Datasources` exports a mix of datasource definitions, type aliases, helper

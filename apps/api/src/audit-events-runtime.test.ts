@@ -1,26 +1,32 @@
 import { describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/primitives"
-import type { AuditLogRow } from "@maple/domain/tinybird"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import { processAuditEventsBatch } from "./audit-events-runtime"
 import { makeWarehouseServiceStub } from "@/routes/v2/v2-test-support"
 import { AuditLogEvent, encodeAuditLogEventSync } from "@maple/backend/services/audit/audit-event"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_audit_consumer_test")
 const OTHER_ORG = asOrgId("org_audit_consumer_other")
 
-const event = (id: string, orgId: OrgId = ORG) =>
+const event = (
+	id: string,
+	orgId: OrgId = ORG,
+	what: { readonly action: string; readonly outcome: "allowed" | "denied" } = {
+		action: "dashboard.created",
+		outcome: "allowed",
+	},
+) =>
 	encodeAuditLogEventSync(
 		new AuditLogEvent({
 			orgId,
 			id: Schema.decodeSync(AuditLogEvent.fields.id)(id),
 			actorType: "user",
 			source: "dashboard",
-			action: "dashboard.created",
-			outcome: "allowed",
+			...what,
 			occurredAtMs: 1_700_000_000_000,
 		}),
 	)
@@ -45,42 +51,51 @@ const message = (body: unknown, attempts: number) => {
 const batchOf = (...messages: ReadonlyArray<{ readonly message: unknown }>) =>
 	({ messages: Arr.map(messages, (entry) => entry.message) }) as never
 
+/** The consumer's services over one warehouse stub: the trail writes through the same `ingest`. */
+const withTrail = (stub: ReturnType<typeof makeWarehouseServiceStub>) =>
+	Layer.effect(AuditTrailService, AuditTrailService.make).pipe(
+		Layer.provideMerge(Layer.succeed(WarehouseQueryService, stub)),
+	)
+
 /** A warehouse whose `ingest` is interrupted — a deploy tearing the isolate down. */
-const interruptedWarehouse = Layer.succeed(
-	WarehouseQueryService,
-	makeWarehouseServiceStub({ ingest: () => Effect.interrupt }),
-)
+const interruptedWarehouse = withTrail(makeWarehouseServiceStub({ ingest: () => Effect.interrupt }))
 
 /** A warehouse whose `ingest` dies rather than failing — an unexpected defect. */
-const dyingWarehouse = Layer.succeed(
-	WarehouseQueryService,
+const dyingWarehouse = withTrail(
 	makeWarehouseServiceStub({
 		ingest: () => Effect.die(new Error("ingest exploded")),
 	}),
 )
 
-/** A warehouse whose `ingest` records each call, or fails every call. */
-const warehouse = (fail = false) => {
-	const written: Array<{ orgId: string; rows: ReadonlyArray<AuditLogRow> }> = []
-	const layer = Layer.succeed(
-		WarehouseQueryService,
+const AUDIT_LOG = "audit_log"
+const AUDIT_TRAIL = "audit_trail_events"
+
+/** A warehouse whose `ingest` records each call, failing the ones to the `failing` datasources. */
+const warehouse = (failing: ReadonlyArray<string> = []) => {
+	const written: Array<{ orgId: string; datasource: string; rows: ReadonlyArray<unknown> }> = []
+	const layer = withTrail(
 		makeWarehouseServiceStub({
-			ingest: (tenant, _datasource, rows) =>
-				fail
+			ingest: (tenant, datasource, rows) =>
+				failing.includes(datasource)
 					? Effect.fail(
 							new WarehouseUpstreamError({
 								message: "tinybird down",
-								pipeName: "audit_log",
+								pipeName: datasource,
 								cause: new Error("down"),
 							}),
 						)
 					: Effect.sync(() => {
-							// SAFETY: this stub only ever receives the audit datasource's rows.
-							written.push({ orgId: tenant.orgId, rows: rows as ReadonlyArray<AuditLogRow> })
+							written.push({ orgId: tenant.orgId, datasource, rows })
 						}),
 		}),
 	)
-	return { written, layer }
+	/** `[orgId, row count]` per write to one datasource, in a stable order. */
+	const writesTo = (datasource: string) =>
+		Arr.map(
+			Arr.filter(written, (write) => write.datasource === datasource),
+			(write) => [write.orgId, write.rows.length] as const,
+		).sort()
+	return { written, writesTo, layer }
 }
 
 describe("processAuditEventsBatch", () => {
@@ -97,16 +112,67 @@ describe("processAuditEventsBatch", () => {
 			expect(first.calls).toEqual(["ack"])
 			expect(second.calls).toEqual(["ack"])
 			expect(other.calls).toEqual(["ack"])
-			expect(Arr.map(store.written, (write) => [write.orgId, write.rows.length]).sort()).toEqual([
+			expect(store.writesTo(AUDIT_LOG)).toEqual([
 				[OTHER_ORG, 1],
 				[ORG, 2],
 			])
-			expect(
-				Arr.every(
-					Arr.flatMap(store.written, (write) => write.rows),
-					(row) => row.Action === "dashboard.created",
-				),
-			).toBe(true)
+		}),
+	)
+
+	it.effect("copies changes and refusals to the audit trail, and leaves allowed reads out", () =>
+		Effect.gen(function* () {
+			const store = warehouse()
+			const change = message(event("11111111-1111-4111-8111-111111111111"), 1)
+			const read = message(
+				event("22222222-2222-4222-8222-222222222222", ORG, {
+					action: "telemetry.read",
+					outcome: "allowed",
+				}),
+				1,
+			)
+			const refusedRead = message(
+				event("33333333-3333-4333-8333-333333333333", ORG, {
+					action: "telemetry.read",
+					outcome: "denied",
+				}),
+				1,
+			)
+			yield* processAuditEventsBatch(batchOf(change, read, refusedRead), MAX_RETRIES).pipe(
+				Effect.provide(store.layer),
+			)
+
+			expect(store.writesTo(AUDIT_LOG)).toEqual([[ORG, 3]])
+			expect(store.writesTo(AUDIT_TRAIL)).toEqual([[ORG, 2]])
+		}),
+	)
+
+	it.effect("writes nothing to the audit trail for a batch of allowed reads", () =>
+		Effect.gen(function* () {
+			const store = warehouse()
+			const read = message(
+				event("11111111-1111-4111-8111-111111111111", ORG, {
+					action: "telemetry.read",
+					outcome: "allowed",
+				}),
+				1,
+			)
+			yield* processAuditEventsBatch(batchOf(read), MAX_RETRIES).pipe(Effect.provide(store.layer))
+
+			expect(read.calls).toEqual(["ack"])
+			expect(store.writesTo(AUDIT_TRAIL)).toEqual([])
+		}),
+	)
+
+	// `audit_log` is the record. A message retried because only its copy failed would be
+	// rewritten there on every attempt and end in the DLQ for an entry that was stored.
+	it.effect("acks an entry whose audit trail copy failed", () =>
+		Effect.gen(function* () {
+			const store = warehouse([AUDIT_TRAIL])
+			const change = message(event("11111111-1111-4111-8111-111111111111"), 1)
+			yield* processAuditEventsBatch(batchOf(change), MAX_RETRIES).pipe(Effect.provide(store.layer))
+
+			expect(change.calls).toEqual(["ack"])
+			expect(store.writesTo(AUDIT_LOG)).toEqual([[ORG, 1]])
 		}),
 	)
 
@@ -117,7 +183,7 @@ describe("processAuditEventsBatch", () => {
 		Effect.gen(function* () {
 			const exhausted = message(event("44444444-4444-4444-8444-444444444444"), MAX_RETRIES + 1)
 			yield* processAuditEventsBatch(batchOf(exhausted), MAX_RETRIES).pipe(
-				Effect.provide(warehouse(true).layer),
+				Effect.provide(warehouse([AUDIT_LOG]).layer),
 			)
 			expect(exhausted.calls).toEqual(["retry"])
 		}),
@@ -128,7 +194,7 @@ describe("processAuditEventsBatch", () => {
 			const a = message(event("55555555-5555-4555-8555-555555555555"), 2)
 			const b = message(event("66666666-6666-4666-8666-666666666666"), 2)
 			yield* processAuditEventsBatch(batchOf(a, b), MAX_RETRIES).pipe(
-				Effect.provide(warehouse(true).layer),
+				Effect.provide(warehouse([AUDIT_LOG]).layer),
 			)
 			expect(a.calls).toEqual(["retry"])
 			expect(b.calls).toEqual(["retry"])
@@ -175,7 +241,7 @@ describe("processAuditEventsBatch", () => {
 
 			expect(malformed.calls).toEqual(["ack"])
 			expect(fine.calls).toEqual(["ack"])
-			expect(store.written).toHaveLength(1)
+			expect(store.writesTo(AUDIT_LOG)).toEqual([[ORG, 1]])
 		}),
 	)
 })

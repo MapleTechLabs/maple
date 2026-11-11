@@ -62,6 +62,7 @@ import { migration_0060_search_console_daily } from "./0060_search_console_daily
 import { migration_0061_error_events_blank_event_fingerprint } from "./0061_error_events_blank_event_fingerprint"
 import { migration_0062_scanner_autonomous_agents } from "./0062_scanner_autonomous_agents"
 import { migration_0063_cost_daily } from "./0063_cost_daily"
+import { migration_0064_audit_trail_events } from "./0064_audit_trail_events"
 import { Array as Arr } from "effect"
 
 /**
@@ -157,6 +158,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0061_error_events_blank_event_fingerprint,
 	migration_0062_scanner_autonomous_agents,
 	migration_0063_cost_daily,
+	migration_0064_audit_trail_events,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

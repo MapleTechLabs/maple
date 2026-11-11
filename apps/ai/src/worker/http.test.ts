@@ -22,6 +22,7 @@ import { HttpServerResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { AuditEventsQueueProducer, MapleDbConnection } from "@maple/backend/platform/bindings"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { OrgId } from "@maple/primitives"
@@ -216,9 +217,13 @@ describe("the maple-ai Worker through alchemy's bridge", () => {
 			const handedOver = yield* Ref.make<ReadonlyArray<Effect.Effect<void>>>([])
 			const sent = yield* Ref.make(0)
 			const ingested = yield* Ref.make(0)
-			const warehouse = Layer.succeed(
-				WarehouseQueryService,
-				makeWarehouseServiceStub({ ingest: () => Ref.update(ingested, (n) => n + 1) }),
+			const warehouse = Layer.effect(AuditTrailService, AuditTrailService.make).pipe(
+				Layer.provideMerge(
+					Layer.succeed(
+						WarehouseQueryService,
+						makeWarehouseServiceStub({ ingest: () => Ref.update(ingested, (n) => n + 1) }),
+					),
+				),
 			)
 			const producer = Layer.succeed(AuditEventsQueueProducer, {
 				sendBatch: (messages) => Ref.update(sent, (n) => n + messages.length),

@@ -106,6 +106,7 @@ import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSess
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
@@ -188,6 +189,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	OrgOpenRouterKeyService.layer,
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
+	AuditTrailService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
 	RuntimeReleaseCatalog.layer,
