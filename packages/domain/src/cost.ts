@@ -25,6 +25,16 @@ export type CostProvider = typeof CostProvider.Type
 export const CostBasis = Schema.Literals(["billed", "estimated"])
 export type CostBasis = typeof CostBasis.Type
 
-/** What kind of charge a row is, after FOCUS `ChargeCategory`. */
-export const CostChargeCategory = Schema.Literals(["usage", "purchase", "tax", "credit", "adjustment"])
+/**
+ * What kind of charge a row is, after FOCUS `ChargeCategory`. `unknown`: the source does not split
+ * charge types, so the row may net credits and purchases into usage.
+ */
+export const CostChargeCategory = Schema.Literals([
+	"usage",
+	"purchase",
+	"tax",
+	"credit",
+	"adjustment",
+	"unknown",
+])
 export type CostChargeCategory = typeof CostChargeCategory.Type
