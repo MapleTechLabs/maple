@@ -32,7 +32,7 @@ export const tabLabel = (tab: CodeReviewTab): string =>
 	)
 
 export const breadcrumbsOf = (tab: CodeReviewTab) => [
-	{ label: "Code review", href: "/code-review" },
+	{ label: "Review & CI", href: "/code-review" },
 	{ label: tabLabel(tab) },
 ]
 
@@ -84,7 +84,7 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 	}
 	return linkTabStrip(
 		h,
-		"Code review views",
+		"Review & CI views",
 		Arr.map(TABS, (entry) => {
 			const linkSearch = defined(entry.tab === "settings" ? {} : carried)
 			return {
@@ -104,7 +104,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 	const page = dashboardPage(
 		options.h,
 		{
-			title: "Code review",
+			title: "Review & CI",
 			actions: options.toolbar,
 			tabs: tabs(options),
 			gap: "lg",
