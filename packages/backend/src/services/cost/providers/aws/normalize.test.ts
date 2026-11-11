@@ -138,6 +138,12 @@ describe("usageReconciles", () => {
 		assert.isFalse(usageReconciles([], byRegion, "eu-central-1"))
 	})
 
+	it("refuses a missing charge under a dollar on a cell of a million", () => {
+		const large = [group("eu-central-1", 1_000_000)]
+		assert.isFalse(usageReconciles([usage(999_999.25)], large, "eu-central-1"))
+		assert.isTrue(usageReconciles([usage(999_999.999)], large, "eu-central-1"))
+	})
+
 	it("compares each service, so a charge and an equal credit do not hide a miss of both", () => {
 		const of = (service: string, costGroup: CostGroup): CostGroup => ({ ...costGroup, service })
 		const netZero = [

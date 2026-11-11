@@ -155,8 +155,11 @@ export const detailedRegions = (groups: ReadonlyArray<CostGroup>, days: number):
 	)
 }
 
-/** A hundredth of a cent, or a millionth of the amount: rounding passes, a missing charge does not. */
-const reconcileTolerance = (cost: number) => Math.max(0.0001, Math.abs(cost) * 0.000001)
+/**
+ * A hundredth of a cent, or a millionth of the amount up to one cent: rounding passes, a missing
+ * charge does not, however large the cell.
+ */
+const reconcileTolerance = (cost: number) => Math.min(0.01, Math.max(0.0001, Math.abs(cost) * 0.000001))
 
 /**
  * Whether a region's pull by usage type holds the same money, for every day and service, as its
