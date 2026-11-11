@@ -232,6 +232,7 @@ export const healthList = <M>(
 				anomalies,
 				nowMs,
 			).slice(0, MAX_ROWS)
+			const isVouched = healthGapOf(model.incidents, model.anomalies.data) === null
 			return section(h, "mt-4 space-y-3", AsyncData.isRefreshing(data), [
 				listHeader(h, slice, model),
 				card(
@@ -242,7 +243,7 @@ export const healthList = <M>(
 							: dividedList(
 									h,
 									{ as: "ul", bordered: false },
-									Arr.map(rows, (row) => serviceRow(h, row, slice)),
+									Arr.map(rows, (row) => serviceRow(h, row, slice, isVouched)),
 								),
 					],
 					"overflow-hidden p-0",
@@ -318,6 +319,7 @@ const serviceRow = <M>(
 	h: HtmlBuilder<M>,
 	{ service, health, causes }: EnrichedService,
 	slice: SliceSearch,
+	isVouched: boolean,
 ): Html => {
 	const primary = primaryServiceHealthCause(causes)
 	const causeOf = (kind: ServiceHealthCause["metric"]) =>
@@ -328,7 +330,11 @@ const serviceRow = <M>(
 		[
 			listRow(h, {
 				href: serviceHref(slice, service),
-				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
+				// "Healthy" is not vouched for while an input is missing, so its dot is not green.
+				leading: statusDot(h, {
+					tone: health === "healthy" && !isVouched ? "neutral" : HEALTH_TONE[health],
+					size: "lg",
+				}),
 				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
 					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
 					typography(h, { size: "sm", tone: "foreground", weight: "medium", truncate: true }, [
