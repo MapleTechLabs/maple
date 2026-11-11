@@ -238,6 +238,24 @@ describe("pullCostExplorer", () => {
 		}),
 	)
 
+	it.effect("retries a throttled request twice with the policy a real pull ships with", () =>
+		Effect.gen(function* () {
+			const fake = makeFake()
+			fake.failWith = () => "ThrottlingException"
+			// No policy installed, as in production: the pull's own bound decides what is billed.
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(pullCostExplorer(fake.client, session, ACCOUNT, FIXTURE_WINDOW)),
+			)
+			// Two backoffs of at most two seconds each; the 20 second timeout must not be what ends it.
+			yield* TestClock.adjust("3 seconds")
+			yield* TestClock.adjust("3 seconds")
+			const error = yield* Fiber.join(fiber)
+			assert.strictEqual(error.reason, "rate_limited")
+			assert.strictEqual(error.requests, 3)
+			assert.lengthOf(fake.requests, 3)
+		}),
+	)
+
 	it.effect("recovers when a retry succeeds, still counting the failed request", () =>
 		Effect.gen(function* () {
 			const fake = makeFake()
