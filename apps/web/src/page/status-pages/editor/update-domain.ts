@@ -165,7 +165,7 @@ export const removedCustomDomain = (
 	return Result.match(result, {
 		onSuccess: (domain): Return => ({
 			...removeCustomDomainDialog(
-				{ ...withDomain(settled, domain), customDomainDraft: null },
+				{ ...withDomain(settled, domain), customDomainDraft: null, customDomainFailure: null },
 				Dialog.close(settled.removeCustomDomainDialog),
 			),
 			outMessage: toast("success", "Custom domain removed"),

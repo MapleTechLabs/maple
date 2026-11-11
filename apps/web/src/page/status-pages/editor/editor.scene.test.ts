@@ -1728,10 +1728,16 @@ describe("custom domain", () => {
 		expect(pageUpdate(removing.model, Message.ClickedConfirmRemoveCustomDomain()).commands ?? []).toEqual(
 			[],
 		)
+		// An earlier refused hostname is not shown against the now-empty field.
+		const refused = pageUpdate(
+			{ ...removing.model, customDomainAction: "set" },
+			Message.CompletedSetCustomDomain({ result: Result.fail(toLoadFailure(new Error("taken"))) }),
+		).model
 		const removed = pageUpdate(
-			removing.model,
+			{ ...refused, customDomainAction: "remove" },
 			Message.CompletedRemoveCustomDomain({ result: Result.succeed(customDomain()) }),
 		)
+		expect(removed.model.customDomainFailure).toBeNull()
 		expect(removed.model.removeCustomDomainDialog.isOpen).toBe(false)
 		expect(removed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
