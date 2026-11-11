@@ -541,9 +541,12 @@ export class SecurityAuditSpendLimitReachedError extends HttpTaggedError<Securit
 	},
 ) {}
 
-const readErrors = [SecurityAuditDisabledError, SecurityAuditPersistenceError] as const
-/** Writes, and the reads that expose findings or reports: org admins only. */
-const adminErrors = [...readErrors, SecurityAuditForbiddenError] as const
+/** Every endpoint is for org admins and engineers; writes that spend the audit budget for admins only. */
+const gatedErrors = [
+	SecurityAuditDisabledError,
+	SecurityAuditPersistenceError,
+	SecurityAuditForbiddenError,
+] as const
 
 /** The scheduled security audit, served by the ai Worker. Dashboard only, behind `securityAudit`. */
 export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
@@ -552,7 +555,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			payload: SecurityAuditCreateTargetRequest,
 			success: SecurityAuditTarget,
 			error: [
-				...adminErrors,
+				...gatedErrors,
 				SecurityAuditRepositoryNotConnectedError,
 				SecurityAuditTargetExistsError,
 				SecurityAuditRepositoryTooLargeError,
@@ -563,20 +566,20 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 	.add(
 		HttpApiEndpoint.get("getSettings", "/settings", {
 			success: SecurityAuditSettings,
-			error: readErrors,
+			error: gatedErrors,
 		}),
 	)
 	.add(
 		HttpApiEndpoint.put("updateSettings", "/settings", {
 			payload: SecurityAuditUpdateSettingsRequest,
 			success: SecurityAuditSettings,
-			error: [...adminErrors, SecurityAuditSameModelsError],
+			error: [...gatedErrors, SecurityAuditSameModelsError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("listTargets", "/targets", {
 			success: SecurityAuditTargetsResponse,
-			error: readErrors,
+			error: gatedErrors,
 		}),
 	)
 	.add(
@@ -585,7 +588,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			payload: SecurityAuditStartRunRequest,
 			success: SecurityAuditRun,
 			error: [
-				...adminErrors,
+				...gatedErrors,
 				SecurityAuditTargetNotFoundError,
 				SecurityAuditTargetDisabledError,
 				SecurityAuditRunInProgressError,
@@ -601,28 +604,28 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		HttpApiEndpoint.get("listRuns", "/runs", {
 			query: SecurityAuditListRunsQuery,
 			success: SecurityAuditRunsResponse,
-			error: readErrors,
+			error: gatedErrors,
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("getRun", "/runs/:runId", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRunDetail,
-			error: [...adminErrors, SecurityAuditRunNotFoundError],
+			error: [...gatedErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("cancelRun", "/runs/:runId/cancel", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRun,
-			error: [...adminErrors, SecurityAuditRunNotFoundError, SecurityAuditRunNotInProgressError],
+			error: [...gatedErrors, SecurityAuditRunNotFoundError, SecurityAuditRunNotInProgressError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunUnits", "/runs/:runId/units", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditUnitsResponse,
-			error: [...adminErrors, SecurityAuditRunNotFoundError],
+			error: [...gatedErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
@@ -630,14 +633,14 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { runId: SecurityAuditRunId },
 			query: SecurityAuditListEventsQuery,
 			success: SecurityAuditEventsResponse,
-			error: [...adminErrors, SecurityAuditRunNotFoundError],
+			error: [...gatedErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("listRunFindings", "/runs/:runId/findings", {
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditFindingsResponse,
-			error: [...adminErrors, SecurityAuditRunNotFoundError],
+			error: [...gatedErrors, SecurityAuditRunNotFoundError],
 		}),
 	)
 	.add(
@@ -645,7 +648,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { targetId: SecurityAuditTargetId },
 			query: SecurityAuditListFindingsQuery,
 			success: SecurityAuditFindingsResponse,
-			error: [...adminErrors, SecurityAuditTargetNotFoundError],
+			error: [...gatedErrors, SecurityAuditTargetNotFoundError],
 		}),
 	)
 	.add(
@@ -653,7 +656,7 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { targetId: SecurityAuditTargetId, fingerprint: Fingerprint },
 			payload: SecurityAuditUpdateFindingRequest,
 			success: SecurityAuditFindingTriageResult,
-			error: [...adminErrors, SecurityAuditFindingNotFoundError],
+			error: [...gatedErrors, SecurityAuditFindingNotFoundError],
 		}),
 	)
 	.prefix("/api/security-audit")

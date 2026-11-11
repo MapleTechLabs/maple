@@ -1,4 +1,3 @@
-import * as Policy from "@maple/domain/policy"
 import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityAuditRunsOutput } from "@maple/domain/mcp-outputs"
 import { securityAuditSpendWindow } from "@maple/domain/security-audit"
@@ -43,7 +42,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 					message: access.message,
 					capability: "security_audit",
 				})
-			const { store, admin } = access
+			const { store } = access
 			const read = Effect.gen(function* () {
 				const targets = yield* store.listTargets
 				const wanted = Arr.filter(
@@ -66,10 +65,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 					Arr.flatten(pages).toSorted((a, b) => b.startedAt - a.startedAt),
 					params.limit,
 				)
-				// Members may list runs but not read what they reported, as in the dashboard.
-				const counts = admin
-					? yield* store.countRunFindings(Arr.map(kept, (run) => run.id))
-					: undefined
+				const counts = yield* store.countRunFindings(Arr.map(kept, (run) => run.id))
 				// Counted per target, so one busy target cannot push another's runs off a shared page.
 				const runCounts = yield* Effect.forEach(
 					wanted,
@@ -101,7 +97,7 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 				runSummaryOf(
 					run,
 					targets.find((t) => t.id === run.targetId),
-					counts?.[run.id],
+					counts[run.id],
 				),
 			)
 			const limitUsd = Option.match(settings, {
@@ -127,11 +123,6 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 							`The org has reached its monthly audit spend limit (${usd(spentUsd)} of ${usd(limitUsd)}): running audits stop and new ones are refused until ${isoOf(window.resetsAt).slice(0, 10)} or an admin raises the limit.`,
 						]
 					: []),
-				...(admin
-					? []
-					: [
-							`Only ${Policy.holdersPhrase(Policy.requiredRole("security:manage"))} see what each run reported.`,
-						]),
 			]
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "result.rowCount": runs.length })
 			return {

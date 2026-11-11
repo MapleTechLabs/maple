@@ -19,6 +19,7 @@ import {
 	readDependencies,
 	readExposure,
 	readRuntimes,
+	requireSecurityReader,
 	repositoryCoverage,
 	repositoryServicesOf,
 	runtimeArea,
@@ -111,6 +112,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
+			yield* requireSecurityReader(tenant)
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const window = { startTime: st, endTime: et }
 			// A repository filter has nothing to keep in the per-service telemetry areas, so the overview skips them.

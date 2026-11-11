@@ -25,7 +25,7 @@ export const permissions = {
 	"anomalies:configure": { min: "engineer", action: "manage anomaly detector settings" },
 	"error_policy:manage": { min: "engineer", action: "manage error notifications and escalation" },
 	"ai_triage:configure": { min: "engineer", action: "manage AI triage settings" },
-	"security:manage": { min: "engineer", action: "read and triage security findings" },
+	"security:manage": { min: "engineer", action: "open the Security Center and triage its findings" },
 
 	// The organization, money and credentials: admins only.
 	"organization:manage": { min: "admin", action: "change the organization's settings" },
