@@ -28,7 +28,9 @@ import {
 	DEFAULT_GROUP_BY,
 	groupByOf,
 	hasSynced,
+	isUnderADay,
 	requestFilters,
+	wholeDaySearch,
 	sortOf,
 	withoutFilter,
 	withoutFilters,
@@ -119,7 +121,7 @@ const requestData = (model: Model, context: PageContext, mode: Keyed.RequestMode
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
-		search: route.search,
+		search: wholeDaySearch(route.search),
 		window: null,
 		nowMs: 0,
 		sources: Keyed.idle(),
@@ -146,9 +148,10 @@ export const routeChanged = (
 	route: { readonly search: Search },
 	context: PageContext,
 ): Return => {
-	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	const next = { ...model, search: route.search }
-	return routeWindowStep(model.search, route.search, {
+	const search = wholeDaySearch(route.search)
+	if (searchHref(model.search) === searchHref(search)) return { model }
+	const next = { ...model, search }
+	return routeWindowStep(model.search, search, {
 		resolve: (): Return => ({
 			model: next,
 			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
@@ -222,7 +225,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				inner,
 				(picker) => Message.GotTimePickerMessage({ message: picker }),
-				(patch) => navigate(model, { ...model.search, ...patch }).outMessage,
+				// A typed or custom range of hours is refused the way one past the maximum is.
+				(patch) =>
+					isUnderADay(patch)
+						? PageOutMessage.RequestedToast({
+								type: "error",
+								title: "Cost is read per whole day",
+								description: "Pick a range of a day or more.",
+							})
+						: navigate(model, { ...model.search, ...patch }).outMessage,
+				{ toastRejected: true },
 			),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)

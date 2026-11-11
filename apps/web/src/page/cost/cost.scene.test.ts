@@ -22,7 +22,8 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
-import { requestFilters, withFilter } from "./derive"
+import * as TimeRangePicker from "../kit/time-range-picker"
+import { isUnderADay, requestFilters, withFilter } from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -434,6 +435,36 @@ describe("cost page", () => {
 		// A hand-edited URL past the cap still reads: the request carries what the API takes.
 		const edited: Search = { region: [...(full.region ?? []), "fifty-one", Str.repeat(301)("b")] }
 		expect(requestFilters(edited)).toEqual({ region: full.region })
+	})
+
+	test("a typed range of hours is refused with a toast; one of days moves the URL", () => {
+		const typed = (shorthand: string) => {
+			const model = populated()
+			return pageUpdate(
+				{ ...model, timePicker: { ...model.timePicker, shorthand } },
+				Message.GotTimePickerMessage({
+					message: TimeRangePicker.Message.PressedShorthandEnter({}),
+				}),
+			).outMessage
+		}
+		expect(typed("3h")).toMatchObject({ _tag: "RequestedToast", title: "Cost is read per whole day" })
+		expect(typed("4d")).toMatchObject({ _tag: "RequestedNavigation" })
+	})
+
+	test("a custom range under a day is short, a whole day and a calendar day are not", () => {
+		const custom = (startTime: string, endTime: string) =>
+			isUnderADay({ startTime, endTime, timePreset: undefined })
+		expect(custom("2026-10-14 08:00:00", "2026-10-14 20:00:00")).toBe(true)
+		expect(custom("2026-10-14 00:00:00", "2026-10-15 00:00:00")).toBe(false)
+		expect(isUnderADay({ startTime: undefined, endTime: undefined, timePreset: "today" })).toBe(false)
+	})
+
+	test("a range of hours in a hand-edited URL falls back to the default range", () => {
+		expect(init({ search: { timePreset: "90m", groupBy: "region" } }, context).model.search).toEqual({
+			groupBy: "region",
+		})
+		const hours: Search = { startTime: "2026-10-14 08:00:00", endTime: "2026-10-14 09:00:00" }
+		expect(routeChanged(populated(), { search: hours }, context).model.search).toEqual({})
 	})
 
 	test("a changed time zone resolves the day window again before it reads anything", () => {

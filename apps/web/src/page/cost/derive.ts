@@ -6,6 +6,7 @@ import {
 	type CostSourceSummary,
 	type CostTimeseriesResponse,
 } from "@maple/domain/http"
+import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engine/datetime"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
@@ -76,6 +77,32 @@ export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
 		filter.dimension,
 		Arr.filter(search[filter.dimension] ?? [], (value) => value !== filter.value),
 	)
+
+const DAY_SECONDS = 24 * 60 * 60
+
+type TimeRange = Pick<Search, "startTime" | "endTime" | "timePreset">
+
+/**
+ * Whether the range is shorter than a day. Cost is read per whole day, so a range of hours would
+ * show the days it touches under a label that says hours. "today" is a whole day.
+ */
+export const isUnderADay = (range: TimeRange): boolean => {
+	if (range.timePreset !== undefined) {
+		const seconds = relativeRangeSeconds(range.timePreset)
+		return seconds !== null && seconds < DAY_SECONDS
+	}
+	return (
+		range.startTime !== undefined &&
+		range.endTime !== undefined &&
+		parseWarehouseDateTime(range.endTime) - parseWarehouseDateTime(range.startTime) < DAY_SECONDS * 1000
+	)
+}
+
+/** The search without a range under a day, which a hand-edited URL can carry: the default range then. */
+export const wholeDaySearch = (search: Search): Search =>
+	isUnderADay(search)
+		? { ...search, startTime: undefined, endTime: undefined, timePreset: undefined }
+		: search
 
 /** The range, grouping and order stay; the filters go. */
 export const withoutFilters = (search: Search): Search => ({
