@@ -87,7 +87,7 @@ interface Duck {
 
 export interface Flock {
 	readonly root: THREE.Group
-	/** The duck under the ray, if any. Only the hit boxes are tested. */
+	/** The duck on the water under the ray, if any. Only the hit boxes are tested. */
 	readonly under: (raycaster: THREE.Raycaster) => number | null
 	readonly poke: (index: number) => Option.Option<Poke>
 	/** Moves the flock; `paddling` advances the loop, hops and flights run on real time. `true`
@@ -151,9 +151,13 @@ export const makeFlock = (palette: TilePalette, material: THREE.Material): Flock
 	return {
 		root,
 		under: (raycaster) => {
+			// A ray does not skip hidden objects: with no lake there is no duck to click, and one
+			// that has flown off leaves its spot on the water to whatever is under it.
+			if (!root.visible) return null
 			const hit = Arr.findFirstIndex(
 				flock,
-				(duck) => raycaster.intersectObject(duck.target, false).length > 0,
+				(duck) =>
+					duck.mood.tookOffAt === null && raycaster.intersectObject(duck.target, false).length > 0,
 			)
 			return Option.getOrNull(hit)
 		},

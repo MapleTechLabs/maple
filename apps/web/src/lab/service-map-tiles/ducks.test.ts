@@ -1,6 +1,8 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { AWAY, calmDuck, type DuckMood, FLIGHT, HOP, isBack, pokeDuck, STARTLE } from "./ducks"
+import * as THREE from "three"
+import { AWAY, calmDuck, type DuckMood, FLIGHT, HOP, isBack, makeFlock, pokeDuck, STARTLE } from "./ducks"
+import { tilePalette } from "./palette"
 
 /** Pokes at each of `times`, returning the duck and what every poke did. */
 const pokes = (times: ReadonlyArray<number>) =>
@@ -46,5 +48,34 @@ describe("poking a duck", () => {
 		expect(isBack(gone, 100 + FLIGHT * 2 + AWAY - 0.1)).toBe(false)
 		expect(isBack(gone, 100 + FLIGHT * 2 + AWAY + 0.1)).toBe(true)
 		expect(isBack(calmDuck, 1000)).toBe(false)
+	})
+})
+
+describe("picking a duck", () => {
+	/** A flock on the water, and a ray straight down onto its first duck. */
+	const afloat = () => {
+		const flock = makeFlock(tilePalette(false), new THREE.MeshBasicMaterial())
+		flock.frame(0, false)
+		flock.root.updateMatrixWorld(true)
+		const at = flock.root.children[0]?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3()
+		const raycaster = new THREE.Raycaster(new THREE.Vector3(at.x, 5, at.z), new THREE.Vector3(0, -1, 0))
+		return { flock, raycaster }
+	}
+
+	it("finds the duck the pointer is over", () => {
+		const { flock, raycaster } = afloat()
+		expect(flock.under(raycaster)).toBe(0)
+	})
+
+	it("lets a click through where a duck has flown off", () => {
+		const { flock, raycaster } = afloat()
+		Arr.forEach(Arr.range(1, STARTLE), () => flock.poke(0))
+		expect(flock.under(raycaster)).toBeNull()
+	})
+
+	it("lets a click through when there is no lake for the flock to be on", () => {
+		const { flock, raycaster } = afloat()
+		flock.root.visible = false
+		expect(flock.under(raycaster)).toBeNull()
 	})
 })
