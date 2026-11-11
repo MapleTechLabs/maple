@@ -61,6 +61,7 @@ const VENDORS = {
 		color: { light: "#BA8E00", dark: "#FFD21E" },
 	},
 	spring_ai: { label: "Spring AI", icon: "SpringIcon", color: { light: "#5EA32D", dark: "#6DB33F" } },
+	vercel_ai_gateway: { label: "Vercel AI Gateway", icon: "VercelIcon", color: MONOCHROME },
 	vercel_ai_sdk: { label: "Vercel AI SDK", icon: "VercelIcon", color: MONOCHROME },
 } satisfies Record<string, Vendor>
 

@@ -4,7 +4,7 @@ import { toEpochMs } from "./time-format"
 
 // Imported, not re-exported straight through: the formatters below CALL these,
 // and a bare `export … from` binds nothing in this module's scope.
-import { formatDuration, formatNumber } from "@maple/domain/format"
+import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
 import type { WIDGET_UNITS } from "@maple/domain/http"
 
 export { formatDuration, formatNumber }
@@ -372,6 +372,12 @@ const UNIT_FORMATS = {
 	bytes: (num: number) => formatStorageBytes(num),
 } satisfies Record<(typeof WIDGET_UNITS)[number]["token"], (num: number) => string>
 
+// Spend per bucket is often a fraction of a cent, which two decimals print as "$0.00".
+const formatUsd = (num: number): string =>
+	num !== 0 && Math.abs(num) < 0.01
+		? num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 })
+		: formatCurrency(num, "usd")
+
 const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
 	Rec.has<string, (num: number) => string>(UNIT_FORMATS, unit)
 
@@ -380,7 +386,11 @@ const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
  * and stat widgets; an uncatalogued unit (a stored `"GB"`) renders as a plain number.
  */
 export const formatValueByUnit = (num: number, unit?: string): string =>
-	unit !== undefined && isUnitToken(unit) ? UNIT_FORMATS[unit](num) : formatNumber(num)
+	unit === "usd"
+		? formatUsd(num)
+		: unit !== undefined && isUnitToken(unit)
+			? UNIT_FORMATS[unit](num)
+			: formatNumber(num)
 
 const DURATION_TO_MS = new Map([
 	["duration_ms", 1],

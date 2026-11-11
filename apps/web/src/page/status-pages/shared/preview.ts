@@ -31,7 +31,10 @@ export const PreviewHistory = Schema.Array(
 export type PreviewHistory = typeof PreviewHistory.Type
 
 /** The preview answers one component per one sent, in order: pair them back up by monitor. */
-export const historyFrom = (sent: StatusPagePreviewParams, snapshot: StatusPagePublicSnapshot): PreviewHistory =>
+export const historyFrom = (
+	sent: StatusPagePreviewParams,
+	snapshot: StatusPagePublicSnapshot,
+): PreviewHistory =>
 	Arr.flatMap(sent.components, (component, index) => {
 		const days = snapshot.components[index]?.days ?? []
 		return component.monitor_id === null || component.monitor_id === undefined || days.length === 0
@@ -252,7 +255,9 @@ export const previewDocument = (options: PreviewDocumentOptions): string => {
 		options.snapshot,
 		{ _tag: "live", updatedAt: options.nowMs },
 		options.nowMs,
-		options.publicUrl === null ? { preview } : { preview, publicUrl: options.publicUrl },
+		options.publicUrl === null
+			? { preview, inDashboard: true }
+			: { preview, inDashboard: true, publicUrl: options.publicUrl },
 	)
 	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script>`
 	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)

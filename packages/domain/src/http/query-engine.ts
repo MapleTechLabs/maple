@@ -734,6 +734,393 @@ export class AwsInfraTimeseriesResponse extends Schema.Class<AwsInfraTimeseriesR
 	),
 }) {}
 
+// Vercel infrastructure page (/infra/vercel): log drain records, deployment traces and AI Gateway traces.
+const VercelProjectId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
+
+export class VercelInfraProjectsRequest extends Schema.Class<VercelInfraProjectsRequest>(
+	"VercelInfraProjectsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+}) {}
+
+export const VercelInfraProject = Schema.Struct({
+	projectId: Schema.String,
+	projectName: Schema.String,
+	serviceName: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	cacheLookups: Schema.Number,
+	errorLogs: Schema.Number,
+	/** ISO-8601. */
+	lastSeen: Schema.String,
+	/** Request latency at Vercel's edge, from the trace drain; null when the project sends no traces. */
+	p50DurationMs: Schema.NullOr(Schema.Number),
+	p95DurationMs: Schema.NullOr(Schema.Number),
+	/** Function invocations and the cold starts among them, from the trace drain's platform spans. */
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+})
+export type VercelInfraProject = typeof VercelInfraProject.Type
+
+export class VercelInfraProjectsResponse extends Schema.Class<VercelInfraProjectsResponse>(
+	"VercelInfraProjectsResponse",
+)({
+	projects: Schema.Array(VercelInfraProject),
+}) {}
+
+/** The log attribute a project's request breakdown groups by. */
+export const VercelInfraBreakdownDimension = Schema.Literals([
+	"path",
+	"host",
+	"region",
+	"source",
+	"cache",
+	"waf",
+	"status",
+])
+export type VercelInfraBreakdownDimension = typeof VercelInfraBreakdownDimension.Type
+
+export class VercelInfraTimeseriesRequest extends Schema.Class<VercelInfraTimeseriesRequest>(
+	"VercelInfraTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	/** Every project when absent. */
+	projectId: Schema.optionalKey(VercelProjectId),
+	/** Narrows the requests to one breakdown value: the dimension, then `filterValue`. */
+	filterBy: Schema.optionalKey(VercelInfraBreakdownDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+}) {}
+
+export const VercelInfraRequestBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	requests: Schema.Number,
+	requests2xx: Schema.Number,
+	requests3xx: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	/** Requests Vercel reported a cache status for: the hit-rate denominator. */
+	cacheLookups: Schema.Number,
+	errorLogs: Schema.Number,
+})
+export type VercelInfraRequestBucket = typeof VercelInfraRequestBucket.Type
+
+export class VercelInfraRequestTimeseriesResponse extends Schema.Class<VercelInfraRequestTimeseriesResponse>(
+	"VercelInfraRequestTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraRequestBucket),
+}) {}
+
+/** Edge latency and function activity per bucket, from the trace drain. */
+export const VercelInfraLatencyBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	/** Request latency at Vercel's edge; null in a bucket without edge spans. */
+	edgeP50Ms: Schema.NullOr(Schema.Number),
+	edgeP95Ms: Schema.NullOr(Schema.Number),
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	/** `Invoke Function` duration; null in a bucket without invocations. */
+	invokeP50Ms: Schema.NullOr(Schema.Number),
+	invokeP95Ms: Schema.NullOr(Schema.Number),
+})
+export type VercelInfraLatencyBucket = typeof VercelInfraLatencyBucket.Type
+
+export class VercelInfraLatencyTimeseriesResponse extends Schema.Class<VercelInfraLatencyTimeseriesResponse>(
+	"VercelInfraLatencyTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraLatencyBucket),
+}) {}
+
+/** Narrows a breakdown to failing requests. */
+export const VercelInfraBreakdownStatus = Schema.Literals(["all", "4xx", "5xx"])
+export type VercelInfraBreakdownStatus = typeof VercelInfraBreakdownStatus.Type
+
+export class VercelInfraBreakdownRequest extends Schema.Class<VercelInfraBreakdownRequest>(
+	"VercelInfraBreakdownRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectId: VercelProjectId,
+	dimension: VercelInfraBreakdownDimension,
+	/** Every request when absent. */
+	status: Schema.optionalKey(VercelInfraBreakdownStatus),
+	/** Narrows the requests to one breakdown value: the dimension, then `filterValue`. */
+	filterBy: Schema.optionalKey(VercelInfraBreakdownDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+}) {}
+
+export const VercelInfraBreakdownRow = Schema.Struct({
+	/** The attribute's value; empty when Vercel reported none. */
+	key: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	cacheLookups: Schema.Number,
+	/** Response body bytes. */
+	bytes: Schema.Number,
+})
+export type VercelInfraBreakdownRow = typeof VercelInfraBreakdownRow.Type
+
+export class VercelInfraBreakdownResponse extends Schema.Class<VercelInfraBreakdownResponse>(
+	"VercelInfraBreakdownResponse",
+)({
+	rows: Schema.Array(VercelInfraBreakdownRow),
+}) {}
+
+export class VercelInfraProjectDetailRequest extends Schema.Class<VercelInfraProjectDetailRequest>(
+	"VercelInfraProjectDetailRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	projectId: VercelProjectId,
+}) {}
+
+export const VercelInfraPath = Schema.Struct({
+	path: Schema.String,
+	requests: Schema.Number,
+	requests4xx: Schema.Number,
+	requests5xx: Schema.Number,
+	cacheHits: Schema.Number,
+	/** Requests Vercel reported a cache status for: the hit-rate denominator. */
+	cacheLookups: Schema.Number,
+})
+export type VercelInfraPath = typeof VercelInfraPath.Type
+
+/** One error message template on a Vercel project, from its newest error logs. */
+export const VercelInfraErrorMessage = Schema.Struct({
+	/** The message with its variable parts as `<*>` (or `<uuid>`, `<ip>`...). */
+	pattern: Schema.String,
+	/** The newest line in the pattern, in full (up to 2000 characters). */
+	sample: Schema.String,
+	occurrences: Schema.Number,
+	source: Schema.String,
+	/** ISO-8601, of the newest line. */
+	lastSeen: Schema.String,
+	/** The newest line's trace, when it carried one. */
+	traceId: Schema.NullOr(Schema.String),
+	spanId: Schema.NullOr(Schema.String),
+	/** The pattern's longest literal part, for a logs body search; null when none is distinctive. */
+	search: Schema.NullOr(Schema.String),
+})
+export type VercelInfraErrorMessage = typeof VercelInfraErrorMessage.Type
+
+export class VercelInfraProjectDetailResponse extends Schema.Class<VercelInfraProjectDetailResponse>(
+	"VercelInfraProjectDetailResponse",
+)({
+	paths: Schema.Array(VercelInfraPath),
+	errors: Schema.Array(VercelInfraErrorMessage),
+	/** Error logs the patterns were clustered from: the window's newest, up to the sample cap. */
+	errorLogsSampled: Schema.Number,
+	/** True when the window had more error logs than the sample holds. */
+	errorLogsCapped: Schema.Boolean,
+}) {}
+
+const VercelAiGatewayUsageFields = {
+	requests: Schema.Number,
+	costUsd: Schema.Number,
+	inputTokens: Schema.Number,
+	outputTokens: Schema.Number,
+	errors: Schema.Number,
+}
+
+export const VercelAiGatewaySummary = Schema.Struct({
+	...VercelAiGatewayUsageFields,
+	p50DurationMs: Schema.NullOr(Schema.Number),
+	p95DurationMs: Schema.NullOr(Schema.Number),
+})
+export type VercelAiGatewaySummary = typeof VercelAiGatewaySummary.Type
+
+export const VercelAiGatewayModel = Schema.Struct({
+	model: Schema.String,
+	provider: Schema.String,
+	...VercelAiGatewayUsageFields,
+	p95DurationMs: Schema.NullOr(Schema.Number),
+})
+export type VercelAiGatewayModel = typeof VercelAiGatewayModel.Type
+
+export const VercelAiGatewayProject = Schema.Struct({
+	/** Empty for requests made outside a Vercel project. */
+	projectId: Schema.String,
+	...VercelAiGatewayUsageFields,
+})
+export type VercelAiGatewayProject = typeof VercelAiGatewayProject.Type
+
+export const VercelAiGatewayBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	...VercelAiGatewayUsageFields,
+})
+export type VercelAiGatewayBucket = typeof VercelAiGatewayBucket.Type
+
+export class VercelAiGatewayResponse extends Schema.Class<VercelAiGatewayResponse>("VercelAiGatewayResponse")(
+	{
+		summary: VercelAiGatewaySummary,
+		models: Schema.Array(VercelAiGatewayModel),
+		/** Empty when the request named a project. */
+		projects: Schema.Array(VercelAiGatewayProject),
+		timeseries: Schema.Array(VercelAiGatewayBucket),
+	},
+) {}
+
+/** A window, for every project or one. */
+/**
+ * What a Real users read is narrowed to: a route or device type for Speed Insights, a page,
+ * referrer or country for Web Analytics. Each read ignores the other's dimensions.
+ */
+export const VercelRealUsersDimension = Schema.Literals(["route", "device", "page", "referrer", "country"])
+export type VercelRealUsersDimension = typeof VercelRealUsersDimension.Type
+
+export class VercelInfraWindowRequest extends Schema.Class<VercelInfraWindowRequest>(
+	"VercelInfraWindowRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	/** Every project when absent. */
+	projectId: Schema.optionalKey(VercelProjectId),
+	filterBy: Schema.optionalKey(VercelRealUsersDimension),
+	filterValue: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+}) {}
+
+/** One route of a project: the function behind it, from the trace drain's platform spans. */
+export const VercelInfraFunction = Schema.Struct({
+	/** The edge request's `http.route`; empty when Vercel reported none. */
+	route: Schema.String,
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	p95DurationMs: Schema.Number,
+	/** Start VM, Spawn Node.js and Init User Code of one cold start, summed; null without cold starts. */
+	initP50Ms: Schema.NullOr(Schema.Number),
+	initP95Ms: Schema.NullOr(Schema.Number),
+})
+export type VercelInfraFunction = typeof VercelInfraFunction.Type
+
+export class VercelInfraFunctionsResponse extends Schema.Class<VercelInfraFunctionsResponse>(
+	"VercelInfraFunctionsResponse",
+)({
+	functions: Schema.Array(VercelInfraFunction),
+}) {}
+
+/** One project's functions over time, for every route or one. */
+export class VercelInfraFunctionTimeseriesRequest extends Schema.Class<VercelInfraFunctionTimeseriesRequest>(
+	"VercelInfraFunctionTimeseriesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	projectId: VercelProjectId,
+	/** The edge request's `http.route`; every route when absent. */
+	route: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+	/** Only invocations that called this host; every invocation when absent. */
+	host: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))),
+}) {}
+
+export const VercelInfraFunctionBucket = Schema.Struct({
+	/** ISO-8601 bucket start. */
+	bucket: Schema.String,
+	invocations: Schema.Number,
+	coldStarts: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	/** Cold-start init time; 0 in a bucket without a cold start. */
+	initP50Ms: Schema.Number,
+	initP95Ms: Schema.Number,
+})
+export type VercelInfraFunctionBucket = typeof VercelInfraFunctionBucket.Type
+
+export class VercelInfraFunctionTimeseriesResponse extends Schema.Class<VercelInfraFunctionTimeseriesResponse>(
+	"VercelInfraFunctionTimeseriesResponse",
+)({
+	buckets: Schema.Array(VercelInfraFunctionBucket),
+}) {}
+
+/** One host a project's functions called. */
+export const VercelInfraDependency = Schema.Struct({
+	host: Schema.String,
+	calls: Schema.Number,
+	/** Calls that failed: an error status, a 5xx, or no response. */
+	errors: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+})
+export type VercelInfraDependency = typeof VercelInfraDependency.Type
+
+export class VercelInfraDependenciesResponse extends Schema.Class<VercelInfraDependenciesResponse>(
+	"VercelInfraDependenciesResponse",
+)({
+	dependencies: Schema.Array(VercelInfraDependency),
+}) {}
+
+export const VercelWebVital = Schema.Literals(["LCP", "INP", "CLS", "FCP", "TTFB"])
+export type VercelWebVital = typeof VercelWebVital.Type
+
+/** The 75th percentile of one Web Vital over a group; milliseconds, or a score for CLS. */
+export const VercelSpeedInsightsReading = Schema.Struct({
+	/** The route or device type; empty in `metrics`. */
+	key: Schema.String,
+	metric: Schema.String,
+	p75: Schema.Number,
+	samples: Schema.Number,
+})
+export type VercelSpeedInsightsReading = typeof VercelSpeedInsightsReading.Type
+
+export class VercelSpeedInsightsResponse extends Schema.Class<VercelSpeedInsightsResponse>(
+	"VercelSpeedInsightsResponse",
+)({
+	metrics: Schema.Array(VercelSpeedInsightsReading),
+	/** By route and by device type; empty when the request named no project. */
+	routes: Schema.Array(VercelSpeedInsightsReading),
+	devices: Schema.Array(VercelSpeedInsightsReading),
+}) {}
+
+export const VercelWebAnalyticsSummary = Schema.Struct({
+	pageViews: Schema.Number,
+	/** Distinct device ids among page views; Vercel rotates them daily. */
+	uniqueDevices: Schema.Number,
+	customEvents: Schema.Number,
+})
+export type VercelWebAnalyticsSummary = typeof VercelWebAnalyticsSummary.Type
+
+/** One value of a breakdown: page views, or occurrences for a custom event. */
+export const VercelWebAnalyticsTop = Schema.Struct({
+	value: Schema.String,
+	count: Schema.Number,
+	devices: Schema.Number,
+})
+export type VercelWebAnalyticsTop = typeof VercelWebAnalyticsTop.Type
+
+export class VercelWebAnalyticsResponse extends Schema.Class<VercelWebAnalyticsResponse>(
+	"VercelWebAnalyticsResponse",
+)({
+	summary: VercelWebAnalyticsSummary,
+	pages: Schema.Array(VercelWebAnalyticsTop),
+	referrers: Schema.Array(VercelWebAnalyticsTop),
+	countries: Schema.Array(VercelWebAnalyticsTop),
+	events: Schema.Array(VercelWebAnalyticsTop),
+}) {}
+
+export const VercelAuditEvent = Schema.Struct({
+	/** ISO-8601. */
+	timestamp: Schema.String,
+	action: Schema.String,
+	actor: Schema.String,
+	actorType: Schema.String,
+	/** Empty for team-level events. */
+	projectId: Schema.String,
+})
+export type VercelAuditEvent = typeof VercelAuditEvent.Type
+
+export class VercelAuditLogResponse extends Schema.Class<VercelAuditLogResponse>("VercelAuditLogResponse")({
+	events: Schema.Array(VercelAuditEvent),
+}) {}
+
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
@@ -1435,6 +1822,7 @@ const ServicePlatformLiteral = Schema.Literals([
 	"kubernetes",
 	"cloudflare",
 	"gcp",
+	"vercel",
 	"lambda",
 	"web",
 	"unknown",
@@ -1513,6 +1901,7 @@ export const ServiceRuntimeRow = Schema.Struct({
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
+	vercelProjectId: Schema.String,
 })
 export type ServiceRuntimeRow = typeof ServiceRuntimeRow.Type
 
@@ -3952,6 +4341,90 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("awsInfraTimeseries", "/aws-infra-timeseries", {
 			payload: AwsInfraTimeseriesRequest,
 			success: AwsInfraTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraProjects", "/vercel-infra-projects", {
+			payload: VercelInfraProjectsRequest,
+			success: VercelInfraProjectsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraRequestTimeseries", "/vercel-infra-request-timeseries", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelInfraRequestTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraLatencyTimeseries", "/vercel-infra-latency-timeseries", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelInfraLatencyTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraBreakdown", "/vercel-infra-breakdown", {
+			payload: VercelInfraBreakdownRequest,
+			success: VercelInfraBreakdownResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraProjectDetail", "/vercel-infra-project-detail", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraProjectDetailResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelAiGateway", "/vercel-ai-gateway", {
+			payload: VercelInfraTimeseriesRequest,
+			success: VercelAiGatewayResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraFunctions", "/vercel-infra-functions", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraFunctionsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraFunctionTimeseries", "/vercel-infra-function-timeseries", {
+			payload: VercelInfraFunctionTimeseriesRequest,
+			success: VercelInfraFunctionTimeseriesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelInfraDependencies", "/vercel-infra-dependencies", {
+			payload: VercelInfraProjectDetailRequest,
+			success: VercelInfraDependenciesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelSpeedInsights", "/vercel-speed-insights", {
+			payload: VercelInfraWindowRequest,
+			success: VercelSpeedInsightsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelWebAnalytics", "/vercel-web-analytics", {
+			payload: VercelInfraWindowRequest,
+			success: VercelWebAnalyticsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelAuditLog", "/vercel-audit-log", {
+			payload: VercelInfraProjectsRequest,
+			success: VercelAuditLogResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

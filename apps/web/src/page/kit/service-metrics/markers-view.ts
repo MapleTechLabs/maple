@@ -15,12 +15,19 @@ const DASH_HIT = 5
 
 const px = (value: number) => `${value}px`
 
+/**
+ * What a marker overlay draws: both, or (for charts stacked on one time axis) the dashes on each chart
+ * and the labels once, in a lane above them.
+ */
+export type MarkerPart = "all" | "dashes" | "labels"
+
 /** `labelGap` lifts the labels clear of the plot, into a gutter the chart reserves above it. */
 export const markersOverlay = <M>(
 	h: HtmlBuilder<M>,
 	layout: MarkerLayout,
 	plot: PlotGeometry,
 	labelGap: number = LABEL_GAP,
+	part: MarkerPart = "all",
 ): Html =>
 	layout.groups.length === 0
 		? null
@@ -31,8 +38,9 @@ export const markersOverlay = <M>(
 				],
 				Arr.flatMap(layout.groups, (group) => {
 					const labelTop = plot.y - LABEL_HEIGHT - labelGap
-					const dashTop = layout.labeled ? plot.y - labelGap : plot.y
-					const dashHeight = layout.labeled ? Math.max(plot.height + labelGap, 0) : plot.height
+					const reachesLabel = layout.labeled && part === "all"
+					const dashTop = reachesLabel ? plot.y - labelGap : plot.y
+					const dashHeight = reachesLabel ? Math.max(plot.height + labelGap, 0) : plot.height
 					const badge = group.commits.length - 1
 					const dashes = Arr.map(group.dashXs, (x, index) =>
 						h.div(
@@ -77,6 +85,7 @@ export const markersOverlay = <M>(
 						[
 							h.Key(`${group.key}-label`),
 							h.DataAttribute("commit-marker-label", ""),
+							h.Title(group.label),
 							h.Style({
 								position: "absolute",
 								left: px(group.boxLeft),
@@ -110,6 +119,9 @@ export const markersOverlay = <M>(
 								: []),
 						],
 					)
-					return [...dashes, anchor, ...(layout.labeled ? [label] : [])]
+					return [
+						...(part === "labels" ? [] : [...dashes, anchor]),
+						...(layout.labeled && part !== "dashes" ? [label] : []),
+					]
 				}),
 			)

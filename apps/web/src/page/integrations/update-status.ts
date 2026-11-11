@@ -57,6 +57,7 @@ export const statusNamesOf = (model: Pick<Model, "hasDataSources">): ReadonlyArr
 export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",

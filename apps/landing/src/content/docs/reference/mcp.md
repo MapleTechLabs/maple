@@ -252,6 +252,7 @@ The write tools here need the org admin or engineer role.
 | Tool                   | Access | What it does                                                                     |
 | ---------------------- | ------ | -------------------------------------------------------------------------------- |
 | `sync_railway`         | write  | Poll Railway now and report each environment's last sync                         |
+| `sync_vercel`          | write  | Sync Vercel now: projects, deployments and the state of Maple's drains           |
 | `create_scrape_target` | write  | Start scraping a Prometheus endpoint that needs no credentials                   |
 | `update_scrape_target` | write  | Pause, resume or change a Prometheus scrape target                               |
 | `delete_scrape_target` | write  | Delete a Prometheus scrape target and its check history; its stored metrics stay |

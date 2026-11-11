@@ -6,6 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
+import { infoHint } from "@maple/views/ui/info-hint"
 
 // A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 
@@ -46,6 +47,8 @@ export const statRail = <M>(
 
 export type StatRailItemOptions<M> = Readonly<{
 	eyebrow: string
+	/** What the eyebrow means: a question mark beside it that explains it on hover (`infoHint`). */
+	eyebrowTooltip?: string
 	value: Html | string
 	tone?: Tone
 	delta?: Html | string
@@ -95,6 +98,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					],
 					[options.eyebrow],
 				),
+				...(options.eyebrowTooltip === undefined ? [] : [infoHint(h, options.eyebrowTooltip)]),
 				...(corner === undefined ? [] : [h.span([h.Class("shrink-0 whitespace-nowrap")], [corner])]),
 			],
 		),

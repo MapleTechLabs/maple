@@ -1,0 +1,162 @@
+import { Clock, Duration, Effect, Schema } from "effect"
+import { Command, Mount } from "foldkit"
+import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
+import { resolveWindow, TimeWindow } from "../../../../data/time-range"
+import {
+	BreakdownInput,
+	FunctionSeriesInput,
+	loadVercelAiGateway,
+	loadVercelBreakdown,
+	loadVercelDependencies,
+	loadVercelDeployments,
+	loadVercelFunctions,
+	loadVercelFunctionSeries,
+	loadVercelLatencySeries,
+	loadVercelProjectDetail,
+	loadVercelProjects,
+	loadVercelRequestSeries,
+	loadVercelSpeedInsights,
+	loadVercelStatus,
+	loadVercelWebAnalytics,
+	ProjectInput,
+	SeriesInput,
+	WindowInput,
+} from "../data"
+import { Message, RequestMode } from "./model"
+
+export const ResolveWindow = Command.define("ResolveVercelProjectWindow", {
+	args: {
+		mode: RequestMode,
+		startTime: Schema.optional(Schema.String),
+		endTime: Schema.optional(Schema.String),
+		preset: Schema.String,
+		timeZone: Schema.String,
+	},
+	messages: [Message.CompletedResolveWindow],
+	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
+		Effect.map(Clock.currentTimeMillis, (nowMs) =>
+			Message.CompletedResolveWindow({
+				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
+				nowMs,
+				mode,
+			}),
+		),
+})
+
+export const LoadStatus = Command.define("LoadVercelProjectStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadStatus],
+	execute: ({ key }) =>
+		Effect.map(loadVercelStatus, (result) => Message.CompletedLoadStatus({ key, result })),
+})
+
+export const FetchProjects = Command.define("FetchVercelProjectRows", {
+	args: { key: Schema.String, window: TimeWindow },
+	messages: [Message.CompletedFetchProjects],
+	execute: ({ key, window }) =>
+		Effect.map(loadVercelProjects(window), (result) => Message.CompletedFetchProjects({ key, result })),
+})
+
+export const FetchBuckets = Command.define("FetchVercelProjectRequestSeries", {
+	args: { key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchBuckets],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelRequestSeries(input), (result) =>
+			Message.CompletedFetchBuckets({ key, result }),
+		),
+})
+
+export const FetchLatency = Command.define("FetchVercelProjectLatencySeries", {
+	args: { key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchLatency],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelLatencySeries(input), (result) =>
+			Message.CompletedFetchLatency({ key, result }),
+		),
+})
+
+export const FetchBreakdown = Command.define("FetchVercelProjectBreakdown", {
+	args: { key: Schema.String, input: BreakdownInput },
+	messages: [Message.CompletedFetchBreakdown],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelBreakdown(input), (result) => Message.CompletedFetchBreakdown({ key, result })),
+})
+
+export const FetchDetail = Command.define("FetchVercelProjectDetail", {
+	args: { key: Schema.String, input: ProjectInput },
+	messages: [Message.CompletedFetchDetail],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelProjectDetail(input), (result) => Message.CompletedFetchDetail({ key, result })),
+})
+
+export const FetchDeployments = Command.define("FetchVercelDeployments", {
+	args: { key: Schema.String, projectId: Schema.String },
+	messages: [Message.CompletedFetchDeployments],
+	execute: ({ key, projectId }) =>
+		Effect.map(loadVercelDeployments(projectId), (result) =>
+			Message.CompletedFetchDeployments({ key, result }),
+		),
+})
+
+export const FetchAiGateway = Command.define("FetchVercelProjectAiGateway", {
+	args: { key: Schema.String, input: SeriesInput },
+	messages: [Message.CompletedFetchAiGateway],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelAiGateway(input), (result) => Message.CompletedFetchAiGateway({ key, result })),
+})
+
+export const FetchFunctions = Command.define("FetchVercelProjectFunctions", {
+	args: { key: Schema.String, input: ProjectInput },
+	messages: [Message.CompletedFetchFunctions],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelFunctions(input), (result) => Message.CompletedFetchFunctions({ key, result })),
+})
+
+export const FetchFunctionSeries = Command.define("FetchVercelProjectFunctionSeries", {
+	args: { key: Schema.String, input: FunctionSeriesInput },
+	messages: [Message.CompletedFetchFunctionSeries],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelFunctionSeries(input), (result) =>
+			Message.CompletedFetchFunctionSeries({ key, result }),
+		),
+})
+
+export const FetchDependencies = Command.define("FetchVercelProjectDependencies", {
+	args: { key: Schema.String, input: ProjectInput },
+	messages: [Message.CompletedFetchDependencies],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelDependencies(input), (result) =>
+			Message.CompletedFetchDependencies({ key, result }),
+		),
+})
+
+export const FetchSpeedInsights = Command.define("FetchVercelProjectSpeedInsights", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchSpeedInsights],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelSpeedInsights(input), (result) =>
+			Message.CompletedFetchSpeedInsights({ key, result }),
+		),
+})
+
+export const FetchWebAnalytics = Command.define("FetchVercelProjectWebAnalytics", {
+	args: { key: Schema.String, input: WindowInput },
+	messages: [Message.CompletedFetchWebAnalytics],
+	execute: ({ key, input }) =>
+		Effect.map(loadVercelWebAnalytics(input), (result) =>
+			Message.CompletedFetchWebAnalytics({ key, result }),
+		),
+})
+
+export const CompleteReloadSpin = Command.define("CompleteVercelProjectReloadSpin", {
+	args: { version: Schema.Number },
+	messages: [Message.CompletedReloadSpin],
+	execute: ({ version }) =>
+		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
+})
+
+/** `useLinkedCursor` on the strips. */
+export const MountLinkedCursor = Mount.defineStream("MountVercelProjectLinkedCursor", {
+	messages: [Message.AttachedLinkedCursor],
+	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),
+})
