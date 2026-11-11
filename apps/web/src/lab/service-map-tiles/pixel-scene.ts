@@ -117,6 +117,7 @@ interface Ailing {
 
 /** Everything of the scene that needs the sprite sheet, made once it has loaded. */
 interface Ready {
+	readonly sheet: THREE.Texture
 	readonly painter: Painter
 	readonly statics: Billboards
 	readonly moving: Billboards
@@ -408,6 +409,7 @@ export function startPixelScene(
 	const state = {
 		derived: derive(initial, null),
 		ready: null as Ready | null,
+		stopped: false,
 		size: measure(container),
 		pending: 0,
 		raf: 0,
@@ -474,6 +476,8 @@ export function startPixelScene(
 
 	const atlas = new Image()
 	atlas.addEventListener("load", () => {
+		// The sheet can arrive after the scene was stopped: there is nothing left to draw on.
+		if (state.stopped) return
 		const sheet = new THREE.Texture(atlas)
 		sheet.colorSpace = THREE.SRGBColorSpace
 		sheet.magFilter = THREE.NearestFilter
@@ -482,6 +486,7 @@ export function startPixelScene(
 		sheet.needsUpdate = true
 		const size = { width: atlas.naturalWidth, height: atlas.naturalHeight }
 		const ready: Ready = {
+			sheet,
 			painter: makePainter(atlas),
 			statics: makeBillboards(sheet, size, 2048),
 			moving: makeBillboards(sheet, size, 256),
@@ -1466,6 +1471,7 @@ export function startPixelScene(
 			sync()
 		},
 		stop: () => {
+			state.stopped = true
 			cancelAnimationFrame(state.raf)
 			observer.disconnect()
 			canvas.removeEventListener("pointerdown", onPointerDown)
@@ -1478,6 +1484,7 @@ export function startPixelScene(
 			orbit.dispose()
 			state.ready?.statics.dispose()
 			state.ready?.moving.dispose()
+			state.ready?.sheet.dispose()
 			Arr.forEach([...Rec.values(land), pointed, chosen, held.top, held.sides, ...ripples], (mesh) => {
 				mesh.geometry.dispose()
 			})
@@ -1490,6 +1497,9 @@ export function startPixelScene(
 			quacks.close()
 			sounds.close()
 			renderer.dispose()
+			// The canvas is made anew for each style: without this every switch would leave a
+			// live WebGL context behind, until the browser starts dropping them.
+			renderer.forceContextLoss()
 		},
 	}
 }
