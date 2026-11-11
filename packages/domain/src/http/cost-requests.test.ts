@@ -45,6 +45,18 @@ describe("cost request filters", () => {
 		expect(accepts("totals", { ...WINDOW, endTime: "2028-02-29 23:59:59.999" })).toBe(true)
 	})
 
+	it("takes a bound from the year 2000 to 2100, and none whose days leave the four-digit year", () => {
+		const at = (day: string) => ({ startTime: `${day} 00:00:00`, endTime: `${day} 23:59:59` })
+		expect(accepts("totals", at("2000-01-01"))).toBe(true)
+		expect(accepts("timeseries", at("2100-12-31"))).toBe(true)
+		expect(accepts("totals", at("1999-12-31"))).toBe(false)
+		expect(accepts("timeseries", at("2101-01-01"))).toBe(false)
+		expect(accepts("breakdown", { ...at("9999-12-31"), groupBy: "region" })).toBe(false)
+		// Either bound alone is enough to refuse the window.
+		expect(accepts("totals", { ...WINDOW, endTime: "9999-12-31 00:00:00" })).toBe(false)
+		expect(accepts("totals", { ...WINDOW, startTime: "1999-12-31 00:00:00" })).toBe(false)
+	})
+
 	it("rejects a metric or a time the query cannot bind", () => {
 		expect(accepts("totals", { ...WINDOW, metric: "list" })).toBe(false)
 		expect(accepts("totals", { ...WINDOW, startTime: "2026-10-01" })).toBe(false)

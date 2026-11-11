@@ -1231,9 +1231,10 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- builder:cost:costCurrenciesQuery:filtered  [d7b3af7f]
+-- builder:cost:costCurrenciesQuery:filtered  [0cb5938a]
 SELECT
           latest.currency AS currency,
+          max(if(latest.date >= '2026-10-01 00:00:00', 1, 0)) AS inWindow,
           ifNull(sumIf(latest.cost, latest.date >= '2026-10-01 00:00:00'), 0) AS cost,
           ifNull(sumIf(latest.cost, NOT (latest.date >= '2026-10-01 00:00:00')), 0) AS previousCost
         FROM (SELECT
@@ -1270,7 +1271,7 @@ SELECT
           AND cost_daily.Region IN ('us-east-1', 'global')
         GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
         GROUP BY currency
-        ORDER BY cost DESC, previousCost DESC, currency ASC
+        ORDER BY inWindow DESC, cost DESC, previousCost DESC, currency ASC
         FORMAT JSON
 
 -- builder:cost:costSourceCoverageQuery:default  [8dac47d3]
@@ -1288,10 +1289,11 @@ SELECT
         ORDER BY sourceId ASC
         FORMAT JSON
 
--- builder:cost:costTimeseriesQuery:byCloudServiceTopKeys  [0de71e58]
+-- builder:cost:costTimeseriesQuery:byCloudServiceTopKeys  [92e3d568]
 SELECT
           latest.date AS date,
           if(latest.cloudService IN ('Amazon Elastic Compute Cloud - Compute', 'Amazon Elastic Load Balancing'), latest.cloudService, '__other__') AS key,
+          if(latest.cloudService IN ('Amazon Elastic Compute Cloud - Compute', 'Amazon Elastic Load Balancing'), 0, 1) AS other,
           ifNull(sum(latest.cost), 0) AS cost,
           max(latest.estimated) AS estimated
         FROM (SELECT
@@ -1328,8 +1330,8 @@ SELECT
           AND cost_daily.Region IN ('us-east-1', 'global')
           AND cost_daily.Currency = 'USD'
         GROUP BY date, sourceId, provider, account, cloudService, serviceCategory, usageType, region, resource, service, chargeCategory, currency) AS latest
-        GROUP BY date, key
-        ORDER BY date ASC, key ASC
+        GROUP BY date, key, other
+        ORDER BY date ASC, key ASC, other ASC
         FORMAT JSON
 
 -- builder:cost:costTotalsQuery:filtered  [479224e0]

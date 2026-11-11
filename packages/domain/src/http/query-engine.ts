@@ -2744,6 +2744,10 @@ export const CostFilters = Schema.Struct({
 } satisfies Record<CostDimension, Schema.Top>)
 export type CostFilters = typeof CostFilters.Type
 
+/** The years a cost window may name: day arithmetic past 9999 leaves the four-digit year. */
+const COST_WINDOW_MIN_YEAR = 2000
+const COST_WINDOW_MAX_YEAR = 2100
+
 /**
  * A window bound that names a real instant. The pattern alone lets `2026-13-01` through, which
  * cannot be floored to a day, and `2026-02-30`, which reads another day than the one asked for.
@@ -2755,6 +2759,13 @@ const CostWindowDateTime = TinybirdDateTime.check(
 		return (
 			(Number.isFinite(date.getTime()) && Str.startsWith(instant)(date.toISOString())) ||
 			"Expected a real calendar date and time"
+		)
+	}),
+	Schema.makeFilter((value: string) => {
+		const year = Number(Str.slice(0, 4)(value))
+		return (
+			(year >= COST_WINDOW_MIN_YEAR && year <= COST_WINDOW_MAX_YEAR) ||
+			`Expected a year from ${COST_WINDOW_MIN_YEAR} to ${COST_WINDOW_MAX_YEAR}`
 		)
 	}),
 )
