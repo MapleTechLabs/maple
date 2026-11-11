@@ -62,6 +62,9 @@ export interface SnapshotPageInput {
 	readonly description: string | null
 	readonly websiteUrl: string | null
 	readonly logoUrl: string | null
+	readonly logoDarkUrl: string | null
+	readonly faviconUrl: string | null
+	readonly supportUrl: string | null
 	readonly privacyUrl: string | null
 	readonly termsUrl: string | null
 	readonly theme: StatusPageTheme
@@ -255,6 +258,9 @@ export const toSnapshot = (input: SnapshotInput): StatusPageSnapshot => {
 			description: input.page.description,
 			websiteUrl: input.page.websiteUrl,
 			logoUrl: input.page.logoUrl,
+			logoDarkUrl: input.page.logoDarkUrl,
+			faviconUrl: input.page.faviconUrl,
+			supportUrl: input.page.supportUrl,
 			theme: input.page.theme,
 			showPoweredBy: input.page.showPoweredBy,
 			privacyUrl: input.page.privacyUrl,
@@ -301,6 +307,9 @@ export const toStatusPageDraft = (params: StatusPagePreviewParams): StatusPageDr
 			description: config.description,
 			websiteUrl: httpsOrNull(config.website_url),
 			logoUrl: httpsOrNull(config.logo_url),
+			logoDarkUrl: httpsOrNull(config.logo_dark_url),
+			faviconUrl: httpsOrNull(config.favicon_url),
+			supportUrl: httpsOrNull(config.support_url),
 			privacyUrl: httpsOrNull(config.privacy_url),
 			termsUrl: httpsOrNull(config.terms_url),
 			theme,
@@ -405,6 +414,9 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 								description: $.description,
 								websiteUrl: $.websiteUrl,
 								logoUrl: $.logoUrl,
+								logoDarkUrl: $.logoDarkUrl,
+								faviconUrl: $.faviconUrl,
+								supportUrl: $.supportUrl,
 								privacyUrl: $.privacyUrl,
 								termsUrl: $.termsUrl,
 								theme: $.theme,

@@ -525,6 +525,8 @@ describe("toStatusPageDraft", () => {
 			slug: "Not A Slug",
 			website_url: "javascript:alert(1)",
 			privacy_url: "https://acme.example/privacy",
+			favicon_url: "http://acme.example/favicon.png",
+			support_url: "https://acme.example/help",
 			theme: { appearance: "light", text: "#777777", background: "#ffffff" },
 			components: [{ name: " API ", group: " " }],
 		})
@@ -533,6 +535,8 @@ describe("toStatusPageDraft", () => {
 		assert.deepStrictEqual(draft.page.theme, DEFAULT_STATUS_PAGE_THEME)
 		assert.isNull(draft.page.websiteUrl)
 		assert.strictEqual(draft.page.privacyUrl, "https://acme.example/privacy")
+		assert.isNull(draft.page.faviconUrl)
+		assert.strictEqual(draft.page.supportUrl, "https://acme.example/help")
 		assert.deepStrictEqual(draft.components, [
 			{
 				name: "API",

@@ -77,6 +77,9 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	logo_dark_url: page.logoDarkUrl,
+	favicon_url: page.faviconUrl,
+	support_url: page.supportUrl,
 	privacy_url: page.privacyUrl,
 	terms_url: page.termsUrl,
 	theme: page.theme,
@@ -153,6 +156,9 @@ const pageAuditDiff = auditDiff({
 		"description",
 		"website_url",
 		"logo_url",
+		"logo_dark_url",
+		"favicon_url",
+		"support_url",
 		"privacy_url",
 		"terms_url",
 		"theme",
@@ -256,6 +262,15 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.logo_dark_url === undefined
+							? undefined
+							: { logoDarkUrl: payload.logo_dark_url }),
+						...(payload.favicon_url === undefined
+							? undefined
+							: { faviconUrl: payload.favicon_url }),
+						...(payload.support_url === undefined
+							? undefined
+							: { supportUrl: payload.support_url }),
 						...(payload.privacy_url === undefined
 							? undefined
 							: { privacyUrl: payload.privacy_url }),
@@ -322,6 +337,15 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.logo_dark_url === undefined
+							? undefined
+							: { logoDarkUrl: payload.logo_dark_url }),
+						...(payload.favicon_url === undefined
+							? undefined
+							: { faviconUrl: payload.favicon_url }),
+						...(payload.support_url === undefined
+							? undefined
+							: { supportUrl: payload.support_url }),
 						...(payload.privacy_url === undefined
 							? undefined
 							: { privacyUrl: payload.privacy_url }),

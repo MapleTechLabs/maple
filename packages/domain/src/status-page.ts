@@ -664,6 +664,12 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
+	// Branding added later: absent from older snapshots, which render without them.
+	/** Shown instead of the logo in dark mode. */
+	logoDarkUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	faviconUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/** Where visitors get help, linked in the header. */
+	supportUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	// Snapshots published before themes existed carry none; they render the default until republished.
 	theme: StatusPageTheme.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(DEFAULT_STATUS_PAGE_THEME))),
 	showPoweredBy: Schema.Boolean,

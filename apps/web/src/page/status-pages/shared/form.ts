@@ -264,10 +264,18 @@ export const SettingsTextField = Schema.Literals([
 	"websiteUrl",
 	"privacyUrl",
 	"termsUrl",
+	"supportUrl",
 	"logoUrl",
+	"logoDarkUrl",
+	"faviconUrl",
 	"autoIncidents",
 ])
 export type SettingsTextField = typeof SettingsTextField.Type
+
+/** The page fields the Appearance tab edits; the rest are on the Settings tab. */
+export const BRANDING_FIELDS = ["logoUrl", "logoDarkUrl", "faviconUrl"] as const
+const isBrandingField = (field: SettingsTextField): boolean =>
+	Arr.some(BRANDING_FIELDS, (branding) => branding === field)
 
 /** The theme's colour inputs, as typed; blank means the preset's colour. */
 export const ThemeColorField = Schema.Literals(["accent", "background", "text", "card", "border"])
@@ -296,7 +304,10 @@ export const SettingsForm = Schema.Struct({
 	websiteUrl: Schema.String,
 	privacyUrl: Schema.String,
 	termsUrl: Schema.String,
+	supportUrl: Schema.String,
 	logoUrl: Schema.String,
+	logoDarkUrl: Schema.String,
+	faviconUrl: Schema.String,
 	showPoweredBy: Schema.Boolean,
 	autoIncidents: StatusPageAutoIncidents,
 	theme: ThemeForm,
@@ -319,7 +330,10 @@ export const settingsFormOf = (page: V2StatusPage): SettingsForm => ({
 	websiteUrl: page.website_url ?? "",
 	privacyUrl: page.privacy_url ?? "",
 	termsUrl: page.terms_url ?? "",
+	supportUrl: page.support_url ?? "",
 	logoUrl: page.logo_url ?? "",
+	logoDarkUrl: page.logo_dark_url ?? "",
+	faviconUrl: page.favicon_url ?? "",
 	showPoweredBy: page.show_powered_by,
 	autoIncidents: page.auto_incidents,
 	theme: themeFormOf(page.theme),
@@ -345,7 +359,10 @@ const normalizedSettings = (form: SettingsForm): SettingsForm => ({
 	websiteUrl: Str.trim(form.websiteUrl),
 	privacyUrl: Str.trim(form.privacyUrl),
 	termsUrl: Str.trim(form.termsUrl),
+	supportUrl: Str.trim(form.supportUrl),
 	logoUrl: Str.trim(form.logoUrl),
+	logoDarkUrl: Str.trim(form.logoDarkUrl),
+	faviconUrl: Str.trim(form.faviconUrl),
 	theme: themeFormOf(themeOf(form.theme)),
 })
 
@@ -360,7 +377,10 @@ const sameNormalized = (a: SettingsForm, b: SettingsForm): boolean =>
 	a.websiteUrl === b.websiteUrl &&
 	a.privacyUrl === b.privacyUrl &&
 	a.termsUrl === b.termsUrl &&
+	a.supportUrl === b.supportUrl &&
 	a.logoUrl === b.logoUrl &&
+	a.logoDarkUrl === b.logoDarkUrl &&
+	a.faviconUrl === b.faviconUrl &&
 	a.showPoweredBy === b.showPoweredBy &&
 	a.autoIncidents === b.autoIncidents &&
 	sameTheme(a.theme, b.theme)
@@ -393,7 +413,10 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 	websiteUrl: httpsIssue(form.websiteUrl),
 	privacyUrl: httpsIssue(form.privacyUrl),
 	termsUrl: httpsIssue(form.termsUrl),
+	supportUrl: httpsIssue(form.supportUrl),
 	logoUrl: httpsIssue(form.logoUrl),
+	logoDarkUrl: httpsIssue(form.logoDarkUrl),
+	faviconUrl: httpsIssue(form.faviconUrl),
 	autoIncidents: null,
 })
 
@@ -417,17 +440,23 @@ export const themeContrastOf = (theme: ThemeForm): string | null =>
 		? null
 		: themeContrastIssue(themeOf(theme))
 
-/** A problem in the page fields, which the Settings tab shows. */
-export const hasPageFieldIssues = (form: SettingsForm): boolean =>
-	Arr.some(Rec.values(settingsIssues(form)), (issue) => issue !== null)
+const hasFieldIssues = (form: SettingsForm, onAppearanceTab: boolean): boolean =>
+	Arr.some(
+		Rec.toEntries(settingsIssues(form)),
+		([field, issue]) => issue !== null && isBrandingField(field) === onAppearanceTab,
+	)
 
-/** A problem in the colours, which the Appearance tab shows. */
-export const hasThemeIssues = (form: SettingsForm): boolean =>
+/** A problem in the page fields, which the Settings tab shows. */
+export const hasPageFieldIssues = (form: SettingsForm): boolean => hasFieldIssues(form, false)
+
+/** A problem in the branding or colours, which the Appearance tab shows. */
+export const hasAppearanceIssues = (form: SettingsForm): boolean =>
+	hasFieldIssues(form, true) ||
 	Arr.some(Rec.values(themeColorIssues(form.theme)), (issue) => issue !== null) ||
 	themeContrastOf(form.theme) !== null
 
 export const hasSettingsIssues = (form: SettingsForm): boolean =>
-	hasPageFieldIssues(form) || hasThemeIssues(form)
+	hasPageFieldIssues(form) || hasAppearanceIssues(form)
 
 export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams => ({
 	name: Str.trim(form.name),
@@ -436,7 +465,10 @@ export const settingsPayload = (form: SettingsForm): V2StatusPageUpdateParams =>
 	website_url: orNull(form.websiteUrl),
 	privacy_url: orNull(form.privacyUrl),
 	terms_url: orNull(form.termsUrl),
+	support_url: orNull(form.supportUrl),
 	logo_url: orNull(form.logoUrl),
+	logo_dark_url: orNull(form.logoDarkUrl),
+	favicon_url: orNull(form.faviconUrl),
 	theme: themeOf(form.theme),
 	show_powered_by: form.showPoweredBy,
 	auto_incidents: form.autoIncidents,

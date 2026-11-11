@@ -14,12 +14,16 @@ function tip(d,c){var s=state(c);return fday(d)+": "+(s==="none"?"No data":s==="
 function pct(p){return(Math.floor(+(p*100).toFixed(6))/100).toFixed(2).replace(/\\.?0+$/,"")+"%"}
 function cells(y,m){var lead=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,n=new Date(Date.UTC(y,m,0)).getUTCDate(),t=Math.ceil((lead+n)/7)*7,r=[];for(var i=0;i<t;i++){var d=i-lead+1;r.push(d>=1&&d<=n?d:0)}return r}
 function mback(d,b){var p=d.split("-"),i=p[0]*12+(p[1]-1)-b;return Math.floor(i/12)+"-"+pad(i%12+1)}
+function stamp(y,mo,d,h,mi,tz,cy){return M[mo]+" "+d+", "+(y===cy?"":y+", ")+pad(h)+":"+pad(mi)+(tz?" "+tz:"")}
 `
 
-/** DOM glue: relative times and the delayed banner, the subscribe dialog and its copy buttons, paging, the calendar's day panel and bar tooltips. */
+/** DOM glue: times in the visitor's zone, relative times and the delayed banner, the subscribe dialog and its copy buttons, paging, the calendar's day panel and bar tooltips. */
 const PAGE_SCRIPT_DOM = `var b=document.body,u=+b.getAttribute("data-updated-at"),s=+b.getAttribute("data-stale-after");
 function age(ms){var m=Math.floor(Math.max(0,ms)/6e4);if(m<1)return"just now";if(m<60)return m+" min ago";var h=Math.floor(m/60);return h<48?h+" h ago":Math.floor(h/24)+" d ago"}
-function tick(){var g=Date.now()-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false}
+var Z=[];try{Z=[new Intl.DateTimeFormat("en-US",{timeZoneName:"short"}),new Intl.DateTimeFormat("en-GB",{timeZoneName:"short"})]}catch(x){}
+function tzn(t){var n="";Z.some(function(f){f.formatToParts(t).forEach(function(p){if(p.type==="timeZoneName")n=p.value});return!/^GMT[+-]/.test(n)});return n}
+function times(now){document.querySelectorAll("time[datetime]").forEach(function(e){var t=new Date(e.getAttribute("datetime")),g=now-t;if(isNaN(g))return;var a=stamp(t.getFullYear(),t.getMonth(),t.getDate(),t.getHours(),t.getMinutes(),tzn(t),new Date(now).getFullYear());if(e.closest(".updates")&&g>=0&&g<864e5){e.textContent=age(g);e.title=a}else{e.textContent=a;e.removeAttribute("title")}})}
+function tick(){var n=Date.now(),g=n-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false;times(n)}
 tick();setInterval(tick,3e4);
 b.classList.add("js");
 var dlg=document.getElementById("subscribe"),box=dlg.querySelector(".modal-box"),opener=null;

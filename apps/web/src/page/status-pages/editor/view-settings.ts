@@ -16,12 +16,12 @@ import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasPageFieldIssues,
 	hasSettingsIssues,
-	hasThemeIssues,
+	hasAppearanceIssues,
 	type SettingsForm,
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { appearanceSection, previewPanel } from "./view-appearance"
+import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
 import { customDomainSection } from "./view-domain"
 import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
@@ -110,13 +110,14 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
 					}),
 					textField(h, {
-						id: "status-page-logo",
-						label: "Logo URL",
-						value: form.logoUrl,
-						placeholder: "https://acme.example/logo.svg",
+						id: "status-page-support",
+						label: "Support URL",
+						value: form.supportUrl,
+						placeholder: "https://acme.example/support",
 						isDisabled: isReadOnly,
-						error: issues.logoUrl,
-						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
+						error: issues.supportUrl,
+						hint: "Linked in the page header as Contact support.",
+						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
 				],
 			),
@@ -283,7 +284,7 @@ const formView = (
 ): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
-	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasThemeIssues(form)
+	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasAppearanceIssues(form)
 	return vstack(h, { className: "max-w-4xl xl:max-w-7xl" }, [
 		h.div(
 			[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
@@ -337,7 +338,10 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, "appearance", (form) => [appearanceSection(h, model, form)])
+	formView(h, model, page, "appearance", (form) => [
+		brandingSection(h, model, form),
+		appearanceSection(h, model, form),
+	])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

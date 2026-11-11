@@ -619,6 +619,9 @@ describe("StatusPagesService", () => {
 					description: null,
 					website_url: null,
 					logo_url: null,
+					logo_dark_url: null,
+					favicon_url: null,
+					support_url: null,
 					privacy_url: null,
 					terms_url: null,
 					show_powered_by: true,
@@ -634,6 +637,43 @@ describe("StatusPagesService", () => {
 						show_uptime: true,
 					})),
 				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("applies branding links, reads them back and refuses ones that are not https", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const { service, page, config } = yield* seeded(testDb)
+				const branded = yield* service.applyConfig(
+					ORG,
+					page.id,
+					{
+						...config,
+						logo_dark_url: " https://acme.test/logo-dark.svg ",
+						favicon_url: "https://acme.test/favicon.png",
+						support_url: "https://acme.test/help",
+					},
+					USER,
+				)
+				assert.deepStrictEqual(branded.changes.fields, [
+					"logo_dark_url",
+					"favicon_url",
+					"support_url",
+				])
+				const read = yield* service.getConfig(ORG, page.id)
+				assert.strictEqual(read.logo_dark_url, "https://acme.test/logo-dark.svg")
+				const stored = yield* service.get(ORG, page.id)
+				assert.strictEqual(stored.faviconUrl, "https://acme.test/favicon.png")
+				assert.strictEqual(stored.supportUrl, "https://acme.test/help")
+
+				const insecure = yield* Effect.flip(
+					service.update(ORG, page.id, { supportUrl: "http://acme.test/help" }),
+				)
+				assert.strictEqual(insecure._tag, "@maple/http/errors/StatusPageValidationError")
+				assert.include(insecure.message, "Support URL")
+				const cleared = yield* service.update(ORG, page.id, { faviconUrl: null })
+				assert.isNull(cleared.faviconUrl)
+				assert.strictEqual(cleared.logoDarkUrl, "https://acme.test/logo-dark.svg")
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 

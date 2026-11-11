@@ -39,6 +39,10 @@ export const StatusPages = PG.table("status_pages", {
 		description: PG.nullable(PG.text),
 		websiteUrl: PG.column(PG.nullable(PG.text), { name: "website_url" }),
 		logoUrl: PG.column(PG.nullable(PG.text), { name: "logo_url" }),
+		/** Branding; https only. The dark logo replaces the logo in dark mode, the support link sits in the header. */
+		logoDarkUrl: PG.column(PG.nullable(PG.text), { name: "logo_dark_url" }),
+		faviconUrl: PG.column(PG.nullable(PG.text), { name: "favicon_url" }),
+		supportUrl: PG.column(PG.nullable(PG.text), { name: "support_url" }),
 		/** Footer links to the customer's own policies; https only. */
 		privacyUrl: PG.column(PG.nullable(PG.text), { name: "privacy_url" }),
 		termsUrl: PG.column(PG.nullable(PG.text), { name: "terms_url" }),
