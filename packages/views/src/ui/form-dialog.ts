@@ -28,6 +28,8 @@ export type FormDialogOptions<M> = Readonly<{
 	isSubmitDisabled?: boolean
 	/** See `DialogView`'s `isReturningFocus`. */
 	isReturningFocus?: boolean
+	/** See `DialogView`'s `isNested`: opened from inside another dialog. */
+	isNested?: boolean
 	submitVariant?: "default" | "destructive"
 	footerStart?: Html
 	className?: string
@@ -57,6 +59,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 		viewInputs: {
 			hasTrigger: false,
 			isReturningFocus: options.isReturningFocus,
+			isNested: options.isNested,
 			className: options.className,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal ?? h.empty,

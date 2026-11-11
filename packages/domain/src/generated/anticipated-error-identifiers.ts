@@ -130,6 +130,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/SourceValidationError",
 	"@maple/http/errors/StatusPageComponentNotFoundError",
 	"@maple/http/errors/StatusPageConflictError",
+	"@maple/http/errors/StatusPageCustomDomainNotFoundError",
+	"@maple/http/errors/StatusPageCustomDomainTakenError",
 	"@maple/http/errors/StatusPageIncidentNotFoundError",
 	"@maple/http/errors/StatusPageNotFoundError",
 	"@maple/http/errors/StatusPageSlugTakenError",

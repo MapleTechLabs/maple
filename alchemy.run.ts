@@ -20,6 +20,7 @@ import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
+	declareStatusDomainsOrigin,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -380,6 +381,8 @@ export default Alchemy.Stack(
 		// Public status pages, served from edge storage alone so they outlive a Maple outage.
 		const statusWorker = yield* StatusWorker
 		yield* serveWorker("status", statusWorker)
+		// Custom domains' CNAME target and the zone's fallback origin: one per zone, owned by US prd.
+		if (!isDevServer && stage.kind === "prd" && region === "us") yield* declareStatusDomainsOrigin
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)

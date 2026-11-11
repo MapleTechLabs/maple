@@ -52,6 +52,7 @@ const SAMPLE_PATHS = [
 	"/status-pages",
 	"/status-pages/new",
 	"/status-pages/stp_abc",
+	"/status-pages/stp_abc/view",
 	"/service-map",
 	"/infra/hosts",
 	"/infra/hosts/web-1",

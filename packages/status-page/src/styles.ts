@@ -18,7 +18,7 @@ a{color:var(--link)}
 [hidden]{display:none!important}
 .wrap{max-width:712px;margin:0 auto;padding:40px 20px 56px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;color:var(--fg);text-decoration:none;letter-spacing:-.01em}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;color:var(--fg);text-decoration:none;letter-spacing:-.01em;margin-right:auto}
 .mono-mark{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:var(--radius);background:var(--primary);color:var(--primary-fg);font-size:15px;font-weight:700;letter-spacing:0}
 .brand img{max-height:36px;max-width:200px;display:block}
 .site{font-size:14px;color:var(--secondary)}
@@ -37,6 +37,47 @@ footer a{color:var(--secondary)}
 .powered a{display:inline-flex;align-items:center;gap:4px;vertical-align:bottom}
 .maple-mark{flex:none;display:block}
 @media (max-width:560px){.wrap{padding:24px 16px 40px}}
+`
+
+/**
+ * The subscribe dialog. It opens as the `#subscribe` target until the script marks the body `js`,
+ * then on the script's `open` class; its tabs are radios, so they switch without script too.
+ */
+const dialogStyles = `
+.i{flex:none;display:block;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.i circle{fill:currentColor;stroke:none}
+.sub-open{font-size:14px;font-weight:500;line-height:20px;padding:6px 12px;border:1px solid var(--line);border-radius:calc(var(--radius)*.75);background:var(--card);color:var(--fg);text-decoration:none}
+.sub-open:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.modal{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:84px 16px 24px}
+body:not(.js) .modal:target,.modal.open{display:block}
+body:has(.modal.open),body:not(.js):has(.modal:target){overflow:hidden}
+.modal-shade{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 70%,transparent)}
+.modal-box{position:relative;max-width:624px;margin:0 auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:0 10px 30px rgba(0,0,0,.18);font-size:14px;line-height:20px}
+.modal-box:focus{outline:none}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--line)}
+.modal-head h2{margin:0;font-size:18px;line-height:28px;font-weight:500;color:var(--fg);text-transform:none;letter-spacing:0}
+.modal-close{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:var(--muted)}
+.modal-close:hover{color:var(--fg)}
+.modal-close .i{width:20px;height:20px}
+.tablist{display:flex;flex-wrap:wrap;margin:16px 16px 0;border-bottom:1px solid var(--line)}
+.tablist label{display:flex;align-items:center;gap:8px;padding:8px 12px 6px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;user-select:none}
+.tablist label:hover{color:var(--fg)}
+#sub-rss:checked~.tablist [for=sub-rss],#sub-slack:checked~.tablist [for=sub-slack]{color:var(--fg);border-bottom-color:var(--fg)}
+#sub-rss:focus-visible~.tablist [for=sub-rss],#sub-slack:focus-visible~.tablist [for=sub-slack]{outline:2px solid var(--link);outline-offset:-2px}
+.pane{display:none}
+#sub-rss:checked~.pane-rss,#sub-slack:checked~.pane-slack{display:block}
+.sub-body{display:grid;gap:12px;padding:16px}
+.sub-body p{margin:0}
+.field{display:grid;gap:8px;font-weight:500}
+.fine{color:var(--muted)}
+.copy{display:flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.copy:focus-within{border-color:color-mix(in srgb,var(--fg) 40%,var(--line))}
+.copy input{flex:1;min-width:0;font:inherit;font-weight:400;color:var(--fg);background:none;border:0;padding:8px;outline:none;text-overflow:ellipsis}
+.copy-btn{display:grid;place-items:center;width:46px;flex:none;padding:0;border:0;border-left:1px solid var(--line);background:none;color:var(--muted);cursor:pointer}
+.copy-btn:hover{color:var(--fg)}
+.copy-btn .i+.i,.copy-btn[data-copied] .i:first-child{display:none}
+.copy-btn[data-copied] .i+.i{display:block;color:var(--ok)}
+@media (max-width:560px){.modal{padding:72px 0 0}}
 `
 
 export const pageStyles = `
@@ -111,6 +152,7 @@ button.day[aria-expanded=true]{background:var(--tint)}
 .cal-panel .title{font-weight:500;color:var(--fg);overflow-wrap:anywhere}
 .cal-panel .meta{font-size:13px}
 .cal-panel .s-notice{--c:var(--muted)}
+${dialogStyles}
 @media (max-width:560px){.bars{gap:1px;height:22px}.cal td{height:36px}.panel-head{padding:12px}.component{padding:12px}.legend{padding:10px 12px}}
 `
 

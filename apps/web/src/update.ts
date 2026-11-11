@@ -60,6 +60,7 @@ import {
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
+import * as Policy from "@maple/domain/policy"
 import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
 import { getActivePlan } from "./page/kit/billing/plan-gating"
 import {
@@ -69,6 +70,7 @@ import {
 	isPublicRoute,
 	type Redirect,
 	routeRedirect,
+	securityRouteRedirect,
 	urlToAppRoute,
 } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
@@ -442,10 +444,13 @@ const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHe
 
 const loadPage: Step = (model) =>
 	Option.match(
-		// A flag-gated route is on its way home: no page, so nothing it would fetch.
+		// A flag- or role-gated route is on its way home: no page, so nothing it would fetch.
 		Option.filter(
 			pageContextOf(model),
-			() => !isPlanGated(model) && Option.isNone(flagRedirectOf(model)),
+			() =>
+				!isPlanGated(model) &&
+				Option.isNone(flagRedirectOf(model)) &&
+				Option.isNone(roleRedirectOf(model)),
 		),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
@@ -499,6 +504,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
+					maybeRole: Option.flatMap(
+						Option.fromNullishOr(model.clerkSnapshot),
+						(snapshot) => snapshot.maybeRole,
+					),
 				}),
 			})
 		: null
@@ -745,6 +754,18 @@ const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
 			)
 		: Option.none()
 
+/**
+ * A Security route opened by someone whose role lacks `security:manage` (a member). Waits for
+ * Clerk's membership read, so an admin is never bounced while it loads; the API refuses either way.
+ */
+const roleRedirectOf = (model: Model): Option.Option<Redirect> =>
+	isClerkAuthEnabled
+		? Option.flatMap(
+				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeRole),
+				(role) => securityRouteRedirect(model.route, Policy.can([role], "security:manage")),
+			)
+		: Option.none()
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -753,6 +774,7 @@ const followRedirects: Step = (model) => {
 			Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)).pipe(
 				Option.orElse(() => Option.flatMap(planGateOf(model), (gate) => gate.redirect)),
 				Option.orElse(() => flagRedirectOf(model)),
+				Option.orElse(() => roleRedirectOf(model)),
 			),
 	})
 	return Option.match(maybeRedirect, {

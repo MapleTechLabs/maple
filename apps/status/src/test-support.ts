@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { handleRequest } from "./handler"
+import { handleRequest, sharedHostMatcher } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -124,6 +124,7 @@ export const send = (
 		storage: fake.storage,
 		nowMs: options.nowMs ?? FIXTURE_NOW,
 		randomId: () => `id-${++fake.ids.next}`,
+		isSharedHost: sharedHostMatcher(null),
 	}
 	return Effect.runPromise(handleRequest(typeof input === "string" ? new Request(input) : input, env))
 }

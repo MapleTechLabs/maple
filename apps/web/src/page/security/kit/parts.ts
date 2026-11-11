@@ -88,9 +88,9 @@ const GATE_COPY = {
 	},
 	forbidden: {
 		icon: "LockIcon",
-		title: "Findings and reports are visible to org admins and engineers only",
+		title: "Security is visible to org admins and engineers only",
 		description:
-			"They can describe how to exploit your code, so only admins and engineers can read them. Ask an admin of this organization for access.",
+			"Findings can describe how to exploit your code, so only admins and engineers can open Security. Ask an admin of this organization for access.",
 	},
 } satisfies Record<Gate, { icon: IconName; title: string; description: string }>
 

@@ -12,6 +12,7 @@ import LiveUptime from "../live/LiveUptime.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const featurePath = getRelativeLocaleUrl(locale, "/features/uptime-monitoring");
+const statusPagesPath = getRelativeLocaleUrl(locale, "/features/status-pages");
 
 const points = [
 	{ title: m.uptime_point_1_title(), body: m.uptime_point_1_body() },
@@ -50,9 +51,12 @@ const points = [
 					}
 				</dl>
 
-				<div class="mt-6 text-[13px]">
+				<div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
 					<a href={featurePath} class="text-fg transition-colors hover:text-primary">
 						{m.uptime_link_feature()}
+					</a>
+					<a href={statusPagesPath} class="text-fg-muted transition-colors hover:text-fg">
+						{m.uptime_link_status_pages()}
 					</a>
 				</div>
 			</div>

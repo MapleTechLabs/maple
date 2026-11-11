@@ -143,7 +143,10 @@ export const AuditResources = {
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
 	slo: { prefix: PublicIdPrefixes.slo, verbs: ["created", "updated", "deleted"] },
-	/** A public status page; component reorders and break-glass token changes are page-level. */
+	/**
+	 * A public status page; component reorders, break-glass token and custom domain changes are
+	 * page-level (the hostname is in `metadata`).
+	 */
 	status_page: {
 		prefix: PublicIdPrefixes.statusPage,
 		verbs: [
@@ -155,6 +158,10 @@ export const AuditResources = {
 			"config_applied",
 			"break_glass_rotated",
 			"break_glass_revoked",
+			"custom_domain_set",
+			"custom_domain_removed",
+			"password_set",
+			"password_removed",
 		],
 	},
 	status_page_component: {
@@ -382,6 +389,10 @@ export const AuditActionLabels = {
 	"status_page.config_applied": "Applied status page config",
 	"status_page.break_glass_rotated": "Rotated status page break-glass token",
 	"status_page.break_glass_revoked": "Revoked status page break-glass token",
+	"status_page.custom_domain_set": "Set status page custom domain",
+	"status_page.custom_domain_removed": "Removed status page custom domain",
+	"status_page.password_set": "Set status page password",
+	"status_page.password_removed": "Removed status page password",
 	"status_page_component.created": "Created status page component",
 	"status_page_component.updated": "Updated status page component",
 	"status_page_component.deleted": "Deleted status page component",

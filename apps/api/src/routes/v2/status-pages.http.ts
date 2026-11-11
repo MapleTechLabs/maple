@@ -18,6 +18,7 @@ import {
 	V2InsufficientPermissions,
 	type V2StatusPage,
 	type V2StatusPageComponent,
+	type V2StatusPageCustomDomain,
 	type V2StatusPageIncident,
 	hasStatusPageConfigChanges,
 } from "@maple/domain/http/v2"
@@ -28,8 +29,13 @@ import type {
 	StatusPageIncidentImpact,
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
+	StatusPageVisibility,
 } from "@maple/primitives"
-import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	isActiveIncident,
+	toPublicStatusPageSnapshot,
+} from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -45,11 +51,16 @@ import {
 	toStatusPageDraft,
 } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { StatusPagesService } from "@maple/backend/services/status-pages/StatusPagesService"
+import {
+	StatusPageCustomDomainsService,
+	type StatusPageCustomDomainView,
+} from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
 // Page settings and components need an engineer: they change what the public sees about the
-// whole org. The break-glass token is a credential, so it stays admin-only. Incidents stay open
-// to any writer, so responders can post.
+// whole org. The break-glass token is a credential, so it stays admin-only, as do the page
+// password and visibility: they decide who can read the page. Incidents stay open to any writer,
+// so responders can post.
 
 /** The caller's tenant, once its org is in the `statusPages` rollout. */
 const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
@@ -72,12 +83,17 @@ export const toV2StatusPage = (page: StatusPageRecord): V2StatusPage => ({
 	description: page.description,
 	website_url: page.websiteUrl,
 	logo_url: page.logoUrl,
+	logo_dark_url: page.logoDarkUrl,
+	favicon_url: page.faviconUrl,
+	support_url: page.supportUrl,
 	privacy_url: page.privacyUrl,
 	terms_url: page.termsUrl,
 	theme: page.theme,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
 	break_glass_token_suffix: page.breakGlassTokenSuffix,
+	visibility: page.visibility,
+	has_password: page.hasPassword,
 	draft: page.draft,
 	revision: page.revision,
 	published_revision: page.publishedRevision,
@@ -127,6 +143,20 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	updated_at: isoTimestamp(incident.updatedAt),
 })
 
+export const toV2StatusPageCustomDomain = (view: StatusPageCustomDomainView): V2StatusPageCustomDomain => ({
+	object: "status_page_custom_domain",
+	page_id: view.pageId,
+	available: view.available,
+	cname_target: view.cnameTarget,
+	hostname: view.domain?.hostname ?? null,
+	status: view.domain?.status ?? null,
+	dns_records: view.domain?.dnsRecords ?? [],
+	last_error: view.domain?.lastError ?? null,
+	last_checked_at: isoTimestampOrNull(view.domain?.lastCheckedAt ?? null),
+	activated_at: isoTimestampOrNull(view.domain?.activatedAt ?? null),
+	created_at: isoTimestampOrNull(view.domain?.createdAt ?? null),
+})
+
 const pageAuditDiff = auditDiff({
 	fields: [
 		"name",
@@ -134,11 +164,15 @@ const pageAuditDiff = auditDiff({
 		"description",
 		"website_url",
 		"logo_url",
+		"logo_dark_url",
+		"favicon_url",
+		"support_url",
 		"privacy_url",
 		"terms_url",
 		"theme",
 		"show_powered_by",
 		"auto_incidents",
+		"visibility",
 	],
 })
 
@@ -147,7 +181,16 @@ const componentAuditDiff = auditDiff({
 })
 
 const incidentAuditDiff = auditDiff({
-	fields: ["title", "impact", "published", "scheduled_start", "scheduled_end", "component_ids"],
+	fields: [
+		"title",
+		"impact",
+		"published",
+		"scheduled_start",
+		"scheduled_end",
+		"started_at",
+		"resolved_at",
+		"component_ids",
+	],
 })
 
 const DEFAULT_STATUS = {
@@ -163,11 +206,25 @@ const DEFAULT_IMPACT = {
 const parseTimestamp = (value: string | null | undefined) =>
 	value === undefined ? undefined : value === null ? null : timestampMs(value)
 
-const publishFailed = (message: string) => new StatusPagePersistenceError({ message })
+const publishFailed = (error: { readonly message: string }) =>
+	new StatusPagePersistenceError({ message: error.message, cause: error })
+
+/** Changing who can read a page is an admin's call, whichever endpoint carries it. */
+const checkVisibilityChange = (
+	roles: ReadonlyArray<string>,
+	current: StatusPageVisibility,
+	next: StatusPageVisibility | undefined,
+) =>
+	next === undefined || next === current
+		? Effect.void
+		: Policy.check(roles, "status_pages:access", (denial) =>
+				V2InsufficientPermissions.make(denial.message),
+			)
 
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* StatusPagesService
+		const customDomains = yield* StatusPageCustomDomainsService
 		const snapshotBuilder = yield* StatusPageSnapshotBuilder
 		const featureFlags = yield* OrganizationFeatureFlagsService
 		const enabledTenant = tenantInRollout(featureFlags)
@@ -207,10 +264,34 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					return yield* snapshotBuilder
 						.buildDraft(tenant.orgId, toStatusPageDraft(payload), nowMs)
 						.pipe(
+							Effect.map(toPublicStatusPageSnapshot),
 							Effect.catchTag("@maple/backend/status-pages/StatusPagePublishDbError", (error) =>
-								Effect.fail(publishFailed(error.message)),
+								Effect.fail(publishFailed(error)),
 							),
 						)
+				}),
+			)
+			.handle("view", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					// The page must be this org's: the builder reads by id alone.
+					yield* service.get(tenant.orgId, params.id)
+					const nowMs = yield* Clock.currentTimeMillis
+					const snapshot = yield* snapshotBuilder.build(params.id, nowMs).pipe(
+						Effect.catchTags({
+							"@maple/backend/status-pages/StatusPageGoneError": () =>
+								Effect.fail(
+									new StatusPageNotFoundError({
+										pageId: params.id,
+										message: "Status page not found",
+									}),
+								),
+							"@maple/backend/status-pages/StatusPagePublishDbError": (error) =>
+								Effect.fail(publishFailed(error)),
+						}),
+					)
+					// Credentials stay with the edge; members only read the page.
+					return toPublicStatusPageSnapshot(snapshot)
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
@@ -236,6 +317,15 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.logo_dark_url === undefined
+							? undefined
+							: { logoDarkUrl: payload.logo_dark_url }),
+						...(payload.favicon_url === undefined
+							? undefined
+							: { faviconUrl: payload.favicon_url }),
+						...(payload.support_url === undefined
+							? undefined
+							: { supportUrl: payload.support_url }),
 						...(payload.privacy_url === undefined
 							? undefined
 							: { privacyUrl: payload.privacy_url }),
@@ -292,6 +382,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
+					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
 					const updated = yield* service.update(tenant.orgId, params.id, {
 						...(payload.name === undefined ? undefined : { name: payload.name }),
 						...(payload.slug === undefined ? undefined : { slug: payload.slug }),
@@ -302,6 +393,15 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 							? undefined
 							: { websiteUrl: payload.website_url }),
 						...(payload.logo_url === undefined ? undefined : { logoUrl: payload.logo_url }),
+						...(payload.logo_dark_url === undefined
+							? undefined
+							: { logoDarkUrl: payload.logo_dark_url }),
+						...(payload.favicon_url === undefined
+							? undefined
+							: { faviconUrl: payload.favicon_url }),
+						...(payload.support_url === undefined
+							? undefined
+							: { supportUrl: payload.support_url }),
 						...(payload.privacy_url === undefined
 							? undefined
 							: { privacyUrl: payload.privacy_url }),
@@ -314,6 +414,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						...(payload.auto_incidents === undefined
 							? undefined
 							: { autoIncidents: payload.auto_incidents }),
+						...(payload.visibility === undefined
+							? undefined
+							: { visibility: payload.visibility }),
 					})
 					yield* recordHttpAudit("status_page.updated", {
 						resourceId: updated.id,
@@ -330,16 +433,29 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
+					const domain = yield* customDomains.get(tenant.orgId, params.id)
 					const deleted = yield* service.remove(tenant.orgId, params.id)
 					// Best effort: the row is gone, so the page must not stay up; a failure is logged.
+					// Cloudflare's side of a custom domain goes with the cleanup queue's next drain.
 					const store = yield* Effect.serviceOption(StatusPageStore)
 					if (Option.isSome(store)) {
-						// The slug route only while it still names this page: slugs free up for reuse at once.
+						// Routes only while they still name this page: slugs and hostnames free up at once.
+						const hostname = domain.domain?.hostname ?? null
 						yield* store.value.deletePage(deleted).pipe(
 							Effect.andThen(store.value.readSlugRoute(current.slug)),
 							Effect.flatMap((owner) =>
 								owner === deleted
 									? store.value.deleteRoutes({ slug: current.slug, hostnames: [] })
+									: Effect.void,
+							),
+							Effect.andThen(
+								hostname === null
+									? Effect.succeed(null)
+									: store.value.readHostRoute(hostname),
+							),
+							Effect.flatMap((owner) =>
+								hostname !== null && owner === deleted
+									? store.value.deleteHostRoute(hostname)
 									: Effect.void,
 							),
 							Effect.catch((error) =>
@@ -386,9 +502,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 											}),
 										),
 									"@maple/backend/status-pages/StatusPagePublishDbError": (error) =>
-										Effect.fail(publishFailed(error.message)),
+										Effect.fail(publishFailed(error)),
 									"@maple/backend/status-pages/StatusPageStoreError": (error) =>
-										Effect.fail(publishFailed(error.message)),
+										Effect.fail(publishFailed(error)),
 								}),
 							)
 					yield* recordHttpAudit("status_page.published", {
@@ -426,6 +542,78 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					return toV2StatusPage(page)
 				}),
 			)
+			.handle("setPassword", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const page = yield* service.setPassword(tenant.orgId, params.id, payload.password)
+					yield* recordHttpAudit("status_page.password_set", { resourceId: params.id })
+					return toV2StatusPage(page)
+				}),
+			)
+			.handle("removePassword", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:access", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const page = yield* service.removePassword(tenant.orgId, params.id)
+					yield* recordHttpAudit("status_page.password_removed", { resourceId: params.id })
+					return toV2StatusPage(page)
+				}),
+			)
+			.handle("getCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					const view = yield* customDomains.get(tenant.orgId, params.id)
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("setCustomDomain", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const before = yield* customDomains.get(tenant.orgId, params.id)
+					const view = yield* customDomains.set(tenant.orgId, params.id, payload.hostname)
+					const previous = before.domain?.hostname ?? null
+					if (previous !== payload.hostname) {
+						yield* recordHttpAudit("status_page.custom_domain_set", {
+							resourceId: params.id,
+							metadata: { hostname: payload.hostname, previous_hostname: previous },
+						})
+					}
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("removeCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const before = yield* customDomains.get(tenant.orgId, params.id)
+					const view = yield* customDomains.remove(tenant.orgId, params.id)
+					yield* recordHttpAudit("status_page.custom_domain_removed", {
+						resourceId: params.id,
+						metadata: { hostname: before.domain?.hostname ?? null },
+					})
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
+			.handle("checkCustomDomain", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* enabledTenant
+					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
+						V2InsufficientPermissions.make(denial.message),
+					)
+					const view = yield* customDomains.check(tenant.orgId, params.id)
+					return toV2StatusPageCustomDomain(view)
+				}),
+			)
 			.handle("getConfig", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* enabledTenant
@@ -438,6 +626,8 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					yield* Policy.check(tenant.roles, "status_pages:edit", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
+					const current = yield* service.get(tenant.orgId, params.id)
+					yield* checkVisibilityChange(tenant.roles, current.visibility, payload.visibility)
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,
@@ -629,6 +819,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.scheduled_end === undefined
 								? undefined
 								: { scheduledEnd: timestampMs(payload.scheduled_end) }),
+							...(payload.started_at === undefined
+								? undefined
+								: { startedAt: timestampMs(payload.started_at) }),
 							source: "api",
 							createdBy: tenant.userId,
 						})
@@ -658,6 +851,12 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								: { published: payload.published }),
 							...(scheduledStart === undefined ? undefined : { scheduledStart }),
 							...(scheduledEnd === undefined ? undefined : { scheduledEnd }),
+							...(payload.started_at === undefined
+								? undefined
+								: { startedAt: timestampMs(payload.started_at) }),
+							...(payload.resolved_at === undefined
+								? undefined
+								: { resolvedAt: timestampMs(payload.resolved_at) }),
 							...(payload.component_ids === undefined
 								? undefined
 								: { componentIds: payload.component_ids }),
@@ -700,6 +899,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.component_ids === undefined
 								? undefined
 								: { componentIds: payload.component_ids }),
+							...(payload.resolved_at === undefined
+								? undefined
+								: { resolvedAt: timestampMs(payload.resolved_at) }),
 							source: "api",
 							createdBy: tenant.userId,
 						})

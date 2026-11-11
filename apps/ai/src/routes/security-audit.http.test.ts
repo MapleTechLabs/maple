@@ -277,7 +277,7 @@ describe("/api/security-audit access", () => {
 		}
 	})
 
-	it("lets members list targets and runs, and keeps findings, reports and writes to admins", async () => {
+	it("refuses members every read and write with a 403", async () => {
 		const harness = makeHarness()
 		try {
 			const member = `${ORG_A}|org:member`
@@ -286,6 +286,7 @@ describe("/api/security-audit access", () => {
 			const memberCalls = await Promise.all([
 				harness.call("GET", "/targets", { as: member }),
 				harness.call("GET", "/runs", { as: member }),
+				harness.call("GET", "/settings", { as: member }),
 				harness.call("GET", `/runs/${run.body.id}`, { as: member }),
 				harness.call("GET", `/runs/${run.body.id}/events`, { as: member }),
 				harness.call("GET", `/targets/${target.body.id}/findings`, { as: member }),
@@ -296,8 +297,10 @@ describe("/api/security-audit access", () => {
 				}),
 			])
 
-			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
-			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([403, 403, 403, 403, 403, 403, 403, 403])
+			expect(Arr.map(memberCalls, (r) => r.body._tag)).toEqual(
+				Arr.map(memberCalls, () => tag("SecurityAuditForbiddenError")),
+			)
 			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()
@@ -818,7 +821,7 @@ describe("/api/security-audit findings", () => {
 })
 
 describe("/api/security-audit run findings", () => {
-	it("lists what each run reported with rejected ones, and counts them for admins only", async () => {
+	it("lists what each run reported with rejected ones, and counts them per run", async () => {
 		const harness = makeHarness()
 		try {
 			const target = await harness.call("POST", "/targets", { body: TARGET })
@@ -878,11 +881,7 @@ describe("/api/security-audit run findings", () => {
 				[first.body.id]: { ...zeros, high: 1, medium: 1, unverified: 1, rejected: 1 },
 				[second.body.id]: { ...zeros, high: 1, rejected: 0 },
 			})
-			expect([
-				memberRuns.status,
-				memberRuns.body.runs.length,
-				"findingCounts" in memberRuns.body,
-			]).toEqual([200, 2, false])
+			expect(memberRuns.status).toBe(403)
 		} finally {
 			await harness.dispose()
 		}
@@ -1169,7 +1168,7 @@ describe("/api/security-audit settings", () => {
 	it("serves the defaults until an admin saves, and keeps them to the org that saved them", async () => {
 		const harness = makeHarness()
 		try {
-			const before = await harness.call("GET", "/settings", { as: `${ORG_A}|org:member` })
+			const before = await harness.call("GET", "/settings", { as: `${ORG_A}|org:engineer` })
 			const body = {
 				monthlySpendLimitUsd: 750,
 				discoveryModel: "anthropic/claude-haiku-5.5",

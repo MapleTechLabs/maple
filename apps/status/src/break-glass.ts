@@ -15,7 +15,7 @@ import { MANAGE_FIELDS, NEW_INCIDENT, NO_CHANGE } from "@maple/status-page"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { StatusEnv, StatusStorageError } from "./ports"
 import { listOverlay, rememberOverlay } from "./snapshot"
-import { codeUnitAt } from "@maple/strings"
+import { constantTimeEqual } from "@maple/domain/status-page-access"
 
 /** A break-glass post that was refused; `status` is the HTTP status the form page answers with. */
 export class BreakGlassRejected extends Schema.TaggedError<BreakGlassRejected>()(
@@ -52,17 +52,6 @@ const reject = (status: number, message: string) => Effect.fail(new BreakGlassRe
 const unreadable = () => new BreakGlassRejected({ status: 400, message: "The form could not be read." })
 const TOO_LARGE = "The update is too large."
 
-/** Compares every character whatever the first mismatch, so timing does not leak the digest. */
-export const constantTimeEqual = (a: string, b: string): boolean =>
-	Arr.reduce(
-		Array.from(
-			{ length: Math.max(a.length, b.length) },
-			(_, index) => codeUnitAt(a, index) ^ codeUnitAt(b, index),
-		),
-		a.length ^ b.length,
-		(diff, bits) => diff | bits,
-	) === 0
-
 const text = (form: FormData, name: string): string => {
 	const value = form.get(name)
 	return typeof value === "string" ? Str.trim(value) : ""
@@ -92,7 +81,8 @@ const readCapped = (
 		}),
 	)
 
-const readFormData = (request: Request): Effect.Effect<FormData, BreakGlassRejected> =>
+/** The posted form, read up to `MAX_FORM_BYTES`. */
+export const readFormData = (request: Request): Effect.Effect<FormData, BreakGlassRejected> =>
 	Effect.gen(function* () {
 		if (Number(request.headers.get("content-length") ?? "0") > MAX_FORM_BYTES) {
 			return yield* reject(413, TOO_LARGE)
