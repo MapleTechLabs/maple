@@ -2866,10 +2866,11 @@ export class CostBreakdownResponse extends Schema.Class<CostBreakdownResponse>("
 }) {}
 
 /**
- * `paused`: the connection no longer supplies cost; its history stays. `pending`: never pulled.
- * `syncing`: still backfilling history. `error`: the last sync failed.
+ * `paused`: the connection no longer supplies cost; its history stays. `held`: nothing failed, but
+ * the sync is waiting (request budget spent, or the org is outside the rollout); `lastError` says
+ * which. `pending`: never pulled. `syncing`: still backfilling history. `error`: the last sync failed.
  */
-export const CostSourceStatus = Schema.Literals(["paused", "pending", "syncing", "ok", "error"])
+export const CostSourceStatus = Schema.Literals(["paused", "held", "pending", "syncing", "ok", "error"])
 export type CostSourceStatus = typeof CostSourceStatus.Type
 
 export const CostSourceSummary = Schema.Struct({

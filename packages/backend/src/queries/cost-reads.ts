@@ -36,6 +36,7 @@ import { makeQueryRunners, type QueryRunnerDeps } from "@maple/backend/queries/q
 import {
 	daysOfWindow,
 	historyFloor,
+	isCostHold,
 	requestsThisMonth,
 	utcToday,
 } from "@maple/backend/services/cost/sync-plan"
@@ -125,7 +126,9 @@ const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary =
 		status: !row.enabled
 			? "paused"
 			: row.lastError !== null
-				? "error"
+				? isCostHold(row.lastErrorReason)
+					? "held"
+					: "error"
 				: row.watermarkDate === null
 					? "pending"
 					: historyComplete

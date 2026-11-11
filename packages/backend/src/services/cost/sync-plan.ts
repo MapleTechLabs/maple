@@ -13,6 +13,17 @@ export const HEAD_DAYS = 4
 export const HEAD_INTERVAL_MS = 23 * 60 * 60_000
 // The open months are re-pulled whole about weekly, to pick up what the provider restated.
 export const SETTLE_INTERVAL_MS = (7 * 24 - 1) * 60 * 60_000
+/**
+ * `lastErrorReason` of a source the sync is holding, though nothing failed: the month's request
+ * budget is spent, or the org is outside the `cloudCost` rollout.
+ */
+export const BUDGET_REASON = "budget"
+export const ROLLOUT_REASON = "rollout"
+
+/** Whether a source's recorded reason is a hold and not a failed sync. */
+export const isCostHold = (reason: string | null): boolean =>
+	reason === BUDGET_REASON || reason === ROLLOUT_REASON
+
 /** History goes back to the first day of the month this many months before the current one. */
 export const HISTORY_MONTHS = 13
 // Through this day of the month the previous month's bill is still open; the first settle after

@@ -29,6 +29,7 @@ const SOURCE_B = "0190f2b3-0000-7000-8000-00000000000b"
 const SOURCE_C = "0190f2b3-0000-7000-8000-00000000000c"
 const SOURCE_D = "0190f2b3-0000-7000-8000-00000000000d"
 const SOURCE_E = "0190f2b3-0000-7000-8000-00000000000e"
+const SOURCE_F = "0190f2b3-0000-7000-8000-00000000000f"
 const FOREIGN_SOURCE = "0190f2b3-0000-7000-8000-0000000000ff"
 
 // History reaches back to 2025-10-01 from here.
@@ -559,6 +560,16 @@ describe("makeCostReads", () => {
 						lastError: "The role may not read cost.",
 						lastErrorReason: "auth",
 					},
+					// Held by the month's request budget: nothing failed, so it is not an error.
+					{
+						id: SOURCE_F,
+						watermarkDate: "2026-11-10",
+						backfillDate: "2026-03-01",
+						lastError: "This month's provider request budget is spent; pulls resume next month.",
+						lastErrorReason: "budget",
+						requestsMonth: "2026-11",
+						requestsCount: 1500,
+					},
 					{ id: FOREIGN_SOURCE, orgId: OTHER_ORG },
 				])
 				const { reads, statements } = yield* makeHarness(testDb)
@@ -577,6 +588,7 @@ describe("makeCostReads", () => {
 					{ id: SOURCE_C, status: "ok", historyComplete: true, requestsThisMonth: 0 },
 					{ id: SOURCE_D, status: "error", historyComplete: true, requestsThisMonth: 3 },
 					{ id: SOURCE_E, status: "paused", historyComplete: true, requestsThisMonth: 0 },
+					{ id: SOURCE_F, status: "held", historyComplete: false, requestsThisMonth: 1500 },
 				])
 				expect(sources[1]).toMatchObject({
 					provider: "aws",
