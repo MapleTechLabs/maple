@@ -583,6 +583,9 @@ describe("security tabs", () => {
 				),
 			),
 			expectView(role("link", { name: /^Open/ })).toHaveAttr("aria-current", "page"),
+			// Counts leave disproved findings out, the gateway's included.
+			expectView(role("link", { name: /^Fixed/ })).toHaveText(/1$/),
+			expectView(role("link", { name: /^Accepted risk/ })).toHaveText(/0$/),
 		)
 		expect(pageUpdate(findings, Message.PickedStatus({ status: "open" })).outMessage).toMatchObject({
 			url: hrefOf(AppRoute.SecurityCodeFindings({ search: { target: TARGET_IDS.gateway } })),
@@ -594,6 +597,8 @@ describe("security tabs", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 fixed · 1 dismissed")).toExist(),
+			// The run that no longer found the fixed finding says so in Recent runs.
+			expectView(text(/· 1 fixed$/)).toExist(),
 			expectView(role("link", { name: "View" })).toHaveAttr(
 				"href",
 				hrefOf(AppRoute.SecurityCodeFindings({ search: { status: "fixed" } })),
