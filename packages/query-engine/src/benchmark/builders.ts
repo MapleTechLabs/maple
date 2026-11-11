@@ -1240,7 +1240,65 @@ const searchConsoleFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+const costWindow = {
+	orgId: ORG_ID,
+	previousStartDate: "2026-09-01 00:00:00",
+	startDate: "2026-10-01 00:00:00",
+	endDate: "2026-10-30 00:00:00",
+}
+
+const costFilters = {
+	sourceIds: ["0f6f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11"],
+	values: { region: ["us-east-1", "global"] },
+}
+
+const costFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "cost",
+		name: "costTotalsQuery",
+		label: "filtered",
+		compile: () => CH.compileUnsafe(CH.costTotalsQuery(costFilters), costWindow),
+	},
+	{
+		module: "cost",
+		name: "costTimeseriesQuery",
+		label: "byCloudServiceTopKeys",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.costTimeseriesQuery({
+					...costFilters,
+					dimension: "cloud_service",
+					keys: ["Amazon Elastic Compute Cloud - Compute", "Amazon Elastic Load Balancing"],
+				}),
+				costWindow,
+			),
+	},
+	{
+		module: "cost",
+		name: "costBreakdownQuery",
+		label: "byUsageTypeEffectiveByChange",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.costBreakdownQuery({
+					...costFilters,
+					dimension: "usage_type",
+					metric: "effective",
+					sortBy: "change",
+					limit: 25,
+				}),
+				costWindow,
+			),
+	},
+	{
+		module: "cost",
+		name: "costSourceCoverageQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.costSourceCoverageQuery(costFilters), costWindow),
+	},
+]
+
 export const builderFixtures: ReadonlyArray<BuilderFixture> = [
+	...costFixtures,
 	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,

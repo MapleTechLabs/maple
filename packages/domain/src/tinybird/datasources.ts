@@ -3022,3 +3022,61 @@ export const searchConsoleDaily = defineDatasource("search_console_daily", {
 })
 
 export type SearchConsoleDailyRow = InferRow<typeof searchConsoleDaily>
+
+/** Two years and a month, so a month always has the same month a year earlier beside it. */
+const COST_DAILY_TTL_DAYS = 760
+
+/**
+ * Cloud cost per (source, UTC day, cloud service, usage type, region, resource), from the cost sync.
+ * `ServiceName` is the telemetry service a resource resolves to ('' when none); the provider's own
+ * service is `CloudService`. `EffectiveCost` spreads upfront commitments over their term.
+ * Each pull writes a source's whole day under one `IngestedAt`: readers keep rows whose IngestedAt
+ * is the max per (SourceId, Date), since providers restate recent days and can drop keys.
+ */
+export const costDaily = defineDatasource("cost_daily", {
+	tenantColumn: "OrgId",
+	description:
+		"Cloud cost per day, cloud service, usage type, region and resource, per connected cost source. Pulled from each provider's billing data; recent days are restated and Estimated = 1 until the provider finalizes them.",
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		SourceId: t.string().lowCardinality(),
+		Provider: t.string().lowCardinality(),
+		AccountId: t.string().lowCardinality(),
+		Date: utcDateTime(),
+		CloudService: t.string().lowCardinality(),
+		ServiceCategory: t.string().lowCardinality(),
+		UsageType: t.string().lowCardinality(),
+		Region: t.string().lowCardinality(),
+		ResourceId: t.string(),
+		ResourceType: t.string().lowCardinality(),
+		ServiceName: t.string().lowCardinality(),
+		ChargeCategory: t.string().lowCardinality(),
+		Basis: t.string().lowCardinality(),
+		Currency: t.string().lowCardinality(),
+		BilledCost: t.float64(),
+		EffectiveCost: t.float64(),
+		ListCost: t.float64(),
+		ConsumedQuantity: t.float64(),
+		ConsumedUnit: t.string().lowCardinality(),
+		Tags: t.map(t.string().lowCardinality(), t.string()),
+		Estimated: t.uint8(),
+		IngestedAt: utcDateTime64(3),
+	},
+	engine: engine.replacingMergeTree({
+		partitionKey: "toYYYYMM(Date)",
+		sortingKey: [
+			"OrgId",
+			"SourceId",
+			"Date",
+			"CloudService",
+			"UsageType",
+			"Region",
+			"ResourceId",
+			"ChargeCategory",
+		],
+		ver: "IngestedAt",
+		ttl: `toDate(Date) + INTERVAL ${COST_DAILY_TTL_DAYS} DAY`,
+	}),
+})
+
+export type CostDailyRow = InferRow<typeof costDaily>
