@@ -548,3 +548,42 @@ describe("SetupAuditService telemetry mapping", () => {
 		},
 	)
 })
+
+describe("Cloudflare unavailable dataset audit projection", () => {
+	it.effect("keeps unavailable disabled datasets visible and available errors failing", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			for (const [id, dataset, enabled, settings] of [
+				["cf-unavailable", "firewall_events", false, { enabled: false, maxDuration: 0 }],
+				["cf-available", "http_requests", true, { enabled: true, maxDuration: 3600 }],
+			] as const) {
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO cloudflare_analytics_state (id, org_id, dataset, zone_id, zone_name, enabled, settings_json, last_error, last_error_at, created_at, updated_at)
+					 VALUES ($1, $2, $3, 'zone-audit', 'example.com', $4, $5, 'upstream timeout', now(), now(), now())`,
+						[id, ORG, dataset, enabled, JSON.stringify(settings)],
+					),
+				)
+			}
+			const report = yield* SetupAuditService.use((audit) => audit.run(tenant))
+			const check = report.checks.find((check) => check.id === "CFG-INTEG-02")!
+			assert.strictEqual(check.status, "fail")
+			assert.include(check.detail!, "1 unavailable")
+			assert.isTrue(
+				check.affected.some(
+					(entity) =>
+						entity.name === "firewall_events · example.com" &&
+						entity.note?.includes("unavailable"),
+				),
+			)
+			assert.isTrue(
+				check.affected.some(
+					(entity) =>
+						entity.name === "http_requests · example.com" &&
+						entity.note?.includes("upstream timeout"),
+				),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+})
