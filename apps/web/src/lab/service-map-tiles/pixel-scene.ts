@@ -1110,6 +1110,22 @@ export function startPixelScene(
 		return Math.hypot(pointer[0] - (base[0] + top[0]) / 2, pointer[1] - (base[1] + top[1]) / 2) < reach
 	}
 
+	/** Whether `pointer` is inside the drawn sprite `sprite` standing at `foot`: its own width and
+	 * height on the screen, for something big enough that a near miss should count as a miss. */
+	const isOnSprite = (pointer: Point, foot: Vec3, sprite: Bill["sprite"]): boolean => {
+		const [wide, tall] = [SPRITES[sprite][2] / PX, SPRITES[sprite][3] / PX]
+		const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion)
+		const base = screenOf(...foot)
+		const top = screenOf(foot[0] + up.x * tall, foot[1] + up.y * tall, foot[2] + up.z * tall)
+		// The sprite faces the camera: it stands straight up the screen from its foot.
+		const half = (Math.hypot(top[0] - base[0], top[1] - base[1]) / tall) * (wide / 2)
+		return (
+			Math.abs(pointer[0] - base[0]) <= half &&
+			pointer[1] <= Math.max(base[1], top[1]) &&
+			pointer[1] >= Math.min(base[1], top[1])
+		)
+	}
+
 	/** Each label lies on the near side of its tile; a label that would cover one already placed
 	 * is hidden, the selected service and the busiest ones first. */
 	const placeLabels = () => {
@@ -1336,11 +1352,7 @@ export function startPixelScene(
 				each.id !== null &&
 				each.id !== input.heldId &&
 				tower !== null &&
-				isOver(
-					pointer,
-					toWorld([each.at[0] + tower.x, each.at[1] + tower.y]),
-					SPRITES[tower.kind][3] / PX,
-				)
+				isOnSprite(pointer, toWorld([each.at[0] + tower.x, each.at[1] + tower.y]), tower.kind)
 			)
 		})
 		const away = (each: Land) => camera.position.distanceTo(new THREE.Vector3(...toWorld(each.at)))
