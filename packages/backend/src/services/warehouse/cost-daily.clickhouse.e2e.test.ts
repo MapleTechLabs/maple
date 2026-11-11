@@ -148,6 +148,11 @@ describe.skipIf(!clickhouseE2eEnabled)("cost_daily reads", () => {
 		assert.strictEqual((await totals({}))?.cost, 1072)
 	})
 
+	it("reads nothing for an org whose source list is empty", async () => {
+		assert.strictEqual((await totals({ sourceIds: [] }))?.cost, 0)
+		assert.deepStrictEqual(await breakdown({ sourceIds: [], dimension: "cloud_service" }), [])
+	})
+
 	it("narrows by a dimension value, including the value of charges with no region", async () => {
 		assert.strictEqual((await totals({ ...ACTIVE, values: { region: ["global"] } }))?.cost, 1)
 		assert.strictEqual(
