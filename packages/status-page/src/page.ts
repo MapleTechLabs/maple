@@ -297,9 +297,12 @@ const renderFooter = (
 ): string => {
 	const privacy = safeUrl(snapshot.page.privacyUrl, ["https:"])
 	const terms = safeUrl(snapshot.page.termsUrl, ["https:"])
+	// Feed readers cannot enter a password or sign in, so only a public page offers its feed.
 	const links = Arr.filter(
 		[
-			`<a href="${pageHref(options, "/feed.atom")}">Atom feed</a>`,
+			snapshot.page.visibility === "public"
+				? `<a href="${pageHref(options, "/feed.atom")}">Atom feed</a>`
+				: "",
 			privacy === null ? "" : `<a href="${escapeHtml(privacy)}" rel="noopener">Privacy policy</a>`,
 			terms === null ? "" : `<a href="${escapeHtml(terms)}" rel="noopener">Terms of service</a>`,
 		],
@@ -326,11 +329,13 @@ export const renderPage = (
 	const today = utcDay(nowMs)
 	const entries = calendarEntries(snapshot)
 	const days = calendarDays(entries, nowMs)
+	// A page behind a password or sign-in has no feeds to subscribe to and stays out of search.
+	const isPublic = snapshot.page.visibility === "public"
 
 	const body = Arr.join(
 		[
-			renderHeader(snapshot, options, SUBSCRIBE_LINK),
-			renderSubscribeDialog(options),
+			renderHeader(snapshot, options, isPublic ? SUBSCRIBE_LINK : ""),
+			isPublic ? renderSubscribeDialog(options) : "",
 			`<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
 			renderHero(
 				overall,
@@ -382,7 +387,9 @@ export const renderPage = (
 		styles: pageStyles,
 		body,
 		bodyAttrs: ` data-generated-at="${snapshot.generatedAt}" data-updated-at="${freshness.updatedAt}" data-stale-after="${STATUS_PAGE_STALE_AFTER_MS}" data-freshness="${freshness._tag}"`,
-		head: `<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`,
+		head: isPublic
+			? `<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`
+			: `<meta name="robots" content="noindex">`,
 		script: PAGE_SCRIPT,
 	})
 }

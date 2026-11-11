@@ -438,6 +438,16 @@ export const StatusPageAutoIncidents = Schema.Literals(["off", "draft", "publish
 export type StatusPageAutoIncidents = Schema.Schema.Type<typeof StatusPageAutoIncidents>
 
 /**
+ * Who can read a status page: anyone, visitors who know its password, or only signed-in members
+ * of its org inside Maple (never served at the edge).
+ */
+export const StatusPageVisibility = Schema.Literals(["public", "password", "internal"]).annotate({
+	identifier: "@maple/StatusPageVisibility",
+	title: "Status Page Visibility",
+})
+export type StatusPageVisibility = Schema.Schema.Type<typeof StatusPageVisibility>
+
+/**
  * Where a page's custom domain stands: waiting for the customer's DNS (CNAME and ownership),
  * waiting for its certificate, serving the page, or stopped with an error to fix.
  */

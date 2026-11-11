@@ -57,8 +57,11 @@ export const plain = (body: string, status: number, cacheControl = "no-store"): 
 		},
 	})
 
-export const redirect = (location: string): Response =>
-	new Response(null, { status: 303, headers: { ...COMMON_HEADERS, location, "cache-control": "no-store" } })
+export const redirect = (location: string, extra: Record<string, string> = {}): Response =>
+	new Response(null, {
+		status: 303,
+		headers: { ...COMMON_HEADERS, location, "cache-control": "no-store", ...extra },
+	})
 
 const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Status page not found</title></head><body><h1>Status page not found</h1><p>There is no status page at this address.</p></body></html>`
 

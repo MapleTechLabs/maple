@@ -1,4 +1,5 @@
 import {
+	ACCESS_PATH,
 	type ManageMessage,
 	renderAtomFeed,
 	renderBadgeSvg,
@@ -8,6 +9,7 @@ import {
 	renderStatusJson,
 } from "@maple/status-page"
 import { Effect, Option, Schema, String as Str } from "effect"
+import { accessPage, hasAccess, postAccess } from "./access"
 import { parseForm, postBreakGlassUpdate } from "./break-glass"
 import type { StatusEnv } from "./ports"
 import { asset, html, notFound, PUBLIC_CACHE_CONTROL, plain, redirect } from "./responses"
@@ -173,6 +175,28 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 	}
 }
 
+/**
+ * A password page: the form and its POST are open, everything else (the page, feeds, JSON, badge,
+ * break-glass) needs a valid access cookie. What it serves is the visitor's alone: never cached
+ * by a shared cache, never indexed.
+ */
+const serveProtected = (env: StatusEnv, request: Request, url: URL, view: PageView, target: Target) =>
+	Effect.gen(function* () {
+		const snapshot = view.snapshot
+		if (target.path === ACCESS_PATH) {
+			if (request.method === "POST") return yield* postAccess(env, request, snapshot, target.basePath)
+			return accessPage(env, snapshot, target.basePath, 200)
+		}
+		const response = (yield* hasAccess(env, request, snapshot))
+			? yield* servePage(env, request, url, view, target)
+			: target.path === "/"
+				? accessPage(env, snapshot, target.basePath, 401)
+				: plain("This status page is password-protected.", 401)
+		response.headers.set("cache-control", "private, no-store")
+		response.headers.set("x-robots-tag", "noindex")
+		return response
+	})
+
 /** One request: resolve the page, load what is still reachable, render. Never fails. */
 export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<Response> =>
 	Effect.gen(function* () {
@@ -194,5 +218,9 @@ export const handleRequest = (request: Request, env: StatusEnv): Effect.Effect<R
 		// A renamed page keeps its old `slug:` key until cleanup; only the current slug serves it.
 		if (target.value.slug !== null && view.value.snapshot.page.slug !== target.value.slug)
 			return notFound()
+		const visibility = view.value.snapshot.page.visibility
+		// Internal pages are taken off the edge; one still reachable here answers as if it were.
+		if (visibility === "internal") return notFound()
+		if (visibility === "password") return yield* serveProtected(env, request, url, view.value, target.value)
 		return yield* servePage(env, request, url, view.value, target.value)
 	})

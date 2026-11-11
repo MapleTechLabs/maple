@@ -160,6 +160,8 @@ export const AuditResources = {
 			"break_glass_revoked",
 			"custom_domain_set",
 			"custom_domain_removed",
+			"password_set",
+			"password_removed",
 		],
 	},
 	status_page_component: {
@@ -389,6 +391,8 @@ export const AuditActionLabels = {
 	"status_page.break_glass_revoked": "Revoked status page break-glass token",
 	"status_page.custom_domain_set": "Set status page custom domain",
 	"status_page.custom_domain_removed": "Removed status page custom domain",
+	"status_page.password_set": "Set status page password",
+	"status_page.password_removed": "Removed status page password",
 	"status_page_component.created": "Created status page component",
 	"status_page_component.updated": "Updated status page component",
 	"status_page_component.deleted": "Deleted status page component",

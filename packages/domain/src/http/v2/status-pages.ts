@@ -12,6 +12,7 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 } from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
@@ -23,6 +24,7 @@ import {
 	StatusPageSnapshot,
 	StatusPageThemeRadius,
 } from "../../status-page"
+import { STATUS_PAGE_PASSWORD_MAX_LENGTH, STATUS_PAGE_PASSWORD_MIN_LENGTH } from "../../status-page-access"
 import {
 	StatusPageComponentNotFoundError,
 	StatusPageConflictError,
@@ -70,6 +72,12 @@ const autoIncidentsField = StatusPageAutoIncidents.annotate({
 	description:
 		"Whether a linked monitor going down opens a page incident: `off`, `draft` (unpublished until you publish it), or `publish`.",
 	examples: ["draft"],
+})
+
+const visibilityField = StatusPageVisibility.annotate({
+	description:
+		"Who can read the page: `public` (anyone), `password` (visitors who enter the page password, set with `PUT /v2/status_pages/{id}/password`; no feeds or badge without it) or `internal` (only members of your organization, in Maple; the page is not served at its address or custom domain). Omitted from an update or a config, the page keeps its visibility. Changing it needs an org admin.",
+	examples: ["public"],
 })
 
 const themeExample = {
@@ -161,6 +169,8 @@ const statusPageExample = {
 	show_powered_by: true,
 	auto_incidents: "draft",
 	break_glass_token_suffix: null,
+	visibility: "public",
+	has_password: false,
 	draft: false,
 	revision: 4,
 	published_revision: 4,
@@ -192,6 +202,10 @@ export const V2StatusPage = Schema.Struct({
 	auto_incidents: autoIncidentsField,
 	break_glass_token_suffix: Schema.NullOr(Schema.String).annotate({
 		description: "Last 6 characters of the break-glass token, or `null` when none is issued.",
+	}),
+	visibility: visibilityField,
+	has_password: Schema.Boolean.annotate({
+		description: "Whether a page password is set. The password itself is never returned.",
 	}),
 	draft: Schema.Boolean.annotate({
 		description:
@@ -229,6 +243,7 @@ export const V2StatusPageUpdateParams = Schema.Struct({
 	theme: Schema.optionalKey(V2StatusPageThemeParams),
 	show_powered_by: Schema.optionalKey(Schema.Boolean),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	visibility: Schema.optionalKey(visibilityField),
 }).annotate({
 	identifier: "StatusPageUpdateParams",
 	title: "Status page update parameters",
@@ -293,6 +308,22 @@ export const V2StatusPageBreakGlassToken = Schema.Struct({
 	],
 })
 export type V2StatusPageBreakGlassToken = Schema.Schema.Type<typeof V2StatusPageBreakGlassToken>
+
+export const V2StatusPagePasswordParams = Schema.Struct({
+	password: Schema.String.check(
+		Schema.isMinLength(STATUS_PAGE_PASSWORD_MIN_LENGTH),
+		Schema.isMaxLength(STATUS_PAGE_PASSWORD_MAX_LENGTH),
+	).annotate({
+		description: `The password visitors enter, ${STATUS_PAGE_PASSWORD_MIN_LENGTH} to ${STATUS_PAGE_PASSWORD_MAX_LENGTH} characters. Stored only as a slow hash.`,
+		examples: ["correct horse battery staple"],
+	}),
+}).annotate({
+	identifier: "StatusPagePasswordParams",
+	title: "Status page password parameters",
+	description: "Request body for setting a status page password.",
+	examples: [wireExample({ password: "correct horse battery staple" })],
+})
+export type V2StatusPagePasswordParams = Schema.Schema.Type<typeof V2StatusPagePasswordParams>
 
 export const V2StatusPageCustomDomainDnsRecord = Schema.Struct({
 	type: Schema.Literals(["CNAME", "TXT"]),
@@ -617,6 +648,7 @@ export const StatusPageConfig = Schema.Struct({
 		Schema.Boolean.annotate({ description: "Whether the page credits Maple. Default `true`." }),
 	),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	visibility: Schema.optionalKey(visibilityField),
 	theme: Schema.optionalKey(StatusPageConfigTheme),
 	components: Schema.Array(StatusPageConfigComponent)
 		.check(Schema.isMaxLength(MAX_STATUS_PAGE_COMPONENTS))
@@ -627,7 +659,7 @@ export const StatusPageConfig = Schema.Struct({
 	identifier: "StatusPageConfig",
 	title: "Status page config",
 	description:
-		"A whole status page as one document: its settings, theme and components, without incidents, the break-glass token or publish state. Applying it replaces the page; omitted optional fields take their defaults.",
+		"A whole status page as one document: its settings, visibility, theme and components, without incidents, the break-glass token, the page password or publish state. Applying it replaces the page; omitted optional fields take their defaults.",
 	examples: [wireExample(configExample)],
 })
 export type StatusPageConfig = Schema.Schema.Type<typeof StatusPageConfig>
@@ -690,6 +722,7 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 		terms_url: textOrNull(config.terms_url),
 		show_powered_by: config.show_powered_by ?? true,
 		auto_incidents: config.auto_incidents ?? "off",
+		visibility: config.visibility ?? "public",
 		theme: {
 			...theme,
 			accent: hexOrNull(theme.accent),
@@ -763,6 +796,7 @@ const PAGE_CONFIG_FIELDS = [
 	"terms_url",
 	"show_powered_by",
 	"auto_incidents",
+	"visibility",
 	"theme",
 ] as const
 
@@ -1127,6 +1161,20 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 		),
 	)
 	.add(
+		HttpApiEndpoint.get("view", "/:id/view", {
+			params: pageParams,
+			success: StatusPageSnapshot,
+			error: [pageNotFound, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "viewStatusPage",
+				summary: "View a status page",
+				description:
+					"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
+			}),
+		),
+	)
+	.add(
 		HttpApiEndpoint.patch("update", "/:id", {
 			params: pageParams,
 			payload: V2StatusPageUpdateParams,
@@ -1196,6 +1244,33 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				identifier: "revokeStatusPageBreakGlassToken",
 				summary: "Revoke the break-glass token",
 				description: `Revokes the page's break-glass token. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("setPassword", "/:id/password", {
+			params: pageParams,
+			payload: V2StatusPagePasswordParams,
+			success: V2StatusPage,
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "setStatusPagePassword",
+				summary: "Set a status page password",
+				description: `Sets or replaces the password visitors enter on a \`password\` page; replacing it signs every visitor out. Setting one does not change the visibility. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.delete("removePassword", "/:id/password", {
+			params: pageParams,
+			success: V2StatusPage,
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "removeStatusPagePassword",
+				summary: "Remove a status page password",
+				description: `Removes the page password. A \`password\` page must be made \`public\` or \`internal\` first. ${adminNote}`,
 			}),
 		),
 	)

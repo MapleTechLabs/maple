@@ -3,6 +3,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import {
 	StatusPageComponents,
+	StatusPageCustomDomains,
 	StatusPageIncidentComponents,
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
@@ -49,6 +50,7 @@ import {
 	type StatusPageIncidentKind,
 	type StatusPageIncidentStatus,
 	type StatusPageUpdateSource,
+	type StatusPageVisibility,
 	type UptimeMonitorId,
 	type UserId,
 } from "@maple/primitives"
@@ -62,6 +64,11 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 } from "@maple/domain/status-page"
+import {
+	hashStatusPagePassword,
+	STATUS_PAGE_PASSWORD_MAX_LENGTH,
+	STATUS_PAGE_PASSWORD_MIN_LENGTH,
+} from "@maple/domain/status-page-access"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -99,6 +106,7 @@ export interface UpdateStatusPageInput {
 	readonly theme?: Partial<StatusPageTheme>
 	readonly showPoweredBy?: boolean
 	readonly autoIncidents?: StatusPageAutoIncidents
+	readonly visibility?: StatusPageVisibility
 }
 
 export interface CreateStatusPageComponentInput {
@@ -188,6 +196,17 @@ export interface StatusPagesServiceApi {
 	/** Returns the new raw token; only its hash and last 6 characters are stored. */
 	readonly rotateBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<string, PageError>
 	readonly revokeBreakGlassToken: (orgId: OrgId, pageId: StatusPageId) => Effect.Effect<void, PageError>
+	/** Stores only a slow hash; a new password signs every visitor out. */
+	readonly setPassword: (
+		orgId: OrgId,
+		pageId: StatusPageId,
+		password: string,
+	) => Effect.Effect<StatusPageRecord, PageWriteError>
+	/** Refused while the page is `password`: it would have nothing to check. */
+	readonly removePassword: (
+		orgId: OrgId,
+		pageId: StatusPageId,
+	) => Effect.Effect<StatusPageRecord, PageWriteError>
 	readonly listComponents: (
 		orgId: OrgId,
 		pageId: StatusPageId,
@@ -408,6 +427,8 @@ const toPageRecord = (row: StatusPageRow): StatusPageRecord => ({
 	showPoweredBy: row.showPoweredBy,
 	autoIncidents: row.autoIncidents,
 	breakGlassTokenSuffix: row.breakGlassTokenSuffix,
+	visibility: row.visibility,
+	hasPassword: row.passwordHash !== null,
 	draft: row.draft,
 	revision: row.revision,
 	publishedRevision: row.publishedRevision,
@@ -525,6 +546,31 @@ const lockPage = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
 			),
 		)
 
+/**
+ * A password page needs a password to check, and an internal page cannot keep a custom domain:
+ * it is served on no address, so the domain would point at nothing.
+ */
+const ensureVisibilityAllowed = Effect.fnUntraced(function* (
+	db: MapleDb,
+	page: StatusPageRow,
+	visibility: StatusPageVisibility,
+) {
+	if (visibility === page.visibility) return
+	if (visibility === "password" && page.passwordHash === null)
+		return yield* invalid("Set a page password before making the page password-protected")
+	if (visibility !== "internal") return
+	const domains = yield* db.run(
+		PG.from(StatusPageCustomDomains)
+			.select("hostname")
+			.where(($) => [$.orgId.eq(page.orgId), $.pageId.eq(page.id)])
+			.limit(1),
+	)
+	if (domains.length > 0)
+		return yield* invalid(
+			"Remove the custom domain before making the page internal: an internal page is served on no address",
+		)
+})
+
 const tooManyComponents = () =>
 	invalid(`A status page can have at most ${MAX_STATUS_PAGE_COMPONENTS} components`)
 
@@ -640,6 +686,7 @@ const contentOf = (
 	terms_url: page.termsUrl,
 	show_powered_by: page.showPoweredBy,
 	auto_incidents: page.autoIncidents,
+	visibility: page.visibility,
 	theme: page.theme,
 	components: Arr.map(components, (component) => ({
 		id: component.id,
@@ -841,8 +888,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 					db.transaction(
 						Effect.gen(function* () {
 							const current = yield* findPage(db, orgId, pageId, {
-								lock: patch.theme !== undefined,
+								lock: patch.theme !== undefined || patch.visibility !== undefined,
 							})
+							if (patch.visibility !== undefined)
+								yield* ensureVisibilityAllowed(db, current, patch.visibility)
 							const theme =
 								patch.theme === undefined
 									? undefined
@@ -868,6 +917,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(patch.autoIncidents === undefined
 											? undefined
 											: { autoIncidents: patch.autoIncidents }),
+										...(patch.visibility === undefined ? undefined : { visibility: patch.visibility }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -977,6 +1027,63 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						}),
 					),
 				)
+			})
+
+			const setPassword = Effect.fn("StatusPagesService.setPassword")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+				password: string,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				if (
+					password.length < STATUS_PAGE_PASSWORD_MIN_LENGTH ||
+					password.length > STATUS_PAGE_PASSWORD_MAX_LENGTH
+				)
+					return yield* invalid(
+						`A page password has ${STATUS_PAGE_PASSWORD_MIN_LENGTH} to ${STATUS_PAGE_PASSWORD_MAX_LENGTH} characters`,
+					)
+				const passwordHash = yield* hashStatusPagePassword(password)
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* findPage(db, orgId, pageId)
+							yield* db.run(
+								PG.update(StatusPages)
+									.set({ passwordHash, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
+							)
+							// The edge checks the published hash, so a new password must republish.
+							yield* bumpPage(db, orgId, pageId)
+						}),
+					),
+				)
+				return yield* requirePage(orgId, pageId)
+			})
+
+			const removePassword = Effect.fn("StatusPagesService.removePassword")(function* (
+				orgId: OrgId,
+				pageId: StatusPageId,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.status_page.id": pageId })
+				const now = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const current = yield* findPage(db, orgId, pageId, { lock: true })
+							if (current.visibility === "password")
+								return yield* invalid(
+									"Make the page public or internal before removing its password",
+								)
+							yield* db.run(
+								PG.update(StatusPages)
+									.set({ passwordHash: null, updatedAt: now })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
+							)
+						}),
+					),
+				)
+				return yield* requirePage(orgId, pageId)
 			})
 
 			const selectComponents = (db: MapleDb, orgId: OrgId, pageId: StatusPageId) =>
@@ -1488,8 +1595,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const monitorIds = [
 					...new Set(Arr.flatMap(components, (c) => (c.monitorId === null ? [] : [c.monitorId]))),
 				]
-				// The document as it will be stored; new components have no id yet.
-				const written: StatusPageConfig = {
+				// The document as it will be stored; new components have no id yet. Visibility is
+				// filled in under the lock: omitted, the page keeps its own, so no document opens it by default.
+				const document: Omit<StatusPageConfig, "visibility"> = {
 					name,
 					slug,
 					description,
@@ -1528,6 +1636,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									message:
 										"The page's config changed since it was read. Read the config again and redo the edit on it.",
 								})
+							const visibility = config.visibility ?? current.visibility
+							yield* ensureVisibilityAllowed(db, current, visibility)
+							const written: StatusPageConfig = { ...document, visibility }
 							const byId = new Map(Arr.map(existing, (row) => [row.id, row]))
 							const foreign = Option.getOrUndefined(
 								Arr.findFirst(listedIds, (id) => !byId.has(id)),
@@ -1558,6 +1669,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										theme,
 										showPoweredBy: input.show_powered_by,
 										autoIncidents: input.auto_incidents,
+										visibility,
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -1648,6 +1760,8 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				makePublic,
 				rotateBreakGlassToken,
 				revokeBreakGlassToken,
+				setPassword,
+				removePassword,
 				listComponents,
 				createComponent,
 				updateComponent,

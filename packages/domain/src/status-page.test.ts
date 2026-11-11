@@ -47,8 +47,10 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		privacyUrl: null,
 		termsUrl: null,
 		customDomain: null,
+		visibility: "public",
 	},
 	breakGlassTokenSha256: null,
+	passwordHash: null,
 	components: [
 		{
 			id: API,

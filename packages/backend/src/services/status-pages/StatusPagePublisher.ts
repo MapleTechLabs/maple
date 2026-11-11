@@ -39,7 +39,10 @@ export interface StatusPageSweepResult {
 export type StatusPagePublishError = StatusPageGoneError | StatusPagePublishDbError | StatusPageStoreError
 
 export interface StatusPagePublisherApi {
-	/** A draft page is a no-op: nothing reaches the edge until it is made public. */
+	/**
+	 * A draft page is a no-op: nothing reaches the edge until it is made public. An internal page
+	 * is taken off the edge instead: its slug route and snapshot go.
+	 */
 	readonly publish: (pageId: StatusPageId) => Effect.Effect<StatusPagePublishResult, StatusPagePublishError>
 	/**
 	 * Drains edge cleanups, publishes pages whose revision lags or whose last publish is stale
@@ -100,6 +103,8 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 								publishedRevision: $.publishedRevision,
 								publishedHash: $.publishedHash,
 								draft: $.draft,
+								visibility: $.visibility,
+								slug: $.slug,
 							}))
 							.where(($) => [$.id.eq(pageId)])
 							.limit(1),
@@ -116,6 +121,31 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 					return { pageId, revision: current.revision, written: false }
 				}
 				const nowMs = yield* Clock.currentTimeMillis
+				if (current.visibility === "internal") {
+					yield* Effect.annotateCurrentSpan({ "maple.status_page.visibility": "internal" })
+					yield* unpublish(pageId, current.slug).pipe(
+						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
+					)
+					// A lost race leaves the revision ahead, so the next sweep takes the page off again.
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(StatusPages)
+								.set({
+									publishedRevision: current.revision,
+									publishedAt: nowMs,
+									// Made public again, the page must be written even if nothing else changed.
+									publishedHash: null,
+									publishAttemptedAt: nowMs,
+									lastPublishError: null,
+								})
+								.where(($) => [
+									$.id.eq(pageId),
+									$.publishedRevision.eq(current.publishedRevision),
+								]),
+						),
+					)
+					return { pageId, revision: current.revision, written: false }
+				}
 				const snapshot = yield* builder.build(pageId, nowMs)
 				// The read revision, not the build's: a bump during the build republishes next sweep.
 				const revision = current.revision
@@ -135,20 +165,21 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 						Effect.andThen(store.putRoutes(pageId, routes)),
 						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
 					)
-				} else {
-					// The hash covers content only, so a route lost at the edge is checked for on its own.
-					yield* Effect.all([
-						store.readSlugRoute(routes.slug),
-						customDomain === null ? Effect.succeed(pageId) : store.readHostRoute(customDomain),
-					]).pipe(
-						Effect.flatMap(([slugTo, hostTo]) =>
-							slugTo === pageId && hostTo === pageId
-								? Effect.void
-								: store.putRoutes(pageId, routes),
-						),
-						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
-					)
 				}
+				// The hash covers content only, so a route lost at the edge is checked for on its own.
+				const reroutedOnly = written
+					? false
+					: yield* Effect.all([
+							store.readSlugRoute(routes.slug),
+							customDomain === null ? Effect.succeed(pageId) : store.readHostRoute(customDomain),
+						]).pipe(
+							Effect.flatMap(([slugTo, hostTo]) =>
+								slugTo === pageId && hostTo === pageId
+									? Effect.succeed(false)
+									: store.putRoutes(pageId, routes).pipe(Effect.as(true)),
+							),
+							Effect.catch((error) => recordFailure(pageId, nowMs, error)),
+						)
 				// Advances only while no other publish moved it since our read, stale republishes included.
 				const advanced = yield* dbExecute((db) =>
 					db.run(
@@ -168,7 +199,8 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 					),
 				)
 				if (advanced.length === 0) {
-					// A concurrent publish got further; ours may have overwritten its snapshot, so go again.
+					// A concurrent publish got further; ours may have overwritten its snapshot or put back
+					// routes it took down (the page went internal), so go again.
 					// Clearing the hash makes that next publish rewrite the body even if it builds the same.
 					const [still] = yield* dbExecute((db) =>
 						db.run(
@@ -199,7 +231,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 							pageId,
 						})
 					}
-					if (written) yield* dbExecute((db) => bumpPage(db, current.orgId, pageId))
+					if (written || reroutedOnly) yield* dbExecute((db) => bumpPage(db, current.orgId, pageId))
 				}
 				yield* Effect.annotateCurrentSpan({
 					"maple.status_page.revision": revision,
@@ -207,6 +239,15 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				})
 				return { pageId, revision, written }
 			})
+
+			/** Takes an internal page off the edge: its slug route while it still names the page, and its snapshot. */
+			const unpublish = (pageId: StatusPageId, slug: string) =>
+				store.readSlugRoute(slug).pipe(
+					Effect.flatMap((routedTo) =>
+						routedTo === pageId ? store.deleteRoutes({ slug, hostnames: [] }) : Effect.void,
+					),
+					Effect.andThen(store.deleteSnapshot(pageId)),
+				)
 
 			/**
 			 * Removes one cleanup's edge data; a slug or hostname another live page now uses is left alone.
@@ -361,10 +402,13 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 							.select(($) => ({ id: $.id }))
 							.where(($) => [
 								$.draft.eq(false),
+								// An internal page has nothing at the edge to refresh, only a change to take down.
 								PG.or(
 									$.revision.gt($.publishedRevision),
-									$.publishedAt.isNull(),
-									$.publishedAt.lt(staleBefore),
+									PG.and(
+										$.visibility.neq("internal"),
+										PG.or($.publishedAt.isNull(), $.publishedAt.lt(staleBefore)),
+									),
 								),
 							])
 							.orderBy(($) => [

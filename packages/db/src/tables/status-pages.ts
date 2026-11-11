@@ -13,6 +13,7 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 	UptimeMonitorId,
 	UserId,
 } from "@maple/primitives"
@@ -52,6 +53,13 @@ export const StatusPages = PG.table("status_pages", {
 		/** SHA-256 (base64url) of the break-glass token, published so the edge can check it. */
 		breakGlassTokenSha256: PG.column(PG.nullable(PG.text), { name: "break_glass_token_sha256" }),
 		breakGlassTokenSuffix: PG.column(PG.nullable(PG.text), { name: "break_glass_token_suffix" }),
+		/** `public`, `password` (needs `password_hash`) or `internal` (never at the edge). */
+		visibility: PG.column(PG.brand(PG.text, StatusPageVisibility), { default: "public" }),
+		/**
+		 * PBKDF2 hash of the page password (`@maple/domain/status-page-access`), published so the
+		 * edge can check it. One-way, so not sealed; never returned by the API.
+		 */
+		passwordHash: PG.column(PG.nullable(PG.text), { name: "password_hash" }),
 		/** A draft is never published: the publisher skips it until it is made public. */
 		draft: PG.column(PG.bool, { default: false }),
 		revision: PG.column(PG.int8, { default: 1 }),
