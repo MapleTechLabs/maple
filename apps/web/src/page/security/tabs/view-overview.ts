@@ -54,6 +54,7 @@ import {
 	coverageSettled,
 	coverageOf,
 	findingsStateOf,
+	fixedByRun,
 	latestDetailOf,
 	latestRunFor,
 	RUN_LIST_CAP,
@@ -61,11 +62,11 @@ import {
 	openConfirmed,
 	openLeads,
 	openNeedsValidation,
-	runningRuns,
+	type ResolvedCounts,
+	resolvedCounts,
 	runsOf,
 	settingsOf,
 	spendThisMonth,
-	targetsOf,
 } from "./derive"
 import { canRunAudits, Message, type Model } from "./model"
 import { bucketOf, countByBucket, isUnverified } from "../kit/findings"
@@ -197,16 +198,33 @@ const kpis = (h: H, model: Model): Html => {
 			: state._tag === "Gated"
 				? "Admins and engineers"
 				: placeholder(h, "h-7 w-10")
-	const running = runningRuns(model).length
 	const coverage = coverageAcross(model)
 	// Until its reads land, an empty sum is unknown, not "not mapped".
 	const coverageUnknown = coverage === null && !coverageSettled(model)
+	const resolved = resolvedCounts(findings)
 	return statRail(h, { columns: 4, className: NARROW_TWO_COLUMNS }, [
 		statRailItem(h, {
 			eyebrow: "Open leads",
 			value: unknown ?? String(confirmed + toValidate),
 			compact: true,
 			subline: unknown === null ? leadsLine(confirmed, toValidate) : undefined,
+		}),
+		statRailItem(h, {
+			eyebrow: "Resolved",
+			value: unknown ?? String(resolved.total),
+			compact: true,
+			action:
+				unknown === null && resolved.total > 0
+					? typography(h, { size: "2xs" }, [
+							textLink(h, { tone: "muted", href: resolvedHref(resolved) }, ["View"]),
+						])
+					: undefined,
+			subline:
+				unknown !== null
+					? undefined
+					: resolved.total === 0
+						? "fixed by a later run, or triaged"
+						: resolvedLine(resolved),
 		}),
 		statRailItem(h, {
 			eyebrow: "Coverage",
@@ -232,18 +250,36 @@ const kpis = (h: H, model: Model): Html => {
 							`latest run of ${coverage.targets} ${coverage.targets === 1 ? "target" : "targets"}`,
 						]),
 		}),
-		statRailItem(h, {
-			eyebrow: "Targets",
-			value: String(targetsOf(model).length),
-			compact: true,
-			subline:
-				running === 0
-					? "no audit running"
-					: `${running} ${running === 1 ? "audit" : "audits"} running now`,
-		}),
 		spendTile(h, model),
 	])
 }
+
+/** "2 fixed · 1 dismissed": how the closed findings closed, zeros left out. */
+const resolvedLine = (resolved: ResolvedCounts): string =>
+	Arr.join(
+		Arr.map(
+			Arr.filter(
+				[
+					[resolved.fixed, "fixed"],
+					[resolved.dismissed, "dismissed"],
+					[resolved.acceptedRisk, "accepted risk"],
+				] as const,
+				([count]) => count > 0,
+			),
+			([count, label]) => `${count} ${label}`,
+		),
+		" · ",
+	)
+
+/** The Findings tab at the first status that has something in it. */
+const resolvedHref = (resolved: ResolvedCounts): string =>
+	hrefOf(
+		AppRoute.SecurityCodeFindings({
+			search: {
+				status: resolved.fixed > 0 ? "fixed" : resolved.dismissed > 0 ? "dismissed" : "accepted_risk",
+			},
+		}),
+	)
 
 /** "3 high, 1 unverified": how many of a severity's count are estimates. */
 const countTitle = (
@@ -588,8 +624,13 @@ const topFindingsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAud
 	])
 }
 
+/** "2 fixed": what a run closed, nothing when it closed none. */
+const fixedNote = (fixed: number): ReadonlyArray<string> => (fixed === 0 ? [] : [`${fixed} fixed`])
+
 const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>): Html => {
 	const runs = runsOf(model).slice(0, 4)
+	const state = findingsStateOf(model)
+	const findings = state._tag === "Ready" ? state.findings : []
 	return panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Recent runs",
@@ -624,6 +665,7 @@ const recentRunsPanel = (h: H, model: Model, targets: ReadonlyArray<SecurityAudi
 												Str.toLowerCase(RUN_KIND_LABEL[run.kind]),
 												PROFILE_LABEL[run.profile],
 												note,
+												...fixedNote(fixedByRun(findings, run.id)),
 											],
 											" · ",
 										),

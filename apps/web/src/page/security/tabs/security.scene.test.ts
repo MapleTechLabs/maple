@@ -559,15 +559,46 @@ describe("security tabs", () => {
 	test("a status picked within the search debounce keeps what was typed", () => {
 		const findings = routeChanged(loaded(), AppRoute.SecurityCodeFindings({ search: {} }), context).model
 		const typed = pageUpdate(findings, Message.ChangedSearchDraft({ value: "exports" })).model
-		const picked = pageUpdate(
-			typed,
-			Message.GotStatusSelectMessage({
-				message: Select.Message.SelectedItem({ index: 1, value: "fixed" }),
-			}),
-		)
+		const picked = pageUpdate(typed, Message.PickedStatus({ status: "fixed" }))
 		expect(picked.outMessage).toMatchObject({
 			url: hrefOf(AppRoute.SecurityCodeFindings({ search: { q: "exports", status: "fixed" } })),
 		})
+	})
+
+	test("closed findings are one tab away, and the tab keeps the other filters", () => {
+		const findings = routeChanged(
+			loaded(),
+			AppRoute.SecurityCodeFindings({ search: { target: TARGET_IDS.gateway } }),
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(findings),
+			expectView(role("link", { name: /^Fixed/ })).toHaveAttr(
+				"href",
+				hrefOf(
+					AppRoute.SecurityCodeFindings({
+						search: { target: TARGET_IDS.gateway, status: "fixed" },
+					}),
+				),
+			),
+			expectView(role("link", { name: /^Open/ })).toHaveAttr("aria-current", "page"),
+		)
+		expect(pageUpdate(findings, Message.PickedStatus({ status: "open" })).outMessage).toMatchObject({
+			url: hrefOf(AppRoute.SecurityCodeFindings({ search: { target: TARGET_IDS.gateway } })),
+		})
+	})
+
+	test("the Overview counts resolved findings and links to them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(text("1 fixed · 1 dismissed")).toExist(),
+			expectView(role("link", { name: "View" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityCodeFindings({ search: { status: "fixed" } })),
+			),
+		)
 	})
 
 	test("an empty status tab reads as filtered, with Clear filters, only when a filter besides the status is set", () => {
@@ -576,7 +607,7 @@ describe("security tabs", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(atStatus({ status: "accepted_risk" })),
-			expectView(text("No findings in this status")).toExist(),
+			expectView(text("No accepted risks")).toExist(),
 			expectView(role("button", { name: "Clear filters" })).toBeAbsent(),
 		)
 		scene(
