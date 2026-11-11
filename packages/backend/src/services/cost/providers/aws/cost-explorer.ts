@@ -23,9 +23,12 @@ import {
 } from "./normalize"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
-// A page holds 2,500 groups and costs the account owner USD 0.01. 20 pages is 50,000 groups for
-// one query; a pull that needs more fails instead of billing on.
-const MAX_PAGES = 20
+// A page holds 2,500 groups and costs the account owner USD 0.01. One query reads two pages per
+// day of its window (5,000 groups a day), never under 20; past that the pull fails as too large
+// instead of billing on.
+const MIN_PAGE_CAP = 20
+const PAGES_PER_DAY = 2
+const pageCap = (days: number) => Math.max(MIN_PAGE_CAP, days * PAGES_PER_DAY)
 const METRICS = ["UnblendedCost", "AmortizedCost", "UsageQuantity"]
 
 // The SDK's default patience (8 retries, about 20s) outlasts the timeout, and a retry is a request.
@@ -100,7 +103,22 @@ export const pullCostExplorer = (
 					duration: REQUEST_TIMEOUT,
 					orElse: () => fail("upstream", "GetCostAndUsage: AWS did not answer in time"),
 				}),
+				// A client span per billed call: `peer.service` draws Cost Explorer on the service map.
+				Effect.withSpan("CostExplorer.GetCostAndUsage", {
+					kind: "client",
+					attributes: {
+						"peer.service": "aws-cost-explorer",
+						"maple.cost.aws.filtered_region": input.Filter?.Dimensions?.Values?.[0] ?? "",
+						"maple.cost.aws.page": input.NextPageToken === undefined ? "first" : "next",
+					},
+				}),
 			)
+
+		const period = costExplorerPeriod(window)
+		if (Option.isNone(period)) {
+			return yield* fail("upstream", `Not a window of days: ${window.startDay} to ${window.endDay}`)
+		}
+		const maxPages = pageCap(period.value.days)
 
 		const pages = (
 			input: CE.GetCostAndUsageRequest,
@@ -111,8 +129,8 @@ export const pullCostExplorer = (
 				const results = Arr.appendAll(seen, answer.ResultsByTime ?? [])
 				const next = answer.NextPageToken
 				if (next === undefined || next === "") return Effect.succeed(results)
-				return page >= MAX_PAGES
-					? fail("upstream", "GetCostAndUsage: more pages than a pull reads")
+				return page >= maxPages
+					? fail("too_large", "This account has more cost rows a day than one pull reads.")
 					: pages({ ...input, NextPageToken: next }, results, page + 1)
 			})
 
@@ -124,10 +142,6 @@ export const pullCostExplorer = (
 				}),
 			)
 
-		const period = costExplorerPeriod(window)
-		if (Option.isNone(period)) {
-			return yield* fail("upstream", `Not a window of days: ${window.startDay} to ${window.endDay}`)
-		}
 		const base = {
 			TimePeriod: { Start: period.value.Start, End: period.value.End },
 			Granularity: "DAILY",

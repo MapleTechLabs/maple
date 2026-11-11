@@ -14,6 +14,7 @@ import {
 	awsRoleArn,
 	type AwsMetricStream,
 	awsSetupPlan,
+	awsModuleRolloutFlag,
 	isAwsModuleAvailable,
 } from "@maple/domain/aws"
 import {
@@ -240,14 +241,18 @@ const validateModules = (
 	modules: ReadonlyArray<AwsModule>,
 	flags: OrganizationFeatureFlags,
 ): Effect.Effect<ReadonlyArray<AwsModule>, ModulesError> => {
-	const planned = Arr.filter(modules, (module) => !isAwsModuleAvailable(module, flags))
-	return planned.length === 0
-		? Effect.succeed(normalizeModules(modules))
-		: Effect.fail(
-				new IntegrationsValidationError({
-					message: `Maple does not read ${Arr.join(planned, ", ")} from AWS yet.`,
-				}),
-			)
+	const refused = Arr.filter(modules, (module) => !isAwsModuleAvailable(module, flags))
+	if (refused.length === 0) return Effect.succeed(normalizeModules(modules))
+	// A module behind a rollout flag is built: the org is outside its rollout, not early.
+	const planned = Arr.filter(refused, (module) => awsModuleRolloutFlag(module) === undefined)
+	return Effect.fail(
+		new IntegrationsValidationError({
+			message:
+				planned.length > 0
+					? `Maple does not read ${Arr.join(planned, ", ")} from AWS yet.`
+					: `Reading ${Arr.join(refused, ", ")} from AWS is not enabled for this organization yet.`,
+		}),
+	)
 }
 
 interface CheckResult {

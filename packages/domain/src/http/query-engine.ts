@@ -2720,6 +2720,9 @@ export class CloudCostPersistenceError extends HttpTaggedError<CloudCostPersiste
 	},
 ) {}
 
+/** The widest window a cost read takes: a little past what `cost_daily` keeps. */
+export const COST_MAX_WINDOW_DAYS = 800
+
 /** Values per dimension a cost read may narrow to; the query inlines them, so both sizes are capped. */
 export const COST_FILTER_MAX_VALUES = 50
 export const COST_FILTER_MAX_VALUE_LENGTH = 300
@@ -2741,10 +2744,25 @@ export const CostFilters = Schema.Struct({
 } satisfies Record<CostDimension, Schema.Top>)
 export type CostFilters = typeof CostFilters.Type
 
+/**
+ * A window bound that names a real instant. The pattern alone lets `2026-13-01` through, which
+ * cannot be floored to a day, and `2026-02-30`, which reads another day than the one asked for.
+ */
+const CostWindowDateTime = TinybirdDateTime.check(
+	Schema.makeFilter((value: string) => {
+		const instant = `${Str.slice(0, 10)(value)}T${Str.slice(11, 19)(value)}`
+		const date = new Date(`${instant}Z`)
+		return (
+			(Number.isFinite(date.getTime()) && Str.startsWith(instant)(date.toISOString())) ||
+			"Expected a real calendar date and time"
+		)
+	}),
+)
+
 /** The window is floored to whole UTC days, both ends inclusive. */
 const CostWindowFields = {
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
+	startTime: CostWindowDateTime,
+	endTime: CostWindowDateTime,
 	/** Defaults to `billed`. */
 	metric: Schema.optionalKey(CostMetric),
 	filters: Schema.optionalKey(CostFilters),
@@ -3700,6 +3718,8 @@ const queryEngineEndpointErrors = [
 const costEndpointErrors = [
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
+	// A window wider than `COST_MAX_WINDOW_DAYS`.
+	QueryEngineValidationError,
 	...queryEngineEndpointErrors,
 ] as const
 

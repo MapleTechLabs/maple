@@ -655,11 +655,17 @@ describe("CostSyncService failures", () => {
 
 	it.effect("holds a throttled source an hour, and any other failure for the claim's backoff", () => {
 		const throttled = harness({ failReason: "rate_limited" })
+		const tooLarge = harness({ failReason: "too_large" })
 		const failing = harness({ failReason: "upstream" })
 		return Effect.gen(function* () {
 			yield* connectA(throttled).pipe(Effect.andThen(poll), Effect.provide(throttled.layer))
 			const held = yield* throttled.sourceState
 			assert.deepStrictEqual([held?.reason, held?.next], ["rate_limited", String(NOW + HOUR_MS)])
+
+			// A pull too large to read is billed on every try: it waits a day, not the 15 minute backoff.
+			yield* connectA(tooLarge).pipe(Effect.andThen(poll), Effect.provide(tooLarge.layer))
+			const large = yield* tooLarge.sourceState
+			assert.deepStrictEqual([large?.reason, large?.next], ["too_large", String(NOW + 24 * HOUR_MS)])
 
 			yield* connectA(failing).pipe(Effect.andThen(poll), Effect.provide(failing.layer))
 			assert.strictEqual((yield* failing.sourceState)?.next, String(NOW + 15 * 60_000))

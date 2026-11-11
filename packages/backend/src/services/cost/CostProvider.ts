@@ -58,14 +58,22 @@ export interface CostPull {
 /**
  * A pull that returned nothing usable. `not_ready`: the customer's side is not set up for cost
  * (permission missing, billing data not enabled); retrying soon will not help. `auth`: Maple could
- * not act as the connection. `rate_limited` and `upstream` are worth a later retry.
+ * not act as the connection. `rate_limited` and `upstream` are worth a later retry. `too_large`: the
+ * window holds more than a pull reads; the same pull fails the same way, and each try is billed.
  */
 export class CostProviderError extends Schema.TaggedError<CostProviderError>()(
 	"@maple/backend/cost/CostProviderError",
 	{
 		message: Schema.String,
 		provider: CostProviderSchema,
-		reason: Schema.Literals(["not_ready", "auth", "rate_limited", "upstream", "invalid_response"]),
+		reason: Schema.Literals([
+			"not_ready",
+			"auth",
+			"rate_limited",
+			"upstream",
+			"invalid_response",
+			"too_large",
+		]),
 		/** Billable requests made before it failed: they still count against the source. */
 		requests: Schema.Number,
 	},

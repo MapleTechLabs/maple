@@ -163,6 +163,11 @@ const assumeWithToken = (
 				? Effect.fail(stsError(answer.Error.Code, answer.Error.Message))
 				: Effect.succeed(answer.AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult),
 		),
+		// The connection check and the cost pull both assume the role here: one client span for STS.
+		Effect.withSpan("AwsSts.AssumeRoleWithWebIdentity", {
+			kind: "client",
+			attributes: { "peer.service": "aws-sts" },
+		}),
 	)
 
 /** Assumes `target` with Maple's token. The session signs in us-east-1 and is kept nowhere. */

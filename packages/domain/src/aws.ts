@@ -118,6 +118,12 @@ export const isAwsModuleAvailable = (module: AwsModule, flags: OrganizationFeatu
 	return spec.available || (spec.rolloutFlag !== undefined && flags[spec.rolloutFlag])
 }
 
+/** The rollout flag of a module that is built but offered only to orgs in its rollout. */
+export const awsModuleRolloutFlag = (module: AwsModule): keyof OrganizationFeatureFlags | undefined => {
+	const spec: AwsModuleSpec = AWS_MODULE_SPECS[module]
+	return spec.rolloutFlag
+}
+
 /** Every connection's role starts with it. The cleanup keeps the OIDC provider while one is left. */
 export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"
 

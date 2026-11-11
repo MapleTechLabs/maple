@@ -15,6 +15,7 @@ import {
 	toWarehouseDateTime64,
 	utcMonth,
 	utcToday,
+	monthStart,
 } from "./sync-plan"
 
 const at = (iso: string) => DateTime.toEpochMillis(DateTime.makeUnsafe(iso))
@@ -52,6 +53,20 @@ const billed = (state: CostSyncState, now: number, count: number): CostSyncState
 	...state,
 	requestsMonth: utcMonth(now),
 	requestsCount: count,
+})
+
+describe("monthStart", () => {
+	it.each([
+		// From the last day of a long month into a shorter one: never the day after it ends.
+		["2026-03-31", -1, "2026-02-01"],
+		["2024-03-31", -1, "2024-02-01"],
+		["2026-05-31", -1, "2026-04-01"],
+		["2026-01-31", -1, "2025-12-01"],
+		["2026-12-31", -13, "2025-11-01"],
+		["2026-03-29", 0, "2026-03-01"],
+	])("is the first day of the month %s months from %s", (day, months, expected) => {
+		assert.strictEqual(monthStart(day, months), expected)
+	})
 })
 
 describe("planCostSync", () => {
