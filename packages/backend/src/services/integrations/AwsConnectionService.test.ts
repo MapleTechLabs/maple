@@ -243,6 +243,12 @@ describe("AwsConnectionService", () => {
 				service.create(orgId, userId, { accountId: account, modules: ["security"] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.include(error.message, "does not read security")
+			// Cost is built: an org outside its rollout is told so, not to wait for it.
+			const gated = yield* Effect.flip(
+				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+			)
+			assert.include(gated.message, "not enabled for this organization")
 			assert.strictEqual(yield* countSources(testDb), 0)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
