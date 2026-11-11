@@ -35,6 +35,16 @@ describe("cost request filters", () => {
 		expect(accepts("totals", { ...WINDOW, filters: { resource: [Str.repeat(301)("a")] } })).toBe(false)
 	})
 
+	it("rejects a bound that matches the format but is not a real date or time", () => {
+		expect(accepts("totals", { ...WINDOW, startTime: "2026-13-01 00:00:00" })).toBe(false)
+		// It would read March 2nd, not the day asked for.
+		expect(accepts("timeseries", { ...WINDOW, startTime: "2026-02-30 00:00:00" })).toBe(false)
+		expect(accepts("breakdown", { ...WINDOW, groupBy: "region", endTime: "2026-10-30 24:00:00" })).toBe(
+			false,
+		)
+		expect(accepts("totals", { ...WINDOW, endTime: "2028-02-29 23:59:59.999" })).toBe(true)
+	})
+
 	it("rejects a metric or a time the query cannot bind", () => {
 		expect(accepts("totals", { ...WINDOW, metric: "list" })).toBe(false)
 		expect(accepts("totals", { ...WINDOW, startTime: "2026-10-01" })).toBe(false)

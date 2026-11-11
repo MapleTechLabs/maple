@@ -2744,10 +2744,25 @@ export const CostFilters = Schema.Struct({
 } satisfies Record<CostDimension, Schema.Top>)
 export type CostFilters = typeof CostFilters.Type
 
+/**
+ * A window bound that names a real instant. The pattern alone lets `2026-13-01` through, which
+ * cannot be floored to a day, and `2026-02-30`, which reads another day than the one asked for.
+ */
+const CostWindowDateTime = TinybirdDateTime.check(
+	Schema.makeFilter((value: string) => {
+		const instant = `${Str.slice(0, 10)(value)}T${Str.slice(11, 19)(value)}`
+		const date = new Date(`${instant}Z`)
+		return (
+			(Number.isFinite(date.getTime()) && Str.startsWith(instant)(date.toISOString())) ||
+			"Expected a real calendar date and time"
+		)
+	}),
+)
+
 /** The window is floored to whole UTC days, both ends inclusive. */
 const CostWindowFields = {
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
+	startTime: CostWindowDateTime,
+	endTime: CostWindowDateTime,
 	/** Defaults to `billed`. */
 	metric: Schema.optionalKey(CostMetric),
 	filters: Schema.optionalKey(CostFilters),
