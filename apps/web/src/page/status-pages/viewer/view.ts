@@ -8,6 +8,7 @@ import { vstack } from "@maple/views/ui/stack"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { statusPageHref, statusPagesHref } from "../shared/commands"
+import { statusPageNotFound } from "../shared/not-found"
 import { previewDocument, previewFrame } from "../shared/preview"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -21,16 +22,17 @@ const NOTE = {
 } as const
 
 const body = (h: H, model: Model): Html => {
-	if (model.pageId === null)
-		return typography(h, { size: "sm", tone: "muted", as: "p" }, ["No status page at this address"])
+	if (model.pageId === null) return statusPageNotFound(h, model.rawPageId)
 	const data = model.snapshot.data
 	if (AsyncData.isFailure(data))
-		return errorState(h, {
-			failure: data.error,
-			title: "Couldn't load the status page",
-			onRetry: Message.ClickedRetry(),
-			className: "py-12",
-		})
+		return data.error.code === "status_page_not_found"
+			? statusPageNotFound(h, model.rawPageId)
+			: errorState(h, {
+					failure: data.error,
+					title: "Couldn't load the status page",
+					onRetry: Message.ClickedRetry(),
+					className: "py-12",
+				})
 	return Option.match(AsyncData.getData(data), {
 		onNone: () => skeleton(h, "h-[640px] w-full"),
 		onSome: (snapshot) =>
@@ -44,7 +46,9 @@ const body = (h: H, model: Model): Html => {
 						isSelectable: false,
 						selectedIds: [],
 						publicUrl: null,
+						opensLinks: true,
 					}),
+					opensLinks: true,
 					className: "h-[640px] lg:h-[calc(100vh-12rem)] lg:min-h-[520px]",
 				}),
 			]),

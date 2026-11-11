@@ -45,6 +45,11 @@ const FRESH_INTERVAL_MS = 60_000
 const PENDING_INTERVAL_MS = 10 * 60_000
 /** Active and failed domains are re-checked a few times a day, to notice a moved or expired one. */
 const SETTLED_INTERVAL_MS = 6 * 60 * 60_000
+/**
+ * A domain that never went live is dropped after a week, so a claim nobody verified cannot hold a
+ * hostname from its owner.
+ */
+const CLAIM_EXPIRES_MS = 7 * 24 * 60 * 60_000
 const POLL_CONCURRENCY = 4
 
 /** The custom domain section of a page: whether this deployment offers them, and the page's one. */
@@ -59,6 +64,10 @@ export interface StatusPageCustomDomainPollResult {
 	readonly checked: number
 	readonly activated: number
 	readonly failed: number
+	/** Checks that failed before recording anything (the database); tried again next time. */
+	readonly errored: number
+	/** Domains dropped for never going live within a week. */
+	readonly expired: number
 }
 
 type DomainError =
@@ -97,7 +106,7 @@ export interface StatusPageCustomDomainsServiceApi {
 		| StatusPageCustomDomainsUnavailableError
 		| StatusPagePersistenceError
 	>
-	/** Checks domains whose next check is due. A failing one is recorded and skipped. */
+	/** Checks domains whose next check is due, and drops claims that never went live. A failing one is skipped. */
 	readonly poll: (
 		nowMs: number,
 	) => Effect.Effect<StatusPageCustomDomainPollResult, StatusPagePersistenceError>
@@ -210,17 +219,6 @@ const unavailable = () =>
 		message: "Custom domains are not configured on this deployment",
 	})
 
-const dueAfter = (row: StatusPageCustomDomainRow, nowMs: number) => {
-	if (row.lastCheckedAt === null) return true
-	const interval =
-		row.status === "active" || row.status === "failed"
-			? SETTLED_INTERVAL_MS
-			: nowMs - row.createdAt < FRESH_FOR_MS
-				? FRESH_INTERVAL_MS
-				: PENDING_INTERVAL_MS
-	return nowMs - row.lastCheckedAt >= interval
-}
-
 export class StatusPageCustomDomainsService extends Context.Service<
 	StatusPageCustomDomainsService,
 	StatusPageCustomDomainsServiceApi
@@ -259,6 +257,15 @@ export class StatusPageCustomDomainsService extends Context.Service<
 						.limit(1),
 				)
 				.pipe(Effect.map(([row]) => row ?? null))
+
+		/** Queues the domain's teardown and deletes it; a page it served goes back to its Maple address. */
+		const dropDomain = (db: MapleDb, domain: StatusPageCustomDomainRow) =>
+			Effect.gen(function* () {
+				// The publisher takes it down at Cloudflare and at the edge on its next sweep.
+				yield* queueCustomDomainRemoval(db, domain.orgId, domain.pageId, domain)
+				yield* db.run(PG.deleteFrom(StatusPageCustomDomains).where(($) => [$.pageId.eq(domain.pageId)]))
+				if (domain.status === "active") yield* bumpPage(db, domain.orgId, domain.pageId)
+			})
 
 		const view = (
 			pageId: StatusPageId,
@@ -320,129 +327,196 @@ export class StatusPageCustomDomainsService extends Context.Service<
 		 * `revalidate`), and records where the domain stands. A Cloudflare failure is recorded on the
 		 * row as its last error, never raised: the next check tries again.
 		 */
-		const refresh = (row: StatusPageCustomDomainRow, options: { readonly revalidate: boolean }) =>
-			Effect.gen(function* () {
-				const nowMs = yield* Clock.currentTimeMillis
-				const target = cnameTarget ?? row.hostname
-				const current = row.cloudflareHostnameId === null ? yield* adoptQueued(row) : row
-				const recordUnreachable = (error: CustomHostnamesError) =>
-					Effect.logWarning("Custom domain check failed").pipe(
-						Effect.annotateLogs({
-							"maple.status_page.id": current.pageId,
-							"error.message": error.message,
-						}),
-						Effect.as({
-							hostnameId: current.cloudflareHostnameId,
-							routeId: current.cloudflareRouteId,
-							status: current.status,
-							dnsRecords:
-								current.dnsRecords.length === 0
-									? [routingRecord(current.hostname, target)]
-									: current.dnsRecords,
-							error: "Maple could not reach Cloudflare to check this domain. It tries again shortly.",
-						}),
-					)
-				const progress = yield* Effect.gen(function* () {
-					let hostnameId = current.cloudflareHostnameId
-					let routeId = current.cloudflareRouteId
-					let state: CustomHostnameState | null = null
-					if (hostnameId !== null) {
-						const read = yield* options.revalidate && current.status !== "active"
-							? cloudflare.revalidateHostname(hostnameId)
-							: cloudflare.getHostname(hostnameId)
-						// Removed at Cloudflare (or by a teardown we raced): start over with a new one.
-						if (Option.isNone(read)) {
-							hostnameId = null
-							routeId = null
-						} else state = read.value
-					}
-					if (state === null) {
-						state = yield* cloudflare.createHostname(current.hostname)
-						hostnameId = state.id
-					}
-					if (routeId === null) routeId = yield* cloudflare.createRoute(current.hostname)
-					return {
-						hostnameId,
-						routeId,
-						...customDomainProgress({
-							hostname: current.hostname,
-							cnameTarget: target,
-							previous: current.status,
-							state,
-						}),
-					}
-				}).pipe(
-					Effect.catchTags({
-						"@maple/backend/status-pages/CustomHostnameConflictError": () =>
-							Effect.succeed({
-								hostnameId: null,
-								routeId: current.cloudflareRouteId,
-								status: "failed" as const,
-								dnsRecords: [routingRecord(current.hostname, target)],
-								error: "This hostname is already set up with Cloudflare for another service. Remove it there, then Check now.",
-							}),
-						"@maple/backend/status-pages/CustomHostnamesNotConfiguredError": recordUnreachable,
-						"@maple/backend/status-pages/CustomHostnamesApiError": recordUnreachable,
+		const refresh = Effect.fn("StatusPageCustomDomainsService.refresh")(function* (
+			row: StatusPageCustomDomainRow,
+			options: { readonly revalidate: boolean },
+		) {
+			yield* Effect.annotateCurrentSpan({ "maple.status_page.id": row.pageId })
+			const nowMs = yield* Clock.currentTimeMillis
+			const target = cnameTarget ?? row.hostname
+			const current = row.cloudflareHostnameId === null ? yield* adoptQueued(row) : row
+			const recordUnreachable = (error: CustomHostnamesError) =>
+				Effect.logWarning("Custom domain check failed").pipe(
+					Effect.annotateLogs({
+						"maple.status_page.id": current.pageId,
+						"error.type": error._tag,
+						"error.message": error.message,
+						...(error._tag === "@maple/backend/status-pages/CustomHostnamesApiError"
+							? {
+									"maple.cloudflare.operation": error.operation,
+									...(error.status === undefined
+										? undefined
+										: { "http.response.status_code": error.status }),
+									...(error.detail === undefined
+										? undefined
+										: { "maple.cloudflare.error_detail": error.detail }),
+								}
+							: undefined),
+					}),
+					Effect.andThen(
+						Effect.annotateCurrentSpan({ "maple.status_page.custom_domain_error": error._tag }),
+					),
+					Effect.as({
+						hostnameId: current.cloudflareHostnameId,
+						routeId: current.cloudflareRouteId,
+						status: current.status,
+						dnsRecords:
+							current.dnsRecords.length === 0
+								? [routingRecord(current.hostname, target)]
+								: current.dnsRecords,
+						error: "Maple could not reach Cloudflare to check this domain. It tries again shortly.",
 					}),
 				)
-				const activated = progress.status === "active" && current.status !== "active"
-				const changedServing = (progress.status === "active") !== (current.status === "active")
-				const saved = yield* dbExecute((db) =>
-					db.transaction(
-						Effect.gen(function* () {
-							const [updated] = yield* db.run(
-								PG.update(StatusPageCustomDomains)
-									.set({
-										status: progress.status,
-										cloudflareHostnameId: progress.hostnameId,
-										cloudflareRouteId: progress.routeId,
-										dnsRecords: progress.dnsRecords,
-										lastError: progress.error,
-										lastCheckedAt: nowMs,
-										...(activated && current.activatedAt === null
-											? { activatedAt: nowMs }
-											: undefined),
-										updatedAt: nowMs,
-									})
+			const progress = yield* Effect.gen(function* () {
+				let hostnameId = current.cloudflareHostnameId
+				let routeId = current.cloudflareRouteId
+				let state: CustomHostnameState | null = null
+				if (hostnameId !== null) {
+					const read = yield* options.revalidate && current.status !== "active"
+						? cloudflare.revalidateHostname(hostnameId)
+						: cloudflare.getHostname(hostnameId)
+					// Removed at Cloudflare (or by a teardown we raced): start over with a new one.
+					if (Option.isNone(read)) {
+						hostnameId = null
+						routeId = null
+					} else state = read.value
+				}
+				if (state === null) {
+					state = yield* cloudflare.createHostname(current.hostname).pipe(
+						// The zone has it already: a concurrent check, or an earlier one that never
+						// recorded its id, created it. Ours unless another stage routes it.
+						Effect.catchTag("@maple/backend/status-pages/CustomHostnameConflictError", (conflict) =>
+							cloudflare
+								.findHostname(current.hostname)
+								.pipe(
+									Effect.flatMap(
+										Option.match({
+											onNone: () => Effect.fail(conflict),
+											onSome: Effect.succeed,
+										}),
+									),
+								),
+						),
+					)
+					hostnameId = state.id
+				}
+				if (routeId === null) routeId = yield* cloudflare.createRoute(current.hostname)
+				return {
+					hostnameId,
+					routeId,
+					...customDomainProgress({
+						hostname: current.hostname,
+						cnameTarget: target,
+						previous: current.status,
+						state,
+					}),
+				}
+			}).pipe(
+				Effect.catchTags({
+					"@maple/backend/status-pages/CustomHostnameConflictError": () =>
+						Effect.succeed({
+							hostnameId: null,
+							routeId: current.cloudflareRouteId,
+							status: "failed" as const,
+							dnsRecords: [routingRecord(current.hostname, target)],
+							error: "This hostname is already set up with Cloudflare for another service. Remove it there, then Check now.",
+						}),
+					"@maple/backend/status-pages/CustomHostnamesNotConfiguredError": recordUnreachable,
+					"@maple/backend/status-pages/CustomHostnamesApiError": recordUnreachable,
+				}),
+			)
+			const activated = progress.status === "active" && current.status !== "active"
+			const changedServing = (progress.status === "active") !== (current.status === "active")
+			const saved = yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						// Only over the row this check started from: a concurrent check may have saved
+						// other Cloudflare ids meanwhile, and the page may have dropped or replaced it.
+						const [updated] = yield* db.run(
+							PG.update(StatusPageCustomDomains)
+								.set({
+									status: progress.status,
+									cloudflareHostnameId: progress.hostnameId,
+									cloudflareRouteId: progress.routeId,
+									dnsRecords: progress.dnsRecords,
+									lastError: progress.error,
+									lastCheckedAt: nowMs,
+									...(activated && current.activatedAt === null
+										? { activatedAt: nowMs }
+										: undefined),
+									updatedAt: nowMs,
+								})
+								.where(($) => [
+									$.pageId.eq(current.pageId),
+									$.hostname.eq(current.hostname),
+									current.cloudflareHostnameId === null
+										? $.cloudflareHostnameId.isNull()
+										: $.cloudflareHostnameId.eq(current.cloudflareHostnameId),
+									current.cloudflareRouteId === null
+										? $.cloudflareRouteId.isNull()
+										: $.cloudflareRouteId.eq(current.cloudflareRouteId),
+								])
+								.returning(),
+						)
+						if (updated === undefined) {
+							// What we created at Cloudflare that the row (if still there) does not hold goes.
+							const [now] = yield* db.run(
+								PG.from(StatusPageCustomDomains)
+									.select()
 									.where(($) => [
 										$.pageId.eq(current.pageId),
 										$.hostname.eq(current.hostname),
 									])
-									.returning(),
+									.limit(1),
 							)
-							if (updated === undefined) {
-								// Replaced or removed while we talked to Cloudflare: what we created goes too.
-								const created = {
-									hostname: current.hostname,
-									cloudflareHostnameId:
-										progress.hostnameId === current.cloudflareHostnameId
-											? null
-											: progress.hostnameId,
-									cloudflareRouteId:
-										progress.routeId === current.cloudflareRouteId
-											? null
-											: progress.routeId,
-								}
-								if (
-									created.cloudflareHostnameId !== null ||
-									created.cloudflareRouteId !== null
-								)
-									yield* queueCustomDomainRemoval(
-										db,
-										current.orgId,
-										current.pageId,
-										created,
-									)
-								return null
+							const orphaned = (id: string | null, had: string | null, held: string | null) =>
+								id === had || id === held ? null : id
+							const created = {
+								hostname: current.hostname,
+								cloudflareHostnameId: orphaned(
+									progress.hostnameId,
+									current.cloudflareHostnameId,
+									now?.cloudflareHostnameId ?? null,
+								),
+								cloudflareRouteId: orphaned(
+									progress.routeId,
+									current.cloudflareRouteId,
+									now?.cloudflareRouteId ?? null,
+								),
 							}
-							// The page's canonical address and edge route follow the domain going live or down.
-							if (changedServing) yield* bumpPage(db, current.orgId, current.pageId)
-							return updated
-						}),
-					),
-				)
-				return { row: saved, activated, failed: progress.status === "failed" }
-			})
+							if (created.cloudflareHostnameId !== null || created.cloudflareRouteId !== null)
+								yield* queueCustomDomainRemoval(db, current.orgId, current.pageId, created)
+							return now ?? null
+						}
+						// The page's canonical address and edge route follow the domain going live or down.
+						if (changedServing) yield* bumpPage(db, current.orgId, current.pageId)
+						return updated
+					}),
+				),
+			)
+			return { row: saved, activated, failed: progress.status === "failed" }
+		})
+
+		/** Drops domains that never went live within a week of being added. */
+		const expireClaims = (nowMs: number) =>
+			dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const expired = yield* db.run(
+							PG.from(StatusPageCustomDomains)
+								.select()
+								.where(($) => [
+									$.activatedAt.isNull(),
+									$.createdAt.lte(nowMs - CLAIM_EXPIRES_MS),
+								])
+								.limit(CUSTOM_DOMAIN_POLL_BATCH)
+								.forUpdate(),
+						)
+						yield* Effect.forEach(expired, (domain) => dropDomain(db, domain), { discard: true })
+						return expired.length
+					}),
+				),
+			)
 
 		const get = Effect.fn("StatusPageCustomDomainsService.get")(function* (
 			orgId: OrgId,
@@ -494,13 +568,7 @@ export class StatusPageCustomDomainsService extends Context.Service<
 								.limit(1),
 						)
 						if (owner !== undefined) return yield* taken()
-						if (existing !== null) {
-							yield* queueCustomDomainRemoval(db, orgId, pageId, existing)
-							yield* db.run(
-								PG.deleteFrom(StatusPageCustomDomains).where(($) => [$.pageId.eq(pageId)]),
-							)
-							if (existing.status === "active") yield* bumpPage(db, orgId, pageId)
-						}
+						if (existing !== null) yield* dropDomain(db, existing)
 						const [row] = yield* db.run(
 							PG.insertInto(StatusPageCustomDomains)
 								.values({
@@ -546,12 +614,7 @@ export class StatusPageCustomDomainsService extends Context.Service<
 								pageId,
 								message: "This status page has no custom domain",
 							})
-						// The publisher takes it down at Cloudflare and at the edge on its next sweep.
-						yield* queueCustomDomainRemoval(db, orgId, pageId, existing)
-						yield* db.run(
-							PG.deleteFrom(StatusPageCustomDomains).where(($) => [$.pageId.eq(pageId)]),
-						)
-						if (existing.status === "active") yield* bumpPage(db, orgId, pageId)
+						yield* dropDomain(db, existing)
 					}),
 				),
 			)
@@ -575,27 +638,37 @@ export class StatusPageCustomDomainsService extends Context.Service<
 		})
 
 		const poll = Effect.fn("StatusPageCustomDomainsService.poll")(function* (nowMs: number) {
-			const empty = { checked: 0, activated: 0, failed: 0 }
-			if (cnameTarget === null) return empty
-			// Oldest check first, never-checked before all; the interval per status is applied here.
-			const candidates = yield* dbExecute((db) =>
+			if (cnameTarget === null) return { checked: 0, activated: 0, failed: 0, errored: 0, expired: 0 }
+			const expired = yield* expireClaims(nowMs)
+			// Due by status: never checked, settled after hours, pending every minute for its first
+			// hour and every ten minutes after. Never-checked first, then the oldest check.
+			const due = yield* dbExecute((db) =>
 				db.run(
 					PG.from(StatusPageCustomDomains)
 						.select()
 						.where(($) => [
-							PG.or($.lastCheckedAt.isNull(), $.lastCheckedAt.lte(nowMs - FRESH_INTERVAL_MS)),
+							PG.or(
+								$.lastCheckedAt.isNull(),
+								$.lastCheckedAt.lte(nowMs - SETTLED_INTERVAL_MS),
+								PG.and(
+									$.status.in_("pending_dns", "pending_ssl"),
+									PG.or(
+										$.lastCheckedAt.lte(nowMs - PENDING_INTERVAL_MS),
+										PG.and(
+											$.createdAt.gt(nowMs - FRESH_FOR_MS),
+											$.lastCheckedAt.lte(nowMs - FRESH_INTERVAL_MS),
+										),
+									),
+								),
+							),
 						])
 						.orderBy(($) => [
 							[PG.asBoolean($.lastCheckedAt.isNotNull()), "asc"],
 							[$.lastCheckedAt, "asc"],
 							[$.pageId, "asc"],
 						])
-						.limit(CUSTOM_DOMAIN_POLL_BATCH * 5),
+						.limit(CUSTOM_DOMAIN_POLL_BATCH),
 				),
-			)
-			const due = Arr.take(
-				Arr.filter(candidates, (row) => dueAfter(row, nowMs)),
-				CUSTOM_DOMAIN_POLL_BATCH,
 			)
 			const outcomes = yield* Effect.forEach(
 				due,
@@ -619,10 +692,14 @@ export class StatusPageCustomDomainsService extends Context.Service<
 				checked: Arr.filter(outcomes, (outcome) => outcome.ok).length,
 				activated: Arr.filter(outcomes, (outcome) => outcome.activated).length,
 				failed: Arr.filter(outcomes, (outcome) => outcome.failed).length,
+				errored: Arr.filter(outcomes, (outcome) => !outcome.ok).length,
+				expired,
 			}
 			yield* Effect.annotateCurrentSpan({
 				"maple.status_page.custom_domains_checked": result.checked,
 				"maple.status_page.custom_domains_activated": result.activated,
+				"maple.status_page.custom_domains_errored": result.errored,
+				"maple.status_page.custom_domains_expired": result.expired,
 			})
 			return result
 		})

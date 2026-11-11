@@ -764,6 +764,41 @@ describe("StatusPagePublisher custom domains", () => {
 		),
 	)
 
+	it.effect("keeps the route of a domain removed and added back before its cleanup drained", () =>
+		withPublisher(({ testDb, store, cloudflare, publisher }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const hostname = yield* cloudflare.api.createHostname("status.acme.com")
+				const routeId = yield* cloudflare.api.createRoute("status.acme.com")
+				// Added back, the domain took over the queued removal's Cloudflare pieces and is active again.
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: hostname.id,
+					cloudflareRouteId: routeId,
+				})
+				yield* seedCleanup(testDb, {
+					pageId,
+					slug: null,
+					deleteSnapshot: false,
+					at: NOW,
+					hostname: "status.acme.com",
+				})
+				yield* publisher.publish(pageId)
+
+				const result = yield* publisher.sweep(NOW + 60_000)
+				assert.strictEqual(result.cleaned, 1)
+				const { kv } = yield* store.contents
+				assert.strictEqual(kv.get(StatusPageKeys.host("status.acme.com")), pageId)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+				assert.strictEqual((yield* cloudflare.routes).size, 1)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
 	it.effect("drops the removed page's route when the hostname's new claim is still pending", () =>
 		withPublisher(({ testDb, store, cloudflare, publisher }) =>
 			Effect.gen(function* () {

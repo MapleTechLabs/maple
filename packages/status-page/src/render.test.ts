@@ -712,7 +712,7 @@ describe("renderRssFeed", () => {
 				`urn:maple:status:${snapshot.pageId}:a:a1`,
 			],
 		])
-		expect(xml).toContain("<description>Fixed &lt;now&gt;</description>")
+		expect(xml).toContain("<description>Fixed &amp;lt;now&amp;gt;</description>")
 		expect(xml).toContain("<link>https://status.acme.example/#incident-a</link>")
 		expect(xml).toContain('<atom:link href="https://status.acme.example/feed.rss" rel="self"')
 	})

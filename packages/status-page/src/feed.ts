@@ -1,4 +1,5 @@
-import type { StatusPageSnapshot } from "@maple/domain/status-page"
+import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
+import { escapeHtml } from "@maple/strings"
 import { escapeXml } from "./escape"
 import { INCIDENT_STATUS_LABEL } from "./format"
 import { latestActivityAt } from "./select"
@@ -19,7 +20,7 @@ interface FeedItem {
 }
 
 /** One item per incident update, newest first, with raw (unescaped) text. */
-const feedItems = (snapshot: StatusPageSnapshot, base: string): ReadonlyArray<FeedItem> =>
+const feedItems = (snapshot: StatusPagePublicSnapshot, base: string): ReadonlyArray<FeedItem> =>
 	Arr.map(
 		Arr.flatMap(snapshot.incidents, (incident) =>
 			Arr.map(incident.updates, (update) => ({ incident, update })),
@@ -34,7 +35,7 @@ const feedItems = (snapshot: StatusPageSnapshot, base: string): ReadonlyArray<Fe
 	)
 
 /** Atom feed with one entry per incident update, newest first. `pageUrl` is the page's absolute URL. */
-export const renderAtomFeed = (snapshot: StatusPageSnapshot, pageUrl: string): string => {
+export const renderAtomFeed = (snapshot: StatusPagePublicSnapshot, pageUrl: string): string => {
 	const base = trimBase(pageUrl)
 	const entries = Arr.join(
 		Arr.map(
@@ -51,13 +52,13 @@ export const renderAtomFeed = (snapshot: StatusPageSnapshot, pageUrl: string): s
 const rfc822 = (ms: number): string => new Date(ms).toUTCString()
 
 /** RSS 2.0 feed with the same items as the Atom feed. `pageUrl` is the page's absolute URL. */
-export const renderRssFeed = (snapshot: StatusPageSnapshot, pageUrl: string): string => {
+export const renderRssFeed = (snapshot: StatusPagePublicSnapshot, pageUrl: string): string => {
 	const base = trimBase(pageUrl)
 	const items = Arr.join(
 		Arr.map(
 			feedItems(snapshot, base),
 			(item) =>
-				`<item><title>${escapeXml(item.title)}</title><link>${escapeXml(item.link)}</link><description>${escapeXml(item.body)}</description><pubDate>${rfc822(item.at)}</pubDate><guid isPermaLink="false">${escapeXml(item.id)}</guid></item>`,
+				`<item><title>${escapeXml(item.title)}</title><link>${escapeXml(item.link)}</link><description>${escapeXml(escapeHtml(item.body))}</description><pubDate>${rfc822(item.at)}</pubDate><guid isPermaLink="false">${escapeXml(item.id)}</guid></item>`,
 		),
 		"",
 	)

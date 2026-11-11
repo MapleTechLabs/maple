@@ -7,6 +7,7 @@ import {
 	makeSnapshot,
 } from "@maple/status-page/fixtures"
 import { beforeEach, describe, expect, it } from "vitest"
+import { sharedHostMatcher } from "./handler"
 import { CACHE_FRESH_MS, cacheKey } from "./snapshot"
 import {
 	type FakeStorage,
@@ -581,5 +582,18 @@ describe("custom domains", () => {
 		expect(bySlug.status).toBe(404)
 		// A page's own domain does not serve /s/<slug> of any page either.
 		expect((await send(fake, `${CUSTOM}/s/acme/`)).status).toBe(404)
+	})
+})
+
+describe("sharedHostMatcher", () => {
+	const isShared = sharedHostMatcher("status.maple.dev")
+
+	it.each([
+		["status.maple.dev", true],
+		["STATUS.Maple.Dev", true],
+		["status.maple.dev.evil.com", false],
+		["evil-status.maple.dev", false],
+	])("treats %s as shared: %s", (hostname, shared) => {
+		expect(isShared(hostname)).toBe(shared)
 	})
 })

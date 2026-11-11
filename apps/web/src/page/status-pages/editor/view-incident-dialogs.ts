@@ -4,7 +4,7 @@ import {
 	type StatusPageIncidentStatus,
 } from "@maple/domain"
 import type { V2StatusPage, V2StatusPageIncident } from "@maple/domain/http/v2"
-import { INCIDENT_STATUS_LABEL, renderUpdateBody } from "@maple/status-page"
+import { INCIDENT_STATUS_LABEL } from "@maple/status-page"
 import type { Tone } from "@maple/ui/lib/tone"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -53,7 +53,7 @@ import { Message } from "./message"
 import type { ComposeStep, Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { pageUrlOf } from "./update-domain"
-import { failureAlert, type TimeInputs, windowLine } from "./view-panel"
+import { failureAlert, type TimeInputs, updateBody, windowLine } from "./view-panel"
 
 // Post incident and Post update: write it, then review how it reads and what it changes on the
 // page before it goes out. Edit details opens on its own, or over Post update.
@@ -65,10 +65,6 @@ type Close = ReadonlyArray<ChildAttribute>
 const MESSAGE_HINT = "Supports **bold**, *italic*, `code`, lists and links."
 
 const DIALOG_CLASS = "sm:max-w-160"
-
-/** The public page's update markup: paragraphs, lists, code and links. */
-const MESSAGE_CLASS =
-	"space-y-2 text-sm text-foreground-soft [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_code]:text-xs [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
 
 const header = (
 	h: H,
@@ -218,14 +214,7 @@ const previewCard = (
 				[INCIDENT_STATUS_LABEL[options.status]],
 			),
 		]),
-		h.div(
-			[
-				h.Class(MESSAGE_CLASS),
-				h.DataAttribute("slot", "update-body"),
-				h.InnerHTML(renderUpdateBody(options.body)),
-			],
-			[],
-		),
+		updateBody(h, options.body),
 		typography(h, { size: "xs", tone: "muted", as: "p" }, options.meta),
 	])
 
@@ -281,12 +270,13 @@ const pageLine = (model: Model, page: V2StatusPage): ReadonlyArray<string> => {
 	return url === null ? [page.name] : [page.name, " · ", Str.replace(/^https?:\/\//u, "")(url)]
 }
 
-const composeWrite = (h: H, model: Model, page: V2StatusPage, timeZone: string, close: Close) => {
+const composeWrite = (h: H, model: Model, page: V2StatusPage, time: TimeInputs, close: Close) => {
+	const { timeZone } = time
 	const form = model.incidentForm
 	const id = model.composeDialog.id
 	const isMaintenance = form.kind === "maintenance"
-	const issues = incidentIssues(form, timeZone)
-	const issue = issues.title ?? issues.body ?? issues.window
+	const issues = incidentIssues(form, timeZone, time.nowMs)
+	const issue = issues.title ?? issues.body ?? issues.window ?? issues.started
 	return [
 		header(h, id, {
 			step: "write",
@@ -346,6 +336,7 @@ const composeWrite = (h: H, model: Model, page: V2StatusPage, timeZone: string, 
 										type: "datetime-local",
 										value: form.startedAt,
 										hint: `Leave empty if it started now. Times are in ${timeZone}.`,
+										error: issues.started,
 										onInput: (value) =>
 											Message.ChangedIncidentField({ field: "startedAt", value }),
 									}),
@@ -545,7 +536,7 @@ const composeDialogView = (h: H, model: Model, page: V2StatusPage, time: TimeInp
 		hasDescription: model.composeStep === "write",
 		content: (close) =>
 			model.composeStep === "write"
-				? composeWrite(h, model, page, time.timeZone, close)
+				? composeWrite(h, model, page, time, close)
 				: composeReview(h, model, time),
 	})
 
@@ -578,7 +569,7 @@ const updateWrite = (
 	const last = incident.updates[0]
 	const names = namesOf(model, incident.component_ids)
 	const tooLong = updateBodyLengthIssue(form.body)
-	const ended = endedIssue(form, incident.started_at, time.timeZone)
+	const ended = endedIssue(form, incident.started_at, time.timeZone, time.nowMs)
 	return [
 		header(h, id, {
 			step: "write",
@@ -607,9 +598,7 @@ const updateWrite = (
 											}),
 										]),
 									]),
-									typography(h, { size: "sm", tone: "muted", truncate: true, as: "p" }, [
-										last.body,
-									]),
+									updateBody(h, last.body, "line-clamp-3"),
 								]),
 							]),
 					vstack(h, { gap: "1.5" }, [
@@ -824,9 +813,9 @@ const timeFields = (
 }
 
 /** Title, impact, times and components, changed in place: saving posts no update. */
-const editDialogView = (h: H, model: Model, timeZone: string): Html => {
+const editDialogView = (h: H, model: Model, time: TimeInputs): Html => {
 	const form = model.incidentEdit
-	const issues = form === null ? null : incidentEditIssues(form, timeZone)
+	const issues = form === null ? null : incidentEditIssues(form, time.timeZone, time.nowMs)
 	const isBlank = issues === null || issues.title !== null
 	return formDialog(h, {
 		slotId: "status-page-edit-incident",
@@ -864,7 +853,7 @@ const editDialogView = (h: H, model: Model, timeZone: string): Html => {
 									}),
 								]
 							: []),
-						...timeFields(h, form, issues?.times ?? null, timeZone),
+						...timeFields(h, form, issues?.times ?? null, time.timeZone),
 						componentChecklist(h, model, {
 							checkedIds: form.componentIds,
 							idPrefix: "status-page-incident-edit-component",
@@ -884,5 +873,5 @@ export const incidentDialogs = (
 ): ReadonlyArray<Html> => [
 	composeDialogView(h, model, page, time),
 	updateDialogView(h, model, time),
-	editDialogView(h, model, time.timeZone),
+	editDialogView(h, model, time),
 ]

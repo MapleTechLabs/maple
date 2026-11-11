@@ -58,9 +58,17 @@ export const postAccess = (
 ): Effect.Effect<Response> =>
 	Effect.gen(function* () {
 		const ip = request.headers.get("cf-connecting-ip") ?? "unknown"
-		const allowed = yield* env.storage
-			.rateLimit(`access:${ip}:${snapshot.pageId}`)
-			.pipe(Effect.orElseSucceed(() => false))
+		const allowed = yield* env.storage.rateLimit(`access:${ip}:${snapshot.pageId}`).pipe(
+			Effect.tapError((error) =>
+				Effect.logWarning("Status page access rate limit unavailable").pipe(
+					Effect.annotateLogs({
+						"maple.status_page.id": snapshot.pageId,
+						"error.type": error._tag,
+					}),
+				),
+			),
+			Effect.orElseSucceed(() => false),
+		)
 		if (!allowed) {
 			return accessPage(env, snapshot, basePath, 429, "Too many attempts. Wait a minute and try again.")
 		}
@@ -71,12 +79,16 @@ export const postAccess = (
 		const posted = form.success.get(ACCESS_FIELD)
 		const hash = snapshot.passwordHash
 		const granted =
-			hash !== null &&
-			typeof posted === "string" &&
-			(yield* verifyStatusPagePassword(posted, hash))
+			hash !== null && typeof posted === "string" && (yield* verifyStatusPagePassword(posted, hash))
 		yield* Effect.annotateCurrentSpan("maple.status_page.access_granted", granted)
 		if (!granted || hash === null) {
-			return accessPage(env, snapshot, basePath, 401, "That password is not right. Check it and try again.")
+			return accessPage(
+				env,
+				snapshot,
+				basePath,
+				401,
+				"That password is not right. Check it and try again.",
+			)
 		}
 		const cookie = yield* signStatusPageAccess(
 			hash,

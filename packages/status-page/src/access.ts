@@ -1,4 +1,4 @@
-import type { StatusPageSnapshot } from "@maple/domain/status-page"
+import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
 import { Array as Arr } from "effect"
 import { pageHref, type RenderOptions, renderDocument, renderHeader } from "./document"
@@ -15,7 +15,7 @@ export const ACCESS_FIELD = "password"
  * once unlocked. `message` says why the last attempt failed.
  */
 export const renderAccessPage = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	message: string | undefined,
 	options: RenderOptions = {},
 ): string => {

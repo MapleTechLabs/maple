@@ -26,10 +26,10 @@ function times(now){document.querySelectorAll("time[datetime]").forEach(function
 function tick(){var n=Date.now(),g=n-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false;times(n)}
 tick();setInterval(tick,3e4);
 b.classList.add("js");
-var dlg=document.getElementById("subscribe"),box=dlg.querySelector(".modal-box"),opener=null;
+var dlg=document.getElementById("subscribe"),box=dlg?dlg.querySelector(".modal-box"):null,opener=null;
 document.querySelectorAll("[data-copy]").forEach(function(c){c.hidden=false});
-function isOpen(){return dlg.classList.contains("open")}
-function openSub(){opener=document.activeElement;dlg.classList.add("open");box.focus({preventScroll:true})}
+function isOpen(){return!!dlg&&dlg.classList.contains("open")}
+function openSub(){if(!dlg)return;opener=document.activeElement;dlg.classList.add("open");box.focus({preventScroll:true})}
 function closeSub(){dlg.classList.remove("open");if(location.hash==="#subscribe")history.replaceState(null,"",location.pathname+location.search);if(opener&&opener.focus)opener.focus()}
 function pick(c){c.focus();c.select()}
 function copy(a){var c=a.parentNode.querySelector("input"),k=function(){pick(c)};if(navigator.clipboard)navigator.clipboard.writeText(c.value).then(function(){a.setAttribute("data-copied","");setTimeout(function(){a.removeAttribute("data-copied")},1500)},k);else k()}

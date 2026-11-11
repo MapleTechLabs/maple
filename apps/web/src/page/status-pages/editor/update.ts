@@ -8,13 +8,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import {
-	type EditorView,
-	pageIdFromUrl,
-	STATUS_PAGE_BASE_URL,
-	statusPageHref,
-	statusPageViewHref,
-} from "../shared/commands"
+import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -22,7 +16,6 @@ import {
 	FetchEditorPreview,
 	FetchEditorSession,
 	FocusEditorElement,
-	OpenPublicPage,
 	ReadEditorClock,
 	WaitEditorPreview,
 } from "./command"
@@ -128,7 +121,6 @@ import {
 	checkCustomDomain,
 	checkedCustomDomain,
 	confirmRemoveCustomDomain,
-	pageUrlOf,
 	readCustomDomain,
 	removeCustomDomainDialog,
 	removedCustomDomain,
@@ -184,7 +176,6 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		incidentFailure: null,
 		updateDialog: Dialog.init("status-page-update", "dialog"),
 		updateForm: { _tag: "Closed" },
-		nextUpdatePost: 0,
 		publishingIncidentIds: [],
 		editIncidentDialog: Dialog.init("status-page-edit-incident", "dialog"),
 		incidentEdit: null,
@@ -324,17 +315,6 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 			return navigate(`${statusPageHref(model.pageId, "settings")}#status-page-settings-break-glass`)
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
-		case "public":
-			// An internal page has no public address: members read it inside Maple.
-			if (Option.exists(pageOf(model), (page) => page.visibility === "internal"))
-				return navigate(statusPageViewHref(model.pageId))
-			return Option.match(
-				Option.flatMap(pageOf(model), (page) => Option.fromNullishOr(pageUrlOf(model, page))),
-				{
-					onNone: () => ({ model: next, commands }),
-					onSome: (url) => ({ model: next, commands: [...commands, OpenPublicPage({ url })] }),
-				},
-			)
 		default:
 			return { model: next, commands }
 	}
@@ -385,7 +365,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
 		CompletedFocus: () => ({ model }),
-		OpenedPublicPage: () => ({ model }),
 		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
@@ -481,7 +460,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SubmittedUpdateWrite: () => reviewUpdate(model, context),
 		ClickedUpdateBack: () => backToUpdateWrite(model),
 		SubmittedUpdate: () => submitUpdate(model, context),
-		CompletedPostUpdate: ({ generation, result }) => postedUpdate(model, generation, result, context),
+		CompletedPostUpdate: ({ result }) => postedUpdate(model, result, context),
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),

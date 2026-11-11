@@ -7,7 +7,7 @@ import {
 	STATUS_PAGE_STALE_AFTER_MS,
 	type StatusPageDayBar,
 	type StatusPageFreshness,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotComponent,
 	type StatusPageSnapshotIncident,
 	uptimePercent,
@@ -159,7 +159,7 @@ const renderComponent = (component: StatusPageSnapshotComponent, options: Render
 	return `<div class="component" data-component="${escapeHtml(component.id)}"${previewIdAttr(options, "component", component.id)}><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days) : ""}</div>`
 }
 
-const renderSystemStatus = (snapshot: StatusPageSnapshot, options: RenderOptions): string => {
+const renderSystemStatus = (snapshot: StatusPagePublicSnapshot, options: RenderOptions): string => {
 	if (snapshot.components.length === 0) return ""
 	const shown = barComponents(snapshot.components)[0]
 	const label = shown === undefined ? "" : rangeLabel(windowDays(shown.days, 0))
@@ -225,12 +225,12 @@ const renderCalendar = (
 		Arr.map(WEEKDAYS, (name) => `<th scope="col" abbr="${name}">${Str.slice(0, 1)(name)}</th>`),
 		"",
 	)
-	return `<section class="panel" aria-labelledby="h-calendar"><div class="panel-head"><h2 id="h-calendar">Calendar</h2>${pager("month", `${MONTHS[month - 1] ?? ""} ${year}`, "month")}</div><table class="cal"><thead><tr>${head}</tr></thead><tbody id="cal-body">${rows}</tbody></table><div class="cal-panel" id="cal-panel" role="region" aria-label="Incidents on the chosen day" hidden></div></section>`
+	return `<section class="panel" aria-labelledby="h-calendar"><div class="panel-head"><h2 id="h-calendar">Calendar <small>(UTC)</small></h2>${pager("month", `${MONTHS[month - 1] ?? ""} ${year}`, "month")}</div><table class="cal"><thead><tr>${head}</tr></thead><tbody id="cal-body">${rows}</tbody></table><div class="cal-panel" id="cal-panel" role="region" aria-label="Incidents on the chosen day" hidden></div></section>`
 }
 
 /** What the script pages through. Bars are `[checks, failures, downChecks]`, or 0 for no data. */
 const pageData = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	today: string,
 	entries: ReadonlyArray<CalendarEntry>,
 	days: ReadonlyMap<string, CalendarDay>,
@@ -291,7 +291,7 @@ const scriptJson = (value: ReturnType<typeof pageData>): string =>
 	)
 
 const renderFooter = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	freshness: StatusPageFreshness,
 	nowMs: number,
 	options: RenderOptions,
@@ -332,7 +332,7 @@ const statusSummary = (
  * `publicUrl`; the image is the logo, when there is one.
  */
 const shareTags = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	title: string,
 	summary: string,
 	options: RenderOptions,
@@ -361,7 +361,7 @@ const shareTags = (
 
 /** The public status page: server-rendered, self-contained, readable with scripts off. */
 export const renderPage = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	freshness: StatusPageFreshness,
 	nowMs: number,
 	options: RenderOptions = {},

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Array as Arr } from "effect"
+import { Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
@@ -118,6 +118,47 @@ describe("CloudflareCustomHostnames", () => {
 					const error = yield* Effect.flip(client.createHostname("status.acme.com"))
 					assert.strictEqual(error._tag, "@maple/backend/status-pages/CustomHostnameConflictError")
 				}),
+		),
+	)
+
+	it.effect("keeps Cloudflare's reason and status on a refused call", () =>
+		withClient(
+			() => json({ success: false, errors: [{ code: 1411, message: "Hostname is prohibited." }] }, 400),
+			(client) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(client.createHostname("status.acme.com"))
+					assert.strictEqual(error._tag, "@maple/backend/status-pages/CustomHostnamesApiError")
+					if (error._tag !== "@maple/backend/status-pages/CustomHostnamesApiError") return
+					assert.strictEqual(error.status, 400)
+					assert.strictEqual(error.detail, "Hostname is prohibited.")
+					assert.include(error.message, "Hostname is prohibited.")
+				}),
+		),
+	)
+
+	const listing = (script: string) => (request: SentRequest) =>
+		Str.includes("/custom_hostnames")(request.url)
+			? json({ success: true, errors: [], result: [hostnameResult] })
+			: json({ success: true, errors: [], result: [{ id: "route-1", pattern: "status.acme.com/*", script }] })
+
+	it.effect("finds the zone's hostname routed to this stage's Worker", () =>
+		withClient(listing("maple-status-pr-7"), (client, requests) =>
+			Effect.gen(function* () {
+				const found = yield* client.findHostname("status.acme.com")
+				assert.strictEqual(Option.getOrNull(found)?.id, "cfh-1")
+				assert.strictEqual(
+					requests[0]?.url,
+					`${API}/zones/${ZONE}/custom_hostnames?hostname=status.acme.com`,
+				)
+			}),
+		),
+	)
+
+	it.effect("does not find a hostname another stage's Worker serves", () =>
+		withClient(listing("maple-status"), (client) =>
+			Effect.gen(function* () {
+				assert.isTrue(Option.isNone(yield* client.findHostname("status.acme.com")))
+			}),
 		),
 	)
 

@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, SchemaTransformation, Struct, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
 	StatusPageComponentStatus,
@@ -717,7 +717,9 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	 * Who may read the page. A password page has no feeds or subscribe options (feed readers
 	 * cannot sign in); an internal one is never served at the edge. Absent before visibility existed.
 	 */
-	visibility: StatusPageVisibility.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed("public" as const))),
+	visibility: StatusPageVisibility.pipe(
+		Schema.withDecodingDefaultTypeKey(Effect.succeed("public" as const)),
+	),
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>
 
@@ -747,6 +749,16 @@ export const StatusPageSnapshot = Schema.Struct({
 	),
 })
 export type StatusPageSnapshot = Schema.Schema.Type<typeof StatusPageSnapshot>
+
+/** The credentials only the edge holds. */
+const SNAPSHOT_SECRETS = ["breakGlassTokenSha256", "passwordHash"] as const
+
+/** A snapshot as the API returns it to members: without the credentials the edge checks. */
+export const StatusPagePublicSnapshot = StatusPageSnapshot.mapFields(Struct.omit(SNAPSHOT_SECRETS))
+export type StatusPagePublicSnapshot = Schema.Schema.Type<typeof StatusPagePublicSnapshot>
+
+export const toPublicStatusPageSnapshot = (snapshot: StatusPageSnapshot): StatusPagePublicSnapshot =>
+	Struct.omit(snapshot, SNAPSHOT_SECRETS)
 
 /**
  * Written after each successful publish sweep. `probesSeenAt` is the newest scheduled check result
@@ -981,7 +993,7 @@ const withIncidentImpact = (
 }
 
 /** The banner status: the worst component, or `operational` for an empty page. */
-export const overallStatus = (snapshot: StatusPageSnapshot): StatusPageComponentStatus =>
+export const overallStatus = (snapshot: StatusPagePublicSnapshot): StatusPageComponentStatus =>
 	worstStatus(Arr.map(snapshot.components, (component) => component.status))
 
 export const dayState = (bar: StatusPageDayBar): StatusPageDayState =>

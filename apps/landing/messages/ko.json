@@ -1425,7 +1425,7 @@
 	"feat_status_cap_8_body": "API v2로 페이지, 컴포넌트, 인시던트를 만듭니다. AI 에이전트는 MCP 도구 apply_status_page_config로 페이지를 설정하고 post_status_page_update로 인시던트를 게시합니다.",
 	"status_feeds_eyebrow": "구독과 API",
 	"status_feeds_title": "Slack, 피드 리더, 코드에서 따라 보기",
-	"status_feeds_lede": "모든 페이지는 RSS와 Atom 피드, 상태 배지, statuspage.io 요약 형식의 status.json을 공개합니다. statuspage.io 페이지를 읽는 스크립트와 도구가 그대로 읽을 수 있습니다.",
+	"status_feeds_lede": "모든 공개 페이지는 RSS와 Atom 피드, 상태 배지, statuspage.io 요약 형식의 status.json을 공개합니다. statuspage.io 페이지를 읽는 스크립트와 도구가 그대로 읽을 수 있습니다.",
 	"status_feeds_rule_1_title": "Slack과 피드 리더",
 	"status_feeds_rule_1_body": "페이지의 구독 메뉴에 피드 URL과, RSS 피드를 Slack 채널에 추가하는 /feed subscribe 명령이 나옵니다.",
 	"status_feeds_rule_2_title": "status.json과 업타임 데이터",

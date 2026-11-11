@@ -48,57 +48,56 @@ const announce = (
  * ended; one that missed its whole window gets both updates. Each in its own transaction, the
  * writes guarded on status so a concurrent sweep or a manual post wins. Returns how many moved.
  */
-export const advanceMaintenance = (db: MapleDb, at: number) =>
-	Effect.gen(function* () {
-		const due = yield* db.run(
-			PG.from(StatusPageIncidents)
-				.select(($) => ({ id: $.id, orgId: $.orgId, scheduledStart: $.scheduledStart }))
-				.where(($) => [
-					$.kind.eq("maintenance"),
-					$.resolvedAt.isNull(),
-					PG.or(
-						PG.and($.status.eq("scheduled"), $.scheduledStart.lte(at)),
-						PG.and($.status.eq("in_progress"), $.scheduledEnd.lte(at)),
-					),
-				])
-				.orderBy(["scheduledStart", "asc"], ["id", "asc"])
-				.limit(MAINTENANCE_SWEEP_BATCH),
-		)
-		const counts = yield* Effect.forEach(due, (row) =>
-			db.transaction(
-				Effect.gen(function* () {
-					const started = yield* db.run(
-						PG.update(StatusPageIncidents)
-							.set({ status: "in_progress", updatedAt: at })
-							.where(($) => [
-								$.orgId.eq(row.orgId),
-								$.id.eq(row.id),
-								$.status.eq("scheduled"),
-								$.scheduledStart.lte(at),
-							])
-							.returning(($) => ({ id: $.id, pageId: $.pageId })),
-					)
-					// A millisecond early, so a window missed whole lists its start before its completion.
-					yield* Effect.forEach(started, (incident) =>
-						announce(db, row.orgId, incident, "in_progress", at - 1),
-					)
-					const completed = yield* db.run(
-						PG.update(StatusPageIncidents)
-							.set({ status: "completed", resolvedAt: at, updatedAt: at })
-							.where(($) => [
-								$.orgId.eq(row.orgId),
-								$.id.eq(row.id),
-								$.status.eq("in_progress"),
-								$.scheduledEnd.lte(at),
-							])
-							.returning(($) => ({ id: $.id, pageId: $.pageId })),
-					)
-					yield* Effect.forEach(completed, (incident) =>
-						announce(db, row.orgId, incident, "completed", at),
-					)
-					return started.length + completed.length > 0 ? 1 : 0
-				}),
-			),
-		)
-		return Arr.reduce(counts, 0, (sum, n) => sum + n)
-	})
+export const advanceMaintenance = Effect.fnUntraced(function* (db: MapleDb, at: number) {
+	const due = yield* db.run(
+		PG.from(StatusPageIncidents)
+			.select(($) => ({ id: $.id, orgId: $.orgId, scheduledStart: $.scheduledStart }))
+			.where(($) => [
+				$.kind.eq("maintenance"),
+				$.resolvedAt.isNull(),
+				PG.or(
+					PG.and($.status.eq("scheduled"), $.scheduledStart.lte(at)),
+					PG.and($.status.eq("in_progress"), $.scheduledEnd.lte(at)),
+				),
+			])
+			.orderBy(["scheduledStart", "asc"], ["id", "asc"])
+			.limit(MAINTENANCE_SWEEP_BATCH),
+	)
+	const counts = yield* Effect.forEach(due, (row) =>
+		db.transaction(
+			Effect.gen(function* () {
+				const started = yield* db.run(
+					PG.update(StatusPageIncidents)
+						.set({ status: "in_progress", updatedAt: at })
+						.where(($) => [
+							$.orgId.eq(row.orgId),
+							$.id.eq(row.id),
+							$.status.eq("scheduled"),
+							$.scheduledStart.lte(at),
+						])
+						.returning(($) => ({ id: $.id, pageId: $.pageId })),
+				)
+				// A millisecond early, so a window missed whole lists its start before its completion.
+				yield* Effect.forEach(started, (incident) =>
+					announce(db, row.orgId, incident, "in_progress", at - 1),
+				)
+				const completed = yield* db.run(
+					PG.update(StatusPageIncidents)
+						.set({ status: "completed", resolvedAt: at, updatedAt: at })
+						.where(($) => [
+							$.orgId.eq(row.orgId),
+							$.id.eq(row.id),
+							$.status.eq("in_progress"),
+							$.scheduledEnd.lte(at),
+						])
+						.returning(($) => ({ id: $.id, pageId: $.pageId })),
+				)
+				yield* Effect.forEach(completed, (incident) =>
+					announce(db, row.orgId, incident, "completed", at),
+				)
+				return started.length + completed.length > 0 ? 1 : 0
+			}),
+		),
+	)
+	return Arr.reduce(counts, 0, (sum, n) => sum + n)
+})

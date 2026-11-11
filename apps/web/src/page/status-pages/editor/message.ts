@@ -19,7 +19,7 @@ import {
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
-	StatusPageSnapshot,
+	StatusPagePublicSnapshot,
 	StatusPageThemeRadius,
 } from "@maple/domain/status-page"
 import { Schema } from "effect"
@@ -55,13 +55,12 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	GotPageMenuMessage: { message: Menu.Message },
 	CompletedFocus: {},
-	OpenedPublicPage: {},
 	// Preview and selection
 	ElapsedPreviewDebounce: { generation: Schema.Number },
 	CompletedFetchPreview: {
 		generation: Schema.Number,
 		draft: StatusPagePreviewParams,
-		result: LoadOutcome(StatusPageSnapshot),
+		result: LoadOutcome(StatusPagePublicSnapshot),
 	},
 	ReceivedPreviewSelection: { kind: PreviewSelection.fields.kind, id: Schema.String },
 	ClickedComponent: { componentId: StatusPageComponentId },
@@ -105,8 +104,7 @@ export const Message = defineMessageUnion({
 	SubmittedUpdateWrite: {},
 	ClickedUpdateBack: {},
 	SubmittedUpdate: {},
-	/** `generation`: which post answered; the form may have moved on to another one. */
-	CompletedPostUpdate: { generation: Schema.Number, result: LoadOutcome(V2StatusPageIncident) },
+	CompletedPostUpdate: { result: LoadOutcome(V2StatusPageIncident) },
 	ClickedPublishIncident: { incidentId: StatusPageIncidentId },
 	CompletedPublishIncident: { incidentId: StatusPageIncidentId, result: LoadOutcome(V2StatusPageIncident) },
 	ClickedEditIncident: { incidentId: StatusPageIncidentId },

@@ -49,13 +49,19 @@ import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
-/** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
+/**
+ * The status page publisher, only when its KV and R2 bindings exist on this Worker. Custom domains
+ * ride along: unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
+ */
 const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
 	Option.match(bindings, {
 		onNone: () => Layer.empty,
 		onSome: ({ kv, bucket }) =>
-			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
-				Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+			Layer.mergeAll(
+				Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
+					Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+				),
+				StatusPageCustomDomainsService.layer,
 			),
 	})
 
@@ -98,8 +104,6 @@ export const layerTick = (
 		// Read by `maybeEnqueueTriage` when present; its absence means every
 		// incident opened here is investigated unclassified.
 		IncidentClassifier.layer,
-		// Unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
-		StatusPageCustomDomainsService.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
@@ -490,7 +494,8 @@ const prReviewPostMergeTick = makeTick(
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
 	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
-	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
+	const domains = yield* Effect.serviceOption(StatusPageCustomDomainsService)
+	if (Option.isNone(publisher) || Option.isNone(reconciler) || Option.isNone(domains)) {
 		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
 	}
 	yield* makeTick(reconciler.value.reconcileAll, "status_page_reconcile", (result) =>
@@ -511,17 +516,16 @@ const statusPagesTick = Effect.gen(function* () {
 	)
 	const nowMs = yield* Clock.currentTimeMillis
 	// Before the sweep, so a domain that just went live is routed in this same minute.
-	yield* makeTick(
-		StatusPageCustomDomainsService.use((domains) => domains.poll(nowMs)),
-		"status_page_custom_domains",
-		(result) =>
-			result.checked > 0
-				? {
-						statusPageCustomDomainsChecked: result.checked,
-						statusPageCustomDomainsActivated: result.activated,
-						statusPageCustomDomainsFailed: result.failed,
-					}
-				: undefined,
+	yield* makeTick(domains.value.poll(nowMs), "status_page_custom_domains", (result) =>
+		result.checked + result.errored + result.expired > 0
+			? {
+					statusPageCustomDomainsChecked: result.checked,
+					statusPageCustomDomainsActivated: result.activated,
+					statusPageCustomDomainsFailed: result.failed,
+					statusPageCustomDomainsErrored: result.errored,
+					statusPageCustomDomainsExpired: result.expired,
+				}
+			: undefined,
 	)
 	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
 		result.due + result.cleaned + result.cleanupsFailed > 0

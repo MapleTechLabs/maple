@@ -1,4 +1,4 @@
-import type { V2StatusPageCustomDomain } from "@maple/domain/http/v2"
+import type { V2StatusPage, V2StatusPageCustomDomain } from "@maple/domain/http/v2"
 import type { StatusPageCustomDomainRecordPurpose } from "@maple/domain/status-page"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
@@ -46,13 +46,6 @@ const PURPOSE_LABEL = {
 	certificate: "Lets the certificate be issued",
 } as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
 
-/** Tells two TXT rows' copy buttons apart. */
-const PURPOSE_NAME = {
-	routing: "routing",
-	ownership: "ownership",
-	certificate: "certificate",
-} as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
-
 const copyCell = (h: H, model: Model, key: string, value: string, label: string): Html =>
 	hstack(h, { gap: "1", align: "center" }, [
 		typography(h, { size: "xs", mono: true, className: "break-all" }, [value]),
@@ -81,9 +74,23 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 							typography(h, { size: "xs", tone: "muted" }, [PURPOSE_LABEL[record.purpose]]),
 						]),
 					]),
-					tableCell(h, [copyCell(h, model, `name-${index}`, record.name, `${PURPOSE_NAME[record.purpose]} ${record.type} name`)]),
 					tableCell(h, [
-						copyCell(h, model, `value-${index}`, record.value, `${PURPOSE_NAME[record.purpose]} ${record.type} value`),
+						copyCell(
+							h,
+							model,
+							`name-${index}`,
+							record.name,
+							`${record.purpose} ${record.type} name`,
+						),
+					]),
+					tableCell(h, [
+						copyCell(
+							h,
+							model,
+							`value-${index}`,
+							record.value,
+							`${record.purpose} ${record.type} value`,
+						),
 					]),
 				]),
 			),
@@ -144,9 +151,13 @@ const domainState = (h: H, model: Model, domain: V2StatusPageCustomDomain): Read
 	]
 }
 
-const hostnameForm = (h: H, model: Model, domain: V2StatusPageCustomDomain): Html => {
+/** An internal page answers nowhere public, so it takes no custom domain. */
+const INTERNAL_NOTE = "An internal page has no public address. Make it public or password-protected first."
+
+const hostnameForm = (h: H, model: Model, page: V2StatusPage, domain: V2StatusPageCustomDomain): Html => {
 	const issue = customDomainDraftIssue(model)
 	const isUnchanged = model.customDomainDraft === null || customDomainInput(model) === domain.hostname
+	const isInternal = page.visibility === "internal"
 	return h.form(
 		[h.AriaLabel("Custom domain"), h.OnSubmit(Message.SubmittedCustomDomain())],
 		[
@@ -156,12 +167,13 @@ const hostnameForm = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 				value: customDomainInput(model),
 				placeholder: "status.acme.com",
 				isMono: true,
-				isDisabled: !canManage(model),
+				isDisabled: !canManage(model) || isInternal,
 				error:
 					issue ??
 					(model.customDomainFailure === null ? null : failureMessage(model.customDomainFailure)),
-				hint:
-					domain.cname_target === null
+				hint: isInternal
+					? INTERNAL_NOTE
+					: domain.cname_target === null
 						? undefined
 						: `A subdomain you control, CNAMEd to ${domain.cname_target}.`,
 				onInput: (value) => Message.ChangedCustomDomain({ value }),
@@ -174,7 +186,10 @@ const hostnameForm = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 								type: "submit",
 								isLoading: model.customDomainAction === "set",
 								isDisabled:
-									isUnchanged || issue !== null || model.customDomainAction !== null,
+									isInternal ||
+									isUnchanged ||
+									issue !== null ||
+									model.customDomainAction !== null,
 							},
 							[domain.hostname === null ? "Add domain" : "Change domain"],
 						),
@@ -183,7 +198,7 @@ const hostnameForm = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 	)
 }
 
-export const customDomainSection = (h: H, model: Model): Html =>
+export const customDomainSection = (h: H, model: Model, page: V2StatusPage): Html =>
 	settingsSection(
 		h,
 		{
@@ -199,7 +214,7 @@ export const customDomainSection = (h: H, model: Model): Html =>
 				onSome: (domain) =>
 					domain.available
 						? vstack(h, { gap: "5" }, [
-								hostnameForm(h, model, domain),
+								hostnameForm(h, model, page, domain),
 								...domainState(h, model, domain),
 							])
 						: typography(h, { size: "sm", tone: "muted", as: "p" }, [

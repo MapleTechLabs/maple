@@ -334,8 +334,9 @@ export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
 		accessSection(h, model, page),
-		customDomainSection(h, model),
-		breakGlassSection(h, model, page),
+		customDomainSection(h, model, page),
+		// Break-glass posts at the public address, which an internal page does not answer on.
+		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
 		...(canManage(model) ? [deleteSection(h)] : []),
 	])
 

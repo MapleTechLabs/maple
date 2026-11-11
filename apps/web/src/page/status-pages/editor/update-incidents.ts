@@ -12,7 +12,14 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
 import { componentStatus, isOpenIncident, STATUSES_OF_KIND } from "../shared/derive"
 import * as Dialog from "@maple/views/ui/dialog"
-import { CreateIncident, DeleteIncident, PostIncidentUpdate, PublishIncident, SaveIncident } from "./command"
+import {
+	CreateIncident,
+	DeleteIncident,
+	PostIncidentUpdate,
+	PublishIncident,
+	ReadEditorClock,
+	SaveIncident,
+} from "./command"
 import {
 	emptyIncidentForm,
 	endedIssue,
@@ -49,6 +56,15 @@ import { focusPanel } from "./update-components"
 
 const decodeImpact = Schema.decodeUnknownOption(StatusPageIncidentImpact)
 const decodeStatus = Schema.decodeUnknownOption(StatusPageIncidentStatus)
+
+/** The clock as of now: a typed time is checked against it, so it must not be one read minutes ago. */
+const nowOf = (model: Model): number => model.nowMs ?? 0
+
+/** A typed time re-reads the clock, so the not-in-the-future check holds the time it was typed. */
+const withClock = (result: Return): Return => ({
+	...result,
+	commands: [...(result.commands ?? []), ReadEditorClock()],
+})
 
 /** Incidents and the page revision change together: both are read again. */
 const reread = (model: Model, context: PageContext): Return =>
@@ -139,6 +155,8 @@ export const changeIncident = (model: Model, field: IncidentTextField, value: st
 				onNone: () => ({ model }),
 				onSome: (status) => ({ model: { ...model, incidentForm: { ...form, status } } }),
 			})
+		case "startedAt":
+			return withClock({ model: { ...model, incidentForm: { ...form, startedAt: value } } })
 		default:
 			return { model: { ...model, incidentForm: { ...form, [field]: value } } }
 	}
@@ -161,7 +179,7 @@ export const toggleIncidentComponent = (model: Model, componentId: StatusPageCom
 
 /** Review is reached only with nothing missing; the footer names what is. */
 export const reviewIncident = (model: Model, context: PageContext): Return =>
-	hasIncidentIssues(incidentIssues(model.incidentForm, context.timeZone))
+	hasIncidentIssues(incidentIssues(model.incidentForm, context.timeZone, nowOf(model)))
 		? { model }
 		: { model: { ...model, composeStep: "review", incidentFailure: null } }
 
@@ -174,7 +192,7 @@ export const submitIncident = (model: Model, context: PageContext, isPublished: 
 	return model.pageId === null ||
 		model.isCreatingIncident ||
 		model.composeStep !== "review" ||
-		hasIncidentIssues(incidentIssues(form, context.timeZone))
+		hasIncidentIssues(incidentIssues(form, context.timeZone, nowOf(model)))
 		? { model }
 		: {
 				model: { ...model, incidentForm: form, isCreatingIncident: true, incidentFailure: null },
@@ -220,7 +238,7 @@ export const selectIncident = (model: Model, incidentId: StatusPageIncidentId): 
 /** The Post update dialog on its write step: the next status along, or the closing one for Resolve. */
 export const openUpdate = (model: Model, incidentId: StatusPageIncidentId, isResolving: boolean): Return => {
 	const incident = Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === incidentId))
-	return incident === undefined || !isOpenIncident(incident)
+	return incident === undefined || !isOpenIncident(incident) || model.updateForm._tag === "Posting"
 		? { model }
 		: updateDialog(
 				{
@@ -238,7 +256,7 @@ export const changeUpdate = (model: Model, field: "status" | "body" | "endedAt",
 	if (state._tag !== "Writing") return { model }
 	const withForm = (form: UpdateForm): Return => ({ model: { ...model, updateForm: { ...state, form } } })
 	if (field === "body") return withForm({ ...state.form, body: value })
-	if (field === "endedAt") return withForm({ ...state.form, endedAt: value })
+	if (field === "endedAt") return withClock(withForm({ ...state.form, endedAt: value }))
 	const allowed: ReadonlyArray<string> = STATUSES_OF_KIND[state.form.kind]
 	return Option.match(decodeStatus(value), {
 		onNone: () => ({ model }),
@@ -254,7 +272,7 @@ export const reviewUpdate = (model: Model, context: PageContext): Return => {
 	return Option.isNone(incident) ||
 		Str.trim(state.form.body) === "" ||
 		updateBodyLengthIssue(state.form.body) !== null ||
-		endedIssue(state.form, incident.value.started_at, context.timeZone) !== null
+		endedIssue(state.form, incident.value.started_at, context.timeZone, nowOf(model)) !== null
 		? { model }
 		: { model: { ...model, updateForm: { _tag: "Reviewing", form: state.form } } }
 }
@@ -272,40 +290,35 @@ export const submitUpdate = (model: Model, context: PageContext): Return => {
 	return state._tag !== "Reviewing" && state._tag !== "Failed"
 		? { model }
 		: {
-				model: {
-					...model,
-					updateForm: { _tag: "Posting", form: state.form, generation: model.nextUpdatePost },
-					nextUpdatePost: model.nextUpdatePost + 1,
-				},
+				model: { ...model, updateForm: { _tag: "Posting", form: state.form } },
 				commands: [
 					PostIncidentUpdate({
 						incidentId: state.form.incidentId,
-						generation: model.nextUpdatePost,
 						payload: updatePayload(state.form, context.timeZone),
 					}),
 				],
 			}
 }
 
-/** A post's result: the dialog closes only if it still shows that post; any success rereads. */
+/**
+ * A post's result: a success closes the dialog and rereads, a failure stays on the review with why.
+ * The dialog cannot close or move to another incident while it posts, so the form is the one sent.
+ */
 export const postedUpdate = (
 	model: Model,
-	generation: number,
 	result: Result.Result<V2StatusPageIncident, LoadFailure>,
 	context: PageContext,
 ): Return => {
 	const state = model.updateForm
-	const isShown = state._tag === "Posting" && state.generation === generation
+	if (state._tag !== "Posting") return { model }
 	return Result.match(result, {
 		onSuccess: (incident): Return => ({
-			...(state._tag === "Posting" && isShown
-				? chain(
-						// The form stays as it was reviewed while the dialog fades out.
-						{ ...model, updateForm: { _tag: "Reviewing", form: state.form } },
-						(next) => updateDialog(next, Dialog.close(next.updateDialog)),
-						(next) => reread(next, context),
-					)
-				: reread(model, context)),
+			...chain(
+				// The form stays as it was reviewed while the dialog fades out.
+				{ ...model, updateForm: { _tag: "Reviewing", form: state.form } },
+				(next) => updateDialog(next, Dialog.close(next.updateDialog)),
+				(next) => reread(next, context),
+			),
 			outMessage: toast(
 				"success",
 				isOpenIncident(incident)
@@ -316,10 +329,9 @@ export const postedUpdate = (
 				incident.title,
 			),
 		}),
-		onFailure: (failure): Return =>
-			state._tag === "Posting" && isShown
-				? { model: { ...model, updateForm: { _tag: "Failed", form: state.form, failure } } }
-				: { model, outMessage: toast("error", "Couldn't post the update", failure.message) },
+		onFailure: (failure): Return => ({
+			model: { ...model, updateForm: { _tag: "Failed", form: state.form, failure } },
+		}),
 	})
 }
 
@@ -391,7 +403,9 @@ export const changeIncidentEdit = (model: Model, field: IncidentEditField, value
 				onNone: () => ({ model }),
 				onSome: (impact) => ({ model: { ...model, incidentEdit: { ...form, impact } } }),
 			})
-		: { model: { ...model, incidentEdit: { ...form, [field]: value } } }
+		: field === "title"
+			? { model: { ...model, incidentEdit: { ...form, title: value } } }
+			: withClock({ model: { ...model, incidentEdit: { ...form, [field]: value } } })
 }
 
 export const toggleIncidentEditComponent = (model: Model, componentId: StatusPageComponentId): Return => {
@@ -418,7 +432,7 @@ export const submitIncidentEdit = (model: Model, context: PageContext): Return =
 			? undefined
 			: Option.getOrUndefined(Arr.findFirst(incidentsOf(model), (row) => row.id === form.incidentId))
 	if (form === null || incident === undefined || model.isSavingIncident) return { model }
-	const issues = incidentEditIssues(form, context.timeZone)
+	const issues = incidentEditIssues(form, context.timeZone, nowOf(model))
 	return issues.title !== null || issues.times !== null
 		? { model }
 		: {

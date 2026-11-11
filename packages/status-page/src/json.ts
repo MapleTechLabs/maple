@@ -2,7 +2,7 @@ import type { StatusPageComponentStatus } from "@maple/primitives"
 import {
 	overallStatus,
 	type StatusPageFreshness,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotIncident,
 } from "@maple/domain/status-page"
 import { activeIncidents } from "./select"
@@ -50,7 +50,7 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
  * page's canonical address (its custom domain once active), published as `status_url`.
  */
 export const renderStatusJson = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	freshness: StatusPageFreshness,
 	pageUrl: string,
 ) => {

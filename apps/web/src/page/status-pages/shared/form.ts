@@ -169,10 +169,18 @@ export const updateBodyLengthIssue = (body: string): string | null => {
 		: null
 }
 
-/** What stops the incident from being sent, by field; `null` where nothing does. */
-export type IncidentIssues = Readonly<{ title: string | null; body: string | null; window: string | null }>
+/** A typed instant after `nowMs`, which the API refuses for when something started or ended. */
+const isFuture = (iso: string, nowMs: number): boolean => iso > new Date(nowMs).toISOString()
 
-export const incidentIssues = (form: IncidentForm, timeZone: string): IncidentIssues => {
+/** What stops the incident from being sent, by field; `null` where nothing does. */
+export type IncidentIssues = Readonly<{
+	title: string | null
+	body: string | null
+	window: string | null
+	started: string | null
+}>
+
+export const incidentIssues = (form: IncidentForm, timeZone: string, nowMs: number): IncidentIssues => {
 	const start = localToIso(form.scheduledStart, timeZone)
 	const end = localToIso(form.scheduledEnd, timeZone)
 	return {
@@ -186,6 +194,11 @@ export const incidentIssues = (form: IncidentForm, timeZone: string): IncidentIs
 					: start.value >= end.value
 						? "The maintenance must end after it starts."
 						: null,
+		started:
+			form.kind === "incident" &&
+			Option.exists(localToIso(form.startedAt, timeZone), (started) => isFuture(started, nowMs))
+				? "It can't start in the future."
+				: null,
 	}
 }
 
@@ -275,6 +288,7 @@ export const editableTimes = (
 export const incidentEditIssues = (
 	form: IncidentEditForm,
 	timeZone: string,
+	nowMs: number,
 ): Readonly<{ title: string | null; times: string | null }> => {
 	const editable = editableTimes(form)
 	const start = localToIso(form.start, timeZone)
@@ -286,8 +300,10 @@ export const incidentEditIssues = (
 			return end.value > start.value ? null : "The maintenance must end after it starts."
 		}
 		if (Option.isNone(start)) return "Set when it started."
+		if (isFuture(start.value, nowMs)) return "It can't start in the future."
 		if (!editable.end) return null
 		if (Option.isNone(end)) return "Set when it ended."
+		if (isFuture(end.value, nowMs)) return "It can't end in the future."
 		return end.value < start.value ? "It can't end before it started." : null
 	}
 	return { title: Str.trim(form.title) === "" ? "Add a title." : null, times: times() }
@@ -360,13 +376,23 @@ export const updateFormFor = (
 	}
 }
 
-/** A typed end before the incident started, which the API refuses; `null` otherwise. */
-export const endedIssue = (form: UpdateForm, startedAt: string, timeZone: string): string | null =>
+/** A typed end in the future or before the incident started, which the API refuses; `null` otherwise. */
+export const endedIssue = (
+	form: UpdateForm,
+	startedAt: string,
+	timeZone: string,
+	nowMs: number,
+): string | null =>
 	form.status !== closingStatus(form.kind)
 		? null
 		: Option.match(localToIso(form.endedAt, timeZone), {
 				onNone: () => null,
-				onSome: (ended) => (ended < startedAt ? "It can't end before it started." : null),
+				onSome: (ended) =>
+					isFuture(ended, nowMs)
+						? "It can't end in the future."
+						: ended < startedAt
+							? "It can't end before it started."
+							: null,
 			})
 
 /** The end time goes only with the closing status, and only once typed. */

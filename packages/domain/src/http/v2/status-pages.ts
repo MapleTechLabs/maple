@@ -21,7 +21,7 @@ import {
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
-	StatusPageSnapshot,
+	StatusPagePublicSnapshot,
 	StatusPageThemeRadius,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "../../status-page"
@@ -1189,7 +1189,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
 			payload: StatusPagePreviewParams,
-			success: StatusPageSnapshot,
+			success: StatusPagePublicSnapshot,
 			error: [V2ParameterInvalid.schema, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1217,7 +1217,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 	.add(
 		HttpApiEndpoint.get("view", "/:id/view", {
 			params: pageParams,
-			success: StatusPageSnapshot,
+			success: StatusPagePublicSnapshot,
 			error: [pageNotFound, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({

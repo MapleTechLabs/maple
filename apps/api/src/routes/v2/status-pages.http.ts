@@ -31,7 +31,11 @@ import type {
 	StatusPageIncidentStatus,
 	StatusPageVisibility,
 } from "@maple/primitives"
-import { DEFAULT_STATUS_PAGE_THEME, isActiveIncident } from "@maple/domain/status-page"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	isActiveIncident,
+	toPublicStatusPageSnapshot,
+} from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { auditDiff, diffAuditChanges } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -202,7 +206,8 @@ const DEFAULT_IMPACT = {
 const parseTimestamp = (value: string | null | undefined) =>
 	value === undefined ? undefined : value === null ? null : timestampMs(value)
 
-const publishFailed = (message: string) => new StatusPagePersistenceError({ message })
+const publishFailed = (error: { readonly message: string }) =>
+	new StatusPagePersistenceError({ message: error.message, cause: error })
 
 /** Changing who can read a page is an admin's call, whichever endpoint carries it. */
 const checkVisibilityChange = (
@@ -212,7 +217,9 @@ const checkVisibilityChange = (
 ) =>
 	next === undefined || next === current
 		? Effect.void
-		: Policy.check(roles, "status_pages:access", (denial) => V2InsufficientPermissions.make(denial.message))
+		: Policy.check(roles, "status_pages:access", (denial) =>
+				V2InsufficientPermissions.make(denial.message),
+			)
 
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
@@ -257,8 +264,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					return yield* snapshotBuilder
 						.buildDraft(tenant.orgId, toStatusPageDraft(payload), nowMs)
 						.pipe(
+							Effect.map(toPublicStatusPageSnapshot),
 							Effect.catchTag("@maple/backend/status-pages/StatusPagePublishDbError", (error) =>
-								Effect.fail(publishFailed(error.message)),
+								Effect.fail(publishFailed(error)),
 							),
 						)
 				}),
@@ -279,11 +287,11 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 									}),
 								),
 							"@maple/backend/status-pages/StatusPagePublishDbError": (error) =>
-								Effect.fail(publishFailed(error.message)),
+								Effect.fail(publishFailed(error)),
 						}),
 					)
 					// Credentials stay with the edge; members only read the page.
-					return { ...snapshot, breakGlassTokenSha256: null, passwordHash: null }
+					return toPublicStatusPageSnapshot(snapshot)
 				}),
 			)
 			.handle("retrieve", ({ params }) =>
@@ -406,7 +414,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						...(payload.auto_incidents === undefined
 							? undefined
 							: { autoIncidents: payload.auto_incidents }),
-						...(payload.visibility === undefined ? undefined : { visibility: payload.visibility }),
+						...(payload.visibility === undefined
+							? undefined
+							: { visibility: payload.visibility }),
 					})
 					yield* recordHttpAudit("status_page.updated", {
 						resourceId: updated.id,
@@ -492,9 +502,9 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 											}),
 										),
 									"@maple/backend/status-pages/StatusPagePublishDbError": (error) =>
-										Effect.fail(publishFailed(error.message)),
+										Effect.fail(publishFailed(error)),
 									"@maple/backend/status-pages/StatusPageStoreError": (error) =>
-										Effect.fail(publishFailed(error.message)),
+										Effect.fail(publishFailed(error)),
 								}),
 							)
 					yield* recordHttpAudit("status_page.published", {

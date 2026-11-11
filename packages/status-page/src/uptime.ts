@@ -3,7 +3,7 @@ import {
 	STATUS_PAGE_HISTORY_DAYS,
 	type StatusPageDayBar,
 	type StatusPageDayState,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	uptimePercent,
 } from "@maple/domain/status-page"
 import { Array as Arr } from "effect"
@@ -31,7 +31,7 @@ const percentOf = (days: ReadonlyArray<StatusPageDayBar>): number | null => {
  * no such component.
  */
 export const renderUptimeJson = (
-	snapshot: StatusPageSnapshot,
+	snapshot: StatusPagePublicSnapshot,
 	pageUrl: string,
 	input: { readonly days: number; readonly componentId: string | null },
 ) => {

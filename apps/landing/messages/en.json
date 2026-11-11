@@ -1526,7 +1526,7 @@
 	"feat_status_cap_8_body": "Create pages, components and incidents through API v2. AI agents set up a page with the apply_status_page_config MCP tool and post incidents with post_status_page_update.",
 	"status_feeds_eyebrow": "Subscriptions and API",
 	"status_feeds_title": "Follow the page from Slack, a feed reader or code",
-	"status_feeds_lede": "Every page publishes RSS and Atom feeds, a status badge and a status.json in the statuspage.io summary format, so scripts and tools that read statuspage.io pages can read yours.",
+	"status_feeds_lede": "Every public page publishes RSS and Atom feeds, a status badge and a status.json in the statuspage.io summary format, so scripts and tools that read statuspage.io pages can read yours.",
 	"status_feeds_rule_1_title": "Slack and feed readers",
 	"status_feeds_rule_1_body": "The page's Subscribe menu lists the feed URLs and the /feed subscribe command that adds the RSS feed to a Slack channel.",
 	"status_feeds_rule_2_title": "status.json and uptime data",

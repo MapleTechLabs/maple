@@ -5,7 +5,7 @@ import type { StatusPageId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
+import { CloudflareCustomHostnames, type CustomHostnamesApiError } from "./CloudflareCustomHostnames"
 import { bumpPage } from "./outbox"
 import { StatusPageGoneError, StatusPagePublishDbError } from "./publish-errors"
 import { StatusPageSnapshotBuilder } from "./StatusPageSnapshotBuilder"
@@ -171,7 +171,9 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 					? false
 					: yield* Effect.all([
 							store.readSlugRoute(routes.slug),
-							customDomain === null ? Effect.succeed(pageId) : store.readHostRoute(customDomain),
+							customDomain === null
+								? Effect.succeed(pageId)
+								: store.readHostRoute(customDomain),
 						]).pipe(
 							Effect.flatMap(([slugTo, hostTo]) =>
 								slugTo === pageId && hostTo === pageId
@@ -225,7 +227,13 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 								hostname: customDomain,
 								cloudflareHostnameId: null,
 								cloudflareRouteId: null,
-							})
+							}).pipe(
+								Effect.catchTag(
+									"@maple/backend/status-pages/CustomHostnamesApiError",
+									// oxlint-disable-next-line maple/no-effect-die -- no Cloudflare ids, so no Cloudflare call is made
+									Effect.die,
+								),
+							)
 						return yield* new StatusPageGoneError({
 							message: `Status page ${pageId} not found`,
 							pageId,
@@ -241,13 +249,14 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 			})
 
 			/** Takes an internal page off the edge: its slug route while it still names the page, and its snapshot. */
-			const unpublish = (pageId: StatusPageId, slug: string) =>
-				store.readSlugRoute(slug).pipe(
-					Effect.flatMap((routedTo) =>
-						routedTo === pageId ? store.deleteRoutes({ slug, hostnames: [] }) : Effect.void,
-					),
-					Effect.andThen(store.deleteSnapshot(pageId)),
-				)
+			const unpublish = Effect.fn("StatusPagePublisher.unpublish")(function* (
+				pageId: StatusPageId,
+				slug: string,
+			) {
+				const routedTo = yield* store.readSlugRoute(slug)
+				if (routedTo === pageId) yield* store.deleteRoutes({ slug, hostnames: [] })
+				yield* store.deleteSnapshot(pageId)
+			})
 
 			/**
 			 * Removes one cleanup's edge data; a slug or hostname another live page now uses is left alone.
@@ -295,61 +304,69 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 
 			/**
 			 * Takes a removed custom domain down: its Cloudflare route and hostname, then its edge route.
-			 * A hostname a live page claims again keeps its edge route, and keeps the Cloudflare pieces
-			 * that page took over. Without Cloudflare configured here the edge route still goes.
+			 * A hostname a live page claims again keeps the Cloudflare pieces that page took over, and
+			 * an edge route already at the claimer stays. Without Cloudflare configured here the edge
+			 * route still goes.
 			 */
-			const cleanCustomDomain = (row: {
+			const cleanCustomDomain = Effect.fn("StatusPagePublisher.cleanCustomDomain")(function* (row: {
 				readonly pageId: StatusPageId
 				readonly hostname: string
 				readonly cloudflareHostnameId: string | null
 				readonly cloudflareRouteId: string | null
-			}) =>
-				Effect.gen(function* () {
-					const [claimed] = yield* dbExecute((db) =>
-						db.run(
-							PG.from(StatusPageCustomDomains)
-								.select(($) => ({
-									cloudflareHostnameId: $.cloudflareHostnameId,
-									cloudflareRouteId: $.cloudflareRouteId,
-								}))
-								.where(($) => [$.hostname.eq(row.hostname)])
-								.limit(1),
-						),
-					)
-					const cloudflare = Effect.all(
-						[
-							row.cloudflareRouteId === null ||
-							claimed?.cloudflareRouteId === row.cloudflareRouteId
-								? Effect.void
-								: customHostnames.deleteRoute(row.cloudflareRouteId),
-							row.cloudflareHostnameId === null ||
-							claimed?.cloudflareHostnameId === row.cloudflareHostnameId
-								? Effect.void
-								: customHostnames.deleteHostname(row.cloudflareHostnameId),
-						],
-						{ discard: true },
-					)
-					yield* cloudflare.pipe(
-						Effect.catchTag("@maple/backend/status-pages/CustomHostnamesNotConfiguredError", () =>
-							Effect.logWarning(
-								"Custom domain left at Cloudflare: custom domains are not configured",
-							).pipe(Effect.annotateLogs({ "maple.status_page.custom_domain": row.hostname })),
-						),
-						Effect.mapError(
-							(error) =>
-								new StatusPageStoreError({
-									message: error.message,
-									operation: "cloudflare.delete",
-									key: row.hostname,
-									cause: error,
-								}),
-						),
-					)
-					// Only a route still at the removed page goes: a claimer that already published keeps its own.
-					const routedTo = yield* store.readHostRoute(row.hostname)
-					if (routedTo === null || routedTo === row.pageId)
-						yield* store.deleteHostRoute(row.hostname)
-				})
+			}) {
+				const [claimed] = yield* dbExecute((db) =>
+					db.run(
+						PG.from(StatusPageCustomDomains)
+							.select(($) => ({
+								pageId: $.pageId,
+								cloudflareHostnameId: $.cloudflareHostnameId,
+								cloudflareRouteId: $.cloudflareRouteId,
+							}))
+							.where(($) => [$.hostname.eq(row.hostname)])
+							.limit(1),
+					),
+				)
+				yield* Effect.all(
+					[
+						row.cloudflareRouteId === null || claimed?.cloudflareRouteId === row.cloudflareRouteId
+							? Effect.void
+							: customHostnames.deleteRoute(row.cloudflareRouteId),
+						row.cloudflareHostnameId === null ||
+						claimed?.cloudflareHostnameId === row.cloudflareHostnameId
+							? Effect.void
+							: customHostnames.deleteHostname(row.cloudflareHostnameId),
+					],
+					{ discard: true },
+				).pipe(
+					Effect.catchTag("@maple/backend/status-pages/CustomHostnamesNotConfiguredError", () =>
+						Effect.logWarning(
+							"Custom domain left at Cloudflare: custom domains are not configured",
+						).pipe(Effect.annotateLogs({ "maple.status_page.custom_domain": row.hostname })),
+					),
+				)
+				// A route at the page claiming the hostname stays, even when that is the removed page
+				// itself (removed and added back before this drained); one still at a page that let the
+				// hostname go is dropped, so it never serves on a hostname another page is claiming.
+				const routedTo = yield* store.readHostRoute(row.hostname)
+				if (routedTo === claimed?.pageId) return
+				if (routedTo === null || routedTo === row.pageId) yield* store.deleteHostRoute(row.hostname)
+			})
+
+			const cleanupFailed = (
+				pageId: StatusPageId,
+				error: StatusPageStoreError | CustomHostnamesApiError,
+				key: string | null,
+			) =>
+				Effect.logWarning("Status page edge cleanup failed").pipe(
+					Effect.annotateLogs({
+						"maple.status_page.id": pageId,
+						"maple.status_page.cleanup.operation": error.operation,
+						"maple.status_page.cleanup.key": key,
+						"error.type": error._tag,
+						"error.message": error.message,
+					}),
+					Effect.as(false),
+				)
 
 			/** Oldest first; a row goes only once its edge deletes succeeded. */
 			const drainCleanups = Effect.gen(function* () {
@@ -370,15 +387,12 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 							),
 						),
 						Effect.as(true),
-						Effect.catchTag("@maple/backend/status-pages/StatusPageStoreError", (error) =>
-							Effect.logWarning("Status page edge cleanup failed").pipe(
-								Effect.annotateLogs({
-									"maple.status_page.id": row.pageId,
-									"error.message": error.message,
-								}),
-								Effect.as(false),
-							),
-						),
+						Effect.catchTags({
+							"@maple/backend/status-pages/StatusPageStoreError": (error) =>
+								cleanupFailed(row.pageId, error, error.key),
+							"@maple/backend/status-pages/CustomHostnamesApiError": (error) =>
+								cleanupFailed(row.pageId, error, row.hostname),
+						}),
 					),
 				)
 				return {

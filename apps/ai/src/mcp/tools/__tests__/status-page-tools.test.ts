@@ -303,10 +303,11 @@ describe("status page tools", () => {
 
 	describe("config", () => {
 		const PAGE = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e01"
-		const admin = () => ({
+		const withRole = (role: string) => ({
 			...rt,
-			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] },
+			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)(role)] },
 		})
+		const admin = () => withRole("org:admin")
 		beforeAll(async () => {
 			const now = Date.now()
 			await executeSql(
@@ -449,6 +450,22 @@ describe("status page tools", () => {
 			expect(after.structuredContent.config.version).not.toBe(config.version)
 		})
 
+		it("refuses an engineer's change of who can read the page", async () => {
+			const read = await readConfig(rt, "config-page")
+			const { config } = read.structuredContent
+			expect(config.visibility).toBe("public")
+			const refused = await runToolDirect(withRole("org:engineer"), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, visibility: "internal" },
+			})
+			expect(refused.isError).toBe(true)
+			expect(markdown(refused)).toContain(
+				"apply_status_page_config would change who can read the page, which only org admins may do. Leave `visibility` as it is, or ask an admin.",
+			)
+			const after = await readConfig(rt, "config-page")
+			expect(after.structuredContent.config).toEqual(config)
+		})
+
 		it("refuses members and names a component id from another page", async () => {
 			const read = await readConfig(rt, "config-page")
 			const refused = await runToolDirect(rt, "apply_status_page_config", {
@@ -456,7 +473,9 @@ describe("status page tools", () => {
 				config: read.structuredContent.config,
 			})
 			expect(refused.isError).toBe(true)
-			expect(markdown(refused)).toContain("only org admins")
+			expect(markdown(refused)).toContain(
+				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or edit it in Maple under Status pages.",
+			)
 
 			const other = await readConfig(rt, "acme-status")
 			const stolen = other.structuredContent.config.components[0].id

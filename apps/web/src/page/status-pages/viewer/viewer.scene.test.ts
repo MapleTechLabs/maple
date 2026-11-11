@@ -22,21 +22,51 @@ const entered = () =>
 	init({ _tag: "StatusPageView", pageId: Schema.encodeSync(StatusPagePublicId)(pageId(1)) }, context)
 
 describe("status page viewer", () => {
-	test("reads the page as visitors see it and draws it in the sandboxed frame", () => {
+	test("reads the page as visitors see it and draws it in the sandboxed frame, whose web links open a new tab", () => {
 		const start = entered()
 		expect(Arr.map(start.commands ?? [], ({ name }) => name)).toEqual(["FetchStatusPageView"])
 		const snapshot = makeSnapshot()
 		const internal = { ...snapshot, page: { ...snapshot.page, visibility: "internal" as const } }
 		const loaded = viewerUpdate(
 			start.model,
-			Message.CompletedFetchView({ key: start.model.snapshot.key ?? "", result: Result.succeed(internal) }),
+			Message.CompletedFetchView({
+				key: start.model.snapshot.key ?? "",
+				result: Result.succeed(internal),
+			}),
 		).model
 		scene(
 			{ update: viewerUpdate, view },
 			given(loaded),
 			expectView(text("Only members of this organization can read this page.")).toExist(),
-			expectView(selector('iframe[title="Acme status"]')).toHaveAttr("sandbox", "allow-scripts"),
+			expectView(selector('iframe[title="Acme status"]')).toHaveAttr(
+				"sandbox",
+				"allow-scripts allow-popups allow-popups-to-escape-sandbox",
+			),
 		)
+	})
+
+	test("an id that is not a page id, or a page that is gone, is not found, with a way back", () => {
+		const bad = init({ _tag: "StatusPageView", pageId: "nope" }, context)
+		expect(bad.commands ?? []).toEqual([])
+		const start = entered()
+		const gone = viewerUpdate(
+			start.model,
+			Message.CompletedFetchView({
+				key: start.model.snapshot.key ?? "",
+				result: Result.fail({ ...toLoadFailure(new Error("gone")), code: "status_page_not_found" }),
+			}),
+		).model
+		for (const model of [bad.model, gone])
+			scene(
+				{ update: viewerUpdate, view },
+				given(model),
+				expectView(text("Status page not found")).toExist(),
+				expectView(role("link", { name: "Back to status pages" })).toHaveAttr(
+					"href",
+					"/status-pages",
+				),
+				expectView(role("button", { name: "Try again" })).not.toExist(),
+			)
 	})
 
 	test("a failed read offers Try again", () => {

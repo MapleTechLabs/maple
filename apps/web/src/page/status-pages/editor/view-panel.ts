@@ -12,7 +12,8 @@ import { icon } from "@maple/views/ui/icon"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { heading } from "@maple/views/ui/heading"
 import { label } from "@maple/views/ui/label"
-import { INCIDENT_STATUS_LABEL } from "@maple/status-page"
+import { INCIDENT_STATUS_LABEL, renderUpdateBody } from "@maple/status-page"
+import { cn } from "@maple/ui/lib/utils"
 import { relativeTime } from "../../kit/relative-time"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -39,6 +40,21 @@ import { Array as Arr, String as Str } from "effect"
 type H = HtmlBuilder<Message>
 
 export type TimeInputs = Readonly<{ nowMs: number; timeZone: string }>
+
+/** The public page's update markup: paragraphs, lists, code and links. */
+const UPDATE_BODY_CLASS =
+	"space-y-2 text-sm text-foreground-soft [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_code]:text-xs [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+
+/** An update's message as the public page renders it, so the editor shows what visitors read. */
+export const updateBody = (h: H, body: string, className?: string): Html =>
+	h.div(
+		[
+			h.Class(cn(UPDATE_BODY_CLASS, className)),
+			h.DataAttribute("slot", "update-body"),
+			h.InnerHTML(renderUpdateBody(body)),
+		],
+		[],
+	)
 
 const frame = (
 	h: H,
@@ -438,9 +454,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 										timeZone: time.timeZone,
 									}),
 								]),
-								typography(h, { size: "sm", as: "p", className: "whitespace-pre-wrap" }, [
-									update.body,
-								]),
+								updateBody(h, update.body),
 							],
 						),
 					),

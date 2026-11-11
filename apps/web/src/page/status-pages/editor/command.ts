@@ -1,5 +1,10 @@
 import { readClock } from "@maple/views/data/timing"
-import { StatusPageComponentId, StatusPageId, StatusPageIncidentId, StatusPageVisibility } from "@maple/domain"
+import {
+	StatusPageComponentId,
+	StatusPageId,
+	StatusPageIncidentId,
+	StatusPageVisibility,
+} from "@maple/domain"
 import {
 	StatusPageConfig,
 	StatusPageDraftComponent,
@@ -134,14 +139,13 @@ export const CreateIncident = Command.define("CreateStatusPageIncident", {
 export const PostIncidentUpdate = Command.define("PostStatusPageIncidentUpdate", {
 	args: {
 		incidentId: StatusPageIncidentId,
-		generation: Schema.Number,
 		payload: V2StatusPageIncidentPostUpdateParams,
 	},
 	messages: [Message.CompletedPostUpdate],
-	execute: ({ incidentId, generation, payload }) =>
+	execute: ({ incidentId, payload }) =>
 		postIncidentUpdate(incidentId, payload).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedPostUpdate({ generation, result })),
+			Effect.map((result) => Message.CompletedPostUpdate({ result })),
 		),
 })
 
@@ -331,14 +335,6 @@ export const FocusEditorElement = Command.define("FocusStatusPageEditorElement",
 	messages: [Message.CompletedFocus],
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
-})
-
-/** The public page in a new tab: it lives on the status Worker's host, outside the app. */
-export const OpenPublicPage = Command.define("OpenStatusPagePublicPage", {
-	args: { url: Schema.String },
-	messages: [Message.OpenedPublicPage],
-	execute: ({ url }) =>
-		Effect.sync(() => window.open(url, "_blank", "noopener")).pipe(Effect.as(Message.OpenedPublicPage())),
 })
 
 /** Focuses the element as it mounts, in the same render, so no keystroke lands elsewhere first. */

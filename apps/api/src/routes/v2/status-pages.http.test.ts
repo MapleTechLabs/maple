@@ -346,7 +346,10 @@ describe("v2 status pages", () => {
 	it("leaves the password and visibility to admins, never returns the password, and shows members the page", () =>
 		withHarness(async (harness) => {
 			const { secret: admin } = await harness.bootstrapKey()
-			const { secret: engineer } = await harness.bootstrapKey(ORG, { ...MEMBER, roles: ["org:engineer"] })
+			const { secret: engineer } = await harness.bootstrapKey(ORG, {
+				...MEMBER,
+				roles: ["org:engineer"],
+			})
 			const { secret: member } = await harness.bootstrapKey(ORG, MEMBER)
 			const page = await harness.request("POST", "/v2/status_pages", admin, {
 				name: "Acme",
@@ -355,8 +358,19 @@ describe("v2 status pages", () => {
 			const path = `/v2/status_pages/${page.body.id}`
 			const password = "correct horse battery"
 
-			expect((await harness.request("PUT", `${path}/password`, engineer, { password })).status).toBe(403)
-			expect((await harness.request("PATCH", path, engineer, { visibility: "internal" })).status).toBe(403)
+			expect((await harness.request("PUT", `${path}/password`, engineer, { password })).status).toBe(
+				403,
+			)
+			expect((await harness.request("PATCH", path, engineer, { visibility: "internal" })).status).toBe(
+				403,
+			)
+			const config = (await harness.request("GET", `${path}/config`, engineer)).body
+			const viaConfig = await harness.request("PUT", `${path}/config`, engineer, {
+				...config,
+				visibility: "internal",
+			})
+			expect(viaConfig.status).toBe(403)
+			expect((await harness.request("GET", path, engineer)).body.visibility).toBe("public")
 			// An engineer may still edit everything else.
 			expect((await harness.request("PATCH", path, engineer, { name: "Acme Inc" })).status).toBe(200)
 
@@ -365,6 +379,8 @@ describe("v2 status pages", () => {
 			const set = await harness.request("PUT", `${path}/password`, admin, { password })
 			expect(set.body.has_password).toBe(true)
 			expect(JSON.stringify(set.body)).not.toContain(password)
+			expect((await harness.request("DELETE", `${path}/password`, engineer)).status).toBe(403)
+			expect((await harness.request("GET", path, engineer)).body.has_password).toBe(true)
 			const locked = await harness.request("PATCH", path, admin, { visibility: "password" })
 			expect(locked.body.visibility).toBe("password")
 			const removing = await harness.request("DELETE", `${path}/password`, admin)
@@ -373,7 +389,8 @@ describe("v2 status pages", () => {
 			const view = await harness.request("GET", `${path}/view`, member)
 			expect(view.status).toBe(200)
 			expect(view.body.page.visibility).toBe("password")
-			expect(view.body.passwordHash).toBeNull()
+			expect(view.body).not.toHaveProperty("passwordHash")
+			expect(view.body).not.toHaveProperty("breakGlassTokenSha256")
 			expect(JSON.stringify(view.body)).not.toContain("pbkdf2")
 		}))
 

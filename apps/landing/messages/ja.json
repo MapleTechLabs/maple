@@ -1425,7 +1425,7 @@
 	"feat_status_cap_8_body": "API v2 でページ、コンポーネント、インシデントを作成できます。AI エージェントは MCP ツールの apply_status_page_config でページを設定し、post_status_page_update でインシデントを投稿します。",
 	"status_feeds_eyebrow": "購読と API",
 	"status_feeds_title": "Slack、フィードリーダー、コードから追える",
-	"status_feeds_lede": "各ページは RSS と Atom のフィード、ステータスバッジ、statuspage.io のサマリー形式の status.json を公開します。statuspage.io のページを読むスクリプトやツールで、そのまま読み取れます。",
+	"status_feeds_lede": "各公開ページは RSS と Atom のフィード、ステータスバッジ、statuspage.io のサマリー形式の status.json を公開します。statuspage.io のページを読むスクリプトやツールで、そのまま読み取れます。",
 	"status_feeds_rule_1_title": "Slack とフィードリーダー",
 	"status_feeds_rule_1_body": "ページの購読メニューに、フィードの URL と、RSS フィードを Slack チャンネルに追加する /feed subscribe コマンドが表示されます。",
 	"status_feeds_rule_2_title": "status.json と稼働データ",

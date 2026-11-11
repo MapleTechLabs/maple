@@ -26,6 +26,7 @@ on its Maple address (`/feed.atom`, `/feed.rss`, `/api/v1/status.json`, `/api/v1
 | Set (`PUT /v2/status_pages/{id}/custom_domain`) | Row in `status_page_custom_domains` first, then the Cloudflare hostname (DV, HTTP validation) and its Worker route. A Cloudflare outage only delays it. |
 | Check | The alerting minute tick, before the publish sweep: every minute for the first hour, every 10 minutes after, every 6 hours once active or failed. `POST .../custom_domain/check` checks now and asks Cloudflare to retry validation. |
 | Active | Hostname and certificate both active. The page's revision is bumped; the publisher writes the snapshot (which names the domain) and the `host:` route. Feeds, `status.json` (`page.status_url`), the Slack command and the dashboard's links then use `https://<domain>`. |
+| Expire | A domain that has not gone active within 7 days of being added is removed (as below), so an unverified claim cannot hold a hostname from its owner. |
 | Remove, replace, page or org deletion | A `status_page_cleanups` row carries the hostname and Cloudflare ids; the publisher's sweep deletes the Worker route, the custom hostname and the edge route, keeping anything a live page has claimed since. |
 
 `status` is `pending_dns`, `pending_ssl`, `active` or `failed` (see `customDomainProgress`).

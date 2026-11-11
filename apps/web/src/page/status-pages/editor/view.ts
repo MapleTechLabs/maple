@@ -13,13 +13,14 @@ import { icon } from "@maple/views/ui/icon"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
-import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import { type EditorView, statusPageHref, statusPagesHref, statusPageViewHref } from "../shared/commands"
+import { statusPageNotFound } from "../shared/not-found"
 import { pageUrlOf } from "./update-domain"
 import {
 	COMPONENT_STATUS_LABEL,
@@ -72,25 +73,27 @@ const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Ht
 	)
 }
 
-const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry> => [
-	{
-		_tag: "Item",
-		value: "public",
-		label: "View public page",
-		icon: "ExternalLinkIcon",
-		// A draft is not public, and without a status domain there is no address to open.
-		isDisabled: page.draft || model.publicBaseUrl === "",
-	},
-	...(canBreakGlass(model)
-		? ([{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" }] as const)
-		: []),
-	...(canManage(model)
-		? ([
-				{ _tag: "Separator" },
-				{ _tag: "Item", value: "delete", label: "Delete", icon: "TrashIcon", variant: "destructive" },
-			] as const)
-		: []),
-]
+/** An internal page has no public address to post to, so it has no break-glass token. */
+const menuEntries = (model: Model, page: V2StatusPage): ReadonlyArray<MenuEntry> => {
+	const hasBreakGlass = canBreakGlass(model) && page.visibility !== "internal"
+	return [
+		...(hasBreakGlass
+			? ([{ _tag: "Item", value: "break-glass", label: "Break-glass token", icon: "KeyIcon" }] as const)
+			: []),
+		...(canManage(model)
+			? ([
+					...(hasBreakGlass ? ([{ _tag: "Separator" }] as const) : []),
+					{
+						_tag: "Item",
+						value: "delete",
+						label: "Delete",
+						icon: "TrashIcon",
+						variant: "destructive",
+					},
+				] as const)
+			: []),
+	]
+}
 
 const publishButton = (h: H, model: Model): Html =>
 	button(
@@ -125,7 +128,10 @@ const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
 		)
 	// A disabled button fires no hover, so its wrapper carries the reason as a tooltip.
 	return h.span(
-		[h.Title(url === null ? "No status domain is configured yet" : "Publish the page to open it")],
+		tooltipTrigger(
+			h,
+			url === null ? "No status domain is configured yet" : "Publish the page to open it",
+		),
 		[button(h, { size: "sm", variant: "outline", isDisabled: true }, label)],
 	)
 }
@@ -135,6 +141,7 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const canPublish = canManage(model) && page.draft
 	// A posted incident opens in the Page tab's panel, so Post incident lives on that tab.
 	const isPageView = resolveView(model.search.view) === "page"
+	const entries = menuEntries(model, page)
 	return detailActions(h, [
 		...(isPageView
 			? [
@@ -151,13 +158,17 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 			: []),
 		...(canPublish ? [publishButton(h, model)] : []),
 		openPageButton(h, model, page),
-		rowActionsMenu(h, {
-			slotId: PAGE_MENU_ID,
-			model: model.pageMenu,
-			entries: menuEntries(model, page),
-			label: "Page actions",
-			toParentMessage: (message) => Message.GotPageMenuMessage({ message }),
-		}),
+		...(entries.length === 0
+			? []
+			: [
+					rowActionsMenu(h, {
+						slotId: PAGE_MENU_ID,
+						model: model.pageMenu,
+						entries,
+						label: "Page actions",
+						toParentMessage: (message) => Message.GotPageMenuMessage({ message }),
+					}),
+				]),
 	])
 }
 
@@ -351,18 +362,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 	)
 }
 
-const notFound = (h: H, model: Model): Html =>
-	dashboardPage(h, {}, [
-		resourceNotFound(h, {
-			title: "Status page not found",
-			description: [
-				"No status page has the id ",
-				h.code([h.Class("font-mono")], [model.rawPageId]),
-				".",
-			],
-			back: { href: statusPagesHref(), label: "Back to status pages" },
-		}),
-	])
+const notFound = (h: H, model: Model): Html => dashboardPage(h, {}, [statusPageNotFound(h, model.rawPageId)])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	if (model.pageId === null) return notFound(h, model)

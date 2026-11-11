@@ -1,18 +1,20 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Exit, Layer, Ref, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/primitives"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
-import { CloudflareCustomHostnames } from "./CloudflareCustomHostnames"
+import { CloudflareCustomHostnames, type CloudflareCustomHostnamesApi } from "./CloudflareCustomHostnames"
 import { customDomainProgress, StatusPageCustomDomainsService } from "./StatusPageCustomDomainsService"
 import { StatusPagesService } from "./StatusPagesService"
 import {
 	cleanupRows,
+	DAY_MS,
 	type InMemoryCustomHostnames,
 	NOW,
 	newPageId,
 	ORG,
 	readPage,
+	seedCustomDomain,
 	seedPage,
 } from "./status-page-test-support"
 
@@ -29,7 +31,11 @@ const withDomains = <A, E>(
 		readonly domains: StatusPageCustomDomainsService["Service"]
 		readonly pages: StatusPagesService["Service"]
 	}) => Effect.Effect<A, E>,
-	options: { readonly cnameTarget?: string | null } = {},
+	options: {
+		readonly cnameTarget?: string | null
+		/** Stands in for parts of the double, to act while a check is mid-call to Cloudflare. */
+		readonly api?: (api: CloudflareCustomHostnamesApi) => CloudflareCustomHostnamesApi
+	} = {},
 ) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
@@ -39,7 +45,12 @@ const withDomains = <A, E>(
 		})
 		const layer = Layer.mergeAll(
 			Layer.effect(StatusPageCustomDomainsService, StatusPageCustomDomainsService.make).pipe(
-				Layer.provide(Layer.succeed(CloudflareCustomHostnames, cloudflare.api)),
+				Layer.provide(
+					Layer.succeed(
+						CloudflareCustomHostnames,
+						options.api === undefined ? cloudflare.api : options.api(cloudflare.api),
+					),
+				),
 			),
 			Layer.effect(StatusPagesService, StatusPagesService.make),
 		).pipe(Layer.provide(testDb.layer))
@@ -55,6 +66,35 @@ const revision = (testDb: TestDb, pageId: string) =>
 
 const onlyHostnameId = (cloudflare: InMemoryCustomHostnames) =>
 	cloudflare.hostnames.pipe(Effect.map((map) => [...map.keys()][0] ?? ""))
+
+/** An effect to run once, the next time `before` wraps a Cloudflare call, ahead of that call. */
+const interleave = Effect.gen(function* () {
+	const next = yield* Ref.make<Effect.Effect<void>>(Effect.void)
+	return {
+		arm: (during: Effect.Effect<void, unknown>) => Ref.set(next, Effect.orDie(during)),
+		before: <A, E>(call: Effect.Effect<A, E>) =>
+			Ref.getAndSet(next, Effect.void).pipe(Effect.flatten, Effect.andThen(call)),
+	}
+})
+
+const domainRows = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ page_id: string; hostname: string; cloudflare_hostname_id: string | null }>(
+			`SELECT page_id, hostname, cloudflare_hostname_id FROM status_page_custom_domains ORDER BY page_id`,
+		),
+	).pipe(Effect.map((result) => result.rows))
+
+const queuedCloudflareRemovals = (testDb: TestDb) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{
+			hostname: string
+			cloudflare_hostname_id: string | null
+			cloudflare_route_id: string | null
+		}>(
+			`SELECT hostname, cloudflare_hostname_id, cloudflare_route_id FROM status_page_cleanups
+			 WHERE cloudflare_hostname_id IS NOT NULL OR cloudflare_route_id IS NOT NULL`,
+		),
+	).pipe(Effect.map((result) => result.rows))
 
 describe("StatusPageCustomDomainsService", () => {
 	it.effect("adds a domain at Cloudflare and shows the CNAME and ownership records to add", () =>
@@ -377,9 +417,222 @@ describe("StatusPageCustomDomainsService", () => {
 						reason?._tag === "Fail" ? reason.error._tag : null,
 						"@maple/http/errors/StatusPageCustomDomainsUnavailableError",
 					)
-					assert.deepStrictEqual(yield* domains.poll(NOW), { checked: 0, activated: 0, failed: 0 })
+					assert.deepStrictEqual(yield* domains.poll(NOW), {
+						checked: 0,
+						activated: 0,
+						failed: 0,
+						errored: 0,
+						expired: 0,
+					})
 				}),
 			{ cnameTarget: null },
+		),
+	)
+
+	it.effect("never reads, checks or removes another org's domain", () =>
+		withDomains(({ testDb, domains }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* seedCustomDomain(testDb, {
+					pageId,
+					hostname: "status.acme.com",
+					status: "active",
+					cloudflareHostnameId: "cfh-acme",
+					cloudflareRouteId: "route-acme",
+				})
+				const before = yield* domainRows(testDb)
+
+				for (const attempt of [
+					domains.get(OTHER_ORG, pageId),
+					domains.check(OTHER_ORG, pageId),
+					domains.remove(OTHER_ORG, pageId),
+				]) {
+					const refused = yield* Effect.flip(attempt)
+					assert.strictEqual(refused._tag, "@maple/http/errors/StatusPageNotFoundError")
+				}
+				assert.deepStrictEqual(yield* domainRows(testDb), before)
+				assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+			}),
+		),
+	)
+
+	it.effect("fails a hostname the zone holds for another stage or service", () =>
+		withDomains(({ testDb, cloudflare, domains }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				yield* cloudflare.addForeignHostname("status.acme.com")
+
+				const result = yield* domains.set(ORG, pageId, "status.acme.com")
+				assert.strictEqual(result.domain?.status, "failed")
+				assert.isNull(result.domain?.cloudflareHostnameId ?? null)
+				assert.include(result.domain?.lastError ?? "", "already set up with Cloudflare")
+				assert.strictEqual((yield* cloudflare.routes).size, 0)
+			}),
+		),
+	)
+
+	it.effect("takes over the zone's hostname an earlier attempt created without recording it", () =>
+		withDomains(({ testDb, cloudflare, domains }) =>
+			Effect.gen(function* () {
+				const pageId = newPageId()
+				yield* seedPage(testDb, { id: pageId, slug: "acme" })
+				const earlier = yield* cloudflare.api.createHostname("status.acme.com")
+
+				const result = yield* domains.set(ORG, pageId, "status.acme.com")
+				assert.strictEqual(result.domain?.status, "pending_dns")
+				assert.strictEqual(result.domain?.cloudflareHostnameId, earlier.id)
+				assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+			}),
+		),
+	)
+
+	it.effect("a check racing another keeps the hostname the other created", () =>
+		Effect.gen(function* () {
+			const race = yield* interleave
+			yield* withDomains(
+				({ testDb, cloudflare, domains }) =>
+					Effect.gen(function* () {
+						const pageId = newPageId()
+						yield* seedPage(testDb, { id: pageId, slug: "acme" })
+						// While set's check asks Cloudflare, a "Check now" creates the hostname first.
+						yield* race.arm(domains.check(ORG, pageId))
+
+						const result = yield* domains.set(ORG, pageId, "status.acme.com")
+						const id = yield* onlyHostnameId(cloudflare)
+						assert.strictEqual((yield* cloudflare.hostnames).size, 1)
+						assert.strictEqual(result.domain?.status, "pending_dns")
+						assert.strictEqual(result.domain?.cloudflareHostnameId, id)
+						assert.strictEqual((yield* domains.get(ORG, pageId)).domain?.cloudflareHostnameId, id)
+						assert.deepStrictEqual(yield* cleanupRows(testDb), [])
+					}),
+				{
+					api: (api) => ({
+						...api,
+						createHostname: (hostname) => race.before(api.createHostname(hostname)),
+					}),
+				},
+			)
+		}),
+	)
+
+	it.effect("queues what a check created when the domain was removed while it talked to Cloudflare", () =>
+		Effect.gen(function* () {
+			const midCall = yield* interleave
+			yield* withDomains(
+				({ testDb, cloudflare, domains }) =>
+					Effect.gen(function* () {
+						const pageId = newPageId()
+						yield* seedPage(testDb, { id: pageId, slug: "acme" })
+						yield* midCall.arm(domains.remove(ORG, pageId))
+
+						const result = yield* domains.set(ORG, pageId, "status.acme.com")
+						assert.isNull(result.domain)
+						const id = yield* onlyHostnameId(cloudflare)
+						const [routeId] = [...(yield* cloudflare.routes).keys()]
+						assert.deepStrictEqual(yield* queuedCloudflareRemovals(testDb), [
+							{
+								hostname: "status.acme.com",
+								cloudflare_hostname_id: id,
+								cloudflare_route_id: routeId ?? null,
+							},
+						])
+					}),
+				{
+					api: (api) => ({
+						...api,
+						createRoute: (hostname) => midCall.before(api.createRoute(hostname)),
+					}),
+				},
+			)
+		}),
+	)
+
+	it.effect("drops a claim that never went live within a week, freeing the hostname", () =>
+		withDomains(({ testDb, domains }) =>
+			Effect.gen(function* () {
+				const squatter = newPageId()
+				const recent = newPageId()
+				const live = newPageId()
+				const owner = newPageId()
+				yield* seedPage(testDb, { id: squatter, slug: "squatter" })
+				yield* seedPage(testDb, { id: recent, slug: "recent" })
+				yield* seedPage(testDb, { id: live, slug: "live" })
+				yield* seedPage(testDb, { id: owner, slug: "acme" })
+				yield* seedCustomDomain(testDb, {
+					pageId: squatter,
+					hostname: "status.acme.com",
+					status: "failed",
+					cloudflareHostnameId: "cfh-squatter",
+					createdAt: NOW - 8 * DAY_MS,
+				})
+				yield* seedCustomDomain(testDb, {
+					pageId: recent,
+					hostname: "status.recent.com",
+					status: "pending_dns",
+					createdAt: NOW - 6 * DAY_MS,
+				})
+				yield* seedCustomDomain(testDb, {
+					pageId: live,
+					hostname: "status.live.com",
+					status: "active",
+					createdAt: NOW - 30 * DAY_MS,
+				})
+				yield* Effect.promise(() =>
+					executeSql(testDb, `UPDATE status_page_custom_domains SET activated_at = now() WHERE page_id = $1`, [
+						live,
+					]),
+				)
+
+				assert.strictEqual((yield* domains.poll(NOW)).expired, 1)
+				assert.sameMembers(
+					Arr.map(yield* domainRows(testDb), (row) => row.hostname),
+					["status.recent.com", "status.live.com"],
+				)
+				assert.deepStrictEqual(yield* queuedCloudflareRemovals(testDb), [
+					{
+						hostname: "status.acme.com",
+						cloudflare_hostname_id: "cfh-squatter",
+						cloudflare_route_id: null,
+					},
+				])
+				const claimed = yield* domains.set(ORG, owner, "status.acme.com")
+				assert.strictEqual(claimed.domain?.hostname, "status.acme.com")
+			}),
+		),
+	)
+
+	it.effect("checks a pending domain that is due even behind many settled ones checked longer ago", () =>
+		withDomains(({ testDb, domains }) =>
+			Effect.gen(function* () {
+				yield* Effect.forEach(
+					Arr.range(1, 100),
+					(n) =>
+						Effect.gen(function* () {
+							const pageId = newPageId()
+							yield* seedPage(testDb, { id: pageId, slug: `settled-${n}` })
+							yield* seedCustomDomain(testDb, {
+								pageId,
+								hostname: `status.settled-${n}.com`,
+								status: "active",
+								lastCheckedAt: NOW - 2 * 60 * 60_000,
+							})
+						}),
+					{ discard: true },
+				)
+				const pending = newPageId()
+				yield* seedPage(testDb, { id: pending, slug: "pending" })
+				yield* seedCustomDomain(testDb, {
+					pageId: pending,
+					hostname: "status.pending.com",
+					status: "pending_dns",
+					lastCheckedAt: NOW - 30 * 60_000,
+				})
+
+				assert.strictEqual((yield* domains.poll(NOW)).checked, 1)
+				assert.strictEqual((yield* domains.get(ORG, pending)).domain?.lastCheckedAt, NOW)
+			}),
 		),
 	)
 })

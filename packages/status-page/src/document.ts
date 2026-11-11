@@ -1,4 +1,4 @@
-import type { StatusPageSnapshot } from "@maple/domain/status-page"
+import type { StatusPagePublicSnapshot } from "@maple/domain/status-page"
 import { escapeHtml } from "@maple/strings"
 import { safeUrl } from "./escape"
 import { baseStyles, presetStyles } from "./styles"
@@ -30,7 +30,7 @@ export const pageHref = (options: RenderOptions, path: string): string =>
  * The logo for the page's mode. Either variant alone serves both modes; with both, an auto page
  * swaps to the dark one when the visitor's scheme is dark.
  */
-const renderLogo = (snapshot: StatusPageSnapshot, name: string): string | null => {
+const renderLogo = (snapshot: StatusPagePublicSnapshot, name: string): string | null => {
 	const light = safeUrl(snapshot.page.logoUrl, ["https:"])
 	const dark = safeUrl(snapshot.page.logoDarkUrl, ["https:"])
 	const appearance = safeTheme(snapshot.page.theme).appearance
@@ -45,7 +45,7 @@ const renderLogo = (snapshot: StatusPageSnapshot, name: string): string | null =
 }
 
 /** Logo (or name) linking home, the support and website links when set, then any `extra` links. */
-export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOptions, extra = ""): string => {
+export const renderHeader = (snapshot: StatusPagePublicSnapshot, options: RenderOptions, extra = ""): string => {
 	const name = escapeHtml(snapshot.page.name)
 	const logo = renderLogo(snapshot, name)
 	const website = safeUrl(snapshot.page.websiteUrl, ["https:", "http:"])
@@ -70,7 +70,7 @@ export const renderHeader = (snapshot: StatusPageSnapshot, options: RenderOption
 }
 
 export const renderDocument = (input: {
-	readonly snapshot: StatusPageSnapshot
+	readonly snapshot: StatusPagePublicSnapshot
 	readonly options: RenderOptions
 	readonly title: string
 	readonly styles: string

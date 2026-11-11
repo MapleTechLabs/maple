@@ -35,8 +35,7 @@ export const UpdateFormState = Schema.Union([
 	Schema.TaggedStruct("Closed", {}),
 	Schema.TaggedStruct("Writing", { form: UpdateForm }),
 	Schema.TaggedStruct("Reviewing", { form: UpdateForm }),
-	/** `generation`: which post this is, so a reopened form ignores an earlier post's answer. */
-	Schema.TaggedStruct("Posting", { form: UpdateForm, generation: Schema.Number }),
+	Schema.TaggedStruct("Posting", { form: UpdateForm }),
 	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
 ])
 export type UpdateFormState = typeof UpdateFormState.Type
@@ -118,8 +117,6 @@ export const Model = Schema.Struct({
 	incidentFailure: Schema.NullOr(LoadFailure),
 	updateDialog: Dialog.Model,
 	updateForm: UpdateFormState,
-	/** The generation the next update post takes. */
-	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
 	editIncidentDialog: Dialog.Model,
 	/** The incident whose title, impact and components are edited; `null` until the dialog first opens. */

@@ -29,7 +29,11 @@ const request = (model: Model, context: PageContext, mode: Keyed.ReadMode): Retu
 
 export const init = (route: ViewRoute, context: PageContext): Return =>
 	request(
-		{ pageId: Option.getOrNull(pageIdFromUrl(route.pageId)), snapshot: Keyed.idle() },
+		{
+			rawPageId: route.pageId,
+			pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
+			snapshot: Keyed.idle(),
+		},
 		context,
 		"Load",
 	)

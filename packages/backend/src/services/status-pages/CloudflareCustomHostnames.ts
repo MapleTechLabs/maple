@@ -12,13 +12,17 @@ export class CustomHostnamesNotConfiguredError extends Schema.TaggedError<Custom
 	{ message: Schema.String },
 ) {}
 
-/** A Cloudflare API call failed: network, an unreadable answer, or an error Cloudflare returned. */
+/**
+ * A Cloudflare API call failed: network or an unreadable answer (`cause`), or an error Cloudflare
+ * returned (`detail`, its first message).
+ */
 export class CustomHostnamesApiError extends Schema.TaggedError<CustomHostnamesApiError>()(
 	"@maple/backend/status-pages/CustomHostnamesApiError",
 	{
 		message: Schema.String,
 		operation: Schema.String,
 		status: Schema.optionalKey(Schema.Number),
+		detail: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -58,6 +62,13 @@ export interface CloudflareCustomHostnamesApi {
 	readonly createHostname: (
 		hostname: string,
 	) => Effect.Effect<CustomHostnameState, CustomHostnamesError | CustomHostnameConflictError>
+	/**
+	 * The zone's custom hostname for `hostname`, to take over one an earlier attempt created without
+	 * recording its id. None when the zone has none, or another stage's Worker route serves it.
+	 */
+	readonly findHostname: (
+		hostname: string,
+	) => Effect.Effect<Option.Option<CustomHostnameState>, CustomHostnamesError>
 	/** None when Cloudflare no longer has it. */
 	readonly getHostname: (
 		id: string,
@@ -119,9 +130,14 @@ const HostnameResult = Schema.Struct({
 	verification_errors: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
-const RouteResult = Schema.Struct({ id: Schema.String, pattern: Schema.optionalKey(Schema.String) })
+const RouteResult = Schema.Struct({
+	id: Schema.String,
+	pattern: Schema.optionalKey(Schema.String),
+	script: Schema.optionalKey(Schema.String),
+})
 
 const HostnameEnvelope = Envelope(HostnameResult)
+const HostnamesEnvelope = Envelope(Schema.Array(HostnameResult))
 const RouteEnvelope = Envelope(RouteResult)
 const RoutesEnvelope = Envelope(Schema.Array(RouteResult))
 const AnyEnvelope = Envelope(Schema.Unknown)
@@ -182,7 +198,10 @@ export class CloudflareCustomHostnames extends Context.Service<
 			),
 		)
 
-		/** One API call: its status and decoded envelope, never failing on a Cloudflare error body. */
+		/**
+		 * One API call: its status and decoded envelope, never failing on a Cloudflare error body.
+		 * `refused` makes the error for that body, with Cloudflare's own message.
+		 */
 		const call = <S extends Schema.Decoder<unknown>>(
 			operation: string,
 			method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
@@ -209,7 +228,16 @@ export class CloudflareCustomHostnames extends Context.Service<
 				const decoded = yield* Schema.decodeEffect(schema)(json).pipe(
 					Effect.mapError((e) => failed(e, response.status)),
 				)
-				return { status: response.status, decoded, failed }
+				const refused = (errors: ReadonlyArray<typeof CloudflareMessage.Type> | undefined) => {
+					const detail = errors?.[0]?.message ?? "Cloudflare refused the request"
+					return new CustomHostnamesApiError({
+						message: `Cloudflare ${operation} failed: ${detail}`,
+						operation,
+						status: response.status,
+						detail,
+					})
+				}
+				return { status: response.status, decoded, refused }
 			}).pipe(
 				Effect.withSpan("CloudflareCustomHostnames.call", {
 					kind: "client",
@@ -217,104 +245,106 @@ export class CloudflareCustomHostnames extends Context.Service<
 				}),
 			)
 
-		const firstMessage = (errors: ReadonlyArray<typeof CloudflareMessage.Type> | undefined) =>
-			errors?.[0]?.message ?? "Cloudflare refused the request"
-
 		const hostnamePath = (config: Configured, id = "") =>
 			`/zones/${config.zoneId}/custom_hostnames${id === "" ? "" : `/${encodeURIComponent(id)}`}`
 		const routesPath = (config: Configured, id = "") =>
 			`/zones/${config.zoneId}/workers/routes${id === "" ? "" : `/${encodeURIComponent(id)}`}`
 
-		const createHostname = (
+		const createHostname = Effect.fn("CloudflareCustomHostnames.createHostname")(function* (
 			hostname: string,
-		): Effect.Effect<CustomHostnameState, CustomHostnamesError | CustomHostnameConflictError> =>
-			call("createHostname", "POST", (config) => hostnamePath(config), HostnameEnvelope, {
-				hostname,
-				ssl: SSL_SETTINGS,
-			}).pipe(
-				Effect.flatMap(
-					({
-						status,
-						decoded,
-						failed,
-					}): Effect.Effect<
-						CustomHostnameState,
-						CustomHostnamesApiError | CustomHostnameConflictError
-					> => {
-						if (decoded.success && decoded.result) return Effect.succeed(toState(decoded.result))
-						const duplicate = Arr.some(
-							decoded.errors ?? [],
-							(error) => error.code !== undefined && DUPLICATE_HOSTNAME_CODES.has(error.code),
-						)
-						return duplicate
-							? Effect.fail(
-									new CustomHostnameConflictError({
-										message: `${hostname} is already added to Cloudflare elsewhere`,
-										hostname,
-									}),
-								)
-							: Effect.fail(failed(new Error(firstMessage(decoded.errors)), status))
-					},
-				),
+		) {
+			const { decoded, refused } = yield* call(
+				"createHostname",
+				"POST",
+				(config) => hostnamePath(config),
+				HostnameEnvelope,
+				{ hostname, ssl: SSL_SETTINGS },
 			)
+			if (decoded.success && decoded.result) return toState(decoded.result)
+			const duplicate = Arr.some(
+				decoded.errors ?? [],
+				(error) => error.code !== undefined && DUPLICATE_HOSTNAME_CODES.has(error.code),
+			)
+			if (duplicate)
+				return yield* new CustomHostnameConflictError({
+					message: `${hostname} is already added to Cloudflare elsewhere`,
+					hostname,
+				})
+			return yield* refused(decoded.errors)
+		})
+
+		const routePattern = (hostname: string) => `${hostname}/*`
+		const listRoutes = call("listRoutes", "GET", (c) => routesPath(c), RoutesEnvelope)
+
+		const findHostname = Effect.fn("CloudflareCustomHostnames.findHostname")(function* (
+			hostname: string,
+		) {
+			const config = yield* requireConfigured
+			const listed = yield* call(
+				"findHostname",
+				"GET",
+				(c) => `${hostnamePath(c)}?hostname=${encodeURIComponent(hostname)}`,
+				HostnamesEnvelope,
+			)
+			if (!listed.decoded.success) return yield* listed.refused(listed.decoded.errors)
+			const found = Arr.findFirst(listed.decoded.result ?? [], (result) => result.hostname === hostname)
+			if (Option.isNone(found)) return Option.none<CustomHostnameState>()
+			// Previews share the zone with prd: a hostname routed to another stage's Worker is not ours.
+			const routes = yield* listRoutes
+			const elsewhere = Arr.some(
+				routes.decoded.result ?? [],
+				(route) =>
+					route.pattern === routePattern(hostname) &&
+					route.script !== undefined &&
+					route.script !== config.workerName,
+			)
+			return elsewhere ? Option.none<CustomHostnameState>() : Option.some(toState(found.value))
+		})
 
 		const readHostname = (operation: string, method: "GET" | "PATCH", body?: unknown) => (id: string) =>
 			call(operation, method, (config) => hostnamePath(config, id), HostnameEnvelope, body).pipe(
-				Effect.flatMap(({ status, decoded, failed }) => {
+				Effect.flatMap(({ status, decoded, refused }) => {
 					if (status === 404) return Effect.succeed(Option.none<CustomHostnameState>())
 					if (decoded.success && decoded.result) return Effect.succeedSome(toState(decoded.result))
-					return Effect.fail(failed(new Error(firstMessage(decoded.errors)), status))
+					return Effect.fail(refused(decoded.errors))
 				}),
 			)
 
 		const deleteBy = (operation: string, path: (config: Configured) => string) =>
 			call(operation, "DELETE", path, AnyEnvelope).pipe(
-				Effect.flatMap(({ status, decoded, failed }) =>
-					decoded.success || status === 404
-						? Effect.void
-						: Effect.fail(failed(new Error(firstMessage(decoded.errors)), status)),
+				Effect.flatMap(({ status, decoded, refused }) =>
+					decoded.success || status === 404 ? Effect.void : Effect.fail(refused(decoded.errors)),
 				),
 			)
 
-		const createRoute = (hostname: string) =>
-			Effect.gen(function* () {
-				const config = yield* requireConfigured
-				const pattern = `${hostname}/*`
-				const created = yield* call("createRoute", "POST", (c) => routesPath(c), RouteEnvelope, {
-					pattern,
-					script: config.workerName,
-				})
-				if (created.decoded.success && created.decoded.result) return created.decoded.result.id
-				// Most likely the pattern already has a route (an earlier attempt created it without
-				// recording the id): take it over for our Worker. Anything else fails as created.
-				const listed = yield* call("listRoutes", "GET", (c) => routesPath(c), RoutesEnvelope)
-				const existing = Arr.findFirst(
-					listed.decoded.result ?? [],
-					(route) => route.pattern === pattern,
-				)
-				if (Option.isNone(existing))
-					return yield* created.failed(
-						new Error(firstMessage(created.decoded.errors)),
-						created.status,
-					)
-				const updated = yield* call(
-					"updateRoute",
-					"PUT",
-					(c) => routesPath(c, existing.value.id),
-					RouteEnvelope,
-					{ pattern, script: config.workerName },
-				)
-				if (!updated.decoded.success)
-					return yield* updated.failed(
-						new Error(firstMessage(updated.decoded.errors)),
-						updated.status,
-					)
-				return existing.value.id
+		const createRoute = Effect.fn("CloudflareCustomHostnames.createRoute")(function* (hostname: string) {
+			const config = yield* requireConfigured
+			const pattern = routePattern(hostname)
+			const created = yield* call("createRoute", "POST", (c) => routesPath(c), RouteEnvelope, {
+				pattern,
+				script: config.workerName,
 			})
+			if (created.decoded.success && created.decoded.result) return created.decoded.result.id
+			// Most likely the pattern already has a route (an earlier attempt created it without
+			// recording the id): take it over for our Worker. Anything else fails as created.
+			const listed = yield* listRoutes
+			const existing = Arr.findFirst(listed.decoded.result ?? [], (route) => route.pattern === pattern)
+			if (Option.isNone(existing)) return yield* created.refused(created.decoded.errors)
+			const updated = yield* call(
+				"updateRoute",
+				"PUT",
+				(c) => routesPath(c, existing.value.id),
+				RouteEnvelope,
+				{ pattern, script: config.workerName },
+			)
+			if (!updated.decoded.success) return yield* updated.refused(updated.decoded.errors)
+			return existing.value.id
+		})
 
 		return {
 			cnameTarget: Option.isSome(configured) ? cnameTarget : Option.none(),
 			createHostname,
+			findHostname,
 			getHostname: readHostname("getHostname", "GET"),
 			revalidateHostname: readHostname("revalidateHostname", "PATCH", { ssl: SSL_SETTINGS }),
 			deleteHostname: (id) => deleteBy("deleteHostname", (config) => hostnamePath(config, id)),
@@ -330,6 +360,8 @@ export class CloudflareCustomHostnames extends Context.Service<
 		Effect.gen(function* () {
 			const hostnames = yield* Ref.make<ReadonlyMap<string, CustomHostnameState>>(new Map())
 			const routes = yield* Ref.make<ReadonlyMap<string, string>>(new Map())
+			/** Hostnames the zone holds for someone else (another stage or service): a conflict, never found. */
+			const foreign = yield* Ref.make<ReadonlySet<string>>(new Set())
 			const failing = yield* Ref.make(false)
 			const counter = yield* Ref.make(0)
 			const nextId = (prefix: string) =>
@@ -356,10 +388,9 @@ export class CloudflareCustomHostnames extends Context.Service<
 				createHostname: (hostname) =>
 					Effect.gen(function* () {
 						yield* guard("createHostname")
-						const taken = Arr.some(
-							[...(yield* Ref.get(hostnames)).values()],
-							(h) => h.hostname === hostname,
-						)
+						const taken =
+							(yield* Ref.get(foreign)).has(hostname) ||
+							Arr.some([...(yield* Ref.get(hostnames)).values()], (h) => h.hostname === hostname)
 						if (taken)
 							return yield* new CustomHostnameConflictError({
 								message: `${hostname} is already added to Cloudflare elsewhere`,
@@ -378,6 +409,11 @@ export class CloudflareCustomHostnames extends Context.Service<
 						yield* Ref.update(hostnames, (map) => new Map([...map, [id, state]]))
 						return state
 					}),
+				findHostname: (hostname) =>
+					guard("findHostname").pipe(
+						Effect.andThen(Ref.get(hostnames)),
+						Effect.map((map) => Arr.findFirst([...map.values()], (h) => h.hostname === hostname)),
+					),
 				getHostname: (id) => guard("getHostname").pipe(Effect.andThen(read(id))),
 				revalidateHostname: (id) => guard("revalidateHostname").pipe(Effect.andThen(read(id))),
 				deleteHostname: (id) =>
@@ -422,6 +458,9 @@ export class CloudflareCustomHostnames extends Context.Service<
 				dropHostname: (id: string) =>
 					Ref.update(hostnames, (map) => new Map(Arr.filter([...map], ([key]) => key !== id))),
 				setFailing: (value: boolean) => Ref.set(failing, value),
+				/** Has the zone hold `hostname` for another stage or service. */
+				addForeignHostname: (hostname: string) =>
+					Ref.update(foreign, (set) => new Set([...set, hostname])),
 			}
 		})
 }

@@ -594,7 +594,7 @@ const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext 
 const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
 
 /** The reviewed message as the public page's markup renders it. */
-const updateBodyOf = find('[data-slot="update-body"]')
+const updateBodyOf = find('[role="dialog"] [data-slot="update-body"]')
 const messageHtml = (html: Parameters<typeof updateBodyOf>[0]): string =>
 	Option.getOrElse(Option.flatMap(updateBodyOf(html), attr("innerHTML")), () => "")
 
@@ -829,11 +829,26 @@ describe("posting an incident", () => {
 	})
 
 	test("an incident can be backdated: the review says when it started and the post carries it", () => {
-		const reviewed = steps(loaded(), [
+		const written = steps(loaded(), [
 			Message.ClickedNewIncident({ kind: "incident" }),
 			Message.ChangedIncidentField({ field: "title", value: "Elevated errors" }),
 			Message.ChangedIncidentField({ field: "body", value: "Looking into it." }),
-			Message.ChangedIncidentField({ field: "startedAt", value: "2026-10-30T14:05" }),
+		])
+		// The clock reads 12:00: a start after it is refused before Review, as the API would.
+		const future = steps(written, [
+			Message.ChangedIncidentField({ field: "startedAt", value: "2026-10-01T12:30" }),
+			Message.SubmittedIncidentWrite(),
+		])
+		expect(future.composeStep).toBe("write")
+		scene(
+			{ update: pageUpdate, view },
+			given(future),
+			mounted,
+			expectView(text("It can't start in the future.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+		)
+		const reviewed = steps(future, [
+			Message.ChangedIncidentField({ field: "startedAt", value: "2026-10-01T09:05" }),
 			Message.SubmittedIncidentWrite(),
 		])
 		scene(
@@ -842,14 +857,14 @@ describe("posting an incident", () => {
 			mounted,
 			inside(
 				role("region", { name: "On the page" }),
-				expectView(text(/Started Oct 30, 14:05/u)).toExist(),
+				expectView(text(/Started Oct 1, 09:05/u)).toExist(),
 			),
 		)
 		expect(pageUpdate(reviewed, Message.SubmittedIncident({ isPublished: true })).commands).toMatchObject(
 			[
 				{
 					name: "CreateStatusPageIncident",
-					args: { payload: { started_at: "2026-10-30T14:05:00.000Z" } },
+					args: { payload: { started_at: "2026-10-01T09:05:00.000Z" } },
 				},
 			],
 		)
@@ -945,7 +960,10 @@ describe("posting an update", () => {
 			given(opened),
 			mounted,
 			expectView(role("dialog", { name: "Post update" })).toExist(),
-			expectView(text("We are looking into elevated error rates.")).toExist(),
+			// The last update reads as the page renders it.
+			tap(({ html }) =>
+				expect(messageHtml(html)).toBe("<p>We are looking into elevated error rates.</p>"),
+			),
 			expectView(role("button", { name: "Monitoring" })).toHaveAttr("aria-pressed", "true"),
 			expectView(role("button", { name: "Review" })).toBeDisabled(),
 			type(role("textbox", { name: "Message" }), "A fix is rolling out."),
@@ -981,20 +999,53 @@ describe("posting an update", () => {
 				name: "PostStatusPageIncidentUpdate",
 				args: {
 					incidentId: incidentId(1),
-					generation: 0,
 					payload: { status: "resolved", body: "This incident has been resolved." },
 				},
 			},
 		])
 		const posted = pageUpdate(
 			posting.model,
-			Message.CompletedPostUpdate({
-				generation: 0,
-				result: Result.succeed(incident(1, { status: "resolved" })),
-			}),
+			Message.CompletedPostUpdate({ result: Result.succeed(incident(1, { status: "resolved" })) }),
 		)
 		expect(posted.model.updateDialog.isOpen).toBe(false)
 		expect(posted.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Incident resolved" })
+	})
+
+	test("a typed time re-reads the clock, so it is checked against the time it was typed", () => {
+		const opened = pageUpdate(
+			loaded({ incidents: [incident(1)] }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+		).model
+		const typed = pageUpdate(
+			opened,
+			Message.ChangedUpdateField({ field: "endedAt", value: "2026-10-01T11:58" }),
+		)
+		expect(names(typed.commands)).toEqual(["ReadStatusPageClock"])
+	})
+
+	test("resolving can say when it ended, but not in the future", () => {
+		const opened = pageUpdate(
+			loaded({ incidents: [incident(1)] }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+		).model
+		const late = steps(opened, [
+			Message.ChangedUpdateField({ field: "endedAt", value: "2026-10-01T12:30" }),
+			Message.SubmittedUpdateWrite(),
+		])
+		expect(late.updateForm._tag).toBe("Writing")
+		scene(
+			{ update: pageUpdate, view },
+			given(late),
+			mounted,
+			expectView(text("It can't end in the future.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+		)
+		// A clock read after the typed minute lets it through.
+		const later = steps(late, [
+			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12, 31) }),
+			Message.SubmittedUpdateWrite(),
+		])
+		expect(later.updateForm._tag).toBe("Reviewing")
 	})
 
 	test("resolving can say when it ended, but not before the incident started", () => {
@@ -1048,10 +1099,7 @@ describe("posting an update", () => {
 		const failed = steps(back, [
 			Message.SubmittedUpdateWrite(),
 			Message.SubmittedUpdate(),
-			Message.CompletedPostUpdate({
-				generation: 0,
-				result: Result.fail(toLoadFailure(new Error("unreachable"))),
-			}),
+			Message.CompletedPostUpdate({ result: Result.fail(toLoadFailure(new Error("unreachable"))) }),
 		])
 		expect(failed.updateDialog.isOpen).toBe(true)
 		scene(
@@ -1239,6 +1287,36 @@ describe("editing an incident's details", () => {
 		)
 	})
 
+	test("an incident's start and end can't move into the future", () => {
+		const opened = pageUpdate(
+			shown(incident(1, { status: "resolved", resolved_at: "2026-10-01T11:55:00.000Z" })),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+		).model
+		const lateEnd = pageUpdate(
+			opened,
+			Message.ChangedIncidentEditField({ field: "end", value: "2026-10-01T12:30" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(lateEnd),
+			mounted,
+			expectView(text("It can't end in the future.")).toExist(),
+			expectView(role("button", { name: "Save changes" })).toBeDisabled(),
+		)
+		expect(pageUpdate(lateEnd, Message.SubmittedIncidentEdit()).commands ?? []).toEqual([])
+		const lateStart = pageUpdate(
+			opened,
+			Message.ChangedIncidentEditField({ field: "start", value: "2026-10-02T09:00" }),
+		).model
+		expect(pageUpdate(lateStart, Message.SubmittedIncidentEdit()).commands ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(lateStart),
+			mounted,
+			expectView(text("It can't start in the future.")).toExist(),
+		)
+	})
+
 	test("a resolved incident's start and end can be corrected, but not out of order", () => {
 		const opened = pageUpdate(
 			shown(incident(1, { status: "resolved", resolved_at: "2026-10-01T11:55:00.000Z" })),
@@ -1306,99 +1384,47 @@ describe("deleting an incident", () => {
 	})
 })
 
-describe("an update posted while the form moved on", () => {
-	const posting = () => {
-		const model = loaded({
-			incidents: [incident(1, { status: "identified" }), incident(2, { status: "identified" })],
-		})
-		const opened = pageUpdate(
-			model,
-			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
-		)
-		const posted = steps(opened.model, [
-			Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
-			Message.SubmittedUpdateWrite(),
-			Message.SubmittedUpdate(),
-		])
-		// Another incident's form opens before the post answers.
-		return pageUpdate(
-			posted,
-			Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false }),
-		).model
-	}
-
-	test("a success keeps the other incident's form open and still rereads", () => {
-		const moved = posting()
-		const done = pageUpdate(
-			moved,
-			Message.CompletedPostUpdate({ generation: 0, result: Result.succeed(incident(1)) }),
-		)
-		expect(done.model.updateForm).toMatchObject({ _tag: "Writing", form: { incidentId: incidentId(2) } })
-		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
-		expect(done.commands ?? []).not.toEqual([])
-	})
-
-	test("a failure is a toast, not an error on the other incident's form", () => {
-		const moved = posting()
-		const failed = pageUpdate(
-			moved,
-			Message.CompletedPostUpdate({
-				generation: 0,
-				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+describe("an update in flight", () => {
+	const posting = () =>
+		steps(
+			loaded({
+				incidents: [incident(1, { status: "identified" }), incident(2, { status: "identified" })],
 			}),
-		)
-		expect(failed.model.updateForm).toMatchObject({
-			_tag: "Writing",
-			form: { incidentId: incidentId(2) },
-		})
-		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
-	})
-
-	test("a reopened form for the same incident ignores the earlier post's answer", () => {
-		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
-		const open = (current: Model) =>
-			steps(current, [
+			[
 				Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
 				Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
 				Message.SubmittedUpdateWrite(),
-			])
-		const first = pageUpdate(open(model), Message.SubmittedUpdate()).model
-		const closed = pageUpdate(first, Message.ClickedIncident({ incidentId: incidentId(1) })).model
-		const second = pageUpdate(open(closed), Message.SubmittedUpdate()).model
-		const failed = pageUpdate(
-			second,
-			Message.CompletedPostUpdate({
-				generation: 0,
-				result: Result.fail(toLoadFailure(new Error("no"))),
-			}),
+				Message.SubmittedUpdate(),
+			],
 		)
-		expect(failed.model.updateForm).toMatchObject({ _tag: "Posting", generation: 1 })
-		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
-	})
 
-	test("edits and closing wait while a post is in flight, and its failure keeps the text", () => {
-		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
-		const posted = steps(model, [
-			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
-			Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
-			Message.SubmittedUpdateWrite(),
-			Message.SubmittedUpdate(),
-		])
-		const held = steps(posted, [
+	test("edits, closing and another incident's Post update wait, and a failure keeps the text", () => {
+		const held = steps(posting(), [
 			Message.ChangedUpdateField({ field: "body", value: "Other" }),
 			Message.ClickedUpdateBack(),
 			Message.GotUpdateDialogMessage({ message: Dialog.Message.ClickedClose() }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false }),
 		])
 		expect(held.updateDialog.isOpen).toBe(true)
-		expect(held.updateForm).toMatchObject({ _tag: "Posting", form: { body: "Fixed." } })
+		expect(held.updateForm).toMatchObject({
+			_tag: "Posting",
+			form: { incidentId: incidentId(1), body: "Fixed." },
+		})
 		const failed = pageUpdate(
 			held,
-			Message.CompletedPostUpdate({
-				generation: 0,
-				result: Result.fail(toLoadFailure(new Error("unreachable"))),
-			}),
+			Message.CompletedPostUpdate({ result: Result.fail(toLoadFailure(new Error("unreachable"))) }),
 		).model
 		expect(failed.updateForm).toMatchObject({ _tag: "Failed", form: { body: "Fixed." } })
+	})
+
+	test("a success closes the dialog and reads the incidents again", () => {
+		const done = pageUpdate(
+			posting(),
+			Message.CompletedPostUpdate({ result: Result.succeed(incident(1)) }),
+		)
+		expect(done.model.updateDialog.isOpen).toBe(false)
+		expect(names(done.commands)).toContain("FetchStatusPageIncidents")
+		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
 	})
 })
 
@@ -1439,14 +1465,14 @@ describe("header", () => {
 			}),
 			expectView(role("link", { name: "Open page" })).not.toExist(),
 			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[title="Publish the page to open it"]')).toExist(),
+			expectView(selector('[data-tooltip="Publish the page to open it"]')).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "" }),
 			expectView(role("link", { name: "Open page" })).not.toExist(),
 			expectView(role("button", { name: "Open page" })).toBeDisabled(),
-			expectView(selector('[title="No status domain is configured yet"]')).toExist(),
+			expectView(selector('[data-tooltip="No status domain is configured yet"]')).toExist(),
 		)
 	})
 })
@@ -1552,6 +1578,27 @@ describe("live screen", () => {
 			{ update: pageUpdate, view },
 			given({ ...loaded(), publicBaseUrl: "" }),
 			expectView(text("Public address appears once a status domain is configured")).toExist(),
+		)
+	})
+
+	test("an internal page is live for members in Maple: no public address and no break-glass token", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({
+				...loaded({ tab: "live", page: statusPage({ visibility: "internal" }) }),
+				publicBaseUrl: "https://status-pr-7.maple.dev",
+			}),
+			expectView(role("heading", { name: "Acme Status is live" })).toExist(),
+			expectView(text("Only members of this organization can read it, in Maple.")).toExist(),
+			expectView(text(/Visitors can read it now/u)).not.toExist(),
+			expectView(selector("#status-page-public-url")).not.toExist(),
+			expectView(role("link", { name: /\/s\/acme-status/u })).not.toExist(),
+			expectAll(all.role("link", { name: "Open page" })).toHaveCount(2),
+			expectView(role("link", { name: "Open page" })).toHaveAttr(
+				"href",
+				`/status-pages/${PUBLIC_ID}/view`,
+			),
+			expectView(role("button", { name: "Get break-glass token" })).not.toExist(),
 		)
 	})
 
@@ -1894,9 +1941,9 @@ describe("settings and appearance views", () => {
 			expectView(text("Only org admins can change who can view a status page.")).toExist(),
 			expectView(role("button", { name: "Set password" })).not.toExist(),
 		)
-		expect(names(pageUpdate(engineer, Message.PickedVisibility({ visibility: "internal" })).commands)).toEqual(
-			[],
-		)
+		expect(
+			names(pageUpdate(engineer, Message.PickedVisibility({ visibility: "internal" })).commands),
+		).toEqual([])
 	})
 
 	test("replacing or revoking an issued token asks first", () => {
@@ -2042,6 +2089,20 @@ describe("custom domain", () => {
 			}),
 		)
 		expect(Option.getOrNull(customDomainOf(removed.model))?.hostname).toBeNull()
+	})
+
+	test("an internal page takes no custom domain, and has no break-glass token to issue", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "settings", page: statusPage({ visibility: "internal" }) })),
+			expectView(role("textbox", { name: "Hostname" })).toBeDisabled(),
+			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
+			expectView(
+				text("An internal page has no public address. Make it public or password-protected first."),
+			).toExist(),
+			expectView(role("region", { name: "Break-glass token" })).not.toExist(),
+			expectView(role("button", { name: "Issue token" })).not.toExist(),
+		)
 	})
 
 	test("members see the domain and its records but no control to change them", () => {
