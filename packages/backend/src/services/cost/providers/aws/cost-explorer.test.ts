@@ -81,6 +81,33 @@ describe("pullCostExplorer", () => {
 		}),
 	)
 
+	it.effect("keeps a region's service-level rows when its pull by usage type misses a charge", () =>
+		Effect.gen(function* () {
+			const missed = FIXTURE_ITEMS[0]?.service ?? ""
+			const region = FIXTURE_ITEMS[0]?.region ?? ""
+			const whole = yield* pull(makeFake())
+			const fake = makeFake()
+			fake.options = { missedByRegionFilter: [missed] }
+			const pulled = yield* pull(fake)
+
+			// The region was asked for, did not add up, and is no longer detailed.
+			assert.isFalse(Arr.contains(pulled.detailedRegions, region))
+			assert.isAbove(pulled.unreconciledRegions, 0)
+			assert.isTrue(
+				Arr.every(
+					Arr.filter(pulled.rows, (row) => row.region === region),
+					(row) => row.usageType === "",
+				),
+			)
+			// No money is lost: the pull sums to what a pull without the miss sums to.
+			assert.closeTo(
+				total(Arr.map(pulled.rows, (row) => row.billedCost)),
+				total(Arr.map(whole.rows, (row) => row.billedCost)),
+				1e-6,
+			)
+		}),
+	)
+
 	it.effect("follows NextPageToken to the last page and counts every page", () =>
 		Effect.gen(function* () {
 			const whole = yield* pull(makeFake())
