@@ -37,12 +37,15 @@ import { statRailLoading } from "../kit/stat-rail"
 import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
+import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { dailyChart } from "./view-chart"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
+
+const DAY_SECONDS = 24 * 60 * 60
 
 type H = HtmlBuilder<Message>
 
@@ -225,6 +228,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 								search: model.search,
 								defaultPreset: DEFAULT_PRESET,
 								presets: DAY_RANGE_PRESET_VALUES,
+								// Cost is per whole day, and the page reads a year at most.
+								maxRangeSeconds: LONG_RANGE_MAX_SECONDS,
+								minRangeSeconds: DAY_SECONDS,
 								window: model.window,
 								picker: model.timePicker,
 								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),

@@ -6,7 +6,7 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 } from "@maple/domain/http"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
 	expect as expectView,
@@ -22,6 +22,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
+import { requestFilters, withFilter } from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -423,6 +424,16 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("-$0.00")).not.toExist(),
 		)
+	})
+
+	test("a dimension never carries more filter values than the API accepts", () => {
+		const full: Search = { region: Arr.makeBy(50, (index) => `region-${index}`) }
+		// The fifty-first is not added: one more would make every read of the page a 400.
+		expect(withFilter(full, { dimension: "region", value: "one-more" })).toEqual(full)
+		expect(withFilter({}, { dimension: "region", value: Str.repeat(301)("a") })).toEqual({})
+		// A hand-edited URL past the cap still reads: the request carries what the API takes.
+		const edited: Search = { region: [...(full.region ?? []), "fifty-one", Str.repeat(301)("b")] }
+		expect(requestFilters(edited)).toEqual({ region: full.region })
 	})
 
 	test("a changed time zone resolves the day window again before it reads anything", () => {

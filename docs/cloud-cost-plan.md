@@ -113,7 +113,10 @@ What bounds the provider's bill for requests:
   20), and detail for the 12 largest regions at most.
 - Per source and month: past 500 requests history waits for the next month, past 1,500 the source
   stops until then.
-- A pull too large to read is held a day. A source whose org left the rollout is not pulled.
+- A pull too large to read or to store is held a day. A source whose org left the rollout is not
+  pulled, and is asked about again on the next hourly run.
+- A source resuming after a gap starts at the month before its watermark's, so days pulled while
+  their month was still open get their final amounts.
 
 ### Reads
 
@@ -250,6 +253,7 @@ Each phase is one PR stack.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
-- AWS: an account with more than about 5,000 cost rows a day in one region is too large for the
-  Cost Explorer pull. It needs the CUR 2.0 export (phase 5).
+- AWS: an account is too large for the Cost Explorer pull past 10,000 cost rows on one day (a day
+  is always written whole), or past about 5,000 rows a day in one region. Its source reports
+  "too large" and syncs nothing. It needs the CUR 2.0 export (phase 5).
 - Packaging: part of every plan, or an add-on.

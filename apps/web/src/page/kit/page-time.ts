@@ -74,6 +74,10 @@ export type PageTimeOptions<M> = Readonly<{
 	picker: TimeRangePicker.Model
 	/** The picker's preset rail, when the page's is not the standard one; holds `defaultPreset`. */
 	presets?: ReadonlyArray<string>
+	/** The widest range the page reads; a wider pick is refused with a toast. */
+	maxRangeSeconds?: number
+	/** The shortest quick-select range worth offering; a page of daily data passes a day. */
+	minRangeSeconds?: number
 	toPickerMessage: (message: TimeRangePicker.Message) => M
 	onReset: M
 	onReload: M
@@ -103,6 +107,8 @@ export const pageTime = <M>(h: HtmlBuilder<M>, options: PageTimeOptions<M>): Htm
 						options.search.timePreset ??
 						(options.search.startTime === undefined ? options.defaultPreset : undefined),
 					presets: options.presets ?? TimeRangePicker.PRESET_VALUES,
+					maxRangeSeconds: options.maxRangeSeconds,
+					minRangeSeconds: options.minRangeSeconds,
 				},
 			}),
 	})

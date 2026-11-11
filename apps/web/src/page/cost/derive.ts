@@ -1,8 +1,10 @@
-import type {
-	CostBreakdownSortBy,
-	CostFilters,
-	CostSourceSummary,
-	CostTimeseriesResponse,
+import {
+	COST_FILTER_MAX_VALUE_LENGTH,
+	COST_FILTER_MAX_VALUES,
+	type CostBreakdownSortBy,
+	type CostFilters,
+	type CostSourceSummary,
+	type CostTimeseriesResponse,
 } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
@@ -44,16 +46,29 @@ export const activeFilters = (search: Search): ReadonlyArray<ActiveFilter> =>
 export const hasFilter = (search: Search, filter: ActiveFilter): boolean =>
 	Arr.contains(search[filter.dimension] ?? [], filter.value)
 
+/** What the API takes of a dimension's values: the first `COST_FILTER_MAX_VALUES`, none too long to send. */
+const sendable = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
+	Arr.take(
+		Arr.filter(values, (value) => value.length <= COST_FILTER_MAX_VALUE_LENGTH),
+		COST_FILTER_MAX_VALUES,
+	)
+
 /** An emptied dimension leaves the URL. */
 const withValues = (search: Search, dimension: CostGroupBy, values: ReadonlyArray<string>): Search => ({
 	...search,
 	[dimension]: values.length === 0 ? undefined : values,
 })
 
-export const withFilter = (search: Search, filter: ActiveFilter): Search =>
-	hasFilter(search, filter)
+// The API refuses a longer list or value with a 400, which would fail every read of the page:
+// a filter past the cap is not added, so the writer and the reader agree on the limit.
+export const withFilter = (search: Search, filter: ActiveFilter): Search => {
+	const values = search[filter.dimension] ?? []
+	return hasFilter(search, filter) ||
+		values.length >= COST_FILTER_MAX_VALUES ||
+		filter.value.length > COST_FILTER_MAX_VALUE_LENGTH
 		? search
-		: withValues(search, filter.dimension, Arr.append(search[filter.dimension] ?? [], filter.value))
+		: withValues(search, filter.dimension, Arr.append(values, filter.value))
+}
 
 export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
 	withValues(
@@ -74,7 +89,8 @@ export const withoutFilters = (search: Search): Search => ({
 /** The filters as a read carries them, or undefined with none (the key then stays out of the body). */
 export const requestFilters = (search: Search): CostFilters | undefined => {
 	const entries = Arr.flatMap(COST_GROUP_BYS, (dimension) => {
-		const values = search[dimension] ?? []
+		// A hand-edited URL can carry more than the API takes: send what it accepts.
+		const values = sendable(search[dimension] ?? [])
 		return values.length === 0 ? [] : [[dimension, values] as const]
 	})
 	return entries.length === 0 ? undefined : Rec.fromEntries(entries)
