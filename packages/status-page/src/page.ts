@@ -381,7 +381,9 @@ export const renderPage = (
 		[
 			renderHeader(snapshot, options, isPublic ? SUBSCRIBE_LINK : ""),
 			isPublic ? renderSubscribeDialog(options) : "",
-			`<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
+			options.inDashboard === true
+				? ""
+				: `<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
 			renderHero(
 				overall,
 				active,
