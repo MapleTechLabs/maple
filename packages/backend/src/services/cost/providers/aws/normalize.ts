@@ -155,13 +155,14 @@ export const detailedRegions = (groups: ReadonlyArray<CostGroup>, days: number):
 	)
 }
 
-/** A cent, or a thousandth of the region's cost: float noise passes, a missing charge does not. */
-const reconcileTolerance = (cost: number) => Math.max(0.01, Math.abs(cost) * 0.001)
+/** A hundredth of a cent, or a millionth of the day's cost: rounding passes, a missing charge does not. */
+const reconcileTolerance = (cost: number) => Math.max(0.0001, Math.abs(cost) * 0.000001)
 
 /**
- * Whether a region's pull by usage type holds the same money as its rows in the `SERVICE` x
- * `REGION` answer. When it does not (the region filter missed a charge), the region keeps its
- * service-level rows, so the day still sums to what Cost Explorer reports.
+ * Whether a region's pull by usage type holds the same money, on every day, as its rows in the
+ * `SERVICE` x `REGION` answer. Rows replace a day at a time, so days are compared one by one: a
+ * window total would hide a charge missing on one day. When a day does not match, the region
+ * keeps its service-level rows, so each day still sums to what Cost Explorer reports.
  */
 export const usageReconciles = (
 	usage: ReadonlyArray<CostGroup>,
@@ -169,13 +170,21 @@ export const usageReconciles = (
 	region: string,
 ): boolean => {
 	const ofRegion = Arr.filter(byRegion, (group) => group.key === region)
-	const sum = (groups: ReadonlyArray<CostGroup>, pick: (group: CostGroup) => number) =>
-		Num.sumAll(Arr.map(groups, pick))
-	const billed = sum(ofRegion, (group) => group.billedCost)
-	const effective = sum(ofRegion, (group) => group.effectiveCost)
-	return (
-		Math.abs(sum(usage, (group) => group.billedCost) - billed) <= reconcileTolerance(billed) &&
-		Math.abs(sum(usage, (group) => group.effectiveCost) - effective) <= reconcileTolerance(effective)
+	const sumOn = (groups: ReadonlyArray<CostGroup>, day: string, pick: (group: CostGroup) => number) =>
+		Num.sumAll(
+			Arr.map(
+				Arr.filter(groups, (group) => group.day === day),
+				pick,
+			),
+		)
+	const matches = (day: string, pick: (group: CostGroup) => number) => {
+		const expected = sumOn(ofRegion, day, pick)
+		return Math.abs(sumOn(usage, day, pick) - expected) <= reconcileTolerance(expected)
+	}
+	const days = Arr.dedupe(Arr.map(Arr.appendAll(ofRegion, usage), (group) => group.day))
+	return Arr.every(
+		days,
+		(day) => matches(day, (group) => group.billedCost) && matches(day, (group) => group.effectiveCost),
 	)
 }
 
