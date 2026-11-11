@@ -146,3 +146,28 @@ describe("a town wall", () => {
 		expect(near).toBeGreaterThan(shore - 0.16)
 	})
 })
+
+describe("a tile's lamp", () => {
+	it("hangs over a village's square, stronger and further-reaching the bigger the village", () => {
+		const [hamlet, city] = [buildTile(spec("service", 0.1)).lamp, buildTile(spec("service", 1)).lamp]
+		expect(hamlet?.at).toEqual([0, 1, 0])
+		expect(city?.power ?? 0).toBeGreaterThan((hamlet?.power ?? 0) * 1.5)
+		expect(city?.reach ?? 0).toBeGreaterThan(hamlet?.reach ?? 0)
+	})
+
+	it("stands by a landmark that has no village round it", () => {
+		const tile = buildTile(spec("database", 0.5))
+		const [x, z] = tile.landmark?.at ?? [9, 9]
+		expect(tile.lamp?.at[0]).toBeCloseTo(x)
+		expect(tile.lamp?.at[2]).toBeCloseTo(z)
+	})
+
+	it("gives only a lighthouse a beam, from its lantern", () => {
+		const tower = buildTile(spec("edge", 0.5))
+		const [x, z] = tower.landmark?.at ?? [9, 9]
+		expect(tower.beacon?.[0]).toBeCloseTo(x)
+		expect(tower.beacon?.[2]).toBeCloseTo(z)
+		expect(tower.beacon?.[1] ?? 0).toBeGreaterThan(1)
+		expect(buildTile(spec("service", 0.9)).beacon).toBeNull()
+	})
+})

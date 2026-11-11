@@ -1,6 +1,8 @@
 // The landscape's colours, without three, so the DOM chrome can read them too.
 
 export interface TilePalette {
+	/** The page is dark: the marks that stand against it are chosen to show. The light on the
+	 * map itself comes from the time of day (`daylight.ts`), not from the theme. */
 	readonly night: boolean
 	/** The soil and the darker soil of a tile's cut sides; the lip of growth above them is the biome's. */
 	readonly soil: string
@@ -48,11 +50,6 @@ export interface TilePalette {
 	readonly slotEdge: string
 	readonly slotHover: string
 	readonly selected: string
-	readonly sun: string
-	readonly sunPower: number
-	readonly sky: string
-	readonly bounce: string
-	readonly skyPower: number
 	/** How far unrelated tiles sink back when one is selected. */
 	readonly dim: string
 }
@@ -96,27 +93,15 @@ const DAY: TilePalette = {
 	slotEdge: "#a8997a",
 	slotHover: "#f5a524",
 	selected: "#f5a524",
-	sun: "#fff4e0",
-	sunPower: 2.6,
-	sky: "#ffffff",
-	bounce: "#c9d6b0",
-	skyPower: 2.0,
 	dim: "#cdd6d2",
 }
 
 const NIGHT: TilePalette = {
 	...DAY,
 	night: true,
-	soil: "#c4b189",
-	soilShade: "#9c876a",
 	ink: "#1d1a16",
 	slot: "#cfc4aa",
 	slotEdge: "#e9dcc0",
-	sun: "#ffe9c4",
-	sunPower: 2.2,
-	sky: "#e6ecf0",
-	bounce: "#8fa08a",
-	skyPower: 1.8,
 	dim: "#a3aeab",
 }
 

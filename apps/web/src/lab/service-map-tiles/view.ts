@@ -27,11 +27,13 @@ import {
 import type { Node3D } from "../../page/service-map/three/types"
 import { biomeOf, biomesFor } from "./biome"
 import { type Link, type LinkState, linkState, type Placements, prospect, tally } from "./board"
+import { daylightAt } from "./daylight"
 import {
 	CELLS_ATTRIBUTE,
 	COMMAND_ATTRIBUTE,
 	heldIdOf,
 	links,
+	litClockOf,
 	Message,
 	type Model,
 	MountScene,
@@ -39,6 +41,7 @@ import {
 	STATE_ATTRIBUTE,
 	topology,
 	TOPOLOGY_ATTRIBUTE,
+	WatchClock,
 } from "./update"
 
 // The page: a toolbar, the landscape with its labels and overlays, and a side rail of connections.
@@ -78,56 +81,87 @@ const healthDot = (h: H, errorRate: number): Html =>
 		attributes: [h.Style({ "background-color": HEALTH_COLOR[health(errorRate)] })],
 	})
 
+const TIME_OF_DAY = { dawn: "Dawn", day: "Day", dusk: "Dusk", night: "Night" } as const
+
+/** What the light button says: the held time of day, or what the viewer's clock makes it now. */
+const lightLabel = (model: Model): string =>
+	model.light === "clock"
+		? `Light: local time (${Str.toLowerCase(TIME_OF_DAY[daylightAt(model.clock).timeOfDay])})`
+		: `Light: ${Str.toLowerCase(TIME_OF_DAY[model.light])}`
+
 const toolbar = (h: H, model: Model, flowing: boolean): Html => {
 	const dealing = model.stack.length > 0
-	return hstack(h, { gap: "2", align: "center", wrap: true, className: "shrink-0 border-b px-4 py-2" }, [
-		button(
-			h,
-			{
-				size: "sm",
-				variant: model.isBuilding && !dealing ? "secondary" : "outline",
-				attributes: [
-					h.AriaPressed(String(model.isBuilding)),
-					h.Disabled(dealing),
-					h.OnClick(Message.ClickedRearrange()),
+	return hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			wrap: true,
+			className: "shrink-0 border-b px-4 py-2",
+			attributes: [h.OnMount(WatchClock())],
+		},
+		[
+			button(
+				h,
+				{
+					size: "sm",
+					variant: model.isBuilding && !dealing ? "secondary" : "outline",
+					attributes: [
+						h.AriaPressed(String(model.isBuilding)),
+						h.Disabled(dealing),
+						h.OnClick(Message.ClickedRearrange()),
+					],
+				},
+				[icon(h, "GridIcon"), model.isBuilding && !dealing ? "Done rearranging" : "Rearrange"],
+			),
+			button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedDeal())] }, [
+				icon(h, "LayersIcon"),
+				"Deal the tiles",
+			]),
+			button(
+				h,
+				{ size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAutoArrange())] },
+				[icon(h, "SparkleIcon"), "Auto-arrange"],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					className: "ml-auto",
+					attributes: [h.AriaPressed(String(!model.isMuted)), h.OnClick(Message.ClickedSound())],
+				},
+				[model.isMuted ? "Sound off" : "Sound on"],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					attributes: [
+						h.Title("Step through: your local time, dawn, day, dusk, night"),
+						h.OnClick(Message.ClickedLight()),
+					],
+				},
+				[lightLabel(model)],
+			),
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "ghost",
+					attributes: [
+						h.AriaPressed(String(flowing)),
+						h.OnClick(Message.ClickedTraffic({ isFlowing: flowing })),
+					],
+				},
+				[
+					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+					flowing ? "Pause traffic" : "Play traffic",
 				],
-			},
-			[icon(h, "GridIcon"), model.isBuilding && !dealing ? "Done rearranging" : "Rearrange"],
-		),
-		button(h, { size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedDeal())] }, [
-			icon(h, "LayersIcon"),
-			"Deal the tiles",
-		]),
-		button(h, { size: "sm", variant: "ghost", attributes: [h.OnClick(Message.ClickedAutoArrange())] }, [
-			icon(h, "SparkleIcon"),
-			"Auto-arrange",
-		]),
-		button(
-			h,
-			{
-				size: "sm",
-				variant: "ghost",
-				className: "ml-auto",
-				attributes: [h.AriaPressed(String(!model.isMuted)), h.OnClick(Message.ClickedSound())],
-			},
-			[model.isMuted ? "Sound off" : "Sound on"],
-		),
-		button(
-			h,
-			{
-				size: "sm",
-				variant: "ghost",
-				attributes: [
-					h.AriaPressed(String(flowing)),
-					h.OnClick(Message.ClickedTraffic({ isFlowing: flowing })),
-				],
-			},
-			[
-				icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-				flowing ? "Pause traffic" : "Play traffic",
-			],
-		),
-	])
+			),
+		],
+	)
 }
 
 const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
@@ -147,6 +181,7 @@ const canvas = (h: H, model: Model, flowing: boolean, isDark: boolean): Html =>
 						flowing,
 						dark: isDark,
 						muted: model.isMuted,
+						clock: litClockOf(model),
 					}),
 				),
 				h.Attribute(COMMAND_ATTRIBUTE, encodeJson(model.command)),

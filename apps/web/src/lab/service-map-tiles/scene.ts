@@ -17,6 +17,7 @@ import {
 	wildsOf,
 } from "./board"
 import { makeSky } from "./birds"
+import { type Clock, daylightAt } from "./daylight"
 import { AWAY, FLIGHT, makeFlock } from "./ducks"
 import { makeFlourishes } from "./flourish"
 import {
@@ -62,6 +63,8 @@ export interface SceneInput {
 	readonly building: boolean
 	readonly flowing: boolean
 	readonly dark: boolean
+	/** The time of day the map is lit for: the viewer's own, or one held from the toolbar. */
+	readonly clock: Clock
 	/** The map's noises are off: quacks, whistles, bells. */
 	readonly muted: boolean
 	readonly command: CameraCommand
@@ -84,6 +87,10 @@ export interface SceneHandle {
 }
 
 const LABEL_ATTRIBUTE = "data-tile-label"
+/** How many lamps and lighthouse beams the map has to hand out. */
+const LAMPS = 28
+const BEACONS = 2
+const BEACON_POWER = 60
 const DRAG_TOLERANCE = 5
 /** Ambient traffic draws at about 40 fps; camera moves and a held tile draw every frame. */
 const AMBIENT_FRAME_MS = 24
@@ -209,9 +216,12 @@ type Materials = {
 	readonly slotEdge: THREE.LineBasicMaterial
 	readonly slotHover: THREE.MeshBasicMaterial
 	readonly faint: THREE.MeshBasicMaterial
+	/** Every window pane on the map: dark by day, lit at night. */
+	readonly glass: THREE.MeshBasicMaterial
 }
 
 const makeMaterials = (): Materials => ({
+	glass: new THREE.MeshBasicMaterial(),
 	land: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
 	landDim: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
 	ink: new THREE.LineBasicMaterial({ transparent: true, opacity: 0.72 }),
@@ -259,6 +269,7 @@ const makeTile = (tile: Tile, id: string, key: string, materials: Materials): Ti
 	const lines = new THREE.LineSegments(tile.ink, materials.ink)
 	const group = new THREE.Group()
 	group.add(mesh, lines)
+	if (tile.glass !== null) group.add(new THREE.Mesh(tile.glass, materials.glass))
 	if (tile.sails === null)
 		return { key, tile, group, mesh, lines, sails: null, ring: { key: "", mesh: null } }
 	const mount = new THREE.Group()
@@ -376,7 +387,12 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	/** The open country's built tiles by key, and what each one's mesh is. */
 	const wildTiles = new Map<
 		string,
-		{ readonly mesh: THREE.Mesh; readonly lines: THREE.LineSegments; readonly cell: string }
+		{
+			readonly mesh: THREE.Mesh
+			readonly lines: THREE.LineSegments
+			readonly glass: THREE.Mesh | null
+			readonly cell: string
+		}
 	>()
 	const wildFeatures = new WeakMap<THREE.Object3D, Feature>()
 	/** Timers that wake a paused map for something due later; cleared with the scene. */
@@ -390,6 +406,9 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		raf: 0,
 		last: performance.now(),
 		lightKey: "",
+		/** The hour the light is drawn for, and the hour it is turning towards. */
+		shownHour: initial.clock.hour,
+		targetHour: initial.clock.hour,
 		networkKey: "",
 		trafficKey: "",
 		lakesKey: "",
@@ -434,26 +453,132 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		return cell === undefined ? null : cellToPoint(cell)
 	}
 
-	const syncLight = () => {
-		const { palette, radius, centre } = state.derived
-		const key = `${centre[0].toFixed(2)}:${centre[1].toFixed(2)}:${radius}:${palette.night}`
-		if (key === state.lightKey) return
-		state.lightKey = key
-		sky.color.set(palette.sky)
-		sky.groundColor.set(palette.bounce)
-		sky.intensity = palette.skyPower
-		sun.color.set(palette.sun)
-		sun.intensity = palette.sunPower
+	// A fixed number of lamps, handed to the tiles that need them: adding or removing a light
+	// makes three rebuild every shader, so the count never changes while the map is up.
+	const parked = new THREE.Group()
+	scene.add(parked)
+	const lamps = Arr.makeBy(LAMPS, () => {
+		const light = new THREE.PointLight(tilePalette(initial.dark).lamp, 0, 4, 1.6)
+		parked.add(light)
+		return { light, power: 0 }
+	})
+	const beacons = Arr.makeBy(BEACONS, () => {
+		const light = new THREE.SpotLight(tilePalette(initial.dark).lamp, 0, 16, 0.3, 0.7, 1.1)
+		parked.add(light, light.target)
+		return { light, isLit: false, turn: 0 }
+	})
+	/** Hands the lamps to the tiles on the board, the biggest villages first, and the beams to
+	 * the lighthouses. A lamp hangs in its tile's own group, so it moves with a tile in hand. */
+	const hangLamps = () => {
+		const wanting = Arr.sort(
+			Arr.flatMap([...tiles.values()], (view) =>
+				view.tile.lamp === null ? [] : [{ view, lamp: view.tile.lamp }],
+			),
+			Order.flip(
+				Order.mapInput(
+					Order.Number,
+					(entry: { readonly lamp: { readonly power: number } }) => entry.lamp.power,
+				),
+			),
+		)
+		Arr.forEach(lamps, (lamp, index) => {
+			const wanted = wanting[index]
+			if (wanted === undefined) {
+				parked.add(lamp.light)
+				lamp.power = 0
+				return
+			}
+			wanted.view.group.add(lamp.light)
+			lamp.light.position.set(...wanted.lamp.at)
+			lamp.light.distance = wanted.lamp.reach
+			lamp.power = wanted.lamp.power
+		})
+		const towers = Arr.flatMap([...tiles.values()], (view) =>
+			view.tile.beacon === null ? [] : [{ view, at: view.tile.beacon }],
+		)
+		Arr.forEach(beacons, (beacon, index) => {
+			const tower = towers[index]
+			beacon.isLit = tower !== undefined
+			if (tower === undefined) {
+				parked.add(beacon.light, beacon.light.target)
+				return
+			}
+			tower.view.group.add(beacon.light, beacon.light.target)
+			beacon.light.position.set(...tower.at)
+		})
+	}
+	/** Turns each lighthouse's beam: its target circles the tower, a little below the lantern. */
+	const turnBeacons = (delta: number): boolean => {
+		const lit = Arr.filter(beacons, (beacon) => beacon.isLit && beacon.light.intensity > 0)
+		Arr.forEach(lit, (beacon) => {
+			beacon.turn += delta * 0.7
+			const { x, y, z } = beacon.light.position
+			beacon.light.target.position.set(
+				x + Math.cos(beacon.turn) * 6,
+				y - 1.5,
+				z + Math.sin(beacon.turn) * 6,
+			)
+		})
+		return lit.length > 0
+	}
+	const glassTones = { day: new THREE.Color(), lit: new THREE.Color() }
+	/** Lights the map for the hour now showing: the sun or the moon, the sky's fill, the windows. */
+	const applyLight = () => {
+		const { palette, radius, centre, input } = state.derived
+		const light = daylightAt({ ...input.clock, hour: state.shownHour })
+		sky.color.setRGB(...light.sky, THREE.SRGBColorSpace)
+		sky.groundColor.setRGB(...light.bounce, THREE.SRGBColorSpace)
+		sky.intensity = light.skyPower
+		sun.color.setRGB(...light.sun, THREE.SRGBColorSpace)
+		sun.intensity = light.sunPower
 		sun.target.position.set(centre[0], 0, centre[1])
-		sun.position.set(centre[0] - radius * 0.8, radius * 0.95, centre[1] + radius * 0.3)
-		const shadow = sun.shadow.camera
-		shadow.left = -radius * 1.05
-		shadow.right = radius * 1.05
-		shadow.top = radius * 1.05
-		shadow.bottom = -radius * 1.05
-		shadow.near = radius * 0.2
-		shadow.far = radius * 3
-		shadow.updateProjectionMatrix()
+		const [x, y, z] = light.direction
+		const far = radius * 1.6
+		sun.position.set(centre[0] + x * far, y * far, centre[1] + z * far)
+		// The lamps come on as the sun goes down. They are real lights: they fall off with
+		// distance and light whatever stands near them.
+		Arr.forEach(lamps, (lamp) => {
+			lamp.light.intensity = lamp.power * light.lamps
+		})
+		Arr.forEach(beacons, (beacon) => {
+			beacon.light.intensity = beacon.isLit ? BEACON_POWER * light.lamps : 0
+		})
+		materials.glass.color.lerpColors(
+			glassTones.day.set(palette.glass),
+			glassTones.lit.set(palette.lamp),
+			light.lamps,
+		)
+	}
+
+	/** The shadow's reach follows the board; the light itself follows the clock. */
+	const syncLight = () => {
+		const { radius, centre, input } = state.derived
+		const key = `${centre[0].toFixed(2)}:${centre[1].toFixed(2)}:${radius}`
+		if (key !== state.lightKey) {
+			state.lightKey = key
+			const shadow = sun.shadow.camera
+			shadow.left = -radius * 1.1
+			shadow.right = radius * 1.1
+			shadow.top = radius * 1.1
+			shadow.bottom = -radius * 1.1
+			shadow.near = radius * 0.2
+			shadow.far = radius * 3.4
+			shadow.updateProjectionMatrix()
+		}
+		state.targetHour = input.clock.hour
+		applyLight()
+	}
+
+	/** Turns the shown hour towards the wanted one, the short way round the clock, so stepping
+	 * from one time of day to another sweeps the sun across instead of jumping. */
+	const turnClock = (delta: number): boolean => {
+		const apart = ((((state.targetHour - state.shownHour) % 24) + 36) % 24) - 12
+		if (Math.abs(apart) < 1e-3) return false
+		// A minute's tick lands at once; a jump of hours takes about a second.
+		const step = Math.min(Math.abs(apart), delta * Math.max(8, Math.abs(apart) * 3))
+		state.shownHour = (((state.shownHour + Math.sign(apart) * step) % 24) + 24) % 24
+		applyLight()
+		return true
 	}
 
 	const ringOf = (view: TileView, id: string) => {
@@ -538,6 +663,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			if (!held && home !== null) view.group.position.set(home[0], 0, home[1])
 			ringOf(view, id)
 		})
+		hangLamps()
+		applyLight()
 	}
 
 	/** The lakes, rebuilt when the land moves; the ducks follow the first one. */
@@ -601,15 +728,17 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			wildTiles.forEach((view) => {
 				view.mesh.visible = !offered.has(view.cell)
 				view.lines.visible = view.mesh.visible
+				if (view.glass !== null) view.glass.visible = view.mesh.visible
 			})
 		if (key === state.wildsKey) return showOffers()
 		state.wildsKey = key
 		const wanted = new Set(Arr.map(specs, (spec) => spec.key))
 		Arr.forEach([...wildTiles], ([built, view]) => {
 			if (wanted.has(built)) return
-			layers.wilds.remove(view.mesh, view.lines)
+			layers.wilds.remove(view.mesh, view.lines, ...(view.glass === null ? [] : [view.glass]))
 			view.mesh.geometry.dispose()
 			view.lines.geometry.dispose()
+			view.glass?.geometry.dispose()
 			wildTiles.delete(built)
 		})
 		Arr.forEach(specs, (spec) => {
@@ -628,8 +757,10 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			const lines = new THREE.LineSegments(tile.ink, materials.ink)
 			lines.position.copy(mesh.position)
 			wildFeatures.set(mesh, spec.feature)
-			wildTiles.set(spec.key, { mesh, lines, cell: cellKey(spec.cell) })
-			layers.wilds.add(mesh, lines)
+			const glass = tile.glass === null ? null : new THREE.Mesh(tile.glass, materials.glass)
+			glass?.position.copy(mesh.position)
+			wildTiles.set(spec.key, { mesh, lines, glass, cell: cellKey(spec.cell) })
+			layers.wilds.add(mesh, lines, ...(glass === null ? [] : [glass]))
 		})
 		showOffers()
 	}
@@ -974,6 +1105,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const seconds = now / 1000
 		// What a click set off plays out on a paused map too: keep drawing until it all settles.
 		const playing = [
+			turnClock(delta),
 			carryHeld(delta),
 			flock.frame(delta, input.flowing),
 			birds.frame(delta, input.flowing, state.derived.centre, state.derived.radius),
@@ -982,6 +1114,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			Arr.some([...spun.values()], (until) => until > seconds),
 		]
 		if (Arr.some(playing, Boolean)) invalidate()
+		// A beam sweeping the board is motion like any other: it stops with the traffic.
+		if (input.flowing && turnBeacons(delta)) invalidate()
 		tiles.forEach((view, id) => {
 			const pace = (input.flowing ? 0.9 : 0) + ((spun.get(id) ?? 0) > seconds ? 8 : 0)
 			if (view.sails !== null) view.sails.rotation.z += delta * pace

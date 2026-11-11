@@ -4,7 +4,7 @@ import type { Biome } from "./biome"
 import type { TilePalette } from "./palette"
 import { creases, fuse, moved, part, pickFrom, seeded, vary } from "./solid"
 import { boulder, earthBlock, field, patch, scatter, tree } from "./tile"
-import { barn, cottage, placed } from "./village"
+import { barn, cottage, isPane, placed } from "./village"
 
 // The open country between and around the services: tiles nobody lives on. Each takes the biome
 // of the service nearest to it, so a namespace's country runs on past its last village.
@@ -22,6 +22,8 @@ export interface WildSpec {
 export interface WildTile {
 	readonly geometry: THREE.BufferGeometry
 	readonly ink: THREE.BufferGeometry
+	/** A farm's window panes, drawn unlit in the map's glass colour; `null` elsewhere. */
+	readonly glass: THREE.BufferGeometry | null
 }
 
 /** What a cell of open country is. Mountains only stand where no tile can be put (`ring` 2): a
@@ -88,6 +90,7 @@ export const buildWild = ({ key, biome, feature, palette }: WildSpec): WildTile 
 		)
 	const flat: Array<THREE.BufferGeometry> = []
 	const raised: Array<THREE.BufferGeometry> = []
+	const panes: Array<THREE.BufferGeometry> = []
 	if (feature === "forest") {
 		raised.push(...rocks(2), ...trees(Math.round(36 + biome.woodland * 14), 0.1, 0.9))
 	} else if (feature === "hills") {
@@ -111,10 +114,12 @@ export const buildWild = ({ key, biome, feature, palette }: WildSpec): WildTile 
 			placed(cottage(palette, biome, random), { position: [-0.45, 0, 0.3], turn: random() * Math.PI }),
 		]
 		taken.push([0, 0])
+		const trim = Arr.flatMap(yard, (built) => built.trim)
+		panes.push(...Arr.filter(trim, isPane))
 		flat.push(
 			patch(random, 0.9, 0.005, biome.yard),
 			...strips,
-			...Arr.flatMap(yard, (built) => built.trim),
+			...Arr.filter(trim, (piece) => !isPane(piece)),
 		)
 		raised.push(...Arr.flatMap(yard, (built) => built.solid), ...trees(6, 1.2, 0.9))
 	} else {
@@ -134,5 +139,6 @@ export const buildWild = ({ key, biome, feature, palette }: WildSpec): WildTile 
 	return {
 		geometry: fuse([earthBlock(palette, biome.turf, ground.getStyle()), ...flat, inked]),
 		ink: creases(inked),
+		glass: panes.length === 0 ? null : fuse(panes),
 	}
 }

@@ -12,7 +12,8 @@ type Parts = ReadonlyArray<THREE.BufferGeometry>
 export interface Building {
 	/** Walls and roofs: the volumes the ink follows. */
 	readonly solid: Parts
-	/** Doors, windows, beams and footings: too small to outline. */
+	/** Doors, windows, beams and footings: too small to outline. The window panes among them
+	 * (`isPane`) are drawn apart, unlit: dark by day and lit at night. */
 	readonly trim: Parts
 }
 
@@ -35,8 +36,17 @@ const FOOT = 0.04
 /** How far a door or a window stands proud of its wall. */
 const PROUD = 0.005
 
-/** Window panes: dark by day, lit at night. */
-const glassOf = (palette: TilePalette): string => (palette.night ? palette.lamp : palette.glass)
+/** Every window pane made, so a tile can tell them from the rest of its trim. */
+const panes = new WeakSet<THREE.BufferGeometry>()
+
+export const isPane = (geometry: THREE.BufferGeometry): boolean => panes.has(geometry)
+
+/** A window pane. Its colour is the glass material's, the same for every window on the map. */
+const pane = (width: number, height: number, depth: number, at: Vec3): THREE.BufferGeometry => {
+	const made = slab(width, height, depth, "white", at)
+	panes.add(made)
+	return made
+}
 
 /** A pitched roof on a wall top `width` by `depth` at height `base`: the two gable ends filled in
  * with wall, and two roof planes with thickness that overhang the walls by `eave`. */
@@ -74,7 +84,6 @@ const chimney = (palette: TilePalette, x: number, top: number, z: number): Build
 
 /** Windows along a wall facing +z at depth `z`: `count` of them spread over `width`. */
 const windowsAcross = (
-	palette: TilePalette,
 	count: number,
 	width: number,
 	y: number,
@@ -82,11 +91,7 @@ const windowsAcross = (
 	size: readonly [number, number] = [0.06, 0.07],
 ): Parts =>
 	Arr.makeBy(count, (index) =>
-		slab(size[0], size[1], 0.014, glassOf(palette), [
-			(index - (count - 1) / 2) * (width / count),
-			y,
-			z + PROUD,
-		]),
+		pane(size[0], size[1], 0.014, [(index - (count - 1) / 2) * (width / count), y, z + PROUD]),
 	)
 
 /** A cottage: one storey under a pitched roof, a door between two windows, a chimney. */
@@ -108,18 +113,10 @@ export const cottage = (palette: TilePalette, biome: Biome, random: () => number
 			slab(width + 0.05, FOOT, depth + 0.05, palette.stone, [0, FOOT / 2, 0]),
 			slab(0.08, 0.13, 0.014, palette.timber, [0, FOOT + 0.065, depth / 2 + PROUD]),
 			...Arr.map([-1, 1], (side) =>
-				slab(0.06, 0.065, 0.014, glassOf(palette), [
-					side * width * 0.31,
-					FOOT + height * 0.6,
-					depth / 2 + PROUD,
-				]),
+				pane(0.06, 0.065, 0.014, [side * width * 0.31, FOOT + height * 0.6, depth / 2 + PROUD]),
 			),
 			...Arr.map([-1, 1], (side) =>
-				slab(0.014, 0.065, 0.08, glassOf(palette), [
-					side * (width / 2 + PROUD),
-					FOOT + height * 0.6,
-					-depth * 0.05,
-				]),
+				pane(0.014, 0.065, 0.08, [side * (width / 2 + PROUD), FOOT + height * 0.6, -depth * 0.05]),
 			),
 			...stack.trim,
 		],
@@ -151,15 +148,11 @@ export const townhouse = (palette: TilePalette, biome: Biome, random: () => numb
 		trim: [
 			slab(width + 0.05, FOOT, depth + 0.05, palette.stone, [0, FOOT / 2, 0]),
 			slab(0.08, 0.14, 0.014, palette.timber, [-width * 0.2, FOOT + 0.07, depth / 2 + PROUD]),
-			slab(0.07, 0.07, 0.014, glassOf(palette), [
-				width * 0.22,
-				FOOT + storey * 0.58,
-				depth / 2 + PROUD,
-			]),
+			pane(0.07, 0.07, 0.014, [width * 0.22, FOOT + storey * 0.58, depth / 2 + PROUD]),
 			...Arr.flatMap(Arr.range(0, upperFloors - 1), (floor) => {
 				const level = FOOT + storey + floor * storey
 				return [
-					...windowsAcross(palette, 2, width, level + storey * 0.55, front),
+					...windowsAcross(2, width, level + storey * 0.55, front),
 					// The frame: a beam under each floor, and posts at the corners and the middle.
 					slab(width + jetty + 0.01, 0.018, 0.012, palette.timber, [
 						0,
@@ -243,11 +236,7 @@ export const church = (palette: TilePalette, biome: Biome, random: () => number,
 			// Tall windows down both sides of the nave, and buttresses between them.
 			...Arr.flatMap([-1, 1], (side) => [
 				...Arr.map([-0.2, 0.08, 0.36], (z) =>
-					slab(0.014, 0.2, 0.07, glassOf(palette), [
-						side * (width / 2 + PROUD),
-						FOOT + height * 0.55,
-						z,
-					]),
+					pane(0.014, 0.2, 0.07, [side * (width / 2 + PROUD), FOOT + height * 0.55, z]),
 				),
 				...Arr.map([-0.06, 0.22], (z) =>
 					slab(0.05, height * 0.8, 0.06, palette.stoneLight, [
@@ -303,7 +292,7 @@ export const townHall = (palette: TilePalette, biome: Biome, random: () => numbe
 			...Arr.map([-0.24, -0.08, 0.08, 0.24], (x) =>
 				slab(0.09, 0.15, 0.014, palette.steel, [x, FOOT + 0.075, depth / 2 + PROUD]),
 			),
-			...windowsAcross(palette, 4, width * 0.92, FOOT + height * 0.72, depth / 2),
+			...windowsAcross(4, width * 0.92, FOOT + height * 0.72, depth / 2),
 			part(new THREE.CylinderGeometry(0.05, 0.05, 0.012, 10).rotateX(Math.PI / 2), palette.dome, {
 				position: [0, top + 0.31, 0.085 + PROUD],
 			}),

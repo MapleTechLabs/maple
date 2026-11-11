@@ -1,10 +1,20 @@
-import { Array as Arr, Effect, Option, Queue, Record as Rec, Schema, Stream } from "effect"
+import {
+	Array as Arr,
+	Clock as EffectClock,
+	Effect,
+	Option,
+	Queue,
+	Record as Rec,
+	Schema,
+	Stream,
+} from "effect"
 import { Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { SceneStartError, Topology } from "../../page/service-map/scene3d"
 import type { Resources } from "../../platform/resources"
 import { SERVICE_MAP_3D_TOPOLOGY } from "../service-map-3d/fixture"
 import { autoLayout, dealOrder, linksOf, type Placements, placeTile, prospect } from "./board"
+import { Clock, clockOf, hourFor, LIGHT_MODES, LightMode } from "./daylight"
 import { Cell, ORIGIN } from "./hex"
 import type { SceneEvents, SceneHandle, SceneInput } from "./scene"
 
@@ -38,6 +48,10 @@ export const Model = Schema.Struct({
 	pokedLinkId: Schema.NullOr(Schema.String),
 	/** The map's noises are off. */
 	isMuted: Schema.Boolean,
+	/** How the map is lit: by the viewer's clock, or held at one time of day. */
+	light: LightMode,
+	/** The viewer's clock, read at the start and again every minute. */
+	clock: Clock,
 	/** The traffic toggle; `null` until clicked, so it follows the reduced-motion setting. */
 	traffic: Schema.NullOr(Schema.Boolean),
 	command: CameraCommand,
@@ -55,6 +69,9 @@ export const Message = defineMessageUnion({
 	ClickedPlaceRest: {},
 	ClickedTraffic: { isFlowing: Schema.Boolean },
 	ClickedSound: {},
+	/** Steps the light on: the clock, then dawn, day, dusk and night. */
+	ClickedLight: {},
+	TickedClock: { clock: Clock },
 	/** A cart or a train was clicked on the map. */
 	PokedLink: { linkId: Schema.String },
 	ClosedLinkCard: {},
@@ -70,12 +87,24 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-export const Flags = Schema.Struct({ reducedMotion: Schema.Boolean })
+export const Flags = Schema.Struct({ reducedMotion: Schema.Boolean, clock: Clock })
 export type Flags = typeof Flags.Type
 
-export const flags = Effect.sync((): Flags => ({
+/** The viewer's clock now, in their own time zone. */
+const readClock = Effect.map(EffectClock.currentTimeMillis, (nowMs) =>
+	clockOf(new Date(nowMs), Intl.DateTimeFormat().resolvedOptions().timeZone),
+)
+
+export const flags = Effect.map(readClock, (clock): Flags => ({
 	reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+	clock,
 }))
+
+/** The clock the map is lit for: the viewer's own, or theirs with the hour held. */
+export const litClockOf = (model: Pick<Model, "light" | "clock">): Clock => ({
+	...model.clock,
+	hour: hourFor(model.light, model.clock),
+})
 
 type Return = Update.Return<Model, Message, Resources>
 
@@ -97,6 +126,8 @@ export const init = (flags: Flags): Return => ({
 		selectedId: null,
 		pokedLinkId: null,
 		isMuted: false,
+		light: "clock",
+		clock: flags.clock,
 		traffic: null,
 		command: { action: "reset", serial: 0 },
 		isDark: null,
@@ -163,6 +194,13 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		ClickedTraffic: ({ isFlowing }) => ({ model: { ...model, traffic: !isFlowing } }),
 		ClickedSound: () => ({ model: { ...model, isMuted: !model.isMuted } }),
+		ClickedLight: () => ({
+			model: {
+				...model,
+				light: LIGHT_MODES[(LIGHT_MODES.indexOf(model.light) + 1) % LIGHT_MODES.length] ?? "clock",
+			},
+		}),
+		TickedClock: ({ clock }) => ({ model: { ...model, clock } }),
 		PokedLink: ({ linkId }) => ({
 			model: Arr.some(links, (link) => link.id === linkId) ? { ...model, pokedLinkId: linkId } : model,
 		}),
@@ -216,6 +254,7 @@ export const SceneState = Schema.Struct({
 	flowing: Schema.Boolean,
 	dark: Schema.Boolean,
 	muted: Schema.Boolean,
+	clock: Clock,
 })
 
 export const TOPOLOGY_ATTRIBUTE = "data-tiles-topology"
@@ -346,4 +385,30 @@ export const MountScene = Mount.defineStream("MountServiceMapTiles", {
 						(stop) => Effect.sync(() => Option.map(stop, (release) => release())),
 					).pipe(Effect.flatMap(() => Effect.never)),
 				),
+})
+
+/** The viewer's clock, read again every minute, so a map left open goes from day to night. */
+export const WatchClock = Mount.defineStream("WatchServiceMapTilesClock", {
+	messages: [Message.TickedClock],
+	execute: () =>
+		Stream.callback<ReturnType<typeof Message.TickedClock>>((queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() =>
+					window.setInterval(
+						() =>
+							Queue.offerUnsafe(
+								queue,
+								Message.TickedClock({
+									clock: clockOf(
+										new Date(),
+										Intl.DateTimeFormat().resolvedOptions().timeZone,
+									),
+								}),
+							),
+						60_000,
+					),
+				),
+				(timer) => Effect.sync(() => window.clearInterval(timer)),
+			).pipe(Effect.flatMap(() => Effect.never)),
+		),
 })

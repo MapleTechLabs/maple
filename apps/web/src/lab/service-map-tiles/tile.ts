@@ -11,6 +11,7 @@ import {
 	church,
 	CHURCH_HEIGHT,
 	cottage,
+	isPane,
 	placed,
 	stall,
 	townHall,
@@ -54,6 +55,13 @@ export interface TileSpec {
 export interface Tile {
 	readonly geometry: THREE.BufferGeometry
 	readonly ink: THREE.BufferGeometry
+	/** The tile's window panes, drawn unlit in the map's glass colour; `null` when it has none. */
+	readonly glass: THREE.BufferGeometry | null
+	/** The lamp that lights the tile after dark: over the square of a village, or by a landmark
+	 * that stands alone. `null` where there is neither. */
+	readonly lamp: Lamp | null
+	/** Where a lighthouse's lantern is, for the beam it turns at night. */
+	readonly beacon: Vec3 | null
 	/** The tallest thing on the tile. */
 	readonly height: number
 	/** What stands out on the tile, for a click on it: where it is, how much room it takes and
@@ -65,6 +73,13 @@ export interface Tile {
 		readonly hub: Vec3
 		readonly turn: number
 	} | null
+}
+
+/** A light on a tile: where it hangs, how far it reaches and how strong it is. */
+export interface Lamp {
+	readonly at: Vec3
+	readonly reach: number
+	readonly power: number
 }
 
 export interface Landmark {
@@ -584,9 +599,21 @@ export const buildTile = (spec: TileSpec): Tile => {
 		...Arr.take(water, 1),
 	]
 	const hub = new THREE.Vector3(...HUB).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn)
+	const trim = Arr.flatMap(buildings, (building) => building.trim)
+	const panes = Arr.filter(trim, isPane)
 	return {
-		geometry: fuse([block, ...ground, inked, ...Arr.flatMap(buildings, (building) => building.trim)]),
+		geometry: fuse([block, ...ground, inked, ...Arr.filter(trim, (piece) => !isPane(piece))]),
 		ink,
+		glass: panes.length === 0 ? null : fuse(panes),
+		// A village is lit from over its square, more strongly the bigger it is; a landmark with
+		// no village round it has a small lamp of its own.
+		lamp:
+			homes.length > 0
+				? { at: [0, 1, 0], reach: plan.yard * 1.5 + 2.6, power: 5 + spec.size * 7 }
+				: hasLandmark
+					? { at: [landmark[0], 0.9, landmark[1]], reach: 3.2, power: 3.5 }
+					: null,
+		beacon: spec.kind === "edge" ? [landmark[0], 1.33, landmark[1]] : null,
 		height: plan.height,
 		landmark: hasLandmark
 			? {

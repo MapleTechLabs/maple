@@ -1,9 +1,21 @@
 import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import { targetsFor } from "./board"
-import { heldIdOf, init, links, Message, type Model, placementsOf, topology, update } from "./update"
+import {
+	heldIdOf,
+	init,
+	links,
+	litClockOf,
+	Message,
+	type Model,
+	placementsOf,
+	topology,
+	update,
+} from "./update"
 
-const start = (): Model => init({ reducedMotion: false }).model
+/** Half past ten on a March morning, north of the equator. */
+const clock = { hour: 10.5, day: 80, isSouthern: false }
+const start = (): Model => init({ reducedMotion: false, clock }).model
 const step = (model: Model, message: Message): Model => update(model, message).model
 const firstFree = (model: Model, id: string) => targetsFor(placementsOf(model), id).free[0] ?? { q: 0, r: 0 }
 
@@ -89,5 +101,30 @@ describe("the tile board", () => {
 		const back = step(lifted, Message.CancelledHold())
 		expect(heldIdOf(back)).toBeNull()
 		expect(back.cells).toEqual(start().cells)
+	})
+})
+
+describe("the light on the map", () => {
+	it("follows the viewer's clock until a time of day is picked", () => {
+		expect(litClockOf(start())).toEqual(clock)
+		const later = step(start(), Message.TickedClock({ clock: { ...clock, hour: 19.25 } }))
+		expect(litClockOf(later).hour).toBe(19.25)
+	})
+
+	it("steps through dawn, day, dusk and night and back to the clock", () => {
+		const modes = Arr.map(
+			Arr.scan(Arr.range(1, 5), start(), (model) => step(model, Message.ClickedLight())),
+			(model) => model.light,
+		)
+		expect(modes).toEqual(["clock", "dawn", "day", "dusk", "night", "clock"])
+	})
+
+	it("holds a picked time of day whatever the clock says", () => {
+		const night = Arr.reduce(Arr.range(1, 4), start(), (model) => step(model, Message.ClickedLight()))
+		const ticked = step(night, Message.TickedClock({ clock: { ...clock, hour: 13 } }))
+		expect(ticked.light).toBe("night")
+		expect(litClockOf(ticked).hour).toBe(litClockOf(night).hour)
+		// The season still comes from the clock: only the hour is held.
+		expect(litClockOf(ticked).day).toBe(clock.day)
 	})
 })
