@@ -77,7 +77,8 @@ export const AWS_MODULE_SPECS = {
 	},
 	cost: {
 		title: "Cost",
-		summary: "Spend by service and resource, and what to cut.",
+		summary:
+			"Daily spend by service, region and usage type, read from Cost Explorer. AWS bills each Cost Explorer request USD 0.01. The policy also allows reading savings recommendations and billing data exports.",
 		available: false,
 		rolloutFlag: "cloudCost",
 		managedPolicies: [],
