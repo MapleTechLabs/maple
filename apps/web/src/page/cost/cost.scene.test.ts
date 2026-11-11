@@ -154,6 +154,11 @@ describe("cost page", () => {
 				"href",
 				"/sources/new?integration=aws",
 			),
+			// An account already connected turns its Cost module on from the AWS integration.
+			expectView(role("link", { name: "Turn on Cost for a connected account" })).toHaveAttr(
+				"href",
+				"/integrations?integration=aws",
+			),
 			expectView(text("Group by")).not.toExist(),
 			expectView(text("Sources")).not.toExist(),
 		)

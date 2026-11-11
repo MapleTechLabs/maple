@@ -30,7 +30,7 @@ const STATUS = {
 >
 
 /** Where the org's connections are listed and changed. */
-export const SOURCES_HREF = hrefOf(AppRoute.Sources())
+const SOURCES_HREF = hrefOf(AppRoute.Sources())
 
 /** How far the sync is: the newest day, how far back history goes, and when it last ran. */
 const facts = (

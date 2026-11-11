@@ -17,12 +17,18 @@ import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../../../kit/relative-time"
 import { integrationIconPlate } from "../../../kit/integration-empty"
+import { textLink } from "@maple/views/ui/text-link"
+import { switchControl } from "@maple/views/ui/switch"
 import {
+	type AwsModuleInfo,
 	isMetricsPanelOpen,
 	isSavingMetricsOf,
 	isSelectionSaved,
 	metricsErrorOf,
 	metricStreamOf,
+	moduleErrorOf,
+	moduleStateOf,
+	offeredModule,
 	selectionOf,
 } from "./aws"
 import {
@@ -32,7 +38,7 @@ import {
 	awsStreamOf,
 } from "../../../integrations/derive"
 import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { canManage, type Model } from "../../../integrations/model"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
@@ -46,6 +52,10 @@ type H = HtmlBuilder<Message>
 const BRAND = providerBrand("aws")
 
 export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
+
+const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
+
+const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
 
 const CONDITION_VARIANT = {
 	setup: "muted",
@@ -492,7 +502,135 @@ export const ingestPanel = (
 	]
 }
 
-const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone: string): Html => {
+/** A connection's action; one that opens a panel reads pressed while the panel is open. */
+const actionButton = (
+	h: H,
+	label: string,
+	message: Message,
+	extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean }> = {},
+): Html =>
+	button(
+		h,
+		{
+			size: "sm",
+			variant: extra.isExpanded === true ? "secondary" : "outline",
+			isLoading: extra.isLoading,
+			attributes: [
+				h.OnClick(message),
+				...(extra.isExpanded === undefined ? [] : [h.AriaExpanded(extra.isExpanded)]),
+			],
+		},
+		[label],
+	)
+
+/** Opens the connection's setup (the stack's script), or closes it when it is the open one. */
+const setupToggle = (h: H, model: Model, connection: V2AwsConnection, label: string): Html => {
+	const isOpen = model.awsCard.setupId === connection.id
+	return actionButton(
+		h,
+		label,
+		isOpen ? Message.ClickedAwsSetupClose() : Message.ClickedAwsSetup({ id: connection.id }),
+		{ isExpanded: isOpen },
+	)
+}
+
+const moduleNote = (h: H, glyph: "done" | "warn" | null, children: ReadonlyArray<Html | string>): Html =>
+	hstack(h, { gap: "2", align: "start" }, [
+		...(glyph === null
+			? []
+			: [
+					icon(h, STEP_GLYPH[glyph].icon, {
+						size: 14,
+						className: cn("mt-px shrink-0", STEP_GLYPH[glyph].className),
+					}),
+				]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, children),
+	])
+
+/** What the Cost module is doing on this connection: off, waiting for the stack, or being read. */
+const costState = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
+	switch (moduleStateOf(connection, "cost")) {
+		case "off":
+			return [moduleNote(h, null, ["Off. Maple does not read this account's cost."])]
+		case "ungranted":
+			// Before the first deploy the role step already asks for the stack.
+			return connection.verified_at === null
+				? [moduleNote(h, null, ["On. Maple reads cost once the stack is deployed."])]
+				: [
+						moduleNote(h, "warn", [
+							"On, but the role does not allow cost reads yet. Update the stack for Maple to read cost.",
+						]),
+						h.div([], [setupToggle(h, model, connection, "Update the stack")]),
+					]
+		case "granted":
+			return [
+				moduleNote(h, "done", [
+					"On. Maple reads this account's cost. ",
+					textLink(h, { href: COST_HREF }, ["Open Cost"]),
+				]),
+			]
+	}
+}
+
+/** The Cost module's switch and state; only for an org the status offers the module to. */
+const costRow = (h: H, model: Model, connection: V2AwsConnection, info: AwsModuleInfo): Html => {
+	const save = model.awsCard.moduleSave
+	const error = moduleErrorOf(save, connection.id)
+	const id = `aws-cost-${connection.id}`
+	return vstack(
+		h,
+		{
+			gap: "2",
+			as: "section",
+			className: "w-full border-t pt-3",
+			attributes: [h.AriaLabel(info.title)],
+		},
+		[
+			hstack(h, { gap: "4", justify: "between" }, [
+				vstack(h, { gap: "0.5", shrink: true }, [
+					typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${id}-label`)] }, [
+						info.title,
+					]),
+					typography(
+						h,
+						{ size: "xs", tone: "muted", as: "p", attributes: [h.Id(`${id}-description`)] },
+						[info.summary],
+					),
+				]),
+				...switchControl(h, {
+					id,
+					inputId: `${id}-input`,
+					isChecked: moduleStateOf(connection, "cost") !== "off",
+					isDisabled: !canManage(model) || save._tag === "Saving",
+					labelledBy: `${id}-label`,
+					describedBy: `${id}-description`,
+					onToggle: Message.ToggledAwsModule({ id: connection.id, module: "cost" }),
+				}),
+			]),
+			...costState(h, model, connection),
+			...(error === null
+				? []
+				: [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Role("alert")] },
+							[error],
+						),
+					]),
+			...(canManage(model)
+				? []
+				: [typography(h, { size: "2xs", tone: "muted", as: "p" }, [MODULES_ADMIN_ONLY])]),
+		],
+	)
+}
+
+const connectionRow = (
+	h: H,
+	model: Model,
+	status: V2AwsIntegration,
+	connection: V2AwsConnection,
+	timeZone: string,
+): Html => {
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
@@ -501,20 +639,7 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 		label: string,
 		message: Message,
 		extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean }> = {},
-	) =>
-		button(
-			h,
-			{
-				size: "sm",
-				variant: extra.isExpanded === true ? "secondary" : "outline",
-				isLoading: extra.isLoading,
-				attributes: [
-					h.OnClick(message),
-					...(extra.isExpanded === undefined ? [] : [h.AriaExpanded(extra.isExpanded)]),
-				],
-			},
-			[label],
-		)
+	) => actionButton(h, label, message, extra)
 	return mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(
 			h,
@@ -537,15 +662,13 @@ const connectionRow = (h: H, model: Model, connection: V2AwsConnection, timeZone
 					...deliverySteps(h, model, connection, timeZone),
 				]),
 				...ingestPanel(h, model, connection, timeZone),
+				...Option.match(offeredModule(status, "cost"), {
+					onNone: () => [],
+					onSome: (info) => [costRow(h, model, connection, info)],
+				}),
 				hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
 					// Reconnect deploys the stack again: it finishes a setup and updates an old one.
-					action(
-						"Reconnect",
-						isOpen
-							? Message.ClickedAwsSetupClose()
-							: Message.ClickedAwsSetup({ id: connection.id }),
-						{ isExpanded: isOpen },
-					),
+					setupToggle(h, model, connection, "Reconnect"),
 					...(connection.verified_at === null
 						? []
 						: [
@@ -669,7 +792,7 @@ const connectedView = (
 	)
 	return vstack(h, { gap: "3" }, [
 		...removedPanel(h, model, focusId),
-		...Arr.map(shown, (connection) => connectionRow(h, model, connection, timeZone)),
+		...Arr.map(shown, (connection) => connectionRow(h, model, status, connection, timeZone)),
 		...(focusId !== null || !status.available
 			? []
 			: [

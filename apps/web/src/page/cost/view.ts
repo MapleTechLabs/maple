@@ -41,12 +41,15 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { dailyChart } from "./view-chart"
 import { figuresRow } from "./view-figures"
-import { SOURCES_HREF, sourcesSection } from "./view-sources"
+import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
 
 type H = HtmlBuilder<Message>
 
 const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
+
+/** Where a connected account's Cost module is turned on. */
+const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
 
 /** No cost source: how to get one. Never a sample of what the page would show. */
 const onRamp = (h: H): Html =>
@@ -78,7 +81,9 @@ const onRamp = (h: H): Html =>
 						linkButton(h, { variant: "default", size: "sm", href: CONNECT_AWS_HREF }, [
 							"Connect AWS",
 						]),
-						textLink(h, { href: SOURCES_HREF, tone: "muted" }, ["Open your sources"]),
+						textLink(h, { href: AWS_INTEGRATION_HREF, tone: "muted" }, [
+							"Turn on Cost for a connected account",
+						]),
 					]),
 				],
 				"max-w-md",

@@ -10,6 +10,7 @@ import { input } from "@maple/views/ui/input"
 import { skeleton } from "@maple/views/ui/skeleton"
 import {
 	type CheckRow,
+	type RailItem,
 	flowColumns,
 	flowRail,
 	foundChips,
@@ -19,12 +20,15 @@ import {
 	stepCard,
 } from "../../../kit/connect-flow"
 import { relativeTime } from "../../../kit/relative-time"
+import { choiceCard, choiceCheckClass } from "@maple/views/ui/choice-card"
 import {
+	type AwsModuleInfo,
 	decodeCreateRequest,
 	isSavingMetricsOf,
 	isSelectionSaved,
 	metricsErrorOf,
 	normalizeAccountId,
+	offeredModule,
 	selectionOf,
 } from "./aws"
 import { catalogEntry } from "../../../integrations/catalog"
@@ -37,7 +41,7 @@ import { ingestPanel, roleName } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // AWS in the connect flow: deploy a read-only role, pick regions and services, then deploy the
 // metric stream and watch the first delivery.
@@ -59,7 +63,14 @@ const at = (h: H, model: Model, timeZone: string, iso: string | null, prefix: st
 	return value === null ? null : relativeTime(h, { value, nowMs: model.nowMs, timeZone, prefix })
 }
 
-const stackRail = (h: H, connection: V2AwsConnection | null): Html =>
+const COST_POLICY: RailItem = {
+	icon: "CircleDollarIcon",
+	title: "Cost policy",
+	detail: "Read-only Cost Explorer reads, attached to the role",
+}
+
+/** `hasCost`: the stack carries the Cost module's policy (asked for, or ticked on the form). */
+const stackRail = (h: H, connection: V2AwsConnection | null, hasCost: boolean): Html =>
 	flowRail(h, {
 		eyebrow: "What the stack creates",
 		items: [
@@ -73,6 +84,7 @@ const stackRail = (h: H, connection: V2AwsConnection | null): Html =>
 				title: "OIDC provider",
 				detail: `${connection?.oidc_issuer ?? "Maple's issuer"}, one per account, shared by every Maple connection to it`,
 			},
+			...(hasCost ? [COST_POLICY] : []),
 			{
 				icon: "LayersIcon",
 				title: "One CloudFormation stack",
@@ -83,6 +95,38 @@ const stackRail = (h: H, connection: V2AwsConnection | null): Html =>
 		timeNote: "Takes about 2 minutes. Needs IAM admin in the account",
 		docs: docs("Setup docs"),
 	})
+
+/** An opt-in module for the account about to be connected, unticked until the user picks it. */
+const moduleChoice = (h: H, model: Model, info: AwsModuleInfo): Html => {
+	const isChecked = model.awsCard.newModules.includes(info.module)
+	return choiceCard(
+		h,
+		{
+			type: "checkbox",
+			isChecked,
+			isDisabled: model.awsCard.isCreating,
+			label: info.title,
+			onChange: Message.ToggledAwsNewModule({ module: info.module }),
+			className: "items-start gap-3 px-3 py-2.5",
+		},
+		[
+			hstack(
+				h,
+				{
+					as: "span",
+					align: "center",
+					justify: "center",
+					className: choiceCheckClass(isChecked, false, "mt-0.5"),
+				},
+				isChecked ? [icon(h, "CheckIcon", { size: 12 })] : [],
+			),
+			vstack(h, { gap: "0.5", grow: true, shrink: true, as: "span" }, [
+				typography(h, { size: "sm", weight: "medium" }, [info.title]),
+				typography(h, { size: "xs", tone: "muted" }, [info.summary]),
+			]),
+		],
+	)
+}
 
 const accountForm = (h: H, model: Model): Html => {
 	const card = model.awsCard
@@ -141,6 +185,10 @@ const accountForm = (h: H, model: Model): Html => {
 							card.createError,
 						),
 			]),
+			...Option.match(offeredModule(awsStatusOf(model), "cost"), {
+				onNone: () => [],
+				onSome: (info) => [moduleChoice(h, model, info)],
+			}),
 		],
 	)
 }
@@ -315,7 +363,11 @@ const connectStep = (h: H, model: Model, timeZone: string): Html => {
 					: connection.verified_at === null
 						? waitingForRole(h, model, connection, timeZone)
 						: roleDeployed(h, model, connection, timeZone)
-	return flowColumns(h, main, stackRail(h, connection))
+	const hasCost =
+		connection === null
+			? Option.isSome(offeredModule(status, "cost")) && model.awsCard.newModules.includes("cost")
+			: connection.modules.includes("cost")
+	return flowColumns(h, main, stackRail(h, connection, hasCost))
 }
 
 const selectionRail = (h: H, model: Model, connection: V2AwsConnection): Html => {
