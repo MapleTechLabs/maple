@@ -1,14 +1,25 @@
 import { Array as Arr, Option, Order, Record as Rec } from "effect"
 import * as THREE from "three"
 import type { TilePalette } from "./palette"
+import type { Block } from "./rails"
+import {
+	COUPLING,
+	isLoaded,
+	type Line,
+	makeSignalBox,
+	makeTrain,
+	type Signal,
+	signalsOf,
+	type Train,
+} from "./signalling"
 import { fuse, part, type Vec3 } from "./solid"
 
 // The supply chains: every link carries its caller's produce to its callee and comes back empty.
 // A cart drives out on the right of its road, turns in the far square and drives back on the
-// other side. A train runs to the far station, stops, and reverses home. Nothing vanishes: the
-// load is all that comes and goes. The load is painted with what the caller's biome makes, the
-// vehicle with the link's health. A vehicle can be poked: it dashes on for a moment, and an
-// engine lets off steam.
+// other side. A train runs to the far station, stops, and backs home, waiting at signals for
+// track another train is on (`signalling.ts`). Nothing vanishes: the load is all that comes and
+// goes. The load is painted with what the caller's biome makes, the vehicle with the link's
+// health. A vehicle can be poked: it dashes on for a moment, and an engine lets off steam.
 
 export interface Route {
 	/** The link the route carries, so a poked vehicle can say what it is hauling. */
@@ -24,8 +35,10 @@ export interface Route {
 	readonly color: string
 	/** The colour of what it carries. */
 	readonly load: string
-	/** A dimmed link's traffic stands still. */
+	/** A dimmed link's carts stand still, and its train finishes its trip and stays at home. */
 	readonly running: boolean
+	/** A railway's stretches of track that other lines use too. */
+	readonly blocks?: ReadonlyArray<Block>
 }
 
 /** A vehicle under the pointer: which one, and the link it runs on. */
@@ -44,6 +57,8 @@ export interface Traffic {
 	/** `moving` runs the ordinary traffic; a poked vehicle dashes even on a paused map. `true`
 	 * while one is still dashing. */
 	readonly frame: (delta: number, moving: boolean) => boolean
+	/** Which links' traffic runs, without starting anything over. */
+	readonly setRunning: (isRunning: (linkId: string) => boolean) => void
 	readonly dispose: () => void
 }
 
@@ -56,12 +71,8 @@ const REACH = 0.34
 const PUFFS = 3
 /** How far to the right of its road's middle a cart keeps. */
 const LANE = 0.085
-/** How far behind its engine, or the wagon in front, a wagon rides. */
-export const COUPLING = 0.66
-/** How far short of the far buffer an engine stops: half its own length and a little air. */
-const BUFFER = 0.42
-/** The share of each leg of a train's trip it spends standing at the station. */
-const DWELL = 0.1
+/** How far from the middle of the track a signal's post stands. */
+const SIGNAL_ASIDE = 0.32
 
 interface Leg {
 	readonly from: THREE.Vector3
@@ -117,18 +128,26 @@ interface Mover {
 	readonly linkId: string
 	readonly kind: Route["kind"]
 	readonly legs: ReadonlyArray<Leg>
-	/** How far one whole trip is, there and back. */
-	readonly trip: number
-	/** Where the nose is `progress` of the way through a trip, and whether it is carrying. */
-	readonly whereabouts: (progress: number) => { readonly along: number; readonly loaded: boolean }
-	readonly speed: number
-	readonly running: boolean
+	/** Where the vehicle's nose is along its legs, and whether it is carrying. */
+	readonly whereabouts: () => { readonly along: number; readonly loaded: boolean }
 	readonly bodies: ReadonlyArray<Body>
 	/** The engine's first puff in the steam mesh; -1 for a cart. */
 	readonly steam: number
-	progress: number
+	running: boolean
 	/** When it was last poked, in seconds; `-Infinity` if never. */
 	pokedAt: number
+}
+
+/** A cart goes round its road at a steady pace. */
+interface Cart extends Mover {
+	readonly trip: number
+	readonly speed: number
+	progress: number
+}
+
+/** A train is driven by the signal box. */
+interface Engine extends Mover {
+	readonly train: Train
 }
 
 // Bodies are white where the instance colour should show, and carry their own dark parts.
@@ -163,12 +182,6 @@ const wagonGeometry = (palette: TilePalette): THREE.BufferGeometry =>
 	])
 
 const wagonLoad = (): THREE.BufferGeometry => new THREE.BoxGeometry(0.42, 0.13, 0.15).translate(0, 0.14, 0)
-
-/** A train's run from standstill to standstill, 0 to 1, with a wait at each end. */
-const run = (phase: number): number => {
-	const moving = Math.min(1, Math.max(0, (phase - DWELL) / (1 - 2 * DWELL)))
-	return moving * moving * (3 - 2 * moving)
-}
 
 export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette): Traffic => {
 	const root = new THREE.Group()
@@ -212,7 +225,7 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 	root.add(steam)
 	const next = { cart: 0, engine: 0, wagon: 0 }
 	const white = new THREE.Color("white")
-	const cartsOn = (route: Route): Array<Mover> => {
+	const cartsOn = (route: Route): Array<Cart> => {
 		const [first, last] = [route.points[0], route.points[route.points.length - 1]]
 		if (first === undefined || last === undefined) return []
 		const { round, loaded } = cartRound(new THREE.Vector3(...first), new THREE.Vector3(...last))
@@ -223,12 +236,15 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 			const slot = next.cart++
 			meshes.cart.setColorAt(slot, new THREE.Color(route.color))
 			meshes.cartLoad.setColorAt(slot, new THREE.Color(route.load))
-			return {
+			const cart: Cart = {
 				linkId: route.linkId,
 				kind: route.kind,
 				legs,
 				trip,
-				whereabouts: (progress) => ({ along: progress * trip, loaded: progress * trip < loaded }),
+				whereabouts: () => ({
+					along: (cart.progress % 1) * trip,
+					loaded: (cart.progress % 1) * trip < loaded,
+				}),
 				speed: route.speed,
 				running: route.running,
 				steam: -1,
@@ -240,14 +256,20 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 				// Spread round the road, then nudged so two roads never march in step.
 				progress: (index + ((slot * 0.37) % 1)) / route.count,
 			}
+			return cart
 		})
 	}
-	const trainOn = (route: Route): Array<Mover> => {
+	const engineOn = (route: Route): Array<Engine> => {
 		const legs = legsOf(Arr.map(route.points, (point) => new THREE.Vector3(...point)))
-		// The engine stops where its last wagon is still clear of the buffer.
-		const home = route.count * COUPLING + 0.3
-		const reach = lengthOf(legs) - home - BUFFER
-		if (reach <= 0) return []
+		const line: Line = {
+			length: lengthOf(legs),
+			wagons: route.count,
+			speed: route.speed,
+			blocks: route.blocks ?? [],
+		}
+		// Trains leave their stations one after another, not all on the first tick.
+		const train = makeTrain(line, (next.engine * 1.3) % 4)
+		if (train === null) return []
 		const slot = next.engine++
 		meshes.engine.setColorAt(slot, new THREE.Color(route.color))
 		const drawn = Arr.flatMap(Arr.range(1, route.count), (wagon): Array<Body> => {
@@ -264,27 +286,30 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 				linkId: route.linkId,
 				kind: route.kind,
 				legs,
-				trip: reach * 2,
-				// Out for the first half of the trip and backing home for the second.
-				whereabouts: (progress) => ({
-					along: home + run(progress < 0.5 ? progress * 2 : 2 - progress * 2) * reach,
-					loaded: progress < 0.5,
-				}),
-				speed: route.speed,
+				train,
+				whereabouts: () => ({ along: train.along, loaded: isLoaded(train) }),
 				running: route.running,
 				steam: slot * PUFFS,
 				pokedAt: -Infinity,
 				bodies: [{ mesh: meshes.engine, index: slot, behind: 0, isLoad: false }, ...drawn],
-				progress: (slot * 0.37) % 1,
 			},
 		]
 	}
-	const movers = Arr.flatMap(routes, (route) => (route.kind === "cart" ? cartsOn(route) : trainOn(route)))
+	const roadGoing = Arr.flatMap(
+		Arr.filter(routes, (route) => route.kind === "cart"),
+		cartsOn,
+	)
+	const engines = Arr.flatMap(
+		Arr.filter(routes, (route) => route.kind === "train"),
+		engineOn,
+	)
+	const movers: ReadonlyArray<Mover> = [...roadGoing, ...engines]
+	const box = makeSignalBox(Arr.map(engines, (engine) => engine.train))
 	const pose = new THREE.Object3D()
 	const now = () => performance.now() / 1000
 	const clock = { puffed: 0 }
 	/** Poses `pose` on the mover's line `along` units from its start; `false` when it has no legs. */
-	const stand = (mover: Mover, along: number): boolean => {
+	const stand = (mover: Pick<Mover, "legs">, along: number): boolean => {
 		const leg = Option.orElse(
 			Arr.findLast(mover.legs, (candidate) => candidate.start <= along),
 			() => Arr.head(mover.legs),
@@ -296,7 +321,7 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		return true
 	}
 	const settle = (mover: Mover, t: number) => {
-		const { along, loaded } = mover.whereabouts(mover.progress % 1)
+		const { along, loaded } = mover.whereabouts()
 		Arr.forEach(mover.bodies, (body) => {
 			if (!stand(mover, along - body.behind)) return
 			pose.scale.setScalar(body.isLoad && !loaded ? 0.001 : 1)
@@ -324,9 +349,68 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		})
 		pose.scale.setScalar(1)
 	}
-	const fleets = [...Rec.values(meshes), steam]
+	// One post per signal, and a lamp on it that goes red while the track it guards is taken.
+	const signals = Arr.flatMap(engines, (engine) =>
+		Arr.map(signalsOf(engine.train.line), (signal): Signal & { readonly at: THREE.Vector3 } => {
+			stand(engine, signal.along)
+			const heading = -pose.rotation.y
+			// To the right of a train coming up to it.
+			const aside = SIGNAL_ASIDE * signal.side
+			return {
+				...signal,
+				at: pose.position
+					.clone()
+					.add(new THREE.Vector3(-Math.sin(heading) * aside, 0, Math.cos(heading) * aside)),
+			}
+		}),
+	)
+	const posts = new THREE.InstancedMesh(
+		fuse([
+			part(new THREE.BoxGeometry(0.03, 0.42, 0.03), palette.steel, { position: [0, 0.16, 0] }),
+			part(new THREE.BoxGeometry(0.1, 0.16, 0.05), palette.steel, { position: [0, 0.4, 0] }),
+		]),
+		new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+		Math.max(1, signals.length),
+	)
+	// The lamp is unlit, so it glows the same by day and by night.
+	const lamps = new THREE.InstancedMesh(
+		new THREE.SphereGeometry(0.045, 8, 6),
+		new THREE.MeshBasicMaterial(),
+		Math.max(1, signals.length),
+	)
+	posts.count = signals.length
+	lamps.count = signals.length
+	posts.castShadow = true
+	Arr.forEach(signals, (signal, index) => {
+		pose.position.copy(signal.at)
+		pose.rotation.set(0, 0, 0)
+		pose.scale.setScalar(1)
+		pose.updateMatrix()
+		posts.setMatrixAt(index, pose.matrix)
+		pose.position.setY(signal.at.y + 0.4)
+		pose.updateMatrix()
+		lamps.setMatrixAt(index, pose.matrix)
+	})
+	Arr.forEach([posts, lamps], (mesh) => {
+		mesh.frustumCulled = false
+		root.add(mesh)
+	})
+	const aspects = { proceed: new THREE.Color(palette.proceed), halt: new THREE.Color(palette.halt) }
+	const light = () => {
+		Arr.forEach(signals, (signal, index) =>
+			lamps.setColorAt(
+				index,
+				Arr.some(signal.guards, (section) => box.isOccupied(section))
+					? aspects.halt
+					: aspects.proceed,
+			),
+		)
+		if (lamps.instanceColor !== null) lamps.instanceColor.needsUpdate = true
+	}
+	const fleets = [...Rec.values(meshes), steam, posts, lamps]
 	const place = () => {
 		const t = now()
+		light()
 		Arr.forEach(movers, (mover) => settle(mover, t))
 		Arr.forEach(fleets, (mesh) => {
 			mesh.instanceMatrix.needsUpdate = true
@@ -337,7 +421,7 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		root,
 		under: (ray) => {
 			const near = Arr.flatMap(movers, (mover, index) => {
-				const { along } = mover.whereabouts(mover.progress % 1)
+				const { along } = mover.whereabouts()
 				// An engine or any of its wagons will do.
 				return Arr.flatMap(Arr.dedupe(Arr.map(mover.bodies, (body) => body.behind)), (behind) => {
 					if (!stand(mover, along - behind)) return []
@@ -364,17 +448,29 @@ export const makeTraffic = (routes: ReadonlyArray<Route>, palette: TilePalette):
 		frame: (delta, moving) => {
 			const t = now()
 			const step = Math.min(delta, 0.05)
-			const dashing = Arr.map(movers, (mover) => {
-				const dash = t - mover.pokedAt < DASH
-				const pace = dash ? DASH_PACE : moving && mover.running ? 1 : 0
-				mover.progress = (mover.progress + (step * mover.speed * pace) / mover.trip) % 1
-				return dash
+			const isDashing = (mover: Mover) => t - mover.pokedAt < DASH
+			Arr.forEach(roadGoing, (cart) => {
+				const pace = isDashing(cart) ? DASH_PACE : moving && cart.running ? 1 : 0
+				cart.progress = (cart.progress + (step * cart.speed * pace) / cart.trip) % 1
 			})
-			const busy = Arr.some(dashing, Boolean)
+			box.step(
+				step,
+				(index) => {
+					const engine = engines[index]
+					return engine === undefined ? 0 : isDashing(engine) ? DASH_PACE : moving ? 1 : 0
+				},
+				// A dimmed link's train is let finish its trip, then kept at home.
+				(index) => engines[index]?.running === true,
+			)
+			const busy = Arr.some(movers, isDashing)
 			if (moving || busy) clock.puffed += step
 			place()
 			return busy
 		},
+		setRunning: (isRunning) =>
+			Arr.forEach(movers, (mover) => {
+				mover.running = isRunning(mover.linkId)
+			}),
 		dispose: () => {
 			Arr.forEach(fleets, (mesh) => {
 				mesh.geometry.dispose()

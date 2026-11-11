@@ -5,7 +5,7 @@ import { type Cell, cellToPoint, corners, disc, hexDistance, type Point } from "
 // borders between tiles: it follows hex sides from a corner of one tile to a corner of the other,
 // so it never cuts through a village.
 
-const cornerKey = ([x, z]: Point): string => `${Math.round(x * 100)},${Math.round(z * 100)}`
+export const cornerKey = ([x, z]: Point): string => `${Math.round(x * 100)},${Math.round(z * 100)}`
 
 export interface Borders {
 	readonly points: ReadonlyMap<string, Point>
@@ -39,15 +39,35 @@ export const bordersOf = (cells: ReadonlyArray<Cell>): Borders => {
 
 const distance = (a: Point, b: Point): number => Math.hypot(a[0] - b[0], a[1] - b[1])
 
+/** The corners at each end that other lines of the same two tiles already end at. */
+export interface Taken {
+	readonly from: ReadonlySet<string>
+	readonly to: ReadonlySet<string>
+}
+
+const NONE_TAKEN: Taken = { from: new Set(), to: new Set() }
+
 /** The shortest run of sides in `borders` from a corner of `from` to a corner of `to`; `None`
  * when the graph does not join them. Among equally short runs it leaves from the corner facing `to`. */
-const runBetween = (borders: Borders, from: Cell, to: Cell): Option.Option<ReadonlyArray<Point>> => {
+const runBetween = (
+	borders: Borders,
+	from: Cell,
+	to: Cell,
+	taken: Taken,
+): Option.Option<ReadonlyArray<Point>> => {
 	const end = cellToPoint(to)
-	const goals = new Set(Arr.map(corners(to), cornerKey))
+	/** The corners of a tile a new line may use: those no other line of that tile ends at, or
+	 * all of them once every one is taken. */
+	const open = (keys: ReadonlyArray<string>, used: ReadonlySet<string>): ReadonlyArray<string> => {
+		const free = Arr.filter(keys, (key) => !used.has(key))
+		return free.length > 0 ? free : keys
+	}
+	const goals = new Set(open(Arr.map(corners(to), cornerKey), taken.to))
+	const starts = new Set(open(Arr.map(corners(from), cornerKey), taken.from))
 	const sources = Arr.sort(
 		Arr.filter(
 			Arr.map(corners(from), (point) => ({ key: cornerKey(point), point })),
-			(corner) => borders.points.has(corner.key),
+			(corner) => borders.points.has(corner.key) && starts.has(corner.key),
 		),
 		Order.mapInput(Order.Number, (corner: { readonly point: Point }) => distance(corner.point, end)),
 	)
@@ -88,11 +108,17 @@ const runBetween = (borders: Borders, from: Cell, to: Cell): Option.Option<Reado
 
 /** The track between two tiles, as points from one tile's centre to the other's: the shortest
  * run of tile sides the land offers. Two tiles the land does not join are linked across the
- * open cells between them, still along cell sides, so the track never cuts through a tile. */
-export const laneBetween = (borders: Borders, from: Cell, to: Cell): ReadonlyArray<Point> => {
-	const overLand = runBetween(borders, from, to)
+ * open cells between them, still along cell sides, so the track never cuts through a tile.
+ * A line avoids the corners in `taken`, so each line of a tile gets a station track of its own. */
+export const laneBetween = (
+	borders: Borders,
+	from: Cell,
+	to: Cell,
+	taken: Taken = NONE_TAKEN,
+): ReadonlyArray<Point> => {
+	const overLand = runBetween(borders, from, to, taken)
 	const run = Option.orElse(overLand, () =>
-		runBetween(bordersOf(disc(from, hexDistance(from, to))), from, to),
+		runBetween(bordersOf(disc(from, hexDistance(from, to))), from, to, taken),
 	)
 	return [cellToPoint(from), ...Option.getOrElse(run, (): ReadonlyArray<Point> => []), cellToPoint(to)]
 }

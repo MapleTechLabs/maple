@@ -1,7 +1,7 @@
 import { Array as Arr } from "effect"
 import { type Link, linkState, type Placements } from "./board"
 import { type Cell, cellToPoint, type Point } from "./hex"
-import { bordersOf, laneBetween } from "./lanes"
+import { bordersOf, cornerKey, laneBetween } from "./lanes"
 
 // What joins the tiles on the board: a road straight across the side two touching tiles share,
 // and a railway along the tile borders for every other link. Each tile also learns which ways
@@ -56,6 +56,14 @@ export const networkOf = (
 	}
 	const roads: Array<Road> = []
 	const rails: Array<Rail> = []
+	/** Per tile, the corners its lines already end at: the next line takes another one, so every
+	 * line has a platform of its own and no two trains share a home. */
+	const stations = new Map<string, Set<string>>()
+	const stationsOf = (id: string): Set<string> => {
+		const used = stations.get(id) ?? new Set<string>()
+		stations.set(id, used)
+		return used
+	}
 	Arr.forEach(links, (link) => {
 		const source = down.get(link.source)
 		const target = down.get(link.target)
@@ -68,9 +76,14 @@ export const networkOf = (
 			leave(link.target, towards(to, from))
 			return
 		}
-		const lane = laneBetween(borders, source, target)
+		const lane = laneBetween(borders, source, target, {
+			from: stationsOf(link.source),
+			to: stationsOf(link.target),
+		})
 		const first = lane[1] ?? to
 		const last = lane[lane.length - 2] ?? from
+		stationsOf(link.source).add(cornerKey(first))
+		stationsOf(link.target).add(cornerKey(last))
 		rails.push({ link, points: [stationOf(from, first), ...lane.slice(1, -1), stationOf(to, last)] })
 		leave(link.source, towards(from, first))
 		leave(link.target, towards(to, last))

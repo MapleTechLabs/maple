@@ -32,12 +32,32 @@ export interface Station {
 	readonly routes: ReadonlyArray<string>
 }
 
+/** A stretch of a route that other routes also use, from `from` to `to` units along its line.
+ * Stretches that touch belong to one `section`, and a section holds one train at a time. */
+export interface Block {
+	readonly section: string
+	readonly from: number
+	readonly to: number
+}
+
 export interface RailNetwork {
 	readonly pieces: ReadonlyArray<Piece>
 	readonly points: ReadonlyArray<Points>
 	readonly stations: ReadonlyArray<Station>
 	/** The line each route's train follows, station to station. */
 	readonly paths: ReadonlyMap<string, ReadonlyArray<Point>>
+	/** The shared stretches of each route, in the order its train meets them. */
+	readonly blocks: ReadonlyMap<string, ReadonlyArray<Block>>
+}
+
+const lengthOf = (line: ReadonlyArray<Point>): number =>
+	Arr.reduce(Arr.zip(line, Arr.drop(line, 1)), 0, (sum, [a, b]) => sum + span(a, b))
+
+/** One piece of a route's line: what it runs over, and where along the line it lies. */
+interface Stretch {
+	readonly resource: string
+	readonly from: number
+	readonly to: number
 }
 
 /** How far before a corner a track starts to turn, at most. */
@@ -87,6 +107,9 @@ export const railNetwork = (routes: ReadonlyArray<RailRoute>): RailNetwork => {
 		{ readonly at: Point; readonly corner: Point; readonly turns: Map<string, Set<string>> }
 	>()
 	const paths = new Map<string, ReadonlyArray<Point>>()
+	const stretches = new Map<string, Array<Stretch>>()
+	/** What may hold only one train: a side of track, or a whole corner (its turns cross). */
+	const users = new Map<string, Set<string>>()
 	const leave = (corner: Point, other: Point, at: Point, turnKey: string, route: string) => {
 		const key = `${keyOf(corner)}|${sideKey(corner, other)}`
 		const end = ends.get(key) ?? { at, corner, turns: new Map<string, Set<string>>() }
@@ -110,7 +133,16 @@ export const railNetwork = (routes: ReadonlyArray<RailRoute>): RailNetwork => {
 		note(stations, keyOf(first), { at: first, heading: heading(first, second) }, id)
 		note(stations, keyOf(last), { at: last, heading: heading(last, beforeLast) }, id)
 		const path: Array<Point> = [first]
-		const cursor = { at: first, stop: first }
+		const cursor = { at: first, stop: first, travelled: 0 }
+		const run: Array<Stretch> = []
+		const over = (resource: string, line: ReadonlyArray<Point>) => {
+			const to = cursor.travelled + lengthOf(line)
+			run.push({ resource, from: cursor.travelled, to })
+			cursor.travelled = to
+			const seen = users.get(resource) ?? new Set<string>()
+			users.set(resource, seen)
+			seen.add(id)
+		}
 		Arr.forEach(stops, (corner, index) => {
 			const before = stops[index - 1]
 			const after = stops[index + 1]
@@ -118,12 +150,14 @@ export const railNetwork = (routes: ReadonlyArray<RailRoute>): RailNetwork => {
 			const cutIn = cutFrom(corner, before)
 			const cutOut = cutFrom(corner, after)
 			note(pieces, `side:${sideKey(before, corner)}`, [cursor.at, cutIn], id)
+			over(`side:${sideKey(before, corner)}`, [cursor.at, cutIn])
 			const turnKey = `turn:${keyOf(corner)}:${Arr.join(
 				Arr.sort([sideKey(before, corner), sideKey(corner, after)], Order.String),
 				"+",
 			)}`
 			const curve = turn(cutIn, corner, cutOut)
 			note(pieces, turnKey, curve, id)
+			over(`corner:${keyOf(corner)}`, curve)
 			leave(corner, before, cutIn, turnKey, id)
 			leave(corner, after, cutOut, turnKey, id)
 			path.push(...curve)
@@ -131,8 +165,40 @@ export const railNetwork = (routes: ReadonlyArray<RailRoute>): RailNetwork => {
 			cursor.stop = corner
 		})
 		note(pieces, `side:${sideKey(cursor.stop, last)}`, [cursor.at, last], id)
+		over(`side:${sideKey(cursor.stop, last)}`, [cursor.at, last])
 		path.push(last)
 		paths.set(id, path)
+		stretches.set(id, run)
+	})
+	const isShared = (resource: string): boolean => (users.get(resource)?.size ?? 0) > 1
+	// Shared stretches that follow one another on any route are one section.
+	const parents = new Map<string, string>()
+	const sectionOf = (resource: string): string => {
+		const parent = parents.get(resource)
+		if (parent === undefined || parent === resource) return resource
+		const root = sectionOf(parent)
+		parents.set(resource, root)
+		return root
+	}
+	stretches.forEach((run) =>
+		Arr.forEach(Arr.zip(run, Arr.drop(run, 1)), ([a, b]) => {
+			if (!isShared(a.resource) || !isShared(b.resource)) return
+			const [first, second] = Arr.sort([sectionOf(a.resource), sectionOf(b.resource)], Order.String)
+			if (first !== undefined && second !== undefined && first !== second) parents.set(second, first)
+		}),
+	)
+	const blocks = new Map<string, ReadonlyArray<Block>>()
+	stretches.forEach((run, id) => {
+		const found: Array<{ section: string; from: number; to: number }> = []
+		Arr.forEach(run, (stretch, index) => {
+			if (!isShared(stretch.resource)) return
+			const before = run[index - 1]
+			const open = found[found.length - 1]
+			// A shared stretch straight after another carries on the same block.
+			if (open !== undefined && before !== undefined && isShared(before.resource)) open.to = stretch.to
+			else found.push({ section: sectionOf(stretch.resource), from: stretch.from, to: stretch.to })
+		})
+		blocks.set(id, found)
 	})
 	return {
 		pieces: Arr.map([...pieces], ([key, piece]) => ({
@@ -157,5 +223,6 @@ export const railNetwork = (routes: ReadonlyArray<RailRoute>): RailNetwork => {
 			routes: [...station.routes],
 		})),
 		paths,
+		blocks,
 	}
 }

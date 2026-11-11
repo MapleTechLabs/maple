@@ -22,6 +22,9 @@ export interface TilePalette {
 	readonly stoneLight: string
 	readonly rock: string
 	readonly banner: string
+	/** A signal's two aspects. */
+	readonly proceed: string
+	readonly halt: string
 	readonly lamp: string
 	readonly timber: string
 	/** Sawn planks: barns, market counters. */
@@ -73,6 +76,8 @@ const DAY: TilePalette = {
 	stoneLight: "#ebdfc4",
 	rock: "#b9b4a6",
 	banner: "#c8553d",
+	proceed: "#3fbf7a",
+	halt: "#e5484d",
 	lamp: "#ffd978",
 	timber: "#8a6a48",
 	plank: "#c9a77c",

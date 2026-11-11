@@ -340,11 +340,20 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		tiles: new THREE.Group(),
 		lakes: new THREE.Group(),
 		wilds: new THREE.Group(),
+		traffic: new THREE.Group(),
 		network: new THREE.Group(),
 		slots: new THREE.Group(),
 		prospect: new THREE.Group(),
 	}
-	scene.add(layers.tiles, layers.lakes, layers.wilds, layers.network, layers.slots, layers.prospect)
+	scene.add(
+		layers.tiles,
+		layers.lakes,
+		layers.wilds,
+		layers.network,
+		layers.traffic,
+		layers.slots,
+		layers.prospect,
+	)
 	const materials = makeMaterials()
 	const hover = new THREE.Mesh(hexPlate(), materials.slotHover)
 	hover.visible = false
@@ -382,6 +391,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		last: performance.now(),
 		lightKey: "",
 		networkKey: "",
+		trafficKey: "",
 		lakesKey: "",
 		wildsKey: "",
 		slotsKey: "",
@@ -639,7 +649,6 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		])
 		if (key === state.networkKey) return
 		state.networkKey = key
-		state.traffic?.dispose()
 		freeAll(layers.network)
 		const routes: Array<Route> = []
 		const roads = { solid: new Array<THREE.BufferGeometry>(), faded: new Array<THREE.BufferGeometry>() }
@@ -711,6 +720,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 				color: level === "healthy" ? palette.engine : HEALTH_COLOR[level],
 				load: loadOf(link),
 				running: !isDimmed(link),
+				blocks: rail.blocks.get(link.id) ?? [],
 			})
 		})
 		Arr.forEach(
@@ -742,9 +752,20 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 				materials.ink,
 			),
 		)
+		// A selection only changes which links run: the carts and trains keep their places.
+		// Anything that moves a road or a railway starts the traffic over.
+		const trafficKey = encodeJson(Arr.map(routes, ({ running: _, ...route }) => route))
+		if (trafficKey === state.trafficKey && state.traffic !== null) {
+			const running = new Map(Arr.map(routes, (route) => [route.linkId, route.running] as const))
+			state.traffic.setRunning((linkId) => running.get(linkId) === true)
+			return
+		}
+		state.trafficKey = trafficKey
+		state.traffic?.dispose()
+		layers.traffic.clear()
 		const traffic = makeTraffic(routes, palette)
 		state.traffic = traffic
-		layers.network.add(traffic.root)
+		layers.traffic.add(traffic.root)
 	}
 
 	const syncSlots = () => {
@@ -1224,6 +1245,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			labelsRoot.removeEventListener("wheel", onWheel)
 			orbit.dispose()
 			state.traffic?.dispose()
+			layers.traffic.clear()
 			flock.dispose()
 			birds.dispose()
 			flourishes.dispose()

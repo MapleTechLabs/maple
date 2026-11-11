@@ -2,7 +2,8 @@ import { Array as Arr } from "effect"
 import * as THREE from "three"
 import { describe, expect, it } from "vitest"
 import { tilePalette } from "./palette"
-import { COUPLING, makeTraffic, type Route } from "./traffic"
+import { COUPLING, homeOf } from "./signalling"
+import { makeTraffic, type Route } from "./traffic"
 
 const route = (linkId: string, kind: Route["kind"], z: number, count = 1): Route => ({
 	linkId,
@@ -38,7 +39,8 @@ describe("traffic", () => {
 		const fleet = traffic()
 		expect(fleet.under(down(0, 0))).toMatchObject({ linkId: "a>b", kind: "cart" })
 		// A train waits with its wagon clear of the buffer, so the engine stands a little way out.
-		expect(fleet.under(down(COUPLING + 0.3, 5))).toMatchObject({ linkId: "c>d", kind: "train" })
+		const home = homeOf({ length: 10, wagons: 1, speed: 1, blocks: [] })
+		expect(fleet.under(down(home, 5))).toMatchObject({ linkId: "c>d", kind: "train" })
 	})
 
 	it("finds nothing over empty road", () => {
@@ -89,11 +91,11 @@ describe("a round trip", () => {
 
 	it("runs a train to the far station and back again in reverse, never gone", () => {
 		const fleet = makeTraffic([route("c>d", "train", 5)], tilePalette(false))
-		// One trip is a little over seventeen units at one unit a second: look once a second for one trip.
 		const atBuffer = { ever: false }
-		const noses = Arr.map(Arr.range(0, 18), () => {
+		// Out, a stand at the far station and home again takes about twenty-five seconds.
+		const noses = Arr.map(Arr.range(0, 30), () => {
 			const at = whereOn(fleet, "c>d", 5)
-			// The far end is looked at four times a second: the engine waits there under a second.
+			// The far end is looked at four times a second: the engine stands there under two.
 			Arr.forEach(Arr.range(1, 4), () => {
 				atBuffer.ever = atBuffer.ever || fleet.under(down(10, 5)) !== null
 				runFor(fleet, 0.25)
@@ -103,15 +105,46 @@ describe("a round trip", () => {
 		expect(Arr.every(noses, (nose) => nose >= 0)).toBe(true)
 		// It pulls up short of the far buffer instead of running into it.
 		expect(atBuffer.ever).toBe(false)
+		const turned = noses.indexOf(Math.max(...noses))
 		expect(Math.max(...noses)).toBeGreaterThan(9.5)
-		// Out and home again within one trip, with no jump between two looks a second apart.
-		expect(noses[noses.length - 1] ?? 9).toBeLessThan(3)
+		// After the far station it comes home, and it never jumps: it tops out at a unit a second.
+		expect(Math.min(...Arr.drop(noses, turned))).toBeLessThan(2.5)
 		const steps = Arr.map(Arr.zip(noses, Arr.drop(noses, 1)), ([before, after]) =>
 			Math.abs(before - after),
 		)
-		// It gets up to nearly two units a second mid-run; a train that vanished and reappeared
-		// would jump the length of the line.
-		expect(Math.max(...steps)).toBeLessThan(2.5)
+		expect(Math.max(...steps)).toBeLessThan(1.5)
+	})
+
+	it("keeps its trains where they are when only the selection changes", () => {
+		const fleet = makeTraffic([route("c>d", "train", 5)], tilePalette(false))
+		runFor(fleet, 6)
+		const before = whereOn(fleet, "c>d", 5)
+		fleet.setRunning(() => false)
+		fleet.frame(0.05, true)
+		expect(Math.abs(Math.max(...whereOn(fleet, "c>d", 5)) - Math.max(...before))).toBeLessThan(0.2)
+	})
+
+	it("holds one train at its signal while another is on the track they share", () => {
+		const shared = [{ section: "middle", from: 4, to: 7 }]
+		const fleet = makeTraffic(
+			[
+				{ ...route("a>b", "train", 5), blocks: shared },
+				{ ...route("c>d", "train", 8), blocks: shared },
+			],
+			tilePalette(false),
+		)
+		/** Whether a train of `linkId` has any part of itself between x = 4 and x = 7 on row `z`. */
+		const onShared = (linkId: string, z: number) =>
+			Arr.some(whereOn(fleet, linkId, z), (x) => x > 4.4 && x < 6.6)
+		const seen = { together: false, first: false, second: false }
+		Arr.forEach(Arr.range(1, 240), () => {
+			const [first, second] = [onShared("a>b", 5), onShared("c>d", 8)]
+			seen.together = seen.together || (first && second)
+			seen.first = seen.first || first
+			seen.second = seen.second || second
+			runFor(fleet, 0.25)
+		})
+		expect(seen).toEqual({ together: false, first: true, second: true })
 	})
 
 	it("pulls a longer train on a busier link, and waits further out for it", () => {
