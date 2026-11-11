@@ -253,6 +253,11 @@ Each phase is one PR stack.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
+- AWS: a management account's rows include its member accounts and carry the connected account's
+  id. Cost Explorer takes two group-by keys, so splitting by linked account multiplies the
+  requests. The CUR 2.0 export carries the account on every row (phase 5).
+- AWS: Cost Explorer rows do not say what kind of charge they are (`ChargeCategory = 'unknown'`):
+  credits, refunds and commitment fees are netted into their service. Only tax stands apart.
 - AWS: an account is too large for the Cost Explorer pull past 10,000 cost rows on one day (a day
   is always written whole), or past about 5,000 rows a day in one region. Its source reports
   "too large" and syncs nothing. It needs the CUR 2.0 export (phase 5).
