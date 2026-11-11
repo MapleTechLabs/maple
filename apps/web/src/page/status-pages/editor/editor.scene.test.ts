@@ -10,13 +10,16 @@ import {
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import {
+	all,
 	attr,
 	Command,
 	click,
 	expect as expectView,
+	expectAll,
 	find,
 	given,
 	inside,
+	Mount,
 	role,
 	scene,
 	selector,
@@ -27,6 +30,8 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { statusPagesHref } from "../shared/commands"
@@ -576,17 +581,26 @@ describe("the page as the editor", () => {
 	})
 })
 
-describe("incidents in the panel", () => {
+const steps = (model: Model, messages: ReadonlyArray<Message>, ctx: PageContext = context) =>
+	Arr.reduce(messages, model, (current, message) => update(current, message, ctx).model)
+
+const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+
+/** The reviewed message as the public page's markup renders it. */
+const updateBodyOf = find('[data-slot="update-body"]')
+const messageHtml = (html: Parameters<typeof updateBodyOf>[0]): string =>
+	Option.getOrElse(Option.flatMap(updateBodyOf(html), attr("innerHTML")), () => "")
+
+const shown = (row: ReturnType<typeof incident>) =>
+	pageUpdate(loaded({ incidents: [row] }), Message.ClickedIncident({ incidentId: row.id })).model
+
+describe("posting an incident", () => {
 	test("switching between incident and maintenance keeps what was typed", () => {
-		const typed = Arr.reduce(
-			[
-				Message.ClickedNewIncident({ kind: "incident" }),
-				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
-				Message.ChangedIncidentField({ field: "body", value: "Planned work." }),
-			],
-			loaded(),
-			(model, message) => pageUpdate(model, message).model,
-		)
+		const typed = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "incident" }),
+			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+			Message.ChangedIncidentField({ field: "body", value: "Planned work." }),
+		])
 		const switched = pageUpdate(typed, Message.ChangedIncidentKind({ kind: "maintenance" })).model
 		expect(switched.incidentForm).toMatchObject({
 			kind: "maintenance",
@@ -598,6 +612,230 @@ describe("incidents in the panel", () => {
 		})
 	})
 
+	test("Post incident opens a dialog on its write step, with the affected components picked", () => {
+		const model = loaded({ components: [component(1), component(2, { monitor_id: downMonitor().id })] })
+		const opened = pageUpdate(model, Message.ClickedNewIncident({ kind: "incident" })).model
+		expect(opened.composeDialog.isOpen).toBe(true)
+		expect(opened.incidentForm.impact).toBe("critical")
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			expectView(role("dialog", { name: "Post incident" })).toExist(),
+			expectView(role("list", { name: "Steps" })).toHaveText("1 Write/2 Review"),
+			expectView(role("textbox", { name: "Title" })).toExist(),
+			expectView(role("checkbox", { name: "Component 2" })).toBeChecked(),
+			expectView(role("checkbox", { name: "Component 1" })).not.toBeChecked(),
+		)
+	})
+
+	test("Review waits for a title and a message, and names what is missing", () => {
+		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "incident" })).model
+		expect(pageUpdate(opened, Message.SubmittedIncidentWrite()).model.composeStep).toBe("write")
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			expectView(text("Add a title.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+			type(role("textbox", { name: "Title" }), "Elevated API errors"),
+			expectView(text("Write the first update.")).toExist(),
+			type(role("textbox", { name: "Message" }), "Looking into it."),
+			expectView(text("Nothing is public until you confirm on the next step.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeEnabled(),
+		)
+	})
+
+	const reviewing = () =>
+		steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "incident" }),
+			Message.ChangedIncidentField({ field: "title", value: "Slow checkout" }),
+			Message.ChangedIncidentField({ field: "impact", value: "critical" }),
+			Message.ToggledIncidentComponent({ componentId: componentId(2) }),
+			Message.ChangedIncidentField({ field: "body", value: "**Checkout** is slow." }),
+			Message.SubmittedIncidentWrite(),
+		])
+
+	test("the review shows the post as the page renders it and what visitors see change", () => {
+		const model = reviewing()
+		expect(model.composeStep).toBe("review")
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			mounted,
+			expectView(role("dialog", { name: "Review before publishing" })).toExist(),
+			inside(
+				role("region", { name: "On the page" }),
+				expectView(text("Slow checkout")).toExist(),
+				expectView(text("Affects Component 2 · Posted just now")).toExist(),
+			),
+			tap(({ html }) => expect(messageHtml(html)).toBe("<p><strong>Checkout</strong> is slow.</p>")),
+			inside(
+				role("region", { name: "What changes" }),
+				expectAll(all.role("listitem")).toHaveCount(2),
+				expectView(text("Page banner")).toExist(),
+				expectView(text("Component 2")).toExist(),
+				expectAll(all.text("Major outage")).toHaveCount(2),
+				expectView(text("Component 1")).not.toExist(),
+			),
+		)
+	})
+
+	test("Publish creates the incident as reviewed, then the dialog closes on the incident's panel", () => {
+		const publishing = pageUpdate(reviewing(), Message.SubmittedIncident({ isPublished: true }))
+		expect(publishing.commands).toMatchObject([
+			{
+				name: "CreateStatusPageIncident",
+				args: {
+					payload: {
+						kind: "incident",
+						title: "Slow checkout",
+						impact: "critical",
+						status: "investigating",
+						component_ids: [componentId(2)],
+						body: "**Checkout** is slow.",
+						published: true,
+					},
+				},
+			},
+		])
+		expect(
+			pageUpdate(publishing.model, Message.SubmittedIncident({ isPublished: true })).commands ?? [],
+		).toEqual([])
+		const created = pageUpdate(
+			publishing.model,
+			Message.CompletedCreateIncident({ result: Result.succeed(incident(2)) }),
+		)
+		expect(created.model.composeDialog.isOpen).toBe(false)
+		expect(created.model.panel).toEqual({ _tag: "Incident", incidentId: incidentId(2) })
+		expect(names(created.commands)).toContain("FetchStatusPageIncidents")
+		expect(created.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Incident published" })
+	})
+
+	test("Save as draft sends the same incident unpublished", () => {
+		expect(
+			pageUpdate(reviewing(), Message.SubmittedIncident({ isPublished: false })).commands,
+		).toMatchObject([
+			{
+				name: "CreateStatusPageIncident",
+				args: { payload: { title: "Slow checkout", published: false } },
+			},
+		])
+	})
+
+	test("Back returns to the write step with everything as typed", () => {
+		const back = pageUpdate(reviewing(), Message.ClickedIncidentBack()).model
+		expect(back.composeStep).toBe("write")
+		scene(
+			{ update: pageUpdate, view },
+			given(back),
+			mounted,
+			expectView(role("textbox", { name: "Title" })).toHaveValue("Slow checkout"),
+			expectView(role("textbox", { name: "Message" })).toHaveValue("**Checkout** is slow."),
+			expectView(role("checkbox", { name: "Component 2" })).toBeChecked(),
+		)
+	})
+
+	test("a refused create stays on the review with the reason", () => {
+		const refused = pageUpdate(
+			pageUpdate(reviewing(), Message.SubmittedIncident({ isPublished: true })).model,
+			Message.CompletedCreateIncident({
+				result: Result.fail(toLoadFailure(new Error("create refused"))),
+			}),
+		).model
+		expect(refused.composeDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			mounted,
+			expectView(text("Couldn't open the incident")).toExist(),
+			expectView(role("button", { name: "Publish" })).toBeEnabled(),
+		)
+	})
+
+	test("the dialog cannot be dismissed while the incident is being created", () => {
+		const creating = pageUpdate(reviewing(), Message.SubmittedIncident({ isPublished: true })).model
+		const dismissed = pageUpdate(
+			creating,
+			Message.GotComposeDialogMessage({ message: Dialog.Message.PressedEscape() }),
+		).model
+		expect(dismissed.composeDialog.isOpen).toBe(true)
+	})
+
+	test("maintenance needs a window that ends after it starts, read in the viewer's zone", () => {
+		const zoned: PageContext = { ...context, timeZone: "Europe/Berlin" }
+		const filled = steps(
+			loaded(),
+			[
+				Message.ClickedNewIncident({ kind: "maintenance" }),
+				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+				Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
+				Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
+				Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T21:00" }),
+				Message.SubmittedIncidentWrite(),
+			],
+			zoned,
+		)
+		expect(filled.composeStep).toBe("write")
+		const fixed = steps(
+			filled,
+			[
+				Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-31T01:00" }),
+				Message.SubmittedIncidentWrite(),
+			],
+			zoned,
+		)
+		expect(update(fixed, Message.SubmittedIncident({ isPublished: true }), zoned).commands).toMatchObject(
+			[
+				{
+					name: "CreateStatusPageIncident",
+					args: {
+						payload: {
+							kind: "maintenance",
+							status: "scheduled",
+							scheduled_start: "2026-10-30T21:00:00.000Z",
+							scheduled_end: "2026-10-31T00:00:00.000Z",
+						},
+					},
+				},
+			],
+		)
+	})
+
+	test("future maintenance is scheduled, and changes nothing on the page yet", () => {
+		const model = steps(loaded(), [
+			Message.ClickedNewIncident({ kind: "maintenance" }),
+			Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
+			Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
+			Message.ToggledIncidentComponent({ componentId: componentId(1) }),
+			Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
+			Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T23:00" }),
+			Message.SubmittedIncidentWrite(),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			mounted,
+			expectView(text("Nothing on the page changes")).toExist(),
+			expectView(role("button", { name: "Schedule" })).toExist(),
+		)
+	})
+
+	test("the write step lists what is missing for maintenance", () => {
+		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "maintenance" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			type(role("textbox", { name: "Title" }), "Database upgrade"),
+			type(role("textbox", { name: "Message" }), "Brief read-only periods."),
+			expectView(text("Set when the maintenance starts and ends.")).toExist(),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+		)
+	})
+})
+
+describe("posting an update", () => {
 	test("an open incident carries its actions, and a draft can be published", () => {
 		const model = pageUpdate(
 			loaded({
@@ -620,13 +858,50 @@ describe("incidents in the panel", () => {
 		).toMatchObject([{ name: "PublishStatusPageIncident", args: { incidentId: incidentId(1) } }])
 	})
 
-	test("resolving posts a resolved update with the closing message", () => {
-		const model = loaded({ incidents: [incident(1)] })
+	test("Post update opens a dialog with the status one step along, and Review needs a message", () => {
 		const opened = pageUpdate(
-			model,
-			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+			loaded({ incidents: [incident(1, { status: "identified" })] }),
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+		).model
+		expect(opened.updateDialog.isOpen).toBe(true)
+		expect(opened.updateForm).toMatchObject({ _tag: "Writing", form: { status: "monitoring" } })
+		expect(pageUpdate(opened, Message.SubmittedUpdateWrite()).model.updateForm._tag).toBe("Writing")
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			mounted,
+			expectView(role("dialog", { name: "Post update" })).toExist(),
+			expectView(text("We are looking into elevated error rates.")).toExist(),
+			expectView(role("button", { name: "Monitoring" })).toHaveAttr("aria-pressed", "true"),
+			expectView(role("button", { name: "Review" })).toBeDisabled(),
+			type(role("textbox", { name: "Message" }), "A fix is rolling out."),
+			expectView(role("button", { name: "Review" })).toBeEnabled(),
 		)
-		const posting = pageUpdate(opened.model, Message.SubmittedUpdate())
+	})
+
+	const resolving = () =>
+		steps(loaded({ incidents: [incident(1, { impact: "major" })] }), [
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: true }),
+			Message.SubmittedUpdateWrite(),
+		])
+
+	test("resolving reviews the components going back to operational, then posts the closing message", () => {
+		const model = resolving()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			mounted,
+			inside(role("region", { name: "On the page" }), expectView(text("Resolved")).toExist()),
+			tap(({ html }) => expect(messageHtml(html)).toBe("<p>This incident has been resolved.</p>")),
+			inside(
+				role("region", { name: "What changes" }),
+				expectAll(all.role("listitem")).toHaveCount(2),
+				expectView(text("Page banner")).toExist(),
+				expectView(text("Component 1")).toExist(),
+				expectAll(all.text("Partial outage")).toHaveCount(2),
+			),
+		)
+		const posting = pageUpdate(model, Message.SubmittedUpdate())
 		expect(posting.commands).toMatchObject([
 			{
 				name: "PostStatusPageIncidentUpdate",
@@ -637,166 +912,92 @@ describe("incidents in the panel", () => {
 				},
 			},
 		])
+		const posted = pageUpdate(
+			posting.model,
+			Message.CompletedPostUpdate({
+				generation: 0,
+				result: Result.succeed(incident(1, { status: "resolved" })),
+			}),
+		)
+		expect(posted.model.updateDialog.isOpen).toBe(false)
+		expect(posted.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Incident resolved" })
 	})
 
-	test("Post update moves the status one step along and needs a message", () => {
-		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
-		const opened = pageUpdate(
-			model,
-			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
-		)
-		expect(opened.model.updateForm._tag === "Editing" && opened.model.updateForm.form.status).toBe(
-			"monitoring",
-		)
-		expect(pageUpdate(opened.model, Message.SubmittedUpdate()).commands ?? []).toEqual([])
-	})
-
-	test("Post incident opens the composer in the panel, with the affected components picked", () => {
-		const model = loaded({ components: [component(1), component(2, { monitor_id: downMonitor().id })] })
+	test("Back keeps the message, and a failed post stays on the review with the reason", () => {
+		const back = pageUpdate(resolving(), Message.ClickedUpdateBack()).model
+		expect(back.updateForm).toMatchObject({
+			_tag: "Writing",
+			form: { status: "resolved", body: "This incident has been resolved." },
+		})
+		const failed = steps(back, [
+			Message.SubmittedUpdateWrite(),
+			Message.SubmittedUpdate(),
+			Message.CompletedPostUpdate({
+				generation: 0,
+				result: Result.fail(toLoadFailure(new Error("unreachable"))),
+			}),
+		])
+		expect(failed.updateDialog.isOpen).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
-			given(model),
-			click(role("button", { name: "Post incident" })),
-			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
-			expectView(role("textbox", { name: "Title" })).toExist(),
-			expectView(role("checkbox", { name: "Component 2" })).toBeChecked(),
-			expectView(role("checkbox", { name: "Component 1" })).not.toBeChecked(),
-			expectView(role("dialog")).not.toExist(),
+			given(failed),
+			mounted,
+			expectView(text("Couldn't post the update")).toExist(),
+			expectView(role("button", { name: "Publish update" })).toBeEnabled(),
 		)
-		const opened = pageUpdate(model, Message.ClickedNewIncident({ kind: "incident" })).model
-		expect(opened.incidentForm.impact).toBe("critical")
 	})
 
-	test("an incident saved as a draft names its components and is not published", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "incident" })).model
-		const filled = Arr.reduce(
-			[
-				Message.ChangedIncidentField({ field: "title", value: "Slow checkout" }),
-				Message.ChangedIncidentField({ field: "impact", value: "critical" }),
-				Message.ToggledIncidentComponent({ componentId: componentId(2) }),
-				Message.ChangedIncidentField({ field: "body", value: "Checkout is slow." }),
-				Message.PickedIncidentPublished({ isPublished: false }),
-			],
-			opened,
-			(current, message) => pageUpdate(current, message).model,
-		)
-		expect(pageUpdate(filled, Message.SubmittedIncident()).commands).toMatchObject([
-			{
-				name: "CreateStatusPageIncident",
-				args: {
-					payload: {
-						kind: "incident",
-						title: "Slow checkout",
-						impact: "critical",
-						status: "investigating",
-						component_ids: [componentId(2)],
-						body: "Checkout is slow.",
-						published: false,
-					},
-				},
-			},
+	test("Change title, impact or components opens Edit details over the update, which keeps its message", () => {
+		const typed = steps(loaded({ incidents: [incident(1, { title: "Elevated errors" })] }), [
+			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
+			Message.ChangedUpdateField({ field: "body", value: "Still looking." }),
 		])
-	})
-
-	test("maintenance needs a window that ends after it starts, read in the viewer's zone", () => {
-		const zoned: PageContext = { ...context, timeZone: "Europe/Berlin" }
-		const opened = update(loaded(), Message.ClickedNewIncident({ kind: "maintenance" }), zoned).model
-		const filled = Arr.reduce(
-			[
-				Message.ChangedIncidentField({ field: "title", value: "Database upgrade" }),
-				Message.ChangedIncidentField({ field: "body", value: "Brief read-only periods." }),
-				Message.ChangedIncidentField({ field: "scheduledStart", value: "2026-10-30T22:00" }),
-				Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-30T21:00" }),
-			],
-			opened,
-			(current, message) => update(current, message, zoned).model,
+		const editing = pageUpdate(typed, Message.ClickedEditIncident({ incidentId: incidentId(1) })).model
+		expect(editing.editIncidentDialog.isOpen).toBe(true)
+		expect(editing.updateDialog.isOpen).toBe(true)
+		expect(editing.updateForm).toMatchObject({ _tag: "Writing", form: { body: "Still looking." } })
+		scene(
+			{ update: pageUpdate, view },
+			given(typed),
+			mounted,
+			expectView(role("button", { name: "Change title, impact or components" })).toHaveHandler("click"),
 		)
-		expect(update(filled, Message.SubmittedIncident(), zoned).commands ?? []).toEqual([])
-		const fixed = update(
-			filled,
-			Message.ChangedIncidentField({ field: "scheduledEnd", value: "2026-10-31T01:00" }),
-			zoned,
+		scene(
+			{ update: pageUpdate, view },
+			given(editing),
+			mounted,
+			mounted,
+			expectView(role("dialog", { name: "Post update" })).toExist(),
+			expectView(role("dialog", { name: "Edit details" })).toExist(),
+			expectView(role("textbox", { name: "Title" })).toHaveValue("Elevated errors"),
+		)
+	})
+})
+
+describe("editing an incident's details", () => {
+	test("Edit details opens the saved title, impact and components in a dialog", () => {
+		const opened = pageUpdate(
+			shown(incident(1, { title: "Elevated errors" })),
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
 		).model
-		expect(update(fixed, Message.SubmittedIncident(), zoned).commands).toMatchObject([
-			{
-				name: "CreateStatusPageIncident",
-				args: {
-					payload: {
-						kind: "maintenance",
-						status: "scheduled",
-						scheduled_start: "2026-10-30T21:00:00.000Z",
-						scheduled_end: "2026-10-31T00:00:00.000Z",
-					},
-				},
-			},
-		])
-	})
-
-	test("the composer lists what is missing before it can be sent", () => {
-		const opened = pageUpdate(loaded(), Message.ClickedNewIncident({ kind: "maintenance" })).model
+		expect(opened.editIncidentDialog.isOpen).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
-			expectView(text("Add a title.")).toExist(),
-			type(role("textbox", { name: "Title" }), "Database upgrade"),
-			type(role("textbox", { name: "Message" }), "Brief read-only periods."),
-			expectView(text("Set when the maintenance starts and ends.")).toExist(),
-			expectView(role("button", { name: "Schedule" })).toBeDisabled(),
-		)
-	})
-
-	const shown = (row: ReturnType<typeof incident>) =>
-		pageUpdate(loaded({ incidents: [row] }), Message.ClickedIncident({ incidentId: row.id })).model
-
-	test("Edit details opens the saved title, impact and components in place of the actions", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(shown(incident(1, { title: "Elevated errors" }))),
-			click(role("button", { name: "Edit details" })),
-			Command.resolve(FocusEditorElement, Message.CompletedFocus()),
+			mounted,
 			expectView(role("textbox", { name: "Title" })).toHaveValue("Elevated errors"),
 			expectView(role("checkbox", { name: "Component 1" })).toBeChecked(),
 			expectView(role("checkbox", { name: "Component 2" })).not.toBeChecked(),
-			expectView(role("button", { name: "Post update" })).not.toExist(),
-			click(role("button", { name: "Cancel" })),
-			expectView(role("button", { name: "Post update" })).toExist(),
-		)
-	})
-
-	test("an edit form left open does not hide the actions of an incident created after it", () => {
-		const editing = pageUpdate(
-			pageUpdate(
-				loaded({ incidents: [incident(1), incident(2)] }),
-				Message.ClickedIncident({ incidentId: incidentId(1) }),
-			).model,
-			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
-		).model
-		const composing = pageUpdate(editing, Message.ClickedNewIncident({ kind: "incident" })).model
-		expect(composing.incidentEdit).toBeNull()
-		const created = pageUpdate(
-			{ ...composing, incidentEdit: editing.incidentEdit },
-			Message.CompletedCreateIncident({ result: Result.succeed(incident(2)) }),
-		).model
-		scene(
-			{ update: pageUpdate, view },
-			given(created),
-			expectView(role("button", { name: "Post update" })).toExist(),
-			expectView(role("button", { name: "Edit details" })).toExist(),
-			expectView(role("textbox", { name: "Title" })).not.toExist(),
 		)
 	})
 
 	test("saving an edit sends the trimmed title, the impact and the components once, and posts no update", () => {
-		const edited = Arr.reduce(
-			[
-				Message.ClickedEditIncident({ incidentId: incidentId(1) }),
-				Message.ChangedIncidentEditField({ field: "title", value: " Checkout errors " }),
-				Message.ChangedIncidentEditField({ field: "impact", value: "critical" }),
-				Message.ToggledIncidentEditComponent({ componentId: componentId(2) }),
-			],
-			shown(incident(1)),
-			(model, message) => pageUpdate(model, message).model,
-		)
+		const edited = steps(shown(incident(1)), [
+			Message.ClickedEditIncident({ incidentId: incidentId(1) }),
+			Message.ChangedIncidentEditField({ field: "title", value: " Checkout errors " }),
+			Message.ChangedIncidentEditField({ field: "impact", value: "critical" }),
+			Message.ToggledIncidentEditComponent({ componentId: componentId(2) }),
+		])
 		const saving = pageUpdate(edited, Message.SubmittedIncidentEdit())
 		expect(saving.commands).toMatchObject([
 			{
@@ -818,7 +1019,7 @@ describe("incidents in the panel", () => {
 				result: Result.succeed(incident(1, { title: "Checkout errors", impact: "critical" })),
 			}),
 		)
-		expect(saved.model.incidentEdit).toBeNull()
+		expect(saved.model.editIncidentDialog.isOpen).toBe(false)
 		expect(names(saved.commands)).not.toContain("PostStatusPageIncidentUpdate")
 		expect(saved.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
 	})
@@ -833,18 +1034,17 @@ describe("incidents in the panel", () => {
 			Message.ChangedIncidentEditField({ field: "title", value: "  " }),
 		).model
 		expect(pageUpdate(blank, Message.SubmittedIncidentEdit()).commands ?? []).toEqual([])
-		const typed = pageUpdate(
-			opened,
+		const refused = steps(opened, [
 			Message.ChangedIncidentEditField({ field: "title", value: "Checkout errors" }),
-		).model
-		const refused = pageUpdate(
-			pageUpdate(typed, Message.SubmittedIncidentEdit()).model,
+			Message.SubmittedIncidentEdit(),
 			Message.CompletedSaveIncident({ result: Result.fail(toLoadFailure(new Error("save refused"))) }),
-		).model
+		])
 		expect(refused.incidentEdit?.title).toBe("Checkout errors")
+		expect(refused.editIncidentDialog.isOpen).toBe(true)
 		scene(
 			{ update: pageUpdate, view },
 			given(refused),
+			mounted,
 			expectView(text("Couldn't save the changes")).toExist(),
 			expectView(role("button", { name: "Save changes" })).toBeEnabled(),
 		)
@@ -858,6 +1058,7 @@ describe("incidents in the panel", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
+			mounted,
 			expectView(role("textbox", { name: "Title" })).toExist(),
 			expectView(role("combobox", { name: "Impact" })).not.toExist(),
 		)
@@ -865,7 +1066,9 @@ describe("incidents in the panel", () => {
 		expect(sent).toMatchObject([{ name: "SaveStatusPageIncident" }])
 		expect(sent[0]?.args?.payload).not.toHaveProperty("impact")
 	})
+})
 
+describe("deleting an incident", () => {
 	test("deleting an incident asks first, deletes it once and closes its panel", () => {
 		const asking = pageUpdate(
 			shown(incident(1, { status: "resolved" })),
@@ -915,9 +1118,12 @@ describe("an update posted while the form moved on", () => {
 			model,
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
 		)
-		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
-		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
-		// The viewer opens the other incident's form before the post answers.
+		const posted = steps(opened.model, [
+			Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
+			Message.SubmittedUpdateWrite(),
+			Message.SubmittedUpdate(),
+		])
+		// Another incident's form opens before the post answers.
 		return pageUpdate(
 			posted,
 			Message.ClickedPostUpdate({ incidentId: incidentId(2), isResolving: false }),
@@ -930,7 +1136,7 @@ describe("an update posted while the form moved on", () => {
 			moved,
 			Message.CompletedPostUpdate({ generation: 0, result: Result.succeed(incident(1)) }),
 		)
-		expect(done.model.updateForm).toMatchObject({ _tag: "Editing", form: { incidentId: incidentId(2) } })
+		expect(done.model.updateForm).toMatchObject({ _tag: "Writing", form: { incidentId: incidentId(2) } })
 		expect(done.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
 		expect(done.commands ?? []).not.toEqual([])
 	})
@@ -945,7 +1151,7 @@ describe("an update posted while the form moved on", () => {
 			}),
 		)
 		expect(failed.model.updateForm).toMatchObject({
-			_tag: "Editing",
+			_tag: "Writing",
 			form: { incidentId: incidentId(2) },
 		})
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
@@ -954,13 +1160,11 @@ describe("an update posted while the form moved on", () => {
 	test("a reopened form for the same incident ignores the earlier post's answer", () => {
 		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
 		const open = (current: Model) =>
-			pageUpdate(
-				pageUpdate(
-					current,
-					Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
-				).model,
+			steps(current, [
+				Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
 				Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
-			).model
+				Message.SubmittedUpdateWrite(),
+			])
 		const first = pageUpdate(open(model), Message.SubmittedUpdate()).model
 		const closed = pageUpdate(first, Message.ClickedIncident({ incidentId: incidentId(1) })).model
 		const second = pageUpdate(open(closed), Message.SubmittedUpdate()).model
@@ -975,19 +1179,23 @@ describe("an update posted while the form moved on", () => {
 		expect(failed.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
 	})
 
-	test("edits and Cancel wait while a post is in flight, and its failure keeps the text", () => {
+	test("edits and closing wait while a post is in flight, and its failure keeps the text", () => {
 		const model = loaded({ incidents: [incident(1, { status: "identified" })] })
-		const opened = pageUpdate(
-			model,
+		const posted = steps(model, [
 			Message.ClickedPostUpdate({ incidentId: incidentId(1), isResolving: false }),
-		)
-		const typed = pageUpdate(opened.model, Message.ChangedUpdateField({ field: "body", value: "Fixed." }))
-		const posted = pageUpdate(typed.model, Message.SubmittedUpdate()).model
-		const edited = pageUpdate(posted, Message.ChangedUpdateField({ field: "body", value: "Other" })).model
-		const cancelled = pageUpdate(edited, Message.ClickedCancelUpdate()).model
-		expect(cancelled.updateForm).toMatchObject({ _tag: "Posting", form: { body: "Fixed." } })
+			Message.ChangedUpdateField({ field: "body", value: "Fixed." }),
+			Message.SubmittedUpdateWrite(),
+			Message.SubmittedUpdate(),
+		])
+		const held = steps(posted, [
+			Message.ChangedUpdateField({ field: "body", value: "Other" }),
+			Message.ClickedUpdateBack(),
+			Message.GotUpdateDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		])
+		expect(held.updateDialog.isOpen).toBe(true)
+		expect(held.updateForm).toMatchObject({ _tag: "Posting", form: { body: "Fixed." } })
 		const failed = pageUpdate(
-			cancelled,
+			held,
 			Message.CompletedPostUpdate({
 				generation: 0,
 				result: Result.fail(toLoadFailure(new Error("unreachable"))),
@@ -998,7 +1206,7 @@ describe("an update posted while the form moved on", () => {
 })
 
 describe("header", () => {
-	test("Post incident is offered on the Page tab only, where its composer opens", () => {
+	test("Post incident is offered on the Page tab, whose panel shows the posted incident", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),

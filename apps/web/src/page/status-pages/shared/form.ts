@@ -111,7 +111,7 @@ export const IncidentForm = Schema.Struct({
 	status: StatusPageIncidentStatus,
 	componentIds: Schema.Array(StatusPageComponentId),
 	body: Schema.String,
-	/** `false` saves a draft visitors do not see. */
+	/** `false` saves a draft visitors do not see; set by the button that sends it. */
 	isPublished: Schema.Boolean,
 	/** Maintenance only: the window as `datetime-local` values, in the viewer's time zone. */
 	scheduledStart: Schema.String,
@@ -144,24 +144,28 @@ export const localToIso = (value: string, timeZone: string): Option.Option<strin
 	)
 }
 
-/** What stops the incident from being sent, in reading order; empty when it can go. */
-export const incidentIssues = (form: IncidentForm, timeZone: string): ReadonlyArray<string> => {
+/** What stops the incident from being sent, by field; `null` where nothing does. */
+export type IncidentIssues = Readonly<{ title: string | null; body: string | null; window: string | null }>
+
+export const incidentIssues = (form: IncidentForm, timeZone: string): IncidentIssues => {
 	const start = localToIso(form.scheduledStart, timeZone)
 	const end = localToIso(form.scheduledEnd, timeZone)
-	const windowIssue =
-		form.kind !== "maintenance"
-			? null
-			: Option.isNone(start) || Option.isNone(end)
-				? "Set when the maintenance starts and ends."
-				: start.value >= end.value
-					? "The maintenance must end after it starts."
-					: null
-	return [
-		...(Str.trim(form.title) === "" ? ["Add a title."] : []),
-		...(Str.trim(form.body) === "" ? ["Write the first update."] : []),
-		...(windowIssue === null ? [] : [windowIssue]),
-	]
+	return {
+		title: Str.trim(form.title) === "" ? "Add a title." : null,
+		body: Str.trim(form.body) === "" ? "Write the first update." : null,
+		window:
+			form.kind !== "maintenance"
+				? null
+				: Option.isNone(start) || Option.isNone(end)
+					? "Set when the maintenance starts and ends."
+					: start.value >= end.value
+						? "The maintenance must end after it starts."
+						: null,
+	}
 }
+
+export const hasIncidentIssues = (issues: IncidentIssues): boolean =>
+	Arr.some(Rec.values(issues), (issue) => issue !== null)
 
 export const incidentPayload = (
 	form: IncidentForm,

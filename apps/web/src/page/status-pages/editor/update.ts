@@ -52,22 +52,26 @@ import {
 } from "./update-components"
 import {
 	askDeleteIncident,
-	cancelIncidentEdit,
+	backToIncidentWrite,
+	backToUpdateWrite,
 	changeIncident,
-	cancelUpdate,
 	changeIncidentEdit,
+	changeIncidentKind,
 	changeUpdate,
+	composeDialog,
 	confirmDeleteIncident,
 	createdIncident,
-	changeIncidentKind,
 	deletedIncident,
 	deleteIncidentDialog,
+	editIncidentDialog,
 	openComposer,
 	openIncidentEdit,
 	openUpdate,
 	postedUpdate,
 	publishedIncident,
 	publishIncident,
+	reviewIncident,
+	reviewUpdate,
 	savedIncident,
 	selectIncident,
 	submitIncident,
@@ -75,6 +79,7 @@ import {
 	submitUpdate,
 	toggleIncidentComponent,
 	toggleIncidentEditComponent,
+	updateDialog,
 } from "./update-incidents"
 import {
 	askBreakGlass,
@@ -157,12 +162,16 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		addPicker: emptyPicker,
 		isAddingComponents: false,
 		addSession: 0,
+		composeDialog: Dialog.init("status-page-compose", "dialog"),
+		composeStep: "write",
 		incidentForm: emptyIncidentForm("incident"),
 		isCreatingIncident: false,
 		incidentFailure: null,
+		updateDialog: Dialog.init("status-page-update", "dialog"),
 		updateForm: { _tag: "Closed" },
 		nextUpdatePost: 0,
 		publishingIncidentIds: [],
+		editIncidentDialog: Dialog.init("status-page-edit-incident", "dialog"),
 		incidentEdit: null,
 		isSavingIncident: false,
 		incidentEditFailure: null,
@@ -274,7 +283,7 @@ const closePanel = (model: Model): Return => {
 	return panel === null
 		? { model }
 		: {
-				model: { ...model, panel: null, updateForm: { _tag: "Closed" }, incidentEdit: null },
+				model: { ...model, panel: null },
 				commands: [FocusEditorElement({ id: target })],
 			}
 }
@@ -431,27 +440,38 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedAddComponents: ({ session, result }) => addedComponents(model, session, result, context),
 		// Incidents
 		ClickedNewIncident: ({ kind }) => openComposer(model, kind),
+		GotComposeDialogMessage: ({ message: child }) =>
+			whenIdle(model.isCreatingIncident, model, () =>
+				composeDialog(model, Dialog.update(model.composeDialog, child)),
+			),
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
-		PickedIncidentPublished: ({ isPublished }) => ({
-			model: { ...model, incidentForm: { ...model.incidentForm, isPublished } },
-		}),
-		SubmittedIncident: () => submitIncident(model, context),
+		SubmittedIncidentWrite: () => reviewIncident(model, context),
+		ClickedIncidentBack: () => backToIncidentWrite(model),
+		SubmittedIncident: ({ isPublished }) => submitIncident(model, context, isPublished),
 		CompletedCreateIncident: ({ result }) => createdIncident(model, result, context),
 		ClickedPostUpdate: ({ incidentId, isResolving }) => openUpdate(model, incidentId, isResolving),
+		GotUpdateDialogMessage: ({ message: child }) =>
+			whenIdle(model.updateForm._tag === "Posting", model, () =>
+				updateDialog(model, Dialog.update(model.updateDialog, child)),
+			),
 		ChangedUpdateField: ({ field, value }) => changeUpdate(model, field, value),
+		SubmittedUpdateWrite: () => reviewUpdate(model),
+		ClickedUpdateBack: () => backToUpdateWrite(model),
 		SubmittedUpdate: () => submitUpdate(model),
-		ClickedCancelUpdate: () => cancelUpdate(model),
 		CompletedPostUpdate: ({ generation, result }) => postedUpdate(model, generation, result, context),
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),
 		ClickedEditIncident: ({ incidentId }) => openIncidentEdit(model, incidentId),
+		GotEditIncidentDialogMessage: ({ message: child }) =>
+			whenIdle(model.isSavingIncident, model, () =>
+				editIncidentDialog(model, Dialog.update(model.editIncidentDialog, child)),
+			),
 		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
 		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
 		SubmittedIncidentEdit: () => submitIncidentEdit(model),
-		ClickedCancelIncidentEdit: () => cancelIncidentEdit(model),
 		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
 		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),
 		ClickedConfirmDeleteIncident: () => confirmDeleteIncident(model),

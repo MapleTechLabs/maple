@@ -87,7 +87,13 @@ export const textField = <M>(
 
 export const textareaField = <M>(
 	h: HtmlBuilder<M>,
-	options: Common<M> & Readonly<{ value: string; placeholder?: string }>,
+	options: Common<M> &
+		Readonly<{
+			value: string
+			placeholder?: string
+			/** The box's height, as layout: `min-h-30`. */
+			controlClassName?: string
+		}>,
 ): Html =>
 	frame(
 		h,
@@ -95,6 +101,7 @@ export const textareaField = <M>(
 		textarea(h, {
 			id: options.id,
 			isDisabled: options.isDisabled,
+			controlClassName: options.controlClassName,
 			attributes: [
 				h.Value(options.value),
 				h.OnInput(options.onInput),
@@ -106,7 +113,12 @@ export const textareaField = <M>(
 export const selectField = <M>(
 	h: HtmlBuilder<M>,
 	options: Common<M> &
-		Readonly<{ value: string; entries: ReadonlyArray<{ value: string; label: string }> }>,
+		Readonly<{
+			value: string
+			entries: ReadonlyArray<{ value: string; label: string }>
+			/** A mark before the value, such as the picked impact's dot. */
+			leading?: Html
+		}>,
 ): Html =>
 	frame(
 		h,
@@ -117,6 +129,7 @@ export const selectField = <M>(
 				defaultValue: options.value,
 				className: "w-full",
 				isDisabled: options.isDisabled,
+				leading: options.leading,
 				attributes: [
 					// Uncontrolled: keyed on the value so a reset or a reopened form rebuilds it.
 					h.Key(`${options.id}-${options.value}`),

@@ -22,10 +22,19 @@ import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../sh
 // `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
 // preview or the list opens in the side panel; Settings and JSON are views of their own.
 
-/** The incident update form: open for one incident, posting it, or showing why the post failed. */
+/** Where the Post incident dialog is: writing it, or reviewing what publishing it changes. */
+export const ComposeStep = Schema.Literals(["write", "review"])
+export type ComposeStep = typeof ComposeStep.Type
+
+/**
+ * The Post update dialog's form: being written, under review, posting, or showing why the post
+ * failed. `Closed` until the dialog first opens; a closed dialog keeps its last form on screen
+ * while it fades out.
+ */
 export const UpdateFormState = Schema.Union([
 	Schema.TaggedStruct("Closed", {}),
-	Schema.TaggedStruct("Editing", { form: UpdateForm }),
+	Schema.TaggedStruct("Writing", { form: UpdateForm }),
+	Schema.TaggedStruct("Reviewing", { form: UpdateForm }),
 	/** `generation`: which post this is, so a reopened form ignores an earlier post's answer. */
 	Schema.TaggedStruct("Posting", { form: UpdateForm, generation: Schema.Number }),
 	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
@@ -47,11 +56,10 @@ export type BreakGlassAction = typeof BreakGlassAction.Type
 /** A freshly issued break-glass token: shown once, never read back. */
 export const RevealedToken = Schema.Struct({ token: Schema.String, suffix: Schema.String })
 
-/** What the side panel shows: one component or incident, the incident composer, or Add component. */
+/** What the side panel shows: one component or incident, or Add component. */
 export const Panel = Schema.Union([
 	Schema.TaggedStruct("Component", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Incident", { incidentId: StatusPageIncidentId }),
-	Schema.TaggedStruct("Compose", {}),
 	/** `session` tells this opening of Add from earlier ones whose writes are still in flight. */
 	Schema.TaggedStruct("Add", { session: Schema.Number }),
 ])
@@ -99,14 +107,18 @@ export const Model = Schema.Struct({
 	/** The last Add session opened; each opening takes the next number. */
 	addSession: Schema.Number,
 	// Incidents
+	composeDialog: Dialog.Model,
+	composeStep: ComposeStep,
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
+	updateDialog: Dialog.Model,
 	updateForm: UpdateFormState,
 	/** The generation the next update post takes. */
 	nextUpdatePost: Schema.Number,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
-	/** The incident whose title, impact and components are being edited; `null` while none is. */
+	editIncidentDialog: Dialog.Model,
+	/** The incident whose title, impact and components are edited; `null` until the dialog first opens. */
 	incidentEdit: Schema.NullOr(IncidentEditForm),
 	isSavingIncident: Schema.Boolean,
 	incidentEditFailure: Schema.NullOr(LoadFailure),

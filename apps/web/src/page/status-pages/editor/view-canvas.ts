@@ -32,7 +32,7 @@ import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
 import { canManage, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
+import { addPanel, componentPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -59,7 +59,7 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	}
 }
 
-/** What the preview outlines: the open component or incident, or the composer's components. */
+/** What the preview outlines: the open component or incident. */
 export const selectedIds = (model: Model): ReadonlyArray<string> => {
 	const panel = model.panel
 	if (panel === null) return []
@@ -68,8 +68,6 @@ export const selectedIds = (model: Model): ReadonlyArray<string> => {
 			return [panel.componentId]
 		case "Incident":
 			return [panel.incidentId]
-		case "Compose":
-			return model.incidentForm.componentIds
 		case "Add":
 			return []
 	}
@@ -343,8 +341,6 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
 			)
 		}
-		case "Compose":
-			return [composerPanel(h, model, time.timeZone)]
 		case "Add":
 			return [addPanel(h, model)]
 	}

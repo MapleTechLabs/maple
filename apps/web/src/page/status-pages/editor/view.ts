@@ -1,6 +1,5 @@
 import type { StatusPageComponentStatus } from "@maple/domain"
 import type { V2StatusPage } from "@maple/domain/http/v2"
-import { worstStatus } from "@maple/domain/status-page"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,8 +24,8 @@ import { pageUrlOf } from "./update-domain"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
-	componentStatus,
 	hasUnpublishedChanges,
+	pageStatus,
 } from "../shared/derive"
 import { Message } from "./message"
 import { canBreakGlass, canManage, type Model } from "./model"
@@ -37,6 +36,7 @@ import { jsonTab } from "./view-json"
 import { addressLine, liveView } from "./view-live"
 import { appearanceView, breakGlassDialog, deletePageDialog, settingsView } from "./view-settings"
 import { removeCustomDomainDialog } from "./view-domain"
+import { incidentDialogs } from "./view-incident-dialogs"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -47,11 +47,7 @@ type H = HtmlBuilder<Message>
 
 /** The banner a visitor sees now: the worst component, from what is loaded. */
 const overallOf = (model: Model): StatusPageComponentStatus =>
-	worstStatus(
-		Arr.map(componentsOf(model), (component) =>
-			componentStatus(component, monitorsOf(model), incidentsOf(model)),
-		),
-	)
+	pageStatus(componentsOf(model), monitorsOf(model), incidentsOf(model))
 
 /** Where the page stands with visitors: live since when, a draft, or changes on their way. */
 const stateLine = (h: H, model: Model, page: V2StatusPage, timeZone: string): Html => {
@@ -132,7 +128,7 @@ const openPageButton = (h: H, model: Model, page: V2StatusPage): Html => {
 /** A draft's next step is publishing it, so Publish leads and Post incident steps back. */
 const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const canPublish = canManage(model) && page.draft
-	// The composer opens beside the page, so Post incident lives on the Page tab.
+	// A posted incident opens in the Page tab's panel, so Post incident lives on that tab.
 	const isPageView = resolveView(model.search.view) === "page"
 	return detailActions(h, [
 		...(isPageView
@@ -341,6 +337,7 @@ const loaded = (h: H, model: Model, page: V2StatusPage, inputs: PageViewInputs):
 				[body(h, model, page, timeZone)],
 			),
 			deleteComponentDialog(h, model, page),
+			...incidentDialogs(h, model, page, { nowMs: model.nowMs ?? 0, timeZone }),
 			deleteIncidentDialog(h, model, page),
 			breakGlassDialog(h, model),
 			deletePageDialog(h, model, page),
