@@ -76,3 +76,25 @@ describe("railways and lakes", () => {
 		Arr.forEach(shore, (point) => expect(span(point, cellToPoint({ q: 1, r: 0 }))).toBeCloseTo(HEX_SIZE))
 	})
 })
+
+describe("stations", () => {
+	it("gives each line of a tile a station corner of its own", () => {
+		// Two lines leave the same tile for two tiles that both lie to its east.
+		const land = new Map<string, Cell>([
+			["hub", { q: 0, r: 0 }],
+			["near", { q: 1, r: 0 }],
+			["upper", { q: 1, r: -1 }],
+			["east", { q: 2, r: 0 }],
+			["north-east", { q: 2, r: -1 }],
+		])
+		const { rails } = networkOf([link("hub", "east"), link("hub", "north-east")], land, null)
+		const nowhere: Point = [9, 9]
+		const stations = Arr.map(rails, (rail): Point => rail.points[0] ?? nowhere)
+		expect(stations).toHaveLength(2)
+		expect(span(stations[0] ?? nowhere, stations[1] ?? nowhere)).toBeGreaterThan(0.5)
+		// Both still stand beside the hub's village.
+		Arr.forEach(stations, (station) =>
+			expect(span(station, cellToPoint({ q: 0, r: 0 }))).toBeCloseTo(STATION_DISTANCE),
+		)
+	})
+})
