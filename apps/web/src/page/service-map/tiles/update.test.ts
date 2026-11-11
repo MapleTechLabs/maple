@@ -1,22 +1,30 @@
 import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
-import { targetsFor } from "./board"
+import { SERVICE_MAP_3D_TOPOLOGY } from "../../../lab/service-map-3d/fixture"
+import type { Node3D, Topology3D } from "../three/types"
+import { linksOf, targetsFor } from "./board"
 import {
 	heldIdOf,
 	init,
-	links,
 	litClockOf,
 	Message,
 	type Model,
+	OutMessage,
 	placementsOf,
-	topology,
+	sync,
 	update,
 } from "./update"
 
+const topology = SERVICE_MAP_3D_TOPOLOGY
+const links = linksOf(topology)
+
 /** Half past ten on a March morning, north of the equator. */
 const clock = { hour: 10.5, day: 80, isSouthern: false }
-const start = (): Model => init({ reducedMotion: false, clock }).model
-const step = (model: Model, message: Message): Model => update(model, message).model
+const start = (): Model => ({ ...sync(init(), topology), clock })
+/** The clock a model is lit for. */
+const lit = (model: Model) => litClockOf(model, model.clock ?? clock)
+const step = (model: Model, message: Message, on: Topology3D = topology): Model =>
+	update(model, message, on).model
 const firstFree = (model: Model, id: string) => targetsFor(placementsOf(model), id).free[0] ?? { q: 0, r: 0 }
 
 describe("the tile board", () => {
@@ -80,6 +88,16 @@ describe("the tile board", () => {
 		expect(heldIdOf(traded)).toBeNull()
 	})
 
+	it("hands a picked service to the parent, and clears it on Rearrange", () => {
+		const id = topology.nodes[0]?.id ?? null
+		expect(update(start(), Message.PickedNode({ nodeId: id }), topology).outMessage).toEqual(
+			OutMessage.Selected({ nodeId: id }),
+		)
+		expect(update(start(), Message.ClickedRearrange(), topology).outMessage).toEqual(
+			OutMessage.Selected({ nodeId: null }),
+		)
+	})
+
 	it("shows the connection of a poked cart or train until a service is picked", () => {
 		const linkId = links[0]?.id ?? ""
 		const poked = step(start(), Message.PokedLink({ linkId }))
@@ -106,9 +124,9 @@ describe("the tile board", () => {
 
 describe("the light on the map", () => {
 	it("follows the viewer's clock until a time of day is picked", () => {
-		expect(litClockOf(start())).toEqual(clock)
+		expect(lit(start())).toEqual(clock)
 		const later = step(start(), Message.TickedClock({ clock: { ...clock, hour: 19.25 } }))
-		expect(litClockOf(later).hour).toBe(19.25)
+		expect(lit(later).hour).toBe(19.25)
 	})
 
 	it("steps through dawn, day, dusk and night and back to the clock", () => {
@@ -123,8 +141,64 @@ describe("the light on the map", () => {
 		const night = Arr.reduce(Arr.range(1, 4), start(), (model) => step(model, Message.ClickedLight()))
 		const ticked = step(night, Message.TickedClock({ clock: { ...clock, hour: 13 } }))
 		expect(ticked.light).toBe("night")
-		expect(litClockOf(ticked).hour).toBe(litClockOf(night).hour)
+		expect(lit(ticked).hour).toBe(lit(night).hour)
 		// The season still comes from the clock: only the hour is held.
-		expect(litClockOf(ticked).day).toBe(clock.day)
+		expect(lit(ticked).day).toBe(clock.day)
+	})
+})
+
+describe("the board over a live map", () => {
+	const [kept, gone] = [topology.nodes[0], topology.nodes[1]]
+	const newcomer: Node3D = {
+		id: "newcomer",
+		label: "newcomer",
+		kind: "service",
+		namespace: kept?.namespace ?? "services",
+		platform: "unknown",
+		throughput: 3,
+		errorRate: 0,
+	}
+	const changed: Topology3D = {
+		nodes: [...Arr.filter(topology.nodes, (node) => node.id !== gone?.id), newcomer],
+		edges: [
+			...Arr.filter(topology.edges, (edge) => edge.source !== gone?.id && edge.target !== gone?.id),
+			{
+				source: newcomer.id,
+				target: kept?.id ?? "",
+				callsPerSecond: 3,
+				errorRate: 0,
+				avgLatencyMs: 12,
+			},
+		],
+	}
+
+	it("keeps every tile still on the map where it stood, places a newcomer and drops the gone", () => {
+		const before = start()
+		const after = sync(before, changed)
+		const stayed = Arr.filter(changed.nodes, (node) => node.id !== newcomer.id)
+		expect(Arr.map(stayed, (node) => after.cells[node.id])).toEqual(
+			Arr.map(stayed, (node) => before.cells[node.id]),
+		)
+		expect(after.cells[newcomer.id]).toBeDefined()
+		expect(after.cells[gone?.id ?? ""]).toBeUndefined()
+		expect(Rec.keys(after.cells)).toHaveLength(changed.nodes.length)
+	})
+
+	it("returns the same board while the services stay the same", () => {
+		const model = start()
+		expect(sync(model, { ...topology, edges: [] })).toBe(model)
+	})
+
+	it("adds a newcomer to the stack during a deal instead of placing it", () => {
+		const dealt = step(start(), Message.ClickedDeal())
+		const after = sync(dealt, changed)
+		expect(after.cells[newcomer.id]).toBeUndefined()
+		expect(after.stack).toContain(newcomer.id)
+		expect(after.stack).not.toContain(gone?.id)
+	})
+
+	it("lays the board out for the map a message arrives with", () => {
+		const moved = step(start(), Message.ClickedSound(), changed)
+		expect(Rec.keys(moved.cells)).toHaveLength(changed.nodes.length)
 	})
 })

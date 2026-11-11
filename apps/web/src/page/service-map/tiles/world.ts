@@ -1,6 +1,6 @@
 import { Array as Arr, Record as Rec } from "effect"
-import { connectedIds } from "../../page/service-map/three/spatial-layout"
-import type { Node3D, Topology3D } from "../../page/service-map/three/types"
+import { connectedIds } from "../three/spatial-layout"
+import type { Node3D, Topology3D } from "../three/types"
 import { type Biome, biomesFor } from "./biome"
 import {
 	lakesOf,

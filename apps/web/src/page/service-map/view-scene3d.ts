@@ -378,7 +378,7 @@ const cachedLayout = (
 	return layoutCache.value
 }
 
-/** The 3D view: `render3D` of the map. Labels and overlays are DOM; the scene draws behind them. */
+/** The 3D view: the map's `renderScene` in 3D. Labels and overlays are DOM; the scene draws behind them. */
 export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3dOptions<M>): Html =>
 	viewportView(h, {
 		model,

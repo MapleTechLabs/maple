@@ -16,6 +16,8 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
+import * as Tiles from "./tiles/update"
+import { topologyOf } from "./view-scene3d"
 import {
 	CompleteReloadSpin,
 	LoadSignalPresence,
@@ -77,6 +79,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
 		scene3d: Scene3d.init(),
+		tiles: Tiles.init(),
 		presence: SignalPresenceData.Loading(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -293,6 +296,22 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 	})
 }
 
+/** The tile view's step over the live map; a pick becomes the map's `onSelect`. */
+const withTiles = (model: Model, message: Tiles.Message, context: PageContext): Return =>
+	Option.match(model.map, {
+		onNone: () => ({ model }),
+		onSome: (map) => {
+			const next = Tiles.update(model.tiles, message, topologyOf(map))
+			const lifted: Return = { model: { ...model, tiles: next.model } }
+			if (next.outMessage === undefined) return lifted
+			const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
+			return merge(
+				lifted,
+				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+			)
+		},
+	})
+
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
 	// A preset: the absolute bounds leave the URL.
 	return pickerStep(
@@ -392,6 +411,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotScene3dMessage: ({ message: inner }) => withScene3d(model, inner, context),
+		GotTilesMessage: ({ message: inner }) => withTiles(model, inner, context),
 		// An answer for another org (the user switched while it was in flight) is dropped.
 		CompletedLoadWorld: ({ orgId, result }) =>
 			orgId === context.orgId
