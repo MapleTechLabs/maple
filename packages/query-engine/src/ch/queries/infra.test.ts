@@ -458,8 +458,6 @@ describe("nodeGaugeTimeseriesQuery", () => {
 	})
 })
 
-// Workloads
-
 describe("listWorkloadsQuery", () => {
 	it("keeps same-named workloads in different namespaces/clusters apart", () => {
 		const { sql } = compileUnsafe(listWorkloadsQuery({ kind: "deployment" }), baseParams)

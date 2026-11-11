@@ -2,6 +2,7 @@
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
+import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
@@ -122,7 +123,7 @@ import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
 import { registerPullRequestTools } from "./pull-request"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	audienceAdmits,
 	McpAuthInvalidError,
@@ -146,7 +147,7 @@ import { filterNextCalls, nextCallsOf, type NextCall, type ToolDoc } from "../li
 import { stringifyJson } from "../lib/json"
 import { renderToolDocWithinBudget } from "./tool-output"
 import { CurrentWindowNotes, WindowNotes } from "../lib/window-notes"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { registerUpdateDashboardTool } from "./update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "./update-dashboard-widget"
 
@@ -391,14 +392,15 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
 	const define: McpToolRegistrar["define"] = (spec) => {
-		const encode = Schema.encodeUnknownEffect(spec.output)
+		const outputSchema: Schema.Codec<unknown, unknown> = McpToolOutputs[spec.name]
+		const encode = Schema.encodeUnknownEffect(outputSchema)
 		definitions.push({
 			name: spec.name,
 			title: spec.title,
 			description: spec.description,
 			schema: spec.parameters,
 			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
-			outputSchema: spec.output,
+			outputSchema,
 			hints: spec.hints,
 			aliases: spec.aliases ?? {},
 			valueAliases: spec.valueAliases ?? {},
@@ -662,12 +664,12 @@ const toDecodeErrorMessage = (
 		? formatDecodeFailure(definition.name, error, inputSchemaOf(definition), normalized)
 		: String(error)
 
-/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
 const findDefinition = (name: string): MapleToolDefinition | undefined => {
 	const canonical = canonicalToolName(name)
 	return mapleToolDefinitions.find((candidate) => candidate.name === canonical)
 }
 
+/** A registered tool this surface cannot see: a shared tool pointing at it is expected. */
 const isHiddenOn = (tool: string, surface: McpToolSurface): boolean => {
 	const target = findDefinition(tool)
 	return target !== undefined && !audienceAdmits(target.audience, surface)

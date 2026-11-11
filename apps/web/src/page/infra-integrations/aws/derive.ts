@@ -1,11 +1,10 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { AWS_INFRA_KINDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import type { Tone } from "@maple/ui/lib/tone"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr, Schema, Record as Rec, String as Str, Option, Order } from "effect"
+import { Array as Arr, Record as Rec, String as Str, Option, Order } from "effect"
 import type { TracedService } from "../kit/traced"
 import type { FleetRead, SparkRead } from "./data"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // What the AWS pages read off the metric rows: one view per resource, its health, and the summary.
 

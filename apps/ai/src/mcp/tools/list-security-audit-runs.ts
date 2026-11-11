@@ -3,7 +3,7 @@ import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } 
 import { ListSecurityAuditRunsOutput } from "@maple/domain/mcp-outputs"
 import { securityAuditSpendWindow } from "@maple/domain/security-audit"
 import { securityAuditLimits } from "@maple/backend/services/security-audit/limits"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { auditAccess, runSummaryOf } from "../lib/security"
@@ -33,7 +33,6 @@ export function registerListSecurityAuditRunsTool(server: McpToolRegistrar) {
 			status: P.optionalOneOf(RUN_STATUSES, "Only runs in this state"),
 			limit: P.limit({ default: 20, max: 100, noun: "runs" }),
 		}),
-		output: ListSecurityAuditRunsOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading security audit runs"],
 		handler: Effect.fn("McpTool.listSecurityAuditRuns")(function* (params) {

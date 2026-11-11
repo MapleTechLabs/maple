@@ -1,6 +1,7 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { resolveWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import {
 	BreakdownInput,
@@ -18,26 +19,12 @@ import {
 	ZoneFacetsInput,
 	ZonesInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
-export const ResolveWindow = Command.define("ResolveCloudflareZoneWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand(
+	"ResolveCloudflareZoneWindow",
+	Message.CompletedResolveWindow,
+)
 
 export const LoadStatus = Command.define("LoadCloudflareZoneStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
@@ -101,14 +88,9 @@ export const FetchLiveTraffic = Command.define("FetchCloudflareTopTraffic", {
 		Effect.map(loadTopTraffic(input), (result) => Message.CompletedFetchLiveTraffic({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteCloudflareZoneReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteCloudflareZoneReloadSpin", Message.CompletedReloadSpin)
 
-/** `useLinkedCursor` on the signal strips. */
+/** One cursor shared by the signal strips. */
 export const MountLinkedCursor = Mount.defineStream("MountCloudflareZoneLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

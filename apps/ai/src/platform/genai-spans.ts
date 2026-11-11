@@ -564,7 +564,6 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
 
-/** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
 /** Handed back to whoever called the tool: the model, or a `run_code` program (`returned-to-caller`). */
 const RETURNED_FAILURES: ReadonlySet<unknown> = new Set(["returned-to-model", "returned-to-caller"])
 

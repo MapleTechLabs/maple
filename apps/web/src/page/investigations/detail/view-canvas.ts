@@ -43,8 +43,6 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 
-// `ProvenanceCanvas`, `FlowEdge`, the flow nodes and `ProvenanceCanvasLoading`.
-
 type H = HtmlBuilder<Message>
 
 const GLYPH = {
@@ -75,7 +73,7 @@ const ports = (h: H, id: string): ReadonlyArray<Html> => [
 	flowHandle(h, id, "source", "right", HANDLE),
 ]
 
-/** `LiveBar`: a short amber sweep; `edge` pins it to the card's bottom edge. */
+/** A short amber sweep; `edge` pins it to the card's bottom edge. */
 const liveBar = (h: H, isEdge: boolean): Html =>
 	h.span(
 		[
@@ -106,7 +104,6 @@ type Clock = Readonly<{ nowMs: number; timeZone: string }>
 /** Routed by `MountNodeLinks` on the canvas. */
 const nodeLink = (h: H) => h.Attribute(NODE_LINK_ATTRIBUTE, "")
 
-/** `FlowSpineNode`. */
 const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): ReadonlyArray<Html> => {
 	const isCurrent = data.current === true
 	const body = [
@@ -250,7 +247,7 @@ const spineNode = (h: H, id: string, data: SpineNodeData, clock: Clock): Readonl
 	]
 }
 
-/** `FlowPendingVerdictNode`: the step after the investigation while no verdict exists. */
+/** The step after the investigation while no verdict exists. */
 const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): ReadonlyArray<Html> => [
 	...ports(h, id),
 	vstack(
@@ -290,7 +287,7 @@ const pendingVerdictNode = (h: H, id: string, data: PendingVerdictNodeData): Rea
 	),
 ]
 
-/** `FlowActionGhostNode`: a proposed action that has not been proposed yet. */
+/** A proposed action that has not been proposed yet. */
 const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 	...ports(h, id),
 	hstack(
@@ -319,7 +316,7 @@ const actionGhostNode = (h: H, id: string): ReadonlyArray<Html> => [
 const openKey = (index: number) => (key: string) =>
 	key === "Enter" || key === " " ? Option.some(Message.ClickedAction({ index })) : Option.none()
 
-/** `FlowActionNode`: the whole card opens the action's detail; its link goes where the action is done. */
+/** The whole card opens the action's detail; its link goes where the action is done. */
 const actionNode = (h: H, id: string, data: ActionNodeData): ReadonlyArray<Html> => {
 	const glyph = ACTION_GLYPH[data.kind]
 	return [
@@ -452,7 +449,7 @@ const geometryOf = (edge: ProvenanceEdge, anchors: Anchors) => {
 	return { from, to, path, labelX }
 }
 
-/** `FlowEdge`: dashed strand and its two port dots; a live strand takes the amber. */
+/** Dashed strand and its two port dots; a live strand takes the amber. */
 export const edgeView = (h: H, edge: ProvenanceEdge, anchors: Anchors): Html | null => {
 	const geometry = geometryOf(edge, anchors)
 	if (geometry === null) return null
@@ -583,7 +580,7 @@ const outlineText = (node: ProvenanceNode): string | null => {
 	}
 }
 
-/** `GraphOutline`: the same chain as a list, the keyboard and screen-reader route into the canvas. */
+/** The same chain as a list: the keyboard and screen-reader route into the canvas. */
 const outline = (h: H, graph: ProvenanceGraph): Html =>
 	h.ol(
 		[h.Class("sr-only")],
@@ -606,7 +603,7 @@ const outline = (h: H, graph: ProvenanceGraph): Html =>
 
 const PROVENANCE_HINT = "what produced this investigation, and what it produced"
 
-/** `Caption`: a running pass counts up against the page clock. */
+/** A running pass counts up against the page clock. */
 const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 	const running =
 		graph.runningSince === null ? null : splitDuration(Math.max(0, nowMs - graph.runningSince))
@@ -644,7 +641,7 @@ const caption = (h: H, graph: ProvenanceGraph, nowMs: number): Html => {
 
 const PANEL = "shrink-0 gap-3.5 bg-surface-faint px-6 pb-5.5 pt-4.5"
 
-/** `ProvenanceCanvas`; a chain of fewer than two cards draws nothing (or the ghost, mid-run). */
+/** A chain of fewer than two cards draws nothing (or the ghost, mid-run). */
 export const provenanceCanvas = (
 	h: H,
 	model: Model,
@@ -852,7 +849,7 @@ const actionGhost = (h: H, card: Card, delay: number): Html =>
 		],
 	)
 
-/** `ProvenanceCanvasLoading`: the chain it is about to be replaced by, drawn as a ghost. */
+/** The chain it is about to be replaced by, drawn as a ghost. */
 export const provenanceLoading = (h: H): Html =>
 	panel(h, { className: PANEL, attributes: [h.AriaBusy(true)] }, [
 		hstack(h, { gap: "2.5" }, [

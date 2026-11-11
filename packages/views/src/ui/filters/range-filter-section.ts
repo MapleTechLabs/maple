@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { collapsiblePanelStyles } from "../collapsible.styles"
+import { eyebrowVariants } from "../eyebrow.styles"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
@@ -13,8 +13,8 @@ import { Message as SectionsMessage, type Model as SectionsModel, sectionOf } fr
 import { formatRange, type RangeUnit, UNIT_SUFFIX, UNIT_WORDS } from "./range-format"
 import { type HistogramMessage, type RangeBucket, rangeHistogram } from "./range-histogram"
 
-// Port of `RangeFilterSection` (packages/ui/src/components/filters/range-filter-section.tsx).
-// The draft text lives in the caller's Model; it commits on blur, Enter or the caller's debounce.
+// A collapsible min/max range filter with presets. The draft text lives in the caller's Model; it
+// commits on blur, Enter or the caller's debounce.
 
 export type RangePreset = Readonly<{ key: string; label: string; value?: string; min?: number; max?: number }>
 
@@ -69,7 +69,7 @@ const boundInput = <M>(h: HtmlBuilder<M>, config: RangeFilterSectionConfig<M>, s
 		],
 	})
 
-/** `applyPreset`: the active preset clicked again clears the range. */
+/** The active preset clicked again clears the range. */
 const presetMessage = <M>(config: RangeFilterSectionConfig<M>, preset: RangePreset): M =>
 	config.minValue === preset.min && config.maxValue === preset.max
 		? config.onApply(undefined, undefined)

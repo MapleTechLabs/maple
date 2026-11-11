@@ -17,13 +17,13 @@ import {
 	type VcsRepo,
 	type VcsRepositoryId,
 	type VcsSyncJob,
+	type TenantContext,
 } from "@maple/domain/http"
-import type { OrgId, UserId } from "@maple/domain/primitives"
+import type { OrgId, UserId } from "@maple/primitives"
 import type { DependencyFindingStatus } from "@maple/domain/dependency-scan"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -278,7 +278,6 @@ export class DependencyScanReader extends Context.Service<DependencyScanReader, 
 			const vcs = yield* VcsRepository
 			const runningCommits = yield* RunningCommits
 
-			/** The org's repositories under a processable installation, active ones only. */
 			const connectedRepositories = Effect.fn("DependencyScanReader.connectedRepositories")(
 				function* (orgId: OrgId) {
 					const allInstallations = yield* vcs.listInstallationsByOrg(orgId)

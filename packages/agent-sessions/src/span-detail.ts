@@ -264,10 +264,6 @@ export function jsonText(value: unknown): string {
 
 const encodeJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
-/* -------------------------------------------------------------------------- */
-/* Message walking                                                            */
-/* -------------------------------------------------------------------------- */
-
 /**
  * Part types that carry model reasoning rather than assistant speech.
  * `reasoning` is the semconv name; `thinking` / `redacted_thinking` are

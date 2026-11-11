@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { InvestigationId, IsoDateTimeString } from "../../primitives"
+import { InvestigationId, IsoDateTimeString } from "@maple/primitives"
 import {
 	InvestigationAgentUnavailableError,
 	InvestigationAutomationDisabledError,

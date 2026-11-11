@@ -1,7 +1,8 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
-import { META_CHIP_CLASS, SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
+import { errorIssueFromV2 } from "../../../data/error-issues"
+import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
+import { META_CHIP_CLASS } from "@maple/views/lib/anomaly-display"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,20 +16,17 @@ import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { serviceDot } from "@maple/views/ui/values"
-import { WORKFLOW_LABEL } from "../../errors/kit/workflow"
-import { actorAvatar } from "../../errors/kit/actor"
-import { ANOMALY_CHART_TOKENS, anomalySignalChart } from "../kit/evidence"
-import { shortIssueId } from "../kit/row"
+import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
+import { actorAvatar } from "../../kit/issue-actor"
+import { ANOMALY_CHART_TOKENS, anomalySignalChart } from "../../kit/anomaly-evidence"
+import { shortIssueId } from "@maple/ui/lib/ids"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `AnomalyHero`, `AnomalySignalChart` + `AnomalyTimeseriesChart` and `AnomalyLinkedIssueCard`.
-
 type H = HtmlBuilder<Message>
 
-/** The theme tokens the signal chart reads. */
 export const CHART_TOKENS = ANOMALY_CHART_TOKENS
 
 /** The detail header's title side: the signal and service under the "Anomaly" eyebrow. */
@@ -43,7 +41,6 @@ export const anomalyTitle = (h: H, incident: AnomalyIncidentDocument): Html =>
 		titleText: `${SIGNAL_LABEL[incident.signalType]} · ${incident.serviceName}`,
 	})
 
-/** `AnomalySignalChart` over the page's series, theme and chart runtime. */
 export const signalChart = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html =>
 	anomalySignalChart(h, {
 		chartId: "anomaly-signal",
@@ -104,7 +101,6 @@ const cardActions = (
 		),
 	])
 
-/** `AnomalyLinkedIssueCard`. */
 export const linkedIssueCard = (
 	h: H,
 	model: Model,

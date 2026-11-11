@@ -36,6 +36,7 @@ import {
 	type ChatOutboundOperation,
 	type ChatTarget,
 	type ChatThreadRequest,
+	withRateLimitRetry,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import {
@@ -67,9 +68,6 @@ const MAX_MESSAGE_CHARS = 3000
  * turn instead of on 429s.
  */
 const MIN_EDIT_INTERVAL = Duration.seconds(1)
-
-/** How many times a 429 is waited out before the turn gives up on the message. */
-const MAX_RATE_LIMIT_ATTEMPTS = 3
 
 /**
  * The longest a 429 may park a turn.
@@ -324,27 +322,12 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				if (Option.isNone(token)) {
 					return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
 				}
-				const bearer = token.value
-				const tryOnce = (count: number): Effect.Effect<SlackApiResult, ChatOutboundError> =>
-					attempt(bearer, operation, method, request).pipe(
-						Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
-							// A read of the conversation is CONTEXT, and the turn has not started yet —
-							// waiting a rate limit out here delays the answer to buy background the model
-							// can do without. An answer is worth waiting for; the history behind it is not.
-							// A channel listing has somebody waiting on a picker, who is better told to
-							// try again than left staring at a spinner for half a minute.
-							count >= MAX_RATE_LIMIT_ATTEMPTS ||
-							operation === "history" ||
-							operation === "destinations"
-								? Effect.fail(
-										failed(operation, "Slack kept rate limiting this message", {
-											status: 429,
-										}),
-									)
-								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
-						),
-					)
-				return tryOnce(1)
+				return withRateLimitRetry(attempt(token.value, operation, method, request), {
+					operation,
+					rateLimited: SlackRateLimited,
+					pause: (limited) => Effect.sleep(limited.wait),
+					gaveUp: (extra) => failed(operation, "Slack kept rate limiting this message", extra),
+				})
 			})
 
 		/** `thread_ts` is left out entirely when there is no thread; Slack rejects an empty one. */

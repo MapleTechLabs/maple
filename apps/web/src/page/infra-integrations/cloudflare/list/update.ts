@@ -1,15 +1,18 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { nextSort } from "../../../kit/table-sort"
 import {
@@ -23,7 +26,7 @@ import {
 	ResolveWindow,
 } from "./command"
 import { statusOf } from "./derive"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -56,7 +59,7 @@ const withView = (search: Search, view: Search["view"]): Search => ({
 /** The view tab's link: where `ClickedView` writes. */
 export const viewHref = (search: Search, view: Search["view"]): string => hrefOfSearch(withView(search, view))
 
-/** `patchSearch`: list state is written in place (a replace, not a new entry). */
+/** List state is written in place (a replace, not a new entry). */
 const patch = (model: Model, next: Partial<Search>): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -70,7 +73,7 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(search), isReplace: false }),
 })
 
-/** `CloudflareData` mounts once the status says connected with analytics scopes. */
+/** The data reads start once the status says connected with analytics scopes. */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const status = statusOf(model)
 	const window = model.window
@@ -102,7 +105,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	}
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "cloudflare")
 const usageKey = (context: PageContext) => requestKey(context.orgId, "integrations.cloudflareUsage", {})
 
 /** The ingest poll: both reads again, the status past its shared cache. */
@@ -143,11 +146,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			resolveCommand(model, context, "Load"),
 			LoadStatus({ key: status, refresh: false }),
 			LoadUsage({ key: usage }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -192,11 +191,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchPlatform: ({ key, result }) => ({
 			model: { ...model, platform: acceptSlot(model.platform, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		TickedIngestPoll: () => refreshIngest(model, context),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		ClickedView: ({ view }) => patch(model, withView(model.search, view)),

@@ -1,8 +1,7 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
+import { CurrentTenant, MapleInternalApi, type TenantContext } from "@maple/domain/http"
 import { Effect } from "effect"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 
 /** The users pages' reads (`/users`, `/users/$userId`), scoped by `CurrentTenant`, through `UsersReadService`. */
 const withTenant =

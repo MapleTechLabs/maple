@@ -97,7 +97,7 @@ A **Done** issue becomes **Regressed** when a new occurrence arrives more than 1
 
 ### Won't fix and snooze
 
-**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when it expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows **Snoozed until**.
+**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when it expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows when the snooze ends.
 
 ### Fix verification
 
@@ -127,7 +127,7 @@ A lease lasts 30 minutes by default. Any action by the holder renews it. When it
 
 Severity is **Critical**, **High**, **Medium**, **Low**, or not set. Set it from the **Severity** select in the issue sidebar, or for several issues at once from the bulk bar. A severity you set by hand overrides one set by an agent or an alert rule.
 
-To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. **Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify; a severity you set by hand bypasses it. Under **Policy simulator**, pick a severity, decision source and AI confidence, then click **Evaluate policy** to see what the saved policy would do. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only organization admins can change this policy.
+To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. **Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify; a severity you set by hand bypasses it. Under **Policy simulator**, pick a severity, decision source and AI confidence, then click **Evaluate policy** to see what the saved policy would do. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only engineers and admins can change this policy.
 
 ## Notifications
 
@@ -141,7 +141,7 @@ The error notification policy decides when Maple sends an issue to your [notific
 
 The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens. With the default of 1, a new error notifies on its first occurrence. Once your organization has opened 10 error issues in the last 24 hours, new errors need 3 occurrences to become an issue whatever the policy says, so a first-seen notification then needs at least 3, or the minimum count when that is higher. The count is checked once, when the incident opens: an incident that opens with fewer occurrences sends no first-seen notification, even if more arrive later. For a regression the minimum count applies as set. No destinations are selected by default, so nothing is sent until you add one.
 
-The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Organization admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
+The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Engineers and admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
 
 An incident opens when an issue fires with no open incident. It resolves after 30 minutes without new occurrences, or when the issue is marked **Done**.
 
@@ -175,7 +175,7 @@ The list loads 50 issues at a time. Click **Load more** for the next page.
 
 The header shows the service, the error title, severity, state, and an **Open incident** marker while one is open. It has three tabs:
 
-- **Overview**: the **Culprit** (top stack frame) and **Fingerprint**; facts such as **Events · all time**, **First seen**, **Last seen**, and **Regressions**; an occurrence chart; and an **Incidents** table with each incident's status, reason (**First seen**, **Regression**, or **Manual**), and event count.
+- **Overview**: **What broke**, with the exception and where it was **Raised at** (the top stack frame); the **All time** event count, **First seen** and **Last seen**; an occurrence chart; and an **Incidents** table with each incident's status, reason (**First seen**, **Regression**, or **Manual**), and event count.
 - **Occurrences**: **Latest occurrences**, with time, service, message, and a link to each trace. Shown for issues from spans.
 - **Activity**: a timeline of state changes, claims, and comments. Add a comment with **Comment**. Markdown is supported.
 
@@ -184,9 +184,9 @@ The header shows the service, the error title, severity, state, and an **Open in
   <figcaption>An issue page. The right panel holds state, severity, lease and linked pull requests.</figcaption>
 </figure>
 
-The sidebar holds **Details** (status, severity, assignee), **Scope** (service, environment, issue ID), **Lease**, **Pull requests**, and **Fix verification**.
+The sidebar holds **Details** (status, severity, priority, assignee), **Scope** (service, environment, issue ID), **Lease**, **Pull requests**, and **Fix verification**.
 
-**Copy agent prompt** copies a prompt with the issue context for a coding agent.
+The header's menu has **Copy agent prompt**, which copies a prompt with the issue context for a coding agent, plus **Copy fingerprint** and **Copy link to issue**.
 
 ## Work with issues from an assistant
 
@@ -208,7 +208,7 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 | `propose_fix`                              | Claim the issue, move it to In review, and optionally attach a PR URL. |
 | `link_pull_request`                        | Attach a GitHub pull request. Its merge starts fix verification.       |
 | `get_error_notification_policy`            | Read the notification policy and its destinations.                     |
-| `update_error_notification_policy`         | Change the notification policy (admins only).                          |
+| `update_error_notification_policy`         | Change the notification policy (engineers and admins only).            |
 
 ## Troubleshooting
 

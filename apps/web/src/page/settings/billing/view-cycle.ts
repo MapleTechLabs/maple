@@ -1,8 +1,8 @@
 import { formatCurrency } from "@maple/domain/format"
 import type { DailySpendResponse } from "@maple/domain/http"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import type { TrialStatus } from "../../../lib/billing/plan-gating"
-import { sentenceCasePlanName } from "../../../lib/billing/plans"
+import type { TrialStatus } from "../../kit/billing/plan-gating"
+import { sentenceCasePlanName } from "../../kit/billing/plans"
 import {
 	buildCumulativeSeries,
 	costBreakdown,
@@ -10,8 +10,8 @@ import {
 	FEATURE_LABELS,
 	SPEND_FEATURES,
 	type SpendModel,
-} from "../../../lib/billing/spend"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+} from "./spend"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -38,8 +38,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
-
-// `BillingCyclePanel`, `SpendChart` and `CostBreakdown` (apps/web/src/components/settings/).
 
 const dollars = (cents: number, currency: string) => formatCurrency(cents / 100, currency)
 
@@ -94,7 +92,6 @@ export const cyclePanelSkeleton = (h: H): Html =>
 
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
-/** `CursorPlot` with `ariaLabel="Cumulative spend this cycle"`. */
 const spendPlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "billing-spend",

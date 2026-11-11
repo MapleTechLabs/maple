@@ -26,8 +26,6 @@ import { panelInputsOf } from "./where-inputs"
 import type { Model } from "./model"
 import { editState, type Return } from "./update"
 
-// The submodel steps: selects, the query panels, the leave dialog, and the dashboard range picker.
-
 /** A rail select's value written into the state, by which select it is. */
 const applySelectValue = (state: EditorState, id: string, value: string): EditorState => {
 	switch (id) {
@@ -87,7 +85,7 @@ export const selectStep = (
 	)
 	if (next.outMessage === undefined) return { model: lifted, commands }
 	const value = next.outMessage.value
-	// `BreakdownPicker` holds "Attribute…" locally; only a typed key becomes a breakdown.
+	// The breakdown picker holds "Attribute…" locally; only a typed key becomes a breakdown.
 	const picked: Model =
 		id === BREAKDOWN_SELECT_ID
 			? {
@@ -158,7 +156,7 @@ export const leaveDialogStep = (model: Model, message: Dialog.Message): Return =
 	}
 }
 
-/** `WidgetTimeRange`: Custom starts from the board's range, so a relative preset keeps moving. */
+/** Custom starts from the board's range, so a relative preset keeps moving. */
 export const timeRangeModeStep = (model: Model, context: PageContext, mode: "dashboard" | "custom"): Return =>
 	editState(model, context, (state): EditorState => {
 		if (mode === "dashboard") return { ...state, timeRange: null }
@@ -166,7 +164,6 @@ export const timeRangeModeStep = (model: Model, context: PageContext, mode: "das
 		return { ...state, timeRange: model.timeRange ?? { type: "relative", value: "1h" } }
 	})
 
-/** `TypePicker`: every panel type. */
 export const isConfigurablePanel = (panel: string): panel is PanelType => isPanelType(panel)
 
 export const chartStep = (model: Model, message: Chart.Message): Return => {

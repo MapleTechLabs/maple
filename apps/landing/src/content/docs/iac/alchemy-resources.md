@@ -35,15 +35,17 @@ Effect.gen(function* () {
 })
 ```
 
-| Prop          | Type             | Notes                                                                                             |
-| ------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
-| `name`        | `string`         | Required                                                                                          |
-| `description` | `string \| null` |                                                                                                   |
-| `tags`        | `string[]`       |                                                                                                   |
-| `time_range`  | `object`         | e.g. `{ type: "relative", value: "12h" }`                                                         |
-| `widgets`     | `object[]`       | Passed through verbatim                                                                           |
-| `sections`    | `object[]`       | Widgets join one with `section_id` and `tab_id`; their `layout` is relative to the section's grid |
-| `variables`   | `object[]`       | Passed through verbatim                                                                           |
+| Prop                       | Type             | Notes                                                                                             |
+| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
+| `name`                     | `string`         | Required                                                                                          |
+| `description`              | `string \| null` |                                                                                                   |
+| `tags`                     | `string[]`       |                                                                                                   |
+| `time_range`               | `object`         | e.g. `{ type: "relative", value: "12h" }`                                                         |
+| `widgets`                  | `object[]`       | Typed by the API's widget schema (`Maple.DashboardWidget`)                                        |
+| `sections`                 | `object[]`       | Widgets join one with `section_id` and `tab_id`; their `layout` is relative to the section's grid |
+| `variables`                | `object[]`       | Typed by the API's variable schema (`Maple.DashboardVariable`)                                    |
+| `refresh_interval_seconds` | `number \| null` | `0`, `5`, `10`, `30`, `60`, `300` or `900`                                                        |
+| `dashboardId`              | `string`         | Adopt an existing `dash_…` dashboard instead of creating one. Cannot change after deploy          |
 
 Outputs: `dashboardId` (`dash_…`), `name`.
 
@@ -83,7 +85,7 @@ Effect.gen(function* () {
 - Slack and other chat-connector destinations depend on integrations linked in Maple, so manage them in [Notification destinations](/docs/alerting/notification-destinations), not here.
 - Deleting a destination that rules still reference fails with a conflict. When the rules live in the same stack, Alchemy deletes them first.
 
-Outputs: `destinationId` (`dest_…`), `name`, `type`, `enabled`.
+Outputs: `destinationId` (`dest_…`), `name`, `type`, `enabled`, `channelLabel` (the non-secret channel handle, such as a Telegram chat ID, or `null`).
 
 ## Maple.AlertRule
 
@@ -172,7 +174,7 @@ Effect.gen(function* () {
 The API has no update endpoint for keys:
 
 - Changing `name`, `description`, `scopes`, `kind` or `expires_in_seconds` **replaces** the key: a new ID and a new secret, and the old key is revoked.
-- Bumping `rotate` **rolls** the key in place: same ID, name and scopes, new secret.
+- Bumping `rotate` **rolls** the key: Maple revokes the old key and issues a replacement with the same name, description, kind and scopes, a new `keyId` and a new secret.
 - Deleting the resource revokes the key.
 
 Outputs: `keyId` (`key_…`), `name`, `keyPrefix`, `secret` (`Redacted`, the full `maple_ak_…` value).

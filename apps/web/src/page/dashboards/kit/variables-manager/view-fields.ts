@@ -15,8 +15,6 @@ import { textarea } from "@maple/views/ui/textarea"
 import { type FormField, Message, type Model } from "./model"
 import { Array as Arr } from "effect"
 
-// The `<Field className="items-stretch gap-1.5">` cells of `VariableForm`.
-
 type H = HtmlBuilder<Message>
 
 export const FIELD_CLASS = "items-stretch gap-1.5"
@@ -49,7 +47,7 @@ export type TextFieldOptions = Readonly<{
 export const textField = (h: H, model: Model, options: TextFieldOptions): Html => {
 	const fieldModel = model[options.field]
 	const isInvalid = options.isInvalid ?? false
-	// Only the input is invalid (`aria-invalid`); the Base UI field root is not.
+	// Only the input is invalid (`aria-invalid`); the field root is not.
 	const state = Field.stateOf(fieldModel, false)
 	const hasDescription =
 		options.error === null && options.description !== undefined && options.description !== null

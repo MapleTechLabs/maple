@@ -32,9 +32,9 @@ import { formatPercent, formatThreshold, formatWindow } from "../shared/slo-deri
 import { budgetDowntime, formIssues, targetOf } from "./derive"
 import { type Form, TARGET_PRESETS, type TextField, THRESHOLDS, type Tier, WINDOW_DAYS } from "./form"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
-
-// `/alerts/slos/new`: what the SLO counts, the target and window, and who its burn-rate alerts notify.
+import { type Model } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
 type H = HtmlBuilder<Message>
 
@@ -238,16 +238,16 @@ const windowSection = (h: H, form: Form): Html =>
 	])
 
 const TIER_COPY = {
-	critical: { title: "Critical", role: "Pages", note: "" },
-	warning: { title: "Warning", role: "Opens a ticket", note: " A critical incident notifies these too." },
-} as const satisfies Record<Tier, Readonly<{ title: string; role: string; note: string }>>
+	critical: { role: "Pages", note: "" },
+	warning: { role: "Opens a ticket", note: " A critical incident notifies these too." },
+} as const satisfies Record<Tier, Readonly<{ role: string; note: string }>>
 
 /** Each tier's line, from the factors and windows the evaluator uses. */
 const TIERS = Arr.map(SLO_BURN_TIERS, (tier) => {
 	const copy = TIER_COPY[tier.severity]
 	return {
 		tier: tier.severity,
-		title: copy.title,
+		title: ALERT_SEVERITY_LABEL[tier.severity],
 		rule: `${copy.role} when the budget burns at ${tier.factor}x over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}.${copy.note}`,
 	}
 })
@@ -314,7 +314,7 @@ const actionBar = (h: H, model: Model): Html => {
 				h,
 				{
 					// Until the session says this is a manager, a click would be dropped by `save`.
-					isDisabled: issues.length > 0 || !canManage(model),
+					isDisabled: issues.length > 0 || !canManageAlerts(model),
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},
@@ -341,7 +341,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit SLO" : "New SLO",
 		description: "The share of a service's requests that must be good, and the error budget that leaves.",
 	}
-	if (model.isSessionLoaded && !canManage(model)) return notAllowedPage(h, model, header)
+	if (model.isSessionLoaded && !canManageAlerts(model)) return notAllowedPage(h, model, header)
 	if (isEdit && AsyncData.isFailure(model.existing.data))
 		return dashboardPage(h, header, [
 			errorState(h, { failure: model.existing.data.error, title: "Couldn't load the SLO" }),

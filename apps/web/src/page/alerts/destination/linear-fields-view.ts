@@ -18,8 +18,6 @@ import {
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `LinearFields`' view: a team picker, or connecting Linear in a popup (admins only).
-
 const IDLE: FieldState = {
 	isInvalid: false,
 	isDirty: false,

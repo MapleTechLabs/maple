@@ -1,23 +1,18 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { field, fieldDescription, fieldLabel, type FieldIds } from "@maple/views/ui/field"
+import type { FieldIds } from "@maple/views/ui/field"
 import type { FieldState } from "@maple/views/ui/input"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
-import type { Message } from "./message"
+import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// `NumberField` and `NoiseRow`: a Base UI field
-// holding an input group with the unit as its trailing addon.
 
 type H = HtmlBuilder<Message>
 
 export const NUMERIC_CONTROL_CLASS =
 	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-export const NOISE_CONTROL_CLASS =
-	"font-mono tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 
-/** Base UI's field state from the value and the value the field mounted with. */
+/** The field state from the value and the value the field mounted with. */
 export const fieldStateOf = (value: string, mounted: string | undefined): FieldState => ({
 	isInvalid: false,
 	isDirty: mounted !== undefined && value !== mounted,
@@ -31,72 +26,76 @@ export const idsOf = (id: string, hasDescription: boolean): FieldIds => {
 	return hasDescription ? { ...ids, description: `${id}-description` } : ids
 }
 
-export type NumberFieldOptions = Readonly<{
+export type InlineNumberOptions = Readonly<{
 	id: string
-	label: string
+	/** The field's name: a sentence row has no label element, the words around it are its label. */
+	ariaLabel: string
 	value: string
 	mounted: string | undefined
-	unit: string | null
+	/** A unit read as part of the number ("%", "ms"); a word unit is written after the field. */
+	unit?: string | null
 	onInput: (value: string) => Message
-	description?: string
 	placeholder?: string
-	ariaLabel?: string
 	inputMode?: "decimal" | "numeric"
-	controlClassName?: string
 	min?: string
-	/** The saved value when it differs (`previous`): the border warns and a note says what it was. */
+	/** The saved value when it differs: the border warns. */
 	previous?: string | null
+	/** The field has an error the user has seen a reason for (left it, or tried to save). */
+	isInvalid?: boolean
+	className?: string
 }>
 
-/** `WasNote`: what a changed field was before the edit. */
-export const wasNote = (h: H, children: ReadonlyArray<string>): Html =>
-	typography(h, { size: "xs", tone: "warning", as: "p" }, [
-		"Was ",
-		typography(
-			h,
-			{ mono: true },
-			Arr.filter(children, (child) => child !== ""),
-		),
-	])
-
-export const numberField = (h: H, options: NumberFieldOptions): Html => {
-	const previous = options.previous ?? null
-	const description = options.description
-	const state = fieldStateOf(options.value, options.mounted)
-	const ids = idsOf(options.id, description !== undefined)
-	const described = ids.description
-	const unit = options.unit
-	return field(h, { className: "items-stretch gap-1.5", state }, [
-		fieldLabel(h, { ids, state }, options.label),
-		inputGroup(h, { className: cn("h-9", previous !== null && "border-severity-warn/60") }, [
+/** A number inside a sentence row: about 96px wide, 32px tall (36px on a phone). */
+export const inlineNumber = (h: H, options: InlineNumberOptions): Html => {
+	const unit = options.unit ?? null
+	const state = { ...fieldStateOf(options.value, options.mounted), isInvalid: options.isInvalid ?? false }
+	return inputGroup(
+		h,
+		{
+			className: cn(
+				"h-9 w-24 shrink-0 sm:h-8",
+				options.className,
+				(options.previous ?? null) !== null && "border-severity-warn/60",
+			),
+		},
+		[
 			inputGroupInput(h, {
 				id: options.id,
 				type: "number",
-				controlClassName: options.controlClassName ?? NUMERIC_CONTROL_CLASS,
+				controlClassName: NUMERIC_CONTROL_CLASS,
 				fieldState: state,
 				attributes: [
-					...(described === undefined ? [] : [h.AriaDescribedBy(described)]),
-					...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
-					h.AriaLabelledBy(ids.label),
+					h.AriaLabel(options.ariaLabel),
+					...(state.isInvalid ? [h.AriaInvalid(true)] : []),
 					h.InputMode(options.inputMode ?? "decimal"),
 					...(options.min === undefined ? [] : [h.Min(options.min)]),
 					...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
 					h.Value(options.value),
 					h.OnInput(options.onInput),
+					h.OnBlur(Message.BlurredField({ id: options.id })),
 				],
 			}),
 			...(unit === null
 				? []
 				: [inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, [unit])])]),
-		]),
-		...(previous === null
-			? []
-			: [
-					wasNote(h, [
-						previous.length > 0 ? previous : "none",
-						previous.length > 0 && unit !== null ? (unit === "%" ? "%" : ` ${unit}`) : "",
-					]),
-				]),
-		...(description === undefined ? [] : [fieldDescription(h, { ids, state }, description)]),
-	])
+		],
+	)
 }
+
+/** Under a sentence row: what each changed field was before the edit ("Threshold was 5%"). */
+export const wasLine = (
+	h: H,
+	changes: ReadonlyArray<Readonly<{ label: string; previous: string | null; unit?: string | null }>>,
+): ReadonlyArray<Html> =>
+	Arr.flatMap(changes, (change) => {
+		const previous = change.previous
+		if (previous === null) return []
+		const unit = change.unit ?? null
+		const suffix = previous.length > 0 && unit !== null ? (unit === "%" ? "%" : ` ${unit}`) : ""
+		return [
+			typography(h, { size: "xs", tone: "warning", as: "p" }, [
+				`${change.label} was `,
+				typography(h, { mono: true }, [previous.length > 0 ? `${previous}${suffix}` : "none"]),
+			]),
+		]
+	})

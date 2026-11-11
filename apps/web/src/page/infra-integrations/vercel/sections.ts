@@ -31,12 +31,8 @@ import {
 	vitalsByKey,
 	type VitalRating,
 	WEB_VITALS,
-} from "../../../components/infra/vercel/list-model"
-import {
-	deploymentStateLabel,
-	deploymentTone,
-	percentOf,
-} from "../../../components/integrations/vercel-model"
+} from "./list-model"
+import { deploymentStateLabel, deploymentTone, percentOf } from "./integration/vercel-model"
 import { AppRoute, hrefOf } from "../../../route"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
@@ -45,7 +41,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../../kit/data-table"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"

@@ -19,7 +19,7 @@ const dayKey = (format: TimeFormat, ms: number) =>
 		day: "numeric",
 	}).format(ms)
 
-/** `formatAsOf`: "20:14" today, "Oct 14, 20:14" before that. */
+/** "20:14" today, "Oct 14, 20:14" before that. */
 export const formatAsOf = (format: TimeFormat, ms: number, nowMs: number): string => {
 	const isSameDay = dayKey(format, ms) === dayKey(format, nowMs)
 	const options: Intl.DateTimeFormatOptions = isSameDay

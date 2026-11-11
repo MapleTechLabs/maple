@@ -6,7 +6,7 @@ import {
 	VcsCommitShaInvalidError,
 } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr, String as Str, Option, Order } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import type { HttpClient } from "effect/http"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
@@ -82,7 +82,6 @@ const commitLayer = (testDb: TestDb, http: Layer.Layer<HttpClient.HttpClient>) =
 	return Layer.mergeAll(service, data)
 }
 
-// Seed an active installation ("42") and its repos directly via the repo layer.
 const seed = (repo: VcsRepo, orgId: OrgId, repos: ReadonlyArray<{ externalRepoId: string; name: string }>) =>
 	Effect.gen(function* () {
 		yield* repo.upsertInstallation({
@@ -269,7 +268,6 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 })
 
 describe("VcsCommitService.resolveCommitDetails", () => {
-	// Seeds `count` stored commits (sha = <hexDigit> repeated 40x) under one repo.
 	const seedCommits = (repo: VcsRepo, orgId: OrgId, shas: ReadonlyArray<string>) =>
 		Effect.gen(function* () {
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
@@ -331,7 +329,7 @@ describe("VcsCommitService.resolveCommitDetails", () => {
 				STORED,
 				Str.repeat(40)("f"), // valid shape, no repo has it
 				"not-a-sha", // invalid shape
-				"", // empty
+				"",
 			])
 			assert.deepStrictEqual(
 				Arr.map(details, (d) => d.sha),

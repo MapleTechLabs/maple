@@ -1,5 +1,5 @@
 import { Effect, Array as Arr, Order, Result, String as Str } from "effect"
-import type { ListLogsOutput } from "@maple/domain/tinybird"
+import type { ListLogsRow } from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type {
 	CompareLogPatternsInput,
@@ -205,13 +205,13 @@ export const compareLogPatterns = Effect.fn("Observability.compareLogPatterns")(
 
 	const [beforeRows, afterRows, beforeCount, afterCount] = yield* Effect.all(
 		[
-			executor.query<ListLogsOutput>(
+			executor.query<ListLogsRow>(
 				"list_logs",
 				{ ...window(input.before), limit: sampleSize },
 				{ profile: "list" },
 			),
 			// Oldest first: with the before sample newest first, both sit against the boundary.
-			executor.query<ListLogsOutput>(
+			executor.query<ListLogsRow>(
 				"list_logs",
 				{ ...window(input.after), limit: sampleSize, order: "asc" },
 				{ profile: "list" },

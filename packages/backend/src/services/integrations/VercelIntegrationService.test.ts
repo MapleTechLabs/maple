@@ -4,10 +4,10 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, VercelConnectRequest, VercelSettingsRequest } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
+import { SourceId } from "@maple/primitives"
 import { VercelIntegrationService } from "./VercelIntegrationService"
 
 const now = Date.UTC(2026, 9, 19, 12, 0, 0)
@@ -91,7 +91,10 @@ interface Fake {
 	deployments: ReadonlyArray<Deployment>
 	created: number
 	/** Answers a call before the default handling when it returns a response. */
-	respond: (call: VercelCall, signal: AbortSignal | null | undefined) => Response | Promise<Response> | undefined
+	respond: (
+		call: VercelCall,
+		signal: AbortSignal | null | undefined,
+	) => Response | Promise<Response> | undefined
 }
 
 const makeFake = (deployments?: ReadonlyArray<Deployment>): Fake => ({
@@ -297,7 +300,9 @@ const drainsTo = (fake: Fake, endpoint: string, teamId = "team_1") =>
 	)
 
 const isTraceCreate = (call: VercelCall) =>
-	call.method === "POST" && call.path === "/v1/drains" && Str.includes("Maple traces")(JSON.stringify(call.body))
+	call.method === "POST" &&
+	call.path === "/v1/drains" &&
+	Str.includes("Maple traces")(JSON.stringify(call.body))
 
 /** The `src_` id of the connection's pull source, as the drains send it. */
 const vercelSourceId = (testDb: TestDb) =>
@@ -316,102 +321,116 @@ const status = () => VercelIntegrationService.use((vercel) => vercel.getStatus(o
 const disconnect = () => VercelIntegrationService.use((vercel) => vercel.disconnect(orgId))
 
 describe("VercelIntegrationService", () => {
-	it.effect("connect creates a log, a trace and an AI Gateway drain carrying the org's ingest key and source", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				const connected = yield* connect()
-				const keys = yield* OrgIngestKeysService.use((service) => service.getOrCreate(orgId, userId))
-				const headers = {
-					authorization: `Bearer ${keys.privateKey}`,
-					"x-maple-source-id": yield* vercelSourceId(testDb),
-				}
-				const created = Arr.map(callsTo(fake, "POST", "/v1/drains"), (call) => call.body)
-				assert.deepStrictEqual(created, [
-					{
-						name: "Maple logs",
-						projects: "some",
-						projectIds: ["prj_web"],
-						schemas: { log: { version: "v1" } },
-						delivery: {
-							type: "http",
-							endpoint: LOGS_ENDPOINT,
-							encoding: "ndjson",
-							compression: "none",
-							headers,
+	it.effect(
+		"connect creates a log, a trace and an AI Gateway drain carrying the org's ingest key and source",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					const connected = yield* connect()
+					const keys = yield* OrgIngestKeysService.use((service) =>
+						service.getOrCreate(orgId, userId),
+					)
+					const headers = {
+						authorization: `Bearer ${keys.privateKey}`,
+						"x-maple-source-id": yield* vercelSourceId(testDb),
+					}
+					const created = Arr.map(callsTo(fake, "POST", "/v1/drains"), (call) => call.body)
+					assert.deepStrictEqual(created, [
+						{
+							name: "Maple logs",
+							projects: "some",
+							projectIds: ["prj_web"],
+							schemas: { log: { version: "v1" } },
+							delivery: {
+								type: "http",
+								endpoint: LOGS_ENDPOINT,
+								encoding: "ndjson",
+								compression: "none",
+								headers,
+							},
+							sampling: [{ type: "head_sampling", rate: 0.5 }],
 						},
-						sampling: [{ type: "head_sampling", rate: 0.5 }],
-					},
-					{
-						name: "Maple traces",
-						projects: "some",
-						projectIds: ["prj_web"],
-						schemas: { trace: { version: "v1" } },
-						delivery: {
-							type: "otlphttp",
-							endpoint: { traces: TRACES_ENDPOINT },
-							encoding: "proto",
-							headers,
+						{
+							name: "Maple traces",
+							projects: "some",
+							projectIds: ["prj_web"],
+							schemas: { trace: { version: "v1" } },
+							delivery: {
+								type: "otlphttp",
+								endpoint: { traces: TRACES_ENDPOINT },
+								encoding: "proto",
+								headers,
+							},
+							sampling: [{ type: "head_sampling", rate: 0.5 }],
 						},
-						sampling: [{ type: "head_sampling", rate: 0.5 }],
-					},
-					// Sampled usage events would undercount cost: no sampling at a rate below 1.
-					{
-						name: "Maple AI Gateway",
-						projects: "some",
-						projectIds: ["prj_web"],
-						schemas: { ai_gateway: { version: "v1" } },
-						delivery: {
-							type: "http",
-							endpoint: AI_GATEWAY_ENDPOINT,
-							encoding: "json",
-							compression: "none",
-							headers,
+						// Sampled usage events would undercount cost: no sampling at a rate below 1.
+						{
+							name: "Maple AI Gateway",
+							projects: "some",
+							projectIds: ["prj_web"],
+							schemas: { ai_gateway: { version: "v1" } },
+							delivery: {
+								type: "http",
+								endpoint: AI_GATEWAY_ENDPOINT,
+								encoding: "json",
+								compression: "none",
+								headers,
+							},
 						},
-					},
-				])
-				assert.isTrue(Arr.every(fake.calls, (call) => call.authorization === "Bearer vc_token_123"))
-				assert.deepStrictEqual({ ...connected.team }, { id: "team_1", slug: "acme", name: "Acme" })
-				assert.deepStrictEqual(
-					{ ...connected.drains.logs },
-					{ id: "drn_1", status: "enabled", lastError: null },
-				)
-				assert.deepStrictEqual(
-					{ ...connected.drains.traces },
-					{ id: "drn_2", status: "enabled", lastError: null },
-				)
-				assert.deepStrictEqual(
-					{ ...connected.drains.aiGateway },
-					{ id: "drn_3", status: "enabled", lastError: null },
-				)
-				// The opt-in drains stay off unless asked for.
-				assert.deepStrictEqual(
-					[connected.speedInsightsEnabled, connected.webAnalyticsEnabled, connected.auditLogEnabled],
-					[false, false, false],
-				)
-				assert.isTrue(connected.aiGatewayEnabled)
-				// The first sync ran inline and left the drains as they were.
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
-				const project = connected.projects[0]
-				assert.strictEqual(project?.forwarded, true)
-				assert.strictEqual(project?.productionDeployment?.id, "dpl_1")
-				assert.strictEqual(project?.latestDeployment?.id, "dpl_2")
-				assert.strictEqual(project?.latestDeployment?.commitSha, "sha_dpl_2")
-				assert.isNotNull(connected.lastSuccessAt)
-				const row = yield* Effect.promise(() =>
-					queryFirstRow<{ token_ciphertext: string }>(
-						testDb,
-						"SELECT token_ciphertext FROM vercel_connections WHERE org_id = $1",
-						[orgId],
-					),
-				)
-				assert.notInclude(row!.token_ciphertext, "vc_token_123")
-			}),
-		)
-	})
+					])
+					assert.isTrue(
+						Arr.every(fake.calls, (call) => call.authorization === "Bearer vc_token_123"),
+					)
+					assert.deepStrictEqual(
+						{ ...connected.team },
+						{ id: "team_1", slug: "acme", name: "Acme" },
+					)
+					assert.deepStrictEqual(
+						{ ...connected.drains.logs },
+						{ id: "drn_1", status: "enabled", lastError: null },
+					)
+					assert.deepStrictEqual(
+						{ ...connected.drains.traces },
+						{ id: "drn_2", status: "enabled", lastError: null },
+					)
+					assert.deepStrictEqual(
+						{ ...connected.drains.aiGateway },
+						{ id: "drn_3", status: "enabled", lastError: null },
+					)
+					// The opt-in drains stay off unless asked for.
+					assert.deepStrictEqual(
+						[
+							connected.speedInsightsEnabled,
+							connected.webAnalyticsEnabled,
+							connected.auditLogEnabled,
+						],
+						[false, false, false],
+					)
+					assert.isTrue(connected.aiGatewayEnabled)
+					// The first sync ran inline and left the drains as they were.
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+					const project = connected.projects[0]
+					assert.strictEqual(project?.forwarded, true)
+					assert.strictEqual(project?.productionDeployment?.id, "dpl_1")
+					assert.strictEqual(project?.latestDeployment?.id, "dpl_2")
+					assert.strictEqual(project?.latestDeployment?.commitSha, "sha_dpl_2")
+					assert.isNotNull(connected.lastSuccessAt)
+					const row = yield* Effect.promise(() =>
+						queryFirstRow<{ token_ciphertext: string }>(
+							testDb,
+							"SELECT token_ciphertext FROM vercel_connections WHERE org_id = $1",
+							[orgId],
+						),
+					)
+					assert.notInclude(row!.token_ciphertext, "vc_token_123")
+				}),
+			)
+		},
+	)
 
 	it.effect(
 		"the opt-in drains are never sampled, the audit log covers the whole team, and disconnect removes them",
@@ -581,7 +600,10 @@ describe("VercelIntegrationService", () => {
 			Effect.gen(function* () {
 				yield* connect()
 				const updated = yield* VercelIntegrationService.use((vercel) =>
-					vercel.updateSettings(orgId, VercelSettingsRequest.make({ logsEnabled: false, samplingRate: 1 })),
+					vercel.updateSettings(
+						orgId,
+						VercelSettingsRequest.make({ logsEnabled: false, samplingRate: 1 }),
+					),
 				)
 				assert.deepStrictEqual(
 					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
@@ -622,34 +644,40 @@ describe("VercelIntegrationService", () => {
 				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
 				assert.isFalse(updated.aiGatewayEnabled)
 				assert.isNull(updated.drains.aiGateway)
-				assert.deepStrictEqual([updated.drains.logs?.id, updated.drains.traces?.id], ["drn_1", "drn_2"])
+				assert.deepStrictEqual(
+					[updated.drains.logs?.id, updated.drains.traces?.id],
+					["drn_1", "drn_2"],
+				)
 			}),
 		)
 	})
 
-	it.effect("a poll strips a sampling rule added to the AI Gateway drain and keeps the others sampled", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect()
-				const aiGateway = fake.drains.get("drn_3")!
-				aiGateway.body = { ...aiGateway.body, sampling: [{ type: "head_sampling", rate: 0.5 }] }
-				const summary = yield* poll()
-				assert.strictEqual(summary.drainsRepaired, 1)
-				const patched = callsTo(fake, "PATCH", "/v1/drains")
-				assert.deepStrictEqual(
-					Arr.map(patched, (call) => call.path),
-					["/v1/drains/drn_3"],
-				)
-				assert.deepInclude(patched[0]?.body, { sampling: [] })
-				yield* poll()
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 1)
-			}),
-		)
-	})
+	it.effect(
+		"a poll strips a sampling rule added to the AI Gateway drain and keeps the others sampled",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					const aiGateway = fake.drains.get("drn_3")!
+					aiGateway.body = { ...aiGateway.body, sampling: [{ type: "head_sampling", rate: 0.5 }] }
+					const summary = yield* poll()
+					assert.strictEqual(summary.drainsRepaired, 1)
+					const patched = callsTo(fake, "PATCH", "/v1/drains")
+					assert.deepStrictEqual(
+						Arr.map(patched, (call) => call.path),
+						["/v1/drains/drn_3"],
+					)
+					assert.deepInclude(patched[0]?.body, { sampling: [] })
+					yield* poll()
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 1)
+				}),
+			)
+		},
+	)
 
 	it.effect("a poll deletes duplicate drains of the org and leaves other drains on the team alone", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -667,72 +695,90 @@ describe("VercelIntegrationService", () => {
 					"team_1",
 					logDrainBody("https://ingest.test/v1/logpush/vercel?maple_org=org_other"),
 				)
-				const otherEndpoint = addDrain(fake, "team_1", traceDrainBody("https://collector.example/v1/traces"))
+				const otherEndpoint = addDrain(
+					fake,
+					"team_1",
+					traceDrainBody("https://collector.example/v1/traces"),
+				)
 				const summary = yield* poll()
 				assert.strictEqual(summary.drainsRepaired, 2)
 				assert.sameMembers(
 					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
 					[`/v1/drains/${extraLogs.id}`, `/v1/drains/${extraTraces.id}`],
 				)
-				assert.sameMembers([...fake.drains.keys()], ["drn_1", "drn_2", "drn_3", otherOrg.id, otherEndpoint.id])
+				assert.sameMembers(
+					[...fake.drains.keys()],
+					["drn_1", "drn_2", "drn_3", otherOrg.id, otherEndpoint.id],
+				)
 				const after = yield* status()
 				assert.deepStrictEqual([after.drains.logs?.id, after.drains.traces?.id], ["drn_1", "drn_2"])
 			}),
 		)
 	})
 
-	it.effect("a poll patches a drain edited on Vercel back to the settings and leaves a disabled one off", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect()
-				const logs = fake.drains.get("drn_1")!
-				logs.body = { ...logs.body, sampling: [], projectIds: ["prj_other"] }
-				fake.drains.get("drn_2")!.status = "disabled"
-				const summary = yield* poll()
-				assert.strictEqual(summary.drainsRepaired, 1)
-				const patched = callsTo(fake, "PATCH", "/v1/drains")
-				assert.deepStrictEqual(
-					Arr.map(patched, (call) => call.path),
-					["/v1/drains/drn_1"],
-				)
-				assert.deepInclude(patched[0]?.body, {
-					projectIds: ["prj_web"],
-					sampling: [{ type: "head_sampling", rate: 0.5 }],
-				})
-				// The team's owner may have turned it off on purpose: only a settings save turns it back on.
-				assert.notProperty(asObject(patched[0]?.body), "status")
-				assert.strictEqual((yield* status()).drains.traces?.status, "disabled")
-				yield* poll()
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 1)
+	it.effect(
+		"a poll patches a drain edited on Vercel back to the settings and leaves a disabled one off",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					const logs = fake.drains.get("drn_1")!
+					logs.body = { ...logs.body, sampling: [], projectIds: ["prj_other"] }
+					fake.drains.get("drn_2")!.status = "disabled"
+					const summary = yield* poll()
+					assert.strictEqual(summary.drainsRepaired, 1)
+					const patched = callsTo(fake, "PATCH", "/v1/drains")
+					assert.deepStrictEqual(
+						Arr.map(patched, (call) => call.path),
+						["/v1/drains/drn_1"],
+					)
+					assert.deepInclude(patched[0]?.body, {
+						projectIds: ["prj_web"],
+						sampling: [{ type: "head_sampling", rate: 0.5 }],
+					})
+					// The team's owner may have turned it off on purpose: only a settings save turns it back on.
+					assert.notProperty(asObject(patched[0]?.body), "status")
+					assert.strictEqual((yield* status()).drains.traces?.status, "disabled")
+					yield* poll()
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 1)
 
-				yield* VercelIntegrationService.use((vercel) => vercel.updateSettings(orgId, VercelSettingsRequest.make({})))
-				assert.deepInclude(callsTo(fake, "PATCH", "/v1/drains/drn_2")[0]?.body, { status: "enabled" })
-				assert.strictEqual((yield* status()).drains.traces?.status, "enabled")
-			}),
-		)
-	})
+					yield* VercelIntegrationService.use((vercel) =>
+						vercel.updateSettings(orgId, VercelSettingsRequest.make({})),
+					)
+					assert.deepInclude(callsTo(fake, "PATCH", "/v1/drains/drn_2")[0]?.body, {
+						status: "enabled",
+					})
+					assert.strictEqual((yield* status()).drains.traces?.status, "enabled")
+				}),
+			)
+		},
+	)
 
-	it.effect("a picked project deleted on Vercel is dropped from the settings instead of patched every poll", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect({ projectIds: ["prj_web", "prj_gone"] })
-				// Vercel drops a deleted project from every drain that named it.
-				for (const drain of fake.drains.values()) drain.body = { ...drain.body, projectIds: ["prj_web"] }
-				yield* TestClock.adjust("61 minutes")
-				yield* poll()
-				assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
-				assert.deepStrictEqual((yield* status()).projectIds, ["prj_web"])
-			}),
-		)
-	})
+	it.effect(
+		"a picked project deleted on Vercel is dropped from the settings instead of patched every poll",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect({ projectIds: ["prj_web", "prj_gone"] })
+					// Vercel drops a deleted project from every drain that named it.
+					for (const drain of fake.drains.values())
+						drain.body = { ...drain.body, projectIds: ["prj_web"] }
+					yield* TestClock.adjust("61 minutes")
+					yield* poll()
+					assert.strictEqual(callsTo(fake, "PATCH", "/v1/drains").length, 0)
+					assert.deepStrictEqual((yield* status()).projectIds, ["prj_web"])
+				}),
+			)
+		},
+	)
 
 	it.effect("all picked projects deleted on Vercel empties the selection and writes no drain", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -766,43 +812,54 @@ describe("VercelIntegrationService", () => {
 				const summary = yield* poll()
 				assert.strictEqual(summary.drainsRepaired, 1)
 				const after = yield* status()
-				assert.deepStrictEqual({ ...after.drains.traces }, { id: "drn_4", status: "enabled", lastError: null })
+				assert.deepStrictEqual(
+					{ ...after.drains.traces },
+					{ id: "drn_4", status: "enabled", lastError: null },
+				)
 				assert.strictEqual(after.drains.logs?.id, "drn_1")
 			}),
 		)
 	})
 
-	it.effect("a connect cut off after creating a drain is finished by the next poll without a second drain", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		let reached = (): void => undefined
-		const traceCreated = new Promise<void>((resolve) => {
-			reached = resolve
-		})
-		// Vercel creates the trace drain, then the request hangs until the caller gives up.
-		fake.respond = (call, signal) => {
-			if (!isTraceCreate(call)) return undefined
-			addDrain(fake, "team_1", call.body)
-			reached()
-			return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason)))
-		}
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				const connecting = yield* Effect.forkChild(connect())
-				yield* Effect.promise(() => traceCreated)
-				yield* Fiber.interrupt(connecting)
-				fake.respond = () => undefined
-				yield* poll()
-				// Only the AI Gateway drain, which the cut-off connect never reached, is created.
-				assert.strictEqual(callsTo(fake, "POST", "/v1/drains").length, 3)
-				assert.deepStrictEqual(drainsTo(fake, TRACES_ENDPOINT), ["drn_2"])
-				const after = yield* status()
-				assert.deepStrictEqual([after.drains.logs?.id, after.drains.traces?.id], ["drn_1", "drn_2"])
-			}),
-		)
-	})
+	it.effect(
+		"a connect cut off after creating a drain is finished by the next poll without a second drain",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			let reached = (): void => undefined
+			const traceCreated = new Promise<void>((resolve) => {
+				reached = resolve
+			})
+			// Vercel creates the trace drain, then the request hangs until the caller gives up.
+			fake.respond = (call, signal) => {
+				if (!isTraceCreate(call)) return undefined
+				addDrain(fake, "team_1", call.body)
+				reached()
+				return new Promise((_, reject) =>
+					signal?.addEventListener("abort", () => reject(signal.reason)),
+				)
+			}
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					const connecting = yield* Effect.forkChild(connect())
+					yield* Effect.promise(() => traceCreated)
+					yield* Fiber.interrupt(connecting)
+					fake.respond = () => undefined
+					yield* poll()
+					// Only the AI Gateway drain, which the cut-off connect never reached, is created.
+					assert.strictEqual(callsTo(fake, "POST", "/v1/drains").length, 3)
+					assert.deepStrictEqual(drainsTo(fake, TRACES_ENDPOINT), ["drn_2"])
+					const after = yield* status()
+					assert.deepStrictEqual(
+						[after.drains.logs?.id, after.drains.traces?.id],
+						["drn_1", "drn_2"],
+					)
+				}),
+			)
+		},
+	)
 
 	it.effect("two connects at once end with one connection and, after a poll, one drain per kind", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -862,12 +919,19 @@ describe("VercelIntegrationService", () => {
 				)
 				// A drain Vercel answers 410 Gone for counts as deleted.
 				fake.respond = (call) =>
-					call.method === "DELETE" && call.path === "/v1/drains/drn_2" ? vercelError(410, "Gone") : undefined
+					call.method === "DELETE" && call.path === "/v1/drains/drn_2"
+						? vercelError(410, "Gone")
+						: undefined
 				const result = yield* disconnect()
 				assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: true })
 				assert.sameMembers(
 					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
-					["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_3", `/v1/drains/${duplicate.id}`],
+					[
+						"/v1/drains/drn_1",
+						"/v1/drains/drn_2",
+						"/v1/drains/drn_3",
+						`/v1/drains/${duplicate.id}`,
+					],
 				)
 				assert.isTrue(fake.drains.has(otherOrg.id))
 				const after = yield* status()
@@ -877,68 +941,79 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
-	it.effect("disconnect still deletes the other drains and the rows when the log drain delete fails", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect()
-				fake.respond = (call) =>
-					call.method === "DELETE" && call.path === "/v1/drains/drn_1"
-						? vercelError(502, "bad gateway")
-						: undefined
-				const result = yield* disconnect()
-				assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: false })
-				assert.deepStrictEqual(
-					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
-					["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_3"],
-				)
-				assert.isFalse((yield* status()).connected)
-			}),
-		)
-	})
+	it.effect(
+		"disconnect still deletes the other drains and the rows when the log drain delete fails",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					fake.respond = (call) =>
+						call.method === "DELETE" && call.path === "/v1/drains/drn_1"
+							? vercelError(502, "bad gateway")
+							: undefined
+					const result = yield* disconnect()
+					assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: false })
+					assert.deepStrictEqual(
+						Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
+						["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_3"],
+					)
+					assert.isFalse((yield* status()).connected)
+				}),
+			)
+		},
+	)
 
-	it.effect("a settings save that finds the org disconnected meanwhile deletes the drain it created", () => {
-		const testDb = createTestDb(trackedDbs)
-		const fake = makeFake()
-		let reached = (): void => undefined
-		const listing = new Promise<void>((resolve) => {
-			reached = resolve
-		})
-		let release = (): void => undefined
-		const disconnected = new Promise<void>((resolve) => {
-			release = resolve
-		})
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect({ logsEnabled: false })
-				let held = false
-				fake.respond = async (call) => {
-					if (held || call.method !== "GET" || call.path !== "/v1/drains") return undefined
-					held = true
-					reached()
-					await disconnected
-					return undefined
-				}
-				const saving = yield* Effect.forkChild(
-					Effect.exit(
-						VercelIntegrationService.use((vercel) => vercel.updateSettings(orgId, VercelSettingsRequest.make({ logsEnabled: true }))),
-					),
-				)
-				yield* Effect.promise(() => listing)
-				assert.deepStrictEqual(yield* disconnect(), { disconnected: true, drainsRemoved: true })
-				release()
-				yield* Fiber.join(saving)
-				// The save created the log drain after the disconnect, then took it back.
-				assert.isAbove(callsTo(fake, "POST", "/v1/drains").length, 1)
-				assert.strictEqual(fake.drains.size, 0)
-			}),
-		)
-	})
+	it.effect(
+		"a settings save that finds the org disconnected meanwhile deletes the drain it created",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			let reached = (): void => undefined
+			const listing = new Promise<void>((resolve) => {
+				reached = resolve
+			})
+			let release = (): void => undefined
+			const disconnected = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect({ logsEnabled: false })
+					let held = false
+					fake.respond = async (call) => {
+						if (held || call.method !== "GET" || call.path !== "/v1/drains") return undefined
+						held = true
+						reached()
+						await disconnected
+						return undefined
+					}
+					const saving = yield* Effect.forkChild(
+						Effect.exit(
+							VercelIntegrationService.use((vercel) =>
+								vercel.updateSettings(
+									orgId,
+									VercelSettingsRequest.make({ logsEnabled: true }),
+								),
+							),
+						),
+					)
+					yield* Effect.promise(() => listing)
+					assert.deepStrictEqual(yield* disconnect(), { disconnected: true, drainsRemoved: true })
+					release()
+					yield* Fiber.join(saving)
+					// The save created the log drain after the disconnect, then took it back.
+					assert.isAbove(callsTo(fake, "POST", "/v1/drains").length, 1)
+					assert.strictEqual(fake.drains.size, 0)
+				}),
+			)
+		},
+	)
 
 	it.effect("a poll that finds the org disconnected meanwhile deletes the drains it re-created", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -994,9 +1069,23 @@ describe("VercelIntegrationService", () => {
 					["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_3"],
 				)
 				const deliveries = new Map<string, object>([
-					["/v1/drains/drn_1", { type: "http", endpoint: LOGS_ENDPOINT, encoding: "ndjson", compression: "none" }],
-					["/v1/drains/drn_2", { type: "otlphttp", endpoint: { traces: TRACES_ENDPOINT }, encoding: "proto" }],
-					["/v1/drains/drn_3", { type: "http", endpoint: AI_GATEWAY_ENDPOINT, encoding: "json", compression: "none" }],
+					[
+						"/v1/drains/drn_1",
+						{ type: "http", endpoint: LOGS_ENDPOINT, encoding: "ndjson", compression: "none" },
+					],
+					[
+						"/v1/drains/drn_2",
+						{ type: "otlphttp", endpoint: { traces: TRACES_ENDPOINT }, encoding: "proto" },
+					],
+					[
+						"/v1/drains/drn_3",
+						{
+							type: "http",
+							endpoint: AI_GATEWAY_ENDPOINT,
+							encoding: "json",
+							compression: "none",
+						},
+					],
 				])
 				for (const call of patched) {
 					assert.deepInclude(call.body, {
@@ -1107,7 +1196,9 @@ describe("VercelIntegrationService", () => {
 				assert.strictEqual(limited.skipped, "rate_limited")
 				assert.include((yield* status()).lastError ?? "", "429")
 				fake.respond = () => undefined
-				yield* VercelIntegrationService.use((vercel) => vercel.updateSettings(orgId, VercelSettingsRequest.make({ samplingRate: 1 })))
+				yield* VercelIntegrationService.use((vercel) =>
+					vercel.updateSettings(orgId, VercelSettingsRequest.make({ samplingRate: 1 })),
+				)
 				assert.strictEqual((yield* poll()).skipped, "lease held")
 			}),
 		)
@@ -1149,49 +1240,52 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
-	it.effect("a build's start, end and failure are stored and updated when a later poll sees it fail", () => {
-		const testDb = createTestDb(trackedDbs)
-		const building = {
-			uid: "dpl_f",
-			created: now - 10 * minute,
-			buildingAt: now - 9 * minute,
-			readyState: "BUILDING",
-			target: "production",
-			projectId: "prj_web",
-		}
-		const fake = makeFake([building])
-		const latest = () =>
-			VercelIntegrationService.use((vercel) => vercel.deployments(orgId, "prj_web", 1)).pipe(
-				Effect.map((deployments) => deployments[0]),
+	it.effect(
+		"a build's start, end and failure are stored and updated when a later poll sees it fail",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const building = {
+				uid: "dpl_f",
+				created: now - 10 * minute,
+				buildingAt: now - 9 * minute,
+				readyState: "BUILDING",
+				target: "production",
+				projectId: "prj_web",
+			}
+			const fake = makeFake([building])
+			const latest = () =>
+				VercelIntegrationService.use((vercel) => vercel.deployments(orgId, "prj_web", 1)).pipe(
+					Effect.map((deployments) => deployments[0]),
+				)
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					const started = yield* latest()
+					assert.strictEqual(started?.state, "BUILDING")
+					assert.strictEqual(started?.buildingAt, building.buildingAt)
+					assert.isNull(started?.readyAt)
+					assert.isNull(started?.errorCode)
+					const failed = {
+						...building,
+						readyState: "ERROR",
+						ready: now - 4 * minute,
+						errorCode: "BUILD_FAILED",
+						errorMessage: 'Command "next build" exited with 1',
+					}
+					fake.deployments = [failed]
+					yield* poll()
+					const ended = yield* latest()
+					assert.strictEqual(ended?.state, "ERROR")
+					assert.strictEqual(ended?.buildingAt, failed.buildingAt)
+					assert.strictEqual(ended?.readyAt, failed.ready)
+					assert.strictEqual(ended?.errorCode, failed.errorCode)
+					assert.strictEqual(ended?.errorMessage, failed.errorMessage)
+				}),
 			)
-		return run(
-			testDb,
-			fake,
-			Effect.gen(function* () {
-				yield* connect()
-				const started = yield* latest()
-				assert.strictEqual(started?.state, "BUILDING")
-				assert.strictEqual(started?.buildingAt, building.buildingAt)
-				assert.isNull(started?.readyAt)
-				assert.isNull(started?.errorCode)
-				const failed = {
-					...building,
-					readyState: "ERROR",
-					ready: now - 4 * minute,
-					errorCode: "BUILD_FAILED",
-					errorMessage: 'Command "next build" exited with 1',
-				}
-				fake.deployments = [failed]
-				yield* poll()
-				const ended = yield* latest()
-				assert.strictEqual(ended?.state, "ERROR")
-				assert.strictEqual(ended?.buildingAt, failed.buildingAt)
-				assert.strictEqual(ended?.readyAt, failed.ready)
-				assert.strictEqual(ended?.errorCode, failed.errorCode)
-				assert.strictEqual(ended?.errorMessage, failed.errorMessage)
-			}),
-		)
-	})
+		},
+	)
 
 	it.effect("deployments without a project are the whole team's, newest first", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -1271,10 +1365,16 @@ describe("VercelIntegrationService", () => {
 				yield* connect()
 				// The old team's trace drain cannot be deleted: the new connection still stands.
 				fake.respond = (call) =>
-					call.method === "DELETE" && call.path === "/v1/drains/drn_2" ? vercelError(500, "internal") : undefined
+					call.method === "DELETE" && call.path === "/v1/drains/drn_2"
+						? vercelError(500, "internal")
+						: undefined
 				const reconnected = yield* connect({ token: "vc_token_456", teamId: "team_2" })
 				assert.deepStrictEqual(
-					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => [call.path, call.teamId, call.authorization]),
+					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => [
+						call.path,
+						call.teamId,
+						call.authorization,
+					]),
 					[
 						["/v1/drains/drn_1", "team_1", "Bearer vc_token_123"],
 						["/v1/drains/drn_2", "team_1", "Bearer vc_token_123"],
@@ -1284,7 +1384,11 @@ describe("VercelIntegrationService", () => {
 				assert.strictEqual(reconnected.team?.id, "team_2")
 				assert.include(reconnected.lastError ?? "", "previous team (acme)")
 				assert.deepStrictEqual(
-					[reconnected.drains.logs?.id, reconnected.drains.traces?.id, reconnected.drains.aiGateway?.id],
+					[
+						reconnected.drains.logs?.id,
+						reconnected.drains.traces?.id,
+						reconnected.drains.aiGateway?.id,
+					],
 					["drn_4", "drn_5", "drn_6"],
 				)
 				assert.deepStrictEqual(drainsTo(fake, TRACES_ENDPOINT, "team_2"), ["drn_5"])
@@ -1323,7 +1427,9 @@ describe("VercelIntegrationService", () => {
 			testDb,
 			fake,
 			Effect.gen(function* () {
-				const found = yield* VercelIntegrationService.use((vercel) => vercel.discover("vercel_token_123", undefined))
+				const found = yield* VercelIntegrationService.use((vercel) =>
+					vercel.discover("vercel_token_123", undefined),
+				)
 				assert.deepStrictEqual(
 					Arr.map(found.teams, (team) => [team.slug, team.plan]),
 					[
@@ -1359,13 +1465,18 @@ describe("VercelIntegrationService", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()
 		fake.respond = (call) =>
-			call.method === "POST" && call.path === "/v1/drains" ? vercelError(400, "Invalid delivery endpoint") : undefined
+			call.method === "POST" && call.path === "/v1/drains"
+				? vercelError(400, "Invalid delivery endpoint")
+				: undefined
 		return run(
 			testDb,
 			fake,
 			Effect.gen(function* () {
 				const error = yield* Effect.flip(connect())
-				assert.include(error.message, "Vercel could not reach Maple's ingest endpoint at https://ingest.test")
+				assert.include(
+					error.message,
+					"Vercel could not reach Maple's ingest endpoint at https://ingest.test",
+				)
 				assert.include(error.message, "(Vercel: Invalid delivery endpoint)")
 			}),
 		)

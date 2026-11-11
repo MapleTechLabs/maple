@@ -5,14 +5,14 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { deployLabel } from "../../../../components/infra/vercel/deploy-signals"
-import type { VercelProjectRow } from "../../../../components/infra/vercel/list-model"
+import { deployLabel } from "../deploy-signals"
+import type { VercelProjectRow } from "../list-model"
 import {
 	COLD_START_HEAVY_PERCENT,
 	type ProjectHealth,
 	productionDeployOf,
 	SLOW_P95_MS,
-} from "../../../../components/infra/vercel/overview-model"
+} from "../overview-model"
 import { AppRoute, hrefOf } from "../../../../route"
 import { compactSearchInput } from "@maple/views/ui/compact-search-input"
 import { badge } from "@maple/views/ui/display"
@@ -24,14 +24,8 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import {
-	columnHead,
-	dataTable,
-	NUMERIC_CELL,
-	ROW_LINK_CLASS,
-	skeletonRows,
-} from "../../../infra/kit/data-table"
-import type { TimeSearch } from "../../../infra/kit/view-tabs"
+import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../kit/data-table"
+import type { TimeSearch } from "../../../kit/view-tabs"
 import { relativeTime } from "../../../kit/relative-time"
 import { type Clock, errorTone, percentText, projectHref } from "../view-parts"
 import { Message } from "./model"

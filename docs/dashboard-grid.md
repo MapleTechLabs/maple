@@ -14,7 +14,7 @@ resize and keyboard rearranging. It replaced react-grid-layout 2.3.0 (and its `r
 | `apps/web/src/page/dashboards/view/grid.ts`, `view-grid.ts`            | The canvas grid per container: normalizes the stored layout, places cells with `grid-column`/`grid-row`        |
 | `apps/web/src/page/dashboards/view/gesture.ts`, `keyboard-move.ts`     | Pointer drag and resize, keyboard rearranging                                                                  |
 | `apps/web/src/page/dashboards/view/layout-commit.ts`                   | The single commit on drop                                                                                      |
-| `apps/web/src/components/dashboard-builder/canvas/grid-breakpoints.ts` | Tiers and `projectLayout` (Maple's responsive policy, not grid mechanics)                                      |
+| `apps/web/src/page/dashboards/kit/grid-breakpoints.ts` | Tiers and `projectLayout` (Maple's responsive policy, not grid mechanics)                                      |
 
 ## Rules worth knowing
 

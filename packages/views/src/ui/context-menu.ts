@@ -13,8 +13,6 @@ import { isRovingKey, nextIndex } from "./overlay/roving"
  * click picks an item, Escape and a press outside close it. `context-menu-view.ts` renders it.
  */
 
-// MODEL
-
 export const Point = Schema.Struct({ x: Schema.Number, y: Schema.Number })
 export type Point = typeof Point.Type
 
@@ -40,8 +38,6 @@ export const init = (id: string, options: Readonly<{ isOpen?: boolean; point?: P
 	submenu: null,
 	subHighlighted: null,
 })
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	PressedTriggerPointer: { point: Point },
@@ -69,8 +65,6 @@ export const OutMessage = defineMessageUnion({
 	SelectedSubItem: { submenu: Schema.Number, index: Schema.Number },
 })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 /** Pointer highlight moves focus to the item, as Base UI's menu does. */
 export const FocusMenuItem = Command.define("FocusMenuItem", {
@@ -143,8 +137,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 /** Portal, `aria-hidden` on the page, scroll lock, focus on the menu, placement at the pointer. */
 export const MountContextMenu = Mount.defineStream("MountContextMenu", {

@@ -38,16 +38,8 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass, type TypographyTone } from "@maple/views/ui/typography"
-import {
-	deployedAt,
-	deployLabel,
-	type DeployRegression,
-} from "../../../../components/infra/vercel/deploy-signals"
-import {
-	requestClassRows,
-	vercelProjectLogAttrs,
-	vercelProjectTracesWhere,
-} from "../../../../components/infra/vercel/list-model"
+import { deployedAt, deployLabel, type DeployRegression } from "../deploy-signals"
+import { requestClassRows, vercelProjectLogAttrs, vercelProjectTracesWhere } from "../list-model"
 import {
 	cacheHitRows,
 	coldStartRows,
@@ -55,12 +47,12 @@ import {
 	latencyRows,
 	projectTotals,
 	serverErrorRateRows,
-} from "../../../../components/infra/vercel/project-signals"
+} from "../project-signals"
 import { AppRoute, hrefOf } from "../../../../route"
 import { VercelBreakdownBy } from "../../../../route/search"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
-import { columnHead, dataTable, dataTableEmpty, NUMERIC_CELL } from "../../../infra/kit/data-table"
-import type { TimeSearch } from "../../../infra/kit/view-tabs"
+import { columnHead, dataTable, dataTableEmpty, NUMERIC_CELL } from "../../../kit/data-table"
+import type { TimeSearch } from "../../../kit/view-tabs"
 import { relativeTime } from "../../../kit/relative-time"
 import { sectionHeading } from "../../../kit/section-heading"
 import { type Clock, LEAD_COLUMN, ROW_CLASS } from "../view-parts"

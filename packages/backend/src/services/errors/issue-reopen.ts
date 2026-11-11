@@ -12,6 +12,9 @@ export type IssueReopen =
 	| { readonly fromState: "done"; readonly toState: "regressed" }
 	| { readonly fromState: "wontfix"; readonly toState: "triage" }
 
+// A snooze has elapsed at `snoozeUntil <= t` here, in `applyIssueReopen`, in the workflow guard and
+// in the tick's suppression (`> windowEnd` is still asleep). Only the tick's wake scan in
+// `ErrorsService` uses `< now`, so a snooze ending exactly at `now` wakes on the next tick.
 export const issueReopenFor = (
 	prior: Pick<ErrorIssueRow, "workflowState" | "snoozeUntil">,
 	timestamp: number,
@@ -22,6 +25,18 @@ export const issueReopenFor = (
 	}
 	return null
 }
+
+/** What a fixed issue's regression writes, for the errors tick and alert/integration reopens alike. */
+export const regressedColumns = <Increment>(incrementedCount: Increment, timestamp: number) => ({
+	workflowState: "regressed" as const,
+	resolvedAt: null,
+	resolvedByActorId: null,
+	lastRegressedAt: timestamp,
+	regressionCount: incrementedCount,
+	// A regression on an issue retention already archived must be seen.
+	archivedAt: null,
+	updatedAt: timestamp,
+})
 
 /**
  * Apply a reopen, guarded on the state it was decided from. Fails with
@@ -41,16 +56,7 @@ export const applyIssueReopen = (
 			reopen.toState === "regressed"
 				? db.run(
 						PG.update(ErrorIssues)
-							.set(($) => ({
-								workflowState: "regressed",
-								resolvedAt: null,
-								resolvedByActorId: null,
-								lastRegressedAt: timestamp,
-								regressionCount: $.regressionCount.add(1),
-								// A regression on an issue retention already archived must be seen.
-								archivedAt: null,
-								updatedAt: timestamp,
-							}))
+							.set(($) => regressedColumns($.regressionCount.add(1), timestamp))
 							.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId), $.workflowState.in_(...from)])
 							.returning("id"),
 					)

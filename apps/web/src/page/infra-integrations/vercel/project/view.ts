@@ -15,15 +15,15 @@ import { hstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import { deployLabel } from "../../../../components/infra/vercel/deploy-signals"
+import { deployLabel } from "../deploy-signals"
 import {
 	fillBuckets,
 	vercelProjectRow,
 	vercelProjectTracesWhere,
 	type VercelProjectRow,
 	zeroRequestBucket,
-} from "../../../../components/infra/vercel/list-model"
-import { projectDeploySignals } from "../../../../components/infra/vercel/project-signals"
+} from "../list-model"
+import { projectDeploySignals } from "../project-signals"
 import { AppRoute, hrefOf } from "../../../../route"
 import type { VercelProjectTab } from "../../../../route/search"
 import type { PageViewInputs } from "../../../contract"
@@ -33,8 +33,8 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { linkTabStrip } from "../../../kit/underline-tabs"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHero } from "../../../infra/kit/page-parts"
-import { pickTimeSearch, type TimeSearch } from "../../../infra/kit/view-tabs"
-import { pageTime } from "../../kit/page-time"
+import { pickTimeSearch, type TimeSearch } from "../../../kit/view-tabs"
+import { pageTime } from "../../../kit/page-time"
 import { DEFAULT_PRESET, seriesInput } from "../data"
 import {
 	aiGatewayEmpty,

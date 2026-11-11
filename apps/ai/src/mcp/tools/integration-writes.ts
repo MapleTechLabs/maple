@@ -5,22 +5,17 @@
  * passes through a model.
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
-import {
-	DeleteScrapeTargetOutput,
-	ScrapeTargetMutationOutput,
-	SyncRailwayOutput,
-	SyncVercelOutput,
-} from "@maple/domain/mcp-outputs"
+import { ScrapeTargetMutationOutput } from "@maple/domain/mcp-outputs"
 import { CreateScrapeTargetRequest, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { ScrapeIntervalSeconds } from "@maple/domain/primitives"
+import { ScrapeIntervalSeconds } from "@maple/primitives"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import * as Policy from "@maple/domain/policy"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { McpInvalidInputError, McpQueryError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -158,7 +153,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		description:
 			"Sync Vercel now instead of waiting for the next 5-minute tick: refresh the team's deployments, check that Maple's drains (logs, traces, AI Gateway, and the opt-in Speed Insights, Web Analytics and audit log) still exist (re-creating a deleted one, re-keying them after an ingest key change), then report each drain's state and each project's latest deployment. Use after fixing a Vercel token or drain, to confirm the data flows again. Org admins and engineers only.",
 		parameters: Schema.Struct({}),
-		output: SyncVercelOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Syncing Vercel"],
 		handler: Effect.fn("McpTool.syncVercel")(function* () {
@@ -261,7 +255,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		description:
 			"Poll Railway now instead of waiting for the next 5-minute tick, then report each environment's last sync and error. Use after fixing a Railway token or project access, to confirm metrics flow again. Org admins and engineers only. Environments already caught up cost no Railway call.",
 		parameters: Schema.Struct({}),
-		output: SyncRailwayOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Syncing Railway"],
 		handler: Effect.fn("McpTool.syncRailway")(function* () {
@@ -352,7 +345,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			interval_seconds: intervalParam("How often to scrape, default 15"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ScrapeTargetMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		phrases: ["Adding a scrape target"],
 		handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
@@ -421,7 +413,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			interval_seconds: intervalParam("A new scrape interval"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ScrapeTargetMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		phrases: ["Updating a scrape target"],
 		handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
@@ -476,7 +467,6 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			target: P.text("The target's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteScrapeTargetOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting a scrape target"],
 		handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {

@@ -13,9 +13,6 @@ import { frame } from "./tiles-frame"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Option, Order } from "effect"
 
-// The stat widget, with its trend sparkline when
-// `display.sparkline` names a series (`StatSparkline`).
-
 type Widget = TileWidget
 
 /** The stat's value, formatted. */
@@ -26,7 +23,7 @@ export const formatStatValue = (value: unknown, unit?: string, prefix?: string, 
 	return `${prefix ?? ""}${formatValueByUnit(num, unit)}${suffix ?? ""}`
 }
 
-/** `getThresholdColor`: the highest threshold the value reaches. */
+/** The highest threshold the value reaches. */
 export const thresholdColor = (
 	value: unknown,
 	thresholds: ReadonlyArray<{ readonly value: number; readonly color: string }> | undefined,
@@ -50,7 +47,7 @@ export const thresholdColor = (
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
 
-/** `StatSparkline`'s values: the first finite numeric column (not `bucket`) of the series rows. */
+/** The sparkline's values: the first finite numeric column (not `bucket`) of the series rows. */
 export const sparklineValues = (state: WidgetDataState | null | undefined): ReadonlyArray<number> => {
 	const rows =
 		state?._tag === "Ready" && state.data !== null && state.data._tag === "Rows" ? state.data.rows : []

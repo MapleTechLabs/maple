@@ -2,7 +2,7 @@ import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { HEALTH_TONE, primaryServiceHealthCause } from "../../components/dashboard/service-health"
+import { HEALTH_TONE, primaryServiceHealthCause } from "../kit/service-health-rollup"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -26,7 +26,7 @@ import {
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "./derive"
-import type { HealthSnapshot, Incident, Model } from "./model"
+import type { HealthSnapshot, Model } from "./model"
 import { alertFiringHero, heroCountsOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -34,6 +34,7 @@ import { Array as Arr, Option } from "effect"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
+import type { HealthIncident } from "../kit/service-health"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -41,10 +42,10 @@ import { dividedList } from "@maple/views/ui/rule"
 export type HealthData = readonly [
 	ReadonlyArray<HealthSnapshot>,
 	ReadonlyArray<V2AnomalyServiceCount>,
-	ReadonlyArray<Incident>,
+	ReadonlyArray<HealthIncident>,
 ]
 
-/** `Result.all([snapshot, anomalies, alertIncidents])`. */
+/** The snapshot with the anomalies and alert incidents; those two read as empty when they failed. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
 	AsyncData.all([
 		model.snapshot.data,
@@ -59,7 +60,7 @@ export type SliceSearch = Readonly<{
 	environments: ReadonlyArray<string> | undefined
 }>
 
-/** `servicesLinkSearch`: the dashboard's slice carried over to `/services`. */
+/** The dashboard's slice carried over to `/services`. */
 export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string =>
 	hrefOf(
 		AppRoute.Services({
@@ -102,7 +103,7 @@ export type HealthOverviewInputs = Readonly<{
 	nowMs: number
 }>
 
-/** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
+/** The banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
 	const rules = AsyncData.getOrElse(model.rules, () => [])
@@ -190,7 +191,7 @@ export type HealthListInputs = HealthOverviewInputs &
 		isNeverReceived: boolean
 	}>
 
-/** `ServiceHealthList`: up to seven rows, worst first, under the section header. */
+/** Up to seven rows, worst first, under the section header. */
 export const healthList = <M>(
 	h: HtmlBuilder<M>,
 	{ model, slice, nowMs, emptyState, isNeverReceived }: HealthListInputs,
@@ -245,7 +246,7 @@ type MetricTone = "ok" | "warn" | "crit"
 const metricTone = (cause: ServiceHealthCause | undefined): MetricTone =>
 	cause === undefined ? "ok" : cause.severity === "critical" ? "crit" : "warn"
 
-/** `Metric`: a right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
+/** A right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
 const metric = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -288,7 +289,7 @@ const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	)
 }
 
-/** `serviceDetailSearch` plus the row's environment: the service page scoped to it. */
+/** The service page, scoped to the row's environment. */
 const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -302,7 +303,6 @@ const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 		}),
 	)
 
-/** `ServiceHealthRow`. */
 const serviceRow = <M>(
 	h: HtmlBuilder<M>,
 	{ service, health, causes }: EnrichedService,

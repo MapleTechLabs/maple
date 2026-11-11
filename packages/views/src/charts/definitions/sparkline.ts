@@ -6,8 +6,6 @@ import type { ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
-// Port of `PlotSparkline` (packages/ui/src/components/plot/sparkline.tsx), definition half.
-
 type SparklineSpec = Extract<ChartSpec, { readonly _tag: "Sparkline" }>
 
 interface SparkPoint {
@@ -17,7 +15,6 @@ interface SparkPoint {
 
 const STROKE_WIDTH = 1.5
 
-// copied: `verticalGradient` (plot-paint.ts imports React's `useId`).
 const verticalGradient = (
 	id: GradientId,
 	color: string,

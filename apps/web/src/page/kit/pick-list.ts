@@ -9,8 +9,8 @@ import { pressable } from "@maple/views/ui/pressable"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// `PickList`: what a form has picked (destinations, people, schedules), each removable and, in an
-// ordered list, movable, then an "Add" menu of the rest.
+// What a form has picked (destinations, people, schedules), each removable and, in an ordered list,
+// movable, then an "Add" menu of the rest.
 
 const moveLabel = (label: string, direction: "up" | "down", context: string | undefined): string =>
 	context === undefined ? `Move ${label} ${direction}` : `Move ${label} ${direction} in ${context}`
@@ -30,8 +30,8 @@ export type PickedEntry<M> = Readonly<{
 }>
 
 /**
- * `PickList`: what a form has picked, each removable (and in order, movable), then an "Add" menu
- * of the rest. The owner keeps the menu's Model and the picks; destinations, people and schedules.
+ * What a form has picked, each removable (and in order, movable), then an "Add" menu of the rest.
+ * The owner keeps the menu's Model and the picks; destinations, people and schedules.
  */
 export const pickList = <M>(
 	h: HtmlBuilder<M>,

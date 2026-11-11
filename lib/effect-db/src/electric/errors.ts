@@ -1,35 +1,23 @@
 import { Schema } from "effect"
 
-/**
- * Error thrown when an insert operation fails
- */
 export class InsertError extends Schema.TaggedError<InsertError>()("@maple/effect-db/InsertError", {
 	message: Schema.String,
 	data: Schema.optional(Schema.Unknown),
 	cause: Schema.optional(Schema.Unknown),
 }) {}
 
-/**
- * Error thrown when an update operation fails
- */
 export class UpdateError extends Schema.TaggedError<UpdateError>()("@maple/effect-db/UpdateError", {
 	message: Schema.String,
 	key: Schema.optional(Schema.Unknown),
 	cause: Schema.optional(Schema.Unknown),
 }) {}
 
-/**
- * Error thrown when a delete operation fails
- */
 export class DeleteError extends Schema.TaggedError<DeleteError>()("@maple/effect-db/DeleteError", {
 	message: Schema.String,
 	key: Schema.optional(Schema.Unknown),
 	cause: Schema.optional(Schema.Unknown),
 }) {}
 
-/**
- * Error thrown when waiting for a transaction ID times out
- */
 export class TxIdTimeoutError extends Schema.TaggedError<TxIdTimeoutError>()(
 	"@maple/effect-db/TxIdTimeoutError",
 	{
@@ -39,9 +27,6 @@ export class TxIdTimeoutError extends Schema.TaggedError<TxIdTimeoutError>()(
 	},
 ) {}
 
-/**
- * Error thrown when a required transaction ID is missing from handler result
- */
 export class MissingTxIdError extends Schema.TaggedError<MissingTxIdError>()(
 	"@maple/effect-db/MissingTxIdError",
 	{
@@ -50,9 +35,6 @@ export class MissingTxIdError extends Schema.TaggedError<MissingTxIdError>()(
 	},
 ) {}
 
-/**
- * Error thrown when an invalid transaction ID type is provided
- */
 export class InvalidTxIdError extends Schema.TaggedError<InvalidTxIdError>()(
 	"@maple/effect-db/InvalidTxIdError",
 	{

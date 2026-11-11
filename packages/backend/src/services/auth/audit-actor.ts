@@ -1,11 +1,11 @@
 import { Context } from "effect"
 import type { AuditLogSource } from "@maple/domain/http"
-import type { ApiKeyId } from "@maple/domain/primitives"
+import type { ApiKeyId } from "@maple/primitives"
 
 /**
  * How the current request authenticated, for audit attribution. The tenant
  * context deliberately does not say whether a request came from a dashboard
- * session, an API key, or MCP — this reference carries those two facts, which
+ * session, an API key, or MCP; this reference carries those two facts, which
  * nothing downstream can re-derive.
  */
 export interface AuditActorInfo {
@@ -27,7 +27,7 @@ export interface AuditActorInfo {
  * A reference (typed default, no handler requirement) rather than a service:
  * the auth middlewares override it per request, and handlers that never record
  * audit entries are unaffected. `undefined` means the request skipped the
- * standard auth middlewares (internal tokens, queue consumers, crons) — callers
+ * standard auth middlewares (internal tokens, queue consumers, crons): callers
  * must then fall back to whatever attribution they can establish themselves,
  * never assume a dashboard session.
  */

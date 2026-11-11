@@ -218,8 +218,6 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 	}
 }
 
-// VIEW
-
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
 	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null), compliance(h)]),
 )
@@ -228,7 +226,7 @@ const complete = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("flex min-h-dvh flex-col items-center justify-center gap-6 px-6 py-16 text-center")],
 		[
-			icon(h, "MapleMark", { size: 56, className: "text-primary" }),
+			icon(h, "MapleMark", { size: 56, className: "text-brand-maple" }),
 			h.h1([h.Class("text-2xl font-semibold")], ["Preview complete"]),
 			h.p(
 				[h.Class("max-w-md text-sm text-muted-foreground")],

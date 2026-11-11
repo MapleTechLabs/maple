@@ -33,7 +33,7 @@ export type MetricRef = Readonly<{ metricName: string; metricType: QueryBuilderM
 /** A metric's picker value and the key its fetched keys are kept under. */
 export const metricValueOf = (metric: MetricRef): string => `${metric.metricName}::${metric.metricType}`
 
-/** `listMetricsResultAtom({ data: { limit: 100, search } })`, reduced to picker options. */
+/** One page of 100 metrics for the search, reduced to picker options. */
 export const listMetricOptions = (search: string) =>
 	listMetrics({ data: { limit: 100, ...(search === "" ? undefined : { search }) } }).pipe(
 		Effect.mapBoth({
@@ -49,7 +49,7 @@ export const listMetricOptions = (search: string) =>
 					),
 					(option: MetricOption, other: MetricOption) => option.value === other.value,
 				),
-				// `toNames`: trimmed, non-empty, each once.
+				// Trimmed, non-empty, each once.
 				services: Arr.dedupeWith(
 					Arr.filter(
 						Arr.map(response.data, (row) => Str.trim(row.serviceName)),

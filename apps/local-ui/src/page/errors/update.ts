@@ -75,7 +75,7 @@ const pruneCards = (model: Model, rows: ReadonlyArray<ErrorTypeRow>): Model => {
 	}
 }
 
-/** `ErrorTypeCard`'s toggle: opening it asks for its traces (a held answer is reused). */
+/** A card's toggle: opening it asks for its traces (a held answer is reused). */
 const toggleCard = (model: Model, context: PageContext, fingerprintHash: string): UpdateReturn => {
 	const card = cardOf(model, fingerprintHash)
 	const next = {
@@ -161,7 +161,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 	Message.match<UpdateReturn>(message, {
 		CompletedReadClock: ({ nowMs }) => {
 			const loaded = load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context)
-			// `ErrorsView` reads `useSignalPresence("traces")` on mount, empty or not.
+			// The page reads the traces signal presence on entry, empty or not.
 			return { ...loaded, outMessage: PageOutMessage.RequestedSignalPresence() }
 		},
 		SucceededFetchSummary: ({ key, summary, fetchedAtMs }) => ({

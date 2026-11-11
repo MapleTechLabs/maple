@@ -27,7 +27,7 @@ import {
 import { matchesZoneQuery, zoneRows } from "./timezone-zones"
 import { Array as Arr } from "effect"
 
-// `TimezoneSelect`: the zone list is read (clock frozen) when it opens; a pick stores the preference.
+// The timezone select: the zone list is read (clock frozen) when it opens; a pick stores the preference.
 
 const SUMMER = Date.parse("2026-07-01T12:00:00Z")
 const rows = zoneRows(

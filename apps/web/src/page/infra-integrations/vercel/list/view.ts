@@ -5,13 +5,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import {
-	inScope,
-	type ProjectHealth,
-	problemsFirst,
-	projectHealth,
-} from "../../../../components/infra/vercel/overview-model"
-import { drainState, VERCEL_DRAINS } from "../../../../components/integrations/vercel-model"
+import { inScope, type ProjectHealth, problemsFirst, projectHealth } from "../overview-model"
+import { drainState, VERCEL_DRAINS } from "../integration/vercel-model"
 import type { VercelProjectScope } from "../../../../route/search"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -25,9 +20,9 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pickTimeSearch, type TimeSearch } from "../../../infra/kit/view-tabs"
+import { pickTimeSearch, type TimeSearch } from "../../../kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { DEFAULT_PRESET } from "../data"
 import { drainNotice } from "../sections"
 import { type Clock, dataOf, failureOf } from "../view-parts"

@@ -143,7 +143,7 @@ function buildMapping(
 	const inputFields: string[] = []
 	// Two columns can map to the same JSON leaf (e.g. logs `Timestamp` and
 	// `TimestampTime` both read `$.timestamp`). The `format()` structure must
-	// declare each leaf once — but the SELECT may reference it for several
+	// declare each leaf once, but the SELECT may reference it for several
 	// target columns. Track the first type seen per leaf and skip duplicates in
 	// the input schema only.
 	const seenLeaves = new Set<string>()

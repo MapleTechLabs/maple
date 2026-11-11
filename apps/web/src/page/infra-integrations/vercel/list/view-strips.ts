@@ -15,14 +15,14 @@ import { errorState } from "@maple/views/ui/error-state"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { type TypographyTone, typography } from "@maple/views/ui/typography"
-import { requestClassRows } from "../../../../components/infra/vercel/list-model"
+import { requestClassRows } from "../list-model"
 import {
 	cacheHitRows,
 	functionLatencyRows,
 	functionLatencySummary,
 	peakServerErrorRate,
 	serverErrorRateRows,
-} from "../../../../components/infra/vercel/overview-model"
+} from "../overview-model"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { dataOf, failureOf } from "../view-parts"
 import { MountLinkedCursor } from "./command"

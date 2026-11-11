@@ -2,32 +2,12 @@
  * The infra tools' `kind` parameters. list_infra lists kinds (plural) and inspect_infra names one
  * entity (singular); each accepts the other spelling, since models carry one over to the other.
  */
+import { InfraEntityKind, InfraKind } from "@maple/domain/mcp-outputs"
 import { Schema, SchemaTransformation, Array as Arr } from "effect"
 
-export const INFRA_KINDS = [
-	"hosts",
-	"pods",
-	"nodes",
-	"workloads",
-	"containers",
-	"cloudflare_zones",
-	"cloudflare_workers",
-	"railway_services",
-	"planetscale_databases",
-	"vercel_projects",
-] as const
-export const ENTITY_KINDS = [
-	"host",
-	"pod",
-	"node",
-	"workload",
-	"container",
-	"cloudflare_zone",
-	"cloudflare_worker",
-	"railway_service",
-	"planetscale_database",
-	"vercel_project",
-] as const
+/** The kinds list_infra lists and the entities inspect_infra names: the outputs' own literals. */
+export const INFRA_KINDS = InfraKind.literals
+export const ENTITY_KINDS = InfraEntityKind.literals
 
 /** Kinds read from a connected integration's polled metrics rather than a collector. */
 export const PROVIDER_KINDS = [
@@ -36,17 +16,14 @@ export const PROVIDER_KINDS = [
 	"railway_services",
 	"planetscale_databases",
 	"vercel_projects",
-] as const satisfies ReadonlyArray<(typeof INFRA_KINDS)[number]>
+] as const satisfies ReadonlyArray<InfraKind>
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
 /** Kinds a collector reports (hostmetrics, kubeletstats, docker_stats). */
-export type CollectorKind = Exclude<(typeof INFRA_KINDS)[number], ProviderKind>
+export type CollectorKind = Exclude<InfraKind, ProviderKind>
 
 export const isProviderKind = (kind: string): kind is ProviderKind =>
 	Arr.some(PROVIDER_KINDS, (provider) => provider === kind)
-
-type InfraKind = (typeof INFRA_KINDS)[number]
-type EntityKind = (typeof ENTITY_KINDS)[number]
 
 const TO_ENTITY = {
 	hosts: "host",
@@ -69,7 +46,7 @@ const TO_ENTITY = {
 	planetscale_database: "planetscale_database",
 	vercel_projects: "vercel_project",
 	vercel_project: "vercel_project",
-} as const satisfies Record<InfraKind | EntityKind, EntityKind>
+} as const satisfies Record<InfraKind | InfraEntityKind, InfraEntityKind>
 
 const TO_KIND = {
 	hosts: "hosts",
@@ -92,7 +69,7 @@ const TO_KIND = {
 	planetscale_database: "planetscale_databases",
 	vercel_projects: "vercel_projects",
 	vercel_project: "vercel_projects",
-} as const satisfies Record<InfraKind | EntityKind, InfraKind>
+} as const satisfies Record<InfraKind | InfraEntityKind, InfraKind>
 
 const EITHER = Schema.Literals([...INFRA_KINDS, ...ENTITY_KINDS])
 
@@ -101,7 +78,7 @@ export const optionalInfraKind = (description: string) =>
 	Schema.optional(
 		EITHER.annotate({ description }).pipe(
 			Schema.decodeTo(
-				Schema.Literals(INFRA_KINDS),
+				InfraKind,
 				SchemaTransformation.transform({ decode: (kind) => TO_KIND[kind], encode: (kind) => kind }),
 			),
 		),
@@ -111,7 +88,7 @@ export const optionalInfraKind = (description: string) =>
 export const entityKind = (description: string) =>
 	EITHER.annotate({ description }).pipe(
 		Schema.decodeTo(
-			Schema.Literals(ENTITY_KINDS),
+			InfraEntityKind,
 			SchemaTransformation.transform({ decode: (kind) => TO_ENTITY[kind], encode: (kind) => kind }),
 		),
 	)

@@ -1,5 +1,5 @@
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
-import { IngestRuleId } from "./primitives"
+import { IngestRuleId } from "@maple/primitives"
 
 // Customer ingest rules: drop or redact telemetry before the gateway stores or bills it.
 // This file is the contract. The Rust gateway (`apps/ingest/src/ingest_rules.rs`) and the TS

@@ -31,7 +31,7 @@ export const splitOnMatches = (
 	return segments
 }
 
-/** `<HighlightedText>`: the text with every match of the active search marked. */
+/** The text with every match of the active search marked. */
 export const highlightedText = <Message>(
 	h: HtmlBuilder<Message>,
 	text: string,

@@ -1,12 +1,13 @@
 import { AiSessionSpanCursor } from "@maple/domain/http"
 import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehouse/ai-sessions"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { detectModels } from "../kit/detected-models"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "@maple/views/ui/copy-button"
 import { readLocale } from "@maple/views/lib/locale"
 import { Message, SpanScope } from "./message"
 import { parseMarkdownTexts } from "../../kit/message-response"
@@ -40,12 +41,8 @@ export const FetchFirstPage = Command.define("FetchAgentSessionFirstPage", {
 	messages: [Message.CompletedFetchFirstPage],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSpans({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.mapBoth({
-				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFirstPage({ key, result })),
+			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
+			settleTo((result) => Message.CompletedFetchFirstPage({ key, result })),
 		),
 })
 
@@ -63,12 +60,8 @@ export const FetchMorePage = Command.define("FetchAgentSessionMorePage", {
 	messages: [Message.CompletedFetchMorePage],
 	execute: ({ key, sessionId, window, scope, after, limit, index }) =>
 		getAiSessionSpans({ data: { ...sessionInput(sessionId, window), scope, after, limit } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (page) => ({ data: page.data, nextCursor: page.nextCursor ?? null }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) =>
+			Effect.map((page) => ({ data: page.data, nextCursor: page.nextCursor ?? null })),
+			settleTo((result) =>
 				Message.CompletedFetchMorePage({
 					key,
 					index,
@@ -86,9 +79,7 @@ export const FetchTotals = Command.define("FetchAgentSessionTotals", {
 	messages: [Message.CompletedFetchTotals],
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSummary({ data: sessionInput(sessionId, window) }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTotals({ key, result })),
+			settleTo((result) => Message.CompletedFetchTotals({ key, result })),
 		),
 })
 
@@ -134,12 +125,11 @@ export const RunCodeAction = Command.define("RunAgentSessionCodeAction", {
 		).pipe(Effect.map((isCopied) => Message.CompletedCodeAction({ code, isCopied }))),
 })
 
-/** Streamdown's `CodeBlockCopyButton` holds its check for `timeout` (2s), then shows Copy again. */
+/** A code block's Copy holds its check for 2s, then shows Copy again. */
 export const WaitCodeCopied = Command.define("WaitAgentSessionCodeCopied", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCodeCopied],
-	execute: ({ generation }) =>
-		Effect.sleep(Duration.millis(2000)).pipe(Effect.as(Message.ElapsedCodeCopied({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCodeCopied({ generation })),
 })
 
 /** "Check the Tools section": brings the Overview's ledger into view. */

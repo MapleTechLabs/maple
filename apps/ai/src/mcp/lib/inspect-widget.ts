@@ -16,7 +16,7 @@ import {
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { productEventsFunnel } from "@maple/query-engine/observability"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
-import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/domain/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import {
 	buildFormulaResults,
@@ -27,6 +27,7 @@ import {
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
 	WarehouseQueryRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
@@ -40,7 +41,7 @@ import {
 } from "./chart-statistics"
 import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
-import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
+import { runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
 import type {
 	InspectChartDataData,
@@ -59,13 +60,12 @@ import {
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { doc, type DocBlock, type NextCall } from "./tool-doc"
 import type { WidgetInspectionSummary as WidgetInspectionSummaryOutput } from "@maple/domain/mcp-outputs"
 
-// `RAW_SQL_ENDPOINT` and `QUERY_SHAPE_ENDPOINTS` are used here as LABELS, not as
-// dispatch keys — dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,
+// `RAW_SQL_ENDPOINT` and `QUERY_RESULT_ENDPOINTS` are used here as LABELS, not as
+// dispatch keys: dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,
 // which read v2 and v3 alike. `inspect_chart_data` reports `endpoint` as part of
 // its response contract and a v3 `kind: "query"` data source has no endpoint, so
 // the shape is mapped back onto the legacy name to keep the MCP payload stable
@@ -185,8 +185,7 @@ function applyReduceToValue(
 
 	// The configured field may not match a column name (the renderer auto-picks
 	// the first numeric column for stat tiles). Fall back to that same field so
-	// the inspector's reducedValue matches what renders — previously this
-	// returned a false `null` for every such stat widget.
+	// the inspector's reducedValue matches what renders.
 	if (values.length === 0) {
 		const fallback = firstNumericField(result)
 		if (fallback && fallback !== field) {
@@ -239,9 +238,6 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 	}
 }
 
-// A real grouping was requested when the draft enables groupBy and lists at
-// least one token that isn't the ungrouped sentinel (`none`/`all`). Used to
-// distinguish an intentional ungrouped chart from a grouping that collapsed.
 /**
  * Whether a draft actually asks for a grouping.
  *
@@ -426,16 +422,13 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 		} satisfies InspectionOutcome
 	}
 
-	const granularitySeconds =
-		rawSql.granularitySeconds ?? autoBucketSeconds(timeRange.startTime, timeRange.endTime)
-
 	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
 		sql,
 		startTime: timeRange.startTime,
 		endTime: timeRange.endTime,
-		granularitySeconds,
+		granularitySeconds: rawSql.granularitySeconds,
 	}).pipe(
 		Effect.map((value) => ({ ok: true as const, value })),
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>

@@ -191,7 +191,7 @@ Read streams to the end (`await result.consumeStream()`) before flushing, since 
 
 ## Verify
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls. Cost shows as unpriced because the AI SDK doesn't report it.
+Run a conversation with two messages and a tool call, then open **Agent sessions** in Maple. You should see one session named after your conversation id with framework **Vercel AI SDK**, one turn per call, and a transcript with the prompts, replies and tool calls. Cost shows as unpriced because the AI SDK doesn't report it.
 
 ## Troubleshooting
 

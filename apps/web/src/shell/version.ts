@@ -26,7 +26,7 @@ const deployedCommit: Effect.Effect<Option.Option<string>, never, HttpClient.Htt
 	},
 ).pipe(Effect.orElseSucceed(() => Option.none()))
 
-/** `fetchDeployedCommit`: a hidden tab reports nothing. */
+/** A hidden tab reports nothing. */
 export const CheckDeployedCommit = Command.define("CheckDeployedCommit", {
 	messages: [Message.CheckedDeployedCommit],
 	execute: Effect.gen(function* () {

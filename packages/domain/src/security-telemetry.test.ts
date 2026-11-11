@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { PROBE_CATEGORIES, PROBE_SIGNATURES, SCANNER_AGENTS, probeCategoryOf } from "./security-telemetry"
+import {
+	PROBE_CATEGORIES,
+	PROBE_SIGNATURES,
+	SCANNER_AGENTS,
+	type SourceActivity,
+	attackChainReasons,
+	attackStagesOf,
+	probeCategoryOf,
+} from "./security-telemetry"
 import { Array as Arr, String as Str } from "effect"
 
 describe("probe catalog", () => {
@@ -23,5 +31,36 @@ describe("probe catalog", () => {
 			[],
 		)
 		expect(probeCategoryOf("")).toBeUndefined()
+	})
+})
+
+describe("attack chains", () => {
+	const quiet = { probed: [], denied: 0, passedDenialSeconds: 0 }
+	const chain = (source: SourceActivity, agent = "") =>
+		attackChainReasons({ agent, stages: attackStagesOf(source) }).length > 0
+
+	it("needs every stage: a sweep with exploit paths that stops at the refusal is not a chain", () => {
+		const sweep = { ...quiet, probed: ["/.env", "/.git/", "/actuator/env", "../"] }
+		expect(attackStagesOf(sweep)).toEqual(["sweep", "exploit"])
+		expect(chain(sweep)).toBe(false)
+		const persisting = { ...sweep, denied: 4, passedDenialSeconds: 300 }
+		expect(attackStagesOf(persisting)).toEqual(["sweep", "exploit", "persisted"])
+		expect(chain(persisting)).toBe(true)
+	})
+
+	it("counts persistence only when a request got through a minute or more after a refusal", () => {
+		const probes = ["../"]
+		expect(attackStagesOf({ probed: probes, denied: 3, passedDenialSeconds: 5 })).toEqual(["exploit"])
+		// No answered request after the refusal: dateDiff to an empty maxIf is negative.
+		expect(attackStagesOf({ probed: probes, denied: 3, passedDenialSeconds: -1_000_000 })).toEqual([
+			"exploit",
+		])
+		expect(attackStagesOf({ ...quiet, passedDenialSeconds: 9999 })).toEqual([])
+	})
+
+	it("marks a source on an autonomous agent's user agent alone, and says why", () => {
+		expect(attackChainReasons({ agent: "ARTEX", stages: [] })).toEqual(["sent the ARTEX user agent"])
+		expect(attackChainReasons({ agent: "", stages: ["sweep", "exploit"] })).toEqual([])
+		expect(attackChainReasons({})).toEqual([])
 	})
 })

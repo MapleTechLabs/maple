@@ -7,7 +7,7 @@ import { OAuthAuthStates } from "@maple/db/tables"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	makeOAuthConnectionHelpers,
 	OAuthTokenResponseSchema,
@@ -101,7 +101,7 @@ const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHel
 			refreshTokenCiphertext: refreshEnc.ciphertext,
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
-			// Already expired — getValidConnectionToken must refresh.
+			// Already expired, so getValidConnectionToken must refresh.
 			expiresAt: (yield* Clock.currentTimeMillis) - 60_000,
 		})
 	})
@@ -131,7 +131,7 @@ describe("refreshAccessToken classification", () => {
 	it.live("a 400 invalid_client is an upstream failure and does NOT revoke the connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		// A rotated/misconfigured Maple client secret answers this for EVERY
-		// tenant at once — stamping revoked here would disconnect them all.
+		// tenant at once; stamping revoked here would disconnect them all.
 		const fetch = fetchLayer(() => jsonResponse({ error: "invalid_client" }, 400))
 		return Effect.gen(function* () {
 			const helpers = yield* makeHelpers()

@@ -1,17 +1,17 @@
 import { EMPTY_VALUE, formatBytes, formatPercent } from "@maple/ui/lib/format"
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { VALUE_TONE } from "../../../../components/infra/severity-tokens"
+import { VALUE_TONE } from "../../../kit/severity-tokens"
 import { cn } from "@maple/ui/lib/utils"
 import { type SparkPoint, type SparkWindow, windowSparkline } from "../../kit/window-sparkline"
-import { SUPABASE_ACCENT } from "../connect"
 import { SATURATION } from "../health"
 import type { HealthStrip } from "./derive"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { String as Str } from "effect"
 import { vstack } from "@maple/views/ui/stack"
+import { PROVIDERS } from "../../../kit/providers"
 
 // The health strip: six tiles, each value over a line spark of the window and a caption.
 
@@ -45,7 +45,7 @@ const tile = (h: H, window: SparkWindow, options: TileOptions): Html =>
 			],
 			[options.value],
 		),
-		windowSparkline(h, { points: options.spark, window, color: SUPABASE_ACCENT }),
+		windowSparkline(h, { points: options.spark, window, color: PROVIDERS.supabase.accent }),
 		typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [options.caption ?? ""]),
 	])
 

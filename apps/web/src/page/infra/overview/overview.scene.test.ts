@@ -1,3 +1,4 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { OrgId } from "@maple/domain"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
@@ -13,10 +14,10 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { summarizeVercel } from "../../../components/infra/overview/summaries"
+import { summarizeVercel } from "./summaries"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
-import * as Frame from "../kit/frame"
+import * as Frame from "../../kit/time-frame"
 import { Message } from "./message"
 import type { Model, SourceId, SourceReading } from "./model"
 import { presentSources, sourceState, surfacesOf } from "./state"
@@ -48,7 +49,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const sourceReads = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.filter(names(commands), (name) => name === "FetchInfraOverviewSource")
-const resolvedAt = (at: typeof window, mode: Frame.RequestMode) =>
+const resolvedAt = (at: typeof window, mode: RequestMode) =>
 	Message.GotFrameMessage({
 		message: Frame.Message.CompletedResolveWindow({ window: at, nowMs: NOW, locale: "en-US", mode }),
 	})

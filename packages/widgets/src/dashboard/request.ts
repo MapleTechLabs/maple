@@ -10,9 +10,9 @@ import {
 /**
  * A stored data source lowered to "which endpoint, with which params".
  *
- * `endpoint` is the transport identity every host dispatches on — the browser's
- * `serverFunctionMap`, the share API's resolver, the atom-family cache key —
- * and `params` is the un-interpolated bag those hosts hand to
+ * `endpoint` is the transport identity every host dispatches on (the browser's
+ * `widgetServerFunctions` in `@maple/web-data`, the API's
+ * `DashboardWidgetDataService`), and `params` is the un-interpolated bag those hosts hand to
  * `planWidgetRequest` (`@maple/query-engine`) for the time-macro / variable /
  * window pass.
  */
@@ -32,9 +32,8 @@ export interface WidgetRequest {
  * Both hosts now lower through this one function and dispatch on the string
  * it returns.
  *
- * It is also the one function the v3 flip touches on the read path: a
- * `kind: "query"` data source has no endpoint of its own, so its result shape is
- * mapped onto the endpoint that already serves that shape. Returns null for a
+ * A `kind: "query"` data source has no endpoint of its own, so its result shape
+ * is mapped onto the endpoint that already serves that shape. Returns null for a
  * data source nothing can serve, which the caller reports as a disabled tile
  * rather than a failed fetch.
  */

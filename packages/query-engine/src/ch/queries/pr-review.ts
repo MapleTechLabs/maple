@@ -8,7 +8,8 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 
 export interface OperationTrafficOpts {
 	/** Only these services; absent means every service of the org. */
@@ -32,7 +33,7 @@ const P95_MS = CH.rawExpr(
 )
 
 export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
-	return from(ServiceOperationsHourly)
+	return from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,
@@ -58,7 +59,7 @@ export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
 }
 
 export function operationTrafficMinutelyQuery(opts: OperationTrafficOpts) {
-	return from(ServiceOperationsMinutely)
+	return from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,

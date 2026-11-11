@@ -1,6 +1,6 @@
 import { InfraPresenceRequest, InfraPresenceResponse, type InfraSurfaceLiteral } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Record } from "effect"
 import { AsyncData } from "foldkit"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import type { NavSurface } from "../shell/nav"
@@ -15,10 +15,10 @@ import type { TimeWindow } from "./time-range"
 const PRESENCE_WINDOW_MS = 60 * 60 * 1000
 const PRESENCE_BUCKET_MS = 5 * 60 * 1000
 
-/** `infraPresenceResultAtom`'s `staleTime`. */
+/** How long a presence read stays fresh. */
 const PRESENCE_IDLE_TTL_MS = 300_000
 
-/** The window `useInfraSurfaces()` probes when it is given none. */
+/** The window the infra surfaces probe when given none. */
 export const lastHourWindow = (nowMs: number): TimeWindow => {
 	const end = Math.floor(nowMs / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
 	return {
@@ -51,7 +51,15 @@ export const loadInfraPresence = (
 		}),
 	).pipe(Effect.map((response) => response.surfaces))
 
-export const INTEGRATION_IDS = ["cloudflare", "railway", "vercel", "planetscale", "gcp", "supabase", "aws"] as const
+export const INTEGRATION_IDS = [
+	"cloudflare",
+	"railway",
+	"vercel",
+	"planetscale",
+	"gcp",
+	"supabase",
+	"aws",
+] as const
 
 /** Connected integrations: `null` until its status answers; a failed status counts as not connected. */
 export type IntegrationFlags = Readonly<{ [K in (typeof INTEGRATION_IDS)[number]]: boolean | null }>
@@ -65,6 +73,9 @@ export const PENDING_INTEGRATIONS: IntegrationFlags = {
 	supabase: null,
 	aws: null,
 }
+
+/** Every integration settled as not connected, as when the combined read failed. */
+export const NO_INTEGRATIONS_CONNECTED: IntegrationFlags = Record.map(PENDING_INTEGRATIONS, () => false)
 
 /**
  * Which infra surfaces an org has. `Pending` until the probe and every status answered (and no

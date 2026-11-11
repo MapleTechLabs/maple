@@ -45,7 +45,7 @@ describe("collectMemberships", () => {
 		}),
 	)
 
-	// `OrgId`/`RoleName` are non-empty, trimmed strings — the ids Clerk cannot
+	// `OrgId`/`RoleName` are non-empty, trimmed strings; the ids Clerk cannot
 	// give us are blank or padded ones.
 	it.effect("drops memberships it cannot model rather than failing the request", () =>
 		Effect.gen(function* () {

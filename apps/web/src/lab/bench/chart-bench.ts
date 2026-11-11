@@ -1,3 +1,4 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Clock, Effect, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -5,7 +6,6 @@ import { defineMessageUnion } from "foldkit/message"
 import { defineLabWithFlags, type LabEntry } from "../define"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime, isChartRuntimeReady, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import type { Resources } from "../../platform/resources"
 
 // The chart benches' shared state: a canvas chart per id,
@@ -15,16 +15,13 @@ export const Model = Schema.Struct({
 	nowMs: Schema.Number,
 	timeZone: Schema.String,
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
 })
 export type Message = typeof Message.Type
@@ -41,13 +38,7 @@ type Return = Update.Return<Model, Message, Resources>
 
 export const init = (flags: BenchFlags): Return => ({
 	model: { ...flags, charts: {}, chartRuntime: ChartRuntime.Loading(), themeColors: null },
-	commands: [
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [LoadChartRuntime()],
 })
 
 export const update = (model: Model, message: Message): Return =>

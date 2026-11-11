@@ -1,14 +1,15 @@
+import { getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { buttonVariants } from "@maple/ui/styles/ui/button"
+import { buttonVariants } from "../button.styles"
 import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { icon } from "../icon"
 import { timestampTrigger } from "../timestamp"
 import type { LogChip, LogRowView, PinnedCell } from "./log-row-view"
 import { highlightedText } from "./highlight"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { badgeVariants } from "../badge.styles"
+import { rowSelectedClass } from "../list-row.styles"
 import { CHIP_CLASS, CHIP_KEY_TONE_CLASSES, CHIP_TONE_CLASSES, rowClass } from "./styles"
 import type * as AttributesPanel from "../attributes/attributes-panel"
 import type { CopyStatus } from "../copy-button"
@@ -61,7 +62,6 @@ const PINNED_COL_WIDTH = "150px"
 /** Chips past this would only squeeze the ones before them; a "+N" mark counts the rest. */
 const ROW_CHIP_LIMIT = 2
 
-// Row and row action classes
 const ROW_CLASS =
 	"hover:bg-surface-sunken active:bg-surface-sunken data-[expanded]:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 const EXPAND_BUTTON_CLASS =
@@ -81,7 +81,7 @@ const META_BADGE_CLASS = cn(badgeVariants({ mono: false, pill: false, size: "xs"
 
 const stop = { propagation: "Stop" } as const
 
-/** `<IconButton size="icon-xs">` without its Base UI tooltip (the tooltip is an open port item). */
+/** An icon-xs icon button, without a tooltip. */
 const iconButton = <Message>(h: HtmlBuilder<Message>, label: string, onClick: Message, icon: Html): Html =>
 	h.button(
 		[
@@ -94,7 +94,7 @@ const iconButton = <Message>(h: HtmlBuilder<Message>, label: string, onClick: Me
 		[icon],
 	)
 
-/** `<TruncatedText tooltip="title">` for a pinned attribute cell. */
+/** Truncated text with a native tooltip, for a pinned attribute cell. */
 const pinnedCell = <Message>(h: HtmlBuilder<Message>, cell: PinnedCell): Html =>
 	h.span(
 		[
@@ -115,7 +115,7 @@ const pinnedCell = <Message>(h: HtmlBuilder<Message>, cell: PinnedCell): Html =>
 		[cell.value],
 	)
 
-/** `LogAttributeChip`'s trigger button; the card renders apart, only while open (see chip-card.ts). */
+/** An attribute chip's trigger button; the card renders apart, only while open (see chip-card.ts). */
 const chipButton = <Message>(
 	h: HtmlBuilder<Message>,
 	events: RowEvents<Message>,
@@ -221,7 +221,7 @@ export const logRow = <Message>(
 							? [row.timeMain]
 							: [
 									row.timeMain,
-									h.span([rowClass(h, "text-foreground-faint")], [row.timeFraction]),
+									h.span([rowClass(h, "text-foreground-subtle")], [row.timeFraction]),
 								],
 					),
 					h.span(
@@ -236,7 +236,7 @@ export const logRow = <Message>(
 							h.Style(
 								FILLED_SEVERITIES.has(row.severity)
 									? { "background-color": row.severityColor }
-									: { color: row.severityColor },
+									: { color: getSeverityInk(row.severity) },
 							),
 							h.Title(row.severity),
 						],

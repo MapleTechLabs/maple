@@ -1,8 +1,8 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import { ListInfraOutput } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
@@ -26,6 +26,7 @@ import {
 	summaryLine,
 	windowText,
 } from "../lib/infra-render"
+import { orFallback } from "../lib/fallback"
 
 const TOOL = "list_infra"
 const WINDOW = P.timeWindow({ defaultHours: 1, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -86,10 +87,7 @@ const connectedProviderKinds = (orgId: Parameters<IntegrationInventoryService["S
 				(result) =>
 					new Set<string>(Arr.map(result.integrations, (integration) => integration.provider)),
 			),
-			Effect.tapError((error) =>
-				Effect.logWarning("list_infra could not read integrations", error.message),
-			),
-			Effect.orElseSucceed(() => new Set<string>()),
+			orFallback("connected integrations", () => new Set<string>()),
 		)
 		return Arr.filter(PROVIDER_KINDS, (kind) => connected.has(PROVIDER_OF[kind]))
 	})
@@ -130,7 +128,6 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "rows per kind" }),
 			...WINDOW.fields,
 		}),
-		output: ListInfraOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing infrastructure", "Checking hosts, pods, containers and providers"],
 		handler: Effect.fn("McpTool.listInfra")(function* (params) {

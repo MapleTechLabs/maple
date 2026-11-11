@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { hasMultipleRegions } from "../lib/region"
+import { hasMultipleRegions } from "../platform/region"
 import { Option, Record, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
@@ -56,7 +56,7 @@ export const triggerFor = (h: HtmlBuilder<Message>, model: Model, menu: Menu) =>
 export const pinnedNamespaceOf = (model: Model): Option.Option<string> =>
 	Option.flatMap(model.maybeOrgId, (orgId) => Record.get(model.pinnedNamespaces, orgId))
 
-/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self-hosted" and the pinned namespace. */
+/** The self-hosted org switcher's trigger: the server tile, "Self-hosted" and the pinned namespace. */
 const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
@@ -218,7 +218,6 @@ export const shellSidebarHeader = (
 		clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk),
 		searchRow(h, tip),
 	])
-// FOOTER
 
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
@@ -327,8 +326,8 @@ export const userAvatar = (
 		initials,
 	)
 
-/** `GuestMenu`'s trigger and `SupportMenu`'s, side by side in the account cluster. */
-/** `UserMenu`'s name: Clerk's full name, else the email, else "User"; self-hosted is "Root". */
+/** The guest menu's and the support menu's triggers, side by side in the account cluster. */
+/** The user menu's name: Clerk's full name, else the email, else "User"; self-hosted is "Root". */
 export const userNameOf = (clerk: ShellClerk | null): string =>
 	clerk === null
 		? "Root"

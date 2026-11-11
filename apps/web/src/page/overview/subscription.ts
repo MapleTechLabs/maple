@@ -1,11 +1,11 @@
-import { rowsToAlertIncidentDocuments } from "@maple/web-data/collections/alerts"
 import { Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
-import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../alerts/shared/collection-load"
+import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../kit/collection-load"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
+import { incidentsLoadFailedStream, incidentsStream } from "../kit/service-health"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
@@ -20,25 +20,11 @@ const withSet = (
 	stream: (set: OrgCollectionSet) => Stream.Stream<Message>,
 ): Stream.Stream<Message, never, OrgCollections> => orgLive(orgId, stream)
 
-/** `useAlertIncidentsList()`: newest trigger first, reduced to what the banner and health read. */
+/** The alert incidents the banner and health read. */
 const incidents = (orgId: string) =>
-	withSet(orgId, (set) =>
-		liveQueryStream(
-			(q) => q.from({ i: set.alertIncidents }).orderBy(({ i }) => i.last_triggered_at, "desc"),
-			(rows) =>
-				Message.UpdatedIncidents({
-					orgId,
-					incidents: Arr.map(rowsToAlertIncidentDocuments(rows), (incident) => ({
-						status: incident.status,
-						groupKey: incident.groupKey,
-						severity: incident.severity,
-						signalType: incident.signalType,
-					})),
-				}),
-		),
-	)
+	incidentsStream(orgId, (list) => Message.UpdatedIncidents({ orgId, incidents: list }))
 
-/** `useAlertRulesList()`'s rules query, reduced to `enabled` (the banner counts them). */
+/** The alert rules, reduced to `enabled` (the banner counts them). */
 const rules = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
@@ -47,7 +33,7 @@ const rules = (orgId: string) =>
 		),
 	)
 
-/** `useAlertRulesList()`'s states query: synced alongside the rules, unread by this page. */
+/** The rule states: synced alongside the rules, unread by this page. */
 const ruleStates = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
@@ -73,13 +59,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isWaiting: AsyncData.isLoading(model.incidents),
 				}),
 				dependenciesToStream: ({ orgId, isWaiting }) =>
-					isWaiting
-						? collectionLoadFailed(
-								`alert_incidents:${orgId}`,
-								() => Message.FailedLoadIncidents({ orgId }),
-								ENRICHMENT_LOAD_TIMEOUT_MS,
-							)
-						: Stream.empty,
+					incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
 			},
 		),
 		/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */

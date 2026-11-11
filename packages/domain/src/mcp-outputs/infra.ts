@@ -1,4 +1,3 @@
-/** Output schemas for the infrastructure MCP tools (hosts, Kubernetes, containers, connected providers). */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
 
@@ -116,8 +115,6 @@ export const InfraKindSection = Schema.Struct({
 })
 export type InfraKindSection = typeof InfraKindSection.Type
 
-// list_infra
-
 export const ListInfraOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	/** Kinds reporting telemetry in the window, whatever was asked for. */
@@ -128,8 +125,6 @@ export const ListInfraOutput = Schema.Struct({
 	sort: Schema.optionalKey(Schema.String),
 	status: Schema.optionalKey(Schema.String),
 })
-
-// inspect_infra
 
 export const InfraSeriesStats = Schema.Struct({
 	/** What the series measures, e.g. "cpu (fraction of limit)". */

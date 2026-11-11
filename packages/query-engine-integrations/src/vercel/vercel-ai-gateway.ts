@@ -9,13 +9,14 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { Traces, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { isoBucket } from "@maple/query-engine/ch/format"
 import type { VercelProjectScope } from "./vercel-infra"
 
 export const VERCEL_AI_GATEWAY_SERVICE = "ai-gateway"
 
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
+type TraceColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 const numberAttribute = ($: TraceColumns, key: string) => CH.toFloat64OrZero($.SpanAttributes.get(key))
 
@@ -43,7 +44,7 @@ const gatewayWhere = ($: TraceColumns, scope: VercelProjectScope) => [
 
 /** Totals over the window, for every project or one. */
 export function vercelAiGatewaySummarySQL(scope: VercelProjectScope = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			...usageColumns($),
 			p50DurationMs: CH.quantile(0.5)($.Duration).div(1_000_000),
@@ -55,7 +56,7 @@ export function vercelAiGatewaySummarySQL(scope: VercelProjectScope = {}) {
 
 /** Usage per model, most expensive first. */
 export function vercelAiGatewayByModelSQL(scope: VercelProjectScope = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			model: CH.if_(
 				$.SpanAttributes.get("gen_ai.response.model").neq(""),
@@ -75,7 +76,7 @@ export function vercelAiGatewayByModelSQL(scope: VercelProjectScope = {}) {
 
 /** Usage per calling Vercel project. Requests made outside a project have an empty id. */
 export function vercelAiGatewayByProjectSQL() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			projectId: $.SpanAttributes.get("vercel.project.id"),
 			...usageColumns($),
@@ -89,7 +90,7 @@ export function vercelAiGatewayByProjectSQL() {
 
 /** Cost, requests and tokens per bucket, for every project or one. */
 export function vercelAiGatewayTimeseriesSQL(scope: VercelProjectScope = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			...usageColumns($),

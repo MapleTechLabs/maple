@@ -1,12 +1,17 @@
+import { WIDEN_TIME_PRESET } from "../../kit/time-controls"
 import { type PageReturn, PageOutMessage } from "../../contract"
 import { AppRoute, hrefOf } from "../../../route"
 import { parseRange } from "@maple/views/ui/filters/range-format"
 import { WaitDurationDebounce } from "./command"
-import { removeTraceFilterChips, type Search, traceFilterChips, WIDEN_TIME_PRESET } from "./derive"
+import { excludedOf, removeTraceFilterChips, type Search, traceFilterChips } from "./derive"
 import type { Facet, Message, SortKey } from "./message"
 import type { Model } from "./model"
-import { clearedWhereClause, excludedFacet, onlyFacet, toggledFacet, withDuration } from "./search-edits"
+import { clearedWhereClause, withDuration } from "./search-edits"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
 import { Array as Arr } from "effect"
+
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: excludedOf(facet) })
 
 // The sidebar's and table's Messages: each computes the next search and asks the root to navigate.
 
@@ -37,11 +42,20 @@ export const sidebarHandlers = (model: Model) => ({
 	ToggledHideNoise: (): Return =>
 		navigate(model, { ...model.search, hideNoise: (model.search.hideNoise ?? true) ? false : undefined }),
 	ToggledFacetOption: ({ facet, name }: { facet: Facet; name: string }): Return =>
-		navigate(model, toggledFacet(model.search, facet, name)),
+		navigate(
+			model,
+			editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+		),
 	ClickedOnlyFacetOption: ({ facet, name }: { facet: Facet; name: string }): Return =>
-		navigate(model, onlyFacet(model.search, facet, name)),
+		navigate(
+			model,
+			editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+		),
 	ClickedExcludeFacetOption: ({ facet, name }: { facet: Facet; name: string }): Return =>
-		navigate(model, excludedFacet(model.search, facet, name)),
+		navigate(
+			model,
+			editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+		),
 	// Keeps only the absolute bounds here, dropping a relative preset.
 	ClickedClearSidebarFilters: (): Return =>
 		navigate(model, { startTime: model.search.startTime, endTime: model.search.endTime }),

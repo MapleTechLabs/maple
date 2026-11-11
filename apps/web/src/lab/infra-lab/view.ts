@@ -33,7 +33,7 @@ import {
 	speedInsightsSection,
 	webAnalyticsSection,
 } from "../../page/infra-integrations/vercel/sections"
-import { pickTimeSearch } from "../../page/infra/kit/view-tabs"
+import { pickTimeSearch } from "../../page/kit/view-tabs"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -58,7 +58,7 @@ type H = HtmlBuilder<Message>
 
 const RANK = { crit: 0, warn: 1, stale: 2 } as const
 
-/** `Frame`: one surface under its route label. */
+/** One surface under its route label. */
 const frame = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	h.section(
 		[h.Class("space-y-6 border-b pb-16"), h.DataAttribute("lab-frame", label)],
@@ -125,7 +125,7 @@ const hosts = (h: H, model: Model, fixture: InfraLabFixture): Html => {
 					placeholder: "Search hosts…",
 					trailing: `${shown.length} of ${fixture.hosts.length} hosts`,
 				}),
-				// `HostTable` keeps its own sort: CPU, descending, until a head is pressed.
+				// The host table keeps its own sort: CPU, descending, until a head is pressed.
 				hostTable(h, sortRowsBy(shown, model.hostSort, HOST_SORT_ACCESSORS), {
 					nowMs: model.nowMs,
 					timeZone: model.timeZone,
@@ -140,7 +140,7 @@ const hosts = (h: H, model: Model, fixture: InfraLabFixture): Html => {
 
 type RailwayInputs = Readonly<{ fixture: InfraLabFixture; nowMs: number; timeZone: string }>
 
-/** `RailwayFleetBand`, the inert search and `RailwayServiceTable`: the Railway page's list body. */
+/** The Railway page's list body: the fleet band, the inert search and the service table. */
 const railwayView = Submodel.defineView<RailwayModel, RailwayList.Message, RailwayInputs>(
 	(railway, inputs, h) =>
 		servicesList(

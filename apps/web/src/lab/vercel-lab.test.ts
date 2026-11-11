@@ -1,6 +1,6 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
-import { vercelHealth, vercelIssues } from "../components/integrations/vercel-model"
+import { vercelHealth, vercelIssues } from "../page/infra-integrations/vercel/integration/vercel-model"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { init, Message, update } from "./vercel-lab"
 
@@ -25,11 +25,15 @@ describe("vercel lab", () => {
 		expect(vercelHealth(statusOf(model, "healthy"))).toBe("healthy")
 		expect(vercelHealth(statusOf(model, "first-sync"))).toBe("pending")
 		expect(Arr.map(vercelIssues(statusOf(model, "logs-deleted")), (issue) => issue.key)).toEqual(["Logs"])
-		expect(Arr.map(vercelIssues(statusOf(model, "traces-failing")), (issue) => issue.key)).toEqual(["Traces"])
-		expect(Arr.map(vercelIssues(statusOf(model, "ai-gateway-disabled")), (issue) => issue.title)).toEqual([
-			"The AI Gateway drain is disabled on Vercel",
+		expect(Arr.map(vercelIssues(statusOf(model, "traces-failing")), (issue) => issue.key)).toEqual([
+			"Traces",
 		])
-		expect(Arr.map(vercelIssues(statusOf(model, "token-rejected")), (issue) => issue.fix)).toEqual(["token"])
+		expect(Arr.map(vercelIssues(statusOf(model, "ai-gateway-disabled")), (issue) => issue.title)).toEqual(
+			["The AI Gateway drain is disabled on Vercel"],
+		)
+		expect(Arr.map(vercelIssues(statusOf(model, "token-rejected")), (issue) => issue.fix)).toEqual([
+			"token",
+		])
 	})
 
 	test("each connect step opens the dialog on that step without sending a request", () => {
@@ -40,17 +44,29 @@ describe("vercel lab", () => {
 		expect(configure?.dialog.isOpen).toBe(true)
 		expect(Arr.some(names(team.commands), (name) => /Vercel|Load/.test(name))).toBe(false)
 
-		const settings = sceneOf(update(opened(), Message.ClickedConnectStep({ step: "settings" })).model, "connect")
-		expect(settings.hub.vercelCard.configure?.draft).toEqual(
-			expect.objectContaining({ projectScope: "some", projectIds: ["prj_storefront", "prj_api"], samplingRate: 0.25 }),
+		const settings = sceneOf(
+			update(opened(), Message.ClickedConnectStep({ step: "settings" })).model,
+			"connect",
 		)
-		const refused = sceneOf(update(opened(), Message.ClickedConnectStep({ step: "refused" })).model, "connect")
+		expect(settings.hub.vercelCard.configure?.draft).toEqual(
+			expect.objectContaining({
+				projectScope: "some",
+				projectIds: ["prj_storefront", "prj_api"],
+				samplingRate: 0.25,
+			}),
+		)
+		const refused = sceneOf(
+			update(opened(), Message.ClickedConnectStep({ step: "refused" })).model,
+			"connect",
+		)
 		expect(refused.hub.vercelCard.configure?.error).not.toBeNull()
 	})
 
 	test("a write is answered in the lab: connecting closes the dialog", () => {
 		const settings = update(opened(), Message.ClickedConnectStep({ step: "settings" })).model
-		const index = Option.getOrThrow(Arr.findFirstIndex(settings.scenes, (scene) => scene.id === "connect"))
+		const index = Option.getOrThrow(
+			Arr.findFirstIndex(settings.scenes, (scene) => scene.id === "connect"),
+		)
 		const connected = update(
 			settings,
 			Message.GotHubMessage({ index, message: IntegrationsMessage.SubmittedVercelConnect() }),

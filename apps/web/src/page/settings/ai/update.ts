@@ -1,11 +1,11 @@
 import { OPENROUTER_BYOK_ADDON_ID } from "@maple/domain/billing"
 import { AiTriageSettingsUpdateRequest, AttachRequest, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
-import { buildCheckoutSuccessUrl } from "../../../lib/billing/checkout-return"
-import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { limitsUpdate } from "../kit/ai-triage-limits"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { trackProduct } from "../../../data/analytics"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -15,22 +15,17 @@ import { type LimitsDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
-
 export const FetchOpenRouterKey = Command.define("FetchOpenRouterKey", {
 	messages: [Message.CompletedFetchKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.get()).pipe(
-		settle((result) => Message.CompletedFetchKey({ result })),
+		settleTo((result) => Message.CompletedFetchKey({ result })),
 	),
 })
 
 export const FetchTriageSettings = Command.define("FetchAiTriageSettings", {
 	messages: [Message.CompletedFetchTriage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.aiTriage.getSettings()).pipe(
-		settle((result) => Message.CompletedFetchTriage({ result })),
+		settleTo((result) => Message.CompletedFetchTriage({ result })),
 	),
 })
 
@@ -40,17 +35,17 @@ const SaveOpenRouterKey = Command.define("SaveOpenRouterKey", {
 	execute: ({ apiKey }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.openRouterKey.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
-		).pipe(settle((result) => Message.CompletedSaveKey({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
 })
 
 const RemoveOpenRouterKey = Command.define("RemoveOpenRouterKey", {
 	messages: [Message.CompletedRemoveKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.remove()).pipe(
-		settle((result) => Message.CompletedRemoveKey({ result })),
+		settleTo((result) => Message.CompletedRemoveKey({ result })),
 	),
 })
 
-/** `attach({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl })`: Stripe returns to this tab. */
+/** Stripe's checkout returns to this tab. */
 const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 	messages: [Message.CompletedAttachAddOn],
 	execute: Effect.gen(function* () {
@@ -59,10 +54,9 @@ const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 		return yield* client.billing.attach({
 			payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }),
 		})
-	}).pipe(settle((result) => Message.CompletedAttachAddOn({ result }))),
+	}).pipe(settleTo((result) => Message.CompletedAttachAddOn({ result }))),
 })
 
-/** `plan_checkout_started`, then the tab leaves for Stripe (`useBillingActions().attach`). */
 const OpenAddOnCheckout = Command.define("OpenOpenRouterAddOnCheckout", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedOpenAddOnCheckout],
@@ -95,7 +89,7 @@ const UpdateTriage = Command.define("UpdateAiTriageSettings", {
 				}),
 			}),
 		).pipe(
-			settle((result) =>
+			settleTo((result) =>
 				purpose === "toggle"
 					? Message.CompletedToggleTriage({ isEnabled: enabled ?? false, result })
 					: Message.CompletedSaveLimits({ result }),
@@ -127,7 +121,7 @@ export const init = (isTriageAvailable: boolean): Return => ({
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** `reactivityKeys`: a write refetches the document behind it, keeping it on screen. */
+/** A write refetches the document behind it, keeping it on screen. */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
@@ -223,7 +217,7 @@ export const update = (model: Model, message: Message): Return =>
 				})),
 				() => null,
 			)
-			// `isSaveSettled`: the committed edits go once the saved value moved off its base or reached them.
+			// The committed edits go once the saved value moved off its base or reached them.
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&

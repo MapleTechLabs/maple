@@ -1,16 +1,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import { OrgId, UserId } from "@maple/domain/http"
-import { supportChannelName } from "@maple/domain/support-channel"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
+import { supportChannelName } from "./SupportChannelService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+} from "@maple/backend/testing/test-pglite"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportChannelService } from "./SupportChannelService"

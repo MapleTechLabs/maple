@@ -3,7 +3,7 @@ import type {
 	ServiceMapDbEdgeRow,
 	ServiceMapEdgeRow,
 	ServicePlatform,
-} from "@maple/ui/components/service-map/service-map-types"
+} from "@maple/views/service-map/graph/service-map-types"
 import { Schema, Array as Arr } from "effect"
 import { cachedAs } from "../../data/cached"
 
@@ -62,7 +62,15 @@ export const OverviewRow = Schema.Struct({
 	spanCount: Schema.Number,
 })
 
-export const Platform = Schema.Literals(["kubernetes", "cloudflare", "gcp", "vercel", "lambda", "web", "unknown"])
+export const Platform = Schema.Literals([
+	"kubernetes",
+	"cloudflare",
+	"gcp",
+	"vercel",
+	"lambda",
+	"web",
+	"unknown",
+])
 
 export const LocalServiceMapData = Schema.Struct({
 	edges: Schema.Array(EdgeRow),

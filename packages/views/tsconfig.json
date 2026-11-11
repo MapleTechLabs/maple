@@ -17,8 +17,6 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
 		"paths": {
-			"@maple/ui/styles/ui/*": ["../ui/src/components/ui/*.styles.ts"],
-			"@maple/ui/*": ["../ui/src/*"],
 			"@maple/chat-platform/manifests": ["../chat-platform/src/connectors/manifests.ts"]
 		},
 		"plugins": [

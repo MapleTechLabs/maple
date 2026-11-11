@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { SessionId, TraceId, UserId } from "../primitives"
+import { SessionId, TraceId, UserId } from "@maple/primitives"
 import { SessionTag, TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
@@ -52,7 +52,6 @@ export const SessionReplayListItem = Schema.Struct({
 export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("ReplaysFacetsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	// Same optional-filter contract as ListReplaysRequest — see the note there.
 	serviceName: Schema.optional(Schema.String),
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
@@ -138,8 +137,6 @@ export class SessionTraceSummariesResponse extends Schema.Class<SessionTraceSumm
 )({
 	data: Schema.Array(SessionTraceSummary),
 }) {}
-
-// API group
 
 const sessionReplayEndpointErrors = [
 	QueryEngineExecutionError,

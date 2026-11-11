@@ -22,14 +22,12 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { newRuleHref } from "../ingest-rule/hrefs"
 import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
-import { settingsSection } from "../kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// `IngestRulesSection`: above the attribute mappings on the ingestion tab.
 
 const lift = (message: RulesMessage): Message => Message.GotIngestRulesMessage({ message })
 

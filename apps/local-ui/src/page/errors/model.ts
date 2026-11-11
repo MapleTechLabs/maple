@@ -5,7 +5,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { Copies } from "../kit/copies"
 import { ErrorsFacets, ErrorsSummary, ErrorTrace, ErrorTypeRow } from "./fetch"
 
-/** One `ErrorTypeCard`'s own state: open or not, and its traces query (kept while closed). */
+/** One error type card's own state: open or not, and its traces query (kept while closed). */
 export const Card = Schema.Struct({
 	isExpanded: Schema.Boolean,
 	traces: KeyedSchema(Schema.Array(ErrorTrace), LoadFailure),
@@ -19,7 +19,7 @@ export const Model = Schema.TaggedStruct("ErrorsPage", {
 	nowMs: Schema.Number,
 	summary: KeyedSchema(Schema.NullOr(ErrorsSummary), LoadFailure),
 	byType: KeyedSchema(Schema.Array(ErrorTypeRow), LoadFailure),
-	/** `dataUpdatedAt` of the error types, for the "New data" pill. */
+	/** When the error types last loaded, for the "New data" pill. */
 	byTypeUpdatedAtMs: Schema.Number,
 	facets: KeyedSchema(ErrorsFacets, LoadFailure),
 	/** Cards by fingerprint hash. */

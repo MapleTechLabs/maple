@@ -8,24 +8,27 @@ import {
 	gcpConnectionState,
 	gcpScopeLabel,
 	gcpWorstState,
-} from "../../components/integrations/gcp-connector-state"
+} from "../infra-integrations/gcp/connector-state"
 import { DateTime, Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	metricsAuthOf,
 	metricsLastCollectedAt,
 	metricsLastError,
-} from "../../components/integrations/planetscale-setup-steps"
+} from "../infra-integrations/planetscale/setup-steps"
 import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, type IntegrationId } from "./catalog"
-import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
-import { scopeLabel, signalsLabel, vercelHealth, vercelIssues } from "../../components/integrations/vercel-model"
+import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
+import {
+	scopeLabel,
+	signalsLabel,
+	vercelHealth,
+	vercelIssues,
+} from "../infra-integrations/vercel/integration/vercel-model"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
 
-// `useIntegrationStatuses` and `useIntegrationOverviews`, as pure folds.
-
-/** `Result.builder`: success (also while revalidating), initial (`null`), else the failure value. */
+/** Success (also while revalidating), initial (`null`), else the failure value. */
 export const fold = <A, E, R>(slot: Keyed<A, E>, onSuccess: (data: A) => R, onFailure: () => R): R | null =>
 	AsyncData.match(slot.data, {
 		onIdle: () => null,
@@ -222,7 +225,7 @@ const githubStatus = (statuses: Statuses) =>
 const connectedOrNot = (connected: boolean): CardStatus =>
 	connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED
 
-/** The header badge per integration (`useIntegrationStatuses`); `null` while loading. */
+/** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	switch (id) {
 		case "gcp":
@@ -347,8 +350,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			return chatStatus(statuses, id)
 	}
 }
-
-// OVERVIEWS
 
 const unavailableOverview = (): IntegrationOverview => UNAVAILABLE
 
@@ -758,7 +759,7 @@ const chatOverview = (statuses: Statuses, id: IntegrationId) =>
 		unavailableOverview,
 	)
 
-/** One integration's overview (`useIntegrationOverviews()[id]`); `null` while its status loads. */
+/** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
 	switch (id) {
 		case "gcp":

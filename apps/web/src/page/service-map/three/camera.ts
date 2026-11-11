@@ -1,12 +1,11 @@
-import { Schema, Array as Arr, String as Str, Option, Order } from "effect"
-import { connectedIds, type SpatialView } from "../../../components/service-map/three/spatial-layout"
-import type { Topology3D } from "../../../components/service-map/three/types"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str, Option, Order } from "effect"
+import { connectedIds, type SpatialView } from "./spatial-layout"
+import type { Topology3D } from "./types"
 import * as THREE from "three"
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import type { Vec3 } from "./kit"
 import type { Layout } from "./world"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The camera rig. The camera and HTML labels share
 // one projection; labels are the `[data-scene-label]` elements under the scene root.
@@ -58,7 +57,7 @@ const boundsOf = (layout: Layout["layout"]) => {
 	return { points, center: new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3()) }
 }
 
-/** What CameraRig memoizes per input: rebuilt when the topology, layout or links change. */
+/** The rig's memo, rebuilt when the topology or the layout changes. */
 const derive = (input: RigInput) => ({
 	input,
 	linksById: new Map(Arr.map(input.layout.links, (link) => [link.id, link])),

@@ -51,8 +51,8 @@ export const readEffectiveTimeZone: Effect.Effect<string> = Effect.flatMap(readS
 export const TIME_ZONE_PREFERENCE_EVENT = "maple:timezone-preference"
 
 /**
- * `setSelectedTimezone`: `timezonePreferenceAtom` writes the JSON-encoded zone, `__system__` for
- * none, then every reader re-renders (here: the root hears `TIME_ZONE_PREFERENCE_EVENT`).
+ * Writes the JSON-encoded zone, `__system__` for none, then every reader re-renders (here: the
+ * root hears `TIME_ZONE_PREFERENCE_EVENT`).
  */
 export const writeSelectedTimeZone = (selected: Option.Option<string>): Effect.Effect<void> =>
 	Effect.sync(() => {
@@ -70,7 +70,7 @@ export const validTimeZone = (zone: string): Option.Option<string> =>
 
 const supportedValues = Option.liftThrowable(() => Intl.supportedValuesOf("timeZone"))
 
-/** `listSupportedTimeZones`: every zone the runtime knows, else UTC and the browser's own. */
+/** Every zone the runtime knows, else UTC and the browser's own. */
 export const readSupportedTimeZones: Effect.Effect<ReadonlyArray<string>> = Effect.map(
 	browserZone,
 	(browser) =>

@@ -1,6 +1,6 @@
 /** Offline graph fixtures. Every external operation fails rather than reaching a real service. */
 import { Effect, Layer, Option } from "effect"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	AuditEventsQueueProducer,

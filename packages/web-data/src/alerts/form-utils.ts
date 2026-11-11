@@ -38,7 +38,7 @@ import type {
 	V2AlertThreshold,
 } from "@maple/domain/http/v2"
 import { fromV2Threshold } from "@maple/domain/http/v2"
-import type { QueryEngineAlertReducer } from "@maple/query-engine"
+import type { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import { Array as Arr, Option, Schema, Record as Rec, String as Str } from "effect"
 import {
 	buildTimeseriesQuerySpec,
@@ -46,8 +46,12 @@ import {
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import { EMPTY_VALUE, formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
-import { getBrowserTimeZone } from "../lib/timezone"
-import { formatDateInTimezone, formatTimeInTimezone, formatTimestampInTimezone } from "../lib/timezone-format"
+import { getBrowserTimeZone } from "@maple/ui/lib/timezone"
+import {
+	formatDateInTimezone,
+	formatTimeInTimezone,
+	formatTimestampInTimezone,
+} from "@maple/ui/lib/timezone-format"
 import type { Tone } from "@maple/ui/lib/tone"
 
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -661,10 +665,6 @@ export function isRulePreviewReady(form: RuleFormState): boolean {
 	return deriveRuleQueryIssues(form).length === 0
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Destination Form Helpers                                                  */
-/* -------------------------------------------------------------------------- */
-
 export type DestinationFormState = {
 	type: AlertDestinationType
 	name: string
@@ -1006,10 +1006,6 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/*  v2 Response Mappers                                                       */
-/* -------------------------------------------------------------------------- */
-
 /**
  * v2 wire types keep snake_case property names after decode, while everything
  * downstream of the preview/checks fetches (charts, diagnosis, breach stats)
@@ -1123,10 +1119,6 @@ export function v2DeliveryToDocument(delivery: V2AlertDelivery): AlertDeliveryEv
 	})
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Incident Stats                                                            */
-/* -------------------------------------------------------------------------- */
-
 export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 	const totalTriggered = incidents.length
 	const resolvedIncidents = Arr.filter(incidents, (i) => Boolean(i.resolvedAt && i.firstTriggeredAt))
@@ -1152,10 +1144,6 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 
 	return { totalTriggered, avgResolution, topContributors }
 }
-
-/* -------------------------------------------------------------------------- */
-/*  Shared Formatters                                                         */
-/* -------------------------------------------------------------------------- */
 
 export function formatAlertDateTime(value: string | null, timeZone: string): string {
 	if (!value) return "Never"
@@ -1197,10 +1185,6 @@ function formatAlertDayHeading(value: string, timeZone: string | undefined, nowM
 	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
 	return formatDateInTimezone(date, { timeZone: timeZone ?? getBrowserTimeZone() })
 }
-
-/* -------------------------------------------------------------------------- */
-/*  Delivery-event presentation                                               */
-/* -------------------------------------------------------------------------- */
 
 /**
  * One token-based vocabulary for alert event types, shared by the delivery log,

@@ -116,8 +116,6 @@ export const compileRules = (specs: ReadonlyArray<IngestRuleSpec>, salt: string)
 	return { rules, invalid, salt: utf8(salt) }
 }
 
-// CONDITIONS
-
 export const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Arr.isArray(value)
 const isMap = (value: AttrValue): value is AttrMap =>
 	typeof value === "object" && !isAttrList(value) && !(value instanceof Uint8Array)
@@ -268,8 +266,6 @@ export const scanCut = (text: string): number => {
 	return index
 }
 
-// SAMPLING
-
 /** Deterministic on trace id, so every span and log of one trace gets the same answer. */
 export const keepBySample = (
 	traceId: string | undefined,
@@ -283,8 +279,6 @@ export const keepBySample = (
 	const head = new DataView(digest.buffer).getBigUint64(0)
 	return head % 100n < BigInt(keepPercent)
 }
-
-// REDACTION
 
 /** Case-insensitive glob where `*` matches any run of characters; `pattern` is lower-cased. */
 export const globMatches = (pattern: string, key: string): boolean => {
@@ -428,8 +422,6 @@ const redactRecord = (
 	}
 	return { record: next, count: ctx.count }
 }
-
-// APPLY
 
 /** The one random draw a record without a trace id gets, taken on first use. */
 interface RecordDraw {

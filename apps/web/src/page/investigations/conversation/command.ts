@@ -2,7 +2,7 @@ import { ChatApplyRequest } from "@maple/domain/http"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { MapleAiClient } from "../../../platform/api-clients"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { awaitHighlighter } from "@maple/views/lib/highlight"
 import { parseMarkdownTexts } from "../../kit/markdown"
 import { abortTurn, loadHistory, postMessage } from "./kit/chat-api"
@@ -115,7 +115,7 @@ export const DownloadCode = Command.define("DownloadChatCode", {
 		),
 })
 
-/** `MapleAiAtomClient.mutation("chat", "apply")`: the session runs (or declines) the proposal. */
+/** The session runs (or declines) the proposal. */
 export const DecideApproval = Command.define("DecideChatApproval", {
 	args: {
 		sessionId: Schema.String,

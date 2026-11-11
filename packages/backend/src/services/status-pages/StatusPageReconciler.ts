@@ -17,7 +17,7 @@ import {
 	type StatusPageIncidentKind,
 	type StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { StatusPageKeys, statusFitsKind, type StatusPageOverlayEntry } from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"

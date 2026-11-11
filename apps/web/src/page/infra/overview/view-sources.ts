@@ -1,4 +1,4 @@
-import { VALUE_TONE } from "../../../components/infra/severity-tokens"
+import { VALUE_TONE } from "../../kit/severity-tokens"
 import { formatNumber } from "@maple/ui/lib/format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -8,7 +8,7 @@ import { segmentedBar } from "@maple/views/ui/meter"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonMeter } from "@maple/views/ui/skeleton"
 import { sectionHeading } from "../../kit/section-heading"
-import type { TimeSearch } from "../kit/view-tabs"
+import type { TimeSearch } from "../../kit/view-tabs"
 import { sourceHref } from "./links"
 import type { HealthSegment, SourceId } from "./model"
 import { sourceMark, SOURCE_TITLE } from "./source-mark"
@@ -17,8 +17,6 @@ import { ROW_CLASS, sectionCaption } from "./view-findings"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `SourcesTable`, `SourceRowBody` and `HealthBar`.
 
 const SEGMENT_CLASS = {
 	ok: TONE_FILL.ok,

@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { chartFences } from "@maple/domain/chat-chart-spec"
 import type { ChatEvent } from "@maple/domain/chat-session"
 import { Result, Record as Rec, String as Str, Array as Arr } from "effect"
@@ -126,7 +127,7 @@ export const init = (sessionId: string, readOnly: ReadOnly = null): Return => ({
 	commands: [LoadHistory({ sessionId, generation: 1 })],
 })
 
-/** `handleSend`: the optimistic bubble, `submitted` and the POST; nothing while a turn runs. */
+/** The optimistic bubble, `submitted` and the POST; nothing while a turn runs. */
 const send = (model: Model, text: string): Return => {
 	const trimmed = Str.trim(text)
 	if (trimmed === "" || !model.historyReady || isLoading(model) || model.readOnly !== null) return { model }
@@ -232,7 +233,6 @@ const step = (model: Model, message: Message): Return =>
 						],
 					},
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
-		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.
 		// Before the history is read the draft stays: a send then would drop the history.
 		SubmittedComposer: () =>
 			model.historyReady ? send({ ...model, draft: "" }, model.draft) : { model },
@@ -252,7 +252,7 @@ const step = (model: Model, message: Message): Return =>
 						commands: [AbortTurn({ sessionId: model.sessionId })],
 					}
 				: { model },
-		// A send outlives a Stop (`runStream` after the POST): its bubble still shown, it adopts the
+		// A send outlives a Stop (the tail starts after the POST): its bubble still shown, it adopts the
 		// cursor under a fresh generation so the server's `turn-end` settles the turn.
 		CompletedPostMessage: ({ generation, localId, text, result }) => {
 			if (!Arr.some(model.messages, (entry) => entry.id === localId)) return { model }
@@ -342,11 +342,7 @@ const step = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotMinimapMessage: ({ message: child }) => ({
 			model: { ...model, minimap: updateMinimap(model.minimap, child) },
 		}),

@@ -21,7 +21,6 @@ import {
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import * as Base64Url from "effect/encoding/Base64Url"
 import type { OAuthAuthStateRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
@@ -31,6 +30,7 @@ import { BACKFILL_WINDOW_MS } from "@maple/backend/services/integrations/vcs/Vcs
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 import { githubWebBaseUrl } from "./github-hosts"
+import { newOAuthState } from "@maple/backend/services/auth/oauth/oauth-state"
 
 // The dashboard connect flow for the GitHub App. Bridges a real GitHub
 // installation into a `vcs_installations` row owned by a Maple org, then hands
@@ -53,7 +53,6 @@ import { githubWebBaseUrl } from "./github-hosts"
 const GITHUB_PROVIDER = "github" as const
 const AUTHORIZE_PROVIDER = "github-authorize"
 const SELECTION_PROVIDER = "github-selection"
-const STATE_TTL_MS = 10 * 60_000 // 10 minutes
 
 interface GithubBranchStatus {
 	readonly name: string
@@ -289,8 +288,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const repo = yield* VcsRepository
 			const queue = yield* VcsSyncQueue
 			const githubApp = yield* GithubAppClient
-			const random = yield* SecureRandom.SecureRandom
-			const newState = Effect.map(random.randomBytes(24), Base64Url.encode)
+			const newState = newOAuthState
 
 			const consumeState = (state: string, provider: string, initiator: OAuthFlowInitiator) =>
 				states
@@ -384,21 +382,17 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				readonly returnTo: string | null
 				readonly githubInstallationIds?: ReadonlyArray<string>
 			}) {
-				const now = yield* Clock.currentTimeMillis
 				const state = yield* newState
-				yield* asPersistence(states.purgeExpired(now))
 				yield* asPersistence(
-					states.insert({
+					states.save({
 						state,
-						orgId: row.orgId,
 						provider: row.provider,
-						initiatedByUserId: row.userId,
+						initiator: { orgId: row.orgId, userId: row.userId },
 						redirectUri: row.redirectUri,
 						returnTo: row.returnTo,
-						githubInstallationIds:
-							row.githubInstallationIds === undefined ? null : [...row.githubInstallationIds],
-						createdAt: now,
-						expiresAt: now + STATE_TTL_MS,
+						...(row.githubInstallationIds === undefined
+							? undefined
+							: { githubInstallationIds: row.githubInstallationIds }),
 					}),
 				)
 				return state

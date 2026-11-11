@@ -10,8 +10,6 @@ import { endpointMessage, localeTimeOf } from "./request"
 
 // `/cli-login`: approve a terminal's device code.
 
-// MODEL
-
 export const DeviceInfo = Schema.Struct({
 	userCode: Schema.String,
 	deviceName: Schema.String,
@@ -38,7 +36,7 @@ export const Model = Schema.TaggedStruct("CliLogin", {
 })
 export type Model = typeof Model.Type
 
-/** `normalizeCliUserCode`: upper-case alphanumerics, eight at most, `XXXX-XXXX`. */
+/** Upper-case alphanumerics, eight at most, as `XXXX-XXXX`. */
 export const normalizeCliUserCode = (value: string): string => {
 	const normalized = Str.slice(0, 8)(Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value)))
 	return normalized.length > 4 ? `${Str.slice(0, 4)(normalized)}-${Str.slice(4)(normalized)}` : normalized
@@ -47,8 +45,6 @@ export const normalizeCliUserCode = (value: string): string => {
 /** The code field's id: the first slot, which its label's `for` points at. */
 export const CODE_FIELD_ID = "cli-login-code"
 export const CODE_LABEL_ID = `${CODE_FIELD_ID}-label`
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	GotOtpMessage: { message: OtpField.Message },
@@ -64,11 +60,9 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 const INSPECT_FALLBACK = "This CLI login code is invalid or expired."
 
-/** `inspectCliDevice`: `GET /api/auth/cli/device/:userCode`. */
+/** `GET /api/auth/cli/device/:userCode`. */
 export const InspectCliDevice = Command.define("InspectCliDevice", {
 	args: { userCode: Schema.String },
 	messages: [Message.SucceededInspectCliDevice, Message.FailedInspectCliDevice],
@@ -94,7 +88,7 @@ export const InspectCliDevice = Command.define("InspectCliDevice", {
 		),
 })
 
-/** `actOnCliDevice`: `POST /api/auth/cli/device/:userCode/approve|deny`. */
+/** `POST /api/auth/cli/device/:userCode/approve|deny`. */
 export const DecideCliDevice = Command.define("DecideCliDevice", {
 	args: { userCode: Schema.String, action: Schema.Literals(["approve", "deny"]) },
 	messages: [Message.SucceededDecideCliDevice, Message.FailedDecideCliDevice],
@@ -116,8 +110,6 @@ export const DecideCliDevice = Command.define("DecideCliDevice", {
 		),
 })
 
-// UPDATE
-
 type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const inspect = (model: Model, code: string): UpdateReturn => {
@@ -136,7 +128,7 @@ const inspect = (model: Model, code: string): UpdateReturn => {
 	}
 }
 
-/** `useState(() => initialCode ? loading : entry)`, then the mount effect's inspection. */
+/** A code carried by the link is inspected at once; without one the entry form shows. */
 export const init = (initialCode: string | undefined): UpdateReturn => {
 	const model: Model = {
 		_tag: "CliLogin",
@@ -153,7 +145,7 @@ export const init = (initialCode: string | undefined): UpdateReturn => {
 	return initialCode === undefined || initialCode === "" ? { model } : inspect(model, initialCode)
 }
 
-/** Base UI's `onValueComplete` fires when the value reaches its full length. */
+/** The code is inspected once, when the field first reaches its full length. */
 const updateOtp = (model: Model, otpMessage: OtpField.Message): UpdateReturn => {
 	const next = OtpField.update(model.otp, otpMessage)
 	const otpCommands = Command.mapMessages(next.commands ?? [], (child) =>

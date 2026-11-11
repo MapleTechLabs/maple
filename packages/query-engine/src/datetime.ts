@@ -95,8 +95,6 @@ export function formatWarehouseDateTimeMs(epochMs: number): string {
 	return Str.replace(/Z$/, "")(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
-// Warehouse time as a schema
-//
 // Everything above is string plumbing any caller may skip. What follows makes
 // a *validated* warehouse timestamp its own type, so the plumbing can't be
 // skipped by accident: a `WarehouseDateTime` exists only because something
@@ -247,8 +245,6 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
 	return WarehouseDateTime.make(formatWarehouseDateTime(epochMs))
 }
 
-// Warehouse time as a value
-//
 // Columns declared `T.dateTime` / `T.dateTime64` decode to `DateTime.Utc` in
 // effect-orm. These codecs put that value back on Maple's HTTP wire in exactly
 // the string ClickHouse would have sent, so clients see no change.
@@ -308,8 +304,6 @@ export const DateTimeUtcFromWarehouse64 = Schema.String.pipe(
 	description: "UTC timestamp, `YYYY-MM-DD HH:mm:ss.SSS` (e.g. `2026-08-25 08:47:52.041`).",
 })
 
-// Relative range shorthand — single source of truth
-//
 // The time picker persists relative ranges as shorthand ("15m", "7d", "3mo",
 // "today"). This grammar used to exist three times over — in the web app (on
 // date-fns), in the MCP dashboard resolver (on Effect DateTime, approximating a
@@ -324,8 +318,6 @@ export const DateTimeUtcFromWarehouse64 = Schema.String.pipe(
 // runtime's local calendar is used: on a Worker, local is UTC, which is the only
 // sensible reading server-side. One implementation serves both.
 
-// Calendar arithmetic in an IANA zone
-//
 // `Date` only knows two calendars — UTC and the runtime's local zone — so every
 // "midnight in Europe/Berlin" question goes through `Intl`. The trick is the
 // standard one: read the wall-clock components in the zone, do the calendar
@@ -362,7 +354,6 @@ function zonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
 	return formatter
 }
 
-/** The wall clock in `timeZone` at `epochMs`. */
 export function zonedDateParts(epochMs: number, timeZone: string): ZonedDateParts {
 	const parts = zonedPartsFormatter(timeZone).formatToParts(new Date(epochMs))
 	const read = (type: Intl.DateTimeFormatPartTypes): number => {
@@ -595,8 +586,6 @@ export function resolveRelativeRangeToWarehouse(
 	}
 }
 
-// Cache-key snap grid — single source of truth
-//
 // A relative preset ("12h") has no absolute endpoint in the URL, so every fresh
 // mount re-resolves it against `Date.now()` and produces a slightly different
 // range. Cache keys are built from that range, so the key rolls over as fast as
@@ -767,8 +756,6 @@ export function resolveTimeRangeWindow(
 		: snapRangeForCache(resolved, { anchoredStart: isCalendarAlignedShorthand(timeRange.value) })
 }
 
-// Time-series bucketing — single source of truth
-//
 // Both the web app and the query engine pick an auto bucket size and build
 // bucket timelines. Keeping one pure implementation here (no driver / no
 // `Date.now()`) prevents the two from drifting and producing different

@@ -1,4 +1,4 @@
-import { getServiceMapNodeColor } from "@maple/ui/components/service-map/service-map-utils"
+import { getServiceMapNodeColor } from "../graph/service-map-utils"
 import { Option, Schema, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type HandleBounds, handlePoint, type MeasuredNode } from "../xyflow/geometry"

@@ -105,7 +105,6 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
 	})
 }
 
-/** `LogDetailPage` over `ResultPage` (`gap="sm"`). */
 /** A link that resolves to no log keeps the page's title, as a load failure does. */
 const isMissing = (model: Model): boolean =>
 	model.key === null || Option.getOrUndefined(AsyncData.getData(model.log.data)) === null

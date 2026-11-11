@@ -11,7 +11,6 @@
 
 @source "../../../packages/ui/src";
 @source "./";
-@source "../../web/src";
 @source "../../../packages/views/src";
 
 /* Loading spinner: step the Nucleo "Pixel Essential" loader frame by frame so it reads as

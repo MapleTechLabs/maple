@@ -45,8 +45,6 @@ const nullable = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.
 const nullableNumber = nullable(Schema.Number)
 const nullableString = nullable(Schema.String)
 
-// Dataset settings (per-tenant limits discovery)
-
 /**
  * The `settings` discovery node is the only authoritative source for a tenant's retention
  * (`notOlderThan`), max query range (`maxDuration`), and available fields — all plan-dependent.
@@ -168,8 +166,6 @@ export const decodeAccountAnalyticsEnvelope = Schema.decodeUnknownEffect(Account
 const ZoneTagNode = Schema.Struct({ zoneTag: Schema.String })
 export const decodeZoneTagOption = Schema.decodeUnknownOption(ZoneTagNode)
 
-// HTTP edge analytics (zone-scoped httpRequestsAdaptiveGroups)
-
 const HTTP_QUANTILES_SELECTION = `
         quantiles {
           edgeTimeToFirstByteMsP50
@@ -249,8 +245,6 @@ const HttpZoneNode = Schema.Struct({
 
 export const decodeHttpZoneNode = Schema.decodeUnknownEffect(HttpZoneNode)
 
-// HTTP path breakdown (zone-scoped httpRequestsAdaptiveGroups, own dataset)
-
 /**
  * Request paths for one zone, as their own selection pair rather than extra dimensions on
  * `httpSelection`'s `groups`. Two reasons, both load-bearing:
@@ -301,8 +295,6 @@ const HttpPathsZoneNode = Schema.Struct({
 })
 
 export const decodeHttpPathsZoneNode = Schema.decodeUnknownEffect(HttpPathsZoneNode)
-
-// HTTP client/geo breakdown (zone-scoped httpRequestsAdaptiveGroups, own dataset)
 
 /**
  * Two more single-purpose selections over the same dataset:
@@ -361,8 +353,6 @@ const HttpDimensionsZoneNode = Schema.Struct({
 })
 
 export const decodeHttpDimensionsZoneNode = Schema.decodeUnknownEffect(HttpDimensionsZoneNode)
-
-// Firewall/WAF events (zone-scoped firewallEventsAdaptiveGroups)
 
 /**
  * Security events by action × source × rule × host. Attack traffic can push the group count past
@@ -424,8 +414,6 @@ export type DnsGroupDefinition = typeof DnsGroup.Type
 const DnsZoneNode = Schema.Struct({ dns: nullable(Schema.Array(DnsGroup)) })
 export const decodeDnsZoneNode = Schema.decodeUnknownEffect(DnsZoneNode)
 
-// Queues (account-scoped queueBacklogAdaptiveGroups / queueConsumerMetricsAdaptiveGroups)
-
 /** Backlog depth is a point-in-time sample, so `avg` (not `sum`) → mapped to gauges. */
 export const queueBacklogSelection = (_options: { readonly withQuantiles: boolean }): string =>
 	`      queueBacklog: queueBacklogAdaptiveGroups(
@@ -477,8 +465,6 @@ const QueueConsumersAccountNode = Schema.Struct({
 })
 export const decodeQueueConsumersAccountNode = Schema.decodeUnknownEffect(QueueConsumersAccountNode)
 
-// Durable Objects (account-scoped durableObjectsInvocationsAdaptiveGroups)
-
 const DO_QUANTILES_SELECTION = `
         quantiles {
           wallTimeP50
@@ -508,8 +494,6 @@ const DurableObjectsAccountNode = Schema.Struct({
 	durableObjects: nullable(Schema.Array(DurableObjectsGroup)),
 })
 export const decodeDurableObjectsAccountNode = Schema.decodeUnknownEffect(DurableObjectsAccountNode)
-
-// Workers invocations (account-scoped workersInvocationsAdaptive)
 
 const WORKERS_QUANTILES_SELECTION = `
         quantiles {
@@ -555,8 +539,6 @@ export type WorkersGroupDefinition = typeof WorkersGroup.Type
 const WorkersAccountNode = Schema.Struct({ invocations: nullable(Schema.Array(WorkersGroup)) })
 
 export const decodeWorkersAccountNode = Schema.decodeUnknownEffect(WorkersAccountNode)
-
-// Live top-traffic lookup (host/path) — served on demand, never stored
 
 /**
  * Top hosts or paths for ONE zone over a window, straight from Cloudflare. Path cardinality is
@@ -679,8 +661,6 @@ const TopTrafficResponse = Schema.Struct({
 })
 
 export const decodeTopTrafficResponse = Schema.decodeUnknownEffect(TopTrafficResponse)
-
-// Time formatting
 
 /** Cloudflare's `Time` scalar accepts RFC 3339; second precision keeps documents stable. */
 export const toGraphqlTime = (epochMs: number): string =>

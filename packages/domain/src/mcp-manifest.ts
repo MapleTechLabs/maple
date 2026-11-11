@@ -19,7 +19,7 @@ export const MCP_SERVER_JSON_SCHEMA =
 /** Reverse-DNS registry name: `maple.dev` → `dev.maple`. */
 export const MAPLE_MCP_SERVER_NAME = "dev.maple/maple"
 
-/** Mirrors the `version` `McpServer.layerHttp` advertises in `initialize`. */
+/** The `version` the MCP server advertises in `initialize` (`apps/ai/src/mcp/app.ts`). */
 export const MAPLE_MCP_SERVER_VERSION = "1.0.0"
 
 export const MAPLE_MCP_SERVER_DESCRIPTION =

@@ -1,5 +1,5 @@
 import { decodePublicId, PublicIdPrefixes, type V2SetupAuditCheck } from "@maple/domain/http/v2"
-import { docsUrl } from "../../../lib/docs"
+import { docsUrl } from "../../kit/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { Array as Arr, Option, Order } from "effect"
 
@@ -54,7 +54,7 @@ const INTEGRATION_FOR_CHECK = new Map<string, string>([
 
 const link = (label: string, href: string): SetupHealthAction => ({ kind: "link", label, href })
 const settingsTab = (tab: "ingestion" | "data-platform") => hrefOf(AppRoute.Settings({ search: { tab } }))
-const alertsTab = (tab: "rules" | "routing") => hrefOf(AppRoute.Alerts({ search: { tab } }))
+const alertsTab = (section: "rules" | "routing") => hrefOf(AppRoute.AlertsSection({ section, search: {} }))
 const integrations = (integration?: string) =>
 	hrefOf(AppRoute.Integrations({ search: integration === undefined ? {} : { integration } }))
 

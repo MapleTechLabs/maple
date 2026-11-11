@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { formatNumber, truncate } from "../lib/format"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -14,6 +14,7 @@ import { IssueKind, IssueListCursor, IssueSeverity, WorkflowState } from "@maple
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { isUnlabelledError, labelExceptionlessFingerprints } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { orFallback } from "../lib/fallback"
 
 type Output = typeof ListErrorIssuesOutput.Type
 type AnyRow = Output["issues"][number]
@@ -130,7 +131,7 @@ const spanLabelsFor = (
 		timeRange: { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) },
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
-		Effect.orElseSucceed(() => new Map<string, string>()),
+		orFallback("exceptionless error labels", () => new Map<string, string>()),
 	)
 }
 
@@ -217,7 +218,6 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			include_archived: P.optionalFlag("Also return archived issues"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListErrorIssuesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing error issues", "Checking open issues"],
 		handler: Effect.fn("McpTool.listErrorIssues")(function* (params) {

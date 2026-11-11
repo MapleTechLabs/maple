@@ -1,78 +1,43 @@
-import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../kit/query-builder/where-clause-autocomplete"
 import { Option, Array as Arr } from "effect"
-import { AsyncData } from "foldkit"
 import type { PageContext } from "../../contract"
-import { type AutocompleteLookup, lookupField, type LookupNames } from "../../kit/autocomplete-lookups"
 import type { QueryDraft } from "../../kit/query-builder/draft"
 import type { PanelInputs } from "../../kit/query-builder/panel"
+import {
+	autocompleteField,
+	lookupTraceFacets,
+	metricKeysOf,
+	type WhereValueSources,
+	whereValuesOf,
+} from "../../kit/query-builder/where-values"
 import type { Model } from "./model"
 import { autocompleteWindowOf } from "./update"
 
-// `useWidgetBuilderData`'s `autocompleteValues`: the provider's lookups per source, the metric
-// list's services, and the board's variable names, for the query panels' where editors.
+// The provider's lookups per source, the metric list's services, and the board's variable names, for
+// the query panels' where editors.
 
-const answerOf = (model: Model, lookup: AutocompleteLookup): LookupNames | undefined =>
-	Option.getOrUndefined(AsyncData.getData(model.autocomplete[lookup]?.data ?? AsyncData.Idle()))
+const sourcesOf = (model: Model, query: QueryDraft | undefined): WhereValueSources => ({
+	slots: model.autocomplete,
+	traceFacets: () => lookupTraceFacets(model.autocomplete),
+	// A picked metric suggests only its own keys, none until they arrive.
+	metricAttributeKeys: () =>
+		query?.dataSource === "metrics" && query.metricName !== ""
+			? (metricKeysOf(model.metricKeys, query)?.attributes ?? [])
+			: autocompleteField(model.autocomplete, "metricAttributeKeys", "keys"),
+	metricServices: model.metricOptions?.services ?? [],
+})
 
-const field = (model: Model, lookup: AutocompleteLookup, name: string): Array<string> => [
-	...lookupField(answerOf(model, lookup), name),
-]
-
-/** `AutocompleteValuesProvider`'s values for a source the list widget reads (no variables). */
+/** The provider's values for a source the list widget reads (no variables). */
 export const providerValuesOf = (
 	model: Model,
 	dataSource: "traces" | "logs" | "product_events",
-): WhereClauseAutocompleteValues => {
-	const spanKeys = field(model, "spanAttributeKeys", "keys")
-	const resourceKeys = field(model, "resourceAttributeKeys", "keys")
-	switch (dataSource) {
-		case "traces":
-			return {
-				services: field(model, "tracesFacets", "services"),
-				spanNames: field(model, "tracesFacets", "spanNames"),
-				environments: field(model, "tracesFacets", "environments"),
-				httpMethods: field(model, "tracesFacets", "httpMethods"),
-				httpStatusCodes: field(model, "tracesFacets", "httpStatusCodes"),
-				attributeKeys: spanKeys,
-				resourceAttributeKeys: resourceKeys,
-			}
-		case "logs":
-			return {
-				services: field(model, "logsFacets", "services"),
-				severities: field(model, "logsFacets", "severities"),
-				attributeKeys: spanKeys,
-				resourceAttributeKeys: resourceKeys,
-			}
-		case "product_events":
-			return {
-				eventNames: field(model, "productEventNames", "keys"),
-				attributeKeys: field(model, "productEventAttributeKeys", "keys"),
-			}
-	}
-}
+): WhereClauseAutocompleteValues => whereValuesOf(dataSource, sourcesOf(model, undefined))
 
-/** `autocompleteValues[query.dataSource]`, with a picked metric's own keys (`useMetricScopedAutocomplete`). */
-export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => {
-	const variables = Arr.map(model.document?.variables ?? [], (variable) => variable.name)
-	switch (query.dataSource) {
-		case "traces":
-		case "logs":
-		case "product_events":
-			return { ...providerValuesOf(model, query.dataSource), variables }
-		case "metrics": {
-			const isScoped = query.metricName !== ""
-			return {
-				metricTypes: [...QUERY_BUILDER_METRIC_TYPES],
-				attributeKeys: isScoped
-					? [...(model.metricKeys[`${query.metricName}::${query.metricType}`]?.attributes ?? [])]
-					: field(model, "metricAttributeKeys", "keys"),
-				services: [...(model.metricOptions?.services ?? [])],
-				variables,
-			}
-		}
-	}
-}
+/** The source's values, with a picked metric's own keys. */
+export const baseValuesOf = (model: Model, query: QueryDraft): WhereClauseAutocompleteValues => ({
+	...whereValuesOf(query.dataSource, sourcesOf(model, query)),
+	variables: Arr.map(model.document?.variables ?? [], (variable) => variable.name),
+})
 
 export const panelInputsOf = (model: Model, context: PageContext): PanelInputs => ({
 	queryOf: (queryId) =>

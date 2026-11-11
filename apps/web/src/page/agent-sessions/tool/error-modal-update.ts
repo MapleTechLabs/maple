@@ -1,11 +1,11 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Option, Schema, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
-import type { Selection } from "../tools-kit/reads"
+import type { Selection } from "../../kit/tools/reads"
 import {
 	CopyErrorArguments,
 	CopyErrorLink,
@@ -14,8 +14,6 @@ import {
 	ScrollSampleIntoView,
 } from "./error-modal-command"
 import { init, Message, type Model, type SamplesPage } from "./error-modal-model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 /** What the modal asks of the page: a new `?error=`, `?session=` or `?variant=`. */
 export const OutMessage = defineMessageUnion({
@@ -189,7 +187,7 @@ const select = (model: Model, context: ModalContext, index: number): Return => {
 	}
 }
 
-/** The sample `SamplesPane` has open: the selection clamped to what is loaded. */
+/** The open sample: the selection clamped to what is loaded. */
 export const currentOf = (model: Model): number =>
 	Math.min(model.selected, Math.max(occurrencesOf(model).length - 1, 0))
 

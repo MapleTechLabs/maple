@@ -61,7 +61,7 @@ const round = (value: number, decimals = 2): string => {
  * reading `__total__`. `issue-hub.ts` and the web alert-source card already
  * guard against it; the notification path did not.
  */
-export const displayGroupKey = (groupKey: string | null): string | null =>
+const displayGroupKey = (groupKey: string | null): string | null =>
 	groupKey == null || groupKey === UNGROUPED_GROUP_KEY ? null : groupKey
 
 /**

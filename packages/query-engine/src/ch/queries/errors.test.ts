@@ -65,8 +65,6 @@ describe("errorsSparkQuery", () => {
 	})
 })
 
-// errorsByTypeQuery
-
 describe("errorsByTypeQuery", () => {
 	it("applies rootOnly filter", () => {
 		const q = errorsByTypeQuery({ rootOnly: true })
@@ -106,8 +104,6 @@ describe("errorsByTypeQuery", () => {
 	})
 })
 
-// errorsTimeseriesQuery
-
 describe("errorsTimeseriesQuery", () => {
 	it("applies services filter", () => {
 		const q = errorsTimeseriesQuery({ fingerprintHash: "1", services: ["api"] })
@@ -115,8 +111,6 @@ describe("errorsTimeseriesQuery", () => {
 		expect(sql).toContain("ServiceName IN ('api')")
 	})
 })
-
-// errorsSummaryQuery
 
 describe("errorsSummaryQuery", () => {
 	it("reads whole hours from service_usage and the partial end hours from raw spans", () => {
@@ -151,8 +145,6 @@ describe("errorsSummaryQuery", () => {
 		expect(sql).toContain("FROM traces")
 	})
 })
-
-// errorDetailTracesQuery
 
 describe("errorDetailTracesQuery", () => {
 	it("applies rootOnly filter", () => {
@@ -234,8 +226,6 @@ describe("errorsByTypeQuery exclusions", () => {
 		expect(sql).toContain("ServiceName NOT IN ('noisy')")
 	})
 })
-
-// errorsFacetsQuery
 
 describe("errorsFacetsQuery", () => {
 	it("filters by error label and service version", () => {
@@ -328,8 +318,6 @@ describe("errorsFacetsQuery", () => {
 	})
 })
 
-// errorIssuesQuery
-
 describe("errorIssuesQuery", () => {
 	it("uses the time-ordered table for broad issue scans", () => {
 		const q = errorIssuesQuery({ services: ["api"] })
@@ -373,8 +361,6 @@ describe("errorTickBootstrapIssuesQuery", () => {
 		expect(sql).not.toContain("LIMIT")
 	})
 })
-
-// tracesFacetsQuery
 
 describe("tracesFacetsQuery", () => {
 	it("applies namespace filter", () => {

@@ -12,7 +12,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { durableStep } from "@maple/backend/platform/durable-step"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"

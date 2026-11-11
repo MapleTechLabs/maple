@@ -182,10 +182,8 @@ const IDENT_ESCAPES = new Map([
 	["e", "\x1b"],
 ])
 
-/** The character at `index`, or `""` past either end. */
 const charAt = (text: string, index: number): string => Option.getOrElse(Str.charAt(text, index), () => "")
 
-/** Where `search` first occurs at or after `from`, or -1. */
 const indexFrom = (text: string, search: string, from: number): number =>
 	Option.match(Str.indexOf(search)(Str.slice(from)(text)), {
 		onNone: () => -1,
@@ -625,7 +623,6 @@ const aliasBindsTable = (masked: string, alias: string): boolean => {
 	return false
 }
 
-/** The first org-filter problem in the query, or null. */
 const orgFilterIssue = (sql: string, masked: string): RawSqlIssue | null => {
 	for (const match of Str.matchAll(ORG_FILTER_MACRO_RE)(sql)) {
 		const alias = match[1] === undefined ? undefined : Str.trim(match[1])
@@ -821,7 +818,6 @@ export const rawSqlIssue = (
 	return options.workload === "dashboard" ? dashboardTimeBoundIssue(sql, maskedSql) : null
 }
 
-/** `rawSqlIssue` as a predicate, for editors that only need a yes/no. */
 export const isValidRawSql = (sql: string, workload: RawSqlWorkload = "interactive"): boolean =>
 	rawSqlIssue(sql, { workload }) === null
 
@@ -858,7 +854,6 @@ export const rawAlertSqlSelectsSamples = (sql: string): boolean => {
 	return false
 }
 
-/** The warning to show when a raw-SQL rule's minimum sample count is likely counting rows. */
 export const rawAlertSampleCountWarning = (sql: string, minimumSampleCount: number): string | null =>
 	minimumSampleCount > 1 && !rawAlertSqlSelectsSamples(sql)
 		? `Minimum sample count ${minimumSampleCount} counts returned rows (one per bucket) because the query has no \`samples\` column. Select an event count as \`samples\` (e.g. \`count() AS samples\`) to gate on volume.`

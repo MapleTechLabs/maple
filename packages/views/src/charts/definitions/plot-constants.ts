@@ -5,14 +5,13 @@ import type {
 	ChartTooltipPosition,
 	ChartValue,
 } from "@tanstack/charts"
-import { findNearestSeriesKey } from "@maple/ui/components/charts/_shared/nearest-series"
+import { findNearestSeriesKey } from "../series/nearest-series"
 import { tooltip } from "@tanstack/charts/tooltip"
 import { Array as Arr, Record as Rec } from "effect"
 
-// Copied from React modules of packages/ui/src/components/plot (plot-tooltip.tsx, plot-legend.tsx,
-// plot-frame.tsx) so this file stays React-free. Phase 1 moves them to a shared module.
+// Constants the chart definitions share.
 
-/** `cursorTooltip` (plot-tooltip.tsx): the shell themed by plot-tooltip.css, beside the cursor. */
+/** `cursorTooltip`: the shell themed by plot-tooltip.css, beside the cursor. */
 export const cursorTooltip = <TDatum>(anchor: ChartTooltipAnchor<TDatum, ChartValue, number> | "pointer") =>
 	({
 		use: tooltip,
@@ -22,10 +21,10 @@ export const cursorTooltip = <TDatum>(anchor: ChartTooltipAnchor<TDatum, ChartVa
 		offset: 12,
 	}) as const
 
-/** plot-legend.tsx: how far a non-highlighted series' colour is mixed into the background. */
+/** How far a non-highlighted series' colour is mixed into the background. */
 export const MUTED_COLOR_AMOUNT = 0.78
 
-/** plot-frame.tsx: `maxFocusDistance` for a chart that resolves focus anywhere in the plot. */
+/** `maxFocusDistance` for a chart that resolves focus anywhere in the plot. */
 export const UNBOUNDED_FOCUS_DISTANCE = Number.MAX_SAFE_INTEGER
 
 /** How far from a series' plotted point the cursor may sit and still emphasise it. */
@@ -41,7 +40,7 @@ interface FocusCell {
 }
 
 /**
- * `createTooltipFocusStore`: the tooltip anchor records the pointer and the y scale on every
+ * The tooltip anchor records the pointer and the y scale on every
  * update, so the body can emphasise the series nearest the cursor. One per built definition.
  */
 export const tooltipFocusCapture = () => {
@@ -58,7 +57,7 @@ export const tooltipFocusCapture = () => {
 		return context.pointer
 	}
 	/**
-	 * `resolveTooltipHighlight`: the label nearest the cursor among `plotted` (label to where its
+	 * The label nearest the cursor among `plotted` (label to where its
 	 * mark sits in y-data space); single-series charts emphasise nothing.
 	 */
 	const highlight = (

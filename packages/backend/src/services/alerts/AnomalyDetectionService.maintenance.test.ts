@@ -5,12 +5,13 @@ import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effe
 import { CacheBackend, EdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { AnomalyDetectionService } from "./AnomalyDetectionService"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 
 const ORG = Schema.decodeSync(OrgId)("org_anomaly_maintenance")
 const HOUR_MS = 60 * 60_000
@@ -67,6 +68,7 @@ const makeLayer = (testDb: TestDb, currentHourStartMs: number) => {
 				.pipe(Effect.orDie),
 	})
 	return Layer.effect(AnomalyDetectionService, AnomalyDetectionService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(WarehouseQueryService, warehouse),

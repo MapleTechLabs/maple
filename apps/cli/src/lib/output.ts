@@ -60,14 +60,10 @@ export const chosenFormat: Effect.Effect<OutputFormat | undefined> = Effect.gen(
 	return explicit ?? (isFormat(env) ? env : undefined)
 })
 
-/** The chosen format, defaulting to json. */
 export const resolveFormat: Effect.Effect<OutputFormat> = Effect.map(
 	chosenFormat,
 	(format) => format ?? "json",
 )
-
-// ---------------------------------------------------------------------------
-// Cell formatting (table mode only; JSON keeps raw numbers)
 
 const integerFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 })
 const decimalFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 })
@@ -177,9 +173,6 @@ export const headerFor = (key: string): string =>
 		Str.replace(/_/g, " ")(Str.replace(/([a-z0-9])([A-Z])/g, "$1 $2")(Str.replace(/Ms$/, "")(key))),
 	)
 
-// ---------------------------------------------------------------------------
-// Tables
-
 export interface Column<R> {
 	readonly header: string
 	readonly cell: (row: R) => string
@@ -272,9 +265,6 @@ export const autoSections = (data: unknown): ReadonlyArray<Section> => {
 	return fields.length > 0 ? [{ body: renderFields(fields) }, ...sections] : sections
 }
 
-// ---------------------------------------------------------------------------
-// Printing
-
 export interface Section {
 	readonly title?: string
 	readonly body: string
@@ -313,7 +303,6 @@ export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
 		const format = yield* resolveFormat
 		const empty = view?.isEmpty ? view.isEmpty(data) : isEmptyResult(data)
 		if (format === "json") {
-			// Raw SQL rows stay as the query returned them.
 			const replacer = view?.raw ? undefined : utcTimestampReplacer()
 			const text = yield* Schema.encodeEffect(
 				Schema.fromJsonString(Schema.Unknown, { replacer, space: 2 }),

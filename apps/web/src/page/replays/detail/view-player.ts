@@ -1,8 +1,9 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { formatClock } from "@maple/ui/lib/replay-format"
 import { hostFromUrl } from "@maple/ui/lib/replay"
 import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { Option, Schema, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { createKeyedLazy, createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { filterChip } from "@maple/views/ui/filter-chip"
@@ -40,8 +41,6 @@ import type { Model, Playback, ReplayDetail } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The replay surface and its transport controls.
 // TODO(scrubber-drag): the scrubber seeks on pointer down; drag-to-scrub and the hover time bubble
@@ -158,7 +157,7 @@ export const bufferedTrack = (h: H, model: Model, surface: TrackSurface): Html =
 export const markersTrack = (h: H, model: Model, surface: TrackSurface): Html =>
 	trackSlots(`markers-${surface}`, markersView, [h, model.meta.actionMarkers, model.player.totalMs])
 
-/** `PlayerMessage`: the surface's centred note when there is nothing to play. */
+/** The surface's centred note when there is nothing to play. */
 const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner = false): Html =>
 	hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
 		vstack(h, { gap: "3", align: "center", className: "max-w-sm text-center" }, [
@@ -170,7 +169,7 @@ const playerMessage = (h: H, children: ReadonlyArray<Html | string>, hasSpinner 
 		]),
 	])
 
-/** `PlayerError`: the failure in the app's error contract, retry when it can help. */
+/** The failure in the app's error contract, retry when it can help. */
 const playerError = (h: H, failure: LoadFailure): Html => {
 	const canRetry = failure.recovery === "retry" || failure.recovery === "refresh"
 	return hstack(h, { align: "center", justify: "center", className: "aspect-video w-full p-8" }, [
@@ -409,7 +408,7 @@ const stageView = (
 const urlBarSlot = createLazy()
 const stageSlot = createLazy()
 
-/** `ReplaySurface detachedTransport docked`: browser chrome over the recording. */
+/** Browser chrome over the recording. */
 export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: SurfaceState): Html => {
 	const { isFullscreen } = model.player
 	const isHolding = model.player.playback._tag === "Playing" && isBuffering(model)
@@ -439,7 +438,7 @@ export const replaySurface = (h: H, model: Model, session: ReplayDetail, state: 
 	)
 }
 
-/** `Scrubber`: a pointer press seeks to where it lands. */
+/** A pointer press seeks to where it lands. */
 const scrubber = (h: H, model: Model, surface: TrackSurface): Html => {
 	const playhead = playheadOf(model)
 	const pct = playhead.totalMs > 0 ? Math.min(100, (playhead.currentMs / playhead.totalMs) * 100) : 0
@@ -539,7 +538,7 @@ const settings = (h: H, speed: number, isSkippingIdle: boolean, isFullscreen: bo
 
 const controlSlots = createKeyedLazy()
 
-/** `ReplayControls`: play, scrubber, clock, speed, skip idle, fullscreen. */
+/** Play, scrubber, clock, speed, skip idle, fullscreen. */
 export const replayControls = (h: H, model: Model, isDetached: boolean): Html => {
 	const { player } = model
 	const surface = isDetached ? "docked" : "fullscreen"
@@ -584,7 +583,7 @@ export const replayControls = (h: H, model: Model, isDetached: boolean): Html =>
 	)
 }
 
-/** `ReplayTransport docked`: the controls flush under the surface (hidden in fullscreen). */
+/** The controls flush under the surface (hidden in fullscreen). */
 export const replayTransport = (h: H, model: Model, status: PlayerStatus): Html | null =>
 	model.player.isFullscreen || status === "unrecorded"
 		? null

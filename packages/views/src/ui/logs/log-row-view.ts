@@ -4,7 +4,7 @@ import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { countLabel } from "@maple/ui/lib/format"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { stripAnsi } from "@maple/ui/lib/strip-ansi"
 import { encodeLogKey } from "../../lib/log-key"
 import { tryParseJson } from "../../lib/display-text"
 import { SpanId, TraceId } from "@maple/domain"
@@ -80,7 +80,7 @@ const MAX_INLINE_CHIPS = 3
 const MAX_VALUE_CHARS = 24
 const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
 
-// packages/ui/src/components/logs/severity-badge.tsx `severityLabel` (a React module).
+/** The severity text, else the OTel severity number's name. */
 export const severityLabel = (severityText: string, severityNumber?: number): string => {
 	if (Str.trim(severityText) !== "") return severityText
 	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
@@ -90,7 +90,7 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 
 const isJsonValue = (value: string): boolean => Option.isSome(tryParseJson(value))
 
-// packages/ui/src/components/logs/log-attribute-chip.tsx `shortKey` / `truncateValue`.
+// An attribute chip's short key and truncated value.
 const shortKey = (key: string): string => {
 	if (key === "http.status_code" || key === "http.response.status_code") return "status"
 	if (key === "http.method" || key === "http.request.method") return "method"

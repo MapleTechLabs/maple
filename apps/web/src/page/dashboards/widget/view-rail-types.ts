@@ -29,8 +29,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 
-// Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
-
 type H = HtmlBuilder<Message>
 
 const titleCase = (value: string): string =>
@@ -49,7 +47,7 @@ const sqlValueField = (h: H, state: EditorState): Html =>
 		}),
 	])
 
-/** `ScalarReduction`: the aggregate, and the series it reduces (the first while unset or gone). */
+/** The aggregate, and the series it reduces (the first while unset or gone). */
 const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const fields = toSeriesFieldOptions(state)
 	// A fixed endpoint reduces its own field, which the stand-in queries cannot name.
@@ -100,7 +98,7 @@ const numberInput = (
 		attributes: [h.Value(value), h.Placeholder(placeholder), h.OnInput(onInput), ...extra],
 	})
 
-/** `GaugeRange`: the arc's sweep. */
+/** The arc's sweep. */
 const gaugeRange = (h: H, state: EditorState): Html =>
 	grid(h, { cols: 2, gap: "2" }, [
 		railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
@@ -115,7 +113,7 @@ const gaugeRange = (h: H, state: EditorState): Html =>
 		]),
 	])
 
-/** `Sparkline`: builder mode only; a fixed endpoint offers it only when it stored a trend source of its own. */
+/** Builder mode only; a fixed endpoint offers it only when it stored a trend source of its own. */
 const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
 	model.sourceMode === "builder" &&
 	(!state.keepsStoredSource || widgetOf(model)?.display.sparkline?.dataSource !== undefined)
@@ -130,7 +128,6 @@ const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> 
 			]
 		: []
 
-/** `RowLimit`. */
 const rowLimit = (h: H, state: EditorState): Html =>
 	railSetting(h, "row-limit", "Row limit", state.tableLimit !== "", [
 		numberInput(h, "row-limit", state.tableLimit, "50", (value) => Message.ChangedTableLimit({ value }), [
@@ -139,7 +136,7 @@ const rowLimit = (h: H, state: EditorState): Html =>
 		]),
 	])
 
-/** `RampSwatch`: the palette's five stops. */
+/** The palette's five stops. */
 const rampSwatch = (h: H, scale: string): Html =>
 	hstack(
 		h,
@@ -156,7 +153,7 @@ const swatchLabel = (h: H, scale: string): ReadonlyArray<Html | string> => [
 	hstack(h, { gap: "2", as: "span" }, [rampSwatch(h, scale), titleCase(scale)]),
 ]
 
-/** `HeatmapColors`: an unset palette shows the ramp the chart already renders. */
+/** An unset palette shows the ramp the chart already renders. */
 const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
 	pageSelect(
 		h,
@@ -186,7 +183,7 @@ const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Ht
 
 const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
 
-/** `FunnelVariant`: bars, or the step-by-step drop-off view. */
+/** Bars, or the step-by-step drop-off view. */
 const funnelVariant = (h: H, state: EditorState): Html =>
 	railSetting(h, "funnel-variant", "View", false, [
 		segments(
@@ -200,7 +197,7 @@ const funnelVariant = (h: H, state: EditorState): Html =>
 		),
 	])
 
-/** `FunnelStepPercent`: the chart's tri-state label mode. */
+/** The chart's tri-state label mode. */
 const funnelStepPercent = (h: H, state: EditorState): Html => {
 	const value = state.funnel.showStepPercent
 	return railSetting(h, "funnel-step-percent", "Step labels", false, [
@@ -217,7 +214,7 @@ const funnelStepPercent = (h: H, state: EditorState): Html => {
 	])
 }
 
-/** The `ConfigPanel` of a panel type other than line, bar and area. */
+/** The settings of a panel type other than line, bar and area. */
 export const typeSettings = (
 	h: H,
 	model: Model,

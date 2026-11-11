@@ -26,8 +26,6 @@ import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
-// `ReviewRulesForm`'s layout, selects, toggles and footer.
-
 type H = HtmlBuilder<Message>
 
 export type ViewInputs = Readonly<{ canEdit: boolean }>
@@ -107,7 +105,7 @@ const switchRow = (
 
 const parentOf = (model: Model) => model.inherited ?? new PrReviewRepositoryConfig({})
 
-/** `ToggleSetting`: a switch for the organization, a select that can inherit for a repository. */
+/** A switch for the organization, a select that can inherit for a repository. */
 const toggleSetting = (
 	h: H,
 	model: Model,

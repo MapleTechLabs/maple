@@ -1,12 +1,10 @@
-// Shared helpers for the infra detail charts (host + k8s). The two chart files
-// keep their own <ChartView> (different units, container chrome, heights) but
-// share the row→series transform, grid/empty conventions, and the unit-aware
-// value formatting used by tooltips, legend chips, and axes. Series colors come
-// from `resolveSeriesColors` — a host/pod/zone keeps its color across windows.
+// Shared helpers for the infra detail charts (host + k8s). The two charts keep their own
+// units, container chrome and heights but share the row→series transform, grid/empty
+// conventions, and the unit-aware value formatting used by tooltips, legend chips, and axes.
+// Series colors come from `resolveSeriesColors`, so a host/pod/zone keeps its color across windows.
 
-// Framework-free: no `@/` imports. The zone-aware
-// `isoToLabel` default lives in `./chart-utils`.
-import { bucketDate } from "@maple/ui/components/plot/bucket-axis"
+// Framework-free: no `@/` imports.
+import { bucketDate } from "../charts/plot/bucket-axis"
 import {
 	EMPTY_VALUE,
 	formatBytes,
@@ -24,8 +22,14 @@ import { Array as Arr, String as Str } from "effect"
  * poller's 5-minute granularity and rounded to whole 5-minute steps.
  */
 export function chartBucketSeconds(startTime: string, endTime: string): number {
-	const startMs = new Date(Str.replace(" ", "T")(startTime) + "Z").getTime()
-	const endMs = new Date(Str.replace(" ", "T")(endTime) + "Z").getTime()
+	return chartBucketSecondsBetween(
+		new Date(Str.replace(" ", "T")(startTime) + "Z").getTime(),
+		new Date(Str.replace(" ", "T")(endTime) + "Z").getTime(),
+	)
+}
+
+/** {@link chartBucketSeconds} over epoch ms bounds. */
+export const chartBucketSecondsBetween = (startMs: number, endMs: number): number => {
 	const windowSeconds = Math.max((endMs - startMs) / 1000, 300)
 	return Math.max(300, Math.ceil(windowSeconds / 100 / 300) * 300)
 }

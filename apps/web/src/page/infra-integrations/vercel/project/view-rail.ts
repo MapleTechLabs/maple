@@ -10,14 +10,9 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { type ToneBar, toneBars } from "@maple/views/ui/tone-bars"
 import { typography } from "@maple/views/ui/typography"
-import { deployLabel } from "../../../../components/infra/vercel/deploy-signals"
-import {
-	type BuildOutcome,
-	buildTimes,
-	slowestFunctions,
-	topDependencies,
-} from "../../../../components/infra/vercel/project-rail"
-import { percentOf } from "../../../../components/integrations/vercel-model"
+import { deployLabel } from "../deploy-signals"
+import { type BuildOutcome, buildTimes, slowestFunctions, topDependencies } from "../project-rail"
+import { percentOf } from "../integration/vercel-model"
 import { relativeTime } from "../../../kit/relative-time"
 import { type Clock, dataOf, failureOf } from "../view-parts"
 import type { Message, Model } from "./model"

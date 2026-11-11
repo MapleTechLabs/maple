@@ -61,7 +61,6 @@ export interface DigestService {
 	/** Error rate as a percentage (0–100). */
 	errorRate: number
 	p95Ms: number
-	/** Week-over-week request comparison. */
 	requestsDelta: Delta
 }
 
@@ -121,7 +120,6 @@ export interface WeeklyDigestProps {
 	services: Array<DigestService>
 	/** The same services, grouped by environment — drives the rendered table. */
 	environmentGroups: Array<DigestEnvironmentGroup>
-	/** Per-environment and per-namespace totals. */
 	breakdown: {
 		environments: Array<DigestBreakdownRow>
 		namespaces: Array<DigestBreakdownRow>
@@ -193,8 +191,8 @@ export function fmtDeltaAbs(delta: number): string {
 }
 
 export function deltaArrow(delta: number): string {
-	if (Math.abs(delta) < 0.05) return "→" // →
-	return delta > 0 ? "↑" : "↓" // ↑ ↓
+	if (Math.abs(delta) < 0.05) return "→"
+	return delta > 0 ? "↑" : "↓"
 }
 
 /** Short label for a delta in prose (subject lines, biggest-mover sublines). */

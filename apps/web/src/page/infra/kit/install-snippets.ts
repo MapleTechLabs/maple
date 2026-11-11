@@ -1,4 +1,4 @@
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
+import { ingestUrl } from "../../../platform/ingest-url"
 import { Array as Arr, String as Str } from "effect"
 
 // The install modal's snippet builders.

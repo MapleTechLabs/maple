@@ -1,5 +1,5 @@
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { niceLinearDomain } from "../plot/plot-scales"
 import {
 	axisTickFormatter,
 	formatBucketLabel,

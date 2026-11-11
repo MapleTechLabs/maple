@@ -48,12 +48,11 @@ import {
 	zoneError,
 } from "./form"
 import { type LayerField, Message } from "./message"
-import { canManage, type Model, zoneItems } from "./model"
+import { type Model, zoneItems } from "./model"
+import { schedulePreview } from "./preview"
 import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
-
-// `/alerts/schedules/new`: the schedule's name and zone, then its layers: who rotates, how they
-// hand off, from when, and the weekly windows a layer is limited to.
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -61,7 +60,6 @@ const isLocalTime = Schema.is(OnCallLocalTime)
 
 const FORM_WIDTH = "max-w-3xl"
 
-/** A field's error line once a save was tried. */
 const shown = (h: H, model: Model, error: Option.Option<string>): ReadonlyArray<Html> =>
 	model.isShowingErrors
 		? Option.match(error, {
@@ -73,7 +71,6 @@ const shown = (h: H, model: Model, error: Option.Option<string>): ReadonlyArray<
 const fieldLabel = (h: H, id: string, text: string): Html =>
 	label(h, { className: typographyClass({ size: "xs", tone: "muted" }), attributes: [h.For(id)] }, [text])
 
-/** A labelled input bound to one value. */
 const textInput = (
 	h: H,
 	options: Readonly<{
@@ -401,7 +398,6 @@ const restrictionsField = (h: H, model: Model, layer: LayerDraft, layerIndex: nu
 	])
 }
 
-/** One layer: its name and order, its people, how it hands off, from when, and its windows. */
 /** "Layer 2, on top": layers are numbered bottom first, and drawn top first. */
 export const layerLabel = (index: number, count: number): string =>
 	count === 1
@@ -524,7 +520,7 @@ const actionBar = (h: H, model: Model): Html => {
 			button(
 				h,
 				{
-					isDisabled: !canManage(model),
+					isDisabled: !canManageAlerts(model),
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},
@@ -540,7 +536,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit schedule" : "New schedule",
 		description: "Who is on call when: people take turns in layers, in one time zone.",
 	}
-	if (model.isSessionLoaded && !canManage(model))
+	if (model.isSessionLoaded && !canManageAlerts(model))
 		return managersOnlyPage(h, {
 			header,
 			title: "Only org admins and engineers can create or change on-call schedules",
@@ -557,9 +553,38 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (!model.isReady || (isEdit && !AsyncData.isSuccess(model.existing.data)))
 		return dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, fill: true }, [
-		formScrollArea(h, [
-			formCard(h, [nameSection(h, model), zoneSection(h, model), layersSection(h, model)], FORM_WIDTH),
-		]),
+		formScrollArea(
+			h,
+			[
+				// From 60rem of room (the form column, the gap, the preview's padding and borders, and the 30rem
+				// the timeline needs unscrolled, rounded up) the form keeps a narrow column and the preview takes
+				// the rest, held in view. Under that it follows the form.
+				h.div(
+					[
+						h.Class(
+							"grid gap-4 @min-[60rem]/scroll:grid-cols-[26rem_minmax(0,1fr)] @min-[60rem]/scroll:items-start",
+						),
+					],
+					[
+						formCard(
+							h,
+							[nameSection(h, model), zoneSection(h, model), layersSection(h, model)],
+							FORM_WIDTH,
+						),
+						h.div(
+							[
+								h.Class(
+									"min-w-0 rounded-md border bg-card p-4 @min-[60rem]/scroll:sticky @min-[60rem]/scroll:top-0 @min-[60rem]/scroll:max-h-[100cqh] @min-[60rem]/scroll:overflow-y-auto",
+								),
+							],
+							[schedulePreview(h, model)],
+						),
+					],
+				),
+			],
+			// A size container: the columns read its width and the preview's height limit its height.
+			"@container-[size]/scroll",
+		),
 		actionBar(h, model),
 	])
 })

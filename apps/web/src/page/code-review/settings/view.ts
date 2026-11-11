@@ -18,7 +18,7 @@ import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
 import { canManage, Message, type Model } from "./model"
-import { repositoryList } from "./repositories"
+import { manageAccessLink, repositoryList } from "./repositories"
 import {
 	activeRepositories,
 	isRepoEnabled,
@@ -26,11 +26,9 @@ import {
 	DEFAULT_MODEL_LABEL,
 	MODEL_OPTIONS,
 } from "./update"
-import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// `CodeReviewSettingsView`: the code review settings page.
 
 type H = HtmlBuilder<Message>
 
@@ -119,7 +117,7 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 
 const repositoriesSection = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.githubStatus.data, {
-		onEmpty: () => repositoryListSkeleton(h),
+		onEmpty: () => repositoryListSkeleton(h, manageAccessLink(h)),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -149,7 +147,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 		},
 	})
 
-/** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
+/** The repository dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
 		onEmpty: () => rulesFormSkeleton(h, "repository"),
@@ -258,7 +256,7 @@ const content = (h: H, model: Model): Html =>
 					),
 				],
 				defaults: [rulesFormSkeleton(h, "organization")],
-				repositories: [repositoryListSkeleton(h, true)],
+				repositories: [repositoryListSkeleton(h, manageAccessLink(h), true)],
 			}),
 		onFailure: (failure) =>
 			errorState(h, {

@@ -19,8 +19,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
-// `ActionDetailSheet`: the whole proposed action,
-// the diagnosis behind it and its evidence, keyed by `?action=`.
+// The whole proposed action, the diagnosis behind it and its evidence, keyed by `?action=`.
 
 type H = HtmlBuilder<Message>
 type Report = NonNullable<V2Investigation["report"]>

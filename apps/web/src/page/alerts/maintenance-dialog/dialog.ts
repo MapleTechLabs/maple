@@ -33,11 +33,10 @@ import {
 	typedFromMatchers,
 } from "../shared/matcher-fields"
 import { SaveRequest, saveMaintenanceWindow, WEEKDAYS } from "../shared/maintenance-windows"
-import { isoMs, msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { localInputOf } from "../schedule-form/form"
 import { parseLocalDateTime } from "../silence-dialog/dialog"
-
-// "New maintenance window" / "Edit maintenance window": the hub's dialog, as one Submodel.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export const ScheduleKind = Schema.Literals(["once", "weekly"])
 export type ScheduleKind = typeof ScheduleKind.Type
@@ -113,7 +112,7 @@ export const init = (id: string): Model => ({
 export const zoneItems = (model: Pick<Model, "zones" | "timeZone">): ReadonlyArray<string> =>
 	Arr.sort(Arr.dedupe(Arr.filter([...model.zones, "UTC", model.timeZone], Str.isNonEmpty)), Order.String)
 
-// VALIDATION: the limits the API's schemas hold.
+// The limits the API's schemas hold.
 
 const isName = Schema.is(AlertMaintenanceWindowName)
 const isReason = Schema.is(AlertMaintenanceWindowReason)
@@ -187,7 +186,7 @@ export const durationError = (raw: string): Option.Option<string> =>
 		? Option.none()
 		: Option.some("Enter 5 to 10080 minutes (7 days)")
 
-// EDIT DIFF: an edit sends only what changed, so a window that already ran or names a deleted
+// An edit sends only what changed, so a window that already ran or names a deleted
 // rule can still be renamed (the API checks a schedule or matchers whenever they are sent).
 
 const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<MaintenanceWeekday> =>
@@ -197,7 +196,7 @@ const weekOrder = (days: ReadonlyArray<MaintenanceWeekday>): ReadonlyArray<Maint
 	)
 
 /** The dialog edits one-off times to the minute, so seconds from an API-created window never count as a change. */
-const minuteOf = (iso: string): number => Math.floor(isoMs(iso) / 60_000)
+const minuteOf = (iso: string): number => Math.floor(toEpochMs(iso) / 60_000)
 
 const scheduleKey = (schedule: V2MaintenanceSchedule): string =>
 	schedule.type === "once"
@@ -304,8 +303,6 @@ export const requestOf = (model: Model): Option.Option<SaveRequest> => {
 	)
 }
 
-// MESSAGES
-
 export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	ReadZones: { zones: Schema.Array(Schema.String) },
@@ -338,9 +335,6 @@ export type OutMessage = typeof OutMessage.Type
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
-// COMMANDS
-
-/** Every zone to pick from. */
 export const ReadWindowZones = Command.define("ReadMaintenanceWindowZones", {
 	messages: [Message.ReadZones],
 	execute: Effect.map(readSupportedTimeZones, (zones) => Message.ReadZones({ zones })),
@@ -358,8 +352,6 @@ export const SaveWindow = Command.define("SaveMaintenanceWindow", {
 			Effect.map((result) => Message.CompletedSave({ openCount, result })),
 		),
 })
-
-// UPDATE
 
 const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: result.model },
@@ -444,8 +436,8 @@ export const openEdit = (
 			typed: typedFromMatchers(window.matchers),
 			ruleIds: window.matchers.rule_ids ?? [],
 			kind: schedule.type,
-			startsAt: schedule.type === "once" ? localInputOf(isoMs(schedule.starts_at), zone) : "",
-			endsAt: schedule.type === "once" ? localInputOf(isoMs(schedule.ends_at), zone) : "",
+			startsAt: schedule.type === "once" ? localInputOf(toEpochMs(schedule.starts_at), zone) : "",
+			endsAt: schedule.type === "once" ? localInputOf(toEpochMs(schedule.ends_at), zone) : "",
 			days: schedule.type === "weekly" ? schedule.days : [],
 			startTime: schedule.type === "weekly" ? schedule.start_time : DEFAULT_START_TIME,
 			durationMinutes:
@@ -530,7 +522,6 @@ const toggled = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotDialogMessage: ({ message: child }) =>
-			// The dialog stays open while a save is in flight.
 			model.isSaving ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
 		ReadZones: ({ zones }) => ({ model: { ...model, zones } }),
 		ChangedName: ({ value }) => unlessSaving(model, () => ({ ...model, name: value })),

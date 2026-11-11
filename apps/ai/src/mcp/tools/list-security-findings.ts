@@ -1,6 +1,6 @@
 import { Clock, DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -27,6 +27,7 @@ import {
 	STATUS_FILTERS,
 	unreadRepository,
 } from "../lib/security"
+import { attackChainReasons } from "@maple/domain/security-telemetry"
 import type { McpToolRegistrar } from "./types"
 
 const TOOL = "list_security_findings"
@@ -106,7 +107,6 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),
-		output: ListSecurityFindingsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {
@@ -223,6 +223,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 									scanner: row.scanner,
 									userAgent: row.userAgent,
 									lastSeen: DateTime.formatIso(row.lastSeen),
+									stages: row.stages,
+									agent: row.agent,
+									attackChain: attackChainReasons(row),
 								})),
 							},
 						}
@@ -433,6 +436,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										"Probe paths",
 										"Scanner",
 										"User agent",
+										"Attack chain",
 										"Last seen",
 									],
 									Arr.map(output.exposure.sources, (s) => [
@@ -441,6 +445,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										String(s.signatures),
 										s.scanner,
 										truncate(s.userAgent, 80),
+										s.attackChain === undefined || s.attackChain.length === 0
+											? "no"
+											: Arr.join(s.attackChain, "; "),
 										s.lastSeen,
 									]),
 								),

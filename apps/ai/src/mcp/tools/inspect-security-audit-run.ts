@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { InspectSecurityAuditRunOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -46,7 +46,6 @@ export function registerInspectSecurityAuditRunTool(server: McpToolRegistrar) {
 			run_id: P.optionalText("A run id from list_security_audit_runs"),
 			repository: P.optionalText("Instead of run_id: this repository's (owner/name) latest run"),
 		}),
-		output: InspectSecurityAuditRunOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a security audit run"],
 		handler: Effect.fn("McpTool.inspectSecurityAuditRun")(function* (params) {

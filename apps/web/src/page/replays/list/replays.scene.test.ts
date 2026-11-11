@@ -416,7 +416,7 @@ describe("replays list", () => {
 		expect(names(pageUpdate(answered, Message.ReachedListEnd()).commands)).toEqual([])
 	})
 
-	test("the end sentinel re-observes once a refreshed first page settles, like ReachEndSentinel", () => {
+	test("the end sentinel re-observes once a refreshed first page settles", () => {
 		const model = pageUpdate(loaded(page([session("a")], "cursor-1")), rowsWindow(1)).model
 		const refreshing = pageUpdate(
 			model,

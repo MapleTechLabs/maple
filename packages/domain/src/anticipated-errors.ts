@@ -1,6 +1,4 @@
 // BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
-// Anticipated error identifiers
-//
 // The set of stable domain HTTP error identifiers that represent *expected*
 // client-facing outcomes (4xx): validation, not-found, unauthorized, forbidden,
 // conflict, … Tagged errors contribute `_tag`; v2 definitions contribute their

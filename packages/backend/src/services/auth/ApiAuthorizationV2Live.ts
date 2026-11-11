@@ -1,5 +1,5 @@
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { ApiKeyLookupPersistenceError, CurrentTenant, RoleName } from "@maple/domain/http"
+import { ApiKeyLookupPersistenceError, CurrentTenant } from "@maple/domain/http"
 import {
 	AuthorizationV2,
 	isScopeExemptRoute,
@@ -15,7 +15,7 @@ import {
 import { Effect, Layer, Option, Schema, String as Str } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ORG_SELECTION_HEADER } from "@maple/auth"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
@@ -32,10 +32,7 @@ import {
 	apiV2RateLimitKey,
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
-import { getBearerToken } from "./bearer-token"
-
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
+import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
@@ -52,14 +49,14 @@ const dpopChallenge = (error: "invalid_token" | "invalid_dpop_proof") =>
 	)
 
 /** `HttpServerRequest` lowercases every incoming header, and the constant is
- * already lowercase — so this is a plain lookup, not a case-insensitive one. */
+ * already lowercase, so this is a plain lookup, not a case-insensitive one. */
 const getOrgSelectionHeader = (headers: Record<string, string | undefined>): string | undefined =>
 	headers[ORG_SELECTION_HEADER]
 
 /**
  * A protected v2 route the scope derivation cannot classify. Every group behind
  * `AuthorizationV2` is prefixed `/v2/<family>`, so this is unreachable by
- * construction — it is a defect (500), never a silently unscoped request.
+ * construction; it is a defect (500), never a silently unscoped request.
  */
 class V2UnclassifiableRoute extends Schema.TaggedError<V2UnclassifiableRoute>()(
 	"@maple/backend/auth/V2UnclassifiableRoute",
@@ -90,7 +87,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 		// organization), and every other resolver rejects the header instead.
 		//
 		// Optional so a route test can build this layer without a membership
-		// directory. Absent, the header is *rejected* rather than ignored — a
+		// directory. Absent, the header is *rejected* rather than ignored: a
 		// runtime that forgot to wire it serves 403s, never another org's data.
 		const membership = yield* Effect.serviceOption(OrgMembershipService)
 		// Optional for the same reason; absent, every organization is served here.
@@ -200,7 +197,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 
 					if (Option.isSome(apiKeyResolved)) {
 						const resolved = apiKeyResolved.value
-						// A refused attempt is the highest-signal audit row there is —
+						// A refused attempt is the highest-signal audit row there is:
 						// denials carry the same actor attribution as successes, tagged
 						// `outcome: "denied"`, coalesced so a looping client cannot
 						// amplify into unbounded rows.
@@ -215,8 +212,8 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						// Deny-list, not an allow-list: `mcp` keys are minted through a
 						// path that does not gate on organization admin, so they must
 						// never reach the public API. `device` keys are admitted
-						// because every ceiling they have — scopes, TTL, and the
-						// pinned roles below — is chosen by the server that minted
+						// because every ceiling they have (scopes, TTL, and the
+						// pinned roles below) is chosen by the server that minted
 						// them, not by whatever is holding them.
 						if (resolved.kind === "mcp") {
 							const message = "This API key is only valid for the MCP server."
@@ -225,9 +222,9 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						}
 
 						// A device credential's authority is entirely its pinned
-						// roles, and `apiKeyDefaultRoles` below is `root`. A device
+						// roles, and `API_KEY_DEFAULT_ROLES` below is `root`. A device
 						// row that reaches here without them is not a key with a
-						// permissive default — it is a key whose defining property
+						// permissive default; it is a key whose defining property
 						// is missing, so it is rejected rather than promoted.
 						if (resolved.kind === "device" && resolved.roles === null) {
 							const message = "This device credential is not valid."
@@ -287,7 +284,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 
 						// An API key is already organization-bound, so a selection could
 						// only ever widen it. This path returns before `resolveTenant`
-						// runs, so the guard inside the resolver never sees it — the
+						// runs, so the guard inside the resolver never sees it; the
 						// check has to be here too.
 						const requestedOrg = getOrgSelectionHeader(request.headers)
 						if (requestedOrg !== undefined && requestedOrg !== resolved.orgId) {
@@ -299,7 +296,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
 							userId: resolved.userId,
-							roles: resolved.roles ?? apiKeyDefaultRoles,
+							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 							...(resolved.scopes !== null ? { scopes: resolved.scopes } : undefined),
 						})

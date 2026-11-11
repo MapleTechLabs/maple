@@ -14,8 +14,7 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { switchControl } from "@maple/views/ui/switch"
-import { integrationIconPlate } from "../infra-integrations/kit/integration-empty"
-import { GITHUB_ACCENT } from "./catalog"
+import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -26,8 +25,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `GithubIntegrationCard`.
+import { providerBrand } from "../kit/providers"
 
 const ACCOUNT_TYPE = { organization: "Organization", user: "Personal account" } as const
 
@@ -263,7 +261,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					" of ",
 					String(active.length),
 					" ",
-					"repositories reviewed. Rules, models and analytics live on the Code review page.",
+					"repositories reviewed. Rules, models and analytics live on the Review & CI page.",
 				],
 				control: [
 					linkButton(
@@ -310,11 +308,11 @@ const byState = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: 
 					: status.state === "disconnected" || status.state === "suspended"
 						? githubDeactivated(h, model, status)
 						: githubReconnect(h)
-// TODO(clerk): `useIsOrgAdmin` gates the CI traces switch; self-hosted is the root admin.
+// TODO(clerk): gate the CI traces switch on org admin; self-hosted is the root admin.
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "GithubIcon", accent: GITHUB_ACCENT, iconClassName: "text-foreground" } as const
+const BRAND = providerBrand("github")
 
 const loadingState = (h: H): Html =>
 	h.div(

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { SloId, SloLatencyThresholdMs, SloWindowDays } from "../../primitives"
+import { SloId, SloLatencyThresholdMs, SloWindowDays } from "@maple/primitives"
 import { SLO_BURN_WINDOWS_MINUTES, SloTargetPercent, type SloSli } from "../../slo"
 import { SloNotFoundError, SloPersistenceError, SloValidationError } from "../slos"
 import { AuthorizationV2 } from "./auth"

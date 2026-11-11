@@ -1,10 +1,10 @@
-import type { ReplayEngine, ReplayEngineFactory } from "../../../components/replays/engine/replay-engine"
+import type { ReplayEngine, ReplayEngineFactory } from "../engine/replay-engine"
 import { Effect, Option, Queue, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { deriveMeta, InactiveInterval } from "./replay-meta"
 import type { ReplayFormat } from "./replay-window"
 import { nonZeroOr } from "@maple/ui/lib/number"
 
-// `ReplayPlayerProvider`'s engine half as a Mount stream: the engine mounts into the element, the
+// The player's engine as a Mount stream: the engine mounts into the element, the
 // Model drives it through data attributes (a nonce'd transport action, speed, skip-idle, hold),
 // and later ranges arrive as `REPLAY_EVENTS` DOM events from feed Mounts beside it.
 

@@ -23,7 +23,7 @@ import {
 	type ActionKind,
 	type ActionTarget,
 } from "./action-target"
-import { formatTimeInTimezone } from "../lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Array as Arr, Option, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
@@ -75,10 +75,6 @@ const ACTION_GAP = 8
 export const HEADING_HEIGHT = 12
 /** Column headings ride 20px above their column's top edge. */
 const HEADING_OFFSET = 20
-
-/* -------------------------------------------------------------------------------------------------
- * Node model
- * -----------------------------------------------------------------------------------------------*/
 
 /** Which glyph the node renders. Kind is carried by the icon, the tile and the fill — never colour alone. */
 export type FlowGlyph = "issue" | "check" | "incident" | "investigation" | "verdict"
@@ -231,10 +227,6 @@ export interface ProvenanceGraph {
 	readonly runningSince: number | null
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Builder
- * -----------------------------------------------------------------------------------------------*/
-
 /**
  * Columns are assembled first as lists, then positioned — so a freeform
  * investigation (no issue, no incident) starts at x=0 instead of leaving two
@@ -307,8 +299,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		nextLabel = isAlert ? "TRIPPED" : "FLARED INTO"
 	}
 
-	/* --- incident ------------------------------------------------------------ */
-
 	if (subject.type === "incident") {
 		pushColumn(
 			[
@@ -379,8 +369,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	)
 	if (running) liveIds.add("investigation")
 
-	/* --- verdict ------------------------------------------------------------- */
-
 	/*
 	 * Still absent while the pass is running: a placeholder *verdict* is a claim
 	 * the investigation has not made yet. What stands in its place is a node about
@@ -450,8 +438,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		)
 	}
 
-	/* --- proposed actions ---------------------------------------------------- */
-
 	const actions = report?.suggestedActions ?? []
 	const proposing = actions.length > 0 && investigation.status !== "investigating"
 	if (proposing) {
@@ -498,8 +484,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		liveIds.add("action-ghost-0")
 		liveIds.add("action-ghost-1")
 	}
-
-	/* --- position ------------------------------------------------------------ */
 
 	const isActionColumn = (column: { nodes: Array<ProvenanceNode> }): boolean => {
 		const kind = column.nodes[0]?.type
@@ -562,10 +546,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		runningSince: running && Number.isFinite(openedMs) ? openedMs : null,
 	}
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Derivations
- * -----------------------------------------------------------------------------------------------*/
 
 /** The name the origin node prints — the exception, not the opaque `iss_…`. */
 const originTitle = (investigation: V2Investigation): string | null => {

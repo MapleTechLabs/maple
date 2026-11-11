@@ -6,8 +6,9 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import {
+	McpToolOutputs,
 	SandboxExecOutput,
 	SandboxGrepOutput,
 	SandboxListFilesOutput,
@@ -18,7 +19,7 @@ import {
 	VcsSourceRepositoryNotFoundError,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import {
 	RepoSandboxService,
@@ -64,7 +65,7 @@ registerSandboxTools({
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
-					structured: Schema.encodeUnknownSync(spec.output)(output),
+					structured: Schema.encodeUnknownSync(McpToolOutputs[spec.name])(output),
 				})),
 			)
 		tools.set(spec.name, run as Run)

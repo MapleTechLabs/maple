@@ -9,7 +9,7 @@ import type { Model } from "./model"
 import { tailOf } from "./subscription"
 import { init, update } from "./update"
 
-// The investigation conversation's update logic (`useMapleChat`): history, sends, the live tail, stop, approvals.
+// The investigation conversation's update logic: history, sends, the live tail, stop, approvals.
 
 const decodeEvent = Schema.decodeUnknownSync(ChatEvent)
 const NOW = Date.parse("2026-10-01T12:00:00Z")

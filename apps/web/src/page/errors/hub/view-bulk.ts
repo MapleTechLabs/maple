@@ -5,17 +5,15 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import type * as Menu from "@maple/views/ui/menu"
 import * as MenuView from "@maple/views/ui/menu-view"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
-import { WORKFLOW_LABEL } from "../kit/workflow"
+import { SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
+import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Order } from "effect"
 import { formatNumber } from "@maple/ui/lib/format"
-import type { ErrorSignal } from "../../../lib/models/error-signal"
-
-// The issues bulk bar: the selection's actions, pinned to the foot.
+import type { ErrorSignal } from "../kit/error-signal"
 
 type H = HtmlBuilder<Message>
 

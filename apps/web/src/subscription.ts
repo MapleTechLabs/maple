@@ -1,5 +1,15 @@
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
-import { Clock, Duration, Effect, Option, Schedule, Schema, Stream } from "effect"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
+import {
+	Array as Arr,
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Schedule,
+	Schema,
+	Stream,
+	String as Str,
+} from "effect"
 import { Dom, Subscription } from "foldkit"
 import { Message } from "./message"
 import type { Resources } from "./platform/resources"
@@ -17,9 +27,11 @@ import { connectSubscriptions } from "./page/onboarding/quick-start-connect"
 import * as SourcesFlow from "./page/sources/new/embed"
 import { clerkSnapshots } from "./platform/clerk"
 import * as Shell from "./shell"
+import { isAlertsOpenAt } from "./shell/nav"
+import { hrefOf } from "./route"
 import { staleBuildRecovery } from "./shell/version"
 import { pollTicks } from "./data/poll"
-import { collectionLoadFailed } from "./page/alerts/shared/collection-load"
+import { collectionLoadFailed } from "./page/kit/collection-load"
 
 /** Emits nothing: an Alt+click on a tri-state filter label is redirected to that row's Exclude button. */
 const altClickExclude: Stream.Stream<Message> = Dom.streamFromEventFilterMap({
@@ -50,7 +62,7 @@ const selfHostedAuthTarget: Dom.TypedEventTarget<{ [SELF_HOSTED_AUTH_EVENT]: Eve
 const timeZoneTarget: Dom.TypedEventTarget<{ [TIME_ZONE_PREFERENCE_EVENT]: Event; storage: StorageEvent }> =
 	window
 
-/** `useTimezonePreference`: this tab's pick, or another tab's `storage` write of the key. */
+/** This tab's pick, or another tab's `storage` write of the key. */
 export const timeZonePreferenceChanges: Stream.Stream<Message> = Stream.merge(
 	Dom.streamFromEvent({ target: timeZoneTarget, type: TIME_ZONE_PREFERENCE_EVENT, mapEvent: () => true }),
 	Dom.streamFromEvent({
@@ -78,8 +90,16 @@ const shellDashboardsOrgId = (model: Model): string | null =>
 		? Option.getOrNull(model.shell.maybeOrgId)
 		: null
 
+/** The org whose Alerts › Inbox count the sidebar shows: while an alerts page has the row open. */
+const shellAlertsInboxOrgId = (model: Model): string | null =>
+	model.session._tag === "SignedIn" &&
+	rendersShell(model.route) &&
+	isAlertsOpenAt(Arr.headNonEmpty(Str.split(hrefOf(model.route), "?")))
+		? Option.getOrNull(model.shell.maybeOrgId)
+		: null
+
 const root = Subscription.make<Model, Message, Resources>()((entry) => ({
-	/** `subscribeSelfHostedAuthChanges`: a renewal elsewhere ended or replaced the session. */
+	/** A renewal elsewhere ended or replaced the session. */
 	selfHostedSession: entry(
 		{ isSelfHosted: Schema.Boolean },
 		{
@@ -126,7 +146,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** `useIsMobile` for the shell: the sidebar turns into a sheet below `md`. */
+	/** The shell's viewport: the sidebar turns into a sheet below `md`. */
 	shellViewport: entry(
 		{},
 		{
@@ -166,7 +186,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** `GlobalShortcuts`: Mod+K, `?`, `T` and `/` while a shell page is open. */
+	/** Mod+K, `?`, `T` and `/` while a shell page is open. */
 	shellGlobalShortcuts: entry(
 		{ isShellOpen: Schema.Boolean },
 		{
@@ -180,7 +200,22 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** `useDashboardsRead` for the Pinned group: the org's live `dashboards` collection. */
+	/** The Alerts › Inbox count, over the `alert_incidents` collection the alerts pages already sync. */
+	shellAlertsInbox: entry(
+		{ orgId: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (model) => ({ orgId: shellAlertsInboxOrgId(model) }),
+			dependenciesToStream: ({ orgId }) =>
+				orgId === null
+					? Stream.empty
+					: Shell.alertsInboxCounts(orgId, (count) =>
+							Message.GotShellMessage({
+								message: Shell.Message.UpdatedAlertsInboxCount({ orgId, count }),
+							}),
+						),
+		},
+	),
+	/** The Pinned group's read: the org's live `dashboards` collection. */
 	shellDashboards: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{
@@ -195,7 +230,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 						),
 		},
 	),
-	/** `useCollectionLoadFailed` while the Pinned group waits on its first `dashboards` answer. */
+	/** A load failure while the Pinned group waits on its first `dashboards` answer. */
 	shellDashboardsLoad: entry(
 		{ orgId: Schema.NullOr(Schema.String) },
 		{
@@ -244,7 +279,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** The dashboards list starred or unstarred one (`dashboardFavoritesAtom`). */
+	/** The dashboards list starred or unstarred one. */
 	shellDashboardFavorites: entry(
 		{},
 		{
@@ -253,7 +288,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				Stream.map(Shell.favoritesChanges, (message) => Message.GotShellMessage({ message })),
 		},
 	),
-	/** `useAppVersionChanged`: only for a build that knows its commit, until it is known stale. */
+	/** Only for a build that knows its commit, until it is known stale. */
 	shellVersionPoll: entry(
 		{ isPolling: Schema.Boolean },
 		{
@@ -326,7 +361,7 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** `useBlocker`'s reload half: a page with unsaved state asks before the tab unloads. */
+	/** The unload half of the navigation guard: a page with unsaved state asks before the tab unloads. */
 	unloadGuard: entry(
 		{ isBlocking: Schema.Boolean },
 		{

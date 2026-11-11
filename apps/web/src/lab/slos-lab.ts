@@ -20,7 +20,7 @@ import {
 	sloUuid,
 	type SloScenario,
 } from "../page/alerts/shared/slo-test-fixtures"
-import { destinationRow, incidentRow, NOW, ORG } from "../page/alerts/shared/test-rows"
+import { destinationRow, hubAt, incidentRow, NOW, ORG } from "../page/kit/alert-test-rows"
 import * as SloMessage from "../page/alerts/slo/message"
 import * as SloModel from "../page/alerts/slo/model"
 import * as SloUpdate from "../page/alerts/slo/update"
@@ -106,7 +106,7 @@ const INCIDENT = incidentRow({
 })
 
 const hubFor = (state: LabState) => {
-	const entered = HubUpdate.init({ _tag: "Alerts", search: { tab: "slos" } }, CONTEXT).model
+	const entered = HubUpdate.init(hubAt({ tab: "slos" }), CONTEXT).model
 	const rows =
 		state === "tab-empty"
 			? []

@@ -10,7 +10,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { listSites } from "@maple/backend/services/integrations/google-search-console/client"
 import { GoogleOAuthService } from "./GoogleOAuthService"
 
@@ -160,7 +160,11 @@ describe("GoogleOAuthService", () => {
 				.pipe(Effect.flip)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsConfigurationError")
 			assert.include(error.message, "GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET")
-		}).pipe(Effect.provide(makeLayer(testDb, mockGoogle(), { GOOGLE_SEARCH_CONSOLE_CLIENT_ID: "g-client-id" })))
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, mockGoogle(), { GOOGLE_SEARCH_CONSOLE_CLIENT_ID: "g-client-id" }),
+			),
+		)
 	})
 
 	it.effect("asks Google for offline Search Console access with a forced consent", () => {

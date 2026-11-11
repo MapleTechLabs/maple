@@ -28,7 +28,7 @@ const spanAttributeKeysOf = (model: Model): ReadonlyArray<string> =>
 		"keys",
 	)
 
-/** `GroupByAutocomplete`. TODO(lab-query-builder): items lack `font-mono` (the item class). */
+/** The group-by autocomplete. TODO(lab-query-builder): items lack `font-mono` (the item class). */
 const groupBy = (h: H, model: Model, query: QueryDraft): Html =>
 	h.submodel({
 		slotId: `query-builder-lab-group-by-${query.id}`,

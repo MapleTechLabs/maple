@@ -15,7 +15,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { defineMessageUnion } from "foldkit/message"
 import { rowToDocument } from "../../../data/collections/dashboards"
 import { trackProduct } from "../../../data/analytics"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { liveQueryStream } from "../../../data/live-query"
 import { orgLive } from "../../../data/collections/org-collections"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -29,15 +29,14 @@ import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// The add-to-dashboard dialog: the
-// explorer's query as a chart widget on an existing dashboard, or on a new one created with it.
+// The add-to-dashboard dialog: the explorer's query as a chart widget on an existing dashboard, or on a new one created with it.
 
 const DashboardChoice = Schema.Struct({ id: Schema.String, name: Schema.String, widgetCount: Schema.Number })
 type DashboardChoice = typeof DashboardChoice.Type
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
-	/** `useDashboardStore().dashboards`, in the collection's order. */
+	/** The org's dashboards, in the collection's order. */
 	dashboards: Schema.Array(DashboardChoice),
 	newName: Schema.String,
 	isCreating: Schema.Boolean,
@@ -107,7 +106,7 @@ const displayUnitOf = (draft: typeof MetricsQueryDraftSchema.Type, declaredUnit:
 		? chartUnitFromOtel(declaredUnit, draft.metricName)
 		: undefined) ?? inferDisplayUnitForQuery(draft)
 
-/** `widgetDisplay` and `buildWidgetDataSource`: a fresh query id, never the explorer's own. */
+/** The chart widget with a fresh query id, never the explorer's own. */
 export const widgetOf = (
 	draft: typeof MetricsQueryDraftSchema.Type,
 	declaredUnit: string,
@@ -145,14 +144,10 @@ export const AddWidget = Command.define("AddMetricWidgetToDashboard", {
 			return yield* mutateDashboard(orgId, dashboardId, (document, nowIso) =>
 				withAddedWidget(document, { id, ...widget, layout: defaultWidgetLayout("chart") }, nowIso),
 			)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAddWidget({ dashboardId, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedAddWidget({ dashboardId, result }))),
 })
 
-/** `importDashboard` with the widget in it: one create, so a not-yet-synced board cannot drop it. */
+/** A dashboard import with the widget in it: one create, so a not-yet-synced board cannot drop it. */
 export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget", {
 	args: {
 		orgId: Schema.String,
@@ -176,15 +171,11 @@ export const CreateDashboard = Command.define("CreateDashboardWithMetricWidget",
 					widgets: [{ ...widget, layout: { x: 0, y: 0, ...defaultWidgetLayout("chart") } }],
 				}),
 			})
-			// `importDashboard`'s `dashboard_created`, with the one widget.
+			// The same `dashboard_created` an import tracks, with the one widget.
 			yield* trackProduct("dashboard_created", { widgets: 1 })
 			yield* awaitTxid(orgId, created.txid)
 			return created.id
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreateDashboard({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreateDashboard({ result }))),
 })
 
 /** The org's dashboards, as the dialog lists them. */
@@ -207,8 +198,6 @@ export const dashboardChoices = (orgId: string): Stream.Stream<Message, never, R
 				}),
 		),
 	)
-
-// UPDATE
 
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
@@ -246,7 +235,7 @@ export const update = (model: Model, message: Message, context: Context): Return
 							}),
 						],
 					},
-		// `handleCreate`: a blank name or a create in flight does nothing.
+		// A blank name or a create in flight does nothing.
 		ClickedCreate: () => {
 			const name = Str.trim(model.newName)
 			return name === "" || model.isCreating || model.addingTo !== null || context.draft === null
@@ -291,13 +280,11 @@ export const update = (model: Model, message: Message, context: Context): Return
 			}),
 	})
 
-/** `onOpenChange(false)` then `navigate({ to: "/dashboards/$dashboardId" })`. */
+/** Closes the dialog, then opens the dashboard. */
 const closedTo = (model: Model, dashboardId: string, isBehind: boolean): Return => ({
 	...liftDialog(model, Dialog.close(model.dialog)),
 	outMessage: OutMessage.OpenedDashboard({ dashboardId, isBehind }),
 })
-
-// VIEW
 
 type H = HtmlBuilder<Message>
 

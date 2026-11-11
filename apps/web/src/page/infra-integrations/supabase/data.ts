@@ -8,7 +8,7 @@ import {
 } from "@maple/web-data/warehouse/supabase-insights"
 import { Effect, Result, Array as Arr } from "effect"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import type { SupabaseFleetInsights, SupabaseProjectRow, SupabaseProjectTimeseriesRow } from "./model"
 
@@ -19,11 +19,8 @@ type BucketedProjectWindow = ProjectWindow & { readonly bucketSeconds: number }
 
 export const loadSupabaseProjects = (window: TimeWindow) =>
 	getSupabaseProjects({ data: window }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<SupabaseProjectRow> => response.projects,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<SupabaseProjectRow> => response.projects),
+		settled,
 	)
 
 /** The status the sidebar and the integration card share (`IntegrationStatuses`). */
@@ -31,32 +28,29 @@ export const loadSupabaseStatus = (refresh: boolean) =>
 	Effect.gen(function* () {
 		const statuses = yield* IntegrationStatuses
 		return yield* statuses.supabase({ refresh })
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const loadSupabaseTimeseries = (input: BucketedProjectWindow) =>
 	getSupabaseProjectTimeseries({ data: { ...input } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<SupabaseProjectTimeseriesRow> => response.buckets),
+		settled,
 	)
 
 export const loadSupabaseApiTraffic = (input: BucketedProjectWindow) =>
-	getSupabaseApiTraffic({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	getSupabaseApiTraffic({ data: { ...input } }).pipe(settled)
 
 export const loadSupabaseApiTopPaths = (input: ProjectWindow) =>
-	getSupabaseApiTopPaths({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	getSupabaseApiTopPaths({ data: { ...input } }).pipe(settled)
 
 export const loadSupabaseCallers = (input: BucketedProjectWindow) =>
-	getSupabaseProjectCallers({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	getSupabaseProjectCallers({ data: { ...input } }).pipe(settled)
 
 /** One project's recurring WARN+ log messages, or every project's without a ref. */
 export const loadSupabaseLogIssues = (input: TimeWindow & { readonly projectRef?: string }) =>
-	getSupabaseLogIssues({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	getSupabaseLogIssues({ data: { ...input } }).pipe(settled)
 
 export const loadSupabaseInsights = (projectRef: string) =>
-	getSupabaseProjectInsights({ data: { projectRef } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	getSupabaseProjectInsights({ data: { projectRef } }).pipe(settled)
 
 /** Most projects the overview reads advisors for. */
 export const FLEET_INSIGHTS_LIMIT = 10

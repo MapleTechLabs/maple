@@ -8,7 +8,7 @@ import {
 import type { McpToolRegistrar } from "./types"
 import { formatDelta, formatNumber, formatPercent, formatPointsDelta, truncate } from "../lib/format"
 import * as P from "../lib/params"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	daysPastDataThrough,
 	historyCoverage,
@@ -129,7 +129,6 @@ export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {
 			device: P.optionalOneOf(SearchConsoleDevice.literals, "Only searches from this device type"),
 			limit: P.limit({ default: 25, max: MAX_LIMIT, noun: "queries" }),
 		}),
-		output: SearchConsoleQueriesOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading Search Console queries", "Checking search queries"],
 		handler: Effect.fn("McpTool.searchConsoleQueries")(function* (params) {

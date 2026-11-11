@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	AlertDestinationDocument,
 	AlertDestinationsListResponse,
@@ -17,7 +17,7 @@ import {
 } from "@maple/domain/http"
 import { ChatWorkspacePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -30,14 +30,9 @@ import {
 	type ChatWorkspaceServiceApi,
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithChat,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
+import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
 
 /**
  * The `chat` alert destination over HTTP: the workspace channel listing behind the picker (admin
@@ -146,15 +141,21 @@ const makeHarness = (
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithChat(chatLayer(listDestinations))),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.alertDestinations,
+			MapleApiV2.groups.chatIntegration,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2AlertDestinationsLive,
+				HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatLayer(listDestinations))),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		// Before the facade stubs, so this fake is the destination service the routes see.
 		Layer.provide(destinationsLayer(recorded)),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

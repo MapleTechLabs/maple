@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { McpConnectionId } from "../primitives"
+import { McpConnectionId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 /**

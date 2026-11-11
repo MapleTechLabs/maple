@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VercelDrainState, VercelProjectScope } from "@maple/domain/http"
-import { OrgId, SourceId } from "@maple/domain/primitives"
+import { OrgId, SourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 

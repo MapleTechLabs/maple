@@ -19,7 +19,7 @@ import {
 import { OrgId } from "@maple/domain/http"
 import { SandboxCheckout } from "@maple/domain/sandbox"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import type { ExecutorTransport } from "@maple/backend/sandbox/client"
+import type { ExecutorTransport } from "@maple/backend/services/sandbox/client"
 import { executorAgentId, executorKey, makeExecutor } from "./ExecutorService"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")

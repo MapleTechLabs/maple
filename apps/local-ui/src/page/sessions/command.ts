@@ -1,4 +1,5 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
+import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { recordCached, withCache } from "../../data/cached"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -16,15 +17,9 @@ const RequestArgs = {
 	apiBase: Schema.String,
 }
 
-export const ReadClock = Command.define("ReadSessionsClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadSessionsClock", Message.CompletedReadClock)
 
-export const ReadRefreshClock = Command.define("ReadSessionsRefreshClock", {
-	messages: [Message.CompletedReadRefreshClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadRefreshClock({ nowMs })),
-})
+export const ReadRefreshClock = readClock("ReadSessionsRefreshClock", Message.CompletedReadRefreshClock)
 
 /** A refetch goes page by page, each cursor from the page before. */
 const fetchPages = <R>(
@@ -36,7 +31,9 @@ const fetchPages = <R>(
 	Effect.flatMap(run(cursor), (page) => {
 		const pages = [...loaded, page]
 		const next = nextCursor(page)
-		return remaining <= 1 || next === undefined ? Effect.succeed(pages) : fetchPages(run, remaining - 1, next, pages)
+		return remaining <= 1 || next === undefined
+			? Effect.succeed(pages)
+			: fetchPages(run, remaining - 1, next, pages)
 	})
 
 /** `readsCache`: a key the page has no rows for yet opens on its cached result first. */
@@ -46,7 +43,8 @@ export const FetchSessions = Command.define("FetchLocalSessions", {
 	interrupt: { keyFields: ["key"], toKey: ({ key }) => key },
 	execute: ({ key, search, startTime, endTime, apiBase, pageCount, readsCache }) => {
 		const filters = filtersOf(new URLSearchParams(search))
-		const run = (cursor: SessionCursor | undefined) => fetchSessionPage(filters, { startTime, endTime }, cursor, apiBase)
+		const run = (cursor: SessionCursor | undefined) =>
+			fetchSessionPage(filters, { startTime, endTime }, cursor, apiBase)
 		return withCache({
 			key: sessionsKey({ search, startTime, endTime }),
 			readsCache,
@@ -74,21 +72,37 @@ export const FetchNextPage = Command.define("FetchNextLocalSessionsPage", {
 	},
 	messages: [Message.SucceededFetchNextPage, Message.FailedFetchNextPage],
 	interrupt: { keyFields: ["key", "generation"], toKey: ({ key, generation }) => `${key}#${generation}` },
-	execute: ({ key, generation, search, startTime, endTime, apiBase, cursorStartTime, cursorSessionId, pages }) =>
+	execute: ({
+		key,
+		generation,
+		search,
+		startTime,
+		endTime,
+		apiBase,
+		cursorStartTime,
+		cursorSessionId,
+		pages,
+	}) =>
 		fetchSessionPage(
 			filtersOf(new URLSearchParams(search)),
 			{ startTime, endTime },
 			{ startTime: cursorStartTime, sessionId: cursorSessionId },
 			apiBase,
 		).pipe(
-			// `fetchNextPage` updates the cached query too, so a reload opens on every page loaded.
+			// A next page updates the cached query too, so a reload opens on every page loaded.
 			Effect.tap((page) =>
 				Effect.flatMap(Clock.currentTimeMillis, (atMs) =>
-					recordCached(sessionsKey({ search, startTime, endTime }), pagesToCached({ pages: [...pages, page] }), atMs),
+					recordCached(
+						sessionsKey({ search, startTime, endTime }),
+						pagesToCached({ pages: [...pages, page] }),
+						atMs,
+					),
 				),
 			),
 			Effect.map((page) => Message.SucceededFetchNextPage({ key, generation, page })),
-			Effect.catch((failure) => Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure }))),
+			Effect.catch((failure) =>
+				Effect.succeed(Message.FailedFetchNextPage({ key, generation, failure })),
+			),
 		),
 })
 
@@ -106,15 +120,20 @@ export const FetchFacets = Command.define("FetchLocalSessionFacets", {
 			fromCached: facetsFromCached,
 			staleMs: FACETS_STALE_MS,
 			toCached: (facets) => facets,
-			fetch: fetchSessionFacets(filtersOf(new URLSearchParams(search)), { startTime, endTime }, apiBase),
+			fetch: fetchSessionFacets(
+				filtersOf(new URLSearchParams(search)),
+				{ startTime, endTime },
+				apiBase,
+			),
 			found: (cached) => Message.FoundCachedFacets({ key, cached }),
 			succeeded: (facets, fetchedAtMs) => Message.SucceededFetchFacets({ key, facets, fetchedAtMs }),
 		}).pipe(Effect.catch((failure) => Effect.succeed(Message.FailedFetchFacets({ key, failure })))),
 })
 
-/** `ToolbarSearch`'s 300 ms pause before a typed value commits. */
+/** The 300 ms pause before a typed value commits. */
 export const WaitSearchDebounce = Command.define("WaitSessionsSearchDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
-	execute: ({ version }) => Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+	execute: ({ version }) =>
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })

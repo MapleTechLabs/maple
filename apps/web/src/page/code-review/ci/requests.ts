@@ -1,22 +1,19 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import type { CodeReviewCiRunsResponse } from "@maple/domain/http"
-import { Option, Schema } from "effect"
+import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
 import type { PageContext, PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { cachedStep, mergeSteps } from "../kit/page-steps"
 import { FetchCiAnalytics, FetchCiRuns, type Message, type Model } from "./model"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 // The CI tab's reads: analytics and the workflow list, then the runs once the analytics show.
 
 type Return = PageReturn<Model, Message>
 
-/** `PAGE` in `CiRunsList`. */
 export const RUNS_PAGE = 50
 
 const runsFilterOf = (model: Model, window: TimeWindow) => ({
@@ -55,7 +52,7 @@ export const runsPageStep = (
 	)
 }
 
-/** `<CiRunsList key={JSON.stringify(runsFilter)}>`: mounted with the analytics; a new filter starts over. */
+/** Mounted with the analytics; a new filter starts the runs over. */
 export const followRuns = (model: Model, context: PageContext): Return => {
 	const window = model.frame.window
 	if (window === null || isEmpty(model)) return { model }

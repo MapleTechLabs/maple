@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { DashboardShareMode as DashboardShareModeSchema } from "@maple/domain/http"
-import { DashboardId, DashboardShareId, OrgId, UserId } from "@maple/domain/primitives"
+import { DashboardShareMode as DashboardShareModeSchema } from "@maple/domain/dashboard-shares"
+import { DashboardId, DashboardShareId, OrgId, UserId } from "@maple/primitives"
 import { Dashboards } from "./dashboards"
 
 const dashboardSharesColumns = {
@@ -12,7 +12,7 @@ const dashboardSharesColumns = {
 	widgetId: PG.column(PG.nullable(PG.text), { name: "widget_id" }),
 	// "public" = anyone with the link. "org" = any signed-in member of orgId.
 	mode: PG.brand(PG.text, DashboardShareModeSchema),
-	// HMAC-SHA256 of the raw token (see share-token-hash.ts). This is what
+	// HMAC-SHA256 of the raw token (see `@maple/backend/platform/credential-tokens`). This is what
 	// resolution looks up; deterministic, so it stays one indexed equality.
 	tokenHash: PG.column(PG.text, { name: "token_hash" }),
 	// The raw token, AES-256-GCM encrypted under MAPLE_INGEST_KEY_ENCRYPTION_KEY
@@ -107,5 +107,4 @@ export const DashboardShares = PG.table("dashboard_shares", {
 })
 
 export type DashboardShareRow = PG.SelectRowOf<typeof DashboardShares>
-export type DashboardShareInsert = PG.InsertRowOf<typeof DashboardShares>
 export type DashboardShareMode = DashboardShareRow["mode"]

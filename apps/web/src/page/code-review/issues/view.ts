@@ -1,9 +1,5 @@
 import { PrReviewCategory, PrReviewFindingStatus, PrReviewSeverity } from "@maple/domain/http"
-import {
-	CATEGORY_LABELS,
-	FINDING_STATUS_LABELS,
-	SEVERITY_LABELS,
-} from "../../../components/code-review/code-review-format"
+import { CATEGORY_LABELS, FINDING_STATUS_LABELS, SEVERITY_LABELS } from "../kit/code-review-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -26,8 +22,6 @@ import { type FilterKey, Message, type Model } from "./model"
 import { DEFAULT_PRESET, MAX_ROWS } from "./update"
 import { findingsList } from "./view-list"
 import { vstack } from "@maple/views/ui/stack"
-
-// The code review issues page.
 
 type H = HtmlBuilder<Message>
 

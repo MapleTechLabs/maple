@@ -13,7 +13,7 @@ import {
 	Option,
 	Schema,
 } from "effect"
-import type { TestDb } from "@maple/backend/platform/test-pglite"
+import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -75,7 +75,6 @@ const testConfig = (extra?: Record<string, unknown>) =>
 
 export const testEnv = (extra?: Record<string, unknown>) => Env.layer.pipe(Layer.provide(testConfig(extra)))
 
-// VcsRepository over an in-memory PGlite TestDb + Env.
 export const testRepoLayer = (testDb: TestDb, extra?: Record<string, unknown>) =>
 	VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(testEnv(extra)))
 

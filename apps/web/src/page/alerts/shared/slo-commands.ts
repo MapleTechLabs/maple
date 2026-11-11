@@ -13,8 +13,6 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 import type { AlertsSloNewSearch } from "../../../route/search"
 
-// The SLO reads and writes, as Effects the pages' Commands wrap, and their links.
-
 /** One page holds every SLO: the API caps an org at 50. */
 export const SLO_LIST_LIMIT = 100
 
@@ -96,8 +94,6 @@ export const saveSlo = (editingId: SloId | null, raw: unknown) =>
 /** `slos.retrieve` and `slos.status` answer this for an id the org has no SLO under. */
 export const SLO_NOT_FOUND_CODE = "slo_not_found"
 
-// LINKS
-
 const encodePublicId = Schema.encodeSync(SloPublicId)
 const decodePublicId = Schema.decodeUnknownOption(SloPublicId)
 const decodeInternalId = Schema.decodeUnknownOption(SloId)
@@ -114,4 +110,4 @@ export const newSloHref = (search: typeof AlertsSloNewSearch.Type = {}): string 
 
 export const editSloHref = (id: SloId): string => newSloHref({ sloId: encodePublicId(id) })
 
-export const slosTabHref = (): string => hrefOf(AppRoute.Alerts({ search: { tab: "slos" } }))
+export const slosTabHref = (): string => hrefOf(AppRoute.AlertsSection({ section: "slos", search: {} }))

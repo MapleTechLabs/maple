@@ -7,6 +7,7 @@
 //             that straddle a version boundary (`display` embeds a data source
 //             via `sparkline`, and the document embeds a widget)
 //   v1/       the shape every pre-versioning document is stored in, frozen
+//   v2/, v3/  later versions; v3 is current
 //   index.ts  unsuffixed aliases bound to the current version
 //
 // Consumers import the unsuffixed names and follow whatever the current version
@@ -73,7 +74,6 @@ export {
 	WidgetDisplayConfigV3,
 } from "./v3/widget"
 export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
-// The v2 -> v3 data-source conversion; see the header of `upgrade-to-v3.ts`.
 export { fromLegacyDataSource, isV3DataSource } from "./upgrade-to-v3"
 export { type DashboardParseOutcome, parseStoredDashboard, stampCurrentVersion } from "./parse"
 export { CURRENT_DASHBOARD_SCHEMA_VERSION, DashboardSchemaVersion } from "./version"
@@ -136,6 +136,4 @@ export { WidgetDataSourceV3 as WidgetDataSourceSchema } from "./v3/data-source"
 export { WidgetDisplayConfigV3 as WidgetDisplayConfigSchema } from "./v3/widget"
 export { DashboardWidgetV3 as DashboardWidgetSchema } from "./v3/widget"
 
-// Section helpers: pure placement/repair logic shared by the API write path,
-// the web read path and the tests.
 export * from "./sections-helpers"

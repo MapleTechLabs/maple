@@ -1,30 +1,17 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
-import * as Animation from "@foldkit/ui/animation"
 import { EscalationChainId } from "@maple/domain/http"
-import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
-import {
-	click,
-	Command,
-	expect as expectView,
-	Mount,
-	given,
-	role,
-	scene,
-	selector,
-	submit,
-	text,
-	withViewInputs,
-} from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { V2EscalationChain } from "@maple/domain/http/v2"
 import type { PageContext } from "../../contract"
 import { CHAIN_IN_USE_CODE } from "../shared/escalation-chains"
 import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
-import { NOW, ORG, ruleId, ruleRow } from "../shared/test-rows"
+import { hubAt, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chainMenuId, init, update } from "./update"
@@ -43,7 +30,7 @@ const RULES = [ruleRow(1, { name: "Checkout errors" }), ruleRow(2, { name: "Chec
 const CHAINS = populatedChains([ruleId(1), ruleId(2), ruleId(3)])
 
 const onRouting = (grants: ReturnType<typeof Policy.grantsOf>, chains: ReadonlyArray<V2EscalationChain>) => {
-	const entered = init({ _tag: "Alerts", search: { tab: "routing" } }, context)
+	const entered = init(hubAt({ tab: "routing" }), context)
 	expect(names(entered.commands)).toContain("FetchAlertsHubChains")
 	return Arr.reduce(
 		[
@@ -61,12 +48,6 @@ const onRouting = (grants: ReturnType<typeof Policy.grantsOf>, chains: ReadonlyA
 	)
 }
 
-const openDialog = () => [
-	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
-	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
-	Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
-]
-
 describe("alerts hub, escalation chains", () => {
 	test("an org without chains learns what one is and can create the first", () => {
 		scene(
@@ -74,7 +55,10 @@ describe("alerts hub, escalation chains", () => {
 			given(onRouting(ENGINEER, [])),
 			expectView(text("No escalation chains yet")).toExist(),
 			expectView(text(/waits for someone to acknowledge, then pages the next/u)).toExist(),
-			expectView(role("button", { name: "Create chain" })).toExist(),
+			expectView(role("link", { name: "Create chain" })).toHaveAttr(
+				"href",
+				"/alerts/escalation-chains/new",
+			),
 		)
 	})
 
@@ -91,7 +75,11 @@ describe("alerts hub, escalation chains", () => {
 			expectView(text("Used by 2 rules")).toExist(),
 			expectView(text("Not used by any rule")).toExist(),
 			expectView(role("button", { name: "Actions for Checkout on-call" })).toExist(),
-			expectView(role("button", { name: "New chain" })).toExist(),
+			expectView(role("link", { name: "New chain" })).toHaveAttr(
+				"href",
+				"/alerts/escalation-chains/new",
+			),
+			expectView(role("link", { name: "Checkout on-call" })).toExist(),
 		)
 	})
 
@@ -107,7 +95,7 @@ describe("alerts hub, escalation chains", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(onRouting(MEMBER, [])),
-			expectView(role("button", { name: "Create chain" })).not.toExist(),
+			expectView(role("link", { name: "Create chain" })).not.toExist(),
 			expectView(text(/Ask an org admin to create one/u)).toExist(),
 		)
 		scene(
@@ -117,17 +105,55 @@ describe("alerts hub, escalation chains", () => {
 		)
 	})
 
-	test("saving a new chain without a name or destinations shows what is missing and sends nothing", () => {
+	test("Edit in a chain's menu opens its editor page", () => {
+		const chainId = Schema.decodeSync(EscalationChainId)(chainUuid(1))
+		const picked = pageUpdate(
+			onRouting(ENGINEER, CHAINS),
+			Message.GotRowMenuMessage({
+				menuId: chainMenuId(chainId),
+				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "edit" } }),
+			}),
+		)
+		expect(picked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: expect.stringMatching(/^\/alerts\/escalation-chains\/esc_/u),
+		})
+	})
+
+	test("Delete on a chain that rules start lists them and holds the delete, as its own page does", () => {
+		const askToDelete = (n: number) =>
+			pageUpdate(
+				onRouting(ENGINEER, CHAINS),
+				Message.GotRowMenuMessage({
+					menuId: chainMenuId(Schema.decodeSync(EscalationChainId)(chainUuid(n))),
+					message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+				}),
+			).model
+		const confirm = within(role("alertdialog"), role("button", { name: "Delete chain" }))
 		scene(
 			{ update: pageUpdate, view },
-			given(onRouting(ENGINEER, CHAINS)),
-			click(role("button", { name: "New chain" })),
-			...openDialog(),
-			expectView(role("dialog", { name: "New escalation chain" })).toExist(),
-			submit(selector("form")),
-			Command.expectNone(),
-			expectView(text("Name the chain")).toExist(),
-			expectView(text("Pick at least one destination, person or schedule")).toExist(),
+			given(askToDelete(1)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/These rules would stop escalating/u)).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout errors"))).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout p95"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// Before the rules list has loaded they are counted instead of named, and still hold it.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...askToDelete(1), rules: null }),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(within(role("alertdialog"), text("2 rules"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// A chain no rule starts deletes as before.
+		scene(
+			{ update: pageUpdate, view },
+			given(askToDelete(3)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/Escalations already running finish on their own copy/u)).toExist(),
+			expectView(confirm).not.toBeDisabled(),
 		)
 	})
 

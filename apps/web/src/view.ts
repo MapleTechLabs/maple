@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "foldkit/html"

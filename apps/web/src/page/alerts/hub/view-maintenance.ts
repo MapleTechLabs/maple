@@ -29,8 +29,9 @@ import {
 } from "../shared/maintenance-windows"
 import { silenceScopeParts } from "../shared/silences"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
 import { windowMenuId } from "./update"
+import { canManageAlerts } from "../../kit/session-grants"
 
 // The Maintenance tab: planned, recurring quiet periods, each written ahead as silences.
 
@@ -135,11 +136,11 @@ export const windowRow = (
 						inputId: `window-switch-input-${window.id}`,
 						isChecked: window.enabled,
 						isDisabled:
-							isEnded || !canManage(model) || model.togglingWindowIds.includes(window.id),
+							isEnded || !canManageAlerts(model) || model.togglingWindowIds.includes(window.id),
 						ariaLabel: window.enabled ? `Disable ${window.name}` : `Enable ${window.name}`,
 						onToggle: Message.ClickedToggleWindow({ windowId: window.id }),
 					}),
-					...(canManage(model) ? [rowMenu(h, model, window)] : []),
+					...(canManageAlerts(model) ? [rowMenu(h, model, window)] : []),
 				]),
 			]),
 		],
@@ -155,10 +156,10 @@ const windowsEmpty = (h: H, model: Model): Html =>
 				emptyTitle(h, ["No maintenance windows yet"]),
 				emptyDescription(h, [
 					"Plan quiet periods once or every week, like a nightly backup or a weekend migration. Each occurrence silences the rules it covers, so no one is paged.",
-					...(canManage(model) ? [] : [" Ask an org admin to create one."]),
+					...(canManageAlerts(model) ? [] : [" Ask an org admin to create one."]),
 				]),
 			]),
-			...(canManage(model)
+			...(canManageAlerts(model)
 				? [
 						emptyActions(h, [
 							button(

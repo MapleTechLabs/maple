@@ -11,9 +11,8 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
-import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../tools-kit/model"
-
-// `/agent-sessions/tools`.
+import { ToolBreakdownRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
+import { SortState } from "../../kit/table-sort"
 
 export const Breakdowns = Schema.Struct({ tools: Schema.Array(ToolBreakdownRow) })
 export type Breakdowns = typeof Breakdowns.Type
@@ -35,8 +34,8 @@ export const Model = Schema.Struct({
 	envSelect: Select.Model,
 	percentileToggle: ToggleGroup.Model,
 	timePicker: TimeRangePicker.Model,
-	/** The Tools table's client-side sort (`useTableSort`, calls descending). */
-	tableSort: Schema.Struct({ key: Schema.NullOr(Schema.String), dir: Schema.Literals(["asc", "desc"]) }),
+	/** The Tools table's client-side sort (calls descending). */
+	tableSort: SortState,
 	searchInput: Schema.String,
 	searchVersion: Schema.Number,
 	lastSentQuery: Schema.String,

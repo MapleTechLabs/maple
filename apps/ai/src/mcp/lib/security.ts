@@ -5,7 +5,7 @@
  */
 import { DateTime, Effect, Option, Order, Array as Arr, String as Str } from "effect"
 import type { SecurityAuditFindingRow, SecurityAuditRunRow, SecurityAuditTargetRow } from "@maple/db/tables"
-import type { DependencyFindingView, DependencyScanRepository } from "@maple/domain/http"
+import type { DependencyFindingView, DependencyScanRepository, TenantContext } from "@maple/domain/http"
 import type { DependencyFindingId } from "@maple/domain/dependency-scan"
 import type {
 	SecurityArea,
@@ -28,11 +28,16 @@ import {
 	runtimePosture,
 	runtimeProductOf,
 } from "@maple/domain/runtime-posture"
-import { PROBE_CATEGORIES, probeCategoryOf } from "@maple/domain/security-telemetry"
+import {
+	PROBE_CATEGORIES,
+	type AttackStage,
+	attackChainReasons,
+	attackStagesOf,
+	probeCategoryOf,
+} from "@maple/domain/security-telemetry"
 import { CH } from "@maple/query-engine"
 import { truncate } from "./format"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import * as Policy from "@maple/domain/policy"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
@@ -70,9 +75,6 @@ export const SEVERITY_RANK = {
 	informational: 4,
 	unknown: 5,
 } satisfies Record<SecuritySeverity, number>
-
-// ---------------------------------------------------------------------------------------------
-// Code audit
 
 export interface CodeTarget {
 	readonly target: SecurityAuditTargetRow
@@ -282,9 +284,6 @@ export const codeRows = (
 		})),
 	)
 
-// ---------------------------------------------------------------------------------------------
-// Dependencies
-
 export type DependencyRead =
 	| {
 			readonly _tag: "read"
@@ -415,12 +414,10 @@ export const displayAdvisory = (finding: Pick<DependencyFindingView, "advisoryId
 	)
 }
 
-// ---------------------------------------------------------------------------------------------
-// Exposure
-
 type SignatureRow = CH.ScannerSignaturesOutput
 type ExposedRow = CH.ScannerExposedOutput
-type SourceRow = CH.ScannerSourcesOutput
+/** A source row with the stages its probes show, classified once per read. */
+type SourceRow = CH.ScannerSourcesOutput & { readonly stages: ReadonlyArray<AttackStage> }
 
 export interface ExposureRead {
 	readonly _tag: "read"
@@ -456,7 +453,12 @@ export const readExposure = (tenant: TenantContext, window: SecurityWindow) =>
 			],
 			{ concurrency: 3 },
 		)
-		return { _tag: "read", signatures, exposed, sources } satisfies ExposureRead
+		return {
+			_tag: "read",
+			signatures,
+			exposed,
+			sources: Arr.map(sources, (row) => ({ ...row, stages: attackStagesOf(row) })),
+		} satisfies ExposureRead
 	}).pipe(
 		Effect.catch((error) =>
 			Effect.logWarning("Security Center read failed", error).pipe(
@@ -586,9 +588,6 @@ export const exposureCategories = (read: ExposureRead, service?: string): Readon
 		? categories
 		: [...categories, summarize("Named scanners on ordinary paths", scanners, false)]
 }
-
-// ---------------------------------------------------------------------------------------------
-// Runtimes
 
 type RuntimeRow = CH.RuntimeVersionsOutput
 
@@ -739,9 +738,6 @@ export const runtimeRows = (entries: ReadonlyArray<RuntimeEntry>): ReadonlyArray
 		]
 	})
 
-// ---------------------------------------------------------------------------------------------
-// Ranking and filters
-
 export const SEVERITY_FLOORS = ["critical", "high", "medium", "low"] as const
 export type SeverityFloor = (typeof SEVERITY_FLOORS)[number]
 
@@ -795,9 +791,6 @@ export const countBySeverity = (rows: ReadonlyArray<SecurityFindingRow>) => ({
 	low: Arr.filter(rows, (row) => row.severity === "low").length,
 	other: Arr.filter(rows, (row) => row.severity === "informational" || row.severity === "unknown").length,
 })
-
-// ---------------------------------------------------------------------------------------------
-// Areas: one summary line, the area's rows and the facts worth a note
 
 export interface AreaResult {
 	readonly area: SecurityArea
@@ -909,6 +902,19 @@ export const dependencyArea = (read: DependencyRead): AreaResult => {
 	}
 }
 
+/** One note naming every listed source that ran an automated attack chain, and why. */
+const attackChainNote = (sources: ReadonlyArray<SourceRow>): ReadonlyArray<string> => {
+	const chains = Arr.flatMap(sources, (row) => {
+		const reasons = attackChainReasons(row)
+		return reasons.length === 0 ? [] : [`${row.clientAddress} (${Arr.join(reasons, ", ")})`]
+	})
+	return chains.length === 0
+		? []
+		: [
+				`${plural(chains.length, "source")} ran an automated attack chain: ${Arr.join(chains, "; ")}. Block them at the edge and check what the services they reached answered.`,
+			]
+}
+
 export const exposureArea = (read: ExposureRead | AreaGate): AreaResult => {
 	if (read._tag !== "read") return gated("exposure", read)
 	if (read.signatures.length === 0 && read.sources.length === 0) {
@@ -931,6 +937,7 @@ export const exposureArea = (read: ExposureRead | AreaGate): AreaResult => {
 		summary: `${requests} probe requests against ${plural(new Set(Arr.map(probes, (row) => row.service)).size, "service")} from ${sources} sources; ${plural(rows.length, "probed path")} answered with a 2xx. Maple sees the status code, not the response body.`,
 		rows,
 		notes: [
+			...attackChainNote(read.sources),
 			...Arr.map(
 				catchAllServices(read.signatures),
 				(entry) =>
@@ -997,9 +1004,6 @@ export const runtimeArea = (read: RuntimesRead | AreaGate): AreaResult => {
 				: [`Not checked for CVEs this time: ${Arr.join(read.skipped, ", ")}.`],
 	}
 }
-
-// ---------------------------------------------------------------------------------------------
-// Repositories: what audits and scans each one, and whether a filtered one was ever read
 
 /** Every audited or connected repository with its latest audit run and dependency scan. */
 export const repositoryCoverage = (

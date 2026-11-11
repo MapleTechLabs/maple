@@ -15,12 +15,13 @@ import {
 } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import type { EscalationChainRow } from "@maple/domain/mcp-outputs"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { McpInvalidInputError } from "../tools/types"
 import { toMcpHttpError } from "./map-http-error"
 import * as P from "./params"
 import { doc } from "./tool-doc"
+import { orFallback } from "./fallback"
 
 type ChainRow = typeof EscalationChainRow.Type
 type DestinationRef = Pick<AlertDestinationDocument, "id" | "name" | "type">
@@ -101,20 +102,20 @@ export const toStepsRequest = (steps: typeof StepsInput.Type) =>
 /** Names for the rendered steps; a failed read only drops the names. */
 export const targetDirectory = (orgId: OrgId) =>
 	Effect.gen(function* () {
-		const alerts = yield* AlertsService
+		const alerts = yield* AlertDestinationsService
 		const schedules = yield* OnCallSchedulesService
 		const [destinations, members, scheduleList] = yield* Effect.all(
 			[
 				alerts.listDestinations(orgId).pipe(
 					Effect.map((response): ReadonlyArray<DestinationRef> => response.destinations),
-					Effect.orElseSucceed((): ReadonlyArray<DestinationRef> => []),
+					orFallback("alert destinations", (): ReadonlyArray<DestinationRef> => []),
 				),
 				schedules.memberNames(orgId),
 				schedules.list(orgId).pipe(
 					Effect.map((response) =>
 						Arr.map(response.schedules, (s) => ({ id: s.id, name: s.name })),
 					),
-					Effect.orElseSucceed(() => []),
+					orFallback("on-call schedules", () => []),
 				),
 			],
 			{ concurrency: "unbounded" },

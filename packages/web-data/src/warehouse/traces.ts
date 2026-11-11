@@ -1,12 +1,11 @@
 import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
+import { formatWarehouseDateTime, CH } from "@maple/query-engine"
 import {
 	QueryEngineExecuteRequest,
 	TracesFacetDimension,
 	type AttributeFilter,
 	type AttributeFilterLeaf,
-	formatWarehouseDateTime,
-	CH,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { TraceId, SpanId } from "@maple/domain"
 import {
 	DeploymentEnvironment,

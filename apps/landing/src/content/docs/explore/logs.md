@@ -63,18 +63,18 @@ Each filter can include or exclude a value.
 
 The detail sheet opens with the message, a meta strip, and an **Error** or **Fatal** banner for those severities. It has these tabs:
 
-- **Attributes**: **Log Attributes** and **Resource Attributes**, with a **Search attributes...** box.
+- **Attributes**: **Log Attributes** and **Resource attributes**, with a **Search attributes…** box.
 - **Trace**: a **Trace Timeline** of every log in the same trace (up to 200), with span boundaries marked. Shown when the log has a trace ID.
 - **Context**: **Surrounding logs**, the logs written around this one by the same **Instance** or the whole **Service**.
 - **Raw**: the record as a **JSON Payload**.
 - **Infrastructure**: host, container, or Kubernetes details, shown when the log carries those resource attributes.
 
-The meta strip shows the timestamp, a `trace:` link, and the span ID. It also has **Open in full page**, **Shareable link**, and **Log JSON** (copy) actions.
+The meta strip shows the timestamp, a `trace:` link, and the span ID. It also has **Open in full page**, copy link to log, and **Log JSON** (copy) actions.
 
 ## Move between logs and traces
 
 - **From a log to its trace**: click the `trace:` link in the meta strip. The trace view opens at the log's timestamp.
-- **From a trace to its logs**: on a trace, click **View Logs**, or open a span's **Logs** tab. See [Traces](/docs/explore/traces#jump-to-logs-and-replays).
+- **From a trace to its logs**: on a trace, click **View logs**, or open a span's **Logs** tab. See [Traces](/docs/explore/traces#jump-to-logs-and-replays).
 
 ## Query logs from an assistant
 

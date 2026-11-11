@@ -29,11 +29,8 @@ import { Array as Arr, Record as Rec } from "effect"
  * a *meaning* ("a timeseries query set", "some raw SQL") to a function instead of
  * hand-assembling an endpoint string and an untyped bag.
  *
- * These now emit the typed v3 union. That switch happened here and NOWHERE ELSE:
- * the ~40 call sites — every dashboard template, the Perses importer, the MCP
- * widget builders, `widget-definitions.ts` — are untouched by the flip, because
- * they were already handing over a meaning rather than assembling a bag. That was
- * the whole point of extracting these, and it is the return on it.
+ * These emit the typed v3 union, so a storage change lands here and not at the
+ * call sites (dashboard templates, the Perses importer, the MCP widget builders).
  *
  * The round-trip tests in `construct.test.ts` are what hold the promise: every
  * constructor's output must read back through the matching accessor unchanged.
@@ -141,7 +138,6 @@ export const makeStaticDataSource = (
 	...(!(transform === undefined) ? { transform } : undefined),
 })
 
-/** The route a product-event funnel widget fetches through. */
 export const PRODUCT_EVENTS_FUNNEL_ENDPOINT = "product_events_funnel"
 
 /**
@@ -198,7 +194,6 @@ export const makeProductEventsFunnelDataSource = (
 	)
 }
 
-/** The route a paths widget fetches through. */
 export const PRODUCT_EVENTS_PATHS_ENDPOINT = "product_events_paths"
 
 /** The stored `display.paths` definition — what `makeProductEventsPathsDataSource` reads. */

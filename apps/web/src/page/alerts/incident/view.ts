@@ -22,7 +22,7 @@ import {
 	signalTitle,
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -40,27 +40,27 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { alertsHref } from "../shared/links"
+import { alertsHref, ruleHref } from "../../kit/alert-links"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
-import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
+import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
 import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
-import { msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { type EscalationData, incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
-import * as Policy from "@maple/domain/policy"
 import * as SilenceDialogView from "../silence-dialog/view"
 import { incidentTimeline } from "./view-timeline"
 import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
-import { ANOMALY_CHART_TOKENS } from "../../anomalies/kit/evidence"
+import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -106,7 +106,6 @@ const statusLine = <M>(
 	]
 }
 
-/** `IncidentHeader`'s title side. */
 export const headerTitle = <M>(
 	h: HtmlBuilder<M>,
 	incident: AlertIncidentDocument,
@@ -194,7 +193,7 @@ const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string)
 	)
 }
 
-/** `IncidentHeader`'s Acknowledge or Unacknowledge button; nothing once the incident resolved. */
+/** The incident header's Acknowledge or Unacknowledge button; nothing once the incident resolved. */
 export const acknowledgeAction = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -244,7 +243,7 @@ const investigateAction = (h: H, model: Model, investigation: V2Investigation | 
 				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
 			)
 
-/** What `IncidentBody` renders, from props (the page reads them off its Model, the lab off a fixture). */
+/** What `incidentBody` renders: the page reads it off its Model, the lab off a fixture. */
 export type IncidentBodyInputs<M> = Readonly<{
 	incident: AlertIncidentDocument
 	rule: AlertRuleDocument | null
@@ -291,7 +290,7 @@ const sourceNote = <M>(
 		]),
 	])
 
-/** `IncidentBody`: signal chart, timeline and rail. */
+/** Signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
 	const { incident, rule } = inputs
 	const group = incidentGroup(incident)
@@ -506,7 +505,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							isLoading: model.isUpdatingAcknowledgement,
 							onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
 						}),
-						...(Policy.has(model.grants, "alerts:manage") && isOpenIncident(model)
+						...(canManageAlerts(model) && isOpenIncident(model)
 							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
 							: []),
 						investigateAction(
@@ -535,7 +534,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	)
 })
 
-/** `DashboardPage`'s breadcrumbs per state. */
 export const breadcrumbsOf = (model: Model) =>
 	Option.match(incidentViewOf(model), {
 		onNone: () => [
@@ -544,7 +542,7 @@ export const breadcrumbsOf = (model: Model) =>
 		],
 		onSome: ({ incident, rule }) => [
 			{ label: "Alerts", href: "/alerts" },
-			{ label: rule?.name ?? incident.ruleName, href: `/alerts/${incident.ruleId}` },
+			{ label: rule?.name ?? incident.ruleName, href: ruleHref(incident.ruleId) },
 			{ label: "Incident" },
 		],
 	})

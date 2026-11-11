@@ -1,4 +1,6 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { breachSideFor } from "@maple/alerting-core/tiers"
+import { Array as Arr, String as Str } from "effect"
 import type { AlertComparator, AlertDestinationDocument, AlertQueryTiming } from "@maple/domain/http"
 import {
 	buildRuleCreateParamsV2,
@@ -15,10 +17,6 @@ import { destinationProvider } from "../shared/providers"
 import type { RuleForm } from "./form"
 import { intervalWindowIssue, queryTimingIssue } from "./interval"
 import { nonZeroOr } from "@maple/ui/lib/number"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// The rule editor's pure helpers: form surface, condition bar, live chart hero, notifications.
 
 /** Editing the org's default anomaly rule: its scope, kind and enabled state are the server's. */
 export const isProtectedDefault = (
@@ -49,6 +47,24 @@ export const conditionSubject = (form: RuleForm): string => {
 	return Str.toLowerCase(signalLabels[form.signalType])
 }
 
+/** A threshold with its unit: "5%", "800 ms", "?" while empty. */
+export const thresholdValue = (form: RuleForm, raw: string): string => {
+	const unit = thresholdUnitLabel(form) ?? ""
+	return `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
+}
+
+/** How many checks fire the rule: "in 3 checks in a row (5 min each)", "over 5 min". */
+export const checksPhrase = (form: RuleForm): string => {
+	const checks = Str.trim(form.consecutiveBreachesRequired) || "?"
+	const outOf = Str.trim(form.breachesOutOf)
+	const windowText = `${Str.trim(form.windowMinutes) || "?"} min`
+	return outOf.length > 0
+		? `in ${checks} of the last ${outOf} checks (${windowText} each)`
+		: checks === "1"
+			? `over ${windowText}`
+			: `in ${checks} checks in a row (${windowText} each)`
+}
+
 /** The rule in one plain sentence, shown in the action bar. */
 export const describeRuleCondition = (form: RuleForm, isDefault = false): string => {
 	if (form.signalType === "anomaly")
@@ -57,21 +73,12 @@ export const describeRuleCondition = (form: RuleForm, isDefault = false): string
 			: isDefaultAnomalyRule(form)
 				? "Anomalies in a service, environment or signal"
 				: `Pages on anomalies in ${anomalyScopeSummary(form)}`
-	const unit = thresholdUnitLabel(form) ?? ""
-	const value = (raw: string) => `${Str.trim(raw) || "?"}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`
+	const value = (raw: string) => thresholdValue(form, raw)
 	const threshold = isRangeComparator(form.comparator)
 		? `${value(form.threshold)} and ${value(form.thresholdUpper)}`
 		: value(form.threshold)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
-	const checks = Str.trim(form.consecutiveBreachesRequired) || "?"
-	const outOf = Str.trim(form.breachesOutOf)
-	const windowText = `${Str.trim(form.windowMinutes) || "?"} min`
-	const when =
-		outOf.length > 0
-			? `in ${checks} of the last ${outOf} checks (${windowText} each)`
-			: checks === "1"
-				? `over ${windowText}`
-				: `in ${checks} checks in a row (${windowText} each)`
+	const when = checksPhrase(form)
 	const severity = escalation === null && form.severity === "critical" ? "Critical" : "Warning"
 	const critical =
 		escalation === null
@@ -82,18 +89,18 @@ export const describeRuleCondition = (form: RuleForm, isDefault = false): string
 
 /** What crossing back looks like for a comparator, as the recovery field's label. */
 export const recoveryLabel = (comparator: AlertComparator): string =>
-	comparator === "gt" || comparator === "gte" ? "Recovers below" : "Recovers above"
+	breachSideFor(comparator) === "above" ? "Recovers below" : "Recovers above"
 
 /** A starting critical value one step worse than the warning one, so the new row is never blank. */
 export const suggestCriticalThreshold = (form: RuleForm): string => {
 	const warning = Number(form.threshold)
 	if (Str.trim(form.threshold).length === 0 || !Number.isFinite(warning)) return ""
 	const step = nonZeroOr(Math.abs(warning), 1)
-	const worse = form.comparator === "gt" || form.comparator === "gte" ? warning + step : warning - step
+	const worse = breachSideFor(form.comparator) === "above" ? warning + step : warning - step
 	return String(Number(worse.toPrecision(12)))
 }
 
-/** `deriveValidationIssues`: what the action bar lists as missing. */
+/** What the action bar lists as missing. */
 export const validationIssues = (form: RuleForm, isDefault = false): ReadonlyArray<string> => {
 	if (form.signalType === "anomaly") return anomalyIssues(form, isDefault)
 	const issues: Array<string> = []
@@ -154,7 +161,7 @@ export const saveIssues = (
 	return timingIssue === null ? issues : [...issues, timingIssue]
 }
 
-/** `previewIdentityKey`: the rule as evaluated; a dry-run verdict is only shown while it matches. */
+/** The rule as evaluated; a dry-run verdict is only shown while it matches. */
 export const previewIdentityKey = (form: RuleForm): string => {
 	const {
 		name: _name,
@@ -173,7 +180,7 @@ export const previewIdentityKey = (form: RuleForm): string => {
 	return encodeJson({ ...evaluated, tiers })
 }
 
-/** `makeSuggestedName`: signal and scope, offered while the name is empty. */
+/** Signal and scope, offered while the name is empty. */
 export const suggestedName = (form: RuleForm): string | null => {
 	if (Str.trim(form.name).length > 0) return null
 	if (form.signalType === "anomaly") return `Anomalies · ${anomalyScopeSummary(form)}`
@@ -203,7 +210,7 @@ export const suggestedName = (form: RuleForm): string | null => {
 	return suffix.length > 0 ? `${base} · ${suffix}` : base
 }
 
-/** `formatGroupBySummary`: the hero's "per …" next to the subject. */
+/** The hero's "per …" next to the subject. */
 export const groupBySummary = (form: RuleForm): string | null => {
 	const groupBy =
 		form.signalType === "builder_query" && form.queryBuilderDraft.addOns.groupBy
@@ -213,7 +220,7 @@ export const groupBySummary = (form: RuleForm): string | null => {
 	return visible.length === 0 ? null : Arr.join(visible, ", ")
 }
 
-/** `destinationTarget`: where a destination delivers, ahead of its name. */
+/** Where a destination delivers, ahead of its name. */
 export const destinationTarget = (
 	destination: AlertDestinationDocument,
 ): { primary: string; secondary: string } => {

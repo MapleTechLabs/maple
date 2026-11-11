@@ -18,9 +18,6 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { WidgetFailure } from "./widget-data"
 
-// The dashboard variables: the
-// option list each variable reads, and the value it resolves to from the URL, its default or the list.
-
 export type Variable = NonNullable<DashboardDocument["variables"]>[number]
 
 /** A variable's option list: custom options are inline; query variables fetch for the window. */
@@ -35,7 +32,7 @@ const names = (rows: ReadonlyArray<{ readonly name: string }>) => Arr.map(rows, 
 const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) =>
 	Arr.map(rows, (row) => row.attributeValue)
 
-/** `readVariableOptions`'s request for one variable, keyed so a window change refetches. */
+/** One variable's request, keyed so a window change refetches. */
 export const optionsSourceOf = (orgId: string, variable: Variable, window: Window | null): OptionsSource => {
 	if (variable.type === "custom")
 		return { _tag: "Inline", options: Arr.map(variable.options, (option) => option.value) }
@@ -44,7 +41,7 @@ export const optionsSourceOf = (orgId: string, variable: Variable, window: Windo
 	return { _tag: "Query", key: requestKey(orgId, "dashboardVariableOptions", { query, window }) }
 }
 
-/** The option strings a query variable reads (`readVariableOptions`' server functions). */
+/** The option strings a query variable reads. */
 export const fetchVariableOptions = (variable: Variable, window: Window) => {
 	const query = dashboardVariableOptionsQuery(variable)
 	if (query === null) return Effect.succeed<ReadonlyArray<string>>([])
@@ -94,7 +91,7 @@ const isUnavailable = (variable: Variable, options: OptionsState, value: string 
 const isUnexpandable = (variable: Variable, options: OptionsState, value: string | undefined) =>
 	variable.type === "query" && options.error !== null && value === ALL_VALUE
 
-/** `values`: each variable's resolved value; one waiting on (or failed by) its options is absent. */
+/** Each variable's resolved value; one waiting on (or failed by) its options is absent. */
 export const resolveVariableValues = (
 	variables: ReadonlyArray<Variable>,
 	urlValues: Readonly<Record<string, string>>,
@@ -142,8 +139,6 @@ export const unexpandableVariables = (
 		}),
 	)
 
-// OPTION SLOTS
-
 /** Each query variable's fetched option list, by variable name. */
 export type OptionsSlots = Readonly<Record<string, Keyed.Keyed<ReadonlyArray<string>, WidgetFailure>>>
 export type OptionsRequest = Readonly<{ name: string; key: string; variable: Variable; window: Window }>
@@ -171,7 +166,7 @@ export const planOptionRequests = (
 	})
 }
 
-/** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
+/** Inline lists, fetched lists, and the loading state of the rest. */
 export const optionsByNameOf = (
 	orgId: string,
 	variables: ReadonlyArray<Variable>,

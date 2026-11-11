@@ -2,13 +2,8 @@ import type { AnomalyIncidentId } from "@maple/domain/http"
 import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	META_CHIP_CLASS,
-	SIGNAL_LABEL,
-	TRIAGE_STATUS_CHIP,
-	deviation,
-	formatSignalValue,
-} from "@maple/web-data/anomalies/format"
+import { SIGNAL_LABEL, deviation, formatSignalValue } from "@maple/web-data/anomalies/format"
+import { META_CHIP_CLASS, TRIAGE_STATUS_CHIP } from "@maple/views/lib/anomaly-display"
 import { Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,12 +19,9 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { anomalyIncidentFromV2 } from "../../../data/anomaly-incidents"
 import { AppRoute, hrefOf } from "../../../route"
-import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../anomalies/kit/evidence"
-
-// An anomaly rule's incident: the detector's evidence (its signal against the baseline, the
-// values, the grouped errors) and the way to the anomaly, its issue and its triage.
+import { anomalyFingerprintRow, anomalySignalChart, anomalySummary } from "../../kit/anomaly-evidence"
 
 /** What the evidence section draws from: the page reads it off its Model, the lab off a fixture. */
 export type AnomalyEvidenceInputs<M> = Readonly<{

@@ -1,22 +1,19 @@
 import { V2ChatDestination } from "@maple/domain/http/v2"
-import { ChatWorkspaceId } from "@maple/domain/primitives"
-import { channelLabel } from "../../../components/alerts/channel-search"
+import { ChatWorkspaceId } from "@maple/primitives"
+import { channelLabel } from "../shared/channel-search"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Combobox from "@maple/views/ui/combobox"
 import type { DestinationForm } from "./form"
 
-// `ChatDestinationFields`: the channel a `chat`
-// destination posts to, from what the workspace's connector says the bot can post in.
-
 export const Model = Schema.Struct({
 	channels: Keyed.KeyedSchema(Schema.Array(V2ChatDestination), LoadFailure),
-	/** Single mode over channel labels: Base UI writes the picked label into the input. */
+	/** Single mode over channel labels: the combobox writes the picked label into the input. */
 	combobox: Combobox.Model,
 })
 export type Model = typeof Model.Type
@@ -47,11 +44,7 @@ export const FetchChatChannels = Command.define("FetchAlertChatChannels", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.chatIntegration.destinations({ params: { id: workspaceId } })
 			return response.destinations
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChannels({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchChannels({ key, result }))),
 })
 
 export type Return = Readonly<{
@@ -107,7 +100,7 @@ export const update = (model: Model, message: Message, form: DestinationForm): R
 		CompletedFetchChannels: ({ key, result }) => {
 			const channels = Keyed.accept(model.channels, key, result)
 			const next = { ...model, channels }
-			// The stored channel's label is known once its list answers (`itemToStringLabel`).
+			// The stored channel's label is known once its list answers.
 			const isEchoing = model.combobox.inputValue === selectedLabel(model, form)
 			return {
 				model: isEchoing

@@ -7,7 +7,7 @@ import {
 	VercelConnections,
 	VercelProjects,
 } from "@maple/db/tables"
-import { OrgId, ScrapeTargetId, SourceId } from "@maple/domain/primitives"
+import { OrgId, ScrapeTargetId, SourceId } from "@maple/primitives"
 import { Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -16,7 +16,7 @@ import {
 	createTestDb,
 	insertTestSource,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { IntegrationInventoryService } from "./IntegrationInventoryService"
 
 const createdDbs: TestDb[] = []
@@ -113,62 +113,67 @@ describe("IntegrationInventoryService", () => {
 		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
 	})
 
-	it.effect("reports a Vercel drain the poller found missing and counts only the connection's projects", () => {
-		const testDb = createTestDb(createdDbs)
-		const orgId = asOrgId("org_v")
-		return Effect.gen(function* () {
-			yield* TestClock.setTime(NOW)
-			const sourceId = asSourceId(
-				yield* Effect.promise(() => insertTestSource(testDb, { orgId: "org_v", platform: "vercel" })),
-			)
-			const database = yield* Database
-			yield* database.execute((db) =>
-				Effect.all([
-					db.run(
-						PG.insertInto(VercelConnections).values({
-							id: "vc_1",
-							orgId,
-							sourceId,
-							teamId: "team_1",
-							teamSlug: "acme",
-							teamName: "Acme",
-							tokenCiphertext: "c",
-							tokenIv: "i",
-							tokenTag: "t",
-							connectedByUserId: "user_1",
-							projectScope: "all",
-							logDrainId: null,
-							traceDrainId: "drn_1",
-							logDrainState: { status: "missing", lastError: "Drain not found" },
-							traceDrainState: { status: "enabled", lastError: null },
-							lastSuccessAt: NOW - 60_000,
-							createdAt: NOW,
-							updatedAt: NOW,
-						}),
+	it.effect(
+		"reports a Vercel drain the poller found missing and counts only the connection's projects",
+		() => {
+			const testDb = createTestDb(createdDbs)
+			const orgId = asOrgId("org_v")
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				const sourceId = asSourceId(
+					yield* Effect.promise(() =>
+						insertTestSource(testDb, { orgId: "org_v", platform: "vercel" }),
 					),
-					db.run(
-						PG.insertInto(VercelProjects).values(
-							Arr.map(["p1", "p2", "p3"], (projectId) => ({
-								id: `row_${projectId}`,
+				)
+				const database = yield* Database
+				yield* database.execute((db) =>
+					Effect.all([
+						db.run(
+							PG.insertInto(VercelConnections).values({
+								id: "vc_1",
 								orgId,
-								// p3 is left from an earlier connection.
-								connectionId: projectId === "p3" ? "vc_0" : "vc_1",
-								projectId,
-								name: projectId,
+								sourceId,
+								teamId: "team_1",
+								teamSlug: "acme",
+								teamName: "Acme",
+								tokenCiphertext: "c",
+								tokenIv: "i",
+								tokenTag: "t",
+								connectedByUserId: "user_1",
+								projectScope: "all",
+								logDrainId: null,
+								traceDrainId: "drn_1",
+								logDrainState: { status: "missing", lastError: "Drain not found" },
+								traceDrainState: { status: "enabled", lastError: null },
+								lastSuccessAt: NOW - 60_000,
 								createdAt: NOW,
 								updatedAt: NOW,
-							})),
+							}),
 						),
-					),
-				]),
-			)
-			const inventory = yield* (yield* IntegrationInventoryService).list(orgId)
-			const vercel = Option.getOrUndefined(
-				Arr.findFirst(inventory.integrations, (i) => i.provider === "vercel"),
-			)
-			assert.strictEqual(vercel?.account, "Acme (2 projects)")
-			assert.strictEqual(vercel?.status, "failing")
-			assert.strictEqual(vercel?.resources[0]?.lastError, "Drain not found")
-		}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
-	})
+						db.run(
+							PG.insertInto(VercelProjects).values(
+								Arr.map(["p1", "p2", "p3"], (projectId) => ({
+									id: `row_${projectId}`,
+									orgId,
+									// p3 is left from an earlier connection.
+									connectionId: projectId === "p3" ? "vc_0" : "vc_1",
+									projectId,
+									name: projectId,
+									createdAt: NOW,
+									updatedAt: NOW,
+								})),
+							),
+						),
+					]),
+				)
+				const inventory = yield* (yield* IntegrationInventoryService).list(orgId)
+				const vercel = Option.getOrUndefined(
+					Arr.findFirst(inventory.integrations, (i) => i.provider === "vercel"),
+				)
+				assert.strictEqual(vercel?.account, "Acme (2 projects)")
+				assert.strictEqual(vercel?.status, "failing")
+				assert.strictEqual(vercel?.resources[0]?.lastError, "Drain not found")
+			}).pipe(Effect.provide(IntegrationInventoryService.layer.pipe(Layer.provideMerge(testDb.layer))))
+		},
+	)
 })

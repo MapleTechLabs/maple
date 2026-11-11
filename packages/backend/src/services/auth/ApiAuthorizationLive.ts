@@ -1,8 +1,8 @@
 import { HttpServerRequest } from "effect/http"
-import { CurrentTenant, RoleName, UnauthorizedError } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema } from "effect"
+import { CurrentTenant, UnauthorizedError } from "@maple/domain/http"
+import { Effect, Layer, Option } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -10,10 +10,7 @@ import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-import { getBearerToken } from "./bearer-token"
-
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
+import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
 
 export const ApiAuthorizationLive = Layer.effect(
 	CurrentTenant.Authorization,
@@ -43,7 +40,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					if (Option.isSome(apiKeyResolved)) {
 						const resolved = apiKeyResolved.value
 						// Denied attempts are audited with the same attribution as
-						// successes — a key probing a surface it is not valid for is
+						// successes: a key probing a surface it is not valid for is
 						// exactly what the audit log exists to surface. This layer has
 						// no rate limiter, so coalescing is what bounds the volume.
 						const recordDenied = (denialReason: string) =>
@@ -74,7 +71,7 @@ export const ApiAuthorizationLive = Layer.effect(
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
 							userId: resolved.userId,
-							roles: resolved.roles ?? apiKeyDefaultRoles,
+							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 						})
 						return yield* httpEffect.pipe(

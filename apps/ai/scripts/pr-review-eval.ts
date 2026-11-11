@@ -7,7 +7,7 @@ import { createHash } from "node:crypto"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { PR_REVIEW_SYSTEM_PROMPT } from "@/chat/prompts"
 import { PR_REVIEW_BUDGET } from "@/chat/budgets"
-import { PR_REVIEW_WORKER_PROMPT } from "@/chat/review-fanout"
+import { PR_REVIEW_WORKER_PROMPT } from "@/chat/review/fanout"
 import { Grade, scoreGrade } from "./pr-review-eval/grading"
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -92,8 +92,6 @@ const positiveInt = (raw: string | undefined, fallback: number, name: string): n
 	}
 	return n
 }
-
-// Mining
 
 /** The old-side line ranges a commit changed, per file, for files a review would read. */
 const changedOldRanges = (sha: string): Array<Location> => {
@@ -238,8 +236,6 @@ const mine = (argv: ReadonlyArray<string>) => {
 	}
 	console.log(encodeTabbedJson({ cases: candidates }))
 }
-
-// Running
 
 const overlaps = (finding: Finding, location: Location) =>
 	finding.path === location.path &&

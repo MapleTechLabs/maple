@@ -6,7 +6,7 @@ import {
 	type McpToolExecutorBuildKind,
 	McpToolsUnavailableError,
 } from "./executor-loader"
-import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
+import { CurrentMcpRequestTenant } from "./tenant"
 import { refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 

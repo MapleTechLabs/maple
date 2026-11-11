@@ -49,7 +49,6 @@ export function encodeKey(value: unknown): string {
  */
 const ORG_KEY_SEPARATOR = "\u0000"
 
-/** Build an org-scoped atom family key. */
 export function encodeOrgScopedKey(orgId: string | null | undefined, value: unknown): string {
 	return `${orgId ?? ""}${ORG_KEY_SEPARATOR}${encodeKey(value)}`
 }

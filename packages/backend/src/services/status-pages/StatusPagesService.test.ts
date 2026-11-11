@@ -3,14 +3,14 @@ import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { StatusPageComponentPublicId, type StatusPageConfig } from "@maple/domain/http/v2"
-import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/domain/primitives"
+import { StatusPageComponentId, StatusPageId, UptimeMonitorId } from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	STATUS_PAGE_BREAK_GLASS_PREFIX,
 	sha256Base64Url,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { StatusPagesService, type CreateStatusPageIncidentInput } from "./StatusPagesService"
 
 const trackedDbs: TestDb[] = []

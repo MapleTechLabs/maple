@@ -16,6 +16,7 @@ import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
@@ -76,6 +77,7 @@ const spanRow = (index: number) => ({
 const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
+		Layer.provide(Layer.effect(AiSessionReadService, AiSessionReadService.make)),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
@@ -1174,10 +1176,6 @@ describe("POST /internal/ai-sessions/summary", () => {
 		}
 	})
 })
-
-// ---------------------------------------------------------------------------
-// Agent Sessions › Tools
-// ---------------------------------------------------------------------------
 
 const TOOLS_WINDOW = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
 

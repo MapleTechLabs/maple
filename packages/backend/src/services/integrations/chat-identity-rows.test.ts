@@ -10,7 +10,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	linkChatIdentity,
 	listChatIdentities,

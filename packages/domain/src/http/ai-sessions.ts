@@ -7,8 +7,6 @@ import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
 
-// AI agent session endpoint schemas
-//
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
 // decode time; a session is resolved at trace granularity by
 // `aiSessionPageQuery` (which ranks a page and measures it off the index) and
@@ -595,10 +593,6 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 	},
 ) {}
 
-// ---------------------------------------------------------------------------
-// Agent Sessions › Tools
-// ---------------------------------------------------------------------------
-//
 // The tool analytics page, backed by `ai-tools.ts` in the query-engine
 // integrations layer. Same source as the sessions list — `ai_trace_index`,
 // filtered to `IsToolCall = 1` — and the same session key, so a row here links
@@ -617,7 +611,6 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
  */
 export const AI_TOOLS_SELECTION_MAX_CHARS = 200
 
-/** Every selection field of the tools page carries the same ceiling. */
 const aiToolsSelectionText = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS),
@@ -819,15 +812,9 @@ export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsRes
 	tools: Schema.Array(AiToolsBreakdownItem),
 }) {}
 
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the failures of one tool
- *
- * Two reads, and both are keyed by a REQUIRED `tool`: they are the tool detail
- * page's, and the whole-org version of either question is the overview's error
- * rate column. Everything else about the selection is the same bag the four
- * reads above take, so the page's toolbar narrows its failures exactly as it
- * narrows its charts.
- * -----------------------------------------------------------------------------------------------*/
+// Tool detail: two reads keyed by a REQUIRED `tool`; the whole-org version of either question
+// is the overview's error rate column. The rest of the selection is the same bag the four
+// reads above take, so the toolbar narrows failures exactly as it narrows the charts.
 
 /** The selection with the tool required — the tool detail page's own scope. */
 const aiToolSelectionForTool = {

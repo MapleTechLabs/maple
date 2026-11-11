@@ -56,6 +56,18 @@ describe("handleRequest API proxy", () => {
 		expect(await request?.text()).toBe("hello")
 	})
 
+	it("keeps the page's cookies out of the forwarded request", async () => {
+		const { env, forwarded } = recordingEnv()
+		await handleRequest(
+			new Request("https://app.maple.test/_api/v2/traces", {
+				headers: { authorization: "Bearer t", cookie: "__session=s; theme=dark" },
+			}),
+			env,
+		)
+		expect(forwarded[0]?.headers.get("cookie")).toBeNull()
+		expect(forwarded[0]?.headers.get("authorization")).toBe("Bearer t")
+	})
+
 	it("sends the API's host, not the app's, so OAuth callbacks stay on the API", async () => {
 		const { env, forwarded } = recordingEnv()
 		await handleRequest(

@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import type { PullSourcePlatform } from "@maple/domain/primitives"
+import type { PullSourcePlatform } from "@maple/primitives"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"

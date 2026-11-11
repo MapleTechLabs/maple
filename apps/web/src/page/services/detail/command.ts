@@ -1,3 +1,5 @@
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
@@ -13,19 +15,16 @@ import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Predicate, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Predicate, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
-import { listMonitors } from "../../alerts/shared/uptime-commands"
-import { Message, RequestMode } from "./message"
+import { listMonitors } from "../../kit/uptime/commands"
+import { Message } from "./message"
 
 const Names = Schema.optional(Schema.Array(Schema.String))
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 /** Entry and Reload: the clock, so the window resolves (snapped on entry, unsnapped after Reload). */
 export const ResolveClock = Command.define("ResolveServiceDetailClock", {
 	args: { mode: RequestMode },
@@ -34,13 +33,7 @@ export const ResolveClock = Command.define("ResolveServiceDetailClock", {
 		Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs, mode })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteServiceDetailReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteServiceDetailReloadSpin", Message.CompletedReloadSpin)
 
 /** The window, the service and the environment filter (`GetCustomChartServiceDetailInput`). */
 export const DetailInput = Schema.Struct({
@@ -85,65 +78,58 @@ export const DependenciesInput = Schema.Struct({
 })
 export type DependenciesInput = typeof DependenciesInput.Type
 
-// Fetches carry their request key back so `update` drops a superseded answer (S6).
+// Fetches carry their request key back so `update` drops a superseded answer.
 
-/** `getServiceDetailOverviewResultAtom`: the charts, releases and environments in one request. */
+/** The charts, releases and environments in one request. */
 export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 	args: { key: Schema.String, input: DetailInput },
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, input }) =>
-		getServiceDetailOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					points: response.data,
-					releases: response.releases,
-					environments: response.environments,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
+		getServiceDetailOverview({ data: { ...input, environments: input.environments } }).pipe(
+			Effect.map((response) => ({
+				points: response.data,
+				releases: response.releases,
+				environments: response.environments,
+			})),
+			settleTo((result) => Message.CompletedFetchOverview({ key, result })),
 		),
 })
 
-/** `getServiceDetailThroughputRefinementResultAtom`: exact pre-sampling volume while sampling is on. */
+/** Exact pre-sampling volume while sampling is on. */
 export const FetchRefinement = Command.define("FetchServiceDetailRefinement", {
 	args: { key: Schema.String, input: RefinementInput },
 	messages: [Message.CompletedFetchRefinement],
 	execute: ({ key, input }) =>
 		getServiceDetailThroughputRefinement({
-			data: { ...input, environments: mutable(input.environments) },
+			data: { ...input, environments: input.environments },
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRefinement({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchRefinement({ key, result })),
 		),
 })
 
-/** `getServiceOperationsResultAtom`, shared by the Overview panel and the Operations tab. */
+/** Shared by the Overview panel and the Operations tab. */
 export const FetchOperations = Command.define("FetchServiceOperations", {
 	args: { key: Schema.String, input: OperationsInput },
 	messages: [Message.CompletedFetchOperations],
 	execute: ({ key, input }) =>
 		getServiceOperations({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.operations, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOperations({ key, result })),
+			Effect.map((response) => response.operations),
+			settleTo((result) => Message.CompletedFetchOperations({ key, result })),
 		),
 })
 
 export const EndpointsInput = Schema.Struct({ ...DetailInput.fields, limit: Schema.Number })
 export type EndpointsInput = typeof EndpointsInput.Type
 
-/** `getServiceEndpointsResultAtom`: the API tab's endpoints, the busiest `ENDPOINTS_LIMIT`. */
+/** The API tab's endpoints, the busiest `ENDPOINTS_LIMIT`. */
 export const FetchEndpoints = Command.define("FetchServiceEndpoints", {
 	args: { key: Schema.String, input: EndpointsInput },
 	messages: [Message.CompletedFetchEndpoints],
 	execute: ({ key, input }) =>
 		getServiceEndpoints({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.endpoints, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchEndpoints({ key, result })),
+			Effect.map((response) => response.endpoints),
+			settleTo((result) => Message.CompletedFetchEndpoints({ key, result })),
 		),
 })
 
@@ -152,24 +138,20 @@ export const FetchUsage = Command.define("FetchServiceDetailUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: ({ key, input }) =>
 		getServiceUsage({ data: input }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({
-					totals: Arr.reduce(
-						response.data,
-						{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
-						(acc, row) => ({
-							logs: acc.logs + row.totalLogs,
-							traces: acc.traces + row.totalTraces,
-							metrics: acc.metrics + row.totalMetrics,
-							dataSize: acc.dataSize + row.dataSizeBytes,
-						}),
-					),
-					previous: response.previousTotals ?? null,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
+			Effect.map((response) => ({
+				totals: Arr.reduce(
+					response.data,
+					{ logs: 0, traces: 0, metrics: 0, dataSize: 0 },
+					(acc, row) => ({
+						logs: acc.logs + row.totalLogs,
+						traces: acc.traces + row.totalTraces,
+						metrics: acc.metrics + row.totalMetrics,
+						dataSize: acc.dataSize + row.dataSizeBytes,
+					}),
+				),
+				previous: response.previousTotals ?? null,
+			})),
+			settleTo((result) => Message.CompletedFetchUsage({ key, result })),
 		),
 })
 
@@ -178,9 +160,8 @@ export const FetchWorkloads = Command.define("FetchServiceWorkloads", {
 	messages: [Message.CompletedFetchWorkloads],
 	execute: ({ key, input }) =>
 		getServiceWorkloads({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.workloads, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchWorkloads({ key, result })),
+			Effect.map((response) => response.workloads),
+			settleTo((result) => Message.CompletedFetchWorkloads({ key, result })),
 		),
 })
 
@@ -189,25 +170,22 @@ export const FetchRuntimes = Command.define("FetchServiceRuntimes", {
 	messages: [Message.CompletedFetchRuntimes],
 	execute: ({ key, input }) =>
 		getServiceRuntimes({ data: input }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.runtimes, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRuntimes({ key, result })),
+			Effect.map((response) => response.runtimes),
+			settleTo((result) => Message.CompletedFetchRuntimes({ key, result })),
 		),
 })
 
-/** `getServiceDependenciesBundleResultAtom`, shared by the strip and the Dependencies tab. */
+/** Shared by the dependency strip and the Dependencies tab. */
 export const FetchDependencies = Command.define("FetchServiceDependenciesBundle", {
 	args: { key: Schema.String, input: DependenciesInput },
 	messages: [Message.CompletedFetchDependencies],
 	execute: ({ key, input }) =>
 		getServiceDependenciesBundle({ data: input }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDependencies({ key, result })),
+			settleTo((result) => Message.CompletedFetchDependencies({ key, result })),
 		),
 })
 
-/** `retainedQueryV2("errorIssues", "list", { query: buildServiceOpenIssuesQuery(...) })`. */
+/** The service's open issues. */
 export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 	args: { key: Schema.String, query: V2ErrorIssueListQuery },
 	messages: [Message.CompletedFetchIssues],
@@ -223,17 +201,13 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 				occurrenceCount: issue.occurrence_count,
 				lastSeenAt: issue.last_seen_at,
 			}))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchIssues({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),
 })
 
 const errorTag = (error: unknown): string =>
 	Predicate.hasProperty(error, "_tag") && typeof error._tag === "string" ? error._tag : ""
 
-/** `commitQueryAtom(sha)`: one commit, its failure kept by tag (not-connected gets a CTA). */
+/** One commit, its failure kept by tag (not-connected gets a CTA). */
 export const FetchCommit = Command.define("FetchServiceDeployCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],
@@ -268,10 +242,8 @@ export const FetchApiOverview = Command.define("FetchServiceApiOverview", {
 	args: { key: Schema.String, input: ApiOverviewInput },
 	messages: [Message.CompletedFetchApiOverview],
 	execute: ({ key, input }) =>
-		getServiceApiOverview({ data: { ...input, environments: mutable(input.environments) } }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchApiOverview({ key, result })),
+		getServiceApiOverview({ data: { ...input, environments: input.environments } }).pipe(
+			settleTo((result) => Message.CompletedFetchApiOverview({ key, result })),
 		),
 })
 
@@ -288,11 +260,10 @@ export const FetchEndpointSeries = Command.define("FetchServiceEndpointSeries", 
 	messages: [Message.CompletedFetchEndpointSeries],
 	execute: ({ key, input }) =>
 		getServiceEndpointsTimeseries({
-			data: { ...input, environments: mutable(input.environments), spanNames: [...input.spanNames] },
+			data: { ...input, environments: input.environments, spanNames: [...input.spanNames] },
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchEndpointSeries({ key, result })),
+			Effect.map((response) => response.buckets),
+			settleTo((result) => Message.CompletedFetchEndpointSeries({ key, result })),
 		),
 })
 
@@ -302,11 +273,10 @@ export const FetchStatusBreakdown = Command.define("FetchServiceEndpointStatusBr
 	messages: [Message.CompletedFetchStatusBreakdown],
 	execute: ({ key, input }) =>
 		getServiceEndpointStatusBreakdown({
-			data: { ...input, environments: mutable(input.environments) },
+			data: { ...input, environments: input.environments },
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.rows, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchStatusBreakdown({ key, result })),
+			Effect.map((response) => response.rows),
+			settleTo((result) => Message.CompletedFetchStatusBreakdown({ key, result })),
 		),
 })
 

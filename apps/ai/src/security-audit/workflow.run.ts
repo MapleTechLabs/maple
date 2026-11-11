@@ -9,8 +9,13 @@
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { aiCreditsUsd } from "@maple/domain/billing"
 import { OrgId } from "@maple/domain/http"
-import type { SandboxError } from "@maple/backend/sandbox/contract"
 import {
+	type SandboxError,
+	SandboxOutputLimitError,
+	SandboxTimeoutError,
+} from "@maple/backend/services/sandbox/contract"
+import {
+	ORG_BUDGET_UNAVAILABLE,
 	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
 	securityAuditSpendWindow,
@@ -103,16 +108,12 @@ export class AuditSandboxStepError extends Schema.TaggedError<AuditSandboxStepEr
 	{ message: Schema.String, step: Schema.String, sandboxTag: Schema.String },
 ) {}
 
-const describeSandboxError = (error: SandboxError): string => {
-	switch (error._tag) {
-		case "@maple/backend/sandbox/SandboxTimeoutError":
-			return `timed out after ${Duration.toMillis(error.maxWallTime)} ms`
-		case "@maple/backend/sandbox/SandboxOutputLimitError":
-			return `${error.stream} reached ${error.observed} bytes, over its ${error.limit} byte limit`
-		default:
-			return error.message
-	}
-}
+const describeSandboxError = (error: SandboxError): string =>
+	Schema.is(SandboxTimeoutError)(error)
+		? `timed out after ${Duration.toMillis(error.maxWallTime)} ms`
+		: Schema.is(SandboxOutputLimitError)(error)
+			? `${error.stream} reached ${error.observed} bytes, over its ${error.limit} byte limit`
+			: error.message
 
 export const toSandboxStepError =
 	(step: string) =>
@@ -154,7 +155,6 @@ const preparedNothing = (profile: ExecutionProfile, why: string): ExecutionProfi
 	],
 })
 
-/** The repo-size step's recorded result. */
 interface RepoSizeVerdict {
 	readonly violations: ReadonlyArray<string>
 	/** The run's note on LFS files it did not read; absent when there were none. */
@@ -210,7 +210,7 @@ const durableAgents = (
 			Effect.mapError((error) =>
 				refused(
 					`the organization's audit spend could not be read: ${messageOf(error)}`,
-					"org_budget_unavailable",
+					ORG_BUDGET_UNAVAILABLE,
 				),
 			),
 			// A step that dies (its timeout, an isolate past its CPU limit) refuses too, as an agent
@@ -219,7 +219,7 @@ const durableAgents = (
 				Effect.fail(
 					refused(
 						`the organization's audit spend step died: ${Str.slice(0, 600)(Cause.pretty(Cause.die(defect)))}`,
-						"org_budget_unavailable",
+						ORG_BUDGET_UNAVAILABLE,
 					),
 				),
 			),
@@ -265,7 +265,7 @@ const durableAgents = (
 					default:
 						// A step recorded by an older deploy replays a value this one does not know.
 						return Effect.fail(
-							refused(`unknown admission ${String(reservation)}`, "org_budget_unavailable"),
+							refused(`unknown admission ${String(reservation)}`, ORG_BUDGET_UNAVAILABLE),
 						)
 				}
 			},
@@ -627,7 +627,6 @@ export const auditWithAgents = <E, R>(
 			prior,
 			changedSincePrior,
 		}).pipe(
-			// The run composes the engine with its host here.
 			Effect.provide([
 				Layer.succeed(AuditAgents, durableAgents(agents, workflowStep, admit, charge)),
 				Layer.succeed(AuditStore, retried(store)),

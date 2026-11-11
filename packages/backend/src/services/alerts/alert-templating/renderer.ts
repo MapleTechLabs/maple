@@ -58,12 +58,11 @@ const isPresent = (value: string | undefined): value is string => value != null 
 export const renderTemplate = (template: string, context: TemplateContext): RenderResult => {
 	const missing = new Set<string>()
 
-	// 1. Resolve conditional blocks first; their inner tokens are substituted in step 2.
+	// Conditional blocks first; their inner tokens are substituted with the rest below.
 	const withConditionals = replaceWith(template, IF_BLOCK, (_match, key = "", inner = "") =>
 		isPresent(context[key]) ? inner : "",
 	)
 
-	// 2. Substitute remaining tokens.
 	const text = replaceWith(withConditionals, TOKEN, (_match, key = "", fallback: string | undefined) => {
 		const value = context[key]
 		if (isPresent(value)) return value

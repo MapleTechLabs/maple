@@ -1,12 +1,13 @@
+import { readClock } from "@maple/views/data/timing"
 import { AlertIncidentId, AlertRuleId, AnomalyIncidentId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from "../shared/commands"
 import { listSlos } from "../shared/slo-commands"
-import { listMonitors } from "../shared/uptime-commands"
+import { listMonitors } from "../../kit/uptime/commands"
 import { retrieveIncidentEscalation } from "../shared/escalation-chains"
 import { listActiveSilences } from "../shared/silences"
 import { readGrants } from "../../../data/session-tenant"
@@ -14,10 +15,7 @@ import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
 
-export const ReadIncidentClock = Command.define("ReadAlertIncidentClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadIncidentClock = readClock("ReadAlertIncidentClock", Message.ReadClock)
 
 export const FetchIncidentPreview = Command.define("FetchAlertIncidentPreview", {
 	args: { key: Schema.String, payload: V2AlertRulePreviewParams },
@@ -34,9 +32,7 @@ export const FetchIncidentChecks = Command.define("FetchAlertIncidentChecks", {
 	messages: [Message.CompletedFetchChecks],
 	execute: ({ key, ruleId, since, until }) =>
 		fetchCheckSummary(ruleId, since, until).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
+			settleTo((result) => Message.CompletedFetchChecks({ key, result })),
 		),
 })
 
@@ -81,11 +77,7 @@ export const FetchIncidentInvestigation = Command.define("FetchAlertIncidentInve
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
 			return page.data[0] ?? null
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvestigation({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigation({ key, result }))),
 })
 
 export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
@@ -96,11 +88,7 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreateInvestigation({ result }))),
 })
 
 export const FetchIncidentEscalation = Command.define("FetchAlertIncidentEscalation", {
@@ -142,9 +130,7 @@ export const FetchIncidentAnomaly = Command.define("FetchAlertIncidentAnomaly", 
 	execute: ({ key, id }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const result = yield* client.anomalies
-				.getIncident({ params: { id } })
-				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+			const result = yield* client.anomalies.getIncident({ params: { id } }).pipe(settled)
 			return Message.CompletedFetchAnomaly({ key, result })
 		}),
 })
@@ -158,7 +144,7 @@ export const FetchIncidentAnomalyTimeseries = Command.define("FetchAlertIncident
 			const client = yield* MapleApiV2Client
 			const result = yield* client.anomalies
 				.getIncidentTimeseries({ params: { id }, query: {} })
-				.pipe(Effect.mapError(toLoadFailure), Effect.result)
+				.pipe(settled)
 			return Message.CompletedFetchAnomalyTimeseries({ key, result })
 		}),
 })

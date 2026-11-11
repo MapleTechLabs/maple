@@ -19,13 +19,8 @@ import {
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { ORG } from "../../alerts/shared/test-rows"
-import {
-	downMonitor,
-	heartbeatMonitor,
-	httpMonitor,
-	monitorId,
-} from "../../alerts/shared/uptime-test-monitors"
+import { ORG } from "../../kit/alert-test-rows"
+import { downMonitor, heartbeatMonitor, httpMonitor, monitorId } from "../../kit/uptime/test-monitors"
 import { statusPageHref } from "../shared/commands"
 import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"

@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import type { PullSourcePlatform } from "@maple/domain/primitives"
+import type { PullSourcePlatform } from "@maple/primitives"
 import { integrationPlatformOf } from "./shared"
 
 // What deleting an integration source disconnects. Google Cloud and AWS keep their own removal dialog.

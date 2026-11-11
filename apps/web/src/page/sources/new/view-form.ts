@@ -1,4 +1,4 @@
-import { isPublicSourcePlatform, type PushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, type PushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { collapsible } from "@maple/views/ui/collapsible"
@@ -15,7 +15,7 @@ import { howItWorksRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
 import { String as Str } from "effect"
 
-// `CreateSourceForm`: the Name step. Create submits; the token shows on Send data.
+// The Name step. Create submits; the token shows on Send data.
 
 type H = HtmlBuilder<Message>
 
@@ -46,7 +46,6 @@ const nameField = (h: H, model: Model, platform: PushSourcePlatform): Html => {
 	])
 }
 
-/** `<Collapsible>` with the "Advanced" trigger; closed, Base UI renders no panel. */
 const advanced = (h: H, model: Model): Html =>
 	collapsible(
 		h,

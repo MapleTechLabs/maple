@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest"
 import { lockfileKindOf, parseLockfile, type ParsedLockfile } from "./index.ts"
 
 const ROOT = join(import.meta.dirname, "__fixtures__")
+// Manifests and lockfiles carry a `.fixture` suffix so GitHub's dependency graph (and Dependabot)
+// does not treat their deliberately vulnerable pins as Maple dependencies.
+const SUFFIX = ".fixture"
+const real = (file: string) => (Str.endsWith(SUFFIX)(file) ? Str.slice(0, -SUFFIX.length)(file) : file)
 
 const decodeIds = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))
 
@@ -27,14 +31,14 @@ const fixtures: ReadonlyArray<Fixture> = Arr.flatMap(readdirSync(ROOT), (kind) =
 		const files = Arr.map(filesUnder(dir), (path) => relative(dir, path))
 		const found = Arr.findFirst(
 			files,
-			(file) => !Str.includes("/")(file) && lockfileKindOf(file) !== undefined,
+			(file) => !Str.includes("/")(file) && lockfileKindOf(real(file)) !== undefined,
 		)
 		if (Option.isNone(found)) return []
 		const lockfile = found.value
 		const manifests = new Map(
 			Arr.map(
-				Arr.filter(files, (f) => Str.endsWith("package.json")(f)),
-				(f): readonly [string, string] => [f, readFileSync(join(dir, f), "utf8")],
+				Arr.filter(files, (f) => Str.endsWith("package.json")(real(f))),
+				(f): readonly [string, string] => [real(f), readFileSync(join(dir, f), "utf8")],
 			),
 		)
 		const expected = decodeIds(readFileSync(join(dir, "expected.json"), "utf8"))
@@ -45,7 +49,7 @@ const fixtures: ReadonlyArray<Fixture> = Arr.flatMap(readdirSync(ROOT), (kind) =
 const parseFixture = (fixture: Fixture, withManifests = true): Promise<ParsedLockfile> =>
 	Effect.runPromise(
 		parseLockfile({
-			path: fixture.lockfile,
+			path: real(fixture.lockfile),
 			content: readFileSync(fixture.lockfile, "utf8"),
 			manifests: withManifests ? fixture.manifests : undefined,
 		}),

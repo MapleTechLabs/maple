@@ -1,6 +1,6 @@
 import { formatNumber } from "@maple/ui/lib/format"
 import type { CodeReviewAnalytics, CodeReviewTotals, VcsRepositoryId } from "@maple/domain/http"
-import { CATEGORY_LABELS } from "../../../components/code-review/code-review-format"
+import { CATEGORY_LABELS } from "../kit/code-review-format"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { emptyMessage } from "@maple/views/ui/empty"
@@ -12,8 +12,6 @@ import { authorLink, type LinkScope, repositoryLink } from "../kit/links"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `RepositoryList`, `BarList`, `CategoriesCard`, `OutcomesCard`, `AuthorsCard`.
 
 type Row = Readonly<{ key: VcsRepositoryId; name: string; value: number }>
 

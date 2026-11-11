@@ -33,7 +33,7 @@ export const Model = Schema.TaggedStruct("ServicesPage", {
 	catalog: KeyedSchema(Catalog, LoadFailure),
 	/** The unfiltered catalog (the facets); unused while no filter is set, as both keys are one. */
 	unfiltered: KeyedSchema(Catalog, LoadFailure),
-	/** `dataUpdatedAt` of the rows, for the "New data" pill. */
+	/** When the rows last loaded, for the "New data" pill. */
 	catalogUpdatedAtMs: Schema.Number,
 	search: Draft,
 	sections: FilterSections.Model,

@@ -12,11 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import {
-	aiGatewayProjectLabel,
-	fillBuckets,
-	zeroAiGatewayBucket,
-} from "../../../components/infra/vercel/list-model"
+import { aiGatewayProjectLabel, fillBuckets, zeroAiGatewayBucket } from "./list-model"
 import * as BarChart from "@maple/views/charts/bar-chart"
 import * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -36,13 +32,13 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { columnHead, dataTable, ROW_LINK_CLASS } from "../../infra/kit/data-table"
-import type { TimeSearch } from "../../infra/kit/view-tabs"
+import { columnHead, dataTable, ROW_LINK_CLASS } from "../../kit/data-table"
+import type { TimeSearch } from "../../kit/view-tabs"
 import { sectionHeading } from "../../kit/section-heading"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { docsLink } from "../../kit/signal-empty-state"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
-import { chartCard } from "../kit/chart-card"
+import { chartCard } from "../../kit/chart-card"
 import { seriesInput } from "./data"
 
 // Pieces both Vercel pages draw: the rate formats and `VercelAiGatewayPanel`.

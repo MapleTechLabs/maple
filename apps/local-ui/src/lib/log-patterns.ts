@@ -1,7 +1,7 @@
 // Display helpers for Drain log templates (`clusterLogPatterns` in
-// `@maple/query-engine/observability`). Variables are `<*>` or a named mask
-// such as `<uuid>`, `<ip>`, `<hex>` or `<email>`.
+// `@maple/query-engine/observability`). Variables are `<*>` or a named mask (`LOG_TEMPLATE_MASKS`).
 
+import { LOG_TEMPLATE_MASKS } from "@maple/query-engine/observability"
 import { compareSeverity } from "./log-shape"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
@@ -10,7 +10,13 @@ export interface TemplateSegment {
 	readonly variable: boolean
 }
 
-const VARIABLE = /<\*>|<(?:uuid|ip|hex|email)>/g
+const VARIABLE = new RegExp(
+	`<\\*>|<(?:${Arr.join(
+		Arr.map(LOG_TEMPLATE_MASKS, (mask) => mask.maskWith),
+		"|",
+	)})>`,
+	"g",
+)
 
 /** Splits a template into literal and variable runs, in order, dropping empty literals. */
 export function splitTemplate(template: string): ReadonlyArray<TemplateSegment> {

@@ -4,7 +4,7 @@ import {
 	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
-} from "../../../components/replays/session-tags"
+} from "../kit/session-tags"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -34,7 +34,7 @@ type FacetItem = ReplaysFacets["services"][number]
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** `withSelected`: a selected value missing from its own list stays checkable (count 0). */
+/** A selected value missing from its own list stays checkable (count 0). */
 const withSelected = (
 	options: ReadonlyArray<FacetItem>,
 	selected: string | undefined,
@@ -137,7 +137,7 @@ const rangeSection = (
 	})
 }
 
-/** `TextFilter`: identity is typed, committed on Enter; the × clears the applied filter. */
+/** Identity is typed, committed on Enter; the × clears the applied filter. */
 const textFilter = (
 	h: HtmlBuilder<Message>,
 	config: Readonly<{

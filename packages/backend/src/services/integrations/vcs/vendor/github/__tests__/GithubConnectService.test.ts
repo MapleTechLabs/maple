@@ -8,7 +8,7 @@ import {
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
@@ -862,7 +862,6 @@ describe("GithubConnectService", () => {
 				mode: "install",
 			})
 
-			// Advance past the 10-minute STATE_TTL_MS before the callback returns.
 			yield* TestClock.adjust("11 minutes")
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)

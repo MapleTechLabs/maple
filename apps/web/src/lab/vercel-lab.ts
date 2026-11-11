@@ -12,9 +12,14 @@ import { defineMessageUnion } from "foldkit/message"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { Model as IntegrationsModel } from "../page/integrations/model"
 import * as Integrations from "../page/integrations/update"
+import { catalogEntry } from "../page/integrations/catalog"
 import { integrationHeader } from "../page/integrations/view-header"
-import { vercelCard, vercelHeaderActions, vercelHeaderStatus } from "../page/integrations/view-vercel"
-import { vercelConfigure } from "../page/integrations/view-vercel-configure"
+import {
+	vercelCard,
+	vercelHeaderActions,
+	vercelHeaderStatus,
+} from "../page/infra-integrations/vercel/integration/view-vercel"
+import { vercelConfigure } from "../page/infra-integrations/vercel/integration/view-vercel-configure"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import type { Resources } from "../platform/resources"
 import { button } from "@maple/views/ui/button"
@@ -41,7 +46,14 @@ const NOT_CONNECTED = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
 	connected: false,
 	team: null,
-	drains: { logs: null, traces: null, aiGateway: null, speedInsights: null, webAnalytics: null, auditLog: null },
+	drains: {
+		logs: null,
+		traces: null,
+		aiGateway: null,
+		speedInsights: null,
+		webAnalytics: null,
+		auditLog: null,
+	},
 	projects: [],
 	connectedAt: null,
 	lastSuccessAt: null,
@@ -155,7 +167,10 @@ const answerOf = (command: HubCommand): IntegrationsMessage | null => {
 			const forTeam = stringArg(command, "forTeam")
 			return IntegrationsMessage.CompletedVercelDiscover({
 				forTeam,
-				response: new VercelDiscoverResponse({ teams: TEAMS, projects: forTeam === null ? [] : PICKABLE }),
+				response: new VercelDiscoverResponse({
+					teams: TEAMS,
+					projects: forTeam === null ? [] : PICKABLE,
+				}),
 				error: null,
 			})
 		}
@@ -166,7 +181,10 @@ const answerOf = (command: HubCommand): IntegrationsMessage | null => {
 				error: null,
 			})
 		case "SaveVercelSettings":
-			return IntegrationsMessage.CompletedVercelSave({ isReapply: command.args?.["isReapply"] === true, error: null })
+			return IntegrationsMessage.CompletedVercelSave({
+				isReapply: command.args?.["isReapply"] === true,
+				error: null,
+			})
 		case "SyncVercel":
 			return IntegrationsMessage.CompletedVercelSync({ failure: null })
 		case "DisconnectIntegration":
@@ -304,7 +322,7 @@ const sceneView = Submodel.defineView<
 					integrationHeader(
 						h,
 						hub,
-						"vercel",
+						catalogEntry("vercel"),
 						{
 							statusLine: vercelHeaderStatus(h, hub, inputs.timeZone),
 							actions: vercelHeaderActions(h, hub),
@@ -335,7 +353,9 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 												{
 													size: "sm",
 													variant: "outline",
-													attributes: [h.OnClick(Message.ClickedConnectStep({ step }))],
+													attributes: [
+														h.OnClick(Message.ClickedConnectStep({ step })),
+													],
 												},
 												[label],
 											),

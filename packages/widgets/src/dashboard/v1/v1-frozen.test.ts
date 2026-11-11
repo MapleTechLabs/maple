@@ -6,7 +6,7 @@ import { DashboardDocumentV1 } from "./document"
 import { DashboardWidgetV1, WidgetDisplayConfigV1 } from "./widget"
 
 // v1 has no runtime consumer: `parseStoredDashboard` migrates a stored payload
-// to the current version and decodes it as v2, and migrations operate on plain
+// to the current version and decodes it as that, and migrations operate on plain
 // JSON, so even a v1 snapshot out of `dashboard_versions` never touches these
 // classes. They exist to *pin* the shape every pre-versioning document is stored
 // in — and a frozen schema nothing exercises is just a comment that can rot.

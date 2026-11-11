@@ -17,7 +17,7 @@ import {
 	type AlertMaintenanceWindowId,
 } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "./AlertSilencesService"
 import { syncWindow } from "./alert-maintenance-window-sync"

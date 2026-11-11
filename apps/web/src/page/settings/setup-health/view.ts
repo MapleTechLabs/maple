@@ -18,7 +18,7 @@ import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { settingsSection, settingsSections } from "../kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import {
 	type HealthSegment,
 	healthSegments,

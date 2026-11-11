@@ -10,7 +10,7 @@ import {
 	type SupabaseAdvisorLint,
 	type SupabaseTopQuery,
 } from "@maple/domain/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { send, SupabaseApiError } from "./api"
@@ -124,7 +124,6 @@ export const decodeStatements = (raw: ReadonlyArray<unknown>) =>
 const unexpectedBody = (what: string) =>
 	new SupabaseApiError({ message: `Supabase returned an unexpected body while ${what}`, kind: "upstream" })
 
-/** One advisor's lints. */
 export const getAdvisors = Effect.fn("SupabaseApi.getAdvisors")(function* (
 	httpClient: HttpClient.HttpClient,
 	apiBaseUrl: string,

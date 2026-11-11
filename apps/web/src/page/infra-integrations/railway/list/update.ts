@@ -1,7 +1,10 @@
+import { pickerStep } from "../../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Tooltip from "@maple/views/ui/tooltip"
@@ -10,7 +13,7 @@ import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { nextSort } from "../../../kit/table-sort"
 import { CompleteReloadSpin, FetchServices, LoadStatus, ResolveWindow } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -27,7 +30,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.railwayStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "railway")
 
 const isConnected = (model: Model): boolean =>
 	Option.match(AsyncData.getData(model.status.data), {
@@ -35,7 +38,7 @@ const isConnected = (model: Model): boolean =>
 		onSome: (status) => status.connected,
 	})
 
-/** `RailwayServices` mounts once the status says connected; its atom keys on the window. */
+/** The services read starts once the status says connected; it keys on the window. */
 const requestServices = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null || !isConnected(model)) return { model }
@@ -153,25 +156,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: searchHref({
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: searchHref({
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotRowTooltipMessage: ({ message: inner }) => {
 			const next = Tooltip.update(model.rowTooltip, inner)

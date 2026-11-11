@@ -33,15 +33,12 @@ import {
 	type ListAiSessionsDistributionsRequest,
 	type ListAiSessionsFacetsRequest,
 	type ListAiSessionsRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { traceSessionTraceId } from "@maple/domain/gen-ai"
 import { Array as Arr, Effect, Option, Order, Record as Rec } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
-// The warehouse's own tenant type, which both callers satisfy: the HTTP
-// group's `CurrentTenant.Context` and the MCP's `CurrentMcpTenant` (whose
-// `TenantContext` in `services/auth/tenant-context` widens to this one).
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 /**
@@ -961,7 +958,6 @@ const usageOf = (row: Integrations.AiSessionTotalsOutput | Integrations.AiSessio
 	return { reporting, tokens, cost }
 }
 
-/** The session's row and its turn rows, as the response shape. */
 const foldSummary = (
 	totals: Integrations.AiSessionTotalsOutput | undefined,
 	rows: readonly Integrations.AiSessionSummaryOutput[],

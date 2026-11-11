@@ -1,5 +1,6 @@
 import type { AlertRuleDocument } from "@maple/domain/http"
-import { formatSql } from "../../../lib/sql-format"
+import { breachSideFor } from "@maple/alerting-core/tiers"
+import { formatSql } from "../shared/sql-format"
 import { tokenizeSql } from "@maple/views/lib/sql-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import { SIGNAL_SOURCE_LABEL } from "@maple/web-data/alerts/chart-series"
@@ -24,7 +25,7 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { alertStatusBadge } from "../shared/badges"
+import { alertStatusBadge, ALERT_SEVERITY_LABEL } from "../shared/badges"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
 import {
@@ -48,8 +49,6 @@ import { sectionHeading } from "../../kit/section-heading"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The rule detail's Overview tab.
-
 type H = HtmlBuilder<Message>
 
 const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
@@ -57,11 +56,11 @@ const SIGNAL_SOURCE_DESCRIPTION = new Map<SignalSource, string>([
 	["checks", "What the evaluator actually observed and stored, one point per check."],
 ])
 
-/** `tierCondition`: one tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
+/** One tier's condition, e.g. "> 2.00% (recovers < 1.50%)". */
 const tierCondition = (rule: AlertRuleDocument, tier: AlertRuleDocument["thresholds"][number]): string => {
 	const value = (n: number) => formatSignalValue(rule.signalType, n)
 	const bound = tier.upper === null ? value(tier.value) : `${value(tier.value)} – ${value(tier.upper)}`
-	const healthy = rule.comparator === "gt" || rule.comparator === "gte" ? "<" : ">"
+	const healthy = breachSideFor(rule.comparator) === "above" ? "<" : ">"
 	const recovery = tier.recoveryValue === null ? "" : ` (recovers ${healthy} ${value(tier.recoveryValue)})`
 	return `${comparatorLabels[rule.comparator]} ${bound}${recovery}`
 }
@@ -139,7 +138,7 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 										]
 									: []),
 								...Arr.map(rule.thresholds, (tier) =>
-									configRow(h, tier.severity === "critical" ? "Critical" : "Warning", [
+									configRow(h, ALERT_SEVERITY_LABEL[tier.severity], [
 										typography(h, { weight: "medium", mono: true }, [
 											tierCondition(rule, tier),
 											" / ",
@@ -272,7 +271,6 @@ const configuration = (h: H, rule: AlertRuleDocument): Html =>
 		],
 	)
 
-/** `Result.builder(checksResult).onError(...)`: the checks read's failure, if any. */
 const checksFailureOf = (model: Model): Option.Option<LoadFailure> =>
 	AsyncData.match(model.checks.data, {
 		onIdle: () => Option.none(),

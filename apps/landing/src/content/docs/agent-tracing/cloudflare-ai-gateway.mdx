@@ -120,7 +120,7 @@ The gateway span has no tool or agent spans around it. For those, trace your app
 
 ## Verify
 
-Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent Sessions** and filter by service `ai-gateway`.
+Run a conversation of three turns with the same `session_id`. After about a minute, open **Agent sessions** and filter by service `ai-gateway`.
 
 You should see one session named after your `session_id`, with vendor **Cloudflare AI Gateway**, a `cf.aig.request` span per model call, the prompt and reply as a transcript, and tokens and cost in USD. Embedding calls show up as `embeddings` operations rather than chat turns.
 

@@ -1,6 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { SourceNotFoundError, SourcePersistenceError, SourceValidationError } from "../sources"
+import {
+	SourceHealthStatus,
+	SourceNotFoundError,
+	SourcePersistenceError,
+	SourceTokenStatus,
+	SourceValidationError,
+} from "../sources"
 import { IngestKeyEncryptionError } from "../ingest-keys"
 import {
 	PushSourcePlatform,
@@ -9,7 +15,7 @@ import {
 	SourceKind,
 	SourcePlatform,
 	SourceSignal,
-} from "../../primitives"
+} from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -89,7 +95,7 @@ const expiresAtField = Schema.NullOr(Timestamp).annotate({
 })
 
 const V2SourceHealth = Schema.Struct({
-	status: Schema.Literals(["disconnected", "failing", "stale", "paused", "pending", "healthy"]).annotate({
+	status: SourceHealthStatus.annotate({
 		description:
 			"`healthy`: data is arriving. `pending`: nothing has arrived yet. `stale`: data stopped arriving (a day for push sources; for pull sources, longer than the integration normally goes between collections). `failing`: the last attempt failed. `paused`: data is dropped on purpose. `disconnected`: the token expired or the integration was removed.",
 		examples: ["healthy"],
@@ -149,7 +155,7 @@ export const V2Source = Schema.Struct({
 		description:
 			"For a pull source, the id of the integration record it stands for (a scrape target, a cloud connection or installation). `null` for push sources.",
 	}),
-	status: Schema.Literals(["active", "paused", "expired"]).annotate({
+	status: SourceTokenStatus.annotate({
 		description:
 			"`active` sources are accepted. `paused` sources are accepted with a success response but their data is dropped, not stored or billed. `expired` tokens are rejected with 401.",
 		examples: ["active"],

@@ -1,7 +1,6 @@
 import { Array as Arr } from "effect"
 import { codeUnitAt } from "@maple/strings"
-// copied: packages/ui/src/components/service-map/service-map-particles.tsx (the budget and
-// sampling half), which cannot be imported here because it is a React module.
+// The service map's particle budget and sampling.
 
 export const MAX_TOTAL_PARTICLES = 400
 const TRAVERSE_TIME = 2

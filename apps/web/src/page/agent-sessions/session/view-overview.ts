@@ -4,7 +4,7 @@ import {
 	type SessionToolCall,
 	type SessionToolUsage,
 } from "@maple/agent-sessions"
-import { buildSessionAxis, type SessionAxis } from "../../../lib/agent-sessions/session-axis"
+import { buildSessionAxis, type SessionAxis } from "../kit/session-axis"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -25,12 +25,10 @@ import { disclosureChevron } from "./view-kit"
 import { sectionHeading } from "../../kit/section-heading"
 import { loadIndicator } from "./view-load"
 import { rail } from "./view-rail"
-import { errorChip } from "../kit/error-chip"
+import { errorChip } from "../../kit/error-chip"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// The session overview: checks and the tool ledger, the rail.
 
 type H = HtmlBuilder<Message>
 
@@ -172,7 +170,7 @@ const failedCallRow = (h: H, model: Model, event: SessionToolCall, sessionStartM
 			align: "baseline",
 			wrap: true,
 			className:
-				"gap-x-3 gap-y-1 border-severity-error border-l-2 bg-severity-error/[0.06] py-1.5 pr-2 pl-2.5",
+				"gap-x-3 gap-y-1 border-severity-error border-l-2 bg-severity-error-a1 py-1.5 pr-2 pl-2.5",
 			attributes: [h.Key(event.spanId)],
 		},
 		[
@@ -207,7 +205,7 @@ const ledgerRow = (
 	const isDisclosable = tool.description !== undefined || failures.length > 0
 	const isExpanded = model.ledgerOpen === tool.name
 	return h.div(
-		[h.Key(tool.name), h.Class(cn("flex flex-col", tool.failed > 0 && "bg-severity-error/[0.06]"))],
+		[h.Key(tool.name), h.Class(cn("flex flex-col", tool.failed > 0 && "bg-severity-error-a1"))],
 		[
 			hstack(h, { gap: "4", align: "center", className: "h-6" }, [
 				isDisclosable

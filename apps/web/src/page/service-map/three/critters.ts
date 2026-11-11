@@ -1,20 +1,7 @@
-import type { InkPalette } from "../../../components/service-map/three/palette"
-import {
-	DEER_NECK,
-	DEER_YAW,
-	drawBird,
-	drawBlimp,
-	drawDeerHead,
-	drawDuck,
-} from "../../../components/service-map/three/maple-scenery"
-import type { Waterway } from "../../../components/service-map/three/maple-scenery-field"
-import {
-	type Bounds,
-	hash,
-	prototypes,
-	type Sketch,
-	sketchOf,
-} from "../../../components/service-map/three/maple-scenery-sketch"
+import type { InkPalette } from "./palette"
+import { DEER_NECK, DEER_YAW, drawBird, drawBlimp, drawDeerHead, drawDuck } from "./maple-scenery"
+import type { Waterway } from "./maple-scenery-field"
+import { type Bounds, hash, prototypes, type Sketch, sketchOf } from "./maple-scenery-sketch"
 import * as THREE from "three"
 import { lampPool } from "./decor"
 import { group, inkBox, inkSolid, mesh, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"

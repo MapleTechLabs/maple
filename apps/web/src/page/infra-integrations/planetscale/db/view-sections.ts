@@ -21,8 +21,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The Activity feed and Top queries sections of `PlanetScaleDatabaseData`.
-
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -147,7 +145,6 @@ export const activitySection = (
 const insightsNotice = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	emptyMessage(h, { dashed: true, className: "bg-surface-faint px-3 py-4 text-xs" }, children)
 
-/** `PlanetScaleTopQueries`. */
 export const topQueries = (
 	h: H,
 	slot: AsyncData.AsyncData<QueryInsights, Parameters<typeof errorState>[1]["failure"]>,

@@ -6,7 +6,6 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import * as Keyed from "@maple/views/data/keyed"
-import { isoMs } from "../page/alerts/shared/time"
 import type { PageContext } from "../page/contract"
 import { Message } from "../page/alerts/uptime-monitor/message"
 import {
@@ -24,6 +23,7 @@ import {
 	responseTimePanel,
 } from "../page/alerts/uptime-monitor/view-panels"
 import type { Resources } from "../platform/resources"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/uptime`: the HTTP monitor page's three charts over a fixture shaped like production checks
 // (checks from 14 hours ago, TTFB carrying the time, transfer near 0, one failure).
@@ -93,16 +93,16 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 		Array.from({ length: checkCount }, (_, index) =>
 			sampleAt(FIRST_CHECK_MS + index * CHECK_EVERY_MS, index),
 		),
-		(sample) => isoMs(sample.at) >= startMs && !inOutage(isoMs(sample.at)),
+		(sample) => toEpochMs(sample.at) >= startMs && !inOutage(toEpochMs(sample.at)),
 	)
 	const buckets = Array.from({ length: windowMs / stepMs }, (_, index) => startMs + index * stepMs)
 	const inBucket = (bucketMs: number) =>
 		Arr.filter(samples, (sample) => {
-			const at = isoMs(sample.at)
+			const at = toEpochMs(sample.at)
 			return at >= bucketMs && at < bucketMs + stepMs
 		})
 	// Like the warehouse (`trimSparseLeadingBuckets`), the points start at the first bucket with a check.
-	const firstCheckMs = samples[0] === undefined ? startMs : isoMs(samples[0].at)
+	const firstCheckMs = samples[0] === undefined ? startMs : toEpochMs(samples[0].at)
 	const points = Arr.flatMap(buckets, (bucketMs): ReadonlyArray<CheckPoint> => {
 		const checks = inBucket(bucketMs)
 		const sorted = Arr.sort(
@@ -198,13 +198,7 @@ export const init = (_flags: Flags): Return => ({
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 	},
-	commands: [
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [LoadChartRuntime()],
 })
 
 export const update = (model: Model, message: Message): Return => {

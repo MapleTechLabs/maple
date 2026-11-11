@@ -1,4 +1,4 @@
-import type { QueryEngineBatchOutcome, QueryEngineResult } from "@maple/query-engine"
+import type { QueryEngineBatchOutcome, QueryEngineResult } from "@maple/domain/query-engine"
 import { Clock, Duration, Effect } from "effect"
 import { QueryEngineTimeoutError, type SelfDescribingHttpError } from "@maple/domain/http"
 

@@ -1,7 +1,6 @@
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { RegisterAgentOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { persistenceFailed, validationFailed } from "./error-issue-shared"
@@ -22,7 +21,6 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 				'JSON array of capability tags, e.g. ["auto-triage","patch-proposer"]',
 			),
 		}),
-		output: RegisterAgentOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Registering an agent"],
 		handler: Effect.fn("McpTool.registerAgent")(function* (params) {

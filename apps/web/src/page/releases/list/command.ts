@@ -1,49 +1,33 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
 import { getReleases } from "@maple/web-data/warehouse/releases"
-import { Clock, Duration, Effect, Queue, Schema, Stream } from "effect"
+import { Effect, Queue, Schema, Stream } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetails } from "../../kit/commit-card"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { ReleasesData } from "./model"
 
-/** `releasesQueryInput`: the window plus the URL filters the warehouse reads. */
+/** The window plus the URL filters the warehouse reads. */
 export const ReleasesInput = Schema.Struct({
 	startTime: Schema.String,
 	endTime: Schema.String,
 	environments: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(Schema.String)),
 	services: Schema.optional(Schema.Array(Schema.String)),
-	/** The namespace pin, `globalNamespace: "top"`. */
+	/** The namespace pin. */
 	namespaces: Schema.optional(Schema.Array(Schema.String)),
 })
 export type ReleasesInput = typeof ReleasesInput.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
-export const ResolveReleasesWindow = Command.define("ResolveReleasesWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveReleasesWindow = resolveWindowCommand(
+	"ResolveReleasesWindow",
+	Message.CompletedResolveWindow,
+)
 
 export const FetchReleases = Command.define("FetchReleases", {
 	args: { key: Schema.String, refresh: Schema.Boolean, input: ReleasesInput },
@@ -55,20 +39,16 @@ export const FetchReleases = Command.define("FetchReleases", {
 				data: {
 					startTime: input.startTime,
 					endTime: input.endTime,
-					environments: mutable(input.environments),
-					excludedEnvironments: mutable(input.excludedEnvironments),
-					services: mutable(input.services),
-					namespaces: mutable(input.namespaces),
+					environments: input.environments,
+					excludedEnvironments: input.excludedEnvironments,
+					services: input.services,
+					namespaces: input.namespaces,
 				},
 			}),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchReleases({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchReleases({ key, result }))),
 })
 
-/** `useReleaseIssueCounts`: issues introduced inside the window, one page. */
+/** Issues introduced inside the window, one page. */
 export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 	args: { key: Schema.String, introducedAfter: Schema.String },
 	messages: [Message.CompletedFetchIssues],
@@ -79,14 +59,10 @@ export const FetchReleaseIssues = Command.define("FetchReleaseIssues", {
 				query: { introduced_after: introducedAfter, limit: 100 },
 			})
 			return { data: page.data, hasMore: page.has_more }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchIssues({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),
 })
 
-/** `commitsQueryAtom(shasKey)`: every release sha on screen in one request. */
+/** Every release sha on screen in one request. */
 export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
 	args: { key: Schema.String, shas: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.CompletedFetchCommits],
@@ -94,14 +70,10 @@ export const FetchReleaseCommits = Command.define("FetchReleaseCommits", {
 		Effect.gen(function* () {
 			const response = yield* readCommitDetails(key, shas, refresh)
 			return response.commits
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchCommits({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchCommits({ key, result }))),
 })
 
-/** `commitRangesAtom`: the commits each release carried, counts only (`limit: 0`). */
+/** The commits each release carried, counts only (`limit: 0`). */
 export const FetchReleaseRanges = Command.define("FetchReleaseRanges", {
 	args: { key: Schema.String, ranges: Schema.String, limit: Schema.Number },
 	messages: [Message.CompletedFetchRanges],
@@ -110,11 +82,7 @@ export const FetchReleaseRanges = Command.define("FetchReleaseRanges", {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.vcsCommitRanges({ query: { ranges, limit } })
 			return response.ranges
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRanges({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchRanges({ key, result }))),
 })
 
 export const LoadReleasesSignalPresence = Command.define("LoadReleasesSignalPresence", {
@@ -124,14 +92,12 @@ export const LoadReleasesSignalPresence = Command.define("LoadReleasesSignalPres
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-export const CompleteReleasesReloadSpin = Command.define("CompleteReleasesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReleasesReloadSpin = reloadSpin(
+	"CompleteReleasesReloadSpin",
+	Message.CompletedReloadSpin,
+)
 
-/** The table is on screen: what `ReleasesTable` reads once it mounts follows. */
+/** The table is on screen: what it reads once it mounts follows. */
 export const MountReleasesTable = Mount.define("MountReleasesTable", {
 	messages: [Message.PaintedTable],
 	execute: () =>
@@ -143,7 +109,7 @@ export const MountReleasesTable = Mount.define("MountReleasesTable", {
 		}),
 })
 
-/** `useTrackWidth`: the first lane's track width, now and on every resize. */
+/** The first lane's track width, now and on every resize. */
 export const MeasureReleasesTrack = Mount.defineStream("MeasureReleasesTrack", {
 	messages: [Message.MeasuredTrack],
 	execute: ({ element }) =>

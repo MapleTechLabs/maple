@@ -31,20 +31,20 @@ import {
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
 import { requestKey } from "@maple/views/data/request-key"
-import { isoMs } from "../shared/time"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { checkoutSlo } from "../shared/slo-test-fixtures"
-import { monitorHref, uptimeTabHref } from "../shared/uptime-commands"
-import { httpMonitor, MONITOR_RULE, monitorId } from "../shared/uptime-test-monitors"
-import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../shared/test-rows"
+import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
+import { httpMonitor, MONITOR_RULE, monitorId } from "../../kit/uptime/test-monitors"
+import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -525,7 +525,7 @@ describe("alert incident", () => {
 			status: synced.status,
 			severity: synced.severity,
 			lastNotifiedAt: synced.lastNotifiedAt,
-			acknowledgedAt: acknowledgedAt === null ? null : isoMs(acknowledgedAt),
+			acknowledgedAt: acknowledgedAt === null ? null : toEpochMs(acknowledgedAt),
 		})
 
 	test("Acknowledge marks the open incident and shows who is on it; Unacknowledge takes it back", () => {

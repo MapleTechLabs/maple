@@ -7,8 +7,8 @@ import {
 } from "@maple/ui/lib/format"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { DEFAULT_TOKEN_FALLBACK } from "@maple/ui/lib/colors"
-import { hasOnlyIntegerValues } from "@maple/ui/components/charts/_shared/sparse-series"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
+import { hasOnlyIntegerValues } from "./series/sparse-series"
+import { DASHED_Y_GRID } from "./plot/plot-grid"
 import {
 	integerTickValues,
 	linearYDomain,
@@ -16,7 +16,7 @@ import {
 	logYScale,
 	NICE_TICK_COUNT,
 	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+} from "./plot/plot-scales"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import {
 	asFiniteNumber,
@@ -28,9 +28,7 @@ import { rowsCache } from "./chart-spec"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The React-free half of `Timeseries` (packages/ui/src/components/plot/timeseries.tsx): row
-// normalisation, series keys and colour tokens, and the shared x and y axes. Copied, as that
-// module also holds the React model hook and frame.
+// Timeseries rows: row normalisation, series keys and colour tokens, and the shared x and y axes.
 
 export const HARD_SERIES_LIMIT = 60
 export const SERIES_FALLBACK_COLOR = DEFAULT_TOKEN_FALLBACK
@@ -40,7 +38,7 @@ export interface SeriesDefinition {
 	readonly chartKey: string
 }
 
-/** `normaliseTimeseriesRows`'s series discovery: first-seen order across all rows, `s1..sN` keys. */
+/** Series discovery: first-seen order across all rows, `s1..sN` keys. */
 export const seriesDefinitionsOf = rowsCache((data: ReadonlyArray<Readonly<Record<string, unknown>>>) => {
 	const rawKeys = [
 		...new Set(
@@ -58,7 +56,7 @@ export const seriesDefinitionsOf = rowsCache((data: ReadonlyArray<Readonly<Recor
 	}
 })
 
-/** The rows of `normaliseTimeseriesRows`, values keyed by chart key; unparseable buckets dropped. */
+/** The rows, values keyed by chart key; unparseable buckets dropped. */
 export const normaliseRows = (
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
 	definitions: ReadonlyArray<SeriesDefinition>,
@@ -75,7 +73,7 @@ export const normaliseRows = (
 		return [next]
 	})
 
-/** `scaleTimeseriesRates`: rates are stored per bucket and displayed per second. */
+/** Rates are stored per bucket and displayed per second. */
 export const scaleRates = (
 	rows: Array<TimeseriesRow>,
 	keys: ReadonlyArray<string>,
@@ -106,7 +104,7 @@ export const seriesColorTokens = (
 	)
 }
 
-/** What a hoisting `TimeseriesLegend` hands the tile header: every series, colour resolved. */
+/** What a hoisted legend hands the tile header: every series, colour resolved. */
 export const hoistedSeries = (
 	data: ReadonlyArray<Readonly<Record<string, unknown>>>,
 	theme: ThemeColors,

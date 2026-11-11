@@ -1,13 +1,13 @@
 /** The GitHub-backed source tools: typed output, and VCS failures mapped to what a model can act on. */
 import { assert, describe, it } from "@effect/vitest"
 import { IntegrationsUpstreamError, OrgId, UserId } from "@maple/domain/http"
-import { ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
 import {
 	VcsSourceRepositoryNotFoundError,
 	VcsSourceService,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { Effect, Layer, Schema } from "effect"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
@@ -29,7 +29,7 @@ registerSourceCodeTools({
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
-					structured: Schema.encodeUnknownSync(spec.output)(output),
+					structured: Schema.encodeUnknownSync(McpToolOutputs[spec.name])(output),
 				})),
 			)
 		tools.set(spec.name, run as Run)
@@ -128,6 +128,26 @@ describe("the source-code tools", () => {
 			assert.deepStrictEqual(seen, [{ query: "three filename:a.ts", path: "src" }])
 			assert.include(answer.text, "Lines: 3")
 			assert.include(answer.text, "start_line=1")
+		}),
+	)
+
+	it.effect("refuses a search path that would add a qualifier of its own", () =>
+		Effect.gen(function* () {
+			const searched: Array<string> = []
+			const error = yield* Effect.flip(
+				call(
+					"search_source_code",
+					{ repository: "octo/shop", query: "three", path: "src repo:octo/other" },
+					{
+						searchCode: (_org, repo) => {
+							searched.push(repo)
+							return Effect.succeed([])
+						},
+					},
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
+			assert.deepStrictEqual(searched, [])
 		}),
 	)
 

@@ -1,6 +1,6 @@
 import type { BillingCustomer } from "@maple/domain/http"
-import { maximumInvoiceCents, uncappedFeatures } from "../../../lib/billing/controls"
-import { getLegacyPlanInfo, getTrialStatus } from "../../../lib/billing/plan-gating"
+import { maximumInvoiceCents, uncappedFeatures } from "./controls"
+import { getLegacyPlanInfo, getTrialStatus } from "../../kit/billing/plan-gating"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,7 +9,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
 import { adminOnlyNotice } from "../kit/members"
-import { settingsSection, settingsSections } from "../kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { canManage, Message, type Model } from "./model"
 import { accountOf, spendModelOf, USAGE_HEADING_ID } from "./update"
 import { accountDialogs, billedOrgsSection, linkSection, memberSection } from "./view-account"
@@ -20,7 +20,7 @@ import { usageTable, usageTableSkeleton } from "./view-usage"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
 export type ViewInputs = Readonly<{
-	/** The settings page's `billingCustomerAtom`. */
+	/** The settings page's billing customer. */
 	customer: AsyncData.AsyncData<BillingCustomer, LoadFailure>
 	adminName: string | null
 	/** The session says the viewer is a member; the admin-only notice shows only then. */
@@ -160,7 +160,7 @@ const accountFailureOf = (
 	return null
 }
 
-/** `CheckoutConfirmingPanel layout="row"` and `CheckoutTimedOutNotice` above the tab. */
+/** The checkout return above the tab: still confirming (as a row), or timed out. */
 const checkoutReturnPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 	switch (model.checkoutReturn) {
 		case "Idle":

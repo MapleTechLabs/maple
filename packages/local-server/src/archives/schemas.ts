@@ -1,11 +1,6 @@
-// Shape primitives shared by the archive journal and manifest readers.
-//
-// These are the rules that were genuinely copy-pasted: a non-negative safe
-// integer was re-checked at four sites in the GC intent alone, and the sha256
-// pattern at six across the two files. The rest of the archive parsers are
-// domain invariants — path containment, phase-vs-kind compatibility, cursor
-// consistency — each with its own tested message, and those stay where they
-// are rather than being flattened into a struct declaration.
+// Shape primitives shared by the archive journal and manifest readers. Domain
+// invariants (path containment, phase-vs-kind, cursor consistency) stay in
+// those readers, each with its own tested message.
 import { Schema, SchemaGetter, String as Str } from "effect"
 
 /** Byte counts and cursors: never negative, never beyond exact integer range. */

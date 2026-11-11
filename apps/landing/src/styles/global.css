@@ -7,6 +7,10 @@
 @import "./fonts.generated.css";
 
 @source "../../../../packages/ui/src";
+/* The kit's styles and the chart, trace and service map helpers that moved out of @maple/ui. */
+@source "../../../../packages/views/src/ui/*.styles.ts";
+@source "../../../../packages/views/src/charts/{plot,series}";
+@source "../../../../packages/views/src/service-map/graph";
 /* The @maple/views chart frame and tooltip the Foldkit logs volume island renders. */
 @source "../../../../packages/views/src/charts/plot-frame.ts";
 @source "../../../../packages/views/src/charts/bucket-tooltip.ts";

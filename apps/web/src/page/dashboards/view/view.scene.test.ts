@@ -284,16 +284,6 @@ describe("dashboard view", () => {
 		expect(names(garbled.commands)).toEqual([])
 	})
 
-	test("Edit flips mode=edit in the URL and keeps the view params", () => {
-		const model = routeChanged(ready(), { ...ROUTE, search: { tab: "a" } }, context).model
-		expect(pageUpdate(model, Message.ClickedToggleEdit()).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({
-				url: "/dashboards/dash_platform?mode=edit&tab=a",
-				isReplace: false,
-			}),
-		)
-	})
-
 	test("renaming writes only a changed, non-blank name", () => {
 		const editing = pageUpdate(ready(), Message.ClickedTitle()).model
 		expect(names(pageUpdate(editing, Message.SubmittedTitle()).commands)).toEqual([])

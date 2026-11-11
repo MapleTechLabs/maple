@@ -102,7 +102,6 @@ export const TONE_EMOJI = {
 	neutral: null,
 } satisfies Record<CancellationSignal["tone"], ReportEmoji | null>
 
-/** An emoji and a space ahead of the text it marks; nothing for no emoji. */
 export const mark = (m: Markup, emoji: ReportEmoji | null): string =>
 	emoji === null ? "" : `${m.emoji(emoji)} `
 
@@ -287,7 +286,6 @@ export const flagsText = (m: Markup, flagged: ReadonlyArray<CancellationSignal>)
 		SEPARATOR,
 	)
 
-/** The snapshot's sections and the model's sources that could not be read, by name. */
 export const unreadSources = ({ snapshot, unreadEvidence }: CancellationReport): ReadonlyArray<string> => [
 	...Arr.map(
 		Arr.filter(

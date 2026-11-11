@@ -27,7 +27,7 @@ import { groupByStep, selectStep, updateQuery } from "./update-controls"
 export type Return = Update.Return<Model, Message, Resources>
 type Cmd = Command.Command<Message, never, Resources>
 
-/** `search.timePreset ?? "1h"`: the route's default window. */
+/** The route's default window. */
 export const DEFAULT_PRESET = "1h"
 const presetOf = (search: TimeSearch): string => search.timePreset ?? DEFAULT_PRESET
 
@@ -66,7 +66,7 @@ const withCommands = (step: Return, commands: ReadonlyArray<Cmd>): Return => ({
 	commands: [...(step.commands ?? []), ...commands],
 })
 
-/** `AutocompleteValuesProvider` (not lazy): every lookup over the current window. */
+/** Every autocomplete lookup over the current window, not lazily. */
 const requestLookups = (model: Model, orgId: OrgId): Return =>
 	Arr.reduce(
 		AUTOCOMPLETE_LOOKUPS,
@@ -147,7 +147,7 @@ const reloaded = (model: Model): Return => {
 	}
 }
 
-/** `runQueries`: the drafts and window as they are now, or the no-enabled-queries error. */
+/** The drafts and window as they are now, or the no-enabled-queries error. */
 const ran = (model: Model): Return => {
 	if (!Arr.some(model.queries, (query) => query.enabled))
 		return { model: { ...model, noQueriesError: NO_ENABLED_QUERIES, submitted: null } }

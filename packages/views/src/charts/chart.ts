@@ -10,9 +10,7 @@ import { ChartTooltip } from "./chart-spec"
  * and the measured container width. The library owns the canvas; this owns what the view reads.
  */
 
-// MODEL
-
-/** The plot rect and the x scale's domain-to-pixel mapping of the last render (`usePlotRect`, `usePlotScales`). */
+/** The plot rect and the x scale's domain-to-pixel mapping of the last render. */
 export const PlotGeometry = Schema.Struct({
 	x: Schema.Number,
 	y: Schema.Number,
@@ -30,7 +28,7 @@ export const Model = Schema.Struct({
 	plot: Schema.Option(PlotGeometry),
 	/** `activeName`: the focused datum's key, shared by plot focus and legend hover. */
 	activeKey: Schema.Option(Schema.String),
-	/** `usePlotLegendHighlight`: a legend click pins one key until clicked again. */
+	/** A legend click pins one key until clicked again. */
 	highlightedKey: Schema.Option(Schema.String),
 	/** What the tooltip shell's body shows; `None` while the library hides it. */
 	tooltip: Schema.Option(ChartTooltip),
@@ -38,7 +36,7 @@ export const Model = Schema.Struct({
 	containerWidth: Schema.Number,
 	/** `useContainerSize(containerRef).height`: a side legend's height cap; 0 before measured. */
 	containerHeight: Schema.Number,
-	/** `useSeriesVisibility`: series keys a time-series legend has hidden. */
+	/** Series keys a time-series legend has hidden. */
 	hiddenKeys: Schema.Array(Schema.String),
 	/** A grouped DOM chart's hovered group (a funnel breakdown), beside the hovered row. */
 	activeGroup: Schema.Option(Schema.String),
@@ -55,8 +53,6 @@ export const init = (): Model => ({
 	hiddenKeys: [],
 	activeGroup: Option.none(),
 })
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	CompletedMountChart: {},
@@ -77,9 +73,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// UPDATE
-
-/** `useSeriesVisibility`'s toggle: unhide, or hide unless it is the last series left. */
+/** Unhide, or hide unless it is the last series left. */
 const toggledHidden = (
 	hidden: ReadonlyArray<string>,
 	key: string,

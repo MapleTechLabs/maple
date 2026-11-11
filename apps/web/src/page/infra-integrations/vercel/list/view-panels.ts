@@ -15,13 +15,7 @@ import {
 import { Array as Arr, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import {
-	VITAL_THRESHOLDS,
-	type VitalRating,
-	vitalRating,
-	vitalsByKey,
-	WEB_VITALS,
-} from "../../../../components/infra/vercel/list-model"
+import { VITAL_THRESHOLDS, type VitalRating, vitalRating, vitalsByKey, WEB_VITALS } from "../list-model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { columnClass } from "@maple/views/ui/column"
 import { emptyMessage } from "@maple/views/ui/empty"

@@ -3,8 +3,6 @@
 import type { TracesMetric, AttributeFilter } from "@maple/domain/query-engine"
 import type { AttributeIndexMode } from "./capabilities"
 
-// Metric → column needs mapping
-
 export type MetricNeed = "count" | "avg_duration" | "quantiles" | "error_rate" | "apdex"
 
 export const METRIC_NEEDS: Record<TracesMetric, MetricNeed[]> = {
@@ -34,15 +32,11 @@ export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 	"deployment.environment.name": "DeploymentEnv",
 } satisfies Record<string, string>
 
-// Attribute filter → typed Condition
-
 import * as CH from "@maple-dev/effect-orm/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Array as Arr } from "effect"
 
-// Semconv rename coalescing
-//
 // OpenTelemetry renamed several span attributes:
 //   http.method           → http.request.method
 //   http.status_code      → http.response.status_code
@@ -201,7 +195,6 @@ export function buildAttrFilterCondition(
 		if (af.mode === "gte") return present.and(numeric.gte(Number(value)))
 		if (af.mode === "lt") return present.and(numeric.lt(Number(value)))
 		if (af.mode === "lte") return present.and(numeric.lte(Number(value)))
-		// equals (default)
 		const exact = colExpr.eq(value)
 		// Empty values intentionally share ClickHouse Map's "missing key returns
 		// default empty string" behavior. A KV-items prefilter would exclude

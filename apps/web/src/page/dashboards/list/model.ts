@@ -5,9 +5,7 @@ import * as TagEditor from "../kit/tag-editor"
 import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
 
-// The dashboards list.
-
-/** `dashboardGlyph`: what the row's icon says the dashboard reads. */
+/** What the row's icon says the dashboard reads. */
 export const Glyph = Schema.Literals([
 	"GridIcon",
 	"PulseIcon",
@@ -34,7 +32,7 @@ export const ListDashboard = Schema.Struct({
 })
 export type ListDashboard = typeof ListDashboard.Type
 
-/** `useDashboardsFallback`: the HTTP snapshot read while live sync is down. */
+/** The HTTP snapshot read while live sync is down. */
 export const Fallback = Schema.Union([
 	Schema.TaggedStruct("Idle", {}),
 	Schema.TaggedStruct("Loading", {}),
@@ -48,16 +46,16 @@ export type Scope = typeof Scope.Type
 
 export const Model = Schema.Struct({
 	search: DashboardsSearch,
-	/** `null` until the collection is ready (`DashboardsListModel`'s `loading`). */
+	/** `null` until the collection is ready. */
 	dashboards: Schema.NullOr(Schema.Array(ListDashboard)),
 	nowMs: Schema.NullOr(Schema.Number),
-	/** `toLocaleString`'s locale for the header counts and dates. */
+	/** The locale for the header counts and dates. */
 	locale: Schema.String,
-	/** `useDashboardPreferences`: localStorage favorites and the stored default sort. */
+	/** localStorage favorites and the stored default sort. */
 	favorites: Schema.Array(Schema.String),
 	storedSort: Schema.String,
 	isPrefsLoaded: Schema.Boolean,
-	/** `ToolbarSearch`'s input and its debounce generation. */
+	/** The search input and its debounce generation. */
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,
 	sortMenu: Menu.Model,
@@ -70,9 +68,9 @@ export const Model = Schema.Struct({
 	isDeleting: Schema.Boolean,
 	pendingTags: Schema.NullOr(ListDashboard),
 	tagEditor: TagEditor.Model,
-	/** `TagFilterMenu`: the multi-select tag combobox; its selection is the URL's `tags`. */
+	/** The multi-select tag combobox; its selection is the URL's `tags`. */
 	tagFilter: Combobox.Model,
-	/** `persistenceErrorAtom`: a failed write turns the list read-only with this reason. */
+	/** A failed write turns the list read-only with this reason. */
 	persistenceError: Schema.NullOr(Schema.String),
 	isCreating: Schema.Boolean,
 	/** The live list never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */

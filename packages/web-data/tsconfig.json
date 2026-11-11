@@ -14,9 +14,6 @@
 		"strict": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
-		"paths": {
-			"@maple/ui/*": ["../ui/src/*"]
-		},
 		"plugins": [
 			{
 				"name": "@effect/language-service",

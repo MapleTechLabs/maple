@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 
 /**
  * The org's own OpenRouter API key (AES-GCM, AAD-bound to the org), one per org. AI turns run on it

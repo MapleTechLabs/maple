@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 
 /**
  * A sub-org whose billing rolls up to another org. The sub-org keeps its own data; its usage,

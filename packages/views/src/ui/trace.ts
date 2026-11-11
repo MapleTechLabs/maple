@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { collapsiblePanelStyles } from "./collapsible.styles"
 import {
 	traceCollapsibleContentStyles,
 	traceCollapsibleStyles,
@@ -10,11 +10,11 @@ import {
 	traceLineStyles,
 	traceStyles,
 	traceTitleStyles,
-} from "@maple/ui/styles/ui/trace"
+} from "./trace.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 
-// Port of packages/ui/src/components/ui/trace.tsx: a list of agent tool-call lines.
+// A list of agent tool-call lines.
 
 export type TraceStatus = "running" | "error" | "pending"
 type Children = ReadonlyArray<Html | string>
@@ -46,7 +46,7 @@ export const traceIcon = <M>(h: HtmlBuilder<M>, children: Children, className?: 
 export const traceTitle = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span([h.DataAttribute("slot", "trace-title"), h.Class(cn(traceTitleStyles, className))], children)
 
-/** `TraceCollapsible` (Base UI Collapsible): the trigger line and, while open, its detail panel. */
+/** A Base UI Collapsible: the trigger line and, while open, its detail panel. */
 export const traceCollapsible = <M>(
 	h: HtmlBuilder<M>,
 	options: {
@@ -93,7 +93,10 @@ export const traceCollapsible = <M>(
 								h.DataAttribute("open", ""),
 								h.DataAttribute("slot", "trace-collapsible-content"),
 								h.Id(options.panelId),
-								h.Style({ "--collapsible-panel-height": "auto", "--collapsible-panel-width": "auto" }),
+								h.Style({
+									"--collapsible-panel-height": "auto",
+									"--collapsible-panel-width": "auto",
+								}),
 							],
 							[
 								h.div(
@@ -107,7 +110,7 @@ export const traceCollapsible = <M>(
 		],
 	)
 
-export const traceDescription =<M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
+export const traceDescription = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
 	h.span(
 		[h.DataAttribute("slot", "trace-description"), h.Class(cn(traceDescriptionStyles, className))],
 		children,

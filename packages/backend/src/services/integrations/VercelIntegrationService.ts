@@ -26,7 +26,8 @@ import {
 	type VercelProjectScope,
 	type VercelSettingsRequest,
 } from "@maple/domain/http"
-import { hashIngestKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { hashIngestKey } from "@maple/backend/platform/credential-tokens"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -44,7 +45,6 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Ref,
 	Result,
 	Schema,
@@ -67,7 +67,7 @@ import {
 	publicSourceId,
 	reportPoll,
 	upsertWithSource,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	createDrain,
 	deleteDrain,
@@ -103,7 +103,6 @@ const decodeUserId = Schema.decodeUnknownSync(UserId)
 const SYSTEM_USER_ID = decodeUserId("system-vercel-integration")
 
 const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceError, "Vercel database error")
-
 
 type DrainKind = "logs" | "traces" | "aiGateway" | "speedInsights" | "webAnalytics" | "auditLog"
 const DRAIN_KINDS: ReadonlyArray<DrainKind> = [
@@ -405,10 +404,7 @@ export class VercelIntegrationService extends Context.Service<
 		const ingestKeys = yield* OrgIngestKeysService
 		const toConfigError = (message: string) => new IntegrationsPersistenceError({ message })
 		const keyring = yield* secretKeyringFromEnv(env, toConfigError)
-		const lookupHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-			toConfigError,
-		)
+		const lookupHmacKey = yield* ingestKeyLookupHmacKey(env, toConfigError)
 		const ingestUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
 		const dbExecute = makeDbExecute(database, "VercelIntegrationService", toPersistenceError)
 
@@ -510,7 +506,11 @@ export class VercelIntegrationService extends Context.Service<
 			)
 			const sourceId = publicSourceId(connection.sourceId)
 			const key = keys.privateKey
-			return { key, sourceId, hash: hashIngestKey(`${key}:${sourceId}`, lookupHmacKey) } satisfies DrainKey
+			return {
+				key,
+				sourceId,
+				hash: hashIngestKey(`${key}:${sourceId}`, lookupHmacKey),
+			} satisfies DrainKey
 		})
 
 		/** The delivery URL of the org's drain; the `maple_org` marker is how Maple finds it again. */
@@ -574,12 +574,12 @@ export class VercelIntegrationService extends Context.Service<
 			const [rule, ...more] = drain.sampling
 			const samplingMatches = sampled(kind, forwarding)
 				? rule !== undefined &&
-						more.length === 0 &&
-						rule.type === "head_sampling" &&
-						Math.abs(rule.rate - forwarding.samplingRate) < 1e-6 &&
-						rule.env === undefined &&
-						rule.requestPath === undefined
-					: rule === undefined
+					more.length === 0 &&
+					rule.type === "head_sampling" &&
+					Math.abs(rule.rate - forwarding.samplingRate) < 1e-6 &&
+					rule.env === undefined &&
+					rule.requestPath === undefined
+				: rule === undefined
 			return (
 				drain.endpoint !== drainEndpoint(kind, orgId) ||
 				(reenable && drain.status === "disabled") ||
@@ -592,11 +592,7 @@ export class VercelIntegrationService extends Context.Service<
 		}
 
 		/** Maple's drains of one kind for this org: by endpoint marker, plus the id on record. */
-		const ownDrains = (
-			drains: ReadonlyArray<VercelListedDrain>,
-			kind: DrainKind,
-			owner: DrainOwner,
-		) => {
+		const ownDrains = (drains: ReadonlyArray<VercelListedDrain>, kind: DrainKind, owner: DrainOwner) => {
 			const storedId = owner[DRAINS[kind].storedId]
 			return Arr.filter(
 				drains,
@@ -772,12 +768,7 @@ export class VercelIntegrationService extends Context.Service<
 		})
 
 		/** Records what a reconcile found; the key hash only once every drain carries the key. */
-		const saveOutcomes = (
-			owner: DrainOwner,
-			outcomes: DrainOutcomes,
-			keyHash: string,
-			now: number,
-		) =>
+		const saveOutcomes = (owner: DrainOwner, outcomes: DrainOutcomes, keyHash: string, now: number) =>
 			updateConnection(owner.orgId, owner.teamId, {
 				logDrainId: outcomes.logs.id,
 				logDrainState: outcomes.logs.state,
@@ -1224,7 +1215,13 @@ export class VercelIntegrationService extends Context.Service<
 							db
 								.run(
 									PG.insertInto(VercelConnections)
-										.values({ id: randomUUID(), orgId, sourceId, ...fields, createdAt: now })
+										.values({
+											id: randomUUID(),
+											orgId,
+											sourceId,
+											...fields,
+											createdAt: now,
+										})
 										.onConflictDoUpdate({
 											target: ["orgId"],
 											// A new team starts its drains and deployment history over.
@@ -1262,7 +1259,9 @@ export class VercelIntegrationService extends Context.Service<
 			}
 			yield* storeProjects(orgId, team.id, projects, now)
 			const ingestKey = yield* drainKey(connection, userId)
-			const reconciled = yield* Effect.result(reconcileDrains(connection, token, forwarding, ingestKey, true))
+			const reconciled = yield* Effect.result(
+				reconcileDrains(connection, token, forwarding, ingestKey, true),
+			)
 			if (Result.isSuccess(reconciled)) {
 				if (!(yield* saveOutcomes(connection, reconciled.success, ingestKey.hash, now))) {
 					// Disconnected or moved team while this ran: take back what it may have created.

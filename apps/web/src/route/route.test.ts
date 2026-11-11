@@ -110,11 +110,60 @@ describe("routes", () => {
 		expect(hrefOf(route)).toBe("/status-pages/stp_abc?view=settings")
 	})
 
+	test("each Alerts section has its own path, beside the detail pages under it", () => {
+		for (const section of ["rules", "uptime", "slos", "silences", "maintenance", "on-call", "routing"]) {
+			const route = parse(`/alerts/${section}`)
+			expect(route).toMatchObject({ _tag: "AlertsSection", section })
+			expect(hrefOf(route)).toBe(`/alerts/${section}`)
+		}
+		expect(parse("/alerts")._tag).toBe("Alerts")
+		expect(hrefOf(parse("/alerts/rules?status=firing"))).toBe("/alerts/rules?status=firing")
+		expect(parse("/alerts/uptime/new")._tag).toBe("AlertsUptimeNew")
+		expect(parse("/alerts/uptime/mon_1")._tag).toBe("AlertsUptimeMonitor")
+		expect(parse("/alerts/slos/slo_1")._tag).toBe("AlertsSlo")
+		expect(parse("/alerts/schedules/sch_1")._tag).toBe("AlertsSchedule")
+		expect(parse("/alerts/escalation-chains/new")._tag).toBe("AlertsEscalationChainNew")
+		expect(parse("/alerts/escalation-chains/esc_1")).toMatchObject({
+			_tag: "AlertsEscalationChain",
+			chainId: "esc_1",
+		})
+		expect(parse("/alerts/incidents/inc_1")._tag).toBe("AlertIncident")
+		expect(parse("/alerts/create")._tag).toBe("AlertsCreate")
+		expect(parse("/alerts/rules/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRule")
+		expect(parse("/alerts/0199a001-0000-7000-8000-000000000001")._tag).toBe("AlertRuleLegacy")
+		expect(parse("/alerts/nope")._tag).toBe("NotFound")
+	})
+
+	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
+			Option.some("/alerts/rules?status=firing"),
+		)
+		expect(redirectOf("/alerts?tab=%22silences%22&window=mw_1")).toEqual(
+			Option.some("/alerts/silences?window=mw_1"),
+		)
+		expect(redirectOf("/alerts?tab=oncall")).toEqual(Option.some("/alerts/on-call"))
+		expect(redirectOf("/alerts?tab=settings")).toEqual(Option.some("/alerts/routing"))
+		expect(redirectOf("/alerts?tab=inbox&signal=anomaly")).toEqual(Option.some("/alerts?signal=anomaly"))
+		expect(redirectOf("/alerts?tab=overview")).toEqual(Option.some("/alerts"))
+		expect(routeRedirect(parse("/alerts?tab=uptime"))).toEqual(
+			Option.some({ url: "/alerts/uptime", isReplace: true }),
+		)
+		// A rule's old address (notifications, the apps) opens it under Rules, keeping its tab and window.
+		expect(redirectOf("/alerts/0199a001-0000-7000-8000-000000000001?tab=history&timePreset=7d")).toEqual(
+			Option.some("/alerts/rules/0199a001-0000-7000-8000-000000000001?tab=history&timePreset=7d"),
+		)
+		expect(routeRedirect(parse("/alerts/rules/0199a001-0000-7000-8000-000000000001"))).toEqual(
+			Option.none(),
+		)
+		expect(routeRedirect(parse("/alerts?signal=anomaly"))).toEqual(Option.none())
+		expect(routeRedirect(parse("/alerts/rules"))).toEqual(Option.none())
+	})
+
 	test("the old status page links under Alerts redirect to their own section", () => {
 		expect(routeRedirect(parse("/alerts?tab=%22status-pages%22"))).toEqual(
 			Option.some({ url: "/status-pages", isReplace: true }),
 		)
-		expect(routeRedirect(parse("/alerts?tab=%22uptime%22"))).toEqual(Option.none())
 		expect(routeRedirect(parse("/alerts/status-pages/stp_abc"))).toEqual(
 			Option.some({ url: "/status-pages/stp_abc", isReplace: true }),
 		)

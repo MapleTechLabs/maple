@@ -1,5 +1,5 @@
 import type { FunnelPopulationFilterField } from "@maple/query-model"
-import type { WhereClauseAutocompleteValues } from "../../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteValues } from "../../kit/query-builder/where-clause-autocomplete"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
@@ -13,9 +13,6 @@ import { ProductEdit, type StepScope } from "./product-edit"
 import { autocompleteWindowOf } from "./update"
 import { providerValuesOf } from "./where-inputs"
 
-// The list filter, the population filters and the funnel steps' filters as `WhereFields`
-// (`ListConfigPanel`, `FunnelQueryPanel`, `PathsQueryPanel`, `FunnelStepBuilder`).
-
 export const LIST_FILTER_ID = "widget-list-filter"
 export const populationFilterId = (scope: StepScope): string => `widget-${scope}-population`
 export const stepFilterId = (scope: StepScope, index: number): string =>
@@ -26,7 +23,7 @@ export type WhereField = Readonly<{ spec: WhereFieldSpec; edit: (expression: str
 
 const noValues = () => null
 
-/** `useFunnelSuggestions().facets`: each facet's names under its population field. */
+/** Each facet's names under its population field. */
 const facetsOf = (model: Model): WhereClauseAutocompleteValues["productEventFacets"] => {
 	const rows = Option.getOrElse(
 		AsyncData.getData(model.suggestions.facets?.data ?? AsyncData.Idle()),

@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { RecommendationIssueStatus } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import { RecommendationIssueStatus } from "@maple/domain/recommendation-issues"
+import { OrgId } from "@maple/primitives"
 
 // Durable, numbered attribute-recommendation issues (PlanetScale-style). Recommendations are
 // detected from live telemetry on each reconcile and upserted here, so each gets a stable per-org

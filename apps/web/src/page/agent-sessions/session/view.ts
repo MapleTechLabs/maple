@@ -27,8 +27,6 @@ import { viewPopover } from "./span-popover"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The agent session detail page over `ResultPage`, and its views.
-
 type H = HtmlBuilder<Message>
 
 const TAB_LABELS = ["Overview", "Traces", "Flow", "Transcript"]
@@ -67,7 +65,7 @@ const panel = (
 	}
 }
 
-/** `SessionViews` in its page wrapper; the lab draws it outside the page frame. */
+/** The session views in their page wrapper; the lab draws them outside the page frame. */
 export const views = (h: H, model: Model, data: SessionData, timeZone: string): Html => {
 	const view = viewOf(model.search.view)
 	return vstack(h, { className: "min-h-64 shrink-0 grow" }, [

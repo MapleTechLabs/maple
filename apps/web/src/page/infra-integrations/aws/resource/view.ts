@@ -27,7 +27,7 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import type { TracedService } from "../../kit/traced"
 import type { BucketPoint } from "../data"
 import { HOT, type Judgement, judge, perMinute, tracedAs } from "../derive"
@@ -37,8 +37,6 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-
-// `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
 
 type H = HtmlBuilder<Message>
 

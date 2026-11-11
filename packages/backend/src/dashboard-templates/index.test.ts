@@ -217,18 +217,6 @@ describe("dashboard template requirements", () => {
 			}
 		}
 	})
-
-	it("derives the public requirements array from the structured requirement", () => {
-		for (const meta of listTemplateMetadata()) {
-			const template = Option.getOrUndefined(
-				Arr.findFirst(DASHBOARD_TEMPLATES, (t) => t.id === meta.id),
-			)!
-			expect(meta.requirement, meta.id).toEqual(template.requirement ?? null)
-			expect(meta.requirements, meta.id).toEqual(
-				template.requirement ? [template.requirement.label] : [],
-			)
-		}
-	})
 })
 
 describe("serviceWhereClause", () => {

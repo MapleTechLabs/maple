@@ -1,23 +1,23 @@
-import { BREAKDOWN_OTHER_KEY, BREAKDOWN_OTHER_LABEL } from "../lib/cloudflare-constants"
+import { CLOUDFLARE_BREAKDOWN_OTHER_KEY } from "@maple/domain/cloud-platform"
+import { BREAKDOWN_OTHER_LABEL } from "../lib/cloudflare-constants"
+import { OTHER_COLOR } from "@maple/ui/lib/colors"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import type { ChartSpec } from "./chart-spec"
 import { type LongRow, transformRows } from "./infra-metric-series"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
-// `StackedBreakdownChart`'s data side: the tail fold, the stack order and the palette, resolved for
+// The stacked breakdown chart's data side: the tail fold, the stack order and the palette, resolved for
 // the canvas. The card and legend are the page's.
 
 export type StackedBreakdownSpec = Extract<ChartSpec, { readonly _tag: "StackedBreakdown" }>
 
-/** `OTHER_COLOR` (packages/ui/src/components/charts/_shared/bucket-series.ts). */
-const OTHER_COLOR = "var(--muted-foreground)"
 /** Series ceiling for a dimension with no fixed vocabulary. */
 const MAX_SERIES = 6
 
 /** The pooled-tail sentinel is a wire value, never a label. */
 export const breakdownSeriesLabel = (name: string) =>
-	name === BREAKDOWN_OTHER_KEY ? BREAKDOWN_OTHER_LABEL : name
+	name === CLOUDFLARE_BREAKDOWN_OTHER_KEY ? BREAKDOWN_OTHER_LABEL : name
 
 /** `foldTail`: cap an open vocabulary at `MAX_SERIES`, pooling the rest into one `other` per bucket. */
 const foldTail = (rows: ReadonlyArray<LongRow>): ReadonlyArray<LongRow> => {
@@ -43,7 +43,7 @@ const foldTail = (rows: ReadonlyArray<LongRow>): ReadonlyArray<LongRow> => {
 		...Arr.filter(rows, (row) => keep.has(row.attributeValue)),
 		...Arr.map([...pooled], ([bucket, value]) => ({
 			bucket,
-			attributeValue: BREAKDOWN_OTHER_KEY,
+			attributeValue: CLOUDFLARE_BREAKDOWN_OTHER_KEY,
 			value,
 		})),
 	]
@@ -78,7 +78,9 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 	const transformed = transformRows(bounded)
 	const rank = new Map(Arr.map(options.order, (name, index) => [name, index]))
 	const rankOf = (name: string) =>
-		name === BREAKDOWN_OTHER_KEY ? Number.MAX_SAFE_INTEGER : (rank.get(name) ?? options.order.length)
+		name === CLOUDFLARE_BREAKDOWN_OTHER_KEY
+			? Number.MAX_SAFE_INTEGER
+			: (rank.get(name) ?? options.order.length)
 	const series = Arr.sort(
 		transformed.series,
 		Order.combine(Order.mapInput(Order.Number, rankOf), (a: string, b: string) =>
@@ -86,11 +88,14 @@ export const stackedBreakdown = (options: StackedBreakdownOptions): StackedBreak
 		),
 	)
 	const identityColors = resolveSeriesColors(
-		Arr.filter(series, (name) => options.colors[name] === undefined && name !== BREAKDOWN_OTHER_KEY),
+		Arr.filter(
+			series,
+			(name) => options.colors[name] === undefined && name !== CLOUDFLARE_BREAKDOWN_OTHER_KEY,
+		),
 	)
 	const paletteOf = (name: string) =>
 		options.colors[name] ??
-		(name === BREAKDOWN_OTHER_KEY ? OTHER_COLOR : (identityColors.get(name) ?? OTHER_COLOR))
+		(name === CLOUDFLARE_BREAKDOWN_OTHER_KEY ? OTHER_COLOR : (identityColors.get(name) ?? OTHER_COLOR))
 	const legend = Arr.map(series, (name) => ({
 		name,
 		label: breakdownSeriesLabel(name),

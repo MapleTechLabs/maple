@@ -8,10 +8,10 @@ import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
 import * as CustomRange from "../../kit/custom-range"
 
-// `AuditLogSection`. Filters live in the `/settings` search; the page passes them in and a change comes back
-// as a navigation.
+// Filters live in the `/settings` search; the page passes them in and a change comes back as a
+// navigation.
 
-/** One `auditLog.list` request, as `auditLogPageAtom` keys it. */
+/** One `auditLog.list` request. */
 export const PageRequest = Schema.Struct({
 	cursor: Schema.optional(Schema.String),
 	actorType: Schema.optional(AuditActorType),
@@ -38,7 +38,7 @@ export const AuditPage = Schema.Struct({
 })
 export type AuditPage = typeof AuditPage.Type
 
-/** The accumulated list (`AuditLogView`): kept while the next page or a refresh loads. */
+/** The accumulated list: kept while the next page or a refresh loads. */
 export const ListView = Schema.Struct({
 	entries: Schema.Array(V2AuditLogEntry),
 	hasMore: Schema.Boolean,
@@ -63,7 +63,7 @@ export const Model = Schema.Struct({
 	pinnedUntil: Schema.NullOr(Schema.String),
 	/** A rolling preset's `since`, resolved when the list started (`resolvedAt`); later pages reuse it. */
 	resolvedSince: Schema.NullOr(Schema.String),
-	/** `useOrganization({ memberships: { pageSize: 100 } })`: the Person filter's members (Clerk only). */
+	/** The Person filter's members (Clerk only). */
 	members: Schema.Array(PersonOption),
 	expanded: Schema.Array(Schema.String),
 	copies: Schema.Record(Schema.String, CopyButton.Model),

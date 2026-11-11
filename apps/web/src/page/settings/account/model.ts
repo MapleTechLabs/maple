@@ -23,8 +23,6 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Sessions", { model: Sessions.Model }),
 	Schema.TaggedStruct("TwoFactor", { model: TwoFactor.Model }),
 	Schema.TaggedStruct("EmailPreferences", { model: EmailPreferences.Model }),
-	/** A tab whose section is not ported yet. */
-	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])
 export type TabModel = typeof TabModel.Type
 

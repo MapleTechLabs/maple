@@ -1,4 +1,7 @@
-import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
+import { pickerStep } from "../kit/page-time"
+import { applySteps } from "../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -21,11 +24,19 @@ import {
 	SaveStored,
 	SaveWorld,
 } from "./command"
-import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
+import { stepEnvironmentSelect } from "../kit/environment-switcher"
+import {
+	ALL_ENVIRONMENTS,
+	DEFAULT_PRESET,
+	focusOf,
+	scopedRows,
+	type Search,
+	sourceGraphOf,
+	withFocus,
+} from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
-	applySteps,
 	bundleStep,
 	databaseSteps,
 	facetsStep,
@@ -36,7 +47,6 @@ import {
 	searchHref,
 } from "./request"
 
-/** The service panel's tabs (`<Tabs defaultValue="service">`). */
 const initServiceTabs = () =>
 	Tabs.init({ idBase: 60, values: ["service", "infrastructure"], selected: "service" })
 
@@ -79,16 +89,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			ReadStored({ orgId: context.orgId }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
-
-// THE MAP
 
 const merge = (result: Return, next: Return): Return => ({
 	model: next.model,
@@ -120,10 +124,10 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 			? model.serviceTabs
 			: initServiceTabs()
 	const withTabs = { ...model, serviceTabs: tabs }
-	const database =
+	const database: Return =
 		previous !== undefined && Option.getOrNull(previous.selectedId) === Option.getOrNull(map.selectedId)
 			? { model: withTabs }
-			: applySteps(withTabs, databaseSteps(withTabs, context, "Load"))
+			: applySteps<Model, Message>(withTabs, databaseSteps(withTabs, context, "Load"))
 	const focusChanged = !sameFocus(map.focus, focusOf(model.search))
 	return {
 		model: database.model,
@@ -151,7 +155,6 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 	}
 }
 
-/** Folds a map step into the page: the map Model, its lifted Commands, then `afterMap`. */
 const withMapStep = (
 	model: Model,
 	before: Option.Option<ServiceMap.Model>,
@@ -168,8 +171,8 @@ const withMapStep = (
 	)
 
 /**
- * Rebuild the graph from whatever has landed (`buildFlowElements`): the
- * first time the bundle and the stored prefs are both in, the map is created; later rows refine it.
+ * Rebuild the graph from whatever has landed (`buildFlowElements`): the first time the bundle
+ * and the stored prefs are both in, the map is created; later rows refine it.
  */
 const syncMap =
 	(context: PageContext) =>
@@ -242,21 +245,20 @@ export const contextChanged = (model: Model, context: PageContext): Return => {
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" stays in the URL as `__all__`, so it sticks.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, { ...model.search, environment: next.outMessage.value })
-					.outMessage,
-			}
+	// "All environments" stays in the URL as `__all__`, so it sticks.
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: true,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(model, { ...model.search, environment }).outMessage,
+		}),
+	})
 }
 
 /** The 3D view's step; a pick becomes the map's `onSelect`. */
@@ -292,23 +294,18 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 }
 
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? TimeRangePicker.unpicked(lifted, next.outMessage)
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	// A preset: the absolute bounds leave the URL.
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+		{ toastRejected: true },
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -332,7 +329,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// The default environment can move once facets land (a confirmed no-production org).
 		CompletedFetchFacets: ({ key, result }) => {
 			const next = { ...model, facets: Keyed.accept(model.facets, key, result) }
-			const rekeyed = applySteps(next, [bundleStep(next, context, "Load")])
+			const rekeyed = applySteps<Model, Message>(next, [bundleStep(next, context, "Load")])
 			// Only a new environment re-asks; the same key keeps its answer, a failure included.
 			return rekeyed.model.bundle.key === model.bundle.key ? { model: next } : rekeyed
 		},
@@ -366,11 +363,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -383,7 +376,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		ClickedRetryFacets: () => applySteps(model, [facetsStep(model, context, "Refresh")]),
+		ClickedRetryFacets: () => applySteps<Model, Message>(model, [facetsStep(model, context, "Refresh")]),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,

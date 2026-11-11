@@ -125,7 +125,11 @@ export const getVercelBreakdown = Effect.fn("QueryEngine.getVercelBreakdown")(fu
 			return yield* client.queryEngine.vercelInfraBreakdown({
 				payload:
 					input.status === undefined
-						? new VercelInfraBreakdownRequest({ ...range, projectId: input.projectId, dimension: input.dimension })
+						? new VercelInfraBreakdownRequest({
+								...range,
+								projectId: input.projectId,
+								dimension: input.dimension,
+							})
 						: new VercelInfraBreakdownRequest({
 								...range,
 								projectId: input.projectId,
@@ -257,7 +261,9 @@ export const getVercelAuditLog = Effect.fn("QueryEngine.getVercelAuditLog")(func
 	return yield* runWarehouseQuery("vercelAuditLog", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.vercelAuditLog({ payload: new VercelInfraProjectsRequest(range) })
+			return yield* client.queryEngine.vercelAuditLog({
+				payload: new VercelInfraProjectsRequest(range),
+			})
 		}),
 	)
 })

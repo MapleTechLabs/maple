@@ -33,9 +33,9 @@ import {
 	sidebarTriggerLabelStyles,
 	sidebarTriggerStyles,
 	sidebarWrapperStyles,
-} from "@maple/ui/styles/ui/sidebar"
-import { ROW_LANE } from "@maple/ui/styles/ui/list-row"
-import { separatorStyles } from "@maple/ui/styles/ui/separator"
+} from "./sidebar.styles"
+import { ROW_LANE } from "./list-row.styles"
+import { separatorStyles } from "./separator.styles"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import { icon } from "./icon"
@@ -43,7 +43,7 @@ import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
 import { String as Str } from "effect"
 
-// The Foldkit side of packages/ui/src/components/ui/sidebar.tsx: same markup, same class composition.
+// The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
 
 export type SidebarState = "expanded" | "collapsed"
 
@@ -87,7 +87,7 @@ export const sidebarDesktop = <Message>(
 	h: HtmlBuilder<Message>,
 	state: SidebarState,
 	children: Children,
-	/** `<Sidebar className>`: lands on the fixed container. */
+	/** Lands on the fixed container. */
 	className?: string,
 	/** Snap to `state` without the width transition (keyboard toggles). */
 	isInstant = false,
@@ -151,7 +151,6 @@ export const sidebarMobile = <Message>(
 		},
 		[h.div([h.Class(sidebarMobileInnerStyles)], children)],
 	)
-// SIDEBAR PARTS
 
 export const sidebarHeader = <Message>(
 	h: HtmlBuilder<Message>,
@@ -314,10 +313,15 @@ export const sidebarMenuItem = <Message>(
 		children,
 	)
 
-export const sidebarMenuBadge = <Message>(h: HtmlBuilder<Message>, children: Children): Html =>
+/** `<SidebarMenuBadge>`; `className` places it beside a sub-item, which the peer offsets don't cover. */
+export const sidebarMenuBadge = <Message>(
+	h: HtmlBuilder<Message>,
+	children: Children,
+	className?: string,
+): Html =>
 	h.div(
 		[
-			h.Class(cn(...sidebarMenuBadgeStyles)),
+			h.Class(cn(...sidebarMenuBadgeStyles, className)),
 			h.DataAttribute("sidebar", "menu-badge"),
 			h.DataAttribute("slot", "sidebar-menu-badge"),
 		],
@@ -351,7 +355,6 @@ export const sidebarMenuSubItem = <Message>(
 		],
 		children,
 	)
-// SIDEBAR BUTTONS
 
 /** TanStack `<Link>`'s active test (`resolveIsActive`, default options): the path or a descendant. */
 export const isLinkActive = (currentPath: string, href: string): boolean =>
@@ -429,16 +432,16 @@ export const sidebarMenuButton = <Message>(
 		children,
 	)
 }
-// SIDEBAR SUB BUTTONS
 
-/** `<SidebarMenuSubButton size="md" render={<Link />}>`. */
+/** A sub-item of a sidebar menu, as a router link or a plain anchor. */
 export const sidebarMenuSubButton = <Message>(
 	h: HtmlBuilder<Message>,
 	/** `link` is a router link (active by path); `href` a plain anchor (`<SidebarMenuSubButton href>`). */
 	options: Readonly<{ className?: string; isActive: boolean; link?: LinkTarget; href?: string }>,
 	children: Children,
 ): Html => {
-	const linkActive = options.link !== undefined && isLinkActive(options.link.currentPath, options.link.href)
+	// The caller picks the most specific sibling, so an index row (`/alerts`) doesn't claim its siblings' pages.
+	const linkActive = options.link !== undefined && options.isActive
 	const className = cn(
 		...sidebarMenuSubButtonStyles,
 		sidebarMenuSubButtonMdStyles,

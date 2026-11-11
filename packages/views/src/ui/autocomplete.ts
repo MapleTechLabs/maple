@@ -1,11 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
+import * as A from "./autocomplete.styles"
 import {
 	inputControlChromeStyles,
 	inputControlLayoutStyles,
 	inputLgStyles,
 	inputStyles,
-} from "@maple/ui/styles/ui/input"
+} from "./input.styles"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { inputId, Message, type Model } from "./combobox"
@@ -34,7 +34,7 @@ export type FieldOptions<M = never> = Readonly<{
 	hasDismissButton?: boolean
 	/** `filter={null}`: `items` are already the list (the command palette's fuse ranking). */
 	isUnfiltered?: boolean
-	/** `startAddon`: the magnifier (default) or none. */
+	/** The magnifier (default) or none. */
 	hasStartAddon?: boolean
 	/** `showClear`: Base UI renders the clear button while the input holds a value. */
 	onClear?: M
@@ -80,7 +80,8 @@ export const autocompleteField = <M>(
 						),
 					]
 				: []),
-			...((options.hasDismissButton ?? options.isInline !== true) && isMounted(model.isOpen, model.animation)
+			...((options.hasDismissButton ?? options.isInline !== true) &&
+			isMounted(model.isOpen, model.animation)
 				? [dismissButton(h)]
 				: []),
 			h.span(
@@ -124,7 +125,9 @@ export const autocompleteField = <M>(
 							[
 								h.Type("button"),
 								h.AriaLabel("Clear"),
-								h.Class(cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles)),
+								h.Class(
+									cn(A.autocompleteInputClearStyles, A.autocompleteInputClearDefaultStyles),
+								),
 								h.DataAttribute("slot", "autocomplete-clear"),
 								h.OnClick(options.onClear),
 							],
@@ -141,7 +144,7 @@ export type ViewInputs = Readonly<{
 	placeholder: string
 	emptyText: string
 	hasStartAddon?: boolean
-	/** `showClear`: the clear button empties the input. */
+	/** A clear button that empties the input. */
 	hasClear?: boolean
 	/** Wraps the field (`<div className="w-64">`) and places it with the hidden input and portal. */
 	toView: (parts: Readonly<{ field: Html; rest: ReadonlyArray<Html> }>) => Html

@@ -19,10 +19,10 @@ import {
 	ErrorIssueId as ErrorIssueIdSchema,
 	type OrgId,
 	OrgId as OrgIdSchema,
-	RoleName,
 	type UserId,
 	UserId as UserIdSchema,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -38,10 +38,7 @@ import {
 } from "@maple/db/tables"
 import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/cache"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
+import { runWarehouseOrgTurn } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 import {
 	Array as Arr,
 	Cause,
@@ -57,10 +54,9 @@ import {
 	Semaphore,
 	String as Str,
 } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { transitionRow } from "@maple/backend/platform/transition-row"
@@ -91,7 +87,7 @@ import {
 } from "./anomaly/detector-state-batch"
 import { rollingCountBuckets } from "./anomaly/rolling-counts"
 import { hysteresisConfigFor } from "./anomaly/hysteresis-config"
-import { foldObservation } from "./incident-hysteresis"
+import { foldObservation } from "@maple/alerting-core/hysteresis"
 import {
 	attachKeyFor,
 	canAttach,
@@ -104,6 +100,7 @@ import {
 	type IncidentFingerprintEntry,
 } from "./anomaly/consolidation"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -112,8 +109,8 @@ const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgIdSchema)
 const decodeIsoSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.firstTriggeredAt)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const SYSTEM_USER_ID = decodeUserIdSync("system-anomaly")
 const decodeIssueIdSync = Schema.decodeUnknownSync(ErrorIssueIdSchema)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 
 const HOUR_MS = 60 * 60 * 1000
 const BASELINE_WINDOW_MS = 7 * 24 * HOUR_MS
@@ -290,16 +287,14 @@ export interface AnomalyDetectionServiceApi {
 const make: Effect.Effect<
 	AnomalyDetectionServiceApi,
 	never,
-	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService
+	Database | WarehouseQueryService | OrgClickHouseSettingsService | EdgeCacheService | InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const orgChSettings = yield* OrgClickHouseSettingsService
 	const edgeCache = yield* EdgeCacheService
-	// Optional: present only inside a Worker isolate. Used to start the
-	// investigation agent when an incident opens (org opt-in).
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
+	// Starts the investigation agent when an incident opens (org opt-in).
+	const starter = yield* InvestigationStarter
 
 	const dbExecute = makeDbExecute(database, "AnomalyDetectionService", makePersistenceError)
 
@@ -402,13 +397,6 @@ const make: Effect.Effect<
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-anomaly"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
-
 	// The tick historically evaluated every org with an ingest key, scanning a
 	// 7-day window for each — overwhelmingly idle orgs, which dominated Tinybird
 	// CPU. Instead, run ONE cross-org scan of the recent hourly MVs (pinned to
@@ -425,7 +413,15 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan("maple.anomaly.known_orgs", knownOrgs.length)
 		const byoRows = yield* dbExecute((db) =>
 			db.run(PG.from(OrgClickHouseSettings).select("orgId").distinct()),
-		).pipe(Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []))
+		).pipe(
+			// Without the list this tick evaluates no BYO-ClickHouse org; say so instead of going quiet.
+			Effect.tapError((error) =>
+				Effect.logWarning("Anomaly BYO-ClickHouse org lookup failed").pipe(
+					Effect.annotateLogs({ error: error.message }),
+				),
+			),
+			Effect.orElseSucceed((): ReadonlyArray<{ readonly orgId: string }> => []),
+		)
 		const byo = new Set<string>(Arr.map(byoRows, (r) => r.orgId))
 
 		const [routingOrg] = knownOrgs
@@ -438,7 +434,7 @@ const make: Effect.Effect<
 		}
 
 		const startTime = formatWarehouseDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
-		const routingTenant = systemTenant(routingOrg)
+		const routingTenant = systemTenant(routingOrg, SYSTEM_USER_ID)
 		yield* warehouse.warmRoute(routingTenant)
 		return yield* Effect.all(
 			[
@@ -837,8 +833,6 @@ const make: Effect.Effect<
 		}
 	})
 
-	// Incident timeseries — observed-vs-baseline chart data
-
 	/** Max chart window; matches the detector's own baseline horizon. */
 	const TIMESERIES_MAX_WINDOW_MS = BASELINE_WINDOW_MS
 
@@ -986,8 +980,6 @@ const make: Effect.Effect<
 			thresholdValue: row.thresholdValue,
 		})
 	})
-
-	// Tick: data fetch
 
 	interface HourRow {
 		/** Epoch ms, not a `DateTime.Utc`: baseline rows are cached as JSON. */
@@ -1248,8 +1240,6 @@ const make: Effect.Effect<
 		return { observations, baselines }
 	})
 
-	// Tick: per-org processing
-
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
 		dbExecute((db) =>
 			db.run(
@@ -1346,7 +1336,7 @@ const make: Effect.Effect<
 
 		const muted = new Set(parseMutedSignals(settings.mutedSignalsJson))
 		const sensitivity = SENSITIVITY[settings.sensitivity] ?? SENSITIVITY.normal
-		const tenant = systemTenant(orgId)
+		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
 		const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
 		const elapsedMinutes = Math.floor((nowMs - currentHourStartMs) / 60_000)
 		const config = { sensitivity, elapsedMinutes }
@@ -1827,7 +1817,6 @@ const make: Effect.Effect<
 							incidentId,
 							issueId: errorIssueId ?? undefined,
 							context: {
-								kind: "anomaly",
 								signalType: evaluation.signalType,
 								serviceName: evaluation.serviceName,
 								deploymentEnv: evaluation.deploymentEnv,
@@ -1836,14 +1825,13 @@ const make: Effect.Effect<
 								// anomaly reached the snapshot as an unclassified incident.
 								severity: issueSeverityFromAlert(evaluation.severity),
 								observedValue: evaluation.value,
-								baselineMedian: evaluation.baselineMedian,
-								baselineSigma: evaluation.baselineSigma,
 								thresholdValue: evaluation.threshold,
-								sampleCount: evaluation.sampleCount,
-								detectedAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+								startedAtMs: nowMs,
 							},
-							chatSessions,
-						}).pipe(Effect.provideService(Database, database))
+						}).pipe(
+							Effect.provideService(Database, database),
+							Effect.provideService(InvestigationStarter, starter),
+						)
 						// A gate skip is recorded as `skipped`, not left at `none`: the
 						// incident was judged, and the hub should say so rather than
 						// read as one automation never reached.
@@ -2136,11 +2124,7 @@ const make: Effect.Effect<
 											? {
 													lastObservedValue: nextEntry.value.lastValue,
 													// The count comes from the promoted series' state row, not
-													// from the fingerprint entry — entries carry only a value.
-													// This previously read `nextEntry.lastValue`, i.e. the
-													// metric reading (a p95 in ms) into an `integer` column,
-													// so every detach failed with `invalid input syntax for
-													// type integer: "4729.711321330495"`.
+													// from the fingerprint entry: entries carry only a value.
 													lastSampleCount: next.lastSampleCount ?? 0,
 												}
 											: undefined),
@@ -2304,53 +2288,14 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			orgsToProcess,
 			(org) =>
-				Effect.gen(function* () {
-					// Orgs whose warehouse rejected queries with an auth/config-class
-					// error are parked (see warehouse-org-quarantine.ts).
-					if (yield* withOutboundPermit(isOrgWarehouseQuarantined(edgeCache, org))) {
-						yield* Effect.logInfo("Skipping org with quarantined warehouse").pipe(
-							Effect.annotateLogs({ orgId: org }),
-						)
-						return emptyStats
-					}
-					return yield* processOrg(org, nowMs, runRetention)
-				}).pipe(
-					// Isolate genuine per-org failures/defects so one bad org can't fail
-					// the whole tick. Interrupts (isolate teardown) are NOT per-org
-					// failures — re-raise them so the tick cancels promptly instead of
-					// logging a phantom failure and marching through the remaining orgs.
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.gen(function* () {
-									const quarantined = yield* quarantineOnConfigClassCause(
-										edgeCache,
-										org,
-										cause,
-										nowMs,
-									)
-									if (quarantined) {
-										yield* Effect.logInfo(
-											"Org warehouse rejected queries with a config-class error; quarantined",
-										).pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									} else {
-										yield* Effect.logError("Anomaly tick failed for org").pipe(
-											Effect.annotateLogs({
-												orgId: org,
-												error: summarizeCause(cause),
-											}),
-										)
-									}
-									yield* Ref.update(orgFailures, (n) => n + 1)
-									return emptyStats
-								}),
-					),
-				),
+				// A parked org is skipped; one bad org cannot fail the tick.
+				runWarehouseOrgTurn(edgeCache, org, nowMs, processOrg(org, nowMs, runRetention), {
+					skipped: emptyStats,
+					failed: Ref.update(orgFailures, (n) => n + 1).pipe(Effect.as(emptyStats)),
+					failureMessage: "Anomaly tick failed for org",
+					skipMessage: "Skipping org with quarantined warehouse",
+					gateLookup: withOutboundPermit,
+				}),
 			{ concurrency: 4 },
 		)
 
@@ -2392,6 +2337,12 @@ export class AnomalyDetectionService extends Context.Service<
 	AnomalyDetectionServiceApi
 >()("@maple/backend/services/AnomalyDetectionService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, OrgClickHouseSettingsService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				OrgClickHouseSettingsService.layer,
+				InvestigationStarter.layer,
+			),
+		),
 	)
 }

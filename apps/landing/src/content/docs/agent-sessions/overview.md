@@ -6,7 +6,7 @@ order: 1
 navLabel: "Overview"
 ---
 
-Each user message in a conversation is usually its own trace. **Agent Sessions** groups those traces into one conversation and shows it turn by turn. To send your agent's traces, pick your framework in [Trace your AI agent](/docs/agent-tracing).
+Each user message in a conversation is usually its own trace. **Agent sessions** groups those traces into one conversation and shows it turn by turn. To send your agent's traces, pick your framework in [Trace your AI agent](/docs/agent-tracing).
 
 ## Sessions, turns and calls
 

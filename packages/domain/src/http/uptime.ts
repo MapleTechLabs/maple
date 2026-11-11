@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { UptimeMonitorId } from "../primitives"
+import { UptimeMonitorId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class UptimeMonitorNotFoundError extends HttpTaggedError<UptimeMonitorNotFoundError>()(

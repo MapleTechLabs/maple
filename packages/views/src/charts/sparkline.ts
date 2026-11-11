@@ -4,8 +4,8 @@ import type { Message, Model } from "./chart"
 import { ChartSpec } from "./chart-spec"
 import { plotFrame } from "./plot-frame"
 
-// Port of `Sparkline` (packages/ui/src/components/ui/gradient-chart.tsx) over `PlotSparkline`: no
-// axes, focus or tooltip, so the chart Model only satisfies the frame. Embed it with `h.submodel`.
+// A sparkline: no axes, focus or tooltip, so the chart Model only satisfies
+// the frame. Embed it with `h.submodel`.
 
 export interface SparklineInputs {
 	readonly chartId: string
@@ -15,10 +15,10 @@ export interface SparklineInputs {
 	readonly className?: string
 	/** Changes with every fetched result, so the chart redraws like `useMemo` on new data. */
 	readonly revision: number
-	/** `PlotSparkline`'s `curve` and `fillOpacity` (the stat widget's monotone, `[0.35, 0]`). */
+	/** The curve and fill opacity (the stat widget's monotone, `[0.35, 0]`). */
 	readonly curve?: "linear" | "monotone"
 	readonly fillOpacity?: readonly [start: number, end: number]
-	/** `PlotSparkline` frames an empty series too (the gradient `Sparkline` draws nothing). */
+	/** Frame an empty series too, where the gradient sparkline draws nothing. */
 	readonly isFramedWhenEmpty?: boolean
 }
 

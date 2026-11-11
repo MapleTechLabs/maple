@@ -1,10 +1,16 @@
-import type { ErrorIssueId, OrgId, UserDetailRequest, UserIssueItem, WorkflowState } from "@maple/domain/http"
+import type {
+	ErrorIssueId,
+	OrgId,
+	UserDetailRequest,
+	UserIssueItem,
+	WorkflowState,
+	TenantContext,
+} from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues } from "@maple/db/tables"
 import { Array as Arr, DateTime, Effect, Option, Order, Record as Rec } from "effect"
 import { CH } from "@maple/query-engine"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { makeErrorDatabaseExecute } from "@maple/backend/services/errors/error-persistence"
 import { issuesOwningHashes } from "@maple/backend/services/errors/issue-fingerprints"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -134,10 +140,6 @@ const issueServices = Effect.fn("UsersReads.issueServices")(function* (
 })
 
 /**
- * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
- * `UserId` (migration 0057).
- */
-/**
  * Services a caller already resolved for the request's namespaces (`undefined` when unscoped), so a
  * read that has a scope in hand does not look the namespace up again.
  */
@@ -146,6 +148,10 @@ export type ResolvedServices = Readonly<{ serviceNames: ReadonlyArray<string> | 
 const servicesFor = (tenant: TenantContext, payload: UserDetailRequest, resolved?: ResolvedServices) =>
 	resolved === undefined ? issueServices(tenant, payload) : Effect.succeed(resolved.serviceNames)
 
+/**
+ * The issues one user hit in the window and scope, `None` on a cluster whose `error_events` lacks
+ * `UserId` (migration 0057).
+ */
 export const readUserIssueItems = Effect.fn("UsersReads.issueItems")(function* (
 	tenant: TenantContext,
 	payload: UserDetailRequest,

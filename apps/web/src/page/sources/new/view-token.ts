@@ -1,4 +1,4 @@
-import { isPublicSourcePlatform, isPushSourcePlatform } from "@maple/domain/primitives"
+import { isPublicSourcePlatform, isPushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { copyableField } from "@maple/views/ui/copyable-field"
@@ -14,7 +14,7 @@ import { showsUpRail } from "./view-push-rail"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `TokenStep`: the Send data step. The one-time token, the setup snippet, then the first-data poll.
+// The Send data step. The one-time token, the setup snippet, then the first-data poll.
 
 type H = HtmlBuilder<Message>
 

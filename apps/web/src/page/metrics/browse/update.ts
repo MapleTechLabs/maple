@@ -1,3 +1,7 @@
+import { pickerStep } from "../../kit/page-time"
+import { keyedSlot } from "../../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toQueryBuilderMetricType } from "@maple/query-model"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -5,7 +9,6 @@ import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import type { MetricsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
@@ -35,14 +38,12 @@ import {
 	TABLE_PAGE_SIZE,
 	toEntries,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = typeof MetricsSearch.Type
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-/** `DashboardPage`'s `defaultPreset` for `/metrics`. */
 export const DEFAULT_PRESET: PresetValue = "24h"
 export const TYPE_SELECT_ID = "metrics-type-filter"
 
@@ -63,18 +64,6 @@ const listInput = (search: Search, window: TimeWindow, limit: number): ListInput
 	endTime: window.endTime,
 })
 
-/** One `Keyed.request`, its Model patch and fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Readonly<{ slot: Keyed.Keyed<A, E>; commands: Commands }> =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ slot, commands: [] }),
-		onSome: (next) => ({ slot: next, commands: [fetch(key)] }),
-	})
-
 /** The mounted grid pages' sparkline queries, one per metric type present on the page. */
 const requestSparklines = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const catalog = AsyncData.getData(model.catalog.data)
@@ -88,7 +77,7 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 			const metricNames = namesOfType(entries, metricType)
 			if (metricNames.length === 0) return []
 			const { key: slotKey, input } = sparklineRequest(context.orgId, window, metricType, metricNames)
-			const step = keyed(Keyed.at(model.sparklines, slotKey), slotKey, mode, (key) =>
+			const step = keyedSlot(Keyed.at(model.sparklines, slotKey), slotKey, mode, (key) =>
 				FetchSparklines({ slot: slotKey, key, input }),
 			)
 			return [{ slotKey, ...step }]
@@ -109,7 +98,7 @@ const requestSparklines = (model: Model, context: PageContext, mode: RequestMode
 /** Every query the page reads for the resolved window. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const org = context.orgId
-	const summary = keyed(
+	const summary = keyedSlot(
 		model.summary,
 		requestKey(org, "getMetricsSummary", { data: window }),
 		mode,
@@ -119,13 +108,13 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	const catalogInput = listInput(model.search, window, CATALOG_LIMIT)
 	const tableInput = listInput(model.search, window, Math.min(model.tableLimit + 1, TABLE_MAX_LIMIT))
 	const catalog = isGrid
-		? keyed(model.catalog, requestKey(org, "listMetrics", { data: catalogInput }), mode, (key) =>
+		? keyedSlot(model.catalog, requestKey(org, "listMetrics", { data: catalogInput }), mode, (key) =>
 				FetchCatalog({ key, input: catalogInput }),
 			)
 		: { slot: model.catalog, commands: [] }
 	const table = isGrid
 		? { slot: model.table, commands: [] }
-		: keyed(model.table, requestKey(org, "listMetrics", { data: tableInput }), mode, (key) =>
+		: keyedSlot(model.table, requestKey(org, "listMetrics", { data: tableInput }), mode, (key) =>
 				FetchTable({ key, input: tableInput }),
 			)
 	const next = requestSparklines(
@@ -139,16 +128,14 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	}
 }
 
-/** `MetricsBrowse`'s `key`: a new search, type or window remounts the grid or table. */
+/** A new search, type or window remounts the grid or table. */
 const remounted = (model: Model, isNewQuery: boolean): Model => {
 	const reset = { ...model, visiblePages: 1, tableLimit: TABLE_PAGE_SIZE }
-	// A new window keeps the previous rows on screen while it loads (`withRetention`).
+	// A new window keeps the previous rows on screen while it loads.
 	return isNewQuery ? { ...reset, catalog: Keyed.idle(), table: Keyed.idle() } : reset
 }
 
-// NAVIGATION
-
-/** `handlePatch`: filter and view changes replace the history entry. */
+/** Filter and view changes replace the history entry. */
 const patchSearch = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -162,8 +149,6 @@ const searchHref = (search: Search) => hrefOf(AppRoute.Metrics({ search }))
 const isSameQuery = (a: Search, b: Search) => (a.q ?? "") === (b.q ?? "") && a.type === b.type
 
 const typeSelectValue = (search: Search) => search.type ?? "all"
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -195,11 +180,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -212,7 +193,7 @@ export const routeChanged = (
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
-	// `ToolbarSearch` resyncs its input on an outside change, never on its own echo.
+	// The search box resyncs its input on an outside change, never on its own echo.
 	const isOutsideQuery = query !== model.lastSentQuery
 	const base: Model = {
 		...remounted({ ...model, search: route.search }, !isSameQuery(model.search, route.search)),
@@ -247,7 +228,7 @@ const metricHref = (model: Model, metricName: string, metricType: string) =>
 		}),
 	)
 
-/** `MetricsTable`'s row link: the page's own time params plus the metric's type. */
+/** The table's row link: the page's own time params plus the metric's type. */
 export const metricLink = metricHref
 
 const liftTypeSelect = (model: Model, message: Select.Message): Return => {
@@ -264,26 +245,20 @@ const liftTypeSelect = (model: Model, message: Select.Message): Return => {
 }
 
 const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted: Return = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL (a push, not a replace).
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: PageOutMessage.RequestedNavigation({
-					url: searchHref({
-						...model.search,
-						...TimeRangePicker.searchPatchOf(next.outMessage),
-					}),
-					isReplace: false,
+	// A preset: the absolute bounds leave the URL (a push, not a replace).
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			PageOutMessage.RequestedNavigation({
+				url: searchHref({
+					...model.search,
+					...patch,
 				}),
-			}
+				isReplace: false,
+			}),
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -356,11 +331,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

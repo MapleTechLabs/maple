@@ -7,8 +7,6 @@ import type { WindowSearch } from "./frame"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, Option } from "effect"
 
-// `CodeReviewLayout`, `CodeReviewTabs` and `NothingInWindow`.
-
 export type CodeReviewTab = "analytics" | "pull-requests" | "ci" | "team" | "issues" | "settings"
 
 export type CarriedSearch = WindowSearch & Readonly<{ repo?: string; author?: string }>
@@ -34,11 +32,11 @@ export const tabLabel = (tab: CodeReviewTab): string =>
 	)
 
 export const breadcrumbsOf = (tab: CodeReviewTab) => [
-	{ label: "Code review", href: "/code-review" },
+	{ label: "Review & CI", href: "/code-review" },
 	{ label: tabLabel(tab) },
 ]
 
-/** Defined keys only, in the order given: TanStack drops `undefined` search values. */
+/** Defined keys only, in the order given, so an `undefined` value leaves no search param. */
 const defined = (search: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> =>
 	Rec.fromEntries(
 		Arr.flatMap(Rec.toEntries(search), ([key, value]) =>
@@ -86,7 +84,7 @@ const tabs = <M>(options: LayoutOptions<M>): Html => {
 	}
 	return linkTabStrip(
 		h,
-		"Code review views",
+		"Review & CI views",
 		Arr.map(TABS, (entry) => {
 			const linkSearch = defined(entry.tab === "settings" ? {} : carried)
 			return {
@@ -106,7 +104,7 @@ export const codeReviewLayout = <M>(options: LayoutOptions<M>, children: Readonl
 	const page = dashboardPage(
 		options.h,
 		{
-			title: "Code review",
+			title: "Review & CI",
 			actions: options.toolbar,
 			tabs: tabs(options),
 			gap: "lg",

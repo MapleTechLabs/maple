@@ -83,7 +83,7 @@ const scenarioCell = (h: H, label: string, height: number, child: Html): Html =>
 		],
 	)
 
-/** Edit mode: Edit, Clone and Delete (`labActions`), as the card menu resolves them. */
+/** Edit mode: Edit, Clone and Delete, as the card menu resolves them. */
 const tileMenu = (h: H, model: Model, slot: string): Html | null =>
 	!isEditMode(model)
 		? null
@@ -172,7 +172,7 @@ const tileSection = (h: H, model: Model, entry: Section): Html =>
 		),
 	)
 
-/** `StatSparkline` alone in a card, per sample. */
+/** A stat sparkline alone in a card, per sample. */
 const sparklineSection = (h: H, model: Model): Html =>
 	section(
 		h,

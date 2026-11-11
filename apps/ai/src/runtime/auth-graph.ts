@@ -17,7 +17,7 @@ import { Layer } from "effect"
  * rate limiter rather than a route-level authorization layer. The chat routes
  * are session-only, the same as they were on api.
  *
- * `McpOAuthRateLimiter` is deliberately absent: the OAuth endpoints stayed on
+ * `McpOAuthRateLimit` is deliberately absent: the OAuth endpoints stayed on
  * api, which still owns its own limiter for them.
  */
 export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLive).pipe(

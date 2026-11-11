@@ -1,9 +1,8 @@
-import { McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
+import { FEEDBACK_TOOL, McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
 import { DateTime, Effect, Schedule, Schema, String as Str } from "effect"
 import { AgentFeedbackImpact, AgentFeedbackKind, AgentType } from "@maple/domain/http"
 import { AgentFeedbackPublicId } from "@maple/domain/http/v2"
-import { SendMapleFeedbackOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -36,7 +35,7 @@ const checkLength = (parameter: string, value: string | undefined, max: number, 
 
 export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 	server.define({
-		name: "send_maple_feedback",
+		name: FEEDBACK_TOOL,
 		title: "Send Maple Feedback",
 		description:
 			"Report a problem with Maple itself (this MCP server, its tools, API, or docs) to the Maple team: a bug, a missing capability, a misleading description, or something that worked well. " +
@@ -109,7 +108,6 @@ export function registerSendMapleFeedbackTool(server: McpToolRegistrar) {
 				ci_cd: "ci",
 			},
 		},
-		output: SendMapleFeedbackOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Sending feedback"],
 		handler: Effect.fn("McpTool.sendMapleFeedback")(function* (params) {

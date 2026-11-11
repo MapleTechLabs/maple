@@ -13,7 +13,7 @@ import {
 	type V2StatusPageIncident,
 } from "@maple/domain/http/v2"
 import { Schema, Array as Arr } from "effect"
-import { NOW } from "../../alerts/shared/test-rows"
+import { NOW } from "../../kit/alert-test-rows"
 
 // Status pages as the v2 API decodes them, for the scene tests.
 

@@ -9,7 +9,7 @@ import { loadSources, sourcesListKey } from "../page/sources/kit/data"
 import { Message } from "./message"
 import { SessionTenant } from "../data/session-tenant"
 import { listOnCallSchedules } from "../page/alerts/shared/oncall-schedules"
-import { isoMs } from "../page/alerts/shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { readEffectiveTimeZone } from "../platform/time-zone"
 import { isNoSchedulesFresh } from "./oncall"
 
@@ -57,12 +57,10 @@ export const LoadSources = Command.define("LoadSources", {
 		),
 })
 
-// DASHBOARDS AND NAMESPACES
-
 const orgArgs = { orgId: Schema.String }
 
 /**
- * `NamespaceScopeList`: the same snapped 24 h services facets probe the overview runs, read through
+ * The same snapped 24 h services facets probe the overview runs, read through
  * the shared probe under the shell's org, so an answer the Overview page already has is reused.
  */
 export const LoadNamespaces = Command.define("LoadNamespaces", {
@@ -116,7 +114,8 @@ export const LoadOnCall = Command.define("LoadOnCall", {
 					shifts: Arr.map(schedules, (schedule) => ({
 						scheduleName: schedule.name,
 						userId: schedule.on_call_now?.user_id ?? null,
-						endsAtMs: schedule.on_call_now === null ? null : isoMs(schedule.on_call_now.ends_at),
+						endsAtMs:
+							schedule.on_call_now === null ? null : toEpochMs(schedule.on_call_now.ends_at),
 					})),
 				},
 			})

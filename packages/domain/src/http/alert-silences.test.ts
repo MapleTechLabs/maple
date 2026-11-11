@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { AlertRuleId } from "../primitives"
+import { AlertRuleId } from "@maple/primitives"
 import {
 	AlertSilenceMatchers,
 	alertSilenceGroupBy,

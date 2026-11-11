@@ -69,7 +69,6 @@ const passwordField = (model: Model, h: HtmlBuilder<Message>): Html => {
 	])
 }
 
-/** `SelfHostedSignInPage`. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
 	accountLayout(h, [
 		h.div(

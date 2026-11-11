@@ -160,7 +160,7 @@ A short-lived process can exit before its spans are sent. In a script, call `awa
 
 ## Verify
 
-Run a conversation with two messages and a tool call, then open **Agent Sessions** in Maple. You should see one session named after your thread id with framework **Mastra**, one turn per `generate()` or `stream()` call, and a transcript with the prompts, replies and tool calls.
+Run a conversation with two messages and a tool call, then open **Agent sessions** in Maple. You should see one session named after your thread id with framework **Mastra**, one turn per `generate()` or `stream()` call, and a transcript with the prompts, replies and tool calls.
 
 Cost shows as unpriced because Mastra doesn't report it. If nothing arrives, set `logLevel: "debug"` on `OtelExporter` to log each export as `Export completed` or `Export FAILED` with the reason.
 

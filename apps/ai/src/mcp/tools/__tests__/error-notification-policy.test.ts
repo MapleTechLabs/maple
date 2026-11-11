@@ -7,10 +7,10 @@ import { AlertDestinationId, AlertPersistenceError, OrgId, RoleName, UserId } fr
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
 const ORG = Schema.decodeSync(OrgId)("org_policy_tools")
@@ -59,7 +59,7 @@ const makeLayer = (namesFail = false) => {
 			roles: [Schema.decodeSync(RoleName)("org:admin")],
 			authMode: "self_hosted",
 		} as never),
-		Layer.succeed(AlertsService, {
+		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () =>
 				namesFail
 					? Effect.fail(new AlertPersistenceError({ message: "bad destination row" }))

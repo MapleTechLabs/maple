@@ -4,8 +4,8 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CaretMessage, WhereCaret } from "./where-autocomplete"
 
-// Any number of where editors with suggestions (`WhereClauseEditor`), by field id: their carets,
-// open lists and active keys' values. The expressions stay with the owner.
+// Any number of where editors with suggestions, by field id: their carets, open lists and active
+// keys' values. The expressions stay with the owner.
 
 export const WhereFieldMessage = defineMessageUnion({
 	GotCaret: { fieldId: Schema.String, message: CaretMessage },

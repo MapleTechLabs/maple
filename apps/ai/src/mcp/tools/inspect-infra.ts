@@ -1,8 +1,9 @@
 import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
-import { InspectInfraOutput, type InfraSeriesStats } from "@maple/domain/mcp-outputs"
+import { type InfraSeriesStats } from "@maple/domain/mcp-outputs"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import * as P from "../lib/params"
 import { doc, type DocBlock, type NextCall } from "../lib/tool-doc"
@@ -184,7 +185,6 @@ export function registerInspectInfraTool(server: McpToolRegistrar) {
 			),
 			...WINDOW.fields,
 		}),
-		output: InspectInfraOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting infrastructure", "Checking resource usage"],
 		handler: Effect.fn("McpTool.inspectInfra")(function* (params) {

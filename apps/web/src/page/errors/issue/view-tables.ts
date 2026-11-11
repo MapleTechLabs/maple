@@ -29,8 +29,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { Array as Arr, String as Str } from "effect"
 
-// The issue incidents and occurrences tables.
-
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
 const REASON_LABEL = {

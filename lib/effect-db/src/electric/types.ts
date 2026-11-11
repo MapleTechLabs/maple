@@ -48,9 +48,6 @@ export type EffectDeleteHandler<
 	R = never,
 > = (params: DeleteMutationFnParams<T, TKey, TUtils>) => Effect.Effect<{ txid: Txid | Array<Txid> }, E, R>
 
-/**
- * Configuration for exponential backoff on connection errors
- */
 export interface BackoffConfig {
 	/**
 	 * Initial delay in milliseconds before first retry
@@ -93,9 +90,6 @@ export interface BackoffConfig {
 	resetTimeoutMs?: number
 }
 
-/**
- * Configuration for an Electric collection with Effect-based handlers
- */
 export interface EffectElectricCollectionConfig<
 	T extends Row<unknown> = Row<unknown>,
 	TKey extends string | number = string | number,
@@ -103,24 +97,12 @@ export interface EffectElectricCollectionConfig<
 	TUtils extends UtilsRecord = Record<string, never>,
 	R = never,
 > {
-	/**
-	 * Unique identifier for the collection
-	 */
 	id?: string
 
-	/**
-	 * Configuration options for the ElectricSQL ShapeStream
-	 */
 	shapeOptions: SyncStreamOptions<GetExtensions<T>>
 
-	/**
-	 * Function to extract the key from an item
-	 */
 	getKey: (item: T) => TKey
 
-	/**
-	 * Optional schema for validation
-	 */
 	schema?: TSchema
 
 	/**
@@ -155,14 +137,8 @@ export interface EffectElectricCollectionConfig<
 	 */
 	gcTime?: number
 
-	/**
-	 * Whether to eagerly start syncing on collection creation
-	 */
 	startSync?: boolean
 
-	/**
-	 * Auto-indexing mode for the collection
-	 */
 	autoIndex?: `off` | `eager`
 
 	/**
@@ -172,9 +148,6 @@ export interface EffectElectricCollectionConfig<
 	 */
 	syncMode?: `eager` | `on-demand`
 
-	/**
-	 * Optional function to compare two items
-	 */
 	compare?: (x: T, y: T) => number
 
 	/**

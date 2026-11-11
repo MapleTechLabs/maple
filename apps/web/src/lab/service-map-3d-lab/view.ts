@@ -7,7 +7,7 @@ import { Message, type Model } from "./update"
 import { inspector } from "./view-inspector"
 import { inventory, topology } from "./view-inventory"
 
-// `ServiceMap3DLab`: `DashboardLayout.Body` > `Content`, the title bar, then viewport and rail.
+// The page body: the title bar, then viewport and rail.
 
 const titleBar = (h: HtmlBuilder<Message>): Html =>
 	h.div(

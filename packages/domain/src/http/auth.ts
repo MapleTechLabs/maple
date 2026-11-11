@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { OrgId, UserId } from "../primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Authorization, SessionAuthorization, TenantSchema, UnauthorizedError } from "./current-tenant"
 
 export class CliDeviceStartRequest extends Schema.Class<CliDeviceStartRequest>("CliDeviceStartRequest")({

@@ -7,31 +7,31 @@ order: 4
 
 A **notification destination** is where Maple delivers an alert when one of your rules fires. You add a destination once and attach it to any number of [alert rules](/docs/alerting/alert-rules). When a rule opens an incident, Maple sends a `trigger`. When the incident resolves, it sends a `resolve`. See [Incidents](/docs/alerting/incidents) for when each is sent.
 
-Destinations live under **Destinations** on the **Routing** tab of the **Alerts** page. Click **New destination** at the top of the page, pick a provider, and fill in the **Connection** fields. You can also create one from **Add destination** while editing a rule. Only organization admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
+Destinations live under **Destinations** on **Alerts → Routing**. Click **Add destination** at the top of the page, pick a provider, and fill in the **Connection** fields. You can also create one from **Add destination** while editing a rule. Only engineers and admins can add, edit or delete destinations. Provider credentials are encrypted at rest and never returned to the browser after they are saved.
 
 ## Sending a test
 
-Every destination on the **Routing** tab has a **Test** button. It delivers a sample alert through the same code path that delivers real alerts, so it confirms your credentials before you attach the destination to a rule.
+Every destination on **Alerts → Routing** has a **Test** button. It delivers a sample alert through the same code path that delivers real alerts, so it confirms your credentials before you attach the destination to a rule.
 
 If a test fails, Maple shows the provider's own rejection reason in the toast and on the destination's row. For example, a bad PagerDuty key reports `PagerDuty delivery failed with 400: Invalid routing key`.
 
 ## Failed deliveries
 
-A delivery that fails with an error retrying cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **auto-disabled** on the **Routing** tab. A successful delivery resets the count. Fix the credential, send a test, and turn the row's switch back on.
+A delivery that fails with an error retrying cannot fix, such as a rejected credential, counts against the destination. After 3 such failures in a row, Maple disables the destination and marks it **auto-disabled** on **Alerts → Routing**. A successful delivery resets the count. Fix the credential, send a test, and turn the row's switch back on.
 
 ## Slack
 
 Link your Slack workspace to Maple, then choose the channel alerts go to. Maple posts through the linked workspace's bot. Incoming-webhook URLs are not supported.
 
 1. Open **Settings → Integrations → Slack** and connect your workspace. See the [Slack integration](/docs/integrations/slack).
-2. On the **Routing** tab, click **New destination** and pick the linked workspace.
+2. On **Alerts → Routing**, click **Add destination** and pick the linked workspace.
 3. Pick a **Channel** and save.
 
 ## Email
 
 Send alerts by email to members of your Maple organization.
 
-1. Click **New destination** and pick **Email**.
+1. Click **Add destination** and pick **Email**.
 2. Under **Recipients**, select up to 10 members of the organization.
 3. Save, then click **Test** on the destination's row.
 
@@ -141,7 +141,7 @@ The payload, headers, signature verification and retry behavior are in the [aler
 Add the Maple bot to your Hazel workspace, then choose the channel alerts go to. The same bot answers `@Maple` questions in Hazel threads.
 
 1. Open **Settings → Integrations → Hazel**, click **Add to Hazel** and approve the install for your workspace. You need to be an owner or admin in Hazel.
-2. On the **Routing** tab, click **New destination** and pick the linked Hazel workspace.
+2. On **Alerts → Routing**, click **Add destination** and pick the linked Hazel workspace.
 3. Pick a **Channel** and save. The list shows every public channel and the private channels the bot was added to.
 
 See Hazel's [Maple integration guide](https://hazel.sh/docs/integrations/maple).

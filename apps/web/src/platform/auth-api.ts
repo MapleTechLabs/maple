@@ -1,6 +1,6 @@
 import { BrowserKeyValueStore } from "@effect/platform-browser"
 import { MapleApi, SelfHostedLoginRequest, UnauthorizedError } from "@maple/domain/http"
-import { apiBaseUrl } from "../lib/services/common/api-base-url"
+import { apiBaseUrl } from "./api-base-url"
 import { Context, Effect, Layer, Option, Predicate, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -46,14 +46,14 @@ const makeClient = (transformClient?: (client: HttpClient.HttpClient) => HttpCli
 
 const withBearer = (token: string) => HttpClient.mapRequest(HttpClientRequest.bearerToken(token))
 
-/** Session check: any answer but a transport failure ends the session (`resolveSelfHostedRouterAuth`). */
+/** Session check: any answer but a transport failure ends the session. */
 const classifySessionCheck = (cause: unknown) =>
 	new SessionCheckError({
 		reason: Predicate.isTagged(cause, "HttpClientError") ? "Unreachable" : "Rejected",
 		cause,
 	})
 
-/** Renewal: only a 401 ends the session; anything else keeps the current token (`renewSessionToken`). */
+/** Renewal: only a 401 ends the session; anything else keeps the current token. */
 const classifyRenewal = (cause: unknown) =>
 	new SessionCheckError({ reason: Schema.is(UnauthorizedError)(cause) ? "Rejected" : "Unreachable", cause })
 

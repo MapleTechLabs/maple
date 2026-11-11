@@ -26,7 +26,7 @@ export const selectSilences = () =>
 	PG.from(AlertSilences).select(($) => ({ ...$, matchersJson: PG.undecoded($.matchersJson) }))
 
 /** A stored row the current schema cannot read matches nothing, rather than everything. */
-export const silenceRowMatchers = (row: StoredSilenceRow): Option.Option<AlertSilenceMatchers> =>
+const silenceRowMatchers = (row: StoredSilenceRow): Option.Option<AlertSilenceMatchers> =>
 	decodeMatchers(row.matchersJson)
 
 export const silenceRowToDocument = (

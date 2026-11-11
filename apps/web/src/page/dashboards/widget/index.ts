@@ -6,7 +6,7 @@ import { subscriptions } from "./subscription"
 import { askToLeave, init, isBlockingNavigation, routeChanged, widgetOf } from "./update"
 import { topbarActions, view } from "./view"
 
-/** `/dashboards/$dashboardId/widgets/$widgetId`: one instance per widget. */
+/** One instance per widget. */
 export const page = definePage(
 	"DashboardWidget",
 	{ Model, Message },

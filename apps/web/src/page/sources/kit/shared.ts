@@ -11,16 +11,14 @@ import {
 	type ScrapeTargetId,
 	type SourceAttributeMode,
 	type SourceSignal,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Option, Schema, Array as Arr, Order } from "effect"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
 import { statusRank } from "./status"
-
-// Shared source constants and `orderSources`.
 
 export const SIGNALS: ReadonlyArray<{ value: SourceSignal; label: string; hint: string }> = [
 	{ value: "traces", label: "Traces", hint: "/v1/traces" },

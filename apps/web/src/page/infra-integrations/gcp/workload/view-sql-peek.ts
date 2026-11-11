@@ -1,9 +1,9 @@
-import { gcpAppWait } from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpAppWait } from "../cloud-sql-signals"
 import { EMPTY_VALUE, formatLatency, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { LATENCY_BAR_TONE, latencyLevel, latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { formatClockInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatClockInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
@@ -35,7 +35,7 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 const PEEK_ROW =
 	"flex items-center gap-3 border-b border-border-subtle px-1 py-2 last:border-0 hover:bg-surface-sunken active:bg-surface-sunken"
 
-// `GcpQueryPeekSheet`: one Query Insights statement, its callers and its slowest traced calls.
+// One Query Insights statement, its callers and its slowest traced calls.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>

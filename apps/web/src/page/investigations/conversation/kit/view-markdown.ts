@@ -3,7 +3,7 @@ import { type ChartSpec, normalizeUnit, parseChartSpec } from "@maple/domain/cha
 import { classifyCell, columnRole, type CellValue } from "./table-cell-value"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { LATENCY_TEXT_TONE, latencyLevel } from "@maple/ui/lib/latency-tone"
-import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { SEVERITY_COLORS, getSeverityInk } from "@maple/ui/lib/severity"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -31,8 +31,6 @@ export type ChartHost<M> = Readonly<{
 	timeZone: string
 	onChart: (id: string, message: ChartModel.Message) => M
 }>
-
-// TABLES
 
 /** A cell's text, or `None` when it holds something the model authored itself (a link, an image). */
 const inlineText = (inlines: ReadonlyArray<Markdown.Inline>): Option.Option<string> =>
@@ -83,7 +81,14 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 				],
 			)
 		case "severity":
-			return h.span([h.Style({ color: SEVERITY_COLORS[value.label] ?? "" })], [value.label])
+			return h.span(
+				[
+					h.Style({
+						color: SEVERITY_COLORS[value.label] === undefined ? "" : getSeverityInk(value.label),
+					}),
+				],
+				[value.label],
+			)
 		case "flag":
 			return h.span(
 				[h.Class(value.severe ? "text-severity-error" : "text-muted-foreground")],
@@ -94,7 +99,7 @@ const cellValue = <M>(h: HtmlBuilder<M>, value: Exclude<CellValue, { kind: "plai
 	}
 }
 
-/** `MarkdownTable`: Maple's `Table` in a panel; body cells under a known header are recognised. */
+/** Maple's `Table` in a panel; body cells under a known header are recognised. */
 const tableView =
 	<M>(h: HtmlBuilder<M>, knownServices: ReadonlySet<string>) =>
 	(views: Markdown.Views) =>
@@ -158,11 +163,8 @@ const tableView =
 		])
 	}
 
-// CHARTS
-
 const PLOT_HEIGHT = "h-[160px] w-full"
 
-/** `<Panel render={<figure />} padded="sm">`. */
 const chartFrame = <M>(h: HtmlBuilder<M>, title: string | null, children: ReadonlyArray<Html>): Html =>
 	panel(
 		h,
@@ -247,7 +249,7 @@ const plot = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, id: string, spec: ChartS
 	})
 }
 
-/** `MarkdownChart`: a ```chart fence as a plot; a payload that is not a chart stays visible as text. */
+/** A ```chart fence as a plot; a payload that is not a chart stays visible as text. */
 const chartView = <M>(h: HtmlBuilder<M>, host: ChartHost<M>, code: string): Html =>
 	Option.match(Option.fromNullishOr(parseChartSpec(code)), {
 		onNone: () =>

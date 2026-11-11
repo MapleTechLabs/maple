@@ -1,4 +1,4 @@
-import { ONBOARDING_INTENTS } from "../../lib/onboarding-intent"
+import { ONBOARDING_INTENTS } from "./onboarding-intent"
 import {
 	filledSurfaces,
 	languageDocsOf,
@@ -9,7 +9,7 @@ import {
 	type StackAnswers,
 	type StackItem,
 	type StackPlatform,
-} from "../../lib/onboarding-stack"
+} from "./onboarding-stack"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,7 +25,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
 import { presenceOf, type TelemetrySignalKind } from "@maple/views/data/signal-presence"
 import { ConnectMessage } from "./quick-start-connect"
-import { TEST_TRACE_SERVICE } from "../../lib/own-services"
+import { TEST_TRACE_SERVICE } from "../kit/own-services"
 import type { LiveFindings } from "./quick-start-live"
 import { regionStep } from "./quick-start-region-view"
 import { isResumable } from "./quick-start-drawer"
@@ -49,14 +49,10 @@ import { selectableRow } from "@maple/views/ui/selectable-row"
 
 type H = HtmlBuilder<Message>
 
-/** `OnboardingLayout`'s right cluster: the progress trail, then the account actions. */
+/** The header's right cluster: the progress trail, then the account actions. */
 export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	hstack(h, { gap: "3" }, children)
 
-/**
- * `MotionStep key={step}` at rest (reduced motion: no slide). A new step is a new element, as
- * AnimatePresence remounts it, so no card is patched over from the previous step.
- */
 /** The agent prompt's copy state, kept with the snippets'. */
 const AGENT_PROMPT_COPY = "agent-prompt"
 
@@ -205,9 +201,11 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 						},
 						[
 							hstack(h, { gap: "2" }, [
-								typography(h, { tone: "primary", attributes: [h.AriaHidden(true)] }, [
-									icon(h, "MapleMark", { size: 20 }),
-								]),
+								icon(h, "MapleMark", {
+									size: 20,
+									className: "text-brand-maple",
+									attributes: [h.AriaHidden(true)],
+								}),
 								h.span(
 									[h.Class("font-display text-lg font-semibold tracking-tight")],
 									["maple"],
@@ -257,8 +255,6 @@ const shell = (h: H, options: ShellOptions, children: ReadonlyArray<Html>): Html
 		],
 	)
 }
-
-// STACK
 
 /** A compact pick: one line of label and description, so the whole stack fits on a laptop screen. */
 const stackCard = (h: H, item: StackItem, isChecked: boolean, onChange: Message): Html =>
@@ -523,8 +519,6 @@ const stackPreview = (h: H, orgName: string, state: QuickStartState): Html => {
 				]),
 	])
 }
-
-// CONNECT
 
 const toConnect = (message: ConnectMessage): Message => Message.GotConnectMessage({ message })
 
@@ -871,8 +865,6 @@ const connectPreview = (h: H, orgName: string, model: Model, state: QuickStartSt
 		),
 	])
 }
-
-// LIVE
 
 type StartCard = Readonly<{
 	glyph: PixelGlyphName

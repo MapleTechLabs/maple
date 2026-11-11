@@ -1,6 +1,10 @@
+import { pickerStep } from "../../kit/page-time"
+import { WIDEN_TIME_PRESET } from "../../kit/time-controls"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { shortId } from "@maple/ui/lib/ids"
 import { addLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
-import { parseLogSearch } from "../../../lib/logs/log-search-query"
+import { parseLogSearch } from "./log-search-query"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -21,7 +25,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as LogDetail from "@maple/views/logs/log-sheet"
 import type { LogRecord } from "@maple/views/ui/logs/log-row-view"
-import { getActiveInfraCorrelations } from "../../../components/infra/infra-correlations"
+import { getActiveInfraCorrelations } from "../../kit/infra-correlation/correlations"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { LOG_PAGE_PATH, logPageHref } from "../log-links"
 import { copyToast } from "../../kit/clipboard"
@@ -43,6 +47,7 @@ import {
 } from "./command"
 import {
 	allLogs,
+	attributeQueryFilters,
 	brushRange,
 	chipId,
 	FETCH_THRESHOLD,
@@ -55,29 +60,23 @@ import {
 	type Search,
 	volumeInput,
 	withoutChips,
+	withoutMatchMode,
 } from "./derive"
 import { initSearchHelp } from "./view-search-help"
-import { type Facet, Message, type RequestMode } from "./message"
-import type { LogsPage, Model, Pagination } from "./model"
+import { advancedHandlers, initAdvanced } from "./advanced"
+import { navigate } from "./navigation"
+import { type Facet, Message } from "./message"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
+import type { LogsPage, Model } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-pages"
 
 export type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-// The preset "widen the time range" switches to.
-const WIDEN_TIME_PRESET = "7d"
-
-/** The stream's default window (`DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"
 
 const NO_BRUSH = { left: null, right: null, isSelecting: false }
-
-const freshPagination = (generation: number): Pagination => ({
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
-})
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -88,11 +87,9 @@ export const resolveCommand = (model: Model, context: PageContext, mode: Request
 		timeZone: context.timeZone,
 	})
 
-// STREAM ROWS
-
 const firstPageOf = (model: Model) => Option.getOrUndefined(AsyncData.getData(model.firstPage.data))
 
-/** `ListFooter`'s line: the count, scoped by the trace and the search. */
+/** The footer's line: the count, scoped by the trace and the search. */
 const footerOf = (model: Model, shown: number): string => {
 	const scope = Arr.join(
 		[
@@ -132,7 +129,7 @@ const streamSlot = {
 	toParentMessage: (message: LogsStream.Message) => Message.GotStreamMessage({ message }),
 }
 
-/** New data (a reload, a filter): expansion was made on the old rows, so it goes (`expansion.anchor`). */
+/** New data (a reload, a filter): expansion was made on the old rows, so it goes. */
 const replaceStreamRows = (model: Model, context: PageContext): Return => {
 	const result = LogsStream.replaceRows(model.stream, rowsOf(model, context))
 	return {
@@ -152,11 +149,9 @@ const inspectOf = (out: LogsStream.OutMessage | undefined): Partial<Model> =>
 		? { isInspecting: out.isInspecting, isScrolledAway: out.isScrolledAway }
 		: {}
 
-// REQUESTS
-
 type Step = Readonly<{ model: Model; commands: Commands }>
 
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
+/** `Some` writes the slot and returns its fetch. */
 const keyed = <A, E>(
 	step: Step,
 	slot: (model: Model) => Keyed.Keyed<A, E>,
@@ -170,10 +165,9 @@ const keyed = <A, E>(
 		onSome: (next) => ({ model: write(step.model, next), commands: [...step.commands, fetch(key)] }),
 	})
 
-/** Every query the page reads, keyed by its inputs, for the resolved window. */
 /**
- * Reload refreshes only the stream (`useRefreshableAtomValue`); the other reads refetch only when
- * their key moves. `facetsMode` is the sidebar's own retry.
+ * Every query the page reads, keyed by its inputs, for the resolved window. Reload refreshes only
+ * the stream; the other reads refetch only when their key moves. `facetsMode` is the sidebar's own retry.
  */
 const requestAll = (
 	model: Model,
@@ -187,7 +181,7 @@ const requestAll = (
 	const { search } = model
 	const input = listInput(search, window, pin)
 	const bucketSeconds = computeBucketSeconds(window.startTime, window.endTime, HISTOGRAM_TARGET_POINTS)
-	const facetsInput = { window, attrs: search.attrs, pinnedNamespace: pin }
+	const facetsInput = { window, ...attributeQueryFilters(search), pinnedNamespace: pin }
 	const listArgs = { search, window, pinnedNamespace: pin }
 	const steps: ReadonlyArray<(step: Step) => Step> = [
 		(step) =>
@@ -234,19 +228,18 @@ const requestAll = (
 		{ model: { ...model, window }, commands: [] },
 		(step, next) => next(step),
 	)
-	// A new first-page request owns a fresh set of later pages (`initialPagination`).
 	const isNewFirstPage = done.model.firstPage.key !== model.firstPage.key
 	return {
 		model: isNewFirstPage
-			? { ...done.model, pagination: freshPagination(model.pagination.generation + 1) }
+			? { ...done.model, pagination: freshLaterPages(model.pagination.generation + 1) }
 			: done.model,
 		commands: done.commands,
 	}
 }
 
 /**
- * `useVirtualReachEnd` + `fetchNextPage`: once the window's last row is within `FETCH_THRESHOLD`
- * of the end, the next page is fetched, one at a time, never while the first page refreshes.
+ * Once the window's last row is within `FETCH_THRESHOLD` of the end, the next page is fetched, one
+ * at a time, never while the first page refreshes.
  */
 const fetchIfNearEnd =
 	(context: PageContext) =>
@@ -269,7 +262,7 @@ const fetchIfNearEnd =
 			return result
 		return {
 			...result,
-			model: { ...model, pagination: { ...model.pagination, isFetching: true } },
+			model: { ...model, pagination: fetchingNext(model.pagination) },
 			commands: [
 				...(result.commands ?? []),
 				FetchNextPage({
@@ -284,16 +277,7 @@ const fetchIfNearEnd =
 		}
 	}
 
-// NAVIGATION
-
-const navigate = (model: Model, search: Search, isReplace = false): Return => ({
-	model,
-	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Logs({ search })), isReplace }),
-})
-
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
-
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
 
 const EXCLUDED_OF = {
 	severities: "excludedSeverities",
@@ -302,32 +286,8 @@ const EXCLUDED_OF = {
 	services: "excludedServices",
 } as const satisfies Record<Facet, string>
 
-/** `toggleOption`: include and exclude are exclusive per value. */
-const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[EXCLUDED_OF[facet]],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[facet]: listOrUndefined(Arr.filter(selected, (v) => v !== name)),
-		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -335,15 +295,13 @@ const windowOnly = (search: Search): Search => ({
 	timePreset: search.timePreset,
 })
 
-// ENTRY POINTS
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
 		window: null,
 		nowMs: 0,
 		firstPage: Keyed.idle(),
-		pagination: freshPagination(0),
+		pagination: freshLaterPages(0),
 		facets: Keyed.idle(),
 		volume: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
@@ -372,6 +330,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshVersion: 0,
 		isReloading: false,
 		isFilterRailMounted: false,
+		advanced: initAdvanced(),
 	}
 	return {
 		model,
@@ -382,11 +341,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -413,8 +368,6 @@ export const routeChanged = (
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
-
-// STREAM
 
 const foldStreamOut = (model: Model, out: LogsStream.OutMessage, context: PageContext): Return =>
 	LogsStream.OutMessage.match<Return>(out, {
@@ -462,8 +415,6 @@ const foldStream = (model: Model, message: LogsStream.Message, context: PageCont
 	return message._tag === "ChangedVirtualWindow" ? fetchIfNearEnd(context)(withOut) : withOut
 }
 
-// UPDATE
-
 /** Reload, live tick or Jump to latest: a new `refreshVersion`, unsnapped, with the 600 ms spin. */
 const reload = (model: Model, context: PageContext): Return => {
 	const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
@@ -485,7 +436,7 @@ const acceptFirstPage = (
 	const firstPage = Keyed.accept(model.firstPage, key, result)
 	if (firstPage === model.firstPage) return { model }
 	// A refreshed first page owns a fresh set of later pages; its rows replace the stream's.
-	const next = { ...model, firstPage, pagination: freshPagination(model.pagination.generation + 1) }
+	const next = { ...model, firstPage, pagination: freshLaterPages(model.pagination.generation + 1) }
 	return fetchIfNearEnd(context)(replaceStreamRows(next, context))
 }
 
@@ -497,9 +448,7 @@ const acceptNextPage = (
 	context: PageContext,
 ): Return => {
 	if (key !== model.firstPage.key || generation !== model.pagination.generation) return { model }
-	const pagination: Pagination = Result.isSuccess(result)
-		? { ...model.pagination, isFetching: false, pages: [...model.pagination.pages, result.success] }
-		: { ...model.pagination, isFetching: false, isStopped: true }
+	const pagination = appendedPage(model.pagination, result)
 	return fetchIfNearEnd(context)({ model: setStreamRows({ ...model, pagination }, context) })
 }
 
@@ -535,12 +484,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, wrap, density, locale },
 		}),
 		CompletedSavePreference: () => ({ model }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		// `useSignalPresence` mounts with the empty state, so its "unknown" copy paints first.
+		...chartEnvHandlers(model),
+		// Presence is asked when the empty state mounts, so its "unknown" copy paints first.
 		MountedFilterRail: () => {
 			if (model.isFilterRailMounted) return { model }
 			const mounted = { ...model, isFilterRailMounted: true }
@@ -570,11 +515,28 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.window === null || model.facets.key === null
 				? { model }
 				: requestAll(model, context, model.window, "Load", "Refresh"),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+		// A sidebar pick is an exact value: a clause's substring mode on that list goes with it.
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(
+				model,
+				withoutMatchMode(
+					editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+					facet,
+				),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				withoutMatchMode(
+					editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+					facet,
+				),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, excludedFacet(model.search, facet, name)),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+			),
 		ClickedClearAllFilters: () => navigate({ ...model, searchText: "" }, windowOnly(model.search)),
 		RemovedFilterChip: ({ chipId: id }) =>
 			navigate(
@@ -700,7 +662,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				Message.GotSearchHelpMessage({ message: m }),
 			)
 		},
-		// `setColumns`: the picked keys in `?columns`, none leaves the URL.
+		// The picked keys go in `?columns`; none leaves the URL.
 		ToggledColumn: ({ key }) => {
 			const pinned = model.search.columns ?? []
 			const next = pinned.includes(key) ? Arr.filter(pinned, (k) => k !== key) : [...pinned, key]
@@ -725,7 +687,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		GotVolumeChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.volumeChart, inner)
-			// `handleBucketHover`: while dragging, every bucket crossed extends the selection.
 			const hovered = inner._tag === "ChangedChartFocus" ? Option.getOrNull(inner.maybeKey) : null
 			const volumeBrush =
 				model.volumeBrush.isSelecting && hovered !== null
@@ -747,30 +708,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const cleared = { ...model, volumeBrush: NO_BRUSH }
 			const buckets = Option.getOrUndefined(AsyncData.getData(model.volume.data)) ?? []
 			const range = isSelecting && left !== null ? brushRange(left, right ?? left, buckets) : undefined
-			// `onTimeRangeSelect`: `applyTimeRangeSearch` with absolute bounds, as a replace.
+			// Absolute bounds, written as a replace.
 			return range === undefined
 				? { model: cleared }
 				: navigate(cleared, { ...model.search, ...range, timePreset: undefined }, true)
 		},
+		...advancedHandlers(model, context),
 		LeftVolumeChart: () =>
 			model.volumeBrush.isSelecting ? { model: { ...model, volumeBrush: NO_BRUSH } } : { model },
-		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = liftChild({ ...model, timePicker: next.model }, next.commands, (m) =>
-				Message.GotTimePickerMessage({ message: m }),
-			)
-			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						...navigate(lifted.model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}),
-						commands: lifted.commands,
-					}
-		},
+		// A preset: the absolute bounds leave the URL.
+		GotTimePickerMessage: ({ message: inner }) =>
+			pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) => navigate(model, { ...model.search, ...patch }).outMessage,
+			),
 	})
 
 const savePreferences = (model: Model): Return => ({

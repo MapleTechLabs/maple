@@ -1,5 +1,5 @@
-/** Output schemas for the list_security_findings and inspect_security_finding MCP tools. */
 import { Schema } from "effect"
+import { ATTACK_STAGES } from "../security-telemetry"
 
 /** The Security Center's four sources of findings. */
 export const SECURITY_AREAS = ["code", "dependencies", "exposure", "runtimes"] as const
@@ -147,6 +147,12 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 					scanner: Schema.String,
 					userAgent: Schema.String,
 					lastSeen: Schema.String,
+					/** Multi-stage behavior the source showed: a sweep, exploit paths, getting past a refusal. */
+					stages: Schema.optionalKey(Schema.Array(Schema.Literals(ATTACK_STAGES))),
+					/** The autonomous attack agent the source named, empty for none. */
+					agent: Schema.optionalKey(Schema.String),
+					/** Why it is an automated attack chain; empty when it is not one. */
+					attackChain: Schema.optionalKey(Schema.Array(Schema.String)),
 				}),
 			),
 		}),
@@ -168,9 +174,6 @@ export const ListSecurityFindingsOutput = Schema.Struct({
 		),
 	),
 })
-
-// ---------------------------------------------------------------------------------------------
-// inspect_security_finding
 
 const Location = Schema.Struct({ file: Schema.String, line: Schema.Number, description: Schema.String })
 
@@ -316,9 +319,6 @@ export const InspectSecurityFindingOutput = Schema.Struct({
 	/** For an advisory id: what was checked and found clean, and what could not be judged. */
 	coverage: Schema.Array(Schema.String),
 })
-
-// ---------------------------------------------------------------------------------------------
-// list_security_audit_runs / inspect_security_audit_run
 
 /** What one audit run reported per severity (leads by their estimate) and how many claims it rejected. */
 export const SecurityAuditRunFindingTotals = Schema.Struct({

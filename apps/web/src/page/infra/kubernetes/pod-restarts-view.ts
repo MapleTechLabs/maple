@@ -1,19 +1,17 @@
-import { restartTone, summarizePodRestarts } from "../../../components/infra/pod-restarts"
+import { restartTone, summarizePodRestarts } from "./pod-restarts"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { columnHead, dataTable } from "../kit/data-table"
+import { columnHead, dataTable } from "../../kit/data-table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
-
-// `PodRestartsStat` and `PodContainerRestarts`.
 
 type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 

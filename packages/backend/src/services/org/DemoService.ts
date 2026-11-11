@@ -1,8 +1,7 @@
-import { DemoSeedError, DemoSeedResponse } from "@maple/domain/http"
+import { DemoSeedError, DemoSeedResponse, type TenantContext } from "@maple/domain/http"
 import { Array as Arr, Context, Effect, Layer, Random } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { generateDemoRows } from "./demo/fixtures"
 
 const DEMO_HOURS_DEFAULT = 6

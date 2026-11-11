@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 /**
@@ -69,4 +69,3 @@ export const MobileDevices = PG.table("mobile_devices", {
 })
 
 export type MobileDeviceRow = PG.SelectRowOf<typeof MobileDevices>
-export type MobileDeviceInsert = PG.InsertRowOf<typeof MobileDevices>

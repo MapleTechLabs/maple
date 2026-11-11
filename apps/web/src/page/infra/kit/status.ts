@@ -1,10 +1,8 @@
-import { deriveHostStatus, type HostStatus } from "../../../components/infra/format"
-import { STATUS_DOT, STATUS_RING, statusLabel } from "../../../components/infra/severity-tokens"
+import { deriveHostStatus, type HostStatus } from "./format"
+import { STATUS_DOT, STATUS_RING, statusLabel } from "../../kit/severity-tokens"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-
-// `SeverityDot` and `HostStatusBadge`.
 
 export const severityDot = <M>(
 	h: HtmlBuilder<M>,
@@ -39,7 +37,7 @@ const STATUS_TEXT = new Map<HostStatus, string>([
 	["ended", "text-muted-foreground"],
 ])
 
-/** `HostStatusBadge`; `quiet` renders nothing while active. `referenceMs` replaces `Date.now()`. */
+/** `quiet` renders nothing while active. `referenceMs` replaces `Date.now()`. */
 export const hostStatusBadge = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{

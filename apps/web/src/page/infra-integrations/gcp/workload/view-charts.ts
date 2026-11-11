@@ -5,12 +5,8 @@ import {
 	gcpLineRows,
 	type GcpChart,
 	type GcpChartWindow,
-} from "../../../../components/infra/gcp/charts"
-import {
-	gcpStripDomain,
-	gcpWorkloadStrips,
-	type GcpStripSummary,
-} from "../../../../components/infra/gcp/workload-signals"
+} from "../charts"
+import { gcpStripDomain, gcpWorkloadStrips, type GcpStripSummary } from "../workload-signals"
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
@@ -21,7 +17,7 @@ import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { icon } from "@maple/views/ui/icon"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../../kit/chart-card"
 import { LINKED_CURSOR_STYLE } from "@maple/views/charts/linked-cursor"
 import { seriesLegend } from "../../../kit/series-legend"
 import type { BucketPoint } from "../data"
@@ -32,8 +28,6 @@ import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -144,7 +138,7 @@ export const correlationStrips = (
 	)
 }
 
-/** `GcpWorkloadCharts`: every chart of a read, each linking its metric into the explorer. */
+/** Every chart of a read, each linking its metric into the explorer. */
 export const workloadCharts = (
 	h: H,
 	model: Model,

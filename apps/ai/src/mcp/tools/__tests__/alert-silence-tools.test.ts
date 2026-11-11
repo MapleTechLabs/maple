@@ -18,7 +18,7 @@ import { GetIncidentTimelineOutput, ListAlertSilencesOutput } from "@maple/domai
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
 

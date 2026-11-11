@@ -7,45 +7,27 @@ import { chatConnectorConfigKeys, chatConnectorOutboundConfigKeys } from "@maple
 import type { MapleDomains, MapleRegion, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
-	appUrlsEnv,
-	authEnv,
-	clickhouseEnv,
 	cloudflareOAuthEnv,
-	githubAppSourceEnv,
-	ingestKeyCryptoEnv,
+	configKeysEnv,
+	devOrgOverrideEnv,
+	linearOAuthEnv,
+	mapleServerEnv,
 	merge,
 	optionalPlain,
 	optionalSecret,
 	planetScaleOAuthEnv,
 	plainWithDefault,
 	requireSecretEntry,
-	selfObservabilityEnv,
 	supabaseOAuthEnv,
-	tinybirdEnv,
 } from "@maple/infra/env"
-import { Array as Arr } from "effect"
 
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
-		tinybirdEnv,
-		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
-		clickhouseEnv,
-		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
-		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
-		// Dev only: on a deploy a pin would point the whole API at one tenant. The local stack's
-		// pin names a seeded org the dev user is not a member of, so it admits non-members.
-		...(stage.kind === "dev"
-			? [
-					optionalPlain("MAPLE_ORG_ID_OVERRIDE"),
-					plainWithDefault("MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS", "true"),
-				]
-			: []),
+		mapleServerEnv(stage, region, domains),
+		devOrgOverrideEnv(stage),
 		// PR previews only: the shared key behind the sign-in page's preview access form.
 		...(stage.kind === "pr" ? [optionalSecret("PREVIEW_SIGNIN_KEY")] : []),
-		authEnv,
-		ingestKeyCryptoEnv,
 		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
-		appUrlsEnv(domains),
 		plainWithDefault("QE_BUCKET_CACHE_ENABLED", "true"),
 		plainWithDefault("QE_BUCKET_CACHE_TTL_SECONDS", "86400"),
 		plainWithDefault("QE_BUCKET_CACHE_FLUX_SECONDS", "60"),
@@ -54,13 +36,11 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// `bucket-cache.ts` and `edge-cache.ts`, or a stale value here overrides them.
 		plainWithDefault("QE_BUCKET_CACHE_READ_CONCURRENCY", "6"),
 		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
-		selfObservabilityEnv(stage, region),
 		// Webhook signing secrets; each receiver answers 503 until its secret is set.
 		optionalSecret("CLERK_WEBHOOK_SECRET"),
 		optionalSecret("AUTUMN_WEBHOOK_SECRET"),
 		// Defaults to MAPLE_INGEST_KEY; set to land product events in another org.
 		optionalSecret("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
-		optionalSecret("AUTUMN_SECRET_KEY"),
 		// Billing details go straight to Stripe; Autumn has no API for them.
 		optionalSecret("STRIPE_SECRET_KEY"),
 		// Shared customer support channels, created in Maple's own Slack workspace.
@@ -72,18 +52,11 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
 		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
 		optionalSecret("SD_INTERNAL_TOKEN"),
-		optionalSecret("INTERNAL_SERVICE_TOKEN"),
-		optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
-		optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
-		optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
-		optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
-		// Each connector's declared install and outbound config; unset means unavailable.
-		...Arr.map([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys], (key) =>
-			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
-		),
+		linearOAuthEnv,
+		// Each connector's declared install and outbound config.
+		configKeysEnv([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys]),
 		apnsEnv,
-		// Repository reading is shared with maple-ai; install and webhooks are api's alone.
-		githubAppSourceEnv,
+		// The GitHub App's reader is in `mapleServerEnv`; install and webhooks are api's alone.
 		optionalPlain("GITHUB_APP_CLIENT_ID"),
 		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),

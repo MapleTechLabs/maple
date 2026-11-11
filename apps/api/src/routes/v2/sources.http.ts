@@ -13,7 +13,7 @@ import {
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2Source, V2SourceDeleteResponse, V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/domain/primitives"
+import { AwsConnectionId, GcpConnectorId, ScrapeTargetId } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"

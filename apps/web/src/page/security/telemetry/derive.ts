@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import {
 	type AdvisorySummary,
 	advisoryKey,
@@ -12,12 +13,15 @@ import {
 	runtimePosture,
 	runtimeProductOf,
 } from "@maple/domain/runtime-posture"
-import { PROBE_CATEGORIES, type ProbeCategoryInfo, probeCategoryOf } from "@maple/domain/security-telemetry"
+import {
+	PROBE_CATEGORIES,
+	type ProbeCategoryInfo,
+	attackChainReasons,
+	probeCategoryOf,
+} from "@maple/domain/security-telemetry"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Schema, Array as Arr, String as Str, Option } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 import type { Exposure, Runtimes } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // Pure readings of the two responses: the Exposure tab's totals and categories, the Runtimes
 // tab's postures in the order the table shows them.
@@ -26,8 +30,6 @@ const sum = (values: ReadonlyArray<number>): number => Arr.reduce(values, 0, (to
 const distinct = (values: ReadonlyArray<string>): number => new Set(values).size
 
 type SignatureRow = Exposure["signatures"][number]
-
-// EXPOSURE
 
 /** The sources query returns the most active addresses only, so past this the count is a floor. */
 export const SOURCES_SHOWN = 20
@@ -46,6 +48,8 @@ export interface ExposureTotals {
 	readonly scannerRequests: number
 	readonly sources: number
 	readonly isSourcesCapped: boolean
+	/** Listed sources that ran an automated attack chain. */
+	readonly attackChains: number
 	/** The signature rows hit the query's cap, so request and service totals are floors. */
 	readonly isSignaturesCapped: boolean
 	readonly servicesProbed: number
@@ -59,6 +63,7 @@ export const exposureTotals = (exposure: Exposure): ExposureTotals => {
 		scannerRequests: sum(Arr.map(scanners, (row) => row.requests)),
 		sources: exposure.sources.length,
 		isSourcesCapped: exposure.sources.length >= SOURCES_SHOWN,
+		attackChains: Arr.filter(exposure.sources, (source) => attackChainReasons(source).length > 0).length,
 		isSignaturesCapped: exposure.signatures.length >= SIGNATURES_SHOWN,
 		servicesProbed: distinct(Arr.map(probes, (row) => row.service)),
 	}
@@ -220,8 +225,6 @@ export const timelineValues = (
 		(_, index) => byBucket.get(last - (count - 1 - index) * bucketMs) ?? 0,
 	)
 }
-
-// RUNTIMES
 
 export type RuntimeStatus = RuntimePosture["status"]
 

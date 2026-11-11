@@ -1,3 +1,5 @@
+import { pickerStep } from "../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -25,7 +27,7 @@ import {
 	LoadSignalPresence,
 	ResolveWindow,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Search } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -146,8 +148,6 @@ export const clearedFilters = (search: Search): Search => ({
 	groups: undefined,
 })
 
-// ENTRY POINTS
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const search = usersSearch(route.search)
 	const model: Model = {
@@ -235,22 +235,16 @@ const changedQuery = (model: Model, value: string): Return => {
 }
 
 const pickedTime = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted: Return = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (m) =>
-			Message.GotTimePickerMessage({ message: m }),
-		),
-	}
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>

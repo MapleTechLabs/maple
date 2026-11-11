@@ -1,7 +1,7 @@
 import { countLabel, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { docsUrl } from "../../../lib/docs"
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
+import { docsUrl } from "../../kit/docs"
+import { ingestUrl } from "../../../platform/ingest-url"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -10,7 +10,7 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection, settingsSections } from "../../kit/settings-section"
 import * as MappingDialogView from "./mapping-dialog-view"
 import { Message } from "./message"
 import { canManageRules, canRollKeys, canViewKeys, type Model } from "./model"
@@ -25,11 +25,9 @@ import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { stripClass } from "@maple/views/ui/rule"
 
-// `IngestionSection`.
-
 type H = HtmlBuilder<Message>
 
-/** `useIngestConnection`: the org's own (non-`demo-`) services and their span rate. */
+/** The org's own (non-`demo-`) services and their span rate. */
 const connectionOf = (model: Model) => {
 	const rows = AsyncData.getOrElse(model.overview, () => [])
 	const real = Arr.filter(rows, (row) => !Str.startsWith("demo-")(row.serviceName))
@@ -227,7 +225,6 @@ type NoInputs = Readonly<{ readonly none?: never }>
 
 export const view = Submodel.defineView<Model, Message, NoInputs>((model, _inputs, h) =>
 	settingsSections(h, [
-		// `AdminOnlyNotice subject="ingestion settings"` renders nothing for admins.
 		statusBanner(h, model),
 		endpointAndKeysSection(h, model),
 		addServiceSection(h, model),

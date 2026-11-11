@@ -1,7 +1,8 @@
+import { SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { getPodFacets, podsSummary, type PodsSummaryInput } from "@maple/web-data/warehouse/infra"
-import { Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { fetchPods, fetchRestarts, PodsInput, RestartsInput } from "../pod-data"
 import { Message } from "./message"
@@ -37,18 +38,14 @@ export const FetchSummary = Command.define("FetchInfraPodsSummary", {
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, input }) =>
 		podsSummary({ data: input satisfies PodsSummaryInput }).pipe(
-			Effect.mapBoth({
-				onSuccess: (counts) => ({
-					livePods: counts.livePods,
-					endedPods: counts.endedPods,
-					saturatedPods: counts.saturatedPods,
-					elevatedPods: counts.elevatedPods,
-					unboundedPods: counts.unboundedPods,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((counts) => ({
+				livePods: counts.livePods,
+				endedPods: counts.endedPods,
+				saturatedPods: counts.saturatedPods,
+				elevatedPods: counts.elevatedPods,
+				unboundedPods: counts.unboundedPods,
+			})),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -57,9 +54,8 @@ export const FetchFacets = Command.define("FetchInfraPodFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getPodFacets({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -67,5 +63,5 @@ export const DebounceSearch = Command.define("DebounceInfraPodsSearch", {
 	args: { query: Schema.String },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ query }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ query })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ query })),
 })

@@ -15,6 +15,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
@@ -25,6 +26,7 @@ import { FetchReviewAuthors, FetchReviews, WaitSearchDebounce } from "./command"
 import { Message, type Model } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
 import { Array as Arr, Record as Rec } from "effect"
+import { urlSortPatch } from "../../kit/table-sort"
 
 export type Search = typeof CodeReviewPullRequestsSearch.Type
 type Return = PageReturn<Model, Message>
@@ -61,17 +63,12 @@ export const sortOf = (search: Search): { sortBy: SortKey; sortDir: SortDir } =>
 })
 
 /** A header click: the active column flips, another starts descending; the default drops from the URL. */
-const sortPatch = (search: Search, key: SortKey): Partial<Search> => {
-	const current = sortOf(search)
-	const sortDir: SortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
-	return key === "reviewed" && sortDir === "desc"
-		? { sortBy: undefined, sortDir: undefined }
-		: { sortBy: key, sortDir }
-}
+const sortPatch = (search: Search, key: SortKey): Partial<Search> =>
+	urlSortPatch(sortOf(search), key, { sortBy: "reviewed", sortDir: "desc" })
 
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewPullRequests({ search }))
 
-/** `onChange`: a filter change starts the list over at one page; opening a review keeps it. */
+/** A filter change starts the list over at one page; opening a review keeps it. */
 const navigate = (model: Model, patch: Partial<Search>): Return => {
 	const isFilter = Arr.some(Rec.keys<string, unknown>(patch), (key) => key !== "review")
 	return {
@@ -142,12 +139,13 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 	}
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message) => Message.GotFrameMessage({ message }))
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
+	)
 
 const sheetOut = (model: Model, out: SheetOut): Return =>
 	out._tag === "Dismissed"
@@ -169,8 +167,6 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 		outMessage: next.outMessage ?? first.outMessage,
 	}
 }
-
-// ENTRY POINTS
 
 export const init = (
 	route: { readonly search: Search },
@@ -259,7 +255,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			},
 		}),
 		ClickedRetry: () => refreshList(model, context),
-		// `useIntervalRefresh`: only the list refetches while a review is queued or running.
+		// Only the list refetches while a review is queued or running.
 		TickedPoll: () => refreshList(model, context),
 		ClickedClearFilters: () =>
 			navigate(model, { repo: undefined, author: undefined, status: undefined, q: undefined }),

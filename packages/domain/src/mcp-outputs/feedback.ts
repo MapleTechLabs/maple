@@ -1,4 +1,3 @@
-/** Output schema for `send_maple_feedback`. */
 import { Schema } from "effect"
 
 export const SendMapleFeedbackOutput = Schema.Struct({
@@ -32,7 +31,6 @@ export const MapleFeedbackReport = Schema.Struct({
 	createdAt: Schema.String,
 })
 
-/** Output schema for `list_maple_feedback`. */
 export const ListMapleFeedbackOutput = Schema.Struct({
 	reports: Schema.Array(MapleFeedbackReport),
 	limit: Schema.Number,

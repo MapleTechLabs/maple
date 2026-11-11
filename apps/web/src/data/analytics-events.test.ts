@@ -11,6 +11,7 @@ import { DEFAULT_QUICK_START_STATE } from "../page/onboarding/quick-start-state"
 import * as CreateDialog from "../page/settings/keys/create-dialog"
 import type { ClerkSnapshot } from "../platform/clerk"
 import { identityOf, isSameIdentity } from "../platform/session-identity"
+import * as CheckoutReturn from "../page/kit/checkout-return"
 
 // Each product event fires as a Command at the moment the user acts.
 
@@ -100,7 +101,12 @@ describe("product events", () => {
 
 	test("a checkout return that times out is plan_checkout_returned, unconfirmed", () => {
 		const waiting = PricingCards.initReturning(true).model
-		const timedOut = PricingCards.update(waiting, PricingCards.Message.ElapsedCheckoutTimeout())
+		const timedOut = PricingCards.update(
+			waiting,
+			PricingCards.Message.GotCheckoutReturnMessage({
+				message: CheckoutReturn.Message.ElapsedTimeout(),
+			}),
+		)
 		expect(tracked(timedOut, "TrackCheckoutReturned")).toEqual({ confirmed: false })
 	})
 })

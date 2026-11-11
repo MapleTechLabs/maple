@@ -1,5 +1,5 @@
 import { type BuildingType, serviceBuildingId } from "@maple/domain/http"
-import type { Topology3D } from "../../components/service-map/three/types"
+import type { Topology3D } from "./three/types"
 import { Array as Arr, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"

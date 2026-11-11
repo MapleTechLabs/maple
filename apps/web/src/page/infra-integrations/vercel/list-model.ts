@@ -1,0 +1,304 @@
+// Pure models behind /infra/vercel: the projects list joins the connection's inventory (names,
+// frameworks, deployments) with what the drains delivered in the window.
+
+import type {
+	VercelAiGatewayBucket,
+	VercelDeploymentSummary,
+	VercelInfraProject,
+	VercelInfraRequestBucket,
+	VercelProjectStatus,
+	VercelSpeedInsightsReading,
+	VercelWebVital,
+} from "@maple/domain/http"
+import { quoteWhereValue } from "@maple/domain/where-clause"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Array as Arr, Option, Order, String as Str } from "effect"
+
+import { percentOf } from "./integration/vercel-model"
+import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
+
+export interface VercelProjectRow {
+	readonly projectId: string
+	readonly name: string
+	readonly framework: string | null
+	readonly production: VercelDeploymentSummary | null
+	/** The newest deployment of any target: the last build. */
+	readonly latest: VercelDeploymentSummary | null
+	readonly requests: number
+	readonly requests4xx: number
+	readonly requests5xx: number
+	/** 5xx share of requests, 0–100; null without requests. */
+	readonly errorPercent: number | null
+	/** Cache hits over cache lookups, 0–100; null when nothing was looked up. */
+	readonly cacheHitPercent: number | null
+	/** Null when the project sends no deployment traces. */
+	readonly p95DurationMs: number | null
+	readonly invocations: number
+	/** Cold starts over function invocations, 0–100; null without invocations. */
+	readonly coldStartPercent: number | null
+	readonly errorLogs: number
+	/** ISO-8601; null when nothing arrived in the window. */
+	readonly lastSeen: string | null
+}
+
+const toRow = (
+	projectId: string,
+	name: string,
+	status: VercelProjectStatus | undefined,
+	row: VercelInfraProject | undefined,
+): VercelProjectRow => ({
+	projectId,
+	name,
+	framework: status?.framework ?? null,
+	production: status?.productionDeployment ?? null,
+	latest: status?.latestDeployment ?? null,
+	requests: row?.requests ?? 0,
+	requests4xx: row?.requests4xx ?? 0,
+	requests5xx: row?.requests5xx ?? 0,
+	errorPercent: row === undefined ? null : percentOf(row.requests5xx, row.requests),
+	cacheHitPercent: row === undefined ? null : percentOf(row.cacheHits, row.cacheLookups),
+	p95DurationMs: row?.p95DurationMs ?? null,
+	invocations: row?.invocations ?? 0,
+	coldStartPercent: row === undefined ? null : percentOf(row.coldStarts, row.invocations),
+	errorLogs: row?.errorLogs ?? 0,
+	lastSeen: row?.lastSeen ?? null,
+})
+
+const busiestFirst = Order.combine(
+	Order.mapInput(Order.flip(Order.Number), (row: VercelProjectRow) => row.requests),
+	Order.make((a: VercelProjectRow, b: VercelProjectRow) => Str.localeCompare(b.name)(a.name)),
+)
+
+/**
+ * Every forwarded project, with or without data in the window, plus any project that delivered
+ * data the inventory does not list (not synced yet, or deleted on Vercel). Busiest first.
+ */
+export function vercelProjectRows(
+	projects: ReadonlyArray<VercelProjectStatus>,
+	rows: ReadonlyArray<VercelInfraProject>,
+): ReadonlyArray<VercelProjectRow> {
+	const rowById = new Map(Arr.map(rows, (row) => [row.projectId, row] as const))
+	const listed = Arr.map(
+		Arr.filter(projects, (project) => project.forwarded || rowById.has(project.id)),
+		(project) => toRow(project.id, project.name, project, rowById.get(project.id)),
+	)
+	const known = new Set(Arr.map(projects, (project) => project.id))
+	const unlisted = Arr.map(
+		Arr.filter(rows, (row) => !known.has(row.projectId)),
+		(row) => toRow(row.projectId, row.projectName || row.projectId, undefined, row),
+	)
+	return Arr.sort([...listed, ...unlisted], busiestFirst)
+}
+
+/** One project's row for its own page: zeros when nothing arrived, its id when nothing names it. */
+export function vercelProjectRow(
+	projectId: string,
+	projects: ReadonlyArray<VercelProjectStatus>,
+	rows: ReadonlyArray<VercelInfraProject>,
+): VercelProjectRow {
+	const status = Option.getOrUndefined(Arr.findFirst(projects, (project) => project.id === projectId))
+	const row = Option.getOrUndefined(Arr.findFirst(rows, (candidate) => candidate.projectId === projectId))
+	return toRow(projectId, status?.name ?? (row?.projectName || projectId), status, row)
+}
+
+export interface VercelFleetTotals {
+	readonly requests: number
+	readonly requests5xx: number
+	readonly errorPercent: number | null
+	readonly cacheHitPercent: number | null
+	readonly errorLogs: number
+	readonly invocations: number
+	readonly coldStarts: number
+	readonly coldStartPercent: number | null
+}
+
+export function vercelFleetTotals(rows: ReadonlyArray<VercelInfraProject>): VercelFleetTotals {
+	let requests = 0
+	let requests5xx = 0
+	let cacheHits = 0
+	let cacheLookups = 0
+	let errorLogs = 0
+	let invocations = 0
+	let coldStarts = 0
+	for (const row of rows) {
+		requests += row.requests
+		requests5xx += row.requests5xx
+		cacheHits += row.cacheHits
+		cacheLookups += row.cacheLookups
+		errorLogs += row.errorLogs
+		invocations += row.invocations
+		coldStarts += row.coldStarts
+	}
+	return {
+		requests,
+		requests5xx,
+		errorPercent: percentOf(requests5xx, requests),
+		cacheHitPercent: percentOf(cacheHits, cacheLookups),
+		errorLogs,
+		invocations,
+		coldStarts,
+		coldStartPercent: percentOf(coldStarts, invocations),
+	}
+}
+
+/**
+ * The window's whole bucket grid, `toStartOfInterval`'s multiples of the bucket since the epoch.
+ * The warehouse skips buckets with no records; for a drain that is a real zero, and a chart drawn
+ * through only the buckets that exist bridges the silence. Buckets come back as `toISOString()`.
+ * An empty series stays empty so a chart still says there is no data.
+ */
+export function fillBuckets<T extends { readonly bucket: string }>(
+	rows: ReadonlyArray<T>,
+	window: { readonly startTime: string; readonly endTime: string; readonly bucketSeconds: number },
+	zero: (bucket: string) => T,
+): ReadonlyArray<T> {
+	if (rows.length === 0) return rows
+	const stepMs = window.bucketSeconds * 1000
+	const byMs = new Map(Arr.map(rows, (row) => [toEpochMs(row.bucket), row] as const))
+	const endMs = toEpochMs(window.endTime)
+	const filled: T[] = []
+	for (let ms = Math.floor(toEpochMs(window.startTime) / stepMs) * stepMs; ms < endMs; ms += stepMs) {
+		const bucket = new Date(ms).toISOString()
+		const row = byMs.get(ms)
+		filled.push(row === undefined ? zero(bucket) : { ...row, bucket })
+		byMs.delete(ms)
+	}
+	// A reading off the grid is still a reading.
+	for (const [ms, row] of byMs) filled.push({ ...row, bucket: new Date(ms).toISOString() })
+	return Arr.sort(
+		filled,
+		Order.mapInput(Order.String, (row: T) => row.bucket),
+	)
+}
+
+export const zeroRequestBucket = (bucket: string): VercelInfraRequestBucket => ({
+	bucket,
+	requests: 0,
+	requests2xx: 0,
+	requests3xx: 0,
+	requests4xx: 0,
+	requests5xx: 0,
+	cacheHits: 0,
+	cacheLookups: 0,
+	errorLogs: 0,
+})
+
+export const zeroAiGatewayBucket = (bucket: string): VercelAiGatewayBucket => ({
+	bucket,
+	requests: 0,
+	costUsd: 0,
+	inputTokens: 0,
+	outputTokens: 0,
+	errors: 0,
+})
+
+/**
+ * Long-form rows for the stacked status-class chart. A request without a status (a crashed
+ * function, a revalidation) is `unknown`, so the stack still totals to every request.
+ */
+export function requestClassRows(
+	buckets: ReadonlyArray<VercelInfraRequestBucket>,
+): ReadonlyArray<{ bucket: string; attributeValue: string; value: number }> {
+	return Arr.flatMap(buckets, (row) => {
+		const classes = [
+			["2xx", row.requests2xx],
+			["3xx", row.requests3xx],
+			["4xx", row.requests4xx],
+			["5xx", row.requests5xx],
+		] as const
+		const classified = Arr.reduce(classes, 0, (sum, [, value]) => sum + value)
+		const unknown = row.requests - classified
+		return Arr.map(
+			[...classes, ...(unknown > 0 ? ([["unknown", unknown]] as const) : [])],
+			([attributeValue, value]) => ({ bucket: row.bucket, attributeValue, value }),
+		)
+	})
+}
+
+const OUTSIDE_PROJECT_LABEL = "No project"
+
+/** An AI Gateway project id as the inventory names it. Requests made outside a project (an API key used elsewhere) have none. */
+export const aiGatewayProjectLabel = (projectId: string, names: ReadonlyMap<string, string>): string =>
+	projectId === "" ? OUTSIDE_PROJECT_LABEL : (names.get(projectId) ?? projectId)
+
+/** The logs explorer filter for one project: the log drain stamps `vercel.project.id` on the resource. */
+export const vercelProjectLogAttrs = (projectId: string): ReadonlyArray<string> => [
+	encodeLogAttributeFilter({
+		source: "resource",
+		key: "vercel.project.id",
+		value: projectId,
+		negated: false,
+	}),
+]
+
+/** The traces explorer filter for one project: Vercel sets `vercel.projectId` on deployment traces. */
+export const vercelProjectTracesWhere = (projectId: string): string =>
+	`resource.vercel.projectId = ${quoteWhereValue(projectId)}`
+
+/** Build time: from the start of the build to ready. Null while it builds, or when Vercel reported neither. */
+export const buildDurationMs = (deployment: VercelDeploymentSummary): number | null =>
+	deployment.buildingAt === null || deployment.readyAt === null
+		? null
+		: Math.max(0, deployment.readyAt - deployment.buildingAt)
+
+/** A build that did not reach ready: Vercel's `ERROR`, or `CANCELED`. */
+export const isFailedBuild = (deployment: VercelDeploymentSummary): boolean => {
+	const state = Str.toUpperCase(deployment.state)
+	return state === "ERROR" || state === "CANCELED"
+}
+
+/** The Web Vitals in the order Speed Insights shows them. */
+export const WEB_VITALS: ReadonlyArray<VercelWebVital> = ["LCP", "INP", "CLS", "FCP", "TTFB"]
+
+/** web.dev's thresholds at p75: good at or under the first, poor over the second. */
+export const VITAL_THRESHOLDS = {
+	LCP: [2500, 4000],
+	INP: [200, 500],
+	CLS: [0.1, 0.25],
+	FCP: [1800, 3000],
+	TTFB: [800, 1800],
+} as const satisfies Record<VercelWebVital, readonly [number, number]>
+
+export type VitalRating = "good" | "needsImprovement" | "poor"
+
+export const vitalRating = (metric: VercelWebVital, p75: number): VitalRating => {
+	const [good, poor] = VITAL_THRESHOLDS[metric]
+	return p75 <= good ? "good" : p75 <= poor ? "needsImprovement" : "poor"
+}
+
+export interface VitalsRow {
+	readonly key: string
+	/** The most samples any one vital has for this key. */
+	readonly samples: number
+	readonly p75: Readonly<Partial<Record<VercelWebVital, number>>>
+}
+
+const isWebVital = (metric: string): metric is VercelWebVital =>
+	Arr.some(WEB_VITALS, (vital) => vital === metric)
+
+/** Long readings (one per key and vital) as one row per key, the most sampled first. */
+export function vitalsByKey(readings: ReadonlyArray<VercelSpeedInsightsReading>): ReadonlyArray<VitalsRow> {
+	const rows = new Map<string, { samples: number; p75: Partial<Record<VercelWebVital, number>> }>()
+	for (const reading of readings) {
+		if (!isWebVital(reading.metric)) continue
+		const row = rows.get(reading.key) ?? { samples: 0, p75: {} }
+		row.p75[reading.metric] = reading.p75
+		row.samples = Math.max(row.samples, reading.samples)
+		rows.set(reading.key, row)
+	}
+	return Arr.sort(
+		Arr.map([...rows], ([key, row]) => ({ key, samples: row.samples, p75: row.p75 })),
+		Order.mapInput(Order.flip(Order.Number), (row: VitalsRow) => row.samples),
+	)
+}
+
+/** The logs explorer filter for one deployment's build output. */
+export const vercelBuildLogAttrs = (deploymentId: string): ReadonlyArray<string> => [
+	encodeLogAttributeFilter({
+		source: "resource",
+		key: "vercel.deployment.id",
+		value: deploymentId,
+		negated: false,
+	}),
+	encodeLogAttributeFilter({ source: "log", key: "vercel.source", value: "build", negated: false }),
+]

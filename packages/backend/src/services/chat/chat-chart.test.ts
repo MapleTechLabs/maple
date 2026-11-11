@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { ShareChartResponse } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { ChatMessage } from "@maple/domain/chat-session"
-import { chatChartId, verifyChatChartId, type VerifiedChatChartClaims } from "@maple/db"
+import { chatChartId, verifyChatChartId, type VerifiedChatChartClaims } from "../../platform/signed-ids"
 import { chatChartFrom, chatChartImageUrl, chatChartResponse, chatChartSession } from "./chat-chart"
 import { parseChartSpec } from "@maple/domain/chat-chart-spec"
 

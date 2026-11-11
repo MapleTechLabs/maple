@@ -1,3 +1,7 @@
+import { pickerStep } from "../../kit/page-time"
+import { keyedSlot } from "../../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
@@ -49,17 +53,15 @@ import {
 	SERVICE_KEY,
 	summarizeCatalogRows,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import { AutocompleteLookup, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 export type Search = typeof MetricSearch.Type
 type Route = { readonly metricName: string; readonly search: Search }
-type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-/** `DashboardPage`'s `defaultPreset` for a metric. */
 export const DEFAULT_PRESET: PresetValue = "24h"
-/** `MetricQueryControls`' "no breakdown" item, shown as its label (`itemToStringLabel`). */
+/** The "no breakdown" item, shown as its label. */
 export const GROUP_BY_NONE_LABEL = "Everything (no breakdown)"
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
@@ -81,21 +83,8 @@ export const summaryOf = (model: Model): CatalogSummary | null =>
 export const draftOf = (model: Model, summary: CatalogSummary) =>
 	buildMetricExplorerDraft(summary, model.search)
 
-/** `MetricBreakdown`'s key: the URL's `bd`, else `service.name`. */
+/** The breakdown key: the URL's `bd`, else `service.name`. */
 export const breakdownKeyOf = (search: Search): string => search.bd ?? SERVICE_KEY
-
-type Step<A, E> = Readonly<{ slot: Keyed.Keyed<A, E>; commands: Commands }>
-
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step<A, E> =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ slot, commands: [] }),
-		onSome: (next) => ({ slot: next, commands: [fetch(key)] }),
-	})
 
 const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["tracesFacets", "getTracesFacets"],
@@ -107,14 +96,14 @@ const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["productEventAttributeKeys", "getProductEventAttributeKeys"],
 ])
 
-/** `AutocompleteValuesProvider`'s lookups for the window, fired when it mounts with the page. */
+/** The autocomplete lookups for the window, fired with the page. */
 const requestAutocomplete = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode) => {
 	const steps = Arr.map(AutocompleteLookup.literals, (lookup) => {
 		const operation = LOOKUP_OPERATION.get(lookup) ?? lookup
 		const input = lookup === "productEventNames" ? { ...window, limit: 200 } : window
 		return {
 			lookup,
-			...keyed(
+			...keyedSlot(
 				Keyed.at(model.autocomplete, lookup),
 				requestKey(context.orgId, operation, { data: input }),
 				mode,
@@ -131,7 +120,7 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 	}
 }
 
-/** What `MetricDetailContent` reads once the summary exists: scoped keys, the chart and the breakdown. */
+/** What the content reads once the summary exists: scoped keys, the chart and the breakdown. */
 const requestContent = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const summary = summaryOf(model)
 	if (summary === null || model.window === null) return { model }
@@ -144,20 +133,20 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 		...window,
 		query: buildBreakdownDraft(draft, breakdownGroupBy(breakdownKeyOf(model.search))),
 	}
-	const attributeKeys = keyed(
+	const attributeKeys = keyedSlot(
 		model.attributeKeys,
 		requestKey(org, "getMetricAttributeKeys", { data: keysInput }),
-		// The scoped keys are read with `useAtomValue`: Reload leaves them alone.
+		// Reload leaves the scoped keys alone.
 		"Load",
 		(key) => FetchAttributeKeys({ key, input: keysInput }),
 	)
-	const timeseries = keyed(
+	const timeseries = keyedSlot(
 		model.timeseries,
 		requestKey(org, "getQueryBuilderTimeseries", { data: { ...window, queries: [chartInput.query] } }),
 		mode,
 		(key) => FetchTimeseries({ key, input: chartInput }),
 	)
-	const breakdown = keyed(
+	const breakdown = keyedSlot(
 		model.breakdown,
 		requestKey(org, "getQueryBuilderBreakdown", { data: { ...window, queries: [breakdownInput.query] } }),
 		mode,
@@ -176,7 +165,7 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 
 /** Every query the page reads for the resolved window. */
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
-	const catalog = keyed(
+	const catalog = keyedSlot(
 		model.catalog,
 		requestKey(context.orgId, "listMetrics", {
 			data: { search: model.metricName, ...window, limit: 1000 },
@@ -184,7 +173,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		mode,
 		(key) => FetchCatalog({ key, metricName: model.metricName, window }),
 	)
-	// Reload leaves the provider's lookups alone: they are read with `useAtomValue`.
+	// Reload leaves the autocomplete lookups alone.
 	const lookups = requestAutocomplete(model, context, window, "Load")
 	const content = requestContent(
 		{ ...model, window, catalog: catalog.slot, autocomplete: lookups.autocomplete },
@@ -218,18 +207,16 @@ const syncControls = (model: Model): Model => {
 	}
 }
 
-// NAVIGATION
-
 const metricHref = (model: Model, search: Search) =>
 	hrefOf(AppRoute.Metric({ metricName: model.metricName, search }))
 
-/** `handlePatch`: query changes replace the history entry. */
+/** Query changes replace the history entry. */
 const patchSearch = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: metricHref(model, search), isReplace: true }),
 })
 
-/** `buildBackToMetricsHref`: back to the browse page with the time range only. */
+/** Back to the browse page with the time range only. */
 export const backToMetricsHref = (search: Search): string =>
 	hrefOf(
 		AppRoute.Metrics({
@@ -264,8 +251,6 @@ const liftAddToDashboard = (
 		}),
 	}
 }
-
-// ENTRY POINTS
 
 export const AGGREGATION_SELECT_ID = "metric-aggregation"
 
@@ -302,14 +287,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(model, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -334,8 +312,6 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
-
-// SUBMODELS
 
 const liftAggregation = (model: Model, message: Select.Message): Return => {
 	const next = Select.update(model.aggregationSelect, message)
@@ -388,25 +364,19 @@ const liftCopyLink = (model: Model, message: CopyButton.Message): Return => {
 }
 
 const liftTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted: Return = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: PageOutMessage.RequestedNavigation({
-					url: metricHref(model, {
-						...model.search,
-						...TimeRangePicker.searchPatchOf(next.outMessage),
-					}),
-					isReplace: false,
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			PageOutMessage.RequestedNavigation({
+				url: metricHref(model, {
+					...model.search,
+					...patch,
 				}),
-			}
+				isReplace: false,
+			}),
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
@@ -452,7 +422,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						where: model.whereInput === "" ? undefined : model.whereInput,
 					})
 				: { model },
-		// Where clauses are single-line: Enter never inserts a newline (suggestions are not ported).
+		// Where clauses are single-line: Enter off the list never inserts a newline.
 		PressedWhereEnter: () => ({ model }),
 		GotCaretMessage: ({ message: caret }) => caretMessage(model, caret, context, summaryOf(model)),
 		MovedWhereSuggestion: ({ step }) => (isWhereOpen(model) ? movedSuggestion(model, step) : { model }),
@@ -510,11 +480,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		ClickedCopyLink: () => ({ model, commands: [ReadLocation()] }),
 		ReadLocationHref: ({ href }) => liftCopyLink(model, CopyButton.Message.ClickedCopy({ text: href })),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedRetryChart: () => requestContent(model, context, "Load"),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }

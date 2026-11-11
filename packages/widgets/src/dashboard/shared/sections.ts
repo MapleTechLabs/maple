@@ -1,7 +1,5 @@
 import { Schema } from "effect"
 
-// Sections (collapsible widget groups, optionally tabbed)
-
 export const DASHBOARD_MAX_SECTIONS = 50
 export const DASHBOARD_MAX_TABS_PER_SECTION = 20
 

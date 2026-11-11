@@ -23,7 +23,7 @@ import {
 	type SignalSource,
 } from "@maple/web-data/alerts/chart-series"
 import { formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -37,14 +37,14 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { pressable } from "@maple/views/ui/pressable"
 import { chartEmpty, chartError, chartLoading } from "@maple/views/ui/chart-state"
 import { seriesLegend } from "../../kit/series-legend"
-import { isoMs } from "./time"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The view half of the alert rule chart; the
 // definition is `charts/definitions/alert-rule.ts`, built by the chart Mount from the spec here.
 
-/** The tokens the chart and its chrome read off the theme (`PAINT_COLORS` plus the frame). */
+/** The tokens the chart and its chrome read off the theme. */
 export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--chart-1",
 	"--severity-warn",
@@ -58,10 +58,11 @@ export const RULE_CHART_TOKENS: ReadonlyArray<string> = [
 	"--background",
 ]
 
-const SIGNAL_TOKEN = "--chart-1"
+// Blue in both themes: `--chart-1` is the dark theme's orange, the warning threshold's colour.
+const SIGNAL_TOKEN = "--chart-p50"
 const CHART_HEIGHT = 300
 const Y_AXIS_WIDTH = 72
-const PLOT_RIGHT = 12
+const PLOT_RIGHT = 28
 const RAIL_CELLS = 60
 
 type RailStatus = "breached" | "error" | "skipped" | "healthy" | "empty"
@@ -98,9 +99,13 @@ export type RuleChartInputs<M> = Readonly<{
 	source?: SignalSource
 	railCoverage?: string
 	selectedBucket?: number | null
-	/** `onSelectBucket`: the rail cells are buttons when set. */
+	/** The rail cells are buttons when set. */
 	onSelectBucket?: (index: number | null) => M
 	isLoading?: boolean
+	/** Said in place of the loading skeleton, whose drawn trend reads like data (the rule editor). */
+	loadingText?: string
+	/** Said when there is nothing to chart and nothing failed, in place of "No data in this window". */
+	emptyText?: Readonly<{ title: string; hint?: string | undefined }>
 	error?: string | null
 	className?: string
 }>
@@ -133,7 +138,11 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 					source === "preview" ? checksChart.rows : previewChart.rows,
 					(domain.max - domain.min) / RAIL_CELLS,
 				)
-	const chartData = merged.rows
+	// A point outside the window would draw past the plot, over the axis labels.
+	const chartData = Arr.filter(merged.rows, (row) => {
+		const t = num(row.t)
+		return t >= domain.min && t <= domain.max
+	})
 	const hasSignal = chartData.length > 0
 	const bucketSeconds =
 		inputs.preview != null
@@ -169,7 +178,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			x2: incident.resolvedAt
 				? new Date(incident.resolvedAt).getTime()
 				: incident.heldSince
-					? isoMs(incident.heldSince)
+					? toEpochMs(incident.heldSince)
 					: domain.max,
 			open: incident.status === "open",
 		})),
@@ -178,7 +187,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 	const heldBands = clipToDomain(
 		Arr.flatMap(incidents, (incident) =>
 			incident.status === "open" && incident.heldSince
-				? [{ x1: isoMs(incident.heldSince), x2: domain.max }]
+				? [{ x1: toEpochMs(incident.heldSince), x2: domain.max }]
 				: [],
 		),
 		domain,
@@ -188,8 +197,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 			? []
 			: clipToDomain(
 					Arr.map(inputs.preview.wouldFire, (span) => ({
-						x1: isoMs(span.start),
-						x2: isoMs(span.end),
+						x1: toEpochMs(span.start),
+						x2: toEpochMs(span.end),
 					})),
 					domain,
 				)
@@ -242,6 +251,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 		gradientId: `${inputs.chartId}-signal`,
 	})
 
+	const hint = inputs.emptyText === undefined ? "Try widening the range" : inputs.emptyText.hint
+	const emptyHint = hint === undefined ? {} : { hint }
+
 	const chartArea = hasSignal
 		? h.div(
 				[h.Class("w-full")],
@@ -274,7 +286,9 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				],
 			)
 		: inputs.isLoading === true
-			? chartLoading(h, { variant: "area", height: CHART_HEIGHT })
+			? inputs.loadingText === undefined
+				? chartLoading(h, { variant: "area", height: CHART_HEIGHT })
+				: chartEmpty(h, { height: CHART_HEIGHT }, [inputs.loadingText])
 			: inputs.error != null
 				? chartError(h, { height: CHART_HEIGHT }, [
 						h.div(
@@ -289,8 +303,8 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 							],
 						),
 					])
-				: chartEmpty(h, { height: CHART_HEIGHT, hint: "Try widening the range" }, [
-						"No data in this window",
+				: chartEmpty(h, { height: CHART_HEIGHT, ...emptyHint }, [
+						inputs.emptyText?.title ?? "No data in this window",
 					])
 
 	const thresholdCaption = hstack(
@@ -443,7 +457,7 @@ export const ruleChart = <M>(h: HtmlBuilder<M>, inputs: RuleChartInputs<M>): Htm
 				? [
 						typography(h, { size: "2xs", tone: "muted", as: "p" }, [
 							clampedToPreview ? "Axis starts at " : "Query series starts at ",
-							formatTime(isoMs(truncatedTo), "tooltip"),
+							formatTime(toEpochMs(truncatedTo), "tooltip"),
 							". The range needs more windows than one preview replays: widen the rule's window or shorten the range.",
 						]),
 					]
@@ -472,7 +486,7 @@ const chartView = Submodel.defineView<
 	}),
 )
 
-// THE RAIL: evaluations as discrete cells, incidents as a continuous bar.
+// The rail: evaluations as discrete cells, incidents as a continuous bar.
 
 /** One rail cell's tally while the checks are folded in. */
 type RailBucket = {

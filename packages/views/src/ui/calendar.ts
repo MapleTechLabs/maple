@@ -4,15 +4,12 @@ import * as Calendar from "foldkit/calendar"
 import * as Dom from "foldkit/dom"
 import { defineMessageUnion } from "foldkit/message"
 
-// Port of packages/ui/src/components/ui/calendar.tsx, single mode: react-day-picker's state as a
-// Submodel. The view is `calendar-view.ts`. @foldkit/ui's Calendar is an activedescendant grid
-// with a focusable table and ARIA rows that react-day-picker does not render, so the DOM is ours;
-// the date math is foldkit/calendar.
+// Single mode: react-day-picker's state as a Submodel. The view is `calendar-view.ts`.
+// @foldkit/ui's Calendar is an activedescendant grid with a focusable table and ARIA rows that
+// react-day-picker does not render, so the DOM is ours; the date math is foldkit/calendar.
 
 export const CalendarDate = Calendar.CalendarDate
 export type CalendarDate = Calendar.CalendarDate
-
-// MODEL
 
 export const Model = Schema.Struct({
 	viewYear: Schema.Number,
@@ -42,8 +39,6 @@ export const init = (config: InitConfig): Model => {
 	}
 }
 
-// MESSAGE
-
 export const DayKey = Schema.Literals([
 	"ArrowLeft",
 	"ArrowRight",
@@ -69,8 +64,6 @@ export type Message = typeof Message.Type
 export const isoDay = (date: CalendarDate): string =>
 	`${date.year}-${Str.padStart(2, "0")(String(date.month))}-${Str.padStart(2, "0")(String(date.day))}`
 
-// COMMAND
-
 /** Moves DOM focus to a day button after the render that shows it. */
 export const FocusDay = Command.define("FocusDay", {
 	args: { day: Schema.String },
@@ -81,8 +74,6 @@ export const FocusDay = Command.define("FocusDay", {
 			Effect.as(Message.CompletedFocusDay()),
 		),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 

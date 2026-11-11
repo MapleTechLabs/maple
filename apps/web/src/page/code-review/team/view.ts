@@ -4,7 +4,7 @@ import {
 	type CodeReviewTeamTotals,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { formatSpan } from "../../../components/code-review/code-review-format"
+import { formatSpan } from "../kit/code-review-format"
 import { EMPTY_VALUE, countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { cn } from "@maple/ui/lib/utils"
@@ -73,9 +73,6 @@ import { contributionCalendar, contributionLevel } from "@maple/views/ui/contrib
 import { type ActivityCount, type ActivityDay, activityByDay, daysOf, totalOf } from "./activity"
 import { ACTIVITY_CARD_ID } from "./update"
 import { Array as Arr, Record as Rec, Schema, String as Str, Order } from "effect"
-
-// `CodeReviewTeamPage`: team KPIs, a few highlights, and the per-person scorecard against the team
-// median, ranked only on request.
 
 type H = HtmlBuilder<Message>
 

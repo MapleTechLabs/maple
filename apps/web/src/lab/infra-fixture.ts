@@ -13,7 +13,7 @@ import {
 	summarizePods,
 	summarizeRailway,
 	summarizeVercel,
-} from "../components/infra/overview/summaries"
+} from "../page/infra/overview/summaries"
 import { VERCEL_PROJECTS } from "./vercel-infra-fixtures"
 import { String as Str } from "effect"
 

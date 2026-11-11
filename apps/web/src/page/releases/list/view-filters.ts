@@ -1,4 +1,4 @@
-import { isReleaseHealth, RELEASE_HEALTH_ORDER } from "../../../components/releases/release-model"
+import { isReleaseHealth, RELEASE_HEALTH_ORDER } from "../release-model"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"

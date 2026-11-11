@@ -7,11 +7,12 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { Logs, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { finiteOrZero } from "@maple/query-engine/ch/format"
 import type { VercelProjectScope } from "./vercel-infra"
 
-type LogColumns = ColumnAccessor<typeof Logs.columns>
+type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
 
 const SPEED_INSIGHTS_SERVICE = "vercel-speed-insights"
 const WEB_ANALYTICS_SERVICE = "vercel-web-analytics"
@@ -46,11 +47,13 @@ const speedInsightsKey = ($: LogColumns, groupBy: VercelSpeedInsightsGroup) => {
 
 /** The 75th percentile of each Web Vital, overall or per route or device type. */
 export function vercelSpeedInsightsSQL(groupBy: VercelSpeedInsightsGroup, scope: VercelProjectScope = {}) {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			key: speedInsightsKey($, groupBy),
 			metric: $.LogAttributes.get("vercel.speed_insights.metric"),
-			p75: finiteOrZero(CH.quantile(0.75)(CH.toFloat64OrZero($.LogAttributes.get("vercel.speed_insights.value")))),
+			p75: finiteOrZero(
+				CH.quantile(0.75)(CH.toFloat64OrZero($.LogAttributes.get("vercel.speed_insights.value"))),
+			),
 			samples: CH.count(),
 		}))
 		.where(($) => [
@@ -69,7 +72,7 @@ const isPageView = ($: LogColumns) => eventType($).eq("pageview")
 
 /** Page views, the devices behind them, and custom events over the window. */
 export function vercelWebAnalyticsSummarySQL(scope: VercelProjectScope = {}) {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			pageViews: CH.countIf(isPageView($)),
 			uniqueDevices: CH.uniqIf(deviceId($), isPageView($).and(deviceId($).neq(""))),
@@ -95,8 +98,11 @@ const webAnalyticsValue = ($: LogColumns, dimension: VercelWebAnalyticsDimension
 }
 
 /** The ten most viewed pages, referrers or countries, or the ten most frequent custom events. */
-export function vercelWebAnalyticsTopSQL(dimension: VercelWebAnalyticsDimension, scope: VercelProjectScope = {}) {
-	return from(Logs)
+export function vercelWebAnalyticsTopSQL(
+	dimension: VercelWebAnalyticsDimension,
+	scope: VercelProjectScope = {},
+) {
+	return from(Datasources.logs)
 		.select(($) => ({
 			value: webAnalyticsValue($, dimension),
 			count: CH.count(),
@@ -115,7 +121,7 @@ export function vercelWebAnalyticsTopSQL(dimension: VercelWebAnalyticsDimension,
 
 /** The team's newest audit events. */
 export function vercelAuditLogSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			action: $.LogAttributes.get("vercel.audit.action"),

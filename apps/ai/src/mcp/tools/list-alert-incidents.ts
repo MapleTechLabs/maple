@@ -1,8 +1,7 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListAlertIncidentsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { ackLabel, ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition } from "../lib/alert-rules"
 import * as P from "../lib/params"
@@ -31,7 +30,6 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "incidents" }),
 		}),
-		output: ListAlertIncidentsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing alert incidents", "Checking recent alerts"],
 		handler: Effect.fn("McpTool.listAlertIncidents")(function* (params) {

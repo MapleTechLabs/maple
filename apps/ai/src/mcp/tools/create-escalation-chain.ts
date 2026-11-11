@@ -1,9 +1,8 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { EscalationChainCreateRequest } from "@maple/domain/http"
-import { EscalationChainMutationOutput } from "@maple/domain/mcp-outputs"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	chainBlocks,
 	createChainErrors,
@@ -35,7 +34,6 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			),
 			description: P.optionalText("Free-form notes"),
 		}),
-		output: EscalationChainMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating an escalation chain"],
 		handler: Effect.fn("McpTool.createEscalationChain")(function* (params) {

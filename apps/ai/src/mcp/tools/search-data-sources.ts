@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Schema, String as Str } from "effect"
-import { SearchDataSourcesOutput } from "@maple/domain/mcp-outputs"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import { searchableWords } from "@maple/data-sources"
 import * as P from "../lib/params"
@@ -35,7 +34,6 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 10, max: 25, noun: "hits" }),
 		}),
 		aliases: { q: "query", search: "query" },
-		output: SearchDataSourcesOutput,
 		hints: { readOnly: true },
 		phrases: ["Searching data sources", "Finding where the data lives"],
 		handler: Effect.fn("McpTool.searchDataSources")(function* ({ query, limit }) {

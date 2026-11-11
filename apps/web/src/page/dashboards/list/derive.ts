@@ -7,22 +7,20 @@ import type { DashboardDocument } from "@maple/domain/http"
 import {
 	dashboardDomains,
 	type DashboardSortOption,
-	epochOf,
 	isDashboardSortOption,
 	readsFromLabel,
 } from "../kit/summary"
 import type { Glyph, ListDashboard, Model, Scope } from "./model"
 import { Array as Arr, String as Str, Order } from "effect"
-
-// The pure halves of `DashboardList` and `dashboard-summary.ts`.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Search = typeof DashboardsSearch.Type
 
-/** "Untitled dashboard" for a blank name (`displayName`). */
+/** "Untitled dashboard" for a blank name. */
 export const displayName = (name: string | undefined): string =>
 	name !== undefined && Str.trim(name) !== "" ? name : "Untitled dashboard"
 
-/** `dashboardMatches`: name, description or tag contains the query. */
+/** Name, description or tag contains the query. */
 export const dashboardMatches = (dashboard: ListDashboard, query: string): boolean => {
 	const needle = Str.toLowerCase(Str.trim(query))
 	if (needle.length === 0) return true
@@ -52,15 +50,15 @@ export const sortDashboards = (
 			case "name-desc":
 				return Str.localeCompare(a.name)(b.name)
 			case "created":
-				return Order.Number(epochOf(b.createdAt), epochOf(a.createdAt))
+				return Order.Number(toEpochMs(b.createdAt), toEpochMs(a.createdAt))
 			case "widgets":
 				return Order.Number(b.widgetCount, a.widgetCount)
 			case "updated":
-				return Order.Number(epochOf(b.updatedAt), epochOf(a.updatedAt))
+				return Order.Number(toEpochMs(b.updatedAt), toEpochMs(a.updatedAt))
 		}
 	})
 
-/** `headerSummary`: counts, then the newest edit as a timestamp (`formatRelativeTimeOrDate` text). */
+/** Counts, then the newest edit as a timestamp (`formatRelativeTimeOrDate` text). */
 export const headerSummary = <M>(
 	h: HtmlBuilder<M>,
 	dashboards: ReadonlyArray<ListDashboard>,
@@ -75,7 +73,7 @@ export const headerSummary = <M>(
 		countLabel(widgets, "widget", undefined, locale),
 	]
 	const latest = Arr.reduce<ListDashboard, string | null>(dashboards, null, (newest, dashboard) =>
-		newest === null || epochOf(dashboard.updatedAt) > epochOf(newest) ? dashboard.updatedAt : newest,
+		newest === null || toEpochMs(dashboard.updatedAt) > toEpochMs(newest) ? dashboard.updatedAt : newest,
 	)
 	if (latest !== null)
 		parts.push(
@@ -107,7 +105,7 @@ export type ListSections = Readonly<{
 	scoped: number
 }>
 
-/** `DashboardList`'s memo: search and tags, then scope, then the chosen sort. */
+/** Search and tags, then scope, then the chosen sort. */
 export const sectionsOf = (model: Model, dashboards: ReadonlyArray<ListDashboard>): ListSections => {
 	const query = queryOf(model.search)
 	const tags = tagsOf(model.search)
@@ -127,7 +125,6 @@ export const sectionsOf = (model: Model, dashboards: ReadonlyArray<ListDashboard
 	}
 }
 
-/** `dashboardGlyph`. */
 const glyphOf = (document: DashboardDocument): Glyph => {
 	if (document.widgets.length === 0) return "GridIcon"
 	switch (dashboardDomains(document)[0]) {

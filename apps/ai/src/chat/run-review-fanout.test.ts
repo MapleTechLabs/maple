@@ -7,22 +7,22 @@
  * `invoke_agent` span was filed under the child's own thread instead of the review's session.
  */
 import { OrgId, UserId } from "@maple/domain"
-import type { SubmitPrReviewRequest } from "@maple/domain/http"
+import type { SubmitPrReviewRequest, TenantContext } from "@maple/domain/http"
 import { prReviewSessionId } from "@maple/domain/chat-session"
 import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
-import { makeChildFindings } from "./review-child-findings"
-import { makeReviewLedger } from "./review-ledger"
-import { makeRunUsage } from "./tools"
+import { makeChildFindings } from "./review/child-findings"
+import { makeReviewLedger } from "./review/ledger"
+import { reviewCompletion } from "./review/completion"
+import { makeRunUsage } from "./usage"
 import { interruptOnAbort, makeTurnObservability } from "./turn-outcome"
 
 const TENANT: TenantContext = {
@@ -111,12 +111,15 @@ describe("runChatTurn review_files children", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: executor,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: () => Effect.void,
-				review: {
-					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
-					ledger: makeReviewLedger(),
-				},
+				completion: reviewCompletion(
+					{ kind: "autonomous" },
+					{
+						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						ledger: makeReviewLedger(),
+						childFindings: makeChildFindings(),
+					},
+					() => Effect.void,
+				),
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),
@@ -165,9 +168,9 @@ describe("runChatTurn review_files children", () => {
 					origin: { kind: "autonomous" },
 					toolExecutor: executor,
 					model,
-					submitDiagnosis: () => Effect.die("no investigation in a review session"),
-					submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
-					review,
+					completion: reviewCompletion({ kind: "autonomous" }, review, (request) =>
+						Effect.sync(() => filed.push(request)),
+					),
 					text: "Review pull request #7 of acme/shop.",
 					history: [],
 					usage: makeRunUsage(),
@@ -242,12 +245,15 @@ describe("runChatTurn review_files children", () => {
 				origin: { kind: "autonomous" },
 				toolExecutor: executor,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a review session"),
-				submitReview: () => Effect.void,
-				review: {
-					coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
-					ledger: makeReviewLedger(),
-				},
+				completion: reviewCompletion(
+					{ kind: "autonomous" },
+					{
+						coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+						ledger: makeReviewLedger(),
+						childFindings: makeChildFindings(),
+					},
+					() => Effect.void,
+				),
 				text: "Review pull request #7 of acme/shop.",
 				history: [],
 				usage: makeRunUsage(),

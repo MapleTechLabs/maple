@@ -1,11 +1,12 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { IssueSeverity } from "@maple/domain/http"
-import { ErrorIssueId, InvestigationId, IssueEscalationId, OrgId } from "@maple/domain/primitives"
+import {
+	IssueEscalationReason,
+	IssueEscalationSource,
+	IssueEscalationStatus,
+	IssueSeverity,
+} from "@maple/domain/error-issues"
+import { ErrorIssueId, InvestigationId, IssueEscalationId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
-
-export const IssueEscalationSourceSchema = Schema.Literals(["ai", "manual"])
-export const IssueEscalationReasonSchema = Schema.Literals(["severity_set", "severity_escalated"])
-export const IssueEscalationStatusSchema = Schema.Literals(["queued", "sent", "skipped", "failed"])
 
 /**
  * Org-level escalation policy: which destinations a triage-outcome severity
@@ -41,8 +42,8 @@ export const IssueEscalations = PG.table("issue_escalations", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		issueId: PG.column(PG.brand(PG.text, ErrorIssueId), { name: "issue_id" }),
 		severity: PG.brand(PG.text, IssueSeverity),
-		source: PG.brand(PG.text, IssueEscalationSourceSchema),
-		reason: PG.brand(PG.text, IssueEscalationReasonSchema),
+		source: PG.brand(PG.text, IssueEscalationSource),
+		reason: PG.brand(PG.text, IssueEscalationReason),
 		runId: PG.column(PG.nullable(PG.text), { name: "run_id" }),
 		investigationId: PG.column(PG.nullable(PG.brand(PG.text, InvestigationId)), {
 			name: "investigation_id",
@@ -51,7 +52,7 @@ export const IssueEscalations = PG.table("issue_escalations", {
 		// dispatch payload survives later runs overwriting the run row.
 		payloadJson: PG.column(PG.jsonb(), { name: "payload_json", default: {} }),
 		deliveryResultsJson: PG.column(PG.jsonb(), { name: "delivery_results_json", default: [] }),
-		status: PG.column(PG.brand(PG.text, IssueEscalationStatusSchema), { default: "queued" }),
+		status: PG.column(PG.brand(PG.text, IssueEscalationStatus), { default: "queued" }),
 		attempts: PG.column(PG.int4, { default: 0 }),
 		// Claim lease: a tick owns a queued row until this plus the lease; attempts fences the claim.
 		claimedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "claimed_at" }),

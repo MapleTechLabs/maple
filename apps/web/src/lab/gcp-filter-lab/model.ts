@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LogFilterDraft } from "../../page/integrations/gcp-configure-schema"
+import { LogFilterDraft } from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import * as Select from "@maple/views/ui/select"
 
@@ -41,7 +41,7 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 	},
 ]
 
-/** One card's `useState`: the draft, and its Keep/Replace select. */
+/** One card's state: the draft, and its Keep/Replace select. */
 export const ScenarioState = Schema.Struct({ filter: LogFilterDraft, filterMode: Select.Model })
 export type ScenarioState = typeof ScenarioState.Type
 
@@ -49,7 +49,7 @@ export const Model = Schema.Struct({ scenarios: Schema.Array(ScenarioState) })
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
-	/** The card's field speaks the integrations page's Messages (`GcpLogFilterField`'s `onFilter`). */
+	/** The card's field speaks the integrations page's Messages. */
 	GotScenarioMessage: { index: Schema.Number, message: IntegrationsMessage },
 })
 export type Message = typeof Message.Type

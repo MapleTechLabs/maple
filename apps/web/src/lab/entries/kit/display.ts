@@ -24,8 +24,6 @@ import { kitPage, kitSection } from "../../kit/kit-layout"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 
-// MODEL
-
 const Model = Schema.Struct({
 	defaultTabs: Tabs.Model,
 	underlineTabs: Tabs.Model,
@@ -42,8 +40,6 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotDefaultTabsMessage: { message: Tabs.Message },
 	GotUnderlineTabsMessage: { message: Tabs.Message },
@@ -51,8 +47,6 @@ const Message = defineMessageUnion({
 	ClickedRetry: {},
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -85,8 +79,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 			}
 		},
 	})
-
-// VIEW
 
 const defaultTabs = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({

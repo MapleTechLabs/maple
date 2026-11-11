@@ -14,7 +14,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { afterAll, beforeAll, it } from "vitest"
 import { Option, Schema, Array as Arr } from "effect"
-import { RoleName } from "@maple/domain/primitives"
+import { RoleName } from "@maple/primitives"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import {
 	integrationFixtureRules,

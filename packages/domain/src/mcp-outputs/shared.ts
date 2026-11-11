@@ -4,6 +4,9 @@
  */
 import { Schema } from "effect"
 
+/** The key that marks a tool's typed output as the chat UI's payload: `{ __maple_ui: true, tool, data }`. */
+export const TOOL_UI_MARKER = "__maple_ui"
+
 /** The resolved window a result covers, as `YYYY-MM-DD HH:mm:ss` UTC. */
 export const OutputTimeRange = Schema.Struct({ start: Schema.String, end: Schema.String })
 

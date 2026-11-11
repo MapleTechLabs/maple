@@ -3,7 +3,7 @@ import type {
 	ServiceMapDbEdgeRow,
 	ServiceMapEdgeRow,
 	ServicePlatform,
-} from "@maple/ui/components/service-map/service-map-types"
+} from "@maple/views/service-map/graph/service-map-types"
 import { Array as Arr } from "effect"
 
 // `aggregateEdges`, `toDbEdge`, `classifyPlatform`: the map's raw rows folded into edges and

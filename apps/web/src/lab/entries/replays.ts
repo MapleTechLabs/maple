@@ -5,7 +5,7 @@ import {
 	pageLayoutStyles,
 	pageScrollAreaStyles,
 	pageStickyAreaStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import { Clock, Effect, Schema, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -14,7 +14,7 @@ import { replaysToolbar } from "../../page/replays/kit/replays-toolbar"
 import { sessionListItems, type SessionRow } from "../../page/replays/kit/session-row"
 import { sessionsList } from "../../page/replays/kit/sessions-list"
 import { emptyWindow, VirtualWindow, virtualizeSessions } from "../../page/replays/kit/virtualize"
-import { viewerFlags } from "@maple/views/ui/logs/viewer"
+import { viewerFlags } from "../viewer-flags"
 import { defineLabWithFlags } from "../define"
 import { foldLabToasts, initLabToasts, labRoot } from "../toasts"
 import * as Toast from "@maple/views/ui/toast"

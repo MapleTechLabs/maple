@@ -4,7 +4,7 @@ import {
 	SupabaseLogIssuesRequest,
 	SupabaseProjectWindowRequest,
 } from "@maple/domain/http"
-import { SupabaseProjectRef } from "@maple/domain/primitives"
+import { SupabaseProjectRef } from "@maple/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
 import { InfraWindowInput, decodeInput, resolveInfraWindow, runWarehouseQuery } from "./effect-utils"
 

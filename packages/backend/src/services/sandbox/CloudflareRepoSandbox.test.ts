@@ -20,7 +20,7 @@ import {
 	SandboxRequest,
 	SandboxRuntime,
 	SandboxSecretHandle,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import { Duration, Effect, Exit, Fiber, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import type { RepositoryCheckout } from "@maple/backend/services/integrations/vcs/VcsSourceService"

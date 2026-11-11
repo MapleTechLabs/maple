@@ -4,6 +4,7 @@ import { Effect, Layer, String as Str } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/http-api"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { rawRoutes } from "@maple/backend/http/raw-routes"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
@@ -239,33 +240,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 	Layer.provide(V2TransportErrorBoundaryLive),
 )
 
-/**
- * Services a raw router's handlers still expect from the request context, beyond the Worker's
- * ports, which every request carries. Each is a runtime "Service not found".
- */
-type LeakedRequestServices<Routes extends Layer.Any> =
-	Layer.Services<Routes> extends infer Marker
-		? Marker extends HttpRouter.Request<"Requires", infer Service>
-			? Exclude<Service, Layer.Success<ApiPortsLayer>>
-			: never
-		: never
-
-/**
- * A raw `HttpRouter` handler runs in the request's own context — unlike an `HttpApiBuilder`
- * group, nothing carries the router's build context into it — so a service it reads per request
- * has to arrive through `HttpRouter.provideRequest` (see `ChatSessionsRouter`). Read inside the
- * handler instead, it compiles, because the isolate builder erases the marker, and fails every
- * request with "Service not found", which is what took the chat routes down on 2026-09-08. This
- * turns that into a build failure naming the leaked service.
- */
-const rawRoutes = <Routes extends Layer.Any>(
-	routes: Routes &
-		([LeakedRequestServices<Routes>] extends [never]
-			? unknown
-			: { readonly leakedRequestServices: LeakedRequestServices<Routes> }),
-) => routes
-
-const RawRoutes = rawRoutes(
+const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 	Layer.mergeAll(
 		IntegrationsCallbackRouter,
 		ChatCallbackRouter,

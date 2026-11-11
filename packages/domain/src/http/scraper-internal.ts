@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "../primitives"
+import { ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "@maple/primitives"
 
 /**
  * Internal contract between the apps/api scrape-target store and the

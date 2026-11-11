@@ -106,13 +106,13 @@ export const AuditResources = {
 	},
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
+	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
+	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
 	 * `metadata`; a tool that also mutates a resource records that action too.
 	 */
-	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
-	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
 	mcp_tool: { verbs: ["called"] },
 	investigation: {
 		prefix: PublicIdPrefixes.investigation,

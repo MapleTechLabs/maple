@@ -11,7 +11,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
 import {
 	draftComponents,
@@ -36,6 +36,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { canManage, type Model, type SubmitMode } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
 
@@ -61,8 +62,6 @@ const readMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
-// ISSUES
-
 export const nameIssue = (model: Model): string | null =>
 	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
 
@@ -83,8 +82,6 @@ export const canSubmit = (model: Model): boolean =>
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
 	!hasRowIssues(model.picker)
-
-// DRAFT
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({
@@ -198,8 +195,9 @@ const submit = (model: Model, mode: SubmitMode): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ orgId, grants }) =>
-			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		CompletedFetchMonitors: ({ key, result }) => acceptMonitors(model, key, result),
 		ClickedRetry: () => readMonitors(model, context, "Supersede"),
 		ChangedName: ({ value }) =>

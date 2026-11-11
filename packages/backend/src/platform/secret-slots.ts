@@ -26,7 +26,6 @@ export const alertDestinationSecretSlot: SecretSlot<OrgRowRef> = {
 export const awsStreamSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "aws_connections.stream_secret",
 	binding: orgRowBinding,
-	legacyAad: (ref) => Buffer.from(`aws_connections:stream:v1:${ref.id}`, "utf8"),
 }
 
 export interface ChatWorkspaceCredentialsRef extends OrgRef {
@@ -37,8 +36,6 @@ export interface ChatWorkspaceCredentialsRef extends OrgRef {
 export const chatWorkspaceCredentialsSlot: SecretSlot<ChatWorkspaceCredentialsRef> = {
 	name: "chat_workspaces.credentials",
 	binding: (ref) => [ref.orgId, ref.connector, ref.externalWorkspaceId],
-	legacyAad: (ref) =>
-		Buffer.from(`chat_workspaces:v1:${ref.orgId}:${ref.connector}:${ref.externalWorkspaceId}`, "utf8"),
 }
 
 /** The row has no org until it is approved; its primary key is what the CLI polls with. */
@@ -50,19 +47,16 @@ export const cliDeviceTokenSlot: SecretSlot<{ readonly deviceCodeHash: string }>
 export const dashboardShareTokenSlot: SecretSlot<OrgRowRef> = {
 	name: "dashboard_shares.token",
 	binding: orgRowBinding,
-	legacyAad: (ref) => Buffer.from(`dashboard_shares:v1:${ref.orgId}:${ref.id}:token`, "utf8"),
 }
 
 export const externalDataSourceSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "external_data_sources.secret",
 	binding: orgRowBinding,
-	legacyAad: (ref) => Buffer.from(`external_data_sources:v1:${ref.orgId}:${ref.id}`, "utf8"),
 }
 
 export const gcpConnectorSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "gcp_connectors.secret",
 	binding: orgRowBinding,
-	legacyAad: (ref) => Buffer.from(`gcp_connectors:v1:${ref.id}`, "utf8"),
 }
 
 export interface OAuthConnectionRef extends OrgRef {
@@ -94,7 +88,6 @@ export const ingestPrivateKeySlot: SecretSlot<OrgRef> = {
 export const openRouterKeySlot: SecretSlot<OrgRef> = {
 	name: "org_openrouter_keys.key",
 	binding: orgBinding,
-	legacyAad: (ref) => Buffer.from(`org_openrouter_keys:v1:${ref.orgId}`, "utf8"),
 }
 
 export const planetScaleWebhookSecretSlot: SecretSlot<OrgRowRef> = {
@@ -111,13 +104,11 @@ export const planetScaleDatabaseWebhookSecretSlot: SecretSlot<OrgRowRef> = {
 export const railwayTokenSlot: SecretSlot<OrgRef> = {
 	name: "railway_connections.token",
 	binding: orgBinding,
-	legacyAad: (ref) => Buffer.from(`railway-token:${ref.orgId}`, "utf8"),
 }
 
 export const vercelTokenSlot: SecretSlot<OrgRef> = {
 	name: "vercel_connections.token",
 	binding: orgBinding,
-	legacyAad: (ref) => Buffer.from(`vercel-token:${ref.orgId}`, "utf8"),
 }
 
 export const scrapeTargetCredentialsSlot: SecretSlot<OrgRowRef> = {

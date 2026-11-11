@@ -12,17 +12,15 @@ import * as Test from "@alchemy.run/test/Vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
 import { HttpClientRequest } from "effect/http"
-import { createMapleAwsOidcKey } from "@maple/infra/aws"
 import {
 	AiWorker,
-	createMapleDeviceTokenKey,
 	ManagedMapleDb,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
 	resolveMapleDomains,
-	resolveMapleProfile,
 } from "@maple/infra/cloudflare"
+import { resolveMapleProfile } from "@maple/infra/profile"
 import MapleAiLive, { MapleAi } from "../../apps/ai/src/worker.ts"
 import MapleApi from "../../apps/api/src/worker.ts"
 
@@ -39,8 +37,6 @@ const TestMapleStack = Layer.effect(
 			workerDev: () => undefined,
 			devEnv: undefined,
 			db: undefined,
-			awsOidc: yield* createMapleAwsOidcKey,
-			deviceToken: yield* createMapleDeviceTokenKey,
 		}
 		return context
 	}),

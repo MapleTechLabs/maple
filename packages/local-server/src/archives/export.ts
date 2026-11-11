@@ -1,18 +1,8 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash } from "node:crypto"
-import {
-	closeSync,
-	constants,
-	existsSync,
-	fsyncSync,
-	openSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-} from "node:fs"
+import { closeSync, constants, existsSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs"
 import { basename, join } from "node:path"
 import type { Chdb } from "../chdb"
+import { sha256FileSync } from "../checkpoint-digest"
 import { type ArchiveSignal } from "./signals"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 
@@ -55,16 +45,12 @@ const decodeJsonRecord = Schema.decodeUnknownSync(
 //   H-E  Explicit source-vs-Parquet event-time min/max in epoch nanoseconds.
 //
 // Every behavior above was probed against real chDB before this code was
-// written: see reports/gate2-round5-implementation.md (probed behaviors). No
-// chDB behavior is assumed.
+// written. No chDB behavior is assumed.
 
 /**
- * The multiset digest algorithm version recorded in each manifest shard. Bumped
- * to v3 in the round-5 repair: v1 passed a bare nullable value into cityHash64
- * (collapsed the per-row hash to NULL); v2 used a sentinel string but a real
- * Nullable(String) value could equal the sentinel (verified collision); v3 binds
- * an EXPLICIT isNull(c) flag as a separate hash argument, so NULL-ness is never
- * conflated with a value. An unknown value fails closed.
+ * The multiset digest algorithm recorded in each manifest shard; an unknown
+ * value fails closed. v3 bound NULL-ness with an explicit isNull(c) flag; v4
+ * keeps that and aggregates with fixed-memory accumulators instead of a sort.
  */
 export const COMPLEX_DIGEST_ALGORITHM = "cityhash64-bounded-multiset-v4"
 
@@ -100,8 +86,8 @@ export interface WrittenShard {
 	readonly bytes: number
 	readonly columns: ReadonlyArray<string>
 	/**
-	 * Multiset complex-value digest over the reopened shard (cityHash64 of the
-	 * sorted per-row position-bound hashes). Detects same-typed column swaps,
+	 * Multiset complex-value digest over the reopened shard (fixed-memory
+	 * accumulators over per-row position-bound hashes). Detects same-typed column swaps,
 	 * cross-row value reassociation, and dup/drop that preserve count and time
 	 * extrema. Algorithm recorded alongside it in the manifest.
 	 */
@@ -144,12 +130,6 @@ const parseCount = (text: string): number => {
 	return count
 }
 
-const sha256File = (path: string): string => {
-	const hash = createHash("sha256")
-	hash.update(readFileSync(path))
-	return hash.digest("hex")
-}
-
 /**
  * Escape a filesystem path for safe embedding in a ClickHouse single-quoted
  * string literal. Escapes backslashes AND single quotes so neither can break
@@ -170,8 +150,6 @@ const assertSafePath = (path: string): void => {
 /** The fixed UTC date + hour predicate appended to every source/export query. */
 const hourPredicate = (signal: ArchiveSignal, rangeDate: string, hour: number): string =>
 	`toDate(${signal.eventTimeColumn}, 'UTC') = '${rangeDate}' AND toHour(${signal.eventTimeColumn}, 'UTC') = ${hour}`
-
-// Schema comparison (blocker #4) — recursive, grounded in measured transforms.
 
 /** A source column's name and type, captured before export for round-trip comparison. */
 export interface SourceColumn {
@@ -233,7 +211,7 @@ const splitArgs = (inner: string): string[] => {
 
 /**
  * Normalize a ClickHouse type the way chDB's Parquet writer does, per the
- * measured round-trip in gate2-round4-probes.md:
+ * measured round-trip:
  *   LowCardinality(T)              → normalize(T)
  *   DateTime                       → DateTime64(3, 'UTC')
  *   DateTime64(N)                  → DateTime64(N, 'UTC')
@@ -360,8 +338,8 @@ const normalizeValueForHash = (name: string, type: string): string => {
  * commutative per-column sum.
  *
  * `sliceFrom` is the FROM clause (e.g. `traces` or `file('p', Parquet)`, with a
- * WHERE predicate already applied where needed). The sort is inside chDB; no
- * rows are materialized in JavaScript.
+ * WHERE predicate already applied where needed). The aggregation runs inside
+ * chDB; no rows are materialized in JavaScript.
  */
 export const multisetDigestSql = (sourceSchema: ReadonlyArray<SourceColumn>, sliceFrom: string): string => {
 	const args = perRowHashArgs(sourceSchema)
@@ -424,11 +402,6 @@ export const compareSchema = (
 	}
 	return Arr.map(parquetCols, (c) => c.name)
 }
-
-// Per-shard validation (H-1 reopen, H-A schema, H-B source count, H-D digest).
-
-// Per-shard validation: H-1 reopen, H-A schema, H-B source count, H-D multiset
-// digest, H-E explicit source-vs-Parquet nanosecond event-time bounds.
 
 /**
  * The physical slice a shard covers: one part, a half-open `_part_offset` range,
@@ -589,9 +562,6 @@ export const measureShardBytes = (
 	return { uncompressed: Number(row?.uncompressed ?? 0), onDiskBytes: statSync(shardPath).size }
 }
 
-// Sharding plan — enumerate each active MergeTree part and split its
-// _part_offset domain into half-open ranges (no ORDER BY; D-016).
-
 /**
  * A planned shard: one part, a half-open `_part_offset` range, and the UTC
  * date/hour. The export and source-validation use the identical predicate (no
@@ -724,9 +694,7 @@ export const exportSignalShards = (
 	db.exec(`SYSTEM STOP MERGES ${signal.name}`)
 	try {
 		// captureSourceSchema runs INSIDE the try so a throw (e.g. an empty
-		// source table) always reaches the SYSTEM START MERGES finally. Placing
-		// it before the try would leave merges stopped on a schema-capture
-		// failure — a production regression caught in review.
+		// source table) always reaches the SYSTEM START MERGES finally.
 		const sourceSchema = captureSourceSchema(db, signal)
 		// Build the full-day shard plan: every UTC hour with rows, every active
 		// part, split into half-open ranges of width <= maxShardRows.
@@ -848,7 +816,7 @@ const exportShardPlans = (
 			rowCount: validated.rowCount,
 			minEventTimeUnixNano: validated.minEventTimeUnixNano,
 			maxEventTimeUnixNano: validated.maxEventTimeUnixNano,
-			sha256: sha256File(finalPath),
+			sha256: sha256FileSync(finalPath),
 			bytes: onDiskBytes,
 			columns: validated.columns,
 			complexDigest: validated.complexDigest,

@@ -2,6 +2,8 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	ActorType,
+	ErrorIncidentReason,
+	ErrorIncidentStatus,
 	ErrorIssueNotFoundError,
 	ErrorPersistenceError,
 	IssueKind,
@@ -10,7 +12,7 @@ import {
 	WorkflowState,
 	MAX_ISSUE_MERGE_SOURCES,
 } from "../errors"
-import { SpanId, TraceId, UserId } from "../../primitives"
+import { SpanId, TraceId, UserId } from "@maple/primitives"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -119,8 +121,8 @@ export const V2ErrorIncident = Schema.Struct({
 	id: ErrorIncidentPublicId,
 	object: Schema.Literal("error_incident"),
 	issue_id: ErrorIssuePublicId,
-	status: Schema.Literals(["open", "resolved"]),
-	reason: Schema.Literals(["first_seen", "regression", "manual"]),
+	status: Schema.Literals(ErrorIncidentStatus.literals),
+	reason: Schema.Literals(ErrorIncidentReason.literals),
 	first_triggered_at: Timestamp,
 	last_triggered_at: Timestamp,
 	resolved_at: Schema.NullOr(Timestamp),

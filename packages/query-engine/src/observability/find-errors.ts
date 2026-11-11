@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe } from "effect"
-import type { ErrorsByTypeOutput } from "@maple/domain/tinybird"
+import type { ErrorsByTypeRow } from "../ch/pipe-rows"
 import * as CH from "../ch"
 import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "../ch/queries/errors"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -9,7 +9,7 @@ import { toErrorSummary } from "./row-mappers"
 export const findErrors = Effect.fn("Observability.findErrors")(function* (input: FindErrorsInput) {
 	const executor = yield* WarehouseExecutor
 
-	const result = yield* executor.query<ErrorsByTypeOutput>(
+	const result = yield* executor.query<ErrorsByTypeRow>(
 		"errors_by_type",
 		{
 			start_time: input.timeRange.startTime,

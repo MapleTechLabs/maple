@@ -11,9 +11,9 @@ import {
 } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import * as Select from "@maple/views/ui/select"
-import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
+import { environmentSwitcher } from "../kit/environment-switcher"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { timeControls } from "../kit/time-controls"
@@ -42,7 +42,7 @@ type H = HtmlBuilder<Message>
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessage({ message })
 
-/** The header: the environment `Select`, then `TimeRangeHeaderControls`, in one row. */
+/** The header: the environment select, then the time range controls, in one row. */
 const headerActions = (h: H, model: Model): Html => {
 	const preset = defaultPreset(model)
 	const controls = timeControls(h, {
@@ -67,24 +67,16 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		// The value follows the URL and facets (`selectedEnvironment`), not the trigger's last pick.
-		model: { ...model.environmentSelect, value: selectedEnvironment(model) },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
-				_tag: "Item",
-				item,
-			})),
-			size: "sm",
-			toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
-		},
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: selectedEnvironment(model),
+		entries: environmentItems(model),
+		toMessage: toSelect,
+		toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
 	})
 }
 
-/** `ServiceHealthList`'s empty state; skeleton until the page-init presence read settles. */
+/** The health list's empty state; skeleton until the page-init presence read settles. */
 const servicesEmptyState = (h: H, model: Model, timeZone: string): Html =>
 	signalEmptyState(h, {
 		signal: "traces",

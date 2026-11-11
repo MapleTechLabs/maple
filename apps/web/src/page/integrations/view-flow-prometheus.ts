@@ -2,7 +2,7 @@ import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
-import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
+import { diagnoseScrapeError } from "./scrape-error-diagnosis"
 import { button } from "@maple/views/ui/button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import {
@@ -36,9 +36,6 @@ import { authField, credentialFields, textField } from "./view-prometheus-form"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
-// the first scheduled scrape land.
 
 type H = HtmlBuilder<Message>
 

@@ -71,8 +71,6 @@ const pw = <A>(message: string, run: () => Promise<A>, shot?: string) =>
 			}),
 	})
 
-// ── sign-in ─────────────────────────────────────────────────────────────────
-
 const ClerkUsers = Schema.Array(Schema.Struct({ id: Schema.String }))
 const ClerkTicket = Schema.Struct({ token: Schema.String })
 const encodeTicketRequest = Schema.encodeEffect(
@@ -115,8 +113,6 @@ const mintTicket = Effect.fn("capture.mintTicket")(
 	},
 	Effect.mapError((cause) => new CaptureError({ message: `Clerk sign-in ticket: ${cause.message}` })),
 )
-
-// ── page prep ───────────────────────────────────────────────────────────────
 
 const FREEZE_CSS = `
 *, *::before, *::after { transition: none !important; animation: none !important; caret-color: transparent !important; }
@@ -212,8 +208,6 @@ const capture = Effect.fn("capture.shot")(function* (
 	)
 	yield* Console.log(`  ✓ ${shot.id}  ${Str.replace(ROOT, "")(out)}`)
 }, Effect.scoped)
-
-// ── command ─────────────────────────────────────────────────────────────────
 
 const command = Command.make(
 	"capture-screenshots",

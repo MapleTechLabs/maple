@@ -22,3 +22,7 @@ export function shortId(
 	if (value.length <= length) return value
 	return options.ellipsis ? `${Str.slice(0, length)(value)}…` : Str.slice(0, length)(value)
 }
+
+/** An issue id as the issue pages print it: the first seven hex digits, upper case. */
+export const shortIssueId = (id: string): string =>
+	Str.toUpperCase(Str.slice(0, 7)(Str.replace(/-/g, "")(id)))

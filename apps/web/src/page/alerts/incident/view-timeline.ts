@@ -1,7 +1,7 @@
 import { TONE_BORDER } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { IncidentTimelineEntry } from "@maple/web-data/alerts/incident-timeline"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -12,8 +12,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { dividedList } from "@maple/views/ui/rule"
-
-// `IncidentTimeline`: the incident's events in order.
 
 const sameDay = (a: number, b: number, timeZone: string): boolean =>
 	formatDateInTimezone(a, { timeZone }) === formatDateInTimezone(b, { timeZone })

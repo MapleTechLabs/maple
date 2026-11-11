@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer, DateTime, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "./AuthService"
 import { matchesMcpOAuthRedirectUri, McpOAuthService, validateMcpOAuthRedirectUri } from "./McpOAuthService"
@@ -214,8 +214,8 @@ describe("McpOAuthService", () => {
 				expect(resolved.value.scopes).toEqual(["mcp:tools"])
 				expect(resolved.value.mcpOAuthResource).toBe(resource)
 			}
-			// The other half of this flow — that MCP accepts this token and rejects it
-			// for a different resource — now runs in apps/ai, where the code that
+			// The other half of this flow (that MCP accepts this token and rejects it
+			// for a different resource) now runs in apps/ai, where the code that
 			// resolves it lives: `mcp/lib/resolve-tenant.oauth.test.ts`.
 			const reused = yield* oauth
 				.exchangeAuthorizationCode(

@@ -1,18 +1,19 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import {
 	type SpatialLayout,
 	spatialLayout,
 	type SpatialTopology,
 	type SpatialView,
-} from "../../components/service-map/three/spatial-layout"
-import type { Edge3D, Node3DKind, Topology3D } from "../../components/service-map/three/types"
+} from "./three/spatial-layout"
+import type { Edge3D, Node3DKind, Topology3D } from "./three/types"
 import type { BuildingType, WorldEntity } from "@maple/domain/http"
 import { Schema, Array as Arr, String as Str, Order } from "effect"
 import type { OccupancyWorld } from "./factory/occupancy"
 import { resolveWorld } from "./factory/resolve"
 
-// The three-free half of the 3D layout (`ServiceMap3DViewport`'s memos), shared by the labels
-// in the view and the scene chunk, so both place the same districts and belts.
+// The three-free half of the 3D layout, shared by the labels in the view and the scene chunk,
+// so both place the same districts and belts.
 
 const LayoutTopology = Schema.Struct({
 	nodes: Schema.Array(
@@ -26,8 +27,6 @@ const LayoutTopology = Schema.Struct({
 })
 export type LayoutTopology = typeof LayoutTopology.Type
 const decodeLayoutTopology = Schema.decodeUnknownSync(Schema.fromJsonString(LayoutTopology))
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 /** Metrics can refresh without replacing the layout: it is keyed on ids, namespaces and kinds. */
 export const topologyKeyOf = (topology: Topology3D): string =>
 	encodeJson({
@@ -40,7 +39,7 @@ export const topologyKeyOf = (topology: Topology3D): string =>
 		}),
 	})
 
-/** `JSON.parse(topologyKey)`: the sorted topology the layout and routes are computed from. */
+/** The sorted topology the layout and routes are computed from. */
 export const layoutTopologyOf = (topologyKey: string): LayoutTopology & SpatialTopology =>
 	decodeLayoutTopology(topologyKey)
 

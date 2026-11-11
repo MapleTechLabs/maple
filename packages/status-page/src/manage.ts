@@ -2,7 +2,7 @@ import {
 	StatusPageIncidentImpact,
 	type StatusPageIncidentKind,
 	StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { type StatusPageSnapshot, statusFitsKind } from "@maple/domain/status-page"
 import { pageHref, type RenderOptions, renderDocument, renderHeader } from "./document"
 import { escapeHtml } from "@maple/strings"

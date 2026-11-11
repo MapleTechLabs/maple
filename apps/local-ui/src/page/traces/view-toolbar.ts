@@ -17,7 +17,7 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
-// The toolbar of `TraceListView` and its `SpanScopeBanner`.
+// The traces list's toolbar and its span-scope banner.
 
 const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =>
 	hstack(h, { wrap: true, shrink: true, grow: true, className: "gap-x-2 gap-y-1 text-sm" }, [

@@ -17,7 +17,7 @@ import {
 	ChatConversationKey,
 	connectorSessionId,
 } from "@maple/domain/chat-session"
-import { ExternalUserId, OrgId } from "@maple/domain/primitives"
+import { ExternalUserId, OrgId } from "@maple/primitives"
 import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
@@ -170,6 +170,8 @@ describe("meterTurn", () => {
 		assert.deepEqual(charged, [])
 	})
 
+	// Exactly one charge per feature: a second meter keyed `chat` on the same turn would not
+	// deduplicate against this `triage` key, and every investigation turn would bill twice.
 	it("charges input and output under a key that carries the turn", async () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
@@ -266,16 +268,6 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
 	})
 
-	it("bills an investigation turn once, not once per source", async () => {
-		// The merge hazard this guards: two meters on the same tail, one keyed `triage` and one
-		// `chat`. The source segment makes those keys disjoint, so nothing would deduplicate them
-		// and every investigation turn would bill twice.
-		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1000, 100)
-
-		assert.deepEqual(keysFor("ai_input_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:input`])
-		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
-	})
-
 	it("skips tracking when the secret key is set but blank", async () => {
 		// A blank key reads as unset, as an absent one does: no request with an empty bearer.
 		const blankKey = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "  " }))
@@ -315,8 +307,8 @@ describe("meterTurn", () => {
 	})
 
 	it("bounds the tracker request itself, not just the finalizer", async () => {
-		// Belt and braces: `METERING_TIMEOUT` abandons the wait, `TRACK_TIMEOUT_MS` aborts the
-		// request. Without the abort the fetch outlives the turn on an isolate that is winding down.
+		// Belt and braces: `METERING_TIMEOUT` abandons the wait, the tracker's `TRACK_TIMEOUT` aborts
+		// the request. Without the abort the fetch outlives the turn on an isolate that is winding down.
 		const signals: Array<AbortSignal | null | undefined> = []
 		const passthrough = globalThis.fetch
 		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

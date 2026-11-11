@@ -9,7 +9,7 @@ import {
 	AgentFeedbackTriageForbiddenError,
 	AgentType,
 } from "@maple/domain/http"
-import { AgentFeedbackId, type OrgId, type UserId } from "@maple/domain/primitives"
+import { AgentFeedbackId, type OrgId, type UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"

@@ -40,13 +40,11 @@ import {
 } from "../shared/slo-derive"
 import { alertingState, budgetBar, toneText } from "../shared/slo-view"
 import { Message } from "./message"
-import { canManage, type Model, type SloListRow } from "./model"
-
-// The hub's SLOs tab: each SLO with its SLI, budget left, fastest burn and alerting state.
+import { type Model, type SloListRow } from "./model"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
-/** The empty org: what an SLO is, in one line, and the first one to add. */
 const slosEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,
@@ -214,7 +212,7 @@ export const slosTab = (h: H, model: Model): Html => {
 		onNone: () => vstack(h, { gap: "4" }, [skeleton(h, "h-9 w-2/3"), skeleton(h, "h-64 w-full")]),
 		onSome: (rows) =>
 			rows.length === 0
-				? slosEmptyState(h, model.search.serviceName, canManage(model))
+				? slosEmptyState(h, model.search.serviceName, canManageAlerts(model))
 				: vstack(h, { gap: "4" }, [
 						listToolbar(h, { className: "pb-0", trailing: readout(h, model, rows) }),
 						slosTable(h, model, rows),

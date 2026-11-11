@@ -57,7 +57,7 @@ export const FocusSiblingMenuItem = Command.define("FocusSiblingMenuItem", {
 		}),
 })
 
-/** `setTheme`: persist, then the `light`/`dark` class and `color-scheme` on `<html>`. */
+/** Persist, then the `light`/`dark` class and `color-scheme` on `<html>`. */
 export const SaveTheme = Command.define("SaveTheme", {
 	args: { theme: Theme },
 	messages: [Message.CompletedSaveTheme],
@@ -72,7 +72,7 @@ export const SaveTheme = Command.define("SaveTheme", {
 		}),
 })
 
-/** `setGlobalNamespace`: "All namespaces" removes the key. */
+/** "All namespaces" removes the key. */
 export const SaveNamespace = Command.define("SaveNamespace", {
 	args: { orgId: Schema.String, maybeNamespace: Schema.Option(Schema.String) },
 	messages: [Message.CompletedSaveNamespace],
@@ -150,17 +150,16 @@ export const SaveSidebarState = Command.define("SaveSidebarState", {
 			return Message.CompletedSaveSidebarState()
 		}),
 })
-// SESSION
 
-/** `GuestMenu`'s log out: drop the self-hosted token and reload into `/sign-in`. */
+/** The guest menu's log out: drop the self-hosted token and reload into `/sign-in`. */
 export const LogOut = Command.define("LogOut", {
 	messages: [Message.CompletedLogOut],
 	execute: clearSessionToken.pipe(Effect.andThen(load("/sign-in")), Effect.as(Message.CompletedLogOut())),
 })
 
 /**
- * `focusSearch`: a page tags its primary search with `data-shortcut-focus="search"`. A field is
- * focused and selected; anything else (the traces Advanced Filter trigger) is clicked.
+ * A page tags its primary search with `data-shortcut-focus="search"`. A field is
+ * focused and selected; anything else (an Advanced Filter trigger) is clicked.
  */
 export const FocusShortcutSearch = Command.define("FocusShortcutSearch", {
 	messages: [Message.CompletedFocusShortcutSearch],

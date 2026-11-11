@@ -1,5 +1,4 @@
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import { Option, Record, Array as Arr, String as Str, Order } from "effect"
@@ -15,10 +14,10 @@ import { meter } from "@maple/views/ui/meter"
 import { panelHeader } from "@maple/views/ui/panel"
 import { relativeTime } from "../kit/relative-time"
 import { seriesLegend } from "../kit/series-legend"
-import { TOOL_CHIP } from "../agent-sessions/kit/error-chip"
-import type { ToolPercentile, ToolSeriesPoint } from "../agent-sessions/tools-kit/model"
-import { type ToolPlotInputs, toolPlotView } from "../agent-sessions/tools-kit/series-chart"
-import { volumeSparkCell } from "../agent-sessions/tools-kit/spark"
+import { TOOL_CHIP } from "../kit/error-chip"
+import type { ToolSeriesPoint } from "../kit/tools/model"
+import { type ToolPlotInputs, toolPlotView } from "../kit/tools/series-chart"
+import { volumeSparkCell } from "../kit/tools/spark"
 import type { McpClientKind } from "./data"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -178,19 +177,6 @@ export const clientPlot = (
 	}
 }
 
-/** The three percentiles, the picked one in the primary (as Agent Tools' `seriesFor`). */
-export const durationSeries = (percentile: ToolPercentile): PlotSeries =>
-	Arr.map(["p50", "p90", "p95"] as const, (key) => ({
-		key,
-		label: Str.toUpperCase(key),
-		token:
-			key === percentile
-				? "--primary"
-				: key === "p95"
-					? "--color-severity-error"
-					: "--muted-foreground",
-	}))
-
 /** A chart cell: the title and legend, then the plot (or the empty note). */
 export const mcpPlot = <M>(
 	h: HtmlBuilder<M>,
@@ -271,7 +257,6 @@ export const sectionTitle = <M>(
 		...(right === undefined ? [] : [right]),
 	])
 
-/** A right-aligned mono number cell; the width and tone come from the caller. */
 export const numberCell = <M>(h: HtmlBuilder<M>, value: string, className: string): Html =>
 	h.span([h.Class(cn("shrink-0 text-right font-mono text-xs tabular-nums", className))], [value])
 
@@ -291,7 +276,6 @@ const TOOL_COLORS = ["var(--chart-2)", "var(--chart-1)", "var(--chart-3)", "var(
 export const toolColor = (index: number): string =>
 	TOOL_COLORS[index % TOOL_COLORS.length] ?? "var(--chart-2)"
 
-/** An attribute name, in the inline code style. */
 export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 	inlineCode(h, { variant: "chip", className: "rounded-sm text-2xs" }, [name])
 
@@ -318,11 +302,7 @@ export const clientIcon = <M>(h: HtmlBuilder<M>, name: string, size = 14): Html 
 
 /** The client's kind as a quiet uppercase tag; unknown clients carry none. */
 export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArray<Html> =>
-	kind === "unknown"
-		? []
-		: [
-				eyebrow(h, { variant: "mono", as: "span" }, [kind]),
-			]
+	kind === "unknown" ? [] : [eyebrow(h, { variant: "mono", as: "span" }, [kind])]
 
 /** `error.type` as a pill, in the tone Agent Sessions gives tool failures. */
 export const errorTypeChip = <M>(h: HtmlBuilder<M>, errorType: string): Html =>
@@ -360,19 +340,6 @@ export const resultCell = <M>(h: HtmlBuilder<M>, errorType: string | null): Html
 				: errorTypeChip(h, errorType),
 		],
 	)
-
-/** An unknown zone throws in the constructor; the clock then reads as the empty value. */
-const clockFormatter = Option.liftThrowable(
-	(timeZone: string) => new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone }),
-)
-const clockFormatters = new Map<string, Option.Option<Intl.DateTimeFormat>>()
-
-/** "13:26" in the page's zone; one formatter per zone. */
-export const formatClock = (epochMs: number, timeZone: string): string => {
-	const formatter = clockFormatters.get(timeZone) ?? clockFormatter(timeZone)
-	clockFormatters.set(timeZone, formatter)
-	return Option.match(formatter, { onNone: () => EMPTY_VALUE, onSome: (f) => f.format(epochMs) })
-}
 
 /** The scope row: what the page is narrowed to, and the window's totals. */
 export const mcpScopeRow = <M>(h: HtmlBuilder<M>, scope: string, count: string, rest: string): Html =>

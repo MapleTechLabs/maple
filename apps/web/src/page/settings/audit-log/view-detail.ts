@@ -6,7 +6,7 @@ import {
 	type V2AuditLogEntry,
 } from "@maple/domain/http/v2"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
-import type { AuditResourceLink } from "../../../components/settings/audit-log-resource"
+import type { AuditResourceLink } from "../kit/audit-log-resource"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -26,15 +26,12 @@ import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
 import { iconButton } from "@maple/views/ui/icon-button"
 
-// `AuditLogDetail` and its parts.
-
 type H = HtmlBuilder<Message>
 
-/** `<Link {...display.link}>` as an href. */
 export const resourceHref = (link: AuditResourceLink): string => {
 	switch (link.to) {
 		case "/alerts/$ruleId":
-			return `/alerts/${encodeURIComponent(link.params.ruleId)}`
+			return `/alerts/rules/${encodeURIComponent(link.params.ruleId)}`
 		case "/dashboards/$dashboardId":
 			return `/dashboards/${encodeURIComponent(link.params.dashboardId)}`
 		case "/errors/issues/$issueId":
@@ -43,8 +40,8 @@ export const resourceHref = (link: AuditResourceLink): string => {
 			return `/investigations/${encodeURIComponent(link.params.id)}`
 		case "/anomalies/$incidentId":
 			return `/anomalies/${encodeURIComponent(link.params.incidentId)}`
-		case "/alerts":
-			return hrefOf(AppRoute.Alerts({ search: link.search }))
+		case "/alerts/routing":
+			return hrefOf(AppRoute.AlertsSection({ section: "routing", search: {} }))
 		case "/integrations":
 			return hrefOf(AppRoute.Integrations({ search: link.search }))
 		case "/settings":
@@ -62,7 +59,7 @@ const formatScalar = (value: unknown): string =>
 const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-/** Structured or long metadata renders as a block (`metadataBlock`). */
+/** Structured or long metadata renders as a block. */
 const metadataBlock = (value: unknown): string | null => {
 	if (typeof value === "string") {
 		const trimmed = Str.trim(value)

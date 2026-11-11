@@ -187,7 +187,8 @@ describe("rawSqlIssue", () => {
 	})
 
 	it("still refuses a reader as the start of WITH FILL", () => {
-		const sql = "SELECT 1 AS b FROM logs WHERE $__orgFilter ORDER BY b WITH FILL FROM url('http://x/') TO 10"
+		const sql =
+			"SELECT 1 AS b FROM logs WHERE $__orgFilter ORDER BY b WITH FILL FROM url('http://x/') TO 10"
 		expect(rawSqlIssue(sql)?.code).toBe("DisallowedFunction")
 	})
 

@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, verificationVerdictAutoCloses, WarehouseQueryError } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
 	WarehouseQueryService,
@@ -21,6 +21,7 @@ import {
 	splitVersionRows,
 	verdictFromInvestigationStatus,
 } from "./FixVerificationTickService"
+import { InvestigationStarter } from "./InvestigationStarter"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { PullRequestLookup } from "./PullRequestLookup"
 
@@ -178,6 +179,8 @@ const makeTickLayer = () => {
 				databaseLive,
 				verificationLive,
 				Layer.succeed(WarehouseQueryService, failingWarehouse),
+				// No row here reaches an investigation; without `ChatSessions` a start would record `no_binding`.
+				InvestigationStarter.layer.pipe(Layer.provide(databaseLive)),
 			),
 		),
 	)

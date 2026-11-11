@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { checkpointQuarantineRoot, restoreTransactionPath } from "@maple/local-server/checkpoints"
 import { migrationJournalPath, migrationRootPath } from "@maple/local-server/local-store-migration-journal"
-import { listRetainedLeftovers, pruneRetainedLeftovers } from "../src/server/retained-leftovers"
+import { listRetainedLeftovers, pruneRetainedLeftovers } from "@maple/local-server/retained-leftovers"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 const withParent = async (run: (dataDir: string) => Promise<void>): Promise<void> => {

@@ -14,7 +14,7 @@ import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
-import { defaultLocalUrl } from "@maple/local-server/local-address"
+import { configuredLocalUrl } from "@maple/local-server/local-address"
 import { durableWrite } from "@maple/local-server/durable-files"
 import {
 	credentialAccount,
@@ -203,8 +203,6 @@ const envConfig = Config.all({
 		Config.map(Option.getOrUndefined),
 	),
 	MAPLE_ORG_ID: optionalEnv("MAPLE_ORG_ID"),
-	MAPLE_LOCAL_URL: optionalEnv("MAPLE_LOCAL_URL"),
-	MAPLE_LOCAL_BIND_HOST: optionalEnv("MAPLE_LOCAL_BIND_HOST"),
 })
 
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>()("@maple/cli/MapleConfig", {
@@ -223,6 +221,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 			),
 		)
 		const env = yield* envConfig
+		const localUrl = yield* configuredLocalUrl
 		const resolvedApiUrl = env.MAPLE_API_URL ?? stored.apiUrl
 		const envToken = env.MAPLE_API_TOKEN === undefined ? undefined : Redacted.value(env.MAPLE_API_TOKEN)
 		const fileToken = storedTokenFor(stored, resolvedApiUrl)
@@ -247,7 +246,7 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 			credentialManaged: stored.credentialManaged === true,
 			tokenSource,
 			envTokenOverride: envToken !== undefined,
-			localUrl: env.MAPLE_LOCAL_URL ?? defaultLocalUrl(env.MAPLE_LOCAL_BIND_HOST),
+			localUrl,
 			defaultMode: Option.fromNullishOr(stored.defaultMode),
 			defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
 			lastUpdateCheck: Option.fromNullishOr(stored.lastUpdateCheck),

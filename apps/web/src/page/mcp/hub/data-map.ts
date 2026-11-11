@@ -1,11 +1,6 @@
-import type {
-	McpOverviewResponse,
-	McpSeriesPoint,
-	McpServersResponse,
-	McpToolResponse,
-} from "@maple/domain/http"
-import type { ToolSeriesPoint } from "../../agent-sessions/tools-kit/model"
-import type { McpCoverageRow, McpFailureKind, McpServerOverview, McpServerRow, McpToolDetail } from "../data"
+import type { McpOverviewResponse, McpSeriesPoint, McpToolResponse } from "@maple/domain/http"
+import type { ToolSeriesPoint } from "../../kit/tools/model"
+import type { McpCoverageRow, McpFailureKind, McpServerOverview, McpToolDetail } from "../data"
 import { Array as Arr } from "effect"
 
 // The hub's reads in the shapes the MCP views draw. Counts arrive raw; the words are here.
@@ -17,8 +12,6 @@ const plural = (count: number, one: string, many = `${one}s`) =>
 	`${count.toLocaleString()} ${count === 1 ? one : many}`
 
 const point = (row: McpSeriesPoint): ToolSeriesPoint => ({ ...row, sessions: 0 })
-
-export const serverRows = (response: McpServersResponse): ReadonlyArray<McpServerRow> => response.servers
 
 /** The failure panel: tool errors, server-side JSON-RPC errors, and the caller mistakes the spec exempts. */
 export const failureKinds = (failures: Overview["failures"]): ReadonlyArray<McpFailureKind> => {

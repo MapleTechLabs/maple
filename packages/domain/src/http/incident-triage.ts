@@ -9,7 +9,7 @@
  */
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { InvestigationId } from "../primitives"
+import { InvestigationId } from "@maple/primitives"
 import { IssueSeverity } from "./errors"
 
 /**
@@ -101,8 +101,8 @@ export class IncidentTriageRequest extends Schema.Class<IncidentTriageRequest>("
 
 /**
  * The bearer a Worker presents to another Worker's internal endpoint:
- * `Authorization: Bearer maple_svc_<INTERNAL_SERVICE_TOKEN>`, the shape the chat
- * agent already uses against `/mcp`.
+ * `Authorization: Bearer maple_svc_<INTERNAL_SERVICE_TOKEN>`. Only the internal
+ * routes accept it; `/mcp` and the chat routes refuse it.
  */
 export const INTERNAL_SERVICE_BEARER_PREFIX = "maple_svc_"
 export const internalServiceBearer = (token: string): string =>

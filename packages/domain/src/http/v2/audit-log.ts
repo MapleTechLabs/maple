@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AuditLogEntryId } from "../../primitives"
+import { AuditLogEntryId } from "@maple/primitives"
 import { AuditActorType, AuditLogPersistenceError, AuditLogSource, AuditOutcome } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -152,7 +152,6 @@ export const V2AuditLogKind = Schema.Literals(["all", "changes", "access"]).anno
 })
 export type V2AuditLogKind = Schema.Schema.Type<typeof V2AuditLogKind>
 
-/** Audit-log list query: standard pagination plus actor/action/resource/outcome/time filters. */
 export const V2AuditLogQuery = Schema.Struct({
 	...ListQuery.fields,
 	kind: Schema.optional(

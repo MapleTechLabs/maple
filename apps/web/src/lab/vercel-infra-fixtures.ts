@@ -390,7 +390,13 @@ const liveIn = (i: number, offsetMs: number) => NOW - (new Date(bucketAt(i)).get
 export const VERCEL_API_DEPLOYMENTS: ReadonlyArray<VercelDeploymentSummary> = [
 	deployment("api-y2", "BUILDING", "feat/batch-writes", "Batch the order writes", 6 * MINUTE, null),
 	// The spike's buckets run 71–75: the bad deploy goes live in its first bucket, the revert in its last.
-	deployment("api-z4", "READY", "main", "Revert: cache product prices at the edge", liveIn(75, 10 * MINUTE)),
+	deployment(
+		"api-z4",
+		"READY",
+		"main",
+		"Revert: cache product prices at the edge",
+		liveIn(75, 10 * MINUTE),
+	),
 	deployment("api-z3", "READY", "main", "Cache product prices at the edge", liveIn(71, 3 * MINUTE)),
 	deployment("api-x8", "READY", "main", "Move rate limits to the edge config", 26 * HOUR),
 	deployment("api-w5", "ERROR", "fix/cold-start", "Lazy-load the PDF renderer", 30 * HOUR, null),

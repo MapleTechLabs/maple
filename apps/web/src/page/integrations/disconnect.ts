@@ -3,6 +3,7 @@ import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../platform/api-clients"
 import { Message, type StatusName } from "./message"
+import { type ProviderId, PROVIDERS } from "../kit/providers"
 
 // Every provider's disconnect copy: the confirmation, its toasts, and the status reads a shared
 // disconnect refreshes. AWS, Google Cloud and chat run their own mutation but read the copy here.
@@ -21,89 +22,78 @@ export interface DisconnectSpec {
 
 export const disconnectTitle = (subject: string): string => `Disconnect ${subject}?`
 
+/** A provider's copy in its registry name: `<Name> disconnected`, `Couldn't disconnect <Name>`. */
+const named = (id: ProviderId, description: string, refresh: ReadonlyArray<StatusName>): DisconnectSpec => {
+	const name = PROVIDERS[id].name
+	return {
+		subject: name,
+		description,
+		success: `${name} disconnected`,
+		error: `Couldn't disconnect ${name}`,
+		refresh,
+	}
+}
+
 const SPECS = {
-	linear: {
-		subject: "Linear",
-		description: "Maple stops opening and updating Linear issues for incidents until you reconnect.",
-		success: "Linear disconnected",
-		error: "Couldn't disconnect Linear",
-		refresh: ["linear"],
-	},
-	github: {
-		subject: "GitHub",
-		description:
-			"This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch.",
-		success: "GitHub disconnected",
-		error: "Couldn't disconnect GitHub",
-		refresh: ["github"],
-	},
-	vercel: {
-		subject: "Vercel",
-		description: "",
-		success: "Vercel disconnected",
-		error: "Couldn't disconnect Vercel",
-		refresh: ["vercel"],
-	},
-	railway: {
-		subject: "Railway",
-		description: "Maple stops collecting metrics from your Railway projects. You can reconnect later.",
-		success: "Railway disconnected",
-		error: "Couldn't disconnect Railway",
-		refresh: ["railway"],
-	},
-	supabase: {
-		subject: "Supabase",
-		description:
-			"Maple revokes its access to your Supabase organization and stops collecting metrics from its projects. Data already collected stays. You can reconnect later.",
-		success: "Supabase disconnected",
-		error: "Couldn't disconnect Supabase",
-		refresh: ["supabase"],
-	},
+	linear: named(
+		"linear",
+		"Maple stops opening and updating Linear issues for incidents until you reconnect.",
+		["linear"],
+	),
+	github: named(
+		"github",
+		"This removes the Maple GitHub App connection and permanently deletes all synced repositories and their commit history from Maple. This cannot be undone. You can reconnect later, but everything will be re-synced from scratch.",
+		["github"],
+	),
+	vercel: named("vercel", "", ["vercel"]),
+	railway: named(
+		"railway",
+		"Maple stops collecting metrics from your Railway projects. You can reconnect later.",
+		["railway"],
+	),
+	supabase: named(
+		"supabase",
+		"Maple revokes its access to your Supabase organization and stops collecting metrics from its projects. Data already collected stays. You can reconnect later.",
+		["supabase"],
+	),
 	planetscale: {
-		subject: "PlanetScale",
-		description: "Maple stops collecting data from PlanetScale. You can reconnect later.",
+		...named("planetscale", "Maple stops collecting data from PlanetScale. You can reconnect later.", [
+			"planetscale",
+			"planetscaleDatabases",
+		]),
 		success: "PlanetScale organization disconnected",
 		error: "Couldn't disconnect PlanetScale organization",
-		refresh: ["planetscale", "planetscaleDatabases"],
 	},
 	cloudflare: {
-		subject: "Cloudflare",
-		description: "Maple stops collecting data from this Cloudflare account. You can reconnect later.",
+		...named(
+			"cloudflare",
+			"Maple stops collecting data from this Cloudflare account. You can reconnect later.",
+			["cloudflare"],
+		),
 		success: "Cloudflare account disconnected",
-		error: "Couldn't disconnect Cloudflare",
-		refresh: ["cloudflare"],
 	},
 	"cloudflare-multi": {
-		subject: "Cloudflare",
-		description:
+		...named(
+			"cloudflare",
 			"Maple stops collecting data from all connected Cloudflare accounts. You can reconnect later.",
+			["cloudflare"],
+		),
 		success: "Cloudflare accounts disconnected",
-		error: "Couldn't disconnect Cloudflare",
-		refresh: ["cloudflare"],
 	},
 	aws: {
-		subject: "AWS account",
-		description:
+		...named(
+			"aws",
 			"Maple stops assuming the role and removes this source. Data already collected stays. Afterwards, delete the stack in AWS with the script Maple shows.",
-		success: "AWS disconnected",
-		error: "Couldn't disconnect AWS",
-		refresh: ["aws"],
+			["aws"],
+		),
+		subject: "AWS account",
 	},
-	gcp: {
-		subject: "Google Cloud",
-		description: "",
-		success: "Google Cloud disconnected",
-		error: "Couldn't disconnect Google Cloud",
-		refresh: ["gcp"],
-	},
-	"google-search-console": {
-		subject: "Google Search Console",
-		description:
-			"Maple revokes its access to your Google account and stops importing Search Console data. Data already imported stays. You can reconnect later.",
-		success: "Google Search Console disconnected",
-		error: "Couldn't disconnect Google Search Console",
-		refresh: ["searchConsole"],
-	},
+	gcp: named("gcp", "", ["gcp"]),
+	"google-search-console": named(
+		"google-search-console",
+		"Maple revokes its access to your Google account and stops importing Search Console data. Data already imported stays. You can reconnect later.",
+		["searchConsole"],
+	),
 	chat: {
 		subject: "workspace",
 		description: "This workspace is unlinked from your organization immediately.",
@@ -178,7 +168,8 @@ export const Disconnect = Command.define("DisconnectIntegration", {
 			Effect.match({
 				onFailure: (error) =>
 					Message.CompletedDisconnect({ integration, failure: toLoadFailure(error) }),
-				onSuccess: (reported) => Message.CompletedDisconnect({ integration: reported, failure: null }),
+				onSuccess: (reported) =>
+					Message.CompletedDisconnect({ integration: reported, failure: null }),
 			}),
 		),
 })

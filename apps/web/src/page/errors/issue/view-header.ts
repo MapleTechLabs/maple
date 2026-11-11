@@ -2,7 +2,7 @@ import type { AnomalyIncidentDocument, ErrorIssueDocument, ErrorIssueId } from "
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
 import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
-import { liveInvestigationSummary, resolveSignalState } from "../../../lib/models/error-signal"
+import { liveInvestigationSummary, resolveSignalState } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { button } from "@maple/views/ui/button"
@@ -12,7 +12,7 @@ import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { severityBadge } from "../kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { signalStateChip } from "../kit/state-chip"
 import { DEFAULT_PRESET, headlineOf, type Search, type Tab } from "./derive"
 import { Message } from "./message"
@@ -25,11 +25,8 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The issue header over `DetailHeader`, and the issue tabs.
-
 type H = HtmlBuilder<Message>
 
-/** `DetailEyebrow`: the kind segments joined by a quiet dot. */
 const detailEyebrow = (h: H, segments: ReadonlyArray<string | null>): Html => {
 	const shown = Arr.filter(segments, (segment): segment is string => segment !== null && segment !== "")
 	return eyebrow(
@@ -45,7 +42,6 @@ const detailEyebrow = (h: H, segments: ReadonlyArray<string | null>): Html => {
 /** A fixed issue's past regressions are history, not a live signal. */
 const RESOLVED_STATES = new Set(["done", "cancelled"])
 
-/** The header's left side: eyebrow, the one `<h1>`, severity and status. */
 export const headerTitle = (
 	h: H,
 	issue: ErrorIssueDocument,
@@ -72,24 +68,19 @@ export const headerTitle = (
 				}),
 				...(surge !== null && surge >= SURGE_THRESHOLD
 					? [
-							badge(
-								h,
-								{ variant: "crit", className: "tabular-nums" },
-								[icon(h, "ArrowTrendUpIcon", { size: 12 }), `Surging ${surge.toFixed(1)}x`],
-							),
+							badge(h, { variant: "crit", className: "tabular-nums" }, [
+								icon(h, "ArrowTrendUpIcon", { size: 12 }),
+								`Surging ${surge.toFixed(1)}x`,
+							]),
 						]
 					: []),
 				...(issue.regressionCount > 0 && !RESOLVED_STATES.has(issue.workflowState)
 					? [
-							badge(
-								h,
-								{ variant: "warn" },
-								[
-									issue.regressionCount === 1
-										? "1 regression"
-										: `${issue.regressionCount} regressions`,
-								],
-							),
+							badge(h, { variant: "warn" }, [
+								issue.regressionCount === 1
+									? "1 regression"
+									: `${issue.regressionCount} regressions`,
+							]),
 						]
 					: []),
 				...openAnomalyBadge(h, anomalies),
@@ -98,7 +89,6 @@ export const headerTitle = (
 	)
 }
 
-/** The picker trigger and Reload (`TimeRangeHeaderControls`). */
 const windowControls = (h: H, model: Model): Html =>
 	timeControls(h, {
 		search: model.search,
@@ -123,7 +113,6 @@ const windowControls = (h: H, model: Model): Html =>
 			}),
 	})
 
-/** `IssueOverflowMenu`: an outline icon trigger, the menu aligned to its end. */
 const overflowMenu = (h: H, model: Model, issue: ErrorIssueDocument): Html =>
 	h.submodel({
 		slotId: model.overflowMenu.id,
@@ -152,7 +141,6 @@ const overflowMenu = (h: H, model: Model, issue: ErrorIssueDocument): Html =>
 		toParentMessage: (message) => Message.GotOverflowMenuMessage({ message }),
 	})
 
-/** The header's actions: the window and the overflow menu. Getting it fixed lives in the body. */
 export const headerActions = (h: H, model: Model, issue: ErrorIssueDocument | null): Html =>
 	hstack(h, { gap: "2" }, [
 		windowControls(h, model),
@@ -165,7 +153,6 @@ const TABS: ReadonlyArray<{ readonly value: Tab; readonly label: string }> = [
 	{ value: "activity", label: "Activity" },
 ]
 
-/** `IssueTabs`: tab links under the header, with counts where they are known. */
 export const issueTabs = (
 	h: H,
 	issueId: ErrorIssueId,

@@ -1,9 +1,7 @@
 import { encodePublicId, V2AlertIncidentEscalation, V2EscalationChain } from "@maple/domain/http/v2"
 import type { AlertDestinationRow } from "@maple/web-data/collections/alerts"
 import { Schema, Array as Arr, String as Str } from "effect"
-import { destinationRow, NOW } from "./test-rows"
-
-// Escalation chains, their destinations and incident runs for the scene tests and `/lab/escalation`.
+import { destinationRow, NOW } from "../../kit/alert-test-rows"
 
 const pad = (n: number) => Str.padStart(12, "0")(String(n))
 export const chainUuid = (n: number) => `0199a00e-0000-7000-8000-${pad(n)}`

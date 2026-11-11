@@ -5,7 +5,7 @@ import { emptyNotice } from "../kit/placeholders"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 
-/** `TraceDetailLoading`: shaped like the loaded page (strip, spectrum bar, waterfall rows). */
+/** Shaped like the loaded page (strip, spectrum bar, waterfall rows). */
 export const traceDetailLoading = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("space-y-4 p-4")],

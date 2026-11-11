@@ -7,7 +7,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { Logs, Traces, orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
 import { isoBucket, leftUTF8 } from "@maple/query-engine/ch/format"
 
 /** Narrows a read to one Vercel project. */
@@ -15,8 +16,8 @@ export interface VercelProjectScope {
 	readonly projectId?: string
 }
 
-type LogColumns = ColumnAccessor<typeof Logs.columns>
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
+type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
+type TraceColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 /** The trace drain's service for Vercel's edge: one request span per request, plus routing children. */
 export const VERCEL_EDGE_SERVICE = "vercel.edge-network"
@@ -50,7 +51,8 @@ const vercelLogsWhere = ($: LogColumns) => [
 ]
 
 /** Answered from Vercel's cache: a hit, a stale copy, or a prerendered page. */
-const servedFromCache = ($: LogColumns) => CH.inList($.LogAttributes.get("vercel.cache"), ["HIT", "STALE", "PRERENDER"])
+const servedFromCache = ($: LogColumns) =>
+	CH.inList($.LogAttributes.get("vercel.cache"), ["HIT", "STALE", "PRERENDER"])
 
 const requestColumns = ($: LogColumns) => ({
 	requests: CH.countIf(isRequest($)),
@@ -64,7 +66,7 @@ const requestColumns = ($: LogColumns) => ({
 
 /** One row per project over the window: request volume, status mix, cache and error logs. */
 export function vercelProjectRequestsSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			projectId: $.ResourceAttributes.get("vercel.project.id"),
 			projectName: CH.any_($.ResourceAttributes.get("vercel.project.name")),
@@ -81,7 +83,7 @@ export function vercelProjectRequestsSQL() {
 
 /** Requests by status class per bucket, for every project or one. */
 export function vercelRequestTimeseriesSQL(scope: VercelProjectScope = {}) {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			requests: CH.countIf(isRequest($)),
@@ -122,9 +124,12 @@ export type VercelBreakdownStatus = "all" | "4xx" | "5xx"
  * One project's requests grouped by one log attribute: volume, failures, cache and
  * response bytes. Requests without the attribute group under the empty key.
  */
-export function vercelProjectBreakdownSQL(dimension: VercelBreakdownDimension, status: VercelBreakdownStatus = "all") {
+export function vercelProjectBreakdownSQL(
+	dimension: VercelBreakdownDimension,
+	status: VercelBreakdownStatus = "all",
+) {
 	const attribute = VERCEL_BREAKDOWN_ATTRIBUTES[dimension]
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			key: $.LogAttributes.get(attribute),
 			requests: CH.count(),
@@ -138,7 +143,9 @@ export function vercelProjectBreakdownSQL(dimension: VercelBreakdownDimension, s
 			...vercelLogsWhere($),
 			$.ResourceAttributes.get("vercel.project.id").eq(param.string("projectId")),
 			isRequest($),
-			status === "all" ? undefined : statusCode($).between(status === "4xx" ? 400 : 500, status === "4xx" ? 499 : 599),
+			status === "all"
+				? undefined
+				: statusCode($).between(status === "4xx" ? 400 : 500, status === "4xx" ? 499 : 599),
 		])
 		.groupBy("key")
 		.orderBy(["requests", "desc"])
@@ -148,7 +155,7 @@ export function vercelProjectBreakdownSQL(dimension: VercelBreakdownDimension, s
 
 /** Edge request latency per bucket, from the trace drain, for every project or one. */
 export function vercelEdgeLatencyTimeseriesSQL(scope: VercelProjectScope = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			p50DurationMs: CH.quantile(0.5)($.Duration).div(1_000_000),
@@ -172,7 +179,7 @@ export function vercelEdgeLatencyTimeseriesSQL(scope: VercelProjectScope = {}) {
 
 /** The busiest paths of one project, with their failures and cache hits. */
 export function vercelProjectTopPathsSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			path: $.LogAttributes.get("url.path"),
 			requests: CH.count(),
@@ -194,7 +201,7 @@ export function vercelProjectTopPathsSQL() {
 
 /** Error and fatal log lines of one project, grouped by their first 200 characters. */
 export function vercelProjectTopErrorsSQL() {
-	return from(Logs)
+	return from(Datasources.logs)
 		.select(($) => ({
 			message: leftUTF8($.Body, CH.lit(200)),
 			occurrences: CH.count(),
@@ -217,7 +224,7 @@ export function vercelProjectTopErrorsSQL() {
  * spans. Empty for projects that send no traces.
  */
 export function vercelProjectLatencySQL() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			projectId: $.ResourceAttributes.get("vercel.projectId"),
 			serviceName: CH.any_($.ServiceName),

@@ -8,7 +8,7 @@ import type {
 	OnCallScheduleConfig,
 	OnCallWeekday,
 } from "@maple/domain/http"
-import type { OnCallOverrideId, UserId } from "@maple/domain/primitives"
+import type { OnCallOverrideId, UserId } from "@maple/primitives"
 
 // Pure on-call resolution. Handoffs and restrictions are local wall-clock times in the
 // schedule's zone. A local time inside a DST gap moves forward by the gap (02:30 becomes
@@ -110,7 +110,6 @@ const rotationClock = (
 	const step = rotation.kind === "daily" ? 1 : 7
 	const weekdayOffset = (day: number) =>
 		rotation.kind === "daily" ? 0 : mod(weekdayOfDay(day) - weekdayIndex(rotation.handoffWeekday), 7)
-	// The handoff day of the shift containing `ms`.
 	const handoffDayAt = (ms: number): number => {
 		const day = localDayOf(zone, ms)
 		const candidate = day - weekdayOffset(day)

@@ -11,11 +11,12 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { defineFn, from, fromQuery, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { Traces, orgIdParam } from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "@maple/query-engine/ch/tables"
 import { finiteOrZero, isoBucket } from "@maple/query-engine/ch/format"
 import { VERCEL_EDGE_SERVICE, isEdgeRequest, type VercelProjectScope } from "./vercel-infra"
 
-type TraceColumns = ColumnAccessor<typeof Traces.columns>
+type TraceColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 const PLATFORM_SERVICE_KEY = "maple_vercel.platform_service"
 const RUNTIME_SERVICE = "vercel.serverless-runtime"
@@ -43,7 +44,7 @@ const projectId = ($: TraceColumns) => $.ResourceAttributes.get("vercel.projectI
 
 /** Invocations and cold starts per project over the window. */
 export function vercelProjectFunctionsSQL() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			projectId: projectId($),
 			/** The project's own service: ingest renames the invocation span to it. */
@@ -66,17 +67,21 @@ export function vercelProjectFunctionsSQL() {
 
 /** Invocations, cold starts and invocation latency per bucket, for every project or one. */
 export function vercelFunctionTimeseriesSQL(scope: VercelProjectScope = {}) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			bucket: isoBucket($.Timestamp),
 			invocations: CH.countIf($.SpanName.eq(INVOKE_FUNCTION)),
 			coldStarts: CH.countIf($.SpanName.eq(START_VM)),
 			// NULL outside invocations, so the quantiles read invocation spans only; 0 in a bucket without one.
 			invokeP50Ms: finiteOrZero(
-				CH.quantile(0.5)(CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0)).div(1_000_000),
+				CH.quantile(0.5)(
+					CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0),
+				).div(1_000_000),
 			),
 			invokeP95Ms: finiteOrZero(
-				CH.quantile(0.95)(CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0)).div(1_000_000),
+				CH.quantile(0.95)(
+					CH.nullIf(CH.if_($.SpanName.eq(INVOKE_FUNCTION), $.Duration, CH.lit(0)), 0),
+				).div(1_000_000),
 			),
 		}))
 		.where(($) => [
@@ -103,7 +108,7 @@ export function vercelFunctionTimeseriesSQL(scope: VercelProjectScope = {}) {
  * and sums their init time.
  */
 export function vercelFunctionRoutesSQL() {
-	const perTrace = from(Traces)
+	const perTrace = from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			route: CH.anyIf($.SpanAttributes.get("http.route"), $.ServiceName.eq(VERCEL_EDGE_SERVICE)),
@@ -119,7 +124,9 @@ export function vercelFunctionRoutesSQL() {
 			projectId($).eq(param.string("projectId")),
 			CH.or(
 				isEdgeRequest($),
-				isRuntime($).and($.SpanKind.eq("Server")).and($.SpanName.in_(INVOKE_FUNCTION, ...COLD_START_PHASES)),
+				isRuntime($)
+					.and($.SpanKind.eq("Server"))
+					.and($.SpanName.in_(INVOKE_FUNCTION, ...COLD_START_PHASES)),
 			),
 		])
 		.groupBy("traceId")
@@ -149,7 +156,7 @@ export function vercelFunctionRoutesSQL() {
  * no response at all (`http.status_code = -1`).
  */
 export function vercelProjectDependenciesSQL() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const status = toInt32OrZero($.SpanAttributes.get("http.status_code"))
 			return {

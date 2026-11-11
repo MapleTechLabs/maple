@@ -1,8 +1,7 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { truncate } from "../lib/format"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListAlertChecksOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { ALERT_CHECK_STATUSES, parseRuleId, ruleNotFound } from "../lib/alert-rules"
 import * as P from "../lib/params"
@@ -59,7 +58,6 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 100, max: 2000, noun: "checks" }),
 		}),
 		aliases: { since: "start_time", until: "end_time" },
-		output: ListAlertChecksOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading alert check history"],
 		handler: Effect.fn("McpTool.listAlertChecks")(function* (params) {

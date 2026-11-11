@@ -6,7 +6,6 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import { CancellationReviewJob } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
-import { CANCELLATION_REVIEW_MAX_RETRIES } from "./queue-retry-limits"
 
 /** Not `maple-api`: a review's minute of upstream reads would skew the request service's percentiles. */
 export const cancellationReviewTelemetry = eventTelemetry({ serviceName: "maple-cancellation-reviews" })
@@ -37,7 +36,7 @@ const settle = (outcome: "reviewed" | "retried" | "interrupted" | "dropped" | "m
  * that could not finish retries with backoff; any outcome it reached acks. The
  * review's claim row dedupes queue redelivery and a cancellation queued twice.
  */
-export const processCancellationReviewBatch = (batch: QueueBatch) =>
+export const processCancellationReviewBatch = (batch: QueueBatch, maxRetries: number) =>
 	Effect.gen(function* () {
 		const reviews = yield* CancellationReviewService
 		yield* Effect.forEach(
@@ -79,7 +78,7 @@ export const processCancellationReviewBatch = (batch: QueueBatch) =>
 											}),
 											error: summarizeCause(cause),
 										}
-										return message.attempts > CANCELLATION_REVIEW_MAX_RETRIES
+										return message.attempts > maxRetries
 											? Effect.logError(
 													"Cancellation review exhausted its retries; dropped",
 												).pipe(

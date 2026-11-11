@@ -7,7 +7,7 @@ import {
 	type AiCreditsExhausted,
 	AiCreditsUnavailable,
 } from "@maple/backend/services/billing/AiCredits"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import { Effect, Option } from "effect"
 
 const CHECK_TIMEOUT = "3 seconds"

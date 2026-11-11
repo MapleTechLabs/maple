@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 /**

@@ -8,8 +8,6 @@ import { Message } from "./message"
 import { isWriteBlocked } from "./mode"
 import type { Model } from "./model"
 
-// The history panel's steps: open and close, preview a version, restore it.
-
 type Return = PageReturn<Model, Message>
 
 const wrapDialog = (message: Dialog.Message) => Message.GotRestoreDialogMessage({ message })
@@ -32,7 +30,7 @@ const readVersions = (model: Model, history: Partial<HistoryState>): Return => {
 	}
 }
 
-/** `openHistory`: the panel mounts and reads the version list. */
+/** The panel mounts and reads the version list. */
 export const openHistory = (model: Model): Return =>
 	model.history.isOpen ? { model } : readVersions(model, { isOpen: true, versions: AsyncData.Loading() })
 

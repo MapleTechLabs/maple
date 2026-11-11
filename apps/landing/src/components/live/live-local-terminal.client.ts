@@ -61,7 +61,6 @@ export function playLocalTerminal(root: HTMLElement) {
 		})
 	}
 
-	// One delegated listener rather than one per line.
 	root.addEventListener("transitionend", (event) => {
 		const el = event.target as HTMLElement
 		if (event.propertyName === "filter" && el.style.filter === "blur(0px)") el.style.filter = "none"

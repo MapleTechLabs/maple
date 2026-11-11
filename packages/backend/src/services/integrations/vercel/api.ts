@@ -106,7 +106,9 @@ const TeamsBody = Schema.Struct({
 			id: Schema.String,
 			slug: Schema.String,
 			name: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			billing: Schema.optionalKey(Schema.NullOr(Schema.Struct({ plan: Schema.optionalKey(Schema.String) }))),
+			billing: Schema.optionalKey(
+				Schema.NullOr(Schema.Struct({ plan: Schema.optionalKey(Schema.String) })),
+			),
 		}),
 	),
 	pagination: Schema.optionalKey(Pagination),

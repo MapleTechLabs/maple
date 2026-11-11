@@ -5,12 +5,12 @@ import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { Array as Arr } from "effect"
 
-// `DetailHeader`'s title side and `DetailHeaderSkeleton`.
-// The page passes the result as `dashboardPage`'s `titleContent`, its actions as `actions`.
+// A detail page's title block and its loading skeleton. The page passes the result as
+// `dashboardPage`'s `titleContent`, its actions as `actions`.
 
 type Children = ReadonlyArray<Html | string>
 
-/** `DetailEyebrow`: the kind segments joined by a quiet dot. */
+/** The kind segments joined by a quiet dot. */
 export const detailEyebrow = <M>(
 	h: HtmlBuilder<M>,
 	segments: ReadonlyArray<Html | string | null>,
@@ -76,13 +76,11 @@ export const detailTitle = <M>(h: HtmlBuilder<M>, options: DetailTitleOptions): 
 	)
 }
 
-/** `DetailHeaderSkeleton`'s title side. */
 export const detailTitleSkeleton = <M>(h: HtmlBuilder<M>, hasMeta = true): Html =>
 	h.div(
 		[h.Class("min-w-0 space-y-2.5"), h.AriaBusy(true)],
 		[skeleton(h, "h-3 w-32"), skeleton(h, "h-7 w-3/4"), ...(hasMeta ? [skeleton(h, "h-5 w-48")] : [])],
 	)
 
-/** `DetailHeader`'s actions wrapper. */
 export const detailActions = <M>(h: HtmlBuilder<M>, children: Children): Html =>
 	h.div([h.Class("flex items-center gap-2")], children)

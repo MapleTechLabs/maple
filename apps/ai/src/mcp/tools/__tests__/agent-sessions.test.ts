@@ -27,8 +27,6 @@ const TRACE_ID = "7f3a4b5c6d7e8f901234567890abcdef"
 const CSV_SESSION_ID = "wrun_01KZCSV"
 const WINDOW = { start_time: "2026-08-19 09:00:00", end_time: "2026-08-19 12:00:00" }
 
-// Warehouse rows, in their wire shapes
-
 const listRow = {
 	sessionId: SESSION_ID,
 	vendorId: "eve",
@@ -219,8 +217,6 @@ const rowCells = (text: string, first: string): ReadonlyArray<string> | undefine
 		(line) => Arr.map(Str.split(" | ")(Str.slice(1, -1)(line)), (cell) => Str.trim(cell)),
 	).find((cells) => cells[0] === first)
 
-// Parameters
-
 describe("agent session parameter validation", () => {
 	it("rejects a lone window bound — the pair is what makes the read a seek", async () => {
 		const answer = await result("get_agent_session", {
@@ -257,8 +253,6 @@ describe("clipPayload", () => {
 		expect(clipPayload("short", 5)).toBe("short")
 	})
 })
-
-// Rendering
 
 describe("offsetLabel", () => {
 	it("carries seconds that round up to a minute into the minute", () => {

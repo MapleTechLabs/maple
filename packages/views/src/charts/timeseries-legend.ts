@@ -1,11 +1,11 @@
-import { findFirstPartialIndex } from "@maple/ui/components/plot/partial-buckets"
+import { findFirstPartialIndex } from "./plot/partial-buckets"
 import {
 	computeSeriesStats,
 	isAllZeroStats,
 	type SeriesStats,
 	type SeriesStatsMap,
 	sortZeroSeriesLast,
-} from "@maple/ui/components/plot/series-stats"
+} from "./plot/series-stats"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -18,8 +18,8 @@ import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
 import { typography } from "../ui/typography"
 
-// `TimeseriesLegend` (packages/ui/src/components/plot/timeseries.tsx): the compact legend or the
-// Min/Max/Mean/Last table, below or beside the plot; shared by the line, area and bar charts.
+// The timeseries legend: the compact legend or the Min/Max/Mean/Last table, below or beside the
+// plot; shared by the line, area and bar charts.
 
 export interface LegendSeries {
 	readonly key: string
@@ -205,7 +205,7 @@ export const timeseriesLegend = (
 ): Html => {
 	const { series } = inputs
 	if ((inputs.legend !== "visible" && inputs.legend !== "right") || series.length === 0) return h.empty
-	// Stats over the closed buckets only, so all-zero series sink to the bottom (`TimeseriesLegend`).
+	// Stats over the closed buckets only, so all-zero series sink to the bottom.
 	const keys = Arr.map(series, (entry) => entry.key)
 	const normalised = normaliseRows(inputs.data, inputs.definitions)
 	const rows = scaleRates(normalised, keys, inputs.unit, bucketSecondsOf(normalised))

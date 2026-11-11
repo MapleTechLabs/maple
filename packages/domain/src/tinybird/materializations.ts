@@ -142,9 +142,6 @@ import {
 import { Array as Arr } from "effect"
 import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/primitives"
 
-/**
- * Materialized view to aggregate log usage statistics per service per hour
- */
 export const serviceUsageLogsMv = defineMaterializedView("service_usage_logs_mv", {
 	description: "Materialized view to aggregate log usage statistics per service per hour",
 	datasource: serviceUsage,
@@ -175,9 +172,6 @@ export const serviceUsageLogsMv = defineMaterializedView("service_usage_logs_mv"
 	],
 })
 
-/**
- * Materialized view to aggregate trace/span usage statistics per service per hour
- */
 export const serviceUsageTracesMv = defineMaterializedView("service_usage_traces_mv", {
 	description: "Materialized view to aggregate trace/span usage statistics per service per hour",
 	datasource: serviceUsage,
@@ -208,9 +202,6 @@ export const serviceUsageTracesMv = defineMaterializedView("service_usage_traces
 	],
 })
 
-/**
- * Materialized view to aggregate sum metric usage statistics per service per hour
- */
 export const serviceUsageMetricsSumMv = defineMaterializedView("service_usage_metrics_sum_mv", {
 	description: "Materialized view to aggregate sum metric usage statistics per service per hour",
 	datasource: serviceUsage,
@@ -241,9 +232,6 @@ export const serviceUsageMetricsSumMv = defineMaterializedView("service_usage_me
 	],
 })
 
-/**
- * Materialized view to aggregate gauge metric usage statistics per service per hour
- */
 export const serviceUsageMetricsGaugeMv = defineMaterializedView("service_usage_metrics_gauge_mv", {
 	description: "Materialized view to aggregate gauge metric usage statistics per service per hour",
 	datasource: serviceUsage,
@@ -274,9 +262,6 @@ export const serviceUsageMetricsGaugeMv = defineMaterializedView("service_usage_
 	],
 })
 
-/**
- * Materialized view to aggregate histogram metric usage statistics per service per hour
- */
 export const serviceUsageMetricsHistogramMv = defineMaterializedView("service_usage_metrics_histogram_mv", {
 	description: "Materialized view to aggregate histogram metric usage statistics per service per hour",
 	datasource: serviceUsage,
@@ -307,9 +292,6 @@ export const serviceUsageMetricsHistogramMv = defineMaterializedView("service_us
 	],
 })
 
-/**
- * Materialized view to aggregate exponential histogram metric usage statistics per service per hour
- */
 export const serviceUsageMetricsExpHistogramMv = defineMaterializedView(
 	"service_usage_metrics_exp_histogram_mv",
 	{
@@ -434,11 +416,6 @@ export const sourceUsageMetricsExpHistogramMv = sourceUsageMv(
 	}),
 )
 
-/**
- * Materialized view projecting trace spans needed for service dependency map.
- * Extracts deployment.environment from Map columns at write time so the service
- * map JOIN query avoids scanning heavy Map columns.
- */
 export const serviceMapSpansMv = defineMaterializedView("service_map_spans_mv", {
 	description:
 		"Materialized view projecting trace spans needed for service dependency map. Extracts deployment.environment from Map columns at write time.",
@@ -606,11 +583,6 @@ export const serviceOverviewMinutelyMv = defineMaterializedView("service_overvie
 	],
 })
 
-/**
- * Materialized view populating trace_list_mv from root spans.
- * Pre-extracts HTTP attributes from SpanAttributes and normalizes span names
- * so the trace list query avoids scanning heavy Map columns and GROUP BY.
- */
 /**
  * Materialized view populating service_map_children from Server/Consumer spans.
  * Pre-filters to only spans with a parent and extracts deployment.environment
@@ -1341,7 +1313,7 @@ export const traceIndexMv = defineMaterializedView("trace_index_mv", {
  * nested cache or reasoning bucket once, under the reporter's usage
  * convention; rows materialized between the two keep the over-count.
  * Migration 0031 added the vendor version and the five token buckets, which
- * is what lets the list render a row without touching `trace_detail_spans`;
+ * is what lets the list render a row without touching the raw spans;
  * rows materialized before it carry `''`/0 for those too. Migration 0032 added
  * the failure's type, the status message, the tool's description, a failed tool
  * call's result and the failure's fingerprint, which does the same for the tool
@@ -1440,6 +1412,8 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
 	description:
 		"Populates scanner_requests with Server spans whose path matches a probe signature or whose user agent names a scanning tool, pre-extracting the signature, scanner, host, path, status, client address and user agent.",
 	datasource: scannerRequests,
+	// A catalog change only renames new rows; without this Tinybird replays 30 days of `traces`.
+	deploymentMethod: "alter",
 	nodes: [
 		node({
 			name: "scanner_requests_mv_node",
@@ -1465,7 +1439,6 @@ export const scannerRequestsMv = defineMaterializedView("scanner_requests_mv", {
 	],
 })
 
-/** Populates `service_runtimes_hourly` with the runtime and SDK each service reports, per hour. */
 export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_hourly_mv", {
 	description:
 		"Counts spans hourly per service, environment, process runtime and telemetry SDK name and version, for the Security Center Runtimes tab.",
@@ -1725,8 +1698,6 @@ export const traceFacetsHourlyMv = defineMaterializedView("trace_facets_hourly_m
 		}),
 	],
 })
-
-// Attribute key aggregation MVs
 
 export const traceSpanAttributeKeysMv = defineMaterializedView("trace_span_attribute_keys_mv", {
 	description: "Aggregates span attribute keys from traces hourly.",
@@ -2107,8 +2078,7 @@ export const traceResourceAttributeValuesMv = defineMaterializedView("trace_reso
  *
  * Cardinality note: SpanName is in the sort key. If any tenant emits high-
  * cardinality span names (per-request data instead of templated routes),
- * the row count grows quickly. See docs/persistence.md and the cardinality
- * pre-flight query in the rollout plan.
+ * the row count grows quickly. See the cardinality pre-flight in docs/persistence.md.
  */
 export const tracesAggregatesHourlyMv = defineMaterializedView("traces_aggregates_hourly_mv", {
 	description:
@@ -2282,10 +2252,6 @@ export const serviceEndpointDetailsHourlyMv = defineMaterializedView("service_en
 	],
 })
 
-/**
- * Populates logs_aggregates_hourly. Severity-aware drop-in for
- * severity-distribution and log-volume dashboards.
- */
 export const logsAggregatesHourlyMv = defineMaterializedView("logs_aggregates_hourly_mv", {
 	description:
 		"Pre-aggregates logs hourly by service × severity × deployment env. Drop-in for severity-distribution and log-volume queries.",

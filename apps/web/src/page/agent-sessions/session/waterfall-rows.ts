@@ -8,12 +8,10 @@ import {
 	spanStartMs,
 	toolSpanIssuers,
 } from "@maple/agent-sessions"
-import { filterSpans } from "../../../lib/agent-sessions/span-filters"
+import { filterSpans } from "../kit/span-filters"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { SessionData } from "./derive"
 import type { Model } from "./model"
-
-// The session waterfall's row model (`buildRows`, `orderByTree`, `spanHeading`, `toolTarget`).
 
 export const TURN_ROW_HEIGHT = 30
 export const ROW_HEIGHT = 28

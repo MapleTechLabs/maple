@@ -125,7 +125,9 @@ describe("vercelProjectFunctionsSQL", () => {
 describe("vercelFunctionRoutesSQL", () => {
 	it("joins invocations to the edge request's route per trace, within one project", () => {
 		const { sql } = compileUnsafe(vercelFunctionRoutesSQL(), project)
-		expect(sql).toContain("anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route")
+		expect(sql).toContain(
+			"anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route",
+		)
 		expect(sql).toContain("traces.ResourceAttributes['vercel.projectId'] = 'prj_1'")
 		expect(sql).toContain(runtimeMarker)
 		expect(sql).toContain("GROUP BY traceId) AS t")
@@ -171,7 +173,9 @@ describe("Speed Insights", () => {
 		const { sql } = compileUnsafe(vercelSpeedInsightsSQL("metric"), window)
 		expect(sql).toContain("logs.ServiceName = 'vercel-speed-insights'")
 		expect(sql).toContain("logs.TimestampTime >= '2026-07-02 00:00:00'")
-		expect(sql).toContain("quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value']))")
+		expect(sql).toContain(
+			"quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value']))",
+		)
 		expect(sql).toContain("GROUP BY key, metric")
 		expect(sql).not.toContain("vercel.project.id")
 	})
@@ -184,7 +188,8 @@ describe("Speed Insights", () => {
 			"if(logs.LogAttributes['vercel.route'] != '', logs.LogAttributes['vercel.route'], logs.LogAttributes['url.path']) AS key",
 		)
 		expect(devices).toContain("logs.LogAttributes['vercel.device.type'] AS key")
-		for (const sql of [routes, devices]) expect(sql).toContain("ResourceAttributes['vercel.project.id'] = 'prj_1'")
+		for (const sql of [routes, devices])
+			expect(sql).toContain("ResourceAttributes['vercel.project.id'] = 'prj_1'")
 	})
 })
 
@@ -192,8 +197,12 @@ describe("Web Analytics", () => {
 	it("counts page views, their devices and custom events", () => {
 		const { sql } = compileUnsafe(vercelWebAnalyticsSummarySQL(), window)
 		expect(sql).toContain("logs.ServiceName = 'vercel-web-analytics'")
-		expect(sql).toContain("countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews")
-		expect(sql).toContain("countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents")
+		expect(sql).toContain(
+			"countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews",
+		)
+		expect(sql).toContain(
+			"countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents",
+		)
 	})
 
 	it("ranks page views by referrer and custom events by name, skipping empty values", () => {

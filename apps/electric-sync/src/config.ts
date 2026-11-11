@@ -2,18 +2,9 @@ import type { AuthEnv } from "@maple/auth"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 
-/**
- * Standalone config for the Electric shape-sync worker. Deliberately a small,
- * self-contained subset — NOT the full `@maple/api` `Env` — so this worker never
- * has to supply `TINYBIRD_*` / `MAPLE_INGEST_KEY_*` etc. it doesn't use. It reads
- * exactly two concerns:
- *
- *  - the Electric upstream (`ELECTRIC_*`), and
- *  - the auth fields (`AuthEnv`) consumed by `makeResolveTenant`.
- *
- * `SyncConfigValues extends AuthEnv`, so the value can be handed straight to
- * `makeResolveTenant` (see routes/shape.http.ts).
- */
+// Only the Electric upstream (`ELECTRIC_*`) and the `AuthEnv` fields `makeResolveTenant` reads,
+// never the full `@maple/api` `Env`, so this worker needs none of the API's other variables.
+
 /**
  * A boot-time configuration value the process cannot run without. Fails the
  * layer build; the tag plus `variable` is what makes the log say which one.

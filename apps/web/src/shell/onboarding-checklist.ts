@@ -27,7 +27,7 @@ export const Model = Schema.Struct({
 	isJustClaimed: Schema.Boolean,
 	isClaimPending: Schema.Boolean,
 	claimError: Schema.NullOr(Schema.String),
-	/** `useLiveClock`: the countdown's clock, ticking each second while one is shown. */
+	/** The countdown's clock, ticking each second while one is shown. */
 	nowMs: Schema.Number,
 })
 export type Model = typeof Model.Type
@@ -68,7 +68,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** `onboardingChecklistAtom`: `GET /v2/onboarding/checklist`, with the clock it was read at. */
+/** `GET /v2/onboarding/checklist`, with the clock it was read at. */
 export const LoadChecklist = Command.define("LoadOnboardingChecklist", {
 	messages: [Message.SucceededLoadChecklist, Message.FailedLoadChecklist],
 	execute: Effect.gen(function* () {
@@ -106,7 +106,7 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const toPopover = (message: Popover.Message) => Message.GotPopoverMessage({ message })
 
-/** `handleOpenChange`: opening re-reads the checklist and retires the pointer; closing ends the claimed beat. */
+/** Opening re-reads the checklist and retires the pointer; closing ends the claimed beat. */
 const popoverStep = (model: Model, message: Popover.Message): UpdateReturn => {
 	const next = Popover.update(model.popover, message)
 	const commands = Command.mapMessages(next.commands ?? [], toPopover)
@@ -161,7 +161,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 /** The pill counts down each second while the checklist is in progress. */
 export const isCounting = (model: Model): boolean => model.checklist?.status === "in_progress"
 
-/** `claimOnboardingRewardMutation`: `POST /v2/onboarding/checklist/claim`. */
+/** `POST /v2/onboarding/checklist/claim`. */
 export const ClaimReward = Command.define("ClaimOnboardingReward", {
 	messages: [Message.SucceededClaim, Message.FailedClaim],
 	execute: Effect.gen(function* () {

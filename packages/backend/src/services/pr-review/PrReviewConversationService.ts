@@ -23,12 +23,11 @@ import {
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PullRequestHead,
-	type VcsRepo,
 	parseReplyCommand,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewEdits,
@@ -55,7 +54,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { isTrustedAuthorAssociation, PrReviewService, PUSH_PERMISSIONS } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
+import { makeRepoUpstream } from "./repo-upstream"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
@@ -87,6 +87,14 @@ export interface PrReviewConversationServiceApi {
 	 * pull request's head is still the run's, its review starts as a trusted author's would. Never fails.
 	 */
 	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
+	/** The pull request a reply answers on, which its session's tools are held to. */
+	readonly replyTarget: (
+		orgId: OrgId,
+		replyId: PrReviewReplyId,
+	) => Effect.Effect<
+		Option.Option<{ readonly repository: string; readonly number: number }>,
+		PrReviewPersistenceError
+	>
 	/** Post the agent's answer, committing a `fix`'s staged edits first. */
 	readonly submitReply: (
 		orgId: OrgId,
@@ -266,37 +274,7 @@ export class PrReviewConversationService extends Context.Service<
 			skipReason: reason,
 		})
 
-		const upstreamFor = Effect.fn("PrReviewConversationService.upstreamFor")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-		) {
-			const installation = yield* repositories
-				.getInstallationById(orgId, repo.installationId)
-				.pipe(Effect.mapError(toPersistence))
-			if (Option.isNone(installation)) return Option.none()
-			const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
-			if (Option.isNone(provider)) return Option.none()
-			return Option.some({
-				provider: provider.value,
-				installation: installation.value,
-				ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-			})
-		})
-
-		/** Whether a person can push to the repository; an unreadable permission is no. */
-		const canPush = Effect.fn("PrReviewConversationService.canPush")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-			login: string,
-		) {
-			const upstream = yield* upstreamFor(orgId, repo)
-			if (Option.isNone(upstream)) return false
-			const { provider, installation, ref } = upstream.value
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, login)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			return PUSH_PERMISSIONS.has(permission)
-		})
+		const { upstreamFor, pushAccess, canPush } = yield* makeRepoUpstream
 
 		const updateReply = (
 			orgId: OrgId,
@@ -332,6 +310,22 @@ export class PrReviewConversationService extends Context.Service<
 						: Effect.succeed(rows[0]),
 				),
 			)
+
+		const replyTarget: PrReviewConversationServiceApi["replyTarget"] = Effect.fn(
+			"PrReviewConversationService.replyTarget",
+		)(function* (orgId, replyId) {
+			const row = yield* getReply(orgId, replyId).pipe(
+				Effect.asSome,
+				Effect.catchTag("@maple/http/pr-review/PrReviewReplyNotFoundError", () =>
+					Effect.succeed(Option.none<PrReviewReplyRow>()),
+				),
+			)
+			if (Option.isNone(row)) return Option.none()
+			const repo = yield* repositories
+				.getRepositoryById(orgId, row.value.repositoryId)
+				.pipe(Effect.mapError(toPersistence))
+			return Option.map(repo, ({ fullName }) => ({ repository: fullName, number: row.value.number }))
+		})
 
 		/** Post on the pull request where the row says; a failure is logged, never thrown into the turn. */
 		const post = Effect.fn("PrReviewConversationService.post")(function* (
@@ -494,10 +488,7 @@ export class PrReviewConversationService extends Context.Service<
 			}
 
 			if (command === "fix") {
-				const permission = yield* provider
-					.fetchCommenterPermission(installation, ref, job.authorLogin)
-					.pipe(Effect.orElseSucceed(() => "none"))
-				if (!PUSH_PERMISSIONS.has(permission))
+				if (!(yield* pushAccess(upstream.value, job.authorLogin)).canPush)
 					return yield* fail(
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
@@ -633,11 +624,9 @@ export class PrReviewConversationService extends Context.Service<
 			if (Option.isNone(upstream)) return yield* annotate("disconnected")
 			const { provider, installation, ref } = upstream.value
 			// Anyone can re-run CI on their own pull request; only write access vouches for someone else's.
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, job.approverLogin)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			if (!PUSH_PERMISSIONS.has(permission))
-				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
+			const access = yield* pushAccess(upstream.value, job.approverLogin)
+			if (!access.canPush)
+				return yield* annotate("not_permitted", { "vcs.repository.permission": access.permission })
 			// Fork runs carry no pull request number: the open one from the run's branch is it.
 			const numbers =
 				job.pullRequestNumbers.length > 0
@@ -875,6 +864,7 @@ export class PrReviewConversationService extends Context.Service<
 		return {
 			onPullRequestComment,
 			onCiApproved,
+			replyTarget,
 			submitReply,
 			stageEdit,
 			failReply,

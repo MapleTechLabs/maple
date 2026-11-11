@@ -9,12 +9,10 @@ import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartEmpty } from "@maple/views/ui/chart-state"
 import { panelHeader } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
-import type { ToolSeriesPoint } from "../tools-kit/model"
-import { type ToolPlotInputs, toolPlotView } from "../tools-kit/series-chart"
+import type { ToolSeriesPoint } from "../../kit/tools/model"
+import { type ToolPlotInputs, toolPlotView } from "../../kit/tools/series-chart"
 import { Message } from "./message"
 import { vstackClass } from "@maple/views/ui/stack"
-
-// The tool detail charts: four readings of one tool.
 
 type H = HtmlBuilder<Message>
 

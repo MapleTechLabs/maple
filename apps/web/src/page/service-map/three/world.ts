@@ -1,21 +1,9 @@
-import { Schema, Array as Arr } from "effect"
-import {
-	type InkPalette,
-	type MachineKind,
-	sceneryPalette,
-} from "../../../components/service-map/three/appearance"
-import {
-	decorateRoutes,
-	type FactoryLink,
-	factoryRoutes,
-	type RoutingTopology,
-} from "../../../components/service-map/three/factory-routing"
-import {
-	connectedIds,
-	type SpatialLayout,
-	type SpatialView,
-} from "../../../components/service-map/three/spatial-layout"
-import type { Topology3D } from "../../../components/service-map/three/types"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr } from "effect"
+import { type InkPalette, type MachineKind, sceneryPalette } from "./appearance"
+import { decorateRoutes, type FactoryLink, factoryRoutes, type RoutingTopology } from "./factory-routing"
+import { connectedIds, type SpatialLayout, type SpatialView } from "./spatial-layout"
+import type { Topology3D } from "./types"
 import type * as THREE from "three"
 import type { WorldEntity } from "@maple/domain/http"
 import type { OccupancyWorld } from "../factory/occupancy"
@@ -26,8 +14,6 @@ import { type EntitySpec, entityLayer } from "./entities"
 import { type Child, type FrameCallback, group, type Scope, type Vec3 } from "./kit"
 import { factoryMachine } from "./machines"
 import { factoryTransport } from "./transport"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The 3D viewport's derived layout, then the scene graph in draw order.
 
@@ -58,13 +44,13 @@ export interface WorldInput {
 	readonly view: SpatialView
 	readonly selectedId: string | null
 	readonly palette: InkPalette
-	/** `flowing`: traffic on and motion allowed, read every frame. */
+	/** Traffic on and motion allowed, read every frame. */
 	readonly flowing: () => boolean
 	/** Customized building types by node id; a missing id keeps the kind's default. */
 	readonly buildings?: ReadonlyMap<string, MachineKind>
 }
 
-/** `<Scenery key={view}>` and the forest's own geometry key: rebuilt only when either changes. */
+/** The scenery rebuilds only when the view, the palette, the districts or the route geometry change. */
 export const sceneryKey = ({ view, layout, palette }: Pick<WorldInput, "view" | "layout" | "palette">) =>
 	encodeJson([
 		view,
@@ -189,16 +175,16 @@ export const machineSpecs = (
 	})
 }
 
-/** MapScene after `Scenery`: zones, paths or steps, belts, then machines, each kept by key. */
+/** What stands on the scenery: zones, paths or steps, belts, then machines, each kept by key. */
 export interface World {
 	readonly root: THREE.Group
 	/** The pickable machines; each child carries `userData.pickId`. */
 	readonly machines: THREE.Group
 	readonly sync: (input: WorldInput) => void
 	readonly machine: (id: string) => THREE.Object3D | undefined
-	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
 	/** Machines moved by `previewMachine`, where they stand now. */
 	readonly previews: () => ReadonlyMap<string, Vec3>
+	/** Moves a built machine without a rebuild; `null` puts it back on its layout position. */
 	readonly previewMachine: (id: string, position: Vec3 | null) => void
 	readonly frame: FrameCallback
 	readonly dispose: () => void

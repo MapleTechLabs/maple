@@ -1,12 +1,8 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	PASSES_PER_DAY_LIMITS,
-	parseDailyLimit,
-	RUNS_PER_DAY_LIMITS,
-} from "../../../components/settings/ai-triage-limits"
-import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
+import { PASSES_PER_DAY_LIMITS, parseDailyLimit, RUNS_PER_DAY_LIMITS } from "../kit/ai-triage-limits"
+import { limitsUpdate } from "../kit/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -33,8 +29,8 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
-import { saveBar } from "../kit/save-bar"
-import { settingsSection, settingsSections } from "../kit/section"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -61,8 +57,6 @@ const fieldIds = (name: string): FieldIds => ({
 	error: `${name}-error`,
 	description: `${name}-description`,
 })
-
-// MODEL PROVIDER
 
 const RADIO_ITEMS = [
 	{ value: "managed", id: "ai-provider-managed", inputId: "ai-provider-managed-input" },
@@ -186,7 +180,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	)
 }
 
-/** `AddOnUpsell`: a lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
+/** A lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
 const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
 	vstack(h, { gap: "3" }, [
 		...(current.configured
@@ -355,8 +349,6 @@ const providerSection = (h: H, model: Model): Html =>
 		}),
 	)
 
-// AUTO-TRIAGE
-
 const limitRow = (
 	h: H,
 	options: Readonly<{
@@ -384,7 +376,7 @@ const limitRow = (
 				state,
 				attributes: [
 					h.Attribute("inputmode", "numeric"),
-					// `aria-invalid={error !== null}` renders "false" too, which the input chrome keys on.
+					// A valid input carries `aria-invalid="false"` too, which the input chrome keys on.
 					...(options.error === null ? [h.AriaInvalid(false)] : []),
 					h.Value(options.value),
 					...(options.isDisabled ? [h.Disabled(true)] : []),
@@ -447,7 +439,7 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 	const draft = limitsDraftOf(model)
 	const runs = parseDailyLimit(draft.maxRunsPerDay, RUNS_PER_DAY_LIMITS)
 	const passes = parseDailyLimit(draft.maxPassesPerDay, PASSES_PER_DAY_LIMITS)
-	// `Collapsible defaultOpen={!passesError.ok}`: an invalid ceiling keeps the section open.
+	// An invalid ceiling keeps the section open.
 	const isAdvancedOpen = model.isAdvancedOpen || !passes.ok
 	return [
 		panel(h, { className: "divide-y" }, [

@@ -4,8 +4,6 @@ import { BAR_CHART_TOKENS } from "@maple/views/charts/bar-chart"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 
-// `AnalyticsPanel` and `ChartFrame`, shared with the CI tab.
-
 export const analyticsPanel = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title: string; control?: Html; footer?: Html }>,

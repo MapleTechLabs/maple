@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection

@@ -2,7 +2,7 @@ import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
 import { Array as Arr, Option } from "effect"
 
-// The bar geometry of `Flamegraph` and `FlamegraphMinimap` (packages/ui `traces/flamegraph*.tsx`).
+// The bar geometry of the flamegraph and its minimap.
 
 export interface FlamegraphInput {
 	readonly rootSpans: ReadonlyArray<SpanNode>

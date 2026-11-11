@@ -13,32 +13,18 @@ import { replaceWith } from "@maple/strings"
 // type-checks structurally, so a field added to the shared schema and forgotten
 // in the clone is a silent omission from the public API, not a compile error.
 //
-// This file makes that a build failure both ways: the type assertions below fail
-// `tsc` when either side gains a field, and the encode tests fail when a field is
-// present in the type but dropped on the wire or spelled differently there.
+// This file makes that a build failure both ways: the type assertion below fails
+// `tsc` when the v2 display has a field storage lacks, and the encode tests fail
+// when a stored field is dropped on the wire or spelled differently there.
 
 const snakeCase = (key: string): string => replaceWith(key, /[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]
 
-// The three structural assignability assertions that used to live here are gone,
-// and deliberately.
-//
-// They asserted that the stored widget/display types were mutually assignable
-// with the v2 ones — which held only while the v2 schemas were a field-for-field
-// clone of storage. Schema v3 ends that: `dataSource.queries` is a typed array of
-// query drafts in storage and an opaque `UnknownRecord` on the wire, because the
-// wire representation of a query has always been opaque (it lived inside the
-// untyped `params` bag) and typing it now would be a second, larger breaking
-// change to the published spec.
-//
-// So assignability is genuinely false, and forcing it would mean either leaking
-// storage types into the public contract or weakening storage to match the wire.
-// What the assertions actually PROTECTED — "you cannot extend the internal schema
-// without deciding what the public API does" — is preserved by the kind-coverage
-// test at the bottom of this file, which fails when an arm is added to the stored
-// union and not mirrored here.
+// Whole-widget assignability is false on purpose since schema v3 (the data source
+// differs between storage and wire); the kind-coverage test at the bottom makes a
+// new stored arm a decision about the public API instead.
 export type _DisplayFieldsCovered = AssertAssignable<
 	keyof typeof V2WidgetDisplay.Type,
 	keyof typeof WidgetDisplayConfigSchema.Type
@@ -249,11 +235,8 @@ describe("the v2 widget mirrors the stored one", () => {
 	})
 })
 
-// The structural successor to the deleted assignability assertions.
-//
 // A fifth arm added to the stored data-source union fails here until someone has
-// decided what `/v2/dashboards` does with it — which is the question the old type
-// assertions forced, and the only one worth forcing.
+// decided what `/v2/dashboards` does with it.
 describe("the v2 data source covers every stored kind", () => {
 	const decode = Schema.decodeUnknownSync(V2WidgetDataSource)
 

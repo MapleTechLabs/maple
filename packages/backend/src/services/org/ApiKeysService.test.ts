@@ -10,8 +10,8 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/platform/test-two-orgs"
+} from "@maple/backend/testing/test-pglite"
+import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/testing/test-two-orgs"
 
 const trackedDbs: TestDb[] = []
 
@@ -92,7 +92,6 @@ describe("ApiKeysService.roll", () => {
 			assert.isDefined(newRow)
 			assert.strictEqual(newRow?.revoked, false)
 
-			// The new secret authenticates; the old one no longer does.
 			const resolvedNew = yield* svc.resolveByKey(rolled.secret)
 			const resolvedOld = yield* svc.resolveByKey(created.secret)
 			assert.isTrue(Option.isSome(resolvedNew))

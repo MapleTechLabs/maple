@@ -1,5 +1,5 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { stripAnsi } from "@maple/ui/lib/strip-ansi"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesPanel from "../attributes/attributes-panel"

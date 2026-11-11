@@ -1,3 +1,4 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -41,15 +42,13 @@ export const Message = defineMessageUnion({
 	GotToastMessage: { message: Toast.Message },
 	GotModeMessage: { message: ToggleGroup.Message },
 	CompletedReadClock: { nowMs: Schema.Number },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { slot: Schema.String, message: Chart.Message },
 	GotCopyMessage: { slot: Schema.String, message: CopyButton.Message },
 	GotDetailsMessage: { slot: Schema.String, message: Popover.Message },
 	GotMenuMessage: { slot: Schema.String, message: Menu.Message },
 	ClickedSortColumn: { slot: Schema.String, field: Schema.String, isText: Schema.Boolean },
-	/** A widget action (`labActions`): the lab has nothing to do. */
+	/** A widget action: the lab has nothing to do. */
 	ClickedWidgetAction: { action: Schema.String },
 	UpdatedDashboards: { orgId: Schema.String },
 })

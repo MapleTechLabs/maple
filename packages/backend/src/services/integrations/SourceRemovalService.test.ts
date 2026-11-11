@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, Option, Order } from "effect"
 import { CreateSourceRequest, OrgId, ScrapeTargetDeleteResponse, UserId } from "@maple/domain/http"
-import { AwsAccountId, GcpProjectId, SourceId } from "@maple/domain/primitives"
+import { AwsAccountId, GcpProjectId, SourceId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -9,7 +9,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AwsConnectionService } from "./AwsConnectionService"

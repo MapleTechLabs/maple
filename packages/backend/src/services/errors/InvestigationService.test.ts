@@ -19,7 +19,7 @@ import {
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -30,11 +30,11 @@ import {
 	Investigations,
 } from "@maple/db/tables"
 import type { ChatSessions } from "@maple/backend/platform/bindings"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Env } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { InvestigationService } from "./InvestigationService"
 import { STALE_MS } from "./investigation-stale"
 
@@ -461,10 +461,9 @@ describe("InvestigationService", () => {
 	)
 
 	/**
-	 * Stub `ChatSession` namespace. The autonomous turn now claims the turn on the ChatSession
-	 * Durable Object in process instead of POSTing back to chat-flue over a service binding, so the
-	 * observable contract is one `beginTurn` call rather than an HTTP request. The real object
-	 * also runs the turn inside itself; nothing here does, which is the point.
+	 * Stub `ChatSession` namespace: a start's observable contract is one `beginTurn` call on the
+	 * investigation's session. The real object also runs the turn inside itself; nothing here does,
+	 * which is the point.
 	 */
 	const chatSessionHarness = (options?: { readonly busy?: boolean }) => {
 		const beginTurns: Array<{ messageId: string; text: string }> = []

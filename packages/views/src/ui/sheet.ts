@@ -10,15 +10,16 @@ import {
 	sheetViewportLeftStyles,
 	sheetViewportStyles,
 	type SheetSize,
-} from "@maple/ui/styles/ui/sheet"
+} from "./sheet.styles"
 import { Command } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
+import { formDialogForm } from "./form-dialog"
 import { icon } from "./icon"
 
-// `<Sheet><SheetPopup side="left">` (packages/ui/src/components/ui/sheet.tsx) over Base UI Dialog.
+// A left-side sheet over Base UI Dialog.
 
 export type SheetOptions<Message> = Readonly<{
 	id: string
@@ -159,6 +160,8 @@ export type SidePanelSheetOptions<Message> = Readonly<{
 	 * Cancel dismisses like Escape does; none renders no footer.
 	 */
 	footer?: (close: ReadonlyArray<ChildAttribute>) => ReadonlyArray<Html>
+	/** Makes the panel a `<form>`: Enter in a field or a `type: "submit"` footer button sends this. */
+	onSubmit?: Message
 	toParentMessage: (message: Dialog.Message) => Message
 }>
 
@@ -187,18 +190,23 @@ export const sidePanelSheet = <Message>(
 			className: REDUCED_MOTION,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal,
-			toContent: (close) => [
-				DialogView.dialogHeader(h, "sheet", [
-					DialogView.dialogTitle(h, "sheet", sheet.id, options.title),
-					...(options.description === undefined
+			toContent: (close) => {
+				const content = [
+					DialogView.dialogHeader(h, "sheet", [
+						DialogView.dialogTitle(h, "sheet", sheet.id, options.title),
+						...(options.description === undefined
+							? []
+							: [DialogView.dialogDescription(h, "sheet", sheet.id, options.description)]),
+					]),
+					DialogView.dialogPanel(h, "sheet", sheet.id, options.body),
+					...(options.footer === undefined
 						? []
-						: [DialogView.dialogDescription(h, "sheet", sheet.id, options.description)]),
-				]),
-				DialogView.dialogPanel(h, "sheet", sheet.id, options.body),
-				...(options.footer === undefined
-					? []
-					: [DialogView.dialogFooter(h, "sheet", options.footer(close))]),
-			],
+						: [DialogView.dialogFooter(h, "sheet", options.footer(close))]),
+				]
+				return options.onSubmit === undefined
+					? content
+					: [formDialogForm(h, options.onSubmit, content)]
+			},
 		},
 		toParentMessage: options.toParentMessage,
 	})

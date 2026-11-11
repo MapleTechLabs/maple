@@ -7,7 +7,7 @@ import { hstack } from "../../ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "../../ui/typography"
 
-// The hint, service and category legend under `TraceFlowView`.
+// The hint, service and category legend under the trace flow.
 
 const separator = <M>(h: HtmlBuilder<M>): Html => typography(h, { tone: "faint" }, ["·"])
 

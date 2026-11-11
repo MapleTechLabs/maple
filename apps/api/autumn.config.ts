@@ -9,7 +9,6 @@ import {
 } from "@maple/domain/billing"
 import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
-// Features
 export const logs = feature({
 	id: "logs",
 	name: "Logs",

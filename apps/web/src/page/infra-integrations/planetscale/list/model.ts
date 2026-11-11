@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
@@ -7,8 +8,6 @@ import { InfraPlanetscaleSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { sortStateOf } from "../../../kit/table-sort"
 import { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
-
-// `/infra/planetscale`.
 
 export const SortKey = Schema.Literals([
 	"name",
@@ -35,9 +34,6 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,

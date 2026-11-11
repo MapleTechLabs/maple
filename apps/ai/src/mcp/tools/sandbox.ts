@@ -1,11 +1,5 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import {
-	SandboxExecOutput,
-	SandboxGrepOutput,
-	SandboxListFilesOutput,
-	SandboxReadFileOutput,
-} from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import {
 	RepoSandboxService,
 	SANDBOX_DEFAULT_TIMEOUT_SECONDS,
@@ -130,7 +124,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			case_sensitive: P.optionalFlag("false for a case-insensitive search"),
 			context_lines: P.optionalNumber("Lines of context shown around each match"),
 		}),
-		output: SandboxGrepOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
@@ -226,7 +219,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			glob: P.optionalText("Only paths matching this pathspec glob, e.g. `**/*.sql`"),
 			ref: P.optionalText(REF_DESCRIPTION),
 		}),
-		output: SandboxListFilesOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Listing files"],
@@ -288,7 +280,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			start_line: P.optionalNumber("First line to return, 1-based"),
 			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
-		output: SandboxReadFileOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Reading a file"],
@@ -414,7 +405,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				`Wall-clock limit in seconds (default ${SANDBOX_DEFAULT_TIMEOUT_SECONDS}, max ${SANDBOX_MAX_TIMEOUT_SECONDS})`,
 			),
 		}),
-		output: SandboxExecOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Running a command"],

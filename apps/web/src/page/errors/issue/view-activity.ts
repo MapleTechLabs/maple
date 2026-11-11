@@ -13,14 +13,13 @@ import { badge, kbd, kbdGroup, separator } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { panel } from "@maple/views/ui/panel"
 import { textarea } from "@maple/views/ui/textarea"
-import { messageResponse } from "../../code-review/kit/markdown"
+import { messageResponse } from "../../kit/message-response"
 import { relativeTime } from "../../kit/relative-time"
-import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../kit/actor"
+import { type ActorIdentity, identityAvatar, resolveActorIdentity } from "../../kit/issue-actor"
 import {
 	DOT_CLASS,
 	EVENT_LABEL,
 	isContinuation,
-	isoMs,
 	MESSAGE_TYPES,
 	MESSAGE_VERB,
 	renderPayload,
@@ -29,10 +28,9 @@ import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { spaced } from "@maple/views/ui/spaced"
 import { hstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// The issue timeline and the comment composer.
-
-/** Rows mounted before "Show earlier" (`RECENT_ITEMS`). */
+/** Rows mounted before "Show earlier". */
 const RECENT_ITEMS = 50
 
 type H = HtmlBuilder<Message>
@@ -210,7 +208,7 @@ const messageRow = (
 								),
 							),
 						],
-						[messageResponse(h, body, "text-sm leading-relaxed")],
+						[messageResponse(h, null, body, "text-sm leading-relaxed")],
 					),
 				],
 			),
@@ -262,7 +260,7 @@ export const issueTimeline = (
 			createdAt: escalation.createdAt,
 			escalation,
 		})),
-	].sort((a, b) => isoMs(a.createdAt) - isoMs(b.createdAt))
+	].sort((a, b) => toEpochMs(a.createdAt) - toEpochMs(b.createdAt))
 	if (items.length === 0)
 		return emptyMessage(h, { dashed: true, className: "py-10" }, [
 			typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, ["No activity yet"]),

@@ -3,8 +3,8 @@
 
 import { Data, Duration, Effect, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { Env } from "@maple/backend/platform/Env"
-import { isIngestRefusal, summarizeUpstreamBody } from "@maple/backend/services/integrations/upstream-body"
+import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { isIngestRefusal, summarizeUpstreamBody } from "./upstream-body"
 
 /** Covers the error-body read too, so a stalled body cannot outlive a poller's lease. */
 const DEFAULT_TIMEOUT = Duration.seconds(30)
@@ -55,10 +55,14 @@ export const keepRefusal = <A, E, R>(self: Effect.Effect<A, E | IngestSendError,
 		),
 	)
 
+/** The ingest gateway's public base URL, without a trailing slash. */
+export const ingestBaseUrl = (env: Pick<EnvConfig, "MAPLE_INGEST_PUBLIC_URL">): string =>
+	Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+
 export const makeIngestSender = Effect.gen(function* () {
 	const env = yield* Env
 	const httpClient = yield* HttpClient.HttpClient
-	const baseUrl = Str.replace(/\/+$/, "")(env.MAPLE_INGEST_PUBLIC_URL)
+	const baseUrl = ingestBaseUrl(env)
 
 	// A refusal is the org's state, not a fault: the span ends Ok and the error fails outside it.
 	const attempt = Effect.fn("IngestSender.send")(

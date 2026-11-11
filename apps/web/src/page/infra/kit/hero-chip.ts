@@ -5,8 +5,6 @@ import { icon } from "@maple/views/ui/icon"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `HeroChip`.
-
 /** A plain-text chip titles itself with its text, so a long value stays readable. */
 export const heroChip = <M>(
 	h: HtmlBuilder<M>,

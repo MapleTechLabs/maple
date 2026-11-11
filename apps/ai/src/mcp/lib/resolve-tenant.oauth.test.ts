@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -107,6 +107,16 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 			)
 			expect(tenant.orgId).toBe(orgId)
 			expect(tenant.roles).toEqual([memberRole])
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("treats a request with cookies and no bearer as carrying no credential", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const failure = yield* resolveMcpTenantContext(
+				new Request(resource, { headers: { cookie: "__session=anything" } }),
+			).pipe(Effect.flip)
+			expect(failure._tag).toBe("@maple/mcp/errors/McpAuthMissingError")
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

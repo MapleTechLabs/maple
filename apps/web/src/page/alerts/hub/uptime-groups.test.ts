@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { downMonitor, httpMonitor, monitorId } from "../shared/uptime-test-monitors"
+import { downMonitor, httpMonitor, monitorId } from "../../kit/uptime/test-monitors"
 import { groupMonitors, NO_NAMESPACE, serviceNamespaces } from "./uptime-groups"
 import { Array as Arr } from "effect"
 

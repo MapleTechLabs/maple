@@ -1,7 +1,7 @@
 import { Duration, Effect, Schema, Stream } from "effect"
 import { Subscription } from "foldkit"
 import * as LogsStream from "@maple/views/ui/logs/logs-stream"
-import { ViewerFlags, viewerFlags } from "@maple/views/ui/logs/viewer"
+import { ViewerFlags, viewerFlags } from "../viewer-flags"
 import * as Shell from "../../shell"
 import { LabShellFlags, labShellFlags, labShellSubscriptions } from "../app-shell"
 import { defineLabWithFlags } from "../define"
@@ -30,7 +30,7 @@ const own = Subscription.make<Model, Message, Resources>()((entry) => ({
 					: Stream.empty,
 		},
 	),
-	/** `useIntervalRefresh`, held while the reader inspects the stream. */
+	/** The interval refresh, held while the reader inspects the stream. */
 	autoRefresh: entry(
 		{ intervalSeconds: Schema.Number },
 		{

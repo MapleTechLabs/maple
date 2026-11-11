@@ -1,9 +1,4 @@
-import {
-	buildDeviceKeyRows,
-	buildKeyRows,
-	filterKeyRows,
-	type KeyTypeFilter,
-} from "../../../components/settings/keys-table"
+import { buildDeviceKeyRows, buildKeyRows, filterKeyRows, type KeyTypeFilter } from "../kit/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -18,7 +13,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { errorState } from "@maple/views/ui/error-state"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
-import { sectionNote, settingsSection, settingsSections } from "../kit/section"
+import { sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -29,8 +24,6 @@ import { devicesTable, keysEmpty, keysTable } from "./view-table"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `ApiKeysSection`.
 
 export type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -155,7 +148,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 		}),
 	])
 
-/** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
+/** The `api_keys` stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
@@ -183,7 +176,7 @@ const revokeDescription = (h: H, model: Model): ReadonlyArray<Html | string> | s
 		: [...subject, " will stop working immediately. This action cannot be undone."]
 }
 
-/** `MobileDevicesSection`: the widget keys phones minted, revocable here when a phone is lost. */
+/** The widget keys phones minted, revocable here when a phone is lost. */
 const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const rows = buildDeviceKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
 	return settingsSection(

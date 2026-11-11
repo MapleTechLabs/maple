@@ -11,7 +11,7 @@ import type { Model } from "./model"
 import { update } from "./page-update"
 import { init } from "./update"
 
-// `useBlocker`: a link, Back or the breadcrumb away from unsaved edits asks first.
+// A link, Back or the breadcrumb away from unsaved edits asks first.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }

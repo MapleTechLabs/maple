@@ -7,7 +7,6 @@
 import { BoundChatSessions } from "@maple/backend/platform/chat-sessions"
 import { connectors } from "@maple/chat-platform/connectors"
 import {
-	cachedRecoverable,
 	MapleDb,
 	mapleDbEnv,
 	type MapleDomains,
@@ -15,7 +14,9 @@ import {
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
+	PRD_DOMAINS,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -37,7 +38,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// Not on previews: no webhook hostname, and a socket would fight dev's bot session.
 		...(stage.kind === "pr" ? [] : [connectorConfigEnv]),
 		// App link base, and the chart-image signing key (without it charts render as text).
-		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? PRD_DOMAINS.web}`),
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 		// Opens credentials a connector sealed on a workspace row; only those connectors need it.
 		optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),

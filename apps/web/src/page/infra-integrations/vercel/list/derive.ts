@@ -6,14 +6,9 @@ import type {
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 import { Array as Arr } from "effect"
-import type { DeployRegression } from "../../../../components/infra/vercel/deploy-signals"
-import {
-	fillBuckets,
-	type VercelProjectRow,
-	vercelProjectRows,
-	zeroRequestBucket,
-} from "../../../../components/infra/vercel/list-model"
-import { teamDeploySignals, type Window } from "../../../../components/infra/vercel/overview-model"
+import type { DeployRegression } from "../deploy-signals"
+import { fillBuckets, type VercelProjectRow, vercelProjectRows, zeroRequestBucket } from "../list-model"
+import { teamDeploySignals, type Window } from "../overview-model"
 import { seriesInput } from "../data"
 import { dataOf } from "../view-parts"
 import type { Model } from "./model"

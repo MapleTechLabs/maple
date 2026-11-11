@@ -3,7 +3,7 @@ import { truncate } from "../lib/format"
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListIntegrationsOutput } from "@maple/domain/mcp-outputs"
 import { INTEGRATION_PROVIDERS, type IntegrationInventory } from "@maple/domain/integration-inventory"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -102,7 +102,6 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 				"Only this provider, with all of its resources. Omit for every provider with its worst resources",
 			),
 		}),
-		output: ListIntegrationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking integrations", "Listing connected integrations"],
 		handler: Effect.fn("McpTool.listIntegrations")(function* ({ provider }) {

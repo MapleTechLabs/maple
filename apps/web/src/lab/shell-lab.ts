@@ -31,13 +31,16 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	update: (model: PageModel, message: PageMessage) => Update.Return<PageModel, PageMessage, Resources>
 	view: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	subscriptions?: Subscription.Subscriptions<PageModel, PageMessage, Resources>
-	currentPath: string
+	/** Fixed, or read from the page (a lab standing on the route it renders). */
+	currentPath: string | ((model: PageModel) => string)
 	/** Fixed, or read from the page (a lab switching between pages). */
 	breadcrumbs:
 		| ReadonlyArray<Shell.BreadcrumbEntry>
 		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
 	/** Rendered in `#app` before the shell: lab toolbars that sit beside the shell. */
 	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
+	/** Shell state the root's reads would bring (the Alerts › Inbox count), as a fixture. */
+	seedShell?: (shell: Shell.Model) => Shell.Model
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -88,6 +91,8 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
 	const before = page.before
 	const beforeView = before === undefined ? null : Submodel.defineView<PageModel, PageMessage>(before)
+	const currentPathOf = (model: PageModel) =>
+		typeof page.currentPath === "function" ? page.currentPath(model) : page.currentPath
 	const breadcrumbsOf = (model: PageModel) =>
 		typeof page.breadcrumbs === "function" ? page.breadcrumbs(model) : page.breadcrumbs
 	const own = Subscription.lift(page.subscriptions ?? {})<Model, Message>({
@@ -104,7 +109,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			return {
 				model: {
 					page: inner.model,
-					shell: shell.model,
+					shell: page.seedShell === undefined ? shell.model : page.seedShell(shell.model),
 					toasts: initLabToasts(),
 					tooltip: TooltipHost.init("tooltip"),
 				},
@@ -154,7 +159,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 								}),
 							]),
 					...labShellView(h, model.shell, toShell, {
-						currentPath: page.currentPath,
+						currentPath: currentPathOf(model.page),
 						breadcrumbs: breadcrumbsOf(model.page),
 						page: () =>
 							h.submodel({

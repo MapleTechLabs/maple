@@ -1,9 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	inlineCodeChipStyles,
-	inlineCodePlainStyles,
-	inlineCodeStyles,
-} from "@maple/ui/styles/ui/inline-code"
+import { inlineCodeChipStyles, inlineCodePlainStyles, inlineCodeStyles } from "./inline-code.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 export const inlineCodeClassName = (variant: "chip" | "plain", className?: string): string =>

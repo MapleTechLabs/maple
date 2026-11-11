@@ -1,6 +1,7 @@
 import { Effect, Array as Arr } from "effect"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
 import { queryWarehouse, withTenantExecutor } from "./query-warehouse"
+import { orFallback } from "./fallback"
 
 export type AttributeScope = "span" | "resource"
 
@@ -43,7 +44,7 @@ const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: 
 		exploreAttributeKeys({ source: "traces", scope, timeRange: window, limit: 1000 }),
 	).pipe(
 		Effect.map((rows) => Arr.map(rows, (r) => r.key)),
-		Effect.orElseSucceed((): ReadonlyArray<string> => []),
+		orFallback("trace attribute keys", (): ReadonlyArray<string> => []),
 	)
 
 export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(function* (
@@ -68,7 +69,7 @@ export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(
 			limit: 1000,
 		}).pipe(
 			Effect.map(({ data }) => Arr.map(data, (r) => r.attributeKey)),
-			Effect.orElseSucceed((): ReadonlyArray<string> => []),
+			orFallback("metric attribute keys", (): ReadonlyArray<string> => []),
 		)
 		scope = pickAttributeScope(key, metricKeys, "unknown")
 	} else {

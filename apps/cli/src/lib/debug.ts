@@ -7,7 +7,6 @@ import { debugEnabled } from "@maple/local-server/debug-log"
 import { dim, gray } from "./style"
 import { Array as Arr, String as Str } from "effect"
 
-/** Emit a debug line to stderr (no-op unless debug is enabled). */
 export const debugLog = (label: string, detail?: string): void => {
 	if (!debugEnabled()) return
 	process.stderr.write(`${gray("[debug]")} ${label}\n`)

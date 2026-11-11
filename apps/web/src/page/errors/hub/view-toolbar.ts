@@ -1,14 +1,14 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "../../../lib/errors/hub-params"
+import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "./hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
+import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "@maple/views/ui/search-input"
@@ -16,8 +16,6 @@ import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// The errors stat strip, list toolbar, search and the sort and severity selects.
 
 type H = HtmlBuilder<Message>
 
@@ -81,7 +79,7 @@ const SEVERITY_TRIGGER_LABEL = { ...SEVERITY_FILTER_LABEL, all: "Severity" } sat
 const isSeverityFilter = (value: string): value is SeverityFilter =>
 	Arr.some(SEVERITY_FILTERS, (filter) => filter === value)
 
-/** `SeverityFilterDot`: the four real levels stacked for "all", the hollow ring for unset. */
+/** The four real levels stacked for "all", the hollow ring for unset. */
 const severityFilterDot = (h: H, value: SeverityFilter): Html =>
 	value === "all"
 		? hstack(
@@ -121,7 +119,7 @@ const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SEVERITY
 	item: { value, label: SEVERITY_FILTER_LABEL[value] },
 }))
 
-/** `ToolbarSearch` (`SearchInput` size sm): typing is debounced into the URL's `q`. */
+/** Typing is debounced into the URL's `q`. */
 const toolbarSearch = (h: H, draft: string): Html =>
 	searchInput(h, {
 		id: "errors-search",
@@ -133,7 +131,6 @@ const toolbarSearch = (h: H, draft: string): Html =>
 		onClear: Message.ChangedSearchDraft({ value: "" }),
 	})
 
-/** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
 export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null, className?: string): Html =>
 	listToolbar(h, {
 		className,

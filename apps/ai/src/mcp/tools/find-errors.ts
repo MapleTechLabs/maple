@@ -9,11 +9,12 @@ import {
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { emptyResultHints } from "../lib/empty-result-hints"
+import { orFallback } from "../lib/fallback"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
@@ -62,7 +63,6 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "error types" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: FindErrorsOutput,
 		hints: { readOnly: true },
 		phrases: ["Looking for errors", "Finding errors"],
 		handler: Effect.fn("McpTool.findErrors")(function* (params) {
@@ -114,7 +114,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				timeRange: input.timeRange,
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
-				Effect.orElseSucceed(() => new Map<string, string>()),
+				orFallback("exceptionless error labels", () => new Map<string, string>()),
 			)
 
 			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"

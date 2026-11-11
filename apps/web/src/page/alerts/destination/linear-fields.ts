@@ -3,16 +3,13 @@ import { Effect, Option, Result, Schedule, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import type { Resources } from "../../../platform/resources"
 import * as Select from "@maple/views/ui/select"
 import { currentReturnPath, startConnect } from "../../integrations/connect"
 import { readGrants } from "../../../data/session-tenant"
 import type { DestinationForm } from "./form"
-
-// `LinearFields`: the org's Linear connection, connected in a popup by an admin, and the
-// team this destination opens issues in.
 
 export const LinearStatus = Schema.Struct({
 	connected: Schema.Boolean,
@@ -70,9 +67,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-const settle = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-	Effect.result(Effect.mapError(effect, toLoadFailure))
-
 export const FetchStatus = Command.define("FetchAlertLinearStatus", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchStatus],
@@ -85,10 +79,7 @@ export const FetchStatus = Command.define("FetchAlertLinearStatus", {
 				revoked: status.revoked,
 				workspaceName: status.workspaceName,
 			}
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchStatus({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchStatus({ key, result }))),
 })
 
 const FetchTeams = Command.define("FetchAlertLinearTeams", {
@@ -99,10 +90,7 @@ const FetchTeams = Command.define("FetchAlertLinearTeams", {
 			const client = yield* MapleInternalApiClient
 			const response = yield* client.integrations.linearTeams()
 			return Arr.map(response.teams, (team) => ({ id: team.id, key: team.key, name: team.name }))
-		}).pipe(
-			settle,
-			Effect.map((result) => Message.CompletedFetchTeams({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchTeams({ key, result }))),
 })
 
 export const FetchGrants = Command.define("FetchAlertLinearGrants", {

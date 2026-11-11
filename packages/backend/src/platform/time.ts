@@ -21,13 +21,6 @@ export function msToSqlTimestamp(ms: number): string {
 	return new Date(ms).toISOString()
 }
 
-export function dateToMs(date: Date): number
-export function dateToMs(date: Date | null): number | null
-export function dateToMs(date: Date | null | undefined): number | null
-export function dateToMs(date: Date | null | undefined): number | null {
-	return date === null || date === undefined ? null : date.getTime()
-}
-
 /**
  * Epoch milliseconds of a timestamp from outside the warehouse (an API response, a header, a
  * request), or `NaN` when it is not one. A string without a zone reads as UTC on every host,

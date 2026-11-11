@@ -10,15 +10,13 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { pressable } from "@maple/views/ui/pressable"
 import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
-import { vendorColor, vendorIcon } from "../kit/vendor"
+import { vendorColor, vendorIcon } from "@maple/views/lib/ai-vendor"
 import { detailTitle } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-
-// The session header: what ran, when, on what.
 
 type H = HtmlBuilder<Message>
 
@@ -33,7 +31,7 @@ const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	])
 }
 
-/** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
+/** The id that copies itself, tinted by the copy's outcome. */
 const copyableId = (
 	h: H,
 	model: Model,

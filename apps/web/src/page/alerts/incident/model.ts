@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
 import {
 	V2AlertIncidentEscalation,
@@ -17,25 +18,20 @@ import {
 import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 import * as SilenceDialog from "../silence-dialog/dialog"
-
-// `/alerts/incidents/$incidentId`.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
+import { LiveRows } from "../../kit/load-schemas"
 
 export const Model = Schema.Struct({
 	incidentId: Schema.String,
-	/** `clockAtSync`: the wall clock to the minute, read when the incident first arrives. */
+	/** The wall clock to the minute, read when the incident first arrives. */
 	nowMs: Schema.NullOr(Schema.Number),
-	incidents: Rows(AlertIncidentRowSchema),
-	rules: Rows(AlertRuleRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
 	preview: PreviewSlot,
 	/** What the evaluator recorded over the range: the chart's line when the query cannot be replayed. */
 	checks: KeyedSchema(CheckSummary, LoadFailure),
@@ -45,7 +41,6 @@ export const Model = Schema.Struct({
 	escalation: KeyedSchema(Schema.NullOr(V2AlertIncidentEscalation), LoadFailure),
 	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
 	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
-	/** An acknowledge or unacknowledge request is running. */
 	isUpdatingAcknowledgement: Schema.Boolean,
 	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
 	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
@@ -55,11 +50,10 @@ export const Model = Schema.Struct({
 	anomaly: KeyedSchema(V2AnomalyIncident, LoadFailure),
 	anomalyTimeseries: KeyedSchema(V2AnomalyIncidentTimeseries, LoadFailure),
 	anomalyChart: Chart.Model,
-	/** `useAsyncAction`: the create request is running, so repeat clicks cannot start duplicates. */
+	/** The create request is running, so repeat clicks cannot start duplicates. */
 	isStartingInvestigation: Schema.Boolean,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	/** `alertSilences.list`: which silence, if any, holds back this incident's notifications. */
 	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
 	silenceDialog: SilenceDialog.Model,

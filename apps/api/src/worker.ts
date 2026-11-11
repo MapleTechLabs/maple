@@ -3,7 +3,14 @@
  * yields and the init the deployed isolate runs. Hosted classes (the Workflow)
  * are exported from the generated entry because the init yields them.
  */
-import { AiWorker, mapleDbEnv, MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
+import {
+	AiWorker,
+	createMapleAwsOidcKey,
+	createMapleDeviceTokenKey,
+	mapleDbEnv,
+	MapleStack,
+	mapleWorkerProps,
+} from "@maple/infra/cloudflare"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
@@ -27,7 +34,7 @@ import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWork
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const { stage, region, domains, devEnv, db, awsOidc, deviceToken } = stack
+	const { stage, region, domains, devEnv, db } = stack
 	// api keeps the hostname and OAuth, and forwards `/mcp` and chat to maple-ai.
 	const ai = yield* AiWorker
 	// Resolved up front so a misconfigured deploy fails before applying anything.
@@ -50,8 +57,8 @@ const props = Effect.gen(function* () {
 			// Minted once and kept in state; bound to this Worker alone.
 			[VCS_SYNC_HOP_SECRET]: yield* makeRandom("VcsSyncHopSecret"),
 			...configuredEnv,
-			...awsOidc,
-			...deviceToken,
+			...(yield* createMapleAwsOidcKey),
+			...(yield* createMapleDeviceTokenKey),
 			...devEnv,
 		},
 	}

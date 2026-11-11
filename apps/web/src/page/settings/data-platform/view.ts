@@ -12,7 +12,7 @@ import {
 	schemaApplyPlan,
 	type SchemaDiffStatus,
 	schemaDiffCounts,
-} from "../../../components/settings/schema-apply-plan"
+} from "../kit/schema-apply-plan"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -34,7 +34,7 @@ import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { settingsSection, settingsSections } from "../kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { type ConnectionField, Message, type Model, type Totals } from "./model"
 import { draftOf, isRunActive } from "./update"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -62,8 +62,6 @@ const ids = (name: string, hasDescription = false): FieldIds => {
 
 const isHttpUrl = (value: string): boolean =>
 	URL.canParse(Str.trim(value)) && /^https?:/i.test(Str.trim(value))
-
-// CONNECTION
 
 const connectionStatus = (h: H, settings: OrgClickHouseSettingsResponse, inputs: Inputs): Html => {
 	if (!settings.configured)
@@ -228,8 +226,6 @@ const connectionPanel = (
 		}),
 	])
 }
-
-// SCHEMA
 
 const STATUS_COUNTS: ReadonlyArray<{ status: SchemaDiffStatus; label: string; tone: string }> = [
 	{ status: "up_to_date", label: "Up to date", tone: "text-foreground" },
@@ -671,8 +667,6 @@ const schemaSection = (h: H, model: Model, settings: OrgClickHouseSettingsRespon
 		],
 	)
 }
-
-// USAGE
 
 const STATS: ReadonlyArray<{
 	key: keyof Totals

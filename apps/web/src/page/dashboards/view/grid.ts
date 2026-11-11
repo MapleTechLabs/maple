@@ -1,18 +1,13 @@
 import { containerKeyOf, type DashboardDocument, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import { type GridGeometry, type Layout, normalizeLayout } from "@maple/grid-engine"
 import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
-import {
-	GRID_ROW_HEIGHT,
-	type GridTier,
-	projectLayout,
-	tierForWidth,
-} from "../../../components/dashboard-builder/canvas/grid-breakpoints"
+import { GRID_ROW_HEIGHT, type GridTier, projectLayout, tierForWidth } from "../kit/grid-breakpoints"
 import type { Model } from "./model"
 import { Array as Arr, Option } from "effect"
 
-// One container's grid as `DashboardGrid` derives it (the root canvas, or a section tab): the tier
-// for the one measured width every grid shares, the stored layout projected onto it, and the pixel
-// geometry a gesture resolves cells with.
+// One container's grid (the root canvas, or a section tab): the tier for the one measured width
+// every grid shares, the stored layout projected onto it, and the pixel geometry a gesture resolves
+// cells with.
 
 type Widget = DashboardDocument["widgets"][number]
 

@@ -433,7 +433,6 @@ function widget(tab: Tab, chart: Chart, index: number): WidgetDef {
 			...(chart.display ?? (counter ? CHART_DISPLAY_AREA : CHART_DISPLAY_LINE)),
 			unit: DISPLAY_UNITS.get(stored?.unit ?? "") ?? "number",
 		},
-		// Two charts per row, in list order, within the tab.
 		layout: { x: (index % 2) * 6, y: Math.floor(index / 2) * 6, w: 6, h: 6 },
 		sectionId: SECTION_ID,
 		tabId: tab.id,

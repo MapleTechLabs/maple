@@ -3,13 +3,13 @@
  * AWS credential. One RSA key signs them; its public half is the JWKS the API serves.
  */
 import { AWS_OIDC_AUDIENCE } from "@maple/domain/aws"
-import { Effect, Redacted, Schema, String as Str } from "effect"
+import { Effect, Redacted, Schema } from "effect"
+import { base64url, pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 import { AwsOidcKeyError } from "./errors"
 
 /** STS accepts a token only while it is valid; Maple mints one right before each call. */
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const TOKEN_SECONDS = 300
-const ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const
 
 export interface AwsOidcJwk {
 	readonly kty: "RSA"
@@ -26,15 +26,6 @@ export interface AwsOidcSigner {
 	/** A token for `subject`, valid from `nowMs` for five minutes. */
 	readonly mint: (subject: string, nowMs: number) => Effect.Effect<Redacted.Redacted, AwsOidcKeyError>
 }
-
-const base64url = (bytes: ArrayBuffer | Uint8Array) =>
-	Buffer.from(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)).toString("base64url")
-
-const pemBody = (pem: string) =>
-	Buffer.from(
-		Str.replace(/\s+/gu, "")(Str.replace(/-----(BEGIN|END) PRIVATE KEY-----/gu, "")(pem)),
-		"base64",
-	)
 
 /** The discovery document AWS reads from `{issuer}/.well-known/openid-configuration`. */
 export const awsOidcDiscovery = (issuer: string) => ({
@@ -54,7 +45,7 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 	const failed = (message: string) => (cause: unknown) => new AwsOidcKeyError({ message, cause })
 	const key = yield* Effect.tryPromise({
 		try: () =>
-			crypto.subtle.importKey("pkcs8", pemBody(Redacted.value(privateKeyPem)), ALGORITHM, true, [
+			crypto.subtle.importKey("pkcs8", pemToPkcs8(Redacted.value(privateKeyPem)), RS256, true, [
 				"sign",
 			]),
 		catch: failed("The AWS OIDC signing key is not a PKCS#8 RSA key"),
@@ -73,28 +64,25 @@ export const makeAwsOidcSigner = Effect.fn("makeAwsOidcSigner")(function* (
 		catch: failed("Hashing the AWS OIDC key failed"),
 	})
 	const jwk: AwsOidcJwk = { kty: "RSA", n, e, kid: base64url(thumbprint), alg: "RS256", use: "sig" }
-	const encode = (value: unknown) => base64url(new TextEncoder().encode(encodeJson(value)))
-	const header = encode({ alg: "RS256", typ: "JWT", kid: jwk.kid })
+	const header = { alg: "RS256", typ: "JWT", kid: jwk.kid }
 
-	const mint = (subject: string, nowMs: number) =>
-		Effect.gen(function* () {
-			const iat = Math.floor(nowMs / 1000)
-			const body = encode({
-				iss: issuer,
-				sub: subject,
-				aud: AWS_OIDC_AUDIENCE,
-				iat,
-				// A minute of allowance for STS's clock running behind.
-				nbf: iat - 60,
-				exp: iat + TOKEN_SECONDS,
-			})
-			const input = `${header}.${body}`
-			const signature = yield* Effect.tryPromise({
-				try: () => crypto.subtle.sign(ALGORITHM, key, new TextEncoder().encode(input)),
-				catch: failed("Signing the AWS OIDC token failed"),
-			})
-			return Redacted.make(`${input}.${base64url(signature)}`)
-		})
+	const mint = (subject: string, nowMs: number) => {
+		const iat = Math.floor(nowMs / 1000)
+		return signJwt(key, RS256, header, {
+			iss: issuer,
+			sub: subject,
+			aud: AWS_OIDC_AUDIENCE,
+			iat,
+			// A minute of allowance for STS's clock running behind.
+			nbf: iat - 60,
+			exp: iat + TOKEN_SECONDS,
+		}).pipe(
+			Effect.mapBoth({
+				onSuccess: Redacted.make,
+				onFailure: (error) => failed("Signing the AWS OIDC token failed")(error.cause),
+			}),
+		)
+	}
 
 	return { issuer, jwk, mint } satisfies AwsOidcSigner
 })

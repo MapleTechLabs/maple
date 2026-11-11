@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
-import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
+import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/primitives"
 import { ErrorIncidents, ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueMergeService } from "./ErrorIssueMergeService"
@@ -177,7 +177,6 @@ describe("ErrorIssueMergeService", () => {
 				merges.mergeIssues(ORG, actorId, target, [asIssueId(randomUUID())]),
 			)
 			assert.strictEqual(missing._tag, "@maple/http/errors/ErrorIssueNotFoundError")
-			// Nothing moved.
 			assert.lengthOf(yield* aliasesOf(target), 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)

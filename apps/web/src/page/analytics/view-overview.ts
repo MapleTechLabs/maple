@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,
@@ -36,9 +36,6 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { dividedList } from "@maple/views/ui/rule"
 
-// `AnalyticsContent`: bot notice, metric strip, traffic chart, the
-// breakdown cards and the traces behind a filtered event.
-
 type H = HtmlBuilder<Message>
 
 // Eight tiles in two or four columns: `divide-*` would double the outer border at row ends,
@@ -53,7 +50,7 @@ const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>
 	Option.getOrUndefined(AsyncData.getData(slot.data))
 
-/** `AnalyticsBotNotice`: shown once bots are at least 5% of the window's sessions. */
+/** Shown once bots are at least 5% of the window's sessions. */
 const botNotice = (h: H, mix: Summary, traffic: string | undefined): Html | null => {
 	if (mix.botShare === null || mix.botShare < 0.05) return null
 	const excluded =
@@ -114,7 +111,7 @@ const metricStrip = (
 		}),
 	)
 
-/** `pairedCompanion`: the selected metric's companion, when it reports something. */
+/** The selected metric's companion, when it reports something. */
 const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMetricSource) => {
 	if (metric.companion === undefined) return undefined
 	const companion = findMetric(metric.companion)
@@ -361,7 +358,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 	]
 }
 
-/** `ProductEventTraceSamples`: the traces behind a filtered event, when it came from a span. */
+/** The traces behind a filtered event, when it came from a span. */
 const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): Html | null => {
 	const header = panelHeader(h, {
 		className: "justify-start gap-2 px-3 py-2",
@@ -483,7 +480,6 @@ export const sharedPageFailure = (model: Model) => {
 		: undefined
 }
 
-/** `AnalyticsContent`. */
 export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html => {
 	const shared = sharedPageFailure(model)
 	return h.div(

@@ -11,10 +11,9 @@
  * carved the nested buckets out (`spanTokenBuckets`) — showed the billed
  * figure: the two disagreed on the number the list filters and sorts by.
  *
- * `genAiTokensExpr` (`tinybird/gen-ai-columns.ts`) now resolves the reporter's
- * convention — vendor first, then provider, then the nesting default — from
- * the same table the web app reads (`genAiUsageConvention` in
- * `@maple/domain`), and takes `greatest(input, cache)` /
+ * The view's `Tokens` expression now resolves the reporter's convention (vendor
+ * first, then provider, then the nesting default) from the same table the web
+ * app read at v29, and takes `greatest(input, cache)` /
  * `greatest(output, reasoning)` where the figure nests and the plain sum where
  * it does not. Only the view's SELECT changes; no column is added.
  *

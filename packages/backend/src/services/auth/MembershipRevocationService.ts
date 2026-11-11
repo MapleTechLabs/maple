@@ -30,8 +30,8 @@ import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./m
  *
  * Nothing ran on removal before this existed, and five separate authorization
  * findings were all the same absence: the membership cache kept answering yes
- * for five minutes, and every *user-bound* credential minted for that person —
- * CLI keys, MCP grants, alert emails, push devices — never re-checked
+ * for five minutes, and every *user-bound* credential minted for that person
+ * (CLI keys, MCP grants, alert emails, push devices) never re-checked
  * membership at all, so the five-minute window was really "forever".
  *
  * Every step is idempotent and predicate-driven, so a webhook retry converges
@@ -69,7 +69,7 @@ export interface MembershipDemotionSummary {
 export interface MembershipRevocationServiceApi {
 	/**
 	 * Evict the membership caches and retire everything that person held in the
-	 * org. Cache eviction runs first and never fails — it closes the widest
+	 * org. Cache eviction runs first and never fails: it closes the widest
 	 * window even when the database work later errors and the delivery retries.
 	 */
 	readonly revokeMembership: (
@@ -88,14 +88,14 @@ export interface MembershipRevocationServiceApi {
 	/**
 	 * `organizationMembership.updated`: evict the caches, and retire the keys the
 	 * member's *old* role is still pinned onto. `roles` is the role set the
-	 * member has now — a promotion strips nothing.
+	 * member has now: a promotion strips nothing.
 	 */
 	readonly demoteMembership: (
 		orgId: OrgId,
 		userId: UserId,
 		roles: ReadonlyArray<RoleName>,
 	) => Effect.Effect<MembershipDemotionSummary, MembershipRevocationError>
-	/** Evict the membership caches only — the one step that never fails. */
+	/** Evict the membership caches only: the one step that never fails. */
 	readonly invalidateMembership: (userId: UserId) => Effect.Effect<void>
 }
 
@@ -363,7 +363,7 @@ const make = Effect.gen(function* () {
 	 * Known residue: a plain `standard` key carries no pinned roles and resolves
 	 * with the `root` default, so a demoted admin's ordinary API keys keep full
 	 * authority. Revoking those on demotion would silently break org automation
-	 * an admin created for the org rather than for themselves, so it is left —
+	 * an admin created for the org rather than for themselves, so it is left:
 	 * deliberately, and stated rather than implied.
 	 */
 	const demoteMembership = Effect.fn("MembershipRevocationService.demoteMembership")(function* (

@@ -3,12 +3,16 @@ import { DateTime, Effect, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { compile, from, param } from "@maple-dev/effect-orm/clickhouse"
 import { defineDatasource, engine, t } from "@maple-dev/effect-orm/tinybird"
-import { utcDateTime, utcDateTime64 } from "@maple/domain/tinybird/datasources"
 import { OrgId } from "@maple/domain"
-import { IdentityLinks, MetricsSum, orgIdParam, utcSecondsParam } from "./tables"
+import { orgIdParam, utcSecondsParam } from "./tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 
 const Stamps = defineDatasource("stamps", {
-	schema: { OrgId: t.string(), Timestamp: utcDateTime64(9), TimestampTime: utcDateTime() },
+	schema: {
+		OrgId: t.string(),
+		Timestamp: Datasources.utcDateTime64(9),
+		TimestampTime: Datasources.utcDateTime(),
+	},
 	engine: engine.mergeTree({ sortingKey: "OrgId" }),
 })
 
@@ -50,7 +54,7 @@ describe("utcSecondsParam", () => {
 describe("wrapped utcDateTime64 columns", () => {
 	it.effect("an Array(DateTime64) column decodes each element to DateTime.Utc", () =>
 		Effect.gen(function* () {
-			const q = from(MetricsSum)
+			const q = from(Datasources.metricsSum)
 				.select(($) => ({ exemplars: $.ExemplarsTimestamp }))
 				.where(($) => [$.OrgId.eq(orgIdParam)])
 			const compiled = yield* compile(q, { orgId: OrgId.make("org_1") })
@@ -68,7 +72,7 @@ describe("wrapped utcDateTime64 columns", () => {
 
 	it.effect("a SimpleAggregateFunction(min, DateTime64) column decodes to DateTime.Utc", () =>
 		Effect.gen(function* () {
-			const q = from(IdentityLinks)
+			const q = from(Datasources.identityLinks)
 				.select(($) => ({ firstSeen: $.FirstSeen, earliest: CH.min_($.FirstSeen) }))
 				.where(($) => [$.OrgId.eq(orgIdParam)])
 				.groupBy("firstSeen")

@@ -5,7 +5,6 @@ import type { Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-/** `ConfirmDialog` for `useBlocker`: leaving with unsaved widget changes. */
 export const leaveDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
 		slotId: model.leaveDialog.id,

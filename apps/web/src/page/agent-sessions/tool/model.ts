@@ -10,14 +10,11 @@ import { AgentSessionToolSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { Facets } from "../list/model"
-import { ToolErrorRow, ToolSeries, TotalsResult } from "../tools-kit/model"
+import { ToolErrorRow, ToolSeries, TotalsResult } from "../../kit/tools/model"
 import * as ErrorModal from "./error-modal-model"
-
-// `/agent-sessions/tools/$toolName`.
+import { SortState } from "../../kit/table-sort"
 
 export const SessionRows = Schema.Struct({ data: Schema.Array(AiSessionListItem) })
-
-const Sort = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: Schema.Literals(["asc", "desc"]) })
 
 export const Model = Schema.Struct({
 	toolName: Schema.String,
@@ -34,7 +31,7 @@ export const Model = Schema.Struct({
 	envSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** The Errors table's client-side sort and its "Show N more" fold. */
-	errorsSort: Sort,
+	errorsSort: SortState,
 	isErrorsExpanded: Schema.Boolean,
 	/** Each grid chart's focus and tooltip, by chart id. */
 	charts: Schema.Record(Schema.String, Chart.Model),
@@ -42,7 +39,7 @@ export const Model = Schema.Struct({
 	chartRuntime: ChartRuntime,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
-	/** `ToolErrorModal`, open while `?error=` names a row the Errors table holds. */
+	/** The error modal, open while `?error=` names a row the Errors table holds. */
 	errorModal: ErrorModal.Model,
 })
 export type Model = typeof Model.Type

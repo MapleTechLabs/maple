@@ -1,4 +1,5 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
 import type {
 	AnnotationSegment,
 	InlineErrorData,
@@ -8,9 +9,9 @@ import type {
 } from "@maple/domain/chat-annotations"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
-import { getSeverityColor } from "@maple/ui/lib/severity"
+import { getSeverityColor, getSeverityInk } from "@maple/ui/lib/severity"
 import { cn } from "@maple/ui/lib/utils"
-import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone, normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
@@ -21,8 +22,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The inline reference cards: a service, an error
 // fingerprint, a trace and a log line the model wrote as `<<maple:…>>`.
@@ -38,8 +37,7 @@ const cardClass = (interactive: boolean): string => cn(SHELL, interactive && LIN
 
 const chevron = <M>(h: HtmlBuilder<M>): Html =>
 	icon(h, "ChevronRightIcon", {
-		className:
-			"size-3.5 shrink-0 text-foreground-faint group-hover/inline:text-muted-foreground",
+		className: "size-3.5 shrink-0 text-foreground-faint group-hover/inline:text-muted-foreground",
 	})
 
 const metric = <M>(
@@ -244,7 +242,10 @@ const severityBadge = <M>(h: HtmlBuilder<M>, severity: string): Html => {
 			variant: "secondary",
 			className: "font-mono text-3xs uppercase shrink-0",
 			attributes: [
-				h.Style({ color, "background-color": `color-mix(in oklch, ${color} 10%, transparent)` }),
+				h.Style({
+					color: getSeverityInk(label),
+					"background-color": `color-mix(in oklch, ${color} 10%, transparent)`,
+				}),
 			],
 		},
 		[label],

@@ -24,7 +24,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { alertStatusBadge } from "../shared/badges"
-import { msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { Message } from "./message"
 import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
@@ -33,8 +33,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// The rule detail's History tab.
 
 type H = HtmlBuilder<Message>
 

@@ -36,7 +36,6 @@ import {
 	SearchConsoleDisconnectResponse,
 	SearchConsoleIntegrationStatus,
 	SearchConsolePrimeResponse,
-	SearchConsoleSiteChoice,
 	SearchConsoleSiteStatus,
 	SearchConsoleStartConnectResponse,
 	SupabaseConnectResponse,
@@ -99,7 +98,7 @@ import {
 } from "@/routes/integrations-callback.http"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "@/routes/v2/integrations.http"
 import { makeOAuthCompleter } from "@/routes/oauth-complete"
-import { Queries } from "@/routes/queries"
+import { Queries } from "@maple/backend/queries/registry"
 import { settleInfraSurfaces } from "./infra-surfaces"
 
 /**
@@ -260,9 +259,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
-						return new SearchConsoleAvailableSitesResponse({
-							sites: Arr.map(sites, (site) => new SearchConsoleSiteChoice(site)),
-						})
+						return new SearchConsoleAvailableSitesResponse({ sites })
 					}),
 				)
 				.handle("searchConsoleSaveSites", ({ payload }) =>

@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -48,11 +49,7 @@ export const init = (
 		commands: [
 			ReadClock(),
 			Command.mapMessage(FilterSections.ReadRemembered(), toSections),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -234,11 +231,7 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 		ChangedRange: ({ range }) => setRange(model, context, range),
 		ClickedWidenRange: () => setRange(model, context, WIDEST_RANGE),
 		MeasuredGrid: ({ viewport }) => ({ model: { ...model, grid: viewport } }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotSparklineMessage: () => ({ model }),
 		GotFilterSectionsMessage: ({ message: child }) => {
 			const next = FilterSections.update(model.sections, child)

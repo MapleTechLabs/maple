@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { gcpSetupPlan, type GcpSetupPlanInput } from "@maple/domain/gcp"
-import { GcpConnectorId, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
+import { GcpConnectorId, GcpProjectId, GcpResourceNumber } from "@maple/primitives"
 import { renderGcpAlchemy } from "./alchemy"
 import { gcpLogFilter } from "./setup-scripts"
 import { hcl, renderGcpTerraform } from "./terraform"

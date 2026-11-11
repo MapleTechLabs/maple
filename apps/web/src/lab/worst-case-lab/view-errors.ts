@@ -1,20 +1,20 @@
 import { buildErrorsLabFixture } from "../errors-fixture"
 import { errorSignal, sampleTraces } from "../worst-case-docs"
-import type { ErrorSignal } from "../../lib/models/error-signal"
+import type { ErrorSignal } from "../../page/errors/kit/error-signal"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
 import type { Message as SignalMessage } from "../../page/errors/hub/message"
 import { type RowState, signalRow } from "../../page/errors/hub/view-row"
-import { identityAvatar } from "../../page/errors/kit/actor"
+import { identityAvatar } from "../../page/kit/issue-actor"
 import { occurrencesTable } from "../../page/errors/kit/occurrences-table"
 import { actorIdentities } from "./fixture"
 import { Message, type Model } from "./model"
 import { type H, narrow, wcSection } from "./view-parts"
 import { Array as Arr } from "effect"
 
-// `ErrorsSection`: occurrences, a signal row, avatars.
+// Occurrences, a signal row, avatars.
 
-/** `ErrorSignalRow` speaks the errors hub's Messages; the lab hosts it in that universe. */
+/** The error signal row speaks the errors hub's Messages; the lab hosts it in that universe. */
 const signalRowView = Submodel.defineView<ErrorSignal, SignalMessage, RowState>((signal, state, h) =>
 	signalRow(h, signal, state),
 )

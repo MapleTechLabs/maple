@@ -37,7 +37,7 @@ const textBlock = (text: string, extra?: Record<string, unknown>) => ({
 	...extra,
 })
 
-export const buildTeamsAdaptiveCard = (input: RenderInput<Config>) => {
+const buildTeamsAdaptiveCard = (input: RenderInput<Config>) => {
 	const { context, templated, linkUrl, chatUrl } = input
 	const group = displayGroup(context)
 	const title = templated?.title ?? `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`
@@ -102,7 +102,7 @@ export const buildTeamsAdaptiveCard = (input: RenderInput<Config>) => {
 }
 
 /** The body the Workflows "Post to a channel when a webhook request is received" trigger expects. */
-export const buildTeamsMessage = (input: RenderInput<Config>) => ({
+const buildTeamsMessage = (input: RenderInput<Config>) => ({
 	type: "message",
 	attachments: [
 		{

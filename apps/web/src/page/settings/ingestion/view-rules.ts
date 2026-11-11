@@ -27,7 +27,7 @@ import { switchControl } from "@maple/views/ui/switch"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { settingsSection } from "../kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import { canManageMappings, type Model, type RecommendationTab } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -35,21 +35,20 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
-
-// `RecommendedMappingsSection` and `AttributeMappingsSection`.
+import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../../kit/recommendations"
 
 type H = HtmlBuilder<Message>
 
 const KIND_TAG = {
-	rename: { label: "Rename", className: TONE_TEXT.info },
-	"double-emission": { label: "Duplicate", className: TONE_TEXT.warn },
-	naming: { label: "Naming", className: TONE_TEXT.warn },
+	rename: { label: RECOMMENDATION_KIND_LABEL.rename, className: TONE_TEXT.info },
+	"double-emission": { label: RECOMMENDATION_KIND_LABEL["double-emission"], className: TONE_TEXT.warn },
+	naming: { label: RECOMMENDATION_KIND_LABEL.naming, className: TONE_TEXT.warn },
 } as const
 const STATUS_BADGE = {
-	open: { label: "Open", variant: "secondary" },
-	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "done" },
+	open: { label: RECOMMENDATION_STATUS_LABEL.open, variant: "secondary" },
+	dismissed: { label: RECOMMENDATION_STATUS_LABEL.dismissed, variant: "secondary" },
+	applied: { label: RECOMMENDATION_STATUS_LABEL.applied, variant: "ok" },
+	resolved: { label: RECOMMENDATION_STATUS_LABEL.resolved, variant: "done" },
 } as const
 
 const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])
@@ -237,8 +236,6 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 		),
 	]
 }
-
-// MAPPINGS
 
 const OPERATION_BADGE = { copy: "info", move: "warn" } as const
 const OPERATION_LABELS = { copy: "Copy", move: "Move" } as const

@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
@@ -38,14 +39,14 @@ import {
 	SetIncidentAcknowledged,
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
-import { isoMs } from "../shared/time"
 import { SLO_LIST_LIMIT } from "../shared/slo-commands"
-import { UPTIME_LIST_LIMIT } from "../shared/uptime-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { matchersForRule } from "../shared/silences"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -168,14 +169,7 @@ export const init = (route: IncidentRoute, context: PageContext): Return => {
 			grants: [],
 			clockMs: null,
 		},
-		commands: [
-			ReadIncidentClock(),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [ReadIncidentClock(), LoadChartRuntime()],
 	}
 	const silences = requestSilences(initial.model, context, "Load")
 	return {
@@ -190,11 +184,11 @@ const slosKey = (context: PageContext) =>
 const monitorsKey = (context: PageContext) =>
 	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
 
-/** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
+/** A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own. */
 const sameKey = <A, E>(slot: Keyed.Keyed<A, E>, key: string) => slot.key === key
 
 /**
- * The reads `IncidentDetail` sends once it mounts: deliveries and the investigation for the
+ * The reads the incident page sends once it loads: deliveries and the investigation for the
  * incident, and the preview once the rule is known. Idempotent (`Load` keeps a same-key slot).
  */
 const followData = (model: Model, context: PageContext): Return =>
@@ -225,14 +219,14 @@ const followData = (model: Model, context: PageContext): Return =>
 				lastNotifiedAt: view.incident.lastNotifiedAt,
 				// Epoch ms: the synced row and the API spell the same instant differently.
 				acknowledgedAt:
-					view.incident.acknowledgedAt === null ? null : isoMs(view.incident.acknowledgedAt),
+					view.incident.acknowledgedAt === null ? null : toEpochMs(view.incident.acknowledgedAt),
 			})
 			// The anomaly's evidence is re-read whenever its alert incident moves (status, severity, a
 			// new breach): the synced row is the change signal, and the previous answer stays on screen.
 			const evidenceVersion = {
 				status: view.incident.status,
 				severity: view.incident.severity,
-				lastTriggeredAt: isoMs(view.incident.lastTriggeredAt),
+				lastTriggeredAt: toEpochMs(view.incident.lastTriggeredAt),
 			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
 				...Option.toArray(
@@ -469,7 +463,7 @@ const withRuleRows = (
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
 	Arr.findFirst(rows ?? [], (row) => row.id === model.incidentId)
 
-/** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
+/** Once the incident row itself changes, the minute clock is read again. */
 const withIncidents = (
 	model: Model,
 	context: PageContext,
@@ -496,7 +490,7 @@ const refreshDueEscalation = (model: Model, nowMs: number): Return => {
 		run !== null &&
 		run.status === "active" &&
 		run.next_step_at !== null &&
-		isoMs(run.next_step_at) <= nowMs
+		toEpochMs(run.next_step_at) <= nowMs
 	const view = incidentViewOf(model)
 	if (!isDue || Option.isNone(view)) return { model }
 	const incidentId = view.value.incident.id
@@ -643,11 +637,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 				}),
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		CompletedFetchAnomaly: ({ key, result }) => ({
 			model: { ...model, anomaly: Keyed.accept(model.anomaly, key, result) },
 		}),

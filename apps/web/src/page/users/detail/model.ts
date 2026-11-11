@@ -16,8 +16,6 @@ import { TimeWindow } from "../../../data/time-range"
 import { UserDetailSearch } from "../../../route/search"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// `/users/$userId`: one end user.
-
 export type Search = typeof UserDetailSearch.Type
 
 /** The overview's profile: `null` when nothing in the window and scope carries the user. */

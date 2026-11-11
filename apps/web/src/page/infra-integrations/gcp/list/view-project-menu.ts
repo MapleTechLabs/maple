@@ -1,4 +1,4 @@
-import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
+import type { GcpProjectHealth } from "../list-model"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
@@ -13,7 +13,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
-// `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
+// With two or more projects the title's chip picks one of them, or all.
 
 export const ALL_PROJECTS = "__all__"
 export const MANAGE_CONNECTIONS = "manage-connections"

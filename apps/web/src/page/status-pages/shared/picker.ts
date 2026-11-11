@@ -3,9 +3,9 @@ import type { StatusPageDraftComponent, V2UptimeMonitor } from "@maple/domain/ht
 import { STATUS_PAGE_MAX_URL_LENGTH } from "@maple/domain/status-page"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { bareUrl } from "../../alerts/shared/uptime-derive"
-import { formIssues, nameFromUrl, wirePayload } from "../../alerts/uptime-form/derive"
-import { emptyForm } from "../../alerts/uptime-form/form"
+import { bareUrl } from "../../kit/uptime/derive"
+import { formIssues, nameFromUrl, wirePayload } from "../../kit/uptime/form-derive"
+import { emptyForm } from "../../kit/uptime/form"
 
 // "What's on it": the org's monitors as a checklist, components without a monitor, and a URL
 // that becomes a new HTTP monitor. The builder and the editor's Add component share it.

@@ -10,7 +10,6 @@ import { Array as Arr, Schema } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 import { providerOf } from "../../page/alerts/shared/providers"
 import { RULE_CHART_TOKENS } from "../../page/alerts/shared/rule-chart"
-import { isoMs } from "../../page/alerts/shared/time"
 import { dashboardPage, pageHeader } from "../../page/kit/dashboard-page"
 import { AppRoute, hrefOf } from "../../route"
 import { linkButton } from "@maple/views/ui/button"
@@ -19,6 +18,7 @@ import { labShellView } from "../app-shell"
 import { Message, type Model } from "./model"
 import { Message as HubMessage } from "../../page/alerts/hub/message"
 import { FRAME_CLASS, hubSections, section } from "./view"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
 
@@ -27,8 +27,8 @@ const acknowledgedByDana = (
 	fixture: AlertsLabFixture,
 ): Readonly<{ incident: AlertIncidentDocument; activity: ReadonlyArray<V2AlertIncidentEvent> }> => {
 	const { incident, deliveries } = fixture.incident
-	const lastNotifiedMs = Arr.reduce(deliveries, isoMs(incident.firstTriggeredAt), (latest, delivery) =>
-		Math.max(latest, isoMs(delivery.attemptedAt ?? delivery.scheduledAt)),
+	const lastNotifiedMs = Arr.reduce(deliveries, toEpochMs(incident.firstTriggeredAt), (latest, delivery) =>
+		Math.max(latest, toEpochMs(delivery.attemptedAt ?? delivery.scheduledAt)),
 	)
 	const acknowledgedAt = new Date(lastNotifiedMs + 60_000).toISOString()
 	return {
@@ -53,7 +53,7 @@ const acknowledgedByDana = (
 	}
 }
 
-/** `IncidentFrame`: `IncidentHeader` (a page header) over `IncidentBody`, from the fixture. */
+/** The incident header over its body, from the fixture. */
 const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture, isAcknowledged: boolean): Html => {
 	const { rule, ruleIncidents, states, preview, range, deliveries, investigation } = fixture.incident
 	const { incident, activity } = isAcknowledged

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { IsoDateTimeString, UserId } from "../primitives"
+import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 
 export const OPENROUTER_KEY_MAX_LENGTH = 256

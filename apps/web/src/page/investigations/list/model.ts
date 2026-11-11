@@ -8,8 +8,6 @@ import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 
-// `/investigations`.
-
 /** One page of `investigations.list`. */
 export const InvestigationPage = Schema.Struct({
 	data: Schema.Array(V2Investigation),

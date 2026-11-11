@@ -1,6 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
-import { DescribeDataSourceOutput } from "@maple/domain/mcp-outputs"
 import type { CatalogEntryView } from "@maple/domain/data-sources"
 import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import * as P from "../lib/params"
@@ -66,7 +65,6 @@ export function registerDescribeDataSourceTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 5_000 }),
 		}),
 		aliases: { source: "data_source", name: "data_source", tables: "entries", resources: "entries" },
-		output: DescribeDataSourceOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading a data source's catalog", "Describing a data source"],
 		handler: Effect.fn("McpTool.describeDataSource")(function* ({ data_source, entries, offset }) {

@@ -102,8 +102,6 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 	}
 })
 
-// List facets (filter sidebar option counts)
-
 const ReplaysFacetsInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
@@ -322,8 +320,6 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 	)
 	return { data: Arr.map(events, replayEventFromV2) }
 })
-
-// Reverse correlation: replays observing a trace
 
 const ReplaysForTraceInput = Schema.Struct({
 	traceId: TraceId,

@@ -25,8 +25,6 @@ import * as Bench from "@maple/query-engine/benchmark"
 import { collectWarehouseQueryCatalog } from "./query-bench/catalog"
 import { runCli } from "@maple-dev/effect-orm/benchmark/cli"
 
-// Errors
-
 class MissingConfigError extends Schema.TaggedError<MissingConfigError>()(
 	"@maple/api/scripts/bench-queries/MissingConfigError",
 	{
@@ -96,8 +94,6 @@ interface FetchOutput {
 	}
 	readonly samples: ReadonlyArray<Sample>
 }
-
-// BenchConfig — resolve warehouse credentials from the environment via `Config`
 
 interface TinybirdConfig {
 	readonly host: string
@@ -199,8 +195,6 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdApi>()("bench/Ti
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(BenchConfig.layer))
 }
 
-// File IO via the core FileSystem service
-
 const decodeJson = <A>(text: string, schema: Schema.Decoder<A>) =>
 	Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(text).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
@@ -226,8 +220,6 @@ const writeJsonFile = (path: string, value: unknown) =>
 				Effect.mapError((cause) => new BenchFileError({ path, op: "write", message: String(cause) })),
 			)
 	})
-
-// Pure helpers — time, formatting, stats, table
 
 const parseRelativeDuration = (input: string): Effect.Effect<number, InvalidDurationError> => {
 	const match = /^(\d+)\s*(s|m|h|d)$/i.exec(input.trim())
@@ -301,8 +293,6 @@ const artifactDirectory = fileURLToPath(new URL(".bench/", import.meta.url))
 const defaultOutput = (name: string) => resolve(artifactDirectory, `${name}-${timestampSlug()}.json`)
 
 const timestampSlug = () => new Date().toISOString().replace(/[:.]/g, "-")
-
-// Handlers
 
 interface FetchConfig {
 	readonly context: Option.Option<string>
@@ -444,8 +434,6 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 			"Catalog fixtures use org_sql_catalog and synthetic dates/filters. Use --suite for a representative tenant and fixed window.",
 		)
 })
-
-// CLI command tree (effect/cli)
 
 const fetchCommand = Command.make(
 	"fetch",

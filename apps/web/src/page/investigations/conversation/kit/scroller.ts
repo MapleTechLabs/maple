@@ -2,16 +2,15 @@ import { Effect, Schema, Array as Arr, Option } from "effect"
 import { Mount } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 
-// `MessageScroller` (`@shadcn/react/message-scroller`, `autoScroll`, `defaultScrollPosition="end"`),
-// its scrolling half: open at the end and follow it; a new user turn is anchored near the top (a
-// spacer below the thread makes room) with 64 px of the previous turn peeking above, and held there
-// while the reply streams; a wheel, touch or key scroll frees it. The jump button shows while the
-// end is out of view. Pure DOM bookkeeping on the viewport, so it lives in a Mount.
+// The message scroller's scrolling half: open at the end and follow it; a new user turn is anchored
+// near the top (a spacer below the thread makes room) with 64 px of the previous turn peeking above,
+// and held there while the reply streams; a wheel, touch or key scroll frees it. The jump button
+// shows while the end is out of view. Pure DOM bookkeeping on the viewport, so it lives in a Mount.
 
 export const ScrollerMessage = defineMessageUnion({ CompletedMountScroller: {} })
 export const CompletedMountScroller = ScrollerMessage.CompletedMountScroller
 
-/** Asks the scroller around the target to bring a message to the top (`scrollToMessage`). */
+/** Asks the scroller around the target to bring a message to the top. */
 export const SCROLL_TO_MESSAGE = "maple:scroll-to-message"
 const EDGE_THRESHOLD = 8
 const PREVIOUS_PEEK = 64
@@ -88,7 +87,6 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		mode = "following-bottom"
 		scrollTo(viewport.scrollHeight - viewport.clientHeight, behavior)
 	}
-	/** `scrollToElement(…, { align: "start" }, { keepPreviousPeek: true })`. */
 	const anchorTo = (element: HTMLElement) => {
 		const offset =
 			element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
@@ -98,7 +96,7 @@ const attach = (root: Element, focusMessageId: string | null): (() => void) => {
 		mode = "anchored-to-message"
 		scrollTo(target, "auto")
 	}
-	/** `scrollToMessage(id, { align: "start" })`: a permalink's message at the top, left where it lands. */
+	/** A permalink's message at the top, left where it lands. */
 	const jumpTo = (element: HTMLElement, behavior: ScrollBehavior = "auto") => {
 		const offset =
 			element.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
@@ -221,8 +219,8 @@ export const MountMessageScroller = Mount.define("MountChatMessageScroller", {
 export const CompletedMountJump = defineMessageUnion({ CompletedMountJump: {} }).CompletedMountJump
 
 /**
- * `JumpToDiagnosis`: on its button, hidden while the message is in view (the scroller's
- * IntersectionObserver, 64 px peek off the top); a press asks the scroller to bring it up.
+ * On the jump button: hidden while the message is in view (the scroller's IntersectionObserver,
+ * 64 px peek off the top); a press asks the scroller to bring it up.
  */
 export const MountJumpToMessage = Mount.define("MountChatJumpToMessage", {
 	args: { messageId: Schema.String },

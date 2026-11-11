@@ -1,6 +1,7 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
+import { filterChipItem } from "@maple/views/ui/filter-chip"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
 import { textLink } from "@maple/views/ui/text-link"
@@ -14,13 +15,12 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
+import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/primitives"
 import { AppRoute, hrefOf } from "../../../route"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { integrationPlatformOf, orderSources, sourceHref, viaLabel } from "../kit/shared"
 import { needsAttention, sourceStatusBadge } from "../kit/status"
 import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
-import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
 import { canManage, type Model, type SourceKind } from "./model"
 import { typography } from "@maple/views/ui/typography"
@@ -164,7 +164,7 @@ const kindOf = (source: V2Source): Exclude<SourceKind, "all"> =>
 const KIND_LABELS = { all: "All", push: "OpenTelemetry", integration: "Integrations" } as const
 
 const kindChip = (h: H, kind: SourceKind, count: number): ToggleGroup.ToggleGroupItem =>
-	countChipItem(h, { value: kind, label: KIND_LABELS[kind], count })
+	filterChipItem(h, { value: kind, label: KIND_LABELS[kind], count })
 
 const kindFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): Html =>
 	ToggleGroup.view(h, {
@@ -194,7 +194,7 @@ const attentionFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): 
 				isConnected: false,
 				size: "xs",
 				items: [
-					countChipItem(h, { value: "attention", label: "Needs attention", count, tone: "warn" }),
+					filterChipItem(h, { value: "attention", label: "Needs attention", count, tone: "warn" }),
 				],
 			})
 }

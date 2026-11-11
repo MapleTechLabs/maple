@@ -11,12 +11,9 @@ import {
 } from "./gauge"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The gauge widget's dial, as SVG.
-
 const attrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string | number>>) =>
 	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, String(value)))
 
-/** `useId().replace(/:/g, "")` of the first gauge: Base UI ids are not compared, so any stable id does. */
 export const gaugeDial = <M>(
 	h: HtmlBuilder<M>,
 	glowId: string,

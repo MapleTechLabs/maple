@@ -1,7 +1,7 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, String as Str } from "effect"
 import { traceHrefFrom } from "./peek"
@@ -22,12 +22,7 @@ import type { TraceRow } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// One row of the traces table.
-
-const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
-
-/** `traceLink`: the trace page, with the row's own span pre-selected when it is not the root. */
-/** `traceLink`: the trace page, keeping the list's search (`{ ...prev, t, spanId }`). */
+/** The trace page, keeping the list's search, with the row's own span pre-selected when it is not the root. */
 export const traceHref = (search: Search, row: TraceRow): string =>
 	traceHrefFrom(search, row.traceId, row.startTime, row.isRootSpan ? undefined : row.spanId)
 
@@ -49,7 +44,7 @@ const rootSpanCell = (
 	nowMs: number,
 	search: Search,
 ): Html => {
-	const epochMs = epochOf(row.startTime)
+	const epochMs = parseWarehouseDateTime(row.startTime)
 	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(

@@ -1,5 +1,5 @@
 import { ALL_VALUE, type ResolvedVariable } from "@maple/query-engine"
-import { REFRESH_INTERVAL_OPTIONS } from "../../../lib/dashboard-controls/search-params"
+import { REFRESH_INTERVAL_OPTIONS } from "../../../route/dashboard-controls"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -13,7 +13,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import type { PageContext } from "../../contract"
-import { codeBlock } from "../../settings/kit/code-block"
+import { codeBlock } from "../../kit/code-block"
 import type { Variable } from "../kit/variables"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -24,8 +24,6 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { dividedList } from "@maple/views/ui/rule"
-
-// The embed widget dialog.
 
 type H = HtmlBuilder<Message>
 

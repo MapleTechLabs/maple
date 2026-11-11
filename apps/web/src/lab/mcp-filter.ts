@@ -1,4 +1,4 @@
-import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
+import type { ToolSeriesPoint } from "../page/kit/tools/model"
 import type { McpCallRow, McpServerOverview, McpToolDetail, McpToolRow } from "../page/mcp/data"
 import type { McpFilters } from "../page/mcp/view-kit"
 import { MCP_CLIENT_TOOLS, MCP_OVERVIEW, MCP_RUN_SQL } from "./mcp-fixture"

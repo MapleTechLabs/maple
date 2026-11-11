@@ -154,7 +154,6 @@ export class CodeReviewAnalytics extends Schema.Class<CodeReviewAnalytics>("Code
 	authors: Schema.Array(CodeReviewAuthorCount),
 }) {}
 
-/** One review in the organization-wide list. */
 export class CodeReviewListItem extends Schema.Class<CodeReviewListItem>("CodeReviewListItem")({
 	id: PrReviewId,
 	repositoryId: VcsRepositoryId,
@@ -229,7 +228,6 @@ export class CodeReviewDetail extends Schema.Class<CodeReviewDetail>("CodeReview
 	postMerge: Schema.optionalKey(Schema.NullOr(PrReviewPostMerge)),
 }) {}
 
-// ---------------------------------------------------------------------------------------------
 // CI: GitHub Actions runs, read from the CI traces the GitHub integration writes.
 
 /** `cicd.pipeline.result` of a run. */
@@ -385,7 +383,6 @@ export class CodeReviewCiRunsResponse extends Schema.Class<CodeReviewCiRunsRespo
 	nextCursor: Schema.NullOr(Schema.String),
 }) {}
 
-// ---------------------------------------------------------------------------------------------
 // Team: per person, what the reviews and CI runs say, by GitHub login. Bots are left out.
 
 export const CodeReviewTeamQuery = Schema.Struct({

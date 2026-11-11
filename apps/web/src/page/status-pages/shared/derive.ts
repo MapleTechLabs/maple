@@ -62,16 +62,6 @@ export const IMPACT_LABEL = {
 	critical: "Critical",
 } as const satisfies Record<StatusPageIncidentImpact, string>
 
-export const INCIDENT_STATUS_LABEL = {
-	investigating: "Investigating",
-	identified: "Identified",
-	monitoring: "Monitoring",
-	resolved: "Resolved",
-	scheduled: "Scheduled",
-	in_progress: "In progress",
-	completed: "Completed",
-} as const satisfies Record<StatusPageIncidentStatus, string>
-
 /** The statuses an incident or a maintenance moves through, the closing one last. */
 export const STATUSES_OF_KIND = {
 	incident: ["investigating", "identified", "monitoring", "resolved"],

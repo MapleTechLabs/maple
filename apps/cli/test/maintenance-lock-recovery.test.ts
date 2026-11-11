@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { withMaintenanceLock } from "@maple/local-server/checkpoints"
+import { maintenanceInProgress, withMaintenanceLock } from "@maple/local-server/checkpoints"
 
 const lockPathOf = (dataDir: string): string => `${resolve(dataDir)}.maple-maintenance-lock`
 
@@ -50,7 +50,9 @@ describe("maintenance lock recovery", () => {
 		await withDataDir(async (dataDir) => {
 			const lockPath = lockPathOf(dataDir)
 			mkdirSync(lockPath, { mode: 0o700 })
-			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }), { mode: 0o000 })
+			writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.ppid }), {
+				mode: 0o000,
+			})
 			ageLock(lockPath, 10 * 60_000)
 			await expect(withMaintenanceLock(dataDir, randomUUID(), async () => "ran")).rejects.toThrow(
 				/ownership is uncertain/,
@@ -149,6 +151,21 @@ describe("maintenance lock recovery", () => {
 			await expect(withMaintenanceLock(dataDir, randomUUID(), async () => "ran")).rejects.toThrow(
 				/another Maple maintenance operation is active/,
 			)
+		})
+	})
+})
+
+describe("maintenanceInProgress", () => {
+	it("is true only while a live process holds the lock", async () => {
+		await withDataDir(async (dataDir) => {
+			const lockPath = lockPathOf(dataDir)
+			expect(maintenanceInProgress(dataDir)).toBe(false)
+			mkdirSync(lockPath, { mode: 0o700 })
+			writeOwner(lockPath, { pid: process.ppid })
+			expect(maintenanceInProgress(dataDir)).toBe(true)
+			// Far above any real pid limit, so it is never alive.
+			writeOwner(lockPath, { pid: 2 ** 30 })
+			expect(maintenanceInProgress(dataDir)).toBe(false)
 		})
 	})
 })

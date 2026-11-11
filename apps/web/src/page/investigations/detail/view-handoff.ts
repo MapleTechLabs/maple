@@ -17,8 +17,6 @@ import { handoffInputOf, investigationOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// "Fix in Claude Code": hand the diagnosis to the reader's own coding agent.
-
 type H = HtmlBuilder<Message>
 
 export const AGENT_ICON = {

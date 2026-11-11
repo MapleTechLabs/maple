@@ -256,10 +256,6 @@ function readCoverage(
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/* Checks                                                                     */
-/* -------------------------------------------------------------------------- */
-
 interface CheckIdentity {
 	readonly id: string
 	readonly name: string
@@ -740,10 +736,6 @@ function promptCacheCheck(llmCalls: readonly AiSessionSpan[]): SessionCheck {
 	}
 	return check(identity, "passed", `Cache hit rate ${rateText} over ${plural(calls.length, "call")}`)
 }
-
-/* -------------------------------------------------------------------------- */
-/* Phrasing                                                                   */
-/* -------------------------------------------------------------------------- */
 
 function plural(n: number, noun: string, nouns = `${noun}s`): string {
 	return `${formatNumber(n)} ${n === 1 ? noun : nouns}`

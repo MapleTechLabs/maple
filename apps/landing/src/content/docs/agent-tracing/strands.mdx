@@ -91,7 +91,7 @@ If your app already sets up a global `TracerProvider` (for example `opentelemetr
 </LanguageTab>
 <LanguageTab id="typescript">
 
-Use the same `OTEL_EXPORTER_OTLP_*` variables, with `OTEL_SEMCONV_STABILITY_OPT_IN="gen_ai_latest_experimental,gen_ai_span_attributes_only"` (the SDK doesn't support the third value). Then:
+Use the same `OTEL_EXPORTER_OTLP_*` variables, with `OTEL_SEMCONV_STABILITY_OPT_IN="gen_ai_latest_experimental,gen_ai_span_attributes_only"` (the TypeScript SDK doesn't support the `gen_ai_unredacted_attributes` allowlist). Then:
 
 ```ts
 import { Agent, FileStorage, SessionManager } from "@strands-agents/sdk"
@@ -202,7 +202,7 @@ try {
 
 ## Verify
 
-Run a conversation of two or three messages, including one that calls a tool, then open **Agent Sessions** in Maple. You should see one session per conversation id with framework **Strands Agents**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls. Cost shows as unpriced because Strands doesn't report it.
+Run a conversation of two or three messages, including one that calls a tool, then open **Agent sessions** in Maple. You should see one session per conversation id with framework **Strands**, one turn per `agent(...)` call, and a transcript with the user messages, replies and tool calls. Cost shows as unpriced because Strands doesn't report it.
 
 ## Troubleshooting
 
