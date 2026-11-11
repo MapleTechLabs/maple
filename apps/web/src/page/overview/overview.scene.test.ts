@@ -1,7 +1,18 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	expect as expectView,
+	expectAll,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
@@ -267,13 +278,34 @@ describe("overview", () => {
 			given(Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)),
 			mounts,
 			expectView(text("Couldn't load alert status")).toExist(),
-			expectView(text("Service health leaves out firing alerts.")).toExist(),
+			// The notice, and the services list's caption further down.
+			expectAll(all.text("Service health leaves out firing alerts.")).toHaveCount(2),
+			expectView(text("Status reflects active alerts and baseline anomalies.")).toBeAbsent(),
+		)
+		const withoutAnomalies: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({
+				key: facets.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			Message.UpdatedIncidents({ orgId, incidents: [] }),
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(Arr.reduce(withoutAnomalies, facets, (model, message) => pageUpdate(model, message).model)),
+			mounts,
+			expectView(text("Couldn't load anomalies")).toExist(),
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([snapshotRow("checkout")])),
 			mounts,
 			expectView(text("Couldn't load alert status")).toBeAbsent(),
+			expectView(text("Status reflects active alerts and baseline anomalies.")).toExist(),
 		)
 	})
 

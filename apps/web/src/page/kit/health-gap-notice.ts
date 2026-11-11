@@ -33,6 +33,9 @@ const COPY = {
 	},
 } satisfies Record<HealthGap, Readonly<{ title: string; description: string }>>
 
+/** What health leaves out, as one sentence: a caption that would otherwise claim the missing input. */
+export const healthGapText = (gap: HealthGap): string => COPY[gap].description
+
 /** The warning above a health summary computed without its alerts or anomalies. */
 export const healthGapNotice = <M>(h: HtmlBuilder<M>, gap: HealthGap, className?: string): Html =>
 	alert(h, { variant: "warn", size: "sm", role: "status", className }, [

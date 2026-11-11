@@ -35,7 +35,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 import type { HealthIncident } from "../kit/service-health"
-import { healthGapNotice, healthGapOf } from "../kit/health-gap-notice"
+import { healthGapNotice, healthGapOf, healthGapText } from "../kit/health-gap-notice"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -162,16 +162,23 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 	})
 }
 
-const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
+/** The caption says what status reflects, or what it leaves out while an input is missing. */
+const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch, model: Model): Html => {
+	const gap = healthGapOf(model.incidents, model.anomalies.data)
+	return listHeaderOf(
+		h,
+		slice,
+		gap === null ? "Status reflects active alerts and baseline anomalies." : healthGapText(gap),
+	)
+}
+
+const listHeaderOf = <M>(h: HtmlBuilder<M>, slice: SliceSearch, caption: string): Html =>
 	hstack(h, { justify: "between" }, [
 		h.div(
 			[],
 			[
 				eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
-				h.p(
-					[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
-					["Status reflects active alerts and baseline anomalies."],
-				),
+				h.p([h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")], [caption]),
 			],
 		),
 		textLink(
@@ -205,11 +212,11 @@ export const healthList = <M>(
 		onEmpty: () =>
 			isNeverReceived
 				? section(h, "mt-4 space-y-3", false, [
-						listHeader(h, slice),
+						listHeader(h, slice, model),
 						card(h, [emptyState], "overflow-hidden p-0"),
 					])
 				: section(h, "mt-4 space-y-3", false, [
-						listHeader(h, slice),
+						listHeader(h, slice, model),
 						card(
 							h,
 							[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
@@ -217,7 +224,7 @@ export const healthList = <M>(
 						),
 					]),
 		onFailure: (failure) =>
-			section(h, "mt-4 space-y-3", false, [listHeader(h, slice), errorState(h, { failure })]),
+			section(h, "mt-4 space-y-3", false, [listHeader(h, slice, model), errorState(h, { failure })]),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const rows = enrichServices(
 				snapshot,
@@ -226,7 +233,7 @@ export const healthList = <M>(
 				nowMs,
 			).slice(0, MAX_ROWS)
 			return section(h, "mt-4 space-y-3", AsyncData.isRefreshing(data), [
-				listHeader(h, slice),
+				listHeader(h, slice, model),
 				card(
 					h,
 					[
