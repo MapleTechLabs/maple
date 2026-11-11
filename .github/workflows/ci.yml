@@ -475,6 +475,7 @@ jobs:
                   src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/trace-facets-hourly-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/ci-runs.clickhouse.e2e.test.ts
+                  src/services/warehouse/cost-daily.clickhouse.e2e.test.ts
                   src/services/warehouse/service-api-materialization.clickhouse.e2e.test.ts
                   src/services/warehouse/service-map-parity.clickhouse.e2e.test.ts
                   src/services/warehouse/host-infra.clickhouse.e2e.test.ts

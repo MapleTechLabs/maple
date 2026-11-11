@@ -159,6 +159,14 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
 		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
+	cost_daily: [
+		"Time column: `Date`, midnight UTC of the usage day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. The newest days are restated by the provider for days to weeks and carry `Estimated = 1` until final.",
+		"Versions: each pull writes a source's whole day with one `IngestedAt`, and a restated day can drop keys an older pull still holds. Keep only each day's newest pull: `AND (SourceId, Date, IngestedAt) IN (SELECT SourceId, Date, max(IngestedAt) FROM cost_daily WHERE <the OrgId, SourceId and Date filters only> GROUP BY SourceId, Date)`, never argMax per key. Keep every other filter (region, service, ...) out of that subquery, or an older pull that still has the value comes back.",
+		"Money: `BilledCost` is what the provider invoices; `EffectiveCost` spreads upfront commitments over their term; both in `Currency`, never converted. `Basis` is 'billed' (provider-reported money) or 'estimated' (usage times list price). Float64: round sums to cents for display.",
+		"`CloudService` is the provider's own service name; `ServiceName` is the telemetry service the resource resolves to and is '' when none does. `Region` is '' or 'global' for charges with no region. `ResourceId` is '' unless the source supplies resource-level cost.",
+		"A disconnected source keeps its rows: the cost tools read only an org's active sources, so filter `SourceId` when a total must match them.",
+		"Pulled into Maple's managed warehouse only: an org on its own ClickHouse reads it empty here.",
+	],
 	search_console_daily: [
 		"Time column: `Date`, midnight UTC holding Google's Pacific day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. Imports run through today, so the newest days are partial (Google reports with a 2 to 3 day lag): end windows at yesterday (Pacific) or earlier for complete days.",
 		"`Grain` is 'site' (totals per Country/Device, Page and Query ''), 'page' (per Page; Country, Device and Query '') or 'query' (per Query, Page, Country and Device). Per-page Country/Device splits are not available: Google drops anonymized traffic when page is split by them. Each grain counts the same clicks again, so always filter one `Grain` and never sum across grains. The 'query' grain omits Google's anonymized queries, so it sums below 'site'.",

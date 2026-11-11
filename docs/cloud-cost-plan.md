@@ -1,7 +1,8 @@
 # Cloud cost: plan
 
-Status: **phase 0 done, 2026-11-11.** Provider APIs checked against docs, public schemas and one
-real AWS account. Nothing is built except the AWS `cost` permission list.
+Status: **phase 1 in progress, 2026-11-11.** Phase 0 checked the provider APIs against docs, public
+schemas and one real AWS account. Built so far: the AWS `cost` permission list, `cost_daily` and its
+queries.
 
 ## Goal
 
@@ -59,19 +60,27 @@ interface CostProvider {
 
 ### Warehouse: `cost_daily`
 
-One row per connection, day, service, usage type, region and resource. Column names follow FOCUS
-(`BilledCost`, `EffectiveCost`, `ListCost`, `ConsumedQuantity`, `ChargeCategory`, `ServiceName`,
-`ResourceId`, `RegionId`, `Tags`), plus:
+One row per cost source, UTC day, cloud service, usage type, region, resource and charge category.
+Money and quantity columns follow FOCUS (`BilledCost`, `EffectiveCost`, `ListCost`,
+`ConsumedQuantity`, `ChargeCategory`). Where Maple's warehouse already has a meaning for a name,
+Maple's meaning wins:
 
+- `ServiceName` is the telemetry service a resource resolves to, as in every other table, and is
+  empty when none does. This is the join to requests and traces. The provider's own service is
+  `CloudService`.
 - `Basis`: `billed` (the provider reported the money) or `estimated` (usage times list price). The
   UI always shows which.
-- `MapleServiceName`: the telemetry `ServiceName` the resource resolves to, when one does. This is
-  the join to requests and traces.
-- `PullVersion`: every pull of a day writes a new version. Queries read the newest committed one
-  per `(connection, day)`. Providers restate recent days, so rows are never updated in place.
+- `Estimated`: 1 while the provider can still restate the day.
+- `IngestedAt` is the pull version. Each pull writes a source's whole day under one value, and
+  queries read the newest per `(SourceId, Date)`. Providers restate recent days and can drop keys,
+  so rows are never updated in place and never picked per key.
 
-Costs are decimals. It is a small table (hundreds of rows per connection per day), so it needs no
-rollup.
+Money is `Float64`, like every other measure in the warehouse, and is rounded to cents when shown.
+The table is written through the managed ingest route only, like `search_console_daily`: an org on
+its own ClickHouse still reads cost from Maple's warehouse. A disconnected source keeps its rows
+until the TTL (760 days), so reads name the org's active sources.
+
+It is a small table (hundreds of rows per source per day), so it needs no rollup.
 
 ### Postgres
 
