@@ -23,7 +23,7 @@ type Cmd = Command.Command<Message, never, Resources>
 
 /**
  * A plain field asked before the credential: what the credential is for, or its public half. It
- * is shown as typed, and a replace starts it from the source that exists.
+ * is shown as typed.
  */
 export type CredentialIdentifier = Readonly<{
 	label: string
@@ -32,7 +32,7 @@ export type CredentialIdentifier = Readonly<{
 	/** Shown when the text is longer than `maxLength`, which the request would refuse to carry. */
 	tooLong: string
 	description?: string
-	/** What a replace starts the field with, read off the source. */
+	/** What a replace sets the field to, read off the source: it is then shown, not asked. */
 	fromSource?: (source: CostSourceSummary) => string
 }>
 
@@ -149,7 +149,7 @@ export const CREDENTIAL_SOURCES = {
 	planetscale: {
 		pick: {
 			// Short enough to stand whole in the list: the form says the rest.
-			meta: "Monthly invoices by branch, spread over its days",
+			meta: "Monthly invoices, spread over each branch's days",
 			addedMeta: "Replace its token in the Sources panel",
 		},
 		identifiers: [
@@ -167,6 +167,7 @@ export const CREDENTIAL_SOURCES = {
 				placeholder: "abcdef123456",
 				maxLength: PLANETSCALE_COST_TOKEN_ID_MAX_LENGTH,
 				tooLong: "That is too long to be a service token ID.",
+				description: "PlanetScale shows it with the token when you create one.",
 			},
 		],
 		field: {
@@ -184,7 +185,7 @@ export const CREDENTIAL_SOURCES = {
 		add: {
 			title: "Add PlanetScale",
 			description:
-				"PlanetScale bills by the month, so Maple spreads each invoice evenly over the days each branch ran. It reads this month and the last at once, then the year before.",
+				"PlanetScale bills by the month, so Maple spreads each invoice line evenly over the days its branch ran. It reads this month and the last at once, then the year before.",
 			toast: "PlanetScale added",
 		},
 		replace: {
@@ -200,9 +201,13 @@ export const CREDENTIAL_SOURCES = {
 				"Maple deletes the token and stops reading the organization's invoices, and its cost leaves this page. Adding PlanetScale again reads the last year again.",
 			toast: "PlanetScale removed",
 		},
-		rowNote: "PlanetScale bills by the month: each day is an even share of its branch's invoice line.",
+		rowNote: "Billed by the month: each day shows an even share of the month's invoice for each branch.",
 		save: (token, [organization = "", tokenId = ""]) =>
 			SavePlanetScaleCostToken({ organization, tokenId, token }),
 		delete: () => RemovePlanetScaleCostToken(),
 	},
 } satisfies Record<CredentialProvider, CredentialSource>
+
+/** A provider's entry, by the fields every entry may have. */
+export const credentialSourceOf = (provider: CredentialProvider): CredentialSource =>
+	CREDENTIAL_SOURCES[provider]

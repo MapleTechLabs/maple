@@ -7,7 +7,15 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import * as Field from "@maple/views/ui/field"
-import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "@maple/views/ui/field"
+import {
+	field,
+	fieldDescription,
+	fieldError,
+	fieldErrorText,
+	type FieldIds,
+	fieldLabel,
+	input,
+} from "@maple/views/ui/field"
 import { formDialogForm } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
@@ -15,7 +23,12 @@ import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
-import { CREDENTIAL_SOURCES, type CredentialIdentifier, type CredentialSource } from "./credential-sources"
+import {
+	CREDENTIAL_SOURCES,
+	type CredentialIdentifier,
+	type CredentialSource,
+	credentialSourceOf,
+} from "./credential-sources"
 import { hasSourceOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -95,30 +108,39 @@ const CREDENTIAL_IDS: FieldIds = {
 	description: "cost-source-credential-description",
 }
 
-const identifierIds = (index: number): FieldIds => ({
+const identifierIds = (index: number, isDescribed: boolean): FieldIds => ({
 	control: `cost-source-identifier-${index}`,
 	label: `cost-source-identifier-${index}-label`,
 	error: `cost-source-identifier-${index}-error`,
-	description: `cost-source-identifier-${index}-description`,
+	...(isDescribed ? { description: `cost-source-identifier-${index}-description` } : undefined),
 })
 
-/** A plain field before the credential, shown as typed. A refusal is about them all, and stands under the credential. */
-const identifierField = (h: H, model: Model, text: CredentialIdentifier, index: number): Html => {
+/**
+ * A plain field before the credential, shown as typed. Locked when a replace took it from the
+ * source: the new credential must be for the same one.
+ */
+const identifierField = (
+	h: H,
+	model: Model,
+	text: CredentialIdentifier,
+	index: number,
+	isLocked: boolean,
+): Html => {
 	const draft = model.credentialIdentifiers[index] ?? Field.init()
 	const state = Field.stateOf(draft, false)
-	const ids = identifierIds(index)
+	const ids = identifierIds(index, text.description !== undefined)
 	return field(h, { state }, [
 		fieldLabel(h, { ids, state }, text.label),
 		input(h, {
 			ids,
 			state,
+			isDisabled: isLocked || model.sourceWrite === "Saving",
 			attributes: [
 				h.Type("text"),
 				h.Attribute("autocomplete", "off"),
 				h.Attribute("autocapitalize", "none"),
 				h.Attribute("spellcheck", "false"),
 				h.Placeholder(text.placeholder),
-				...(model.sourceWrite === "Saving" ? [h.Disabled(true)] : []),
 				...Field.controlAttributes(h, draft, (message) =>
 					Message.GotCredentialIdentifierMessage({ index, message }),
 				),
@@ -128,8 +150,10 @@ const identifierField = (h: H, model: Model, text: CredentialIdentifier, index: 
 	])
 }
 
-const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
-	const state = Field.stateOf(model.credentialDraft, model.credentialError !== null)
+/** The credential, typed hidden. `ownsError`: a refusal is about this field alone, and stands under it. */
+const credentialField = (h: H, model: Model, { field: text }: CredentialSource, ownsError: boolean): Html => {
+	const error = ownsError ? model.credentialError : null
+	const state = Field.stateOf(model.credentialDraft, error !== null)
 	return field(h, { state }, [
 		fieldLabel(h, { ids: CREDENTIAL_IDS, state }, text.label),
 		input(h, {
@@ -145,13 +169,9 @@ const credentialField = (h: H, model: Model, { field: text }: CredentialSource):
 				),
 			],
 		}),
-		...(model.credentialError === null
+		...(error === null
 			? []
-			: [
-					fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [
-						model.credentialError,
-					]),
-				]),
+			: [fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [error])]),
 		fieldDescription(h, { ids: CREDENTIAL_IDS, state }, [
 			text.help.before,
 			textLink(
@@ -178,7 +198,8 @@ const credentialForm = (
 	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
 ): Html => {
 	const id = model.addDialog.id
-	const source: CredentialSource = CREDENTIAL_SOURCES[provider]
+	const source = credentialSourceOf(provider)
+	const identifiers = source.identifiers ?? []
 	const isReplacing = hasSourceOf(sources, provider)
 	const isSaving = model.sourceWrite === "Saving"
 	const canSubmit =
@@ -193,10 +214,24 @@ const credentialForm = (
 		]),
 		DialogView.dialogPanel(h, "dialog", id, [
 			vstack(h, { gap: "4" }, [
-				...Arr.map(source.identifiers ?? [], (identifier, index) =>
-					identifierField(h, model, identifier, index),
+				...Arr.map(identifiers, (identifier, index) =>
+					identifierField(
+						h,
+						model,
+						identifier,
+						index,
+						isReplacing && identifier.fromSource !== undefined,
+					),
 				),
-				credentialField(h, model, source),
+				credentialField(h, model, source, identifiers.length === 0),
+				// With several fields a refusal can be about any of them: it stands under them all.
+				...(identifiers.length === 0 || model.credentialError === null
+					? []
+					: [
+							fieldErrorText(h, { className: "font-prose", attributes: [h.Role("alert")] }, [
+								model.credentialError,
+							]),
+						]),
 			]),
 		]),
 		DialogView.dialogFooter(h, "dialog", [

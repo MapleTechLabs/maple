@@ -43,7 +43,7 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
-import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
+import { CREDENTIAL_SOURCES, credentialSourceOf } from "./credential-sources"
 import { Message } from "./message"
 import type { AddStep, Model, Search } from "./model"
 import type { CredentialProvider } from "./providers"
@@ -191,12 +191,11 @@ const identifierDrafts = (model: Model, addStep: AddStep): ReadonlyArray<Field.M
 	const existing = Option.flatMap(AsyncData.getData(model.sources.data), ({ sources }) =>
 		Arr.findFirst(sources, (source) => source.provider === addStep),
 	)
-	const source: CredentialSource = CREDENTIAL_SOURCES[addStep]
-	return Arr.map(source.identifiers ?? [], (identifier) =>
+	return Arr.map(credentialSourceOf(addStep).identifiers ?? [], (identifier) =>
 		Field.init(
 			Option.match(existing, {
 				onNone: () => "",
-				onSome: (source) => identifier.fromSource?.(source) ?? "",
+				onSome: (replaced) => identifier.fromSource?.(replaced) ?? "",
 			}),
 		),
 	)
@@ -415,7 +414,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			) {
 				return { model }
 			}
-			const source: CredentialSource = CREDENTIAL_SOURCES[model.addStep]
+			const source = credentialSourceOf(model.addStep)
 			// The request refuses a longer one before it is sent, which would leave the save unanswered.
 			const tooLong = Option.orElse(
 				Option.map(

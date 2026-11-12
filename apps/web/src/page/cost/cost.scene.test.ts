@@ -623,7 +623,7 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
 			// Where the reader picks it, the page says its days are a month's invoice spread out.
-			expectView(text("Monthly invoices by branch, spread over its days")).toExist(),
+			expectView(text("Monthly invoices, spread over each branch's days")).toExist(),
 		)
 		const form = pageUpdate(opened, Message.PickedProvider({ provider: "planetscale" })).model
 		scene(
@@ -632,12 +632,18 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("Add PlanetScale")).toExist(),
-			expectView(text(/spreads each invoice evenly over the days each branch ran/)).toExist(),
+			expectView(text(/spreads each invoice line evenly over the days its branch ran/)).toExist(),
 			expectView(label("Organization")).toHaveAttr("type", "text"),
 			expectView(label("Service token ID")).toHaveAttr("type", "text"),
 			// Only the token is typed hidden.
 			expectView(label("Service token")).toHaveAttr("type", "password"),
 			expectView(text("The name in app.planetscale.com/<organization>.")).toExist(),
+			expectView(label("Organization")).toHaveAccessibleDescription(
+				"The name in app.planetscale.com/<organization>.",
+			),
+			expectView(label("Service token ID")).toHaveAccessibleDescription(
+				"PlanetScale shows it with the token when you create one.",
+			),
 			expectView(role("link", { name: "Create a service token" })).toHaveAttr(
 				"href",
 				"https://app.planetscale.com/",
@@ -692,6 +698,36 @@ describe("cost page", () => {
 		)
 		expect(names(oversized.commands)).toEqual([])
 		expect(oversized.model.credentialError).toBe("That is too long to be a service token ID.")
+		expect(
+			pageUpdate(identified(filled, 0, Str.repeat(101)("a")), Message.SubmittedCredential()).model
+				.credentialError,
+		).toBe("That is too long to be a PlanetScale organization name.")
+		// While the save is in flight the fields are shown, not editable, and typing changes nothing.
+		scene(
+			{ update: pageUpdate, view },
+			given(saving.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(label("Organization")).toBeDisabled(),
+			expectView(label("Service token ID")).toBeDisabled(),
+		)
+		expect(identified(saving.model, 0, "other").credentialIdentifiers).toEqual(
+			saving.model.credentialIdentifiers,
+		)
+		// Going back to the providers leaves nothing typed behind, for this provider or the next.
+		const wentBack = pageUpdate(filled, Message.ClickedBackToProviders()).model
+		expect([wentBack.addStep, wentBack.credentialDraft.value, wentBack.credentialIdentifiers]).toEqual([
+			"pick",
+			"",
+			[],
+		])
+		expect(
+			Arr.map(
+				pageUpdate(wentBack, Message.PickedProvider({ provider: "planetscale" })).model
+					.credentialIdentifiers,
+				(draft) => draft.value,
+			),
+		).toEqual(["", ""])
 
 		const refusal =
 			"PlanetScale found no organization with this name for this service token. Check the organization, the token ID and the token."
@@ -709,6 +745,8 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(role("alert")).toHaveText(refusal),
+			// The refusal can be about any of the three: no single field is marked wrong.
+			expectView(label("Service token")).not.toHaveAttr("aria-invalid", "true"),
 			// What was typed stays, so the wrong field can be corrected.
 			expectView(label("Organization")).toHaveValue("  acme "),
 		)
@@ -760,7 +798,7 @@ describe("cost page", () => {
 			expectView(text("acme")).toExist(),
 			expectView(text(/provider requests/)).not.toExist(),
 			// Beside the figures, the row says its days are shares of a monthly invoice.
-			expectView(text(/each day is an even share of its branch's invoice line/)).toExist(),
+			expectView(text(/each day shows an even share of the month's invoice for each branch/)).toExist(),
 		)
 
 		const replacing = pageUpdate(
@@ -774,9 +812,11 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(text("Replace the PlanetScale token")).toExist(),
 			expectView(text(/Use a token for the same PlanetScale organization/)).toExist(),
-			// The organization is the source's: only the new token is typed.
+			// The organization is the source's and cannot be another: only the new token is typed.
 			expectView(label("Organization")).toHaveValue("acme"),
+			expectView(label("Organization")).toBeDisabled(),
 			expectView(label("Service token ID")).toHaveValue(""),
+			expectView(label("Service token ID")).toBeEnabled(),
 			expectView(role("button", { name: "Back" })).not.toExist(),
 		)
 		const typed = Arr.reduce(
