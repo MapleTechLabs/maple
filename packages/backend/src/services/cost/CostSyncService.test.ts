@@ -77,6 +77,11 @@ interface FakeProviderOptions {
 	readonly strayDays?: ReadonlyArray<string>
 	/** Another tick takes the row over while the pull is in flight. */
 	readonly stealLease?: boolean
+	/**
+	 * The source's key is replaced while the pull is in flight: what the key service writes to the
+	 * source then (its claim released, its hold and error cleared).
+	 */
+	readonly replaceKeyDuringPull?: boolean
 	/** A second passes during each pull, so every step reads its own clock. */
 	readonly pullTakesASecond?: boolean
 	/** Every `ingest` call answers 503. */
@@ -159,6 +164,12 @@ const harness = (options: FakeProviderOptions = {}) => {
 					yield* sql("UPDATE cost_sources SET lease_until = to_timestamp($1 / 1000.0)", [
 						NOW + 14 * 60_000,
 					])
+				}
+				if (options.replaceKeyDuringPull === true) {
+					yield* sql(
+						`UPDATE cost_sources SET lease_until = NULL, last_error = NULL, last_error_reason = NULL,
+						        next_attempt_at = NULL, consecutive_failures = 0`,
+					)
 				}
 				const failReason =
 					options.failReason ??
@@ -375,6 +386,29 @@ describe("CostSyncService OpenRouter sources", () => {
 			assert.deepStrictEqual(h.windows().slice(1), [["2026-11-08", "2026-11-11"]])
 		}).pipe(Effect.provide(h.layer))
 	})
+
+	it.effect(
+		"a pull that fails on the old key after the key was replaced writes no error and no hold",
+		() => {
+			const h = harness({ replaceKeyDuringPull: true, failReason: "auth" })
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.saveOpenRouterKey({ id: OPENROUTER_KEY_A })
+				const summary = yield* poll
+				// The old key's pull ran and was refused, but its claim was gone by then.
+				assert.lengthOf(h.pulls, 1)
+				assert.deepStrictEqual([summary.skipped, summary.failures], [1, 0])
+				const state = yield* h.sourceStateOf("org_a", OPENROUTER_KEY_A)
+				assert.deepStrictEqual(
+					[state?.error, state?.reason, state?.next, state?.failures, state?.lease],
+					[null, null, null, 0, null],
+				)
+				// So the new key is tried at the next tick, not hours later.
+				yield* TestClock.adjust("5 minutes")
+				assert.strictEqual((yield* poll).due, 1)
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
 
 	it.effect("removes the source with its key, and leaves the org's AWS source alone", () => {
 		const h = harness()
