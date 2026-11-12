@@ -58,7 +58,10 @@ export class OpenRouterCostProvider extends Context.Service<OpenRouterCostProvid
 			const database = yield* Database
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
-			const keyring = yield* secretKeyringFromEnv(env, (message) => failed("auth", message))
+			// Read at the first pull, not here: an unusable key must not stop the sync of other providers.
+			const keyring = yield* Effect.cached(
+				secretKeyringFromEnv(env, (message) => failed("auth", message)),
+			)
 			const dbExecute = makeDbExecute(database, "OpenRouterCostProvider", () =>
 				failed("upstream", "OpenRouter connection database error"),
 			)
@@ -82,8 +85,9 @@ export class OpenRouterCostProvider extends Context.Service<OpenRouterCostProvid
 					)
 					if (row === undefined)
 						return yield* failed("auth", "No OpenRouter key is saved for this source.")
+					const secrets = yield* keyring
 					const apiKey = yield* openSecret(
-						keyring,
+						secrets,
 						openRouterCostKeySlot,
 						{ orgId: row.orgId },
 						{ ciphertext: row.keyCiphertext, iv: row.keyIv, tag: row.keyTag },

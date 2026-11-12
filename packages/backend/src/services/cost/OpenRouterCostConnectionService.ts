@@ -26,6 +26,12 @@ import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 
 const VALIDATE_TIMEOUT = Duration.seconds(15)
 
+/** A workspace id no account has: how a key answers for it says whether it is scoped to one. */
+const NO_SUCH_WORKSPACE = "00000000-0000-4000-8000-000000000000"
+
+const WORKSPACE_SCOPED_KEY =
+	"This management key reads one workspace only, so the source would miss the rest of the account's spend. Use a management key for the whole account."
+
 const NOT_A_MANAGEMENT_KEY =
 	"This is a regular API key. Reading spend needs a management key, which you create under Settings, Management keys in OpenRouter."
 
@@ -108,6 +114,18 @@ export class OpenRouterCostConnectionService extends Context.Service<
 					})
 				}
 				yield* asked(OpenRouterApi.getActivity({}))
+				// A key scoped to one workspace reads only that one, and nothing in a pull would say so.
+				const scoped = yield* OpenRouterApi.getWorkspaceActivity({
+					workspaceId: NO_SUCH_WORKSPACE,
+				}).pipe(
+					Effect.as(false),
+					Effect.catchTags({
+						"@maple/backend/openrouter/NotFound": () => Effect.succeed(false),
+						"@maple/backend/openrouter/Forbidden": () => Effect.succeed(true),
+					}),
+					asked,
+				)
+				if (scoped) return yield* new OpenRouterKeyValidationError({ message: WORKSPACE_SCOPED_KEY })
 				return { keyLabel: data.label, accountId }
 			}).pipe(
 				OpenRouterApi.withKey(httpClient, {
@@ -181,10 +199,12 @@ export class OpenRouterCostConnectionService extends Context.Service<
 						if (row === undefined) return false
 						// The source shows on the Cost page at once, not at the next sync tick.
 						yield* reconcileOpenRouterCostSources(db, now, orgId)
-						// A source held for its old key's failure is due again with the new one.
+						// A source held for its old key's failure is due again with the new one. A pull
+						// still in flight on the old key loses its claim, so its failure writes no hold.
 						yield* db.run(
 							PG.update(CostSources)
 								.set({
+									leaseUntil: null,
 									lastError: null,
 									lastErrorReason: null,
 									nextAttemptAt: null,

@@ -135,6 +135,28 @@ describe("OpenRouterCostProvider", () => {
 		)
 	})
 
+	it.effect("is built on a deployment whose secret key is unusable, and fails only its own pulls", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeOpenRouter()
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				testDb.pglite.query(
+					`INSERT INTO openrouter_cost_connections
+					   (id, org_id, key_ciphertext, key_iv, key_tag, key_label, account_id, created_at, updated_at, updated_by)
+					 VALUES ('conn_a', 'org_cost', 'sealed', 'iv', 'tag', 'sk-or-v1-abc...123', 'user_account_a', now(), now(), 'user_cost')`,
+				),
+			)
+			const error = yield* Effect.flip(pull(ORG, "conn_a"))
+			assert.deepStrictEqual([error.reason, world.urls], ["auth", []])
+		}).pipe(
+			Effect.provide(
+				Layer.effect(OpenRouterCostProvider, OpenRouterCostProvider.make).pipe(
+					Layer.provide(fakeOpenRouterDeps(testDb, world, "not-a-32-byte-key")),
+				),
+			),
+		)
+	})
+
 	it.effect("never reads a key through another org's source, or a connection that is gone", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeOpenRouter()

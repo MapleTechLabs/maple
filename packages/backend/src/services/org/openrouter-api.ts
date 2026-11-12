@@ -186,6 +186,21 @@ const getActivityBody = API.make(() => ({
 export const getActivity = (input: typeof GetActivityRequest.Type) =>
 	getActivityBody(input).pipe(Effect.flatMap(decoded(ActivityResponse)))
 
+const GetWorkspaceActivityRequest = Schema.Struct({
+	workspaceId: Schema.String.pipe(T.Query("workspace_id")),
+}).pipe(T.Http({ method: "GET", uri: "/activity", code: 200 }))
+
+/**
+ * One workspace's activity. A key for the whole account is answered 404 for a workspace the
+ * account does not have; a key scoped to one workspace is answered 403 for any other.
+ */
+export const getWorkspaceActivity = API.make(() => ({
+	input: GetWorkspaceActivityRequest,
+	output: Schema.Unknown,
+	errors: [BadRequest, Unauthorized, Forbidden, NotFound],
+	protocol: OpenRouterProtocol,
+}))
+
 const CreateChatCompletionRequest = Schema.Struct({
 	model: Schema.String,
 	messages: Schema.Array(Schema.Struct({ role: Schema.Literal("user"), content: Schema.String })),
