@@ -8,6 +8,7 @@ import {
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
@@ -397,6 +398,48 @@ describe("cost page", () => {
 		expect(previousPeriodOf(both, window, 30, { provider: ["openrouter"] })).toBe("beyond")
 		expect(previousPeriodOf(both, window, 30, { provider: ["aws"] })).toBe("synced")
 		expect(previousPeriodOf(aws, window, 30, {})).toBe("synced")
+	})
+
+	test("a member who may not manage integrations is offered no source action the API would refuse", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+		})
+		const asMember = (model: Model) =>
+			pageUpdate(model, Message.CompletedReadGrants({ grants: [] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(answered(entered({}, [source(), openRouter]).model))),
+			resolveTheme,
+			// The sources still show how their sync is doing.
+			expectView(text("user_2openrouterAccount")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Remove" })).not.toExist(),
+			expectView(role("link", { name: "Manage connection" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(entered({}, []).model)),
+			resolveTheme,
+			expectView(text("No cost source yet")).toExist(),
+			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
+			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+		)
+		// An engineer is offered them.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					asMember(answered(entered({}, [openRouter]).model)),
+					Message.CompletedReadGrants({ grants: Policy.grantsOf(["org:engineer"]) }),
+				).model,
+			),
+			resolveTheme,
+			expectView(role("button", { name: "Add source" })).toExist(),
+			expectView(role("button", { name: "Replace key" })).toExist(),
+		)
 	})
 
 	test("grouped by provider, a row reads the provider's name and filters by its id", () => {

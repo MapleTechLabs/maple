@@ -37,7 +37,7 @@ import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
-import type { Model } from "./model"
+import { canManageSources, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -50,7 +50,7 @@ const DAY_SECONDS = 24 * 60 * 60
 type H = HtmlBuilder<Message>
 
 /** No cost source: how to get one. Never a sample of what the page would show. */
-const onRamp = (h: H): Html =>
+const onRamp = (h: H, canManage: boolean): Html =>
 	empty(
 		h,
 		[
@@ -62,26 +62,40 @@ const onRamp = (h: H): Html =>
 					emptyDescription(h, [
 						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model.",
 					]),
+					// A member's save would be refused: say who can, and offer no form.
+					...(canManage
+						? []
+						: [
+								emptyDescription(
+									h,
+									["Only organization admins and engineers can add a cost source."],
+									"mt-3",
+								),
+							]),
 				],
 				"max-w-md",
 			),
-			emptyContent(
-				h,
-				[
-					emptyActions(h, [
-						button(
+			...(canManage
+				? [
+						emptyContent(
 							h,
-							{
-								variant: "default",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedAddSource())],
-							},
-							["Add a cost source"],
+							[
+								emptyActions(h, [
+									button(
+										h,
+										{
+											variant: "default",
+											size: "sm",
+											attributes: [h.OnClick(Message.ClickedAddSource())],
+										},
+										["Add a cost source"],
+									),
+								]),
+							],
+							"max-w-md",
 						),
-					]),
-				],
-				"max-w-md",
-			),
+					]
+				: []),
 		],
 		emptyFrameClass("dashed"),
 	)
@@ -225,8 +239,11 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 			errorState(h, { failure, title: "Couldn't load cost", onRetry: Message.ClickedRetry() }),
 		],
 		onData: ({ sources }) => {
-			if (sources.length === 0) return [onRamp(h)]
-			const section = sourcesSection(h, sources, model.nowMs, timeZone, model.sourceWrite !== "Idle")
+			if (sources.length === 0) return [onRamp(h, canManageSources(model))]
+			const section = sourcesSection(h, sources, model.nowMs, timeZone, {
+				isBusy: model.sourceWrite !== "Idle",
+				canManage: canManageSources(model),
+			})
 			return hasSynced(sources) ? [...content(h, model), section] : [firstSync(h, sources), section]
 		},
 	})

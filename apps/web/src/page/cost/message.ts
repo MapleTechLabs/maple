@@ -7,6 +7,7 @@ import {
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -44,6 +45,7 @@ export const Message = defineMessageUnion({
 	ClickedClearFilters: {},
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { message: Chart.Message },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
 	ClickedAddOpenRouter: {},

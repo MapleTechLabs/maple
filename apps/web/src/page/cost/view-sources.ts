@@ -111,7 +111,7 @@ const sourceRow = (
 	source: CostSourceSummary,
 	nowMs: number,
 	timeZone: string,
-	isBusy: boolean,
+	options: Readonly<{ isBusy: boolean; canManage: boolean }>,
 ): Html => {
 	const provider = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
@@ -136,7 +136,15 @@ const sourceRow = (
 						]),
 						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),
-					hstack(h, { gap: "1", className: "-my-1 shrink-0" }, actions(h, source, isBusy)),
+					...(options.canManage
+						? [
+								hstack(
+									h,
+									{ gap: "1", className: "-my-1 shrink-0" },
+									actions(h, source, options.isBusy),
+								),
+							]
+						: []),
 				]),
 				hstack(
 					h,
@@ -157,26 +165,34 @@ export const sourcesSection = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	nowMs: number,
 	timeZone: string,
-	/** A key write is in flight: the row actions wait for it. */
-	isBusy: boolean,
+	options: Readonly<{
+		/** A key write is in flight: the actions wait for it. */
+		isBusy: boolean
+		/** The viewer may add, replace and remove sources; without it no such action is offered. */
+		canManage: boolean
+	}>,
 ): Html =>
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Sources",
-			action: button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isDisabled: isBusy,
-					attributes: [h.OnClick(Message.ClickedAddSource())],
-				},
-				["Add source"],
-			),
+			...(options.canManage
+				? {
+						action: button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: options.isBusy,
+								attributes: [h.OnClick(Message.ClickedAddSource())],
+							},
+							["Add source"],
+						),
+					}
+				: undefined),
 		}),
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
-			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone, isBusy)),
+			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone, options)),
 		),
 	])

@@ -9,6 +9,7 @@ import {
 } from "@maple/web-data/warehouse/cost"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { readGrants } from "../../data/session-tenant"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { COST_GROUP_BYS } from "../../route/search"
 import { resolveWindowCommand } from "../kit/time-frame"
@@ -83,6 +84,11 @@ export const FetchCostBreakdown = Command.define("FetchCostBreakdown", {
 		getCostBreakdown({
 			data: { ...windowOf(input), groupBy: input.groupBy, sortBy: input.sortBy, limit: input.limit },
 		}).pipe(settleTo((result) => Message.CompletedLoadBreakdown({ key, result }))),
+})
+
+export const ReadCostGrants = Command.define("ReadCostGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 /** Saves the org's OpenRouter management key, which makes (or keeps) its cost source. */

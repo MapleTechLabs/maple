@@ -1,4 +1,5 @@
 import { OpenRouterCostKeyRemoved, OpenRouterCostKeySaved } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
 import { Array as Arr, Effect, Option, Result, Schema } from "effect"
@@ -12,6 +13,7 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	ReadCostGrants,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
@@ -55,6 +57,8 @@ export const LabState = Schema.Literals([
 	"key-refused",
 	"replace-key",
 	"remove-source",
+	"member",
+	"member-onramp",
 ])
 export type LabState = typeof LabState.Type
 
@@ -93,7 +97,11 @@ const searchFor = (state: LabState): Search =>
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
-	state === "onramp" || state === "add-source" || state === "add-openrouter" || state === "key-refused"
+	state === "onramp" ||
+	state === "member-onramp" ||
+	state === "add-source" ||
+	state === "add-openrouter" ||
+	state === "key-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -115,6 +123,10 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [CostMessage.ClickedReplaceKey()]
 		case "remove-source":
 			return [CostMessage.ClickedRemoveSource()]
+		// Without Clerk the page starts with every permission: the member states take them away.
+		case "member":
+		case "member-onramp":
+			return [CostMessage.CompletedReadGrants({ grants: [] })]
 		default:
 			return []
 	}
@@ -216,6 +228,12 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 							sortBy: input.sortBy,
 						}),
 					),
+				}),
+			)
+		case ReadCostGrants.name:
+			return Option.some(
+				CostMessage.CompletedReadGrants({
+					grants: state === "member" || state === "member-onramp" ? [] : Policy.allPermissions,
 				}),
 			)
 		case SaveOpenRouterCostKey.name:

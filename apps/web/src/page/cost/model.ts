@@ -4,6 +4,7 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
@@ -35,6 +36,8 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** What the viewer's roles allow; empty until the session read answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
 	/** The OpenRouter management key being typed; cleared whichever way the dialog closes. */
@@ -45,3 +48,7 @@ export const Model = Schema.Struct({
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing"]),
 })
 export type Model = typeof Model.Type
+
+/** The saves need this permission: a viewer without it is offered no action that would be refused. */
+export const canManageSources = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "integrations:manage")

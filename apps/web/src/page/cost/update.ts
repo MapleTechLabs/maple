@@ -1,4 +1,5 @@
 import { OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -9,6 +10,7 @@ import { failureMessage } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -24,6 +26,7 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	ReadCostGrants,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
@@ -140,6 +143,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		chartRuntime: { _tag: "Loading" },
 		refreshVersion: 0,
 		isReloading: false,
+		// Without Clerk there are no roles: everyone may do everything.
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
 		keyDraft: Field.init(),
@@ -148,7 +153,14 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
-		{ model, commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()] },
+		{
+			model,
+			commands: [
+				resolveCommand(model, context, "Load"),
+				LoadChartRuntime(),
+				...(isClerkAuthEnabled ? [ReadCostGrants()] : []),
+			],
+		},
 		(next) => requestSources(next, context, "Load"),
 	)
 }
@@ -296,6 +308,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
 		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
 		ClickedBackToProviders: () =>
