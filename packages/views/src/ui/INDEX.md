@@ -161,7 +161,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
 - `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
 - `packages/views/src/ui/step-trail.ts` `stepTrail`: A step flow's place, over a dialog's title: `1 WRITE / 2 REVIEW`.
-- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill.
+- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill, `round` a dot for a series that is a share, not a line.
 - `packages/views/src/ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
 - `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: The loading placeholder for row tables.
 - `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: The Table and its parts.
@@ -195,10 +195,11 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
+- `apps/web/src/page/kit/billing/ai-credits.ts` `modelLabel`, `aiCreditsBreakdownLoading`, `aiCreditsBreakdown`: Where a billing cycle's AI credits went: totals, each surface and model, and code review by repository and pull request, for the AI credits page.
 - `apps/web/src/page/kit/billing/checkout-return.ts` `buildCheckoutSuccessUrl`, `isCheckoutReturn`, `withoutCheckoutReturn`: The round trip through Stripe Checkout.
 - `apps/web/src/page/kit/billing/plan-gating.ts` `isLegacyPlan`, `isUsableCustomer`, `getActivePlan`, `hasSelectedPlan`, `getLapsedPlan`, `hasLapsedPlan`, `resolvePlanAccess`, `getTrialStatus`, `hasBringYourOwnCloudAddOn`, `getFeatureQuotas`, `getQuotaStatus`, `getPastDueSubscription`, `getLegacyPlanInfo`: A plan from the live `listPlans` catalog , the source of truth for which plans are currently offered and for per-feature overage rates.
 - `apps/web/src/page/kit/billing/plans.ts` `getPlanFeatures`, `getPlanDescription`, `sentenceCasePlanName`, `planDisplayName`: A catalog plan name in the UI's sentence case: "Bring Your Own Cloud" reads "Bring your own cloud".
-- `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
+- `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`, `formatCredits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
 - `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
 - `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.

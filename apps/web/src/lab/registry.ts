@@ -134,6 +134,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ai-credits",
+		title: "AI credits",
+		description:
+			"The AI credits page under Settings › Billing: spend by feature and model, and code review by repository and pull request (`?state=` code-review, chat, empty, loading, error).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:

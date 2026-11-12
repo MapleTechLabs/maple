@@ -762,7 +762,11 @@ describe("AI credits", () => {
 				cycleEnd: CYCLE_END,
 			}),
 			aiDaily: new AiCreditUsageResponse({
+				cycleStartMs: CYCLE_START,
+				cycleEndMs: CYCLE_END,
 				bySource: [],
+				byModel: [],
+				codeReview: null,
 				days: [
 					new AiCreditDay({ date: "2026-07-01", credits: 8 }),
 					new AiCreditDay({ date: "2026-07-03", credits: 6 }),

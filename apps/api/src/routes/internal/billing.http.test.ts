@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -648,6 +649,8 @@ describe("billing writes over HTTP", () => {
 			readonly stripe?: object
 			/** The org this one is billed through, when it is a member org. */
 			readonly billedThrough?: OrgId
+			readonly billingOrgs?: object
+			readonly codeReviews?: object
 		} = {},
 	) => {
 		const routes = HttpApiBuilder.layer(BillingOnlyApi).pipe(
@@ -665,12 +668,25 @@ describe("billing writes over HTTP", () => {
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
 			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
 			Layer.provideMerge(
+				Layer.succeed(PrReviewAnalyticsService, {
+					analytics: die,
+					listReviews: die,
+					getReview: die,
+					listFindings: die,
+					spend: die,
+					...overrides.codeReviews,
+				}),
+			),
+			Layer.provideMerge(
 				overrides.billedThrough === undefined
 					? BillingCustomerResolver.standalone
 					: billedThroughResolver(overrides.billedThrough),
 			),
 			Layer.provideMerge(
-				Layer.succeed(BillingOrgService, { members: () => Effect.succeed([]) } as never),
+				Layer.succeed(BillingOrgService, {
+					members: () => Effect.succeed([]),
+					...overrides.billingOrgs,
+				} as never),
 			),
 			Layer.provideMerge(Layer.succeed(ProductEventsService, { track: die, trackMany: die })),
 			Layer.provideMerge(Layer.succeed(StripeClient, { request: die, ...overrides.stripe })),
@@ -687,12 +703,12 @@ describe("billing writes over HTTP", () => {
 		)
 		const { handler, dispose } = HttpRouter.toWebHandler(routes as never, { disableLogger: true })
 
-		const send = (method: string) => async (path: string, body: unknown) => {
+		const send = (method: string) => async (path: string, body?: unknown) => {
 			const response = await handler(
 				new Request(`http://maple.test${path}`, {
 					method,
 					headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-					body: JSON.stringify(body),
+					...(body === undefined ? undefined : { body: JSON.stringify(body) }),
 				}),
 				Context.empty(),
 			)
@@ -700,7 +716,7 @@ describe("billing writes over HTTP", () => {
 			return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 		}
 
-		return { post: send("POST"), put: send("PUT"), dispose }
+		return { get: send("GET"), post: send("POST"), put: send("PUT"), dispose }
 	}
 
 	it("refuses attach from a non-admin member", async () => {
@@ -771,6 +787,78 @@ describe("billing writes over HTTP", () => {
 			})
 			assert.strictEqual(portal.status, 409)
 			assert.strictEqual(portal.body._tag, "@maple/http/errors/BillingManagedByBillingOrgError")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("breaks AI credits down over the whole bill, and keeps the spend when the model split fails", async () => {
+		const SIBLING = Schema.decodeSync(OrgId)("org_billing_sibling")
+		const spendOrgs: Array<ReadonlyArray<string>> = []
+		const harness = makeHarness(["org:member"], {
+			billedThrough: PAYER_ORG,
+			billingOrgs: {
+				members: (payer: OrgId) => Effect.succeed(payer === PAYER_ORG ? [{ orgId: SIBLING }] : []),
+			},
+			codeReviews: {
+				spend: (orgIds: ReadonlyArray<string>) =>
+					Effect.sync(() => {
+						spendOrgs.push(orgIds)
+						return {
+							reviews: 1,
+							pullRequests: 1,
+							credits: 0.05,
+							unpricedReviews: 0,
+							reReviews: 0,
+							reReviewCredits: 0,
+							repositories: [],
+							topPullRequests: [],
+						}
+					}),
+			},
+			autumn: {
+				getOrCreateCustomer: () =>
+					Effect.succeed({
+						statusCode: 200,
+						response: {
+							id: PAYER_ORG,
+							subscriptions: [
+								{
+									planId: "startup",
+									status: "active",
+									currentPeriodStart: 1_000,
+									currentPeriodEnd: 2_000_000_000_000,
+								},
+							],
+						},
+					}),
+				aggregateEvents: (_customer: string, options: { readonly groupBy?: string }) =>
+					Effect.succeed(
+						options.groupBy === "properties.model"
+							? { statusCode: 500, response: { message: "aggregate failed" } }
+							: {
+									statusCode: 200,
+									response: {
+										list: [
+											{
+												period: 0,
+												values: { ai_credits: 0.05 },
+												groupedValues: { ai_credits: { review: 0.05 } },
+											},
+										],
+									},
+								},
+					),
+			},
+		})
+		try {
+			const response = await harness.get("/internal/billing/ai-credit-usage")
+			assert.strictEqual(response.status, 200)
+			assert.deepStrictEqual(response.body.bySource, [{ source: "review", credits: 0.05 }])
+			assert.deepStrictEqual(response.body.byModel, [])
+			assert.strictEqual(response.body.codeReview.reviews, 1)
+			// The viewer is a member org: the breakdown covers the payer and every org it pays for.
+			assert.deepStrictEqual(spendOrgs, [[PAYER_ORG, SIBLING]])
 		} finally {
 			await harness.dispose()
 		}

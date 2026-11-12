@@ -54,6 +54,7 @@ const usageView = Submodel.defineView<Model, Message, Readonly<{ readonly none?:
 	},
 )
 const view = withViewInputs(usageView, {})()
+
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
 /** The tab once the account says this org pays for itself. */
 const entered = () =>
@@ -121,12 +122,16 @@ describe("billing tab", () => {
 
 	test("the AI credits row says which surfaces spent them, and offers a retry when that read fails", () => {
 		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
+			cycleStartMs: 0,
+			cycleEndMs: 1,
 			bySource: [
 				{ source: "triage", credits: 3.1 },
 				{ source: "chat", credits: 1.05 },
 				{ source: "other", credits: 0.004 },
 			],
 			days: [{ date: "1970-01-02", credits: 4.3 }],
+			byModel: [],
+			codeReview: null,
 		})
 		const loaded = step(
 			init(ADMIN, false, true).model,
@@ -137,6 +142,7 @@ describe("billing tab", () => {
 			given(loaded),
 			expectView(text("AI credits")).toExist(),
 			expectView(text("Investigations $3.10 · Chat $1.05 · Other <$0.01")).toExist(),
+			expectView(text("Details")).toExist(),
 		)
 		const failed = step(
 			init(ADMIN, false, true).model,
