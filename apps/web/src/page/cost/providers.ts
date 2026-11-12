@@ -42,6 +42,7 @@ export const COST_PROVIDERS = {
 	planetscale: {
 		name: PROVIDERS.planetscale.name,
 		icon: PROVIDERS.planetscale.icon,
+		iconClassName: "text-foreground",
 		requestUsd: null,
 		firstSync: "months",
 	},

@@ -146,7 +146,8 @@ export const CREDENTIAL_SOURCES = {
 	},
 	planetscale: {
 		pick: {
-			meta: "Monthly invoices per database and branch, spread over the days each branch ran",
+			// Short enough to stand whole in the list: the form says the rest.
+			meta: "Monthly invoices by branch, spread over its days",
 			addedMeta: "Replace its token in the Sources panel",
 		},
 		identifiers: [

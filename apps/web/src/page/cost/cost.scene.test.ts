@@ -623,9 +623,7 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
 			// Where the reader picks it, the page says its days are a month's invoice spread out.
-			expectView(
-				text("Monthly invoices per database and branch, spread over the days each branch ran"),
-			).toExist(),
+			expectView(text("Monthly invoices by branch, spread over its days")).toExist(),
 		)
 		const form = pageUpdate(opened, Message.PickedProvider({ provider: "planetscale" })).model
 		scene(
