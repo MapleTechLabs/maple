@@ -72,6 +72,22 @@ export interface VcsSourceFile {
 	readonly content: string
 }
 
+/**
+ * What a provider answered for one month of an account's billed usage. A refusal is an answer,
+ * not a failure: most installations lack the permission, and a failed span would put each in
+ * error tracking. `NotGranted`: the installation never accepted it, so nothing was asked.
+ */
+export type VcsBillingUsageAnswer =
+	| { readonly _tag: "Usage"; readonly body: string }
+	| { readonly _tag: "NotGranted" }
+	| { readonly _tag: "Refused"; readonly status: number; readonly body: string }
+
+/** A calendar month, 1 to 12. */
+export interface VcsBillingMonth {
+	readonly year: number
+	readonly month: number
+}
+
 export interface VcsProviderClient {
 	readonly id: VcsProviderId
 
@@ -569,4 +585,21 @@ export interface VcsProviderClient {
 		boolean,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError
 	>
+
+	/**
+	 * One month of what the provider billed the installation's account, as the provider's own
+	 * report (the cost sync reads it). Only an organization account has one.
+	 */
+	readonly fetchBillingUsage: (
+		installation: Pick<VcsInstallation, "externalInstallationId" | "accountLogin">,
+		month: VcsBillingMonth,
+	) => Effect.Effect<
+		VcsBillingUsageAnswer,
+		VcsProviderError | VcsInstallationGoneError | VcsRateLimitedError
+	>
+
+	/** Where the installation's account accepts the permissions the provider's app asks for. */
+	readonly installationSettingsUrl: (
+		installation: Pick<VcsInstallation, "externalInstallationId" | "accountLogin" | "accountType">,
+	) => string
 }

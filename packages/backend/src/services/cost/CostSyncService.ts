@@ -29,8 +29,10 @@ import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
+import { reconcileGithubCostSources } from "./github-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import {
 	advanceCostSync,
@@ -165,6 +167,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const adapters = {
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
+				github: yield* GithubCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -204,9 +207,20 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** GitHub sources whose installation can no longer be read (see `reconcileGithubCostSources`). */
+			const reconcileGithub = Effect.fn("CostSyncService.reconcileGithub")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileGithubCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "github",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** One function per provider; each owns the sources of its own connection table. */
 			const reconcile = (now: number) =>
-				Effect.all([reconcileAws(now), reconcileOpenRouter(now)], { discard: true })
+				Effect.all([reconcileAws(now), reconcileOpenRouter(now), reconcileGithub()], {
+					discard: true,
+				})
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
@@ -668,6 +682,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			Layer.mergeAll(
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
+				GithubCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

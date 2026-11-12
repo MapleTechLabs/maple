@@ -26,6 +26,7 @@ import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 import { parseRetryAfterSeconds } from "../../../vendor-retry"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
+import type { VcsBillingUsageAnswer } from "../../VcsProviderClient"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -832,20 +833,22 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				scope?: "installation" | "repository",
 			) =>
 				Effect.gen(function* () {
+					// The key is left out, not undefined: the error's constructor refuses `scope: undefined`.
+					const scoped = scope === undefined ? {} : { scope }
 					const body = yield* response.text.pipe(
 						Effect.mapError(
 							() =>
 								new GithubAppError({
 									message: `${context} failed`,
 									status: response.status,
-									scope,
+									...scoped,
 								}),
 						),
 					)
 					return yield* new GithubAppError({
 						message: `${context} failed: ${response.status} ${Str.slice(0, 300)(body)}`,
 						status: response.status,
-						scope,
+						...scoped,
 					})
 				})
 
@@ -954,6 +957,51 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						`GitHub request failed: ${url}`,
 					),
 				)
+
+			// The billing report needs organization "Administration: read", which a token lists as
+			// `organization_administration`. No permissions listed: assume granted.
+			const grantsBillingRead = ({ permissions }: InstallationToken) =>
+				permissions === undefined ||
+				permissions["organization_administration"] === "read" ||
+				permissions["organization_administration"] === "write"
+
+			/** One month of an organization's billed usage, or how GitHub refused it: a 4xx is an answer. */
+			const getOrganizationBillingUsage = Effect.fn("GithubAppClient.getOrganizationBillingUsage")(
+				function* (
+					externalInstallationId: string,
+					org: string,
+					period: { readonly year: number; readonly month: number },
+				): Effect.fn.Return<VcsBillingUsageAnswer, GithubAppError> {
+					const config = yield* resolveConfig
+					const cached = yield* installationToken(externalInstallationId)
+					// A token minted before the organization accepted the permission never gains it.
+					const token = grantsBillingRead(cached)
+						? cached
+						: yield* installationTokens
+								.remove(externalInstallationId)
+								.pipe(Effect.andThen(installationToken(externalInstallationId)))
+					if (!grantsBillingRead(token)) return { _tag: "NotGranted" }
+					const response = yield* authedGet(
+						config,
+						token.token,
+						`${config.apiBaseUrl}/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${period.year}&month=${period.month}`,
+					)
+					if (response.status >= 500) return yield* failure(response, "Billing usage report")
+					const body = yield* response.text.pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({
+									message: "Billing usage report could not be read",
+									status: response.status,
+									cause,
+								}),
+						),
+					)
+					return isOk(response)
+						? { _tag: "Usage", body }
+						: { _tag: "Refused", status: response.status, body: Str.slice(0, 300)(body) }
+				},
+			)
 
 			const listInstallationRepositories = Effect.fn("GithubAppClient.listInstallationRepositories")(
 				function* (externalInstallationId: string) {
@@ -2670,6 +2718,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listCheckRunAnnotations,
 				streamJobLog,
 				canReadActions,
+				getOrganizationBillingUsage,
 				mintCloneCredentials,
 				getInstallation,
 				exchangeUserOAuthCode,

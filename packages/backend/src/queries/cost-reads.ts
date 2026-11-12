@@ -125,6 +125,7 @@ const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary =
 	return {
 		id: row.id,
 		provider: row.provider,
+		connectionRef: row.connectionRef,
 		accountId: row.accountId,
 		status: !row.enabled
 			? "paused"

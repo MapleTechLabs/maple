@@ -28,6 +28,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
@@ -43,6 +44,10 @@ const CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000a1"
 const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
 const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
 const OPENROUTER_KEY_A = "0190f2b3-0000-7000-8000-0000000000d1"
+const INSTALLATION_A = "0190f2b3-0000-4000-8000-0000000000e1"
+const INSTALLATION_B = "0190f2b3-0000-4000-8000-0000000000e2"
+const INSTALLATION_C = "0190f2b3-0000-4000-8000-0000000000e3"
+const INSTALLATION_D = "0190f2b3-0000-4000-8000-0000000000e4"
 /** What every fake pull reports as billable. */
 const REQUESTS_PER_PULL = 2
 
@@ -240,6 +245,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 			Layer.mergeAll(
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
+				Layer.succeed(GithubCostProvider, adapterOf("github")),
 				warehouse,
 				featureFlags,
 			),
@@ -282,6 +288,36 @@ const harness = (options: FakeProviderOptions = {}) => {
 			 VALUES ($1, $2, 'sealed', 'iv', 'tag', 'sk-or-v1-abc...123', 'user_account_a', now(), now(), 'user_a')`,
 			[key.id, key.orgId ?? "org_a"],
 		)
+	/** A GitHub App installation of an organization, and (unless `source` is false) its cost source. */
+	const installGithub = (installation: {
+		readonly id: string
+		readonly login: string
+		readonly orgId?: string
+		readonly source?: boolean
+	}) =>
+		Effect.promise(async () => {
+			const orgId = installation.orgId ?? "org_a"
+			const sourceId = await insertTestSource(testDb, {
+				orgId,
+				platform: "github",
+				name: installation.id,
+			})
+			await executeSql(
+				testDb,
+				`INSERT INTO vcs_installations
+				   (id, org_id, source_id, provider, external_installation_id, account_login, account_type,
+				    external_account_id, status, installed_by_user_id, created_at, updated_at)
+				 VALUES ($1, $2, $3, 'github', $1, $4, 'organization', $1, 'active', 'user_a', now(), now())`,
+				[installation.id, orgId, sourceId, installation.login],
+			)
+			if (installation.source === false) return
+			await executeSql(
+				testDb,
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 VALUES (gen_random_uuid()::text, $1, 'github', $2, $3, now(), now())`,
+				[orgId, installation.id, installation.login],
+			)
+		})
 	const sourceRefs = Effect.promise(() =>
 		testDb.pglite.query<{ org: string; ref: string; account: string }>(
 			"SELECT org_id AS org, connection_ref AS ref, account_id AS account FROM cost_sources ORDER BY org_id, connection_ref",
@@ -322,6 +358,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 		sql,
 		connect,
 		saveOpenRouterKey,
+		installGithub,
 		sourceRefs,
 		sourceState,
 		sourceStateOf,
@@ -426,6 +463,89 @@ describe("CostSyncService OpenRouter sources", () => {
 			yield* TestClock.adjust("1 hour")
 			yield* poll
 			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
+		}).pipe(Effect.provide(h.layer))
+	})
+})
+
+describe("CostSyncService GitHub sources", () => {
+	it.effect("pulls the previous month through today, then walks history back three months", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.installGithub({ id: INSTALLATION_A, login: "example-org" })
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+			assert.deepStrictEqual(h.windows()[0], ["2026-10-01", "2026-11-11"])
+			assert.isTrue(Arr.every(h.writtenRows(), (row) => row.Provider === "github"))
+
+			// History is walked a month at a time over the next ticks, and stops at the floor.
+			yield* Effect.forEach(Arr.range(1, 6), () => Effect.andThen(TestClock.adjust("5 minutes"), poll))
+			assert.deepStrictEqual(h.windows().slice(1), [
+				["2026-09-01", "2026-09-30"],
+				["2026-08-01", "2026-08-31"],
+			])
+			const state = yield* h.sourceStateOf("org_a", INSTALLATION_A)
+			assert.deepStrictEqual(
+				[state?.watermark, state?.backfill, state?.error],
+				["2026-11-11", "2026-08-01", null],
+			)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("makes no source for an installation, and removes one that can no longer be read", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.installGithub({ id: INSTALLATION_A, login: "example-org" })
+			yield* h.installGithub({ id: INSTALLATION_B, login: "example-paused" })
+			yield* h.installGithub({ id: INSTALLATION_C, login: "example-gone" })
+			yield* h.installGithub({ id: INSTALLATION_D, login: "example-plain", source: false })
+			yield* h.connect({ id: CONNECTION_A })
+			yield* poll
+			// The installation nobody added stays without a source.
+			assert.deepStrictEqual(yield* h.sourceRefs, [
+				["org_a", INSTALLATION_A, "example-org"],
+				["org_a", INSTALLATION_B, "example-paused"],
+				["org_a", INSTALLATION_C, "example-gone"],
+				["org_a", CONNECTION_A, "123456789012"],
+			])
+
+			yield* h.sql("UPDATE vcs_installations SET status = 'suspended' WHERE id = $1", [INSTALLATION_B])
+			yield* h.sql("DELETE FROM vcs_installations WHERE id = $1", [INSTALLATION_C])
+			yield* TestClock.adjust("1 hour")
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [
+				["org_a", INSTALLATION_A, "example-org"],
+				["org_a", CONNECTION_A, "123456789012"],
+			])
+
+			// An installation that turned into a user account's has no billing report to read.
+			yield* h.sql("UPDATE vcs_installations SET account_type = 'user' WHERE id = $1", [INSTALLATION_A])
+			yield* TestClock.adjust("1 hour")
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("removes a source whose ref is another org's installation, without pulling through it", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.installGithub({
+				id: INSTALLATION_A,
+				login: "example-org",
+				orgId: "org_b",
+				source: false,
+			})
+			// The join is by org: to org_a the installation does not exist.
+			yield* h.sql(
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 VALUES (gen_random_uuid()::text, 'org_a', 'github', $1, 'example-org', now(), now())`,
+				[INSTALLATION_A],
+			)
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [])
+			assert.deepStrictEqual(h.pulls, [])
 		}).pipe(Effect.provide(h.layer))
 	})
 })

@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import type { CostSourceSummary } from "@maple/domain/http"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -63,7 +64,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model, a GitHub organization by product and repository.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -104,19 +105,36 @@ const onRamp = (
 		emptyFrameClass("dashed"),
 	)
 
-/**
- * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
- * alike): AWS keeps over a year, OpenRouter four weeks.
- */
+/** What a provider's first sync brings in: said on its own, and named beside other providers. */
+const FIRST_SYNC = {
+	aws: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "AWS brings in this month and the last, and older months fill in after that.",
+	},
+	openrouter: {
+		alone: "It brings in the last four weeks, which is all OpenRouter keeps.",
+		named: "OpenRouter brings in its last four weeks.",
+	},
+	github: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "GitHub brings in this month and the last, then the two months before.",
+	},
+} as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
+
+/** What the first syncs bring in, by the providers that have no cost yet (waiting or failing alike). */
 const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
 	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
-	const hasOpenRouter = Arr.some(unsynced, (source) => source.provider === "openrouter")
-	const hasOther = Arr.some(unsynced, (source) => source.provider !== "openrouter")
-	return hasOpenRouter && hasOther
-		? "AWS brings in this month and the last, and older months fill in after that. OpenRouter brings in its last four weeks."
-		: hasOpenRouter
-			? "It brings in the last four weeks, which is all OpenRouter keeps."
-			: "It brings in this month and the last, and older months fill in after that."
+	const providers = Arr.filter(CostProvider.literals, (provider) =>
+		Arr.some(unsynced, (source) => source.provider === provider),
+	)
+	const [only, ...others] = providers
+	if (only === undefined) return FIRST_SYNC.aws.alone
+	return others.length === 0
+		? FIRST_SYNC[only].alone
+		: Arr.join(
+				Arr.map(providers, (provider) => FIRST_SYNC[provider].named),
+				" ",
+			)
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */
