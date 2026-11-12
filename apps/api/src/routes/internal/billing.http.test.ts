@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 import { ConfigProvider, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -664,6 +665,15 @@ describe("billing writes over HTTP", () => {
 			),
 			Layer.provideMerge(Layer.succeed(EdgeCacheService, makeCache())),
 			Layer.provideMerge(Layer.succeed(DailySpendService, { get: die })),
+			Layer.provideMerge(
+				Layer.succeed(PrReviewAnalyticsService, {
+					analytics: die,
+					listReviews: die,
+					getReview: die,
+					listFindings: die,
+					spend: die,
+				}),
+			),
 			Layer.provideMerge(
 				overrides.billedThrough === undefined
 					? BillingCustomerResolver.standalone
