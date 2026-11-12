@@ -16,7 +16,7 @@ export const backdropBarRightStyles = "right-2"
 
 export const levelMeterStyles = "inline-flex shrink-0 items-end gap-0.5"
 
-export const levelMeterPipStyles = "h-2.5 w-1 rounded-xs"
+export const levelMeterPipStyles = "h-3 w-1 rounded-xs"
 
 export const levelMeterPipOnStyles = "bg-muted-foreground"
 

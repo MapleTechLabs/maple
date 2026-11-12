@@ -49,7 +49,7 @@ const rating = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		name: string
-		glyph: "SparkleIcon" | "CircleDollarIcon"
+		glyph: "SquareSparkleIcon" | "CircleDollarIcon"
 		level: number
 		ramp: LevelRamp
 	}>,
@@ -81,7 +81,7 @@ const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): Readon
 			hstack(h, { gap: "3", align: "center" }, [
 				rating(h, {
 					name: "Intelligence",
-					glyph: "SparkleIcon",
+					glyph: "SquareSparkleIcon",
 					level: securityAuditIntelligenceLevel(model),
 					ramp: "high-is-good",
 				}),
