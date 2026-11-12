@@ -81,6 +81,8 @@ const NARROW_ACTION = "max-w-36 sm:max-w-72"
 const filterSelect = (
 	h: H,
 	filter: SelectFilter,
+	/** What the select filters, as a screen reader names it. */
+	name: string,
 	value: string | undefined,
 	all: string,
 	labels: Readonly<Record<string, string>>,
@@ -92,7 +94,7 @@ const filterSelect = (
 			size: "sm",
 			value: value ?? "",
 			attributes: [
-				h.AriaLabel(all),
+				h.AriaLabel(name),
 				h.OnChange((next) => Message.ChangedFilter({ filter, value: next })),
 			],
 		},
@@ -107,12 +109,21 @@ const toolbar = (h: H, model: Model): Html =>
 		filterSelect(
 			h,
 			"category",
+			"Category",
 			model.search.category,
 			"All categories",
 			CATEGORY_LABEL,
 			AuditTrailCategory.literals,
 		),
-		filterSelect(h, "outcome", model.search.outcome, "All outcomes", OUTCOME_LABEL, OUTCOME_FILTERS),
+		filterSelect(
+			h,
+			"outcome",
+			"Outcome",
+			model.search.outcome,
+			"All outcomes",
+			OUTCOME_LABEL,
+			OUTCOME_FILTERS,
+		),
 		compactSearchInput(h, {
 			value: model.actorText,
 			placeholder: "Actor id or email, then Enter",

@@ -67,13 +67,14 @@ const nextPage = (model: Model, result: Result.Result<EventsPage, ReturnType<typ
 		result,
 	})
 
-/** A second page: the same events three days older, under other ids. */
+/** A second page: the same events three days older, under other ids, its cursor on its own last event. */
 const olderPage = (hasMore: boolean): EventsPage => {
-	const page = auditEventsOf(NOW - 3 * 24 * 3600 * 1000, hasMore)
-	return {
-		...page,
-		events: Arr.map(page.events, (event) => ({ ...event, id: `f${Str.slice(1)(event.id)}` })),
-	}
+	const events = Arr.map(auditEventsOf(NOW - 3 * 24 * 3600 * 1000).events, (event) => ({
+		...event,
+		id: `f${Str.slice(1)(event.id)}`,
+	}))
+	const last = events.at(-1)
+	return { events, nextCursor: hasMore && last !== undefined ? `${last.occurredAt}:${last.id}` : null }
 }
 
 const down = toLoadFailure(new AuditTrailPersistenceError({ message: "The audit trail could not be read" }))
@@ -145,6 +146,15 @@ describe("security audit log", () => {
 
 	// The toggle's label replaces its content for a screen reader: without the time in it, the
 	// row would say what happened and never when.
+	test("each filter is named for what it filters, whatever value it shows", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(PAGE, { outcome: "denied" })),
+			expectView(role("combobox", { name: "Outcome" })).toExist(),
+			expectView(role("combobox", { name: "Category" })).toExist(),
+		)
+	})
+
 	test("a row's toggle names the action and when it happened", () => {
 		scene(
 			{ update: pageUpdate, view },
