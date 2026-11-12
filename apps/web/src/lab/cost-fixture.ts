@@ -101,12 +101,18 @@ const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 		},
 	)
 
-type Request = Readonly<{ days: number; filters: CostFilters | undefined }>
+type Request = Readonly<{
+	days: number
+	filters: CostFilters | undefined
+	/** The lab's reader removed OpenRouter: its lines are in no read, whatever the filters say. */
+	withoutOpenRouter?: boolean
+}>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
 const windowOf = (request: Request) =>
 	Arr.flatMap(LINES, (entry, index) =>
-		matches(entry, request.filters)
+		matches(entry, request.filters) &&
+		!(request.withoutOpenRouter === true && entry.provider === "openrouter")
 			? [
 					{
 						entry,
