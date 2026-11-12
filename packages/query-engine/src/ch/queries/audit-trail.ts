@@ -49,6 +49,7 @@ export function auditTrailEventsQuery(opts: AuditTrailEventsOpts) {
 				action: $.Action,
 				category: $.Category,
 				outcome: $.Outcome,
+				outcomeReason: $.OutcomeReason,
 				targetType: $.TargetType,
 				targetId: $.TargetId,
 				targetName: $.TargetName,

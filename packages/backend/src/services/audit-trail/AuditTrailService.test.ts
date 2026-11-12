@@ -76,6 +76,7 @@ const stored = (id: string, overrides: Partial<Record<string, unknown>> = {}) =>
 	action: "org.add_member",
 	category: "membership",
 	outcome: "success",
+	outcomeReason: "",
 	targetType: "user",
 	targetId: "hubot",
 	targetName: "",
@@ -159,6 +160,7 @@ describe("AuditTrailService.list", () => {
 				providerEventId: `evt_${ids[0]}`,
 				actor: { type: "user", id: "octocat", name: null, email: null },
 				target: { type: "user", id: "hubot", name: null },
+				outcomeReason: null,
 				originIp: null,
 				raw: { action: "org.add_member" },
 			})

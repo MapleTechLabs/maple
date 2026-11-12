@@ -33,6 +33,8 @@ export const AuditTrailEntry = Schema.Struct({
 	action: Schema.String,
 	category: Schema.String,
 	outcome: Schema.String,
+	/** Why it failed or was refused, in the platform's words. */
+	outcomeReason: Schema.NullOr(Schema.String),
 	target: Schema.Struct({
 		type: Schema.NullOr(Schema.String),
 		id: Schema.NullOr(Schema.String),

@@ -46,6 +46,7 @@ const event = (overrides: Partial<AuditTrailEntry> = {}): AuditTrailEntry => ({
 	action: "org.add_member",
 	category: "membership",
 	outcome: "success",
+	outcomeReason: null,
 	target: { type: "user", id: "hubot", name: null },
 	originIp: null,
 	originCountry: null,

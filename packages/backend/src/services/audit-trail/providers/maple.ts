@@ -124,7 +124,6 @@ const actorOf = (event: AuditLogEvent): AuditTrailEvent["actor"] => {
 /** What the trail's detail view shows of a Maple entry beyond the shared columns. */
 const rawOf = (event: AuditLogEvent): Record<string, unknown> => ({
 	source: event.source,
-	...(event.denialReason !== undefined ? { denialReason: event.denialReason } : undefined),
 	...(event.affectedUserId !== undefined ? { affectedUserId: event.affectedUserId } : undefined),
 	...(event.changes !== undefined ? { changes: event.changes } : undefined),
 	...(event.metadata !== undefined ? { metadata: event.metadata } : undefined),
@@ -149,12 +148,14 @@ const mapleAuditTrailEvent = (event: AuditLogEvent): AuditTrailEvent | null => {
 			: undefined
 	return {
 		provider: "maple",
-		providerEventId: event.id,
+		// The entry's public id, the one the Settings audit log shows and looks up.
+		providerEventId: encodePublicId(PublicIdPrefixes.auditLogEntry, event.id),
 		occurredAtMs: event.occurredAtMs,
 		actor: actorOf(event),
 		action: event.action,
 		category: categoryOf(event),
 		outcome: event.outcome === "denied" ? "denied" : "success",
+		...(event.denialReason !== undefined ? { outcomeReason: event.denialReason } : undefined),
 		...(target !== undefined ? { target } : undefined),
 		...(event.originIp !== undefined ? { originIp: event.originIp } : undefined),
 		...(event.originCountry !== undefined ? { originCountry: event.originCountry } : undefined),
