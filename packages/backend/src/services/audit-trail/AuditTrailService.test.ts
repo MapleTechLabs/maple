@@ -110,6 +110,23 @@ describe("AuditTrailService.list", () => {
 		}),
 	)
 
+	// Two unmerged copies differ only in when they were stored; the first write is the one the
+	// table will keep, so it is the one to show.
+	it.effect("reads an event's copies oldest write first, so the kept one is the first write", () =>
+		Effect.gen(function* () {
+			const warehouse = fakeWarehouse([
+				stored(ids[0], { ingestedAt: "2026-08-29 09:13:30.000" }),
+				stored(ids[0], { ingestedAt: "2026-08-29 09:20:00.000" }),
+			])
+			const page = yield* withTrail(warehouse, (trail) => trail.list(ORG, { limit: 10 }))
+
+			expect(warehouse.sql[0]).toContain("ORDER BY occurredAt DESC, id DESC, ingestedAt ASC")
+			expect(Arr.map(page.events, (event) => event.ingestedAt)).toEqual([
+				Date.UTC(2026, 7, 29, 9, 13, 30),
+			])
+		}),
+	)
+
 	it.effect("shows a redelivered event the table has not merged yet once", () =>
 		Effect.gen(function* () {
 			const warehouse = fakeWarehouse([stored(ids[0]), stored(ids[0]), stored(ids[1])])

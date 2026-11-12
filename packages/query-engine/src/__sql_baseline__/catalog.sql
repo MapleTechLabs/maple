@@ -373,7 +373,7 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
--- builder:audit-trail:auditTrailEventsQuery:default  [066a2e72]
+-- builder:audit-trail:auditTrailEventsQuery:default  [ac8596a7]
 SELECT
           audit_trail_events.Id AS id,
           audit_trail_events.OccurredAt AS occurredAt,
@@ -397,11 +397,11 @@ SELECT
           audit_trail_events.Raw AS raw
         FROM audit_trail_events
         WHERE audit_trail_events.OrgId = 'org_sql_catalog'
-        ORDER BY occurredAt DESC, id DESC
+        ORDER BY occurredAt DESC, id DESC, ingestedAt ASC
         LIMIT 51
         FORMAT JSON
 
--- builder:audit-trail:auditTrailEventsQuery:filtered  [526381eb]
+-- builder:audit-trail:auditTrailEventsQuery:filtered  [a97c670a]
 SELECT
           audit_trail_events.Id AS id,
           audit_trail_events.OccurredAt AS occurredAt,
@@ -434,7 +434,7 @@ SELECT
           AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00'
           AND audit_trail_events.OccurredAt <= '2026-01-03 14:15:00'
           AND (audit_trail_events.OccurredAt < '2026-01-03 14:15:00' OR (audit_trail_events.OccurredAt = '2026-01-03 14:15:00' AND audit_trail_events.Id < '0f6f2c1e7a554c0e9a3b0d2c7e5b9a11'))
-        ORDER BY occurredAt DESC, id DESC
+        ORDER BY occurredAt DESC, id DESC, ingestedAt ASC
         LIMIT 51
         FORMAT JSON
 

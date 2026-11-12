@@ -221,6 +221,20 @@ describe("GET /internal/audit-trail/events", () => {
 		}
 	})
 
+	// Maple's events are stored under the user id: without the directory an email matches none
+	// of them, and a page that left them out would look complete.
+	it("answers 503 for an email filter while the member directory is down", async () => {
+		const harness = makeHarness(ADMIN, { events: [], next: null }, true)
+		try {
+			const response = await harness.list("?actor=ada@acme.test")
+
+			expect(response.status).toBe(503)
+			expect(harness.asked).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	it("reads the directory once to resolve an email filter and name the page it returns", async () => {
 		const harness = makeHarness(ADMIN, { events: [mapleUser()], next: null })
 		try {

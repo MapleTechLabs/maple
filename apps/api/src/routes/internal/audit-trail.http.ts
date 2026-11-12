@@ -1,12 +1,17 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { AuditTrailForbiddenError, CurrentTenant, MapleInternalApi } from "@maple/domain/http"
+import {
+	AuditTrailForbiddenError,
+	AuditTrailPersistenceError,
+	CurrentTenant,
+	MapleInternalApi,
+} from "@maple/domain/http"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import type { OrgMember } from "@maple/backend/services/org/OrgMembersService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { Effect, Array as Arr, Option, String as Str } from "effect"
-import { orgMemberDirectory } from "@/routes/org-member-directory"
+import { orgMemberDirectory, orgMemberDirectoryOrFail } from "@/routes/org-member-directory"
 
 const DEFAULT_PAGE_LIMIT = 50
 
@@ -59,8 +64,6 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 					"audit_log:read",
 					(denial) => new AuditTrailForbiddenError({ message: denial.message }),
 				)
-				// Read at most once a request: to resolve an email filter, or to name the page.
-				const readDirectory = yield* Effect.cached(orgMemberDirectory(members, tenant.orgId))
 				// Only Maple's own events store a user id where the page shows an email.
 				const emailActor =
 					query.actor !== undefined &&
@@ -68,12 +71,25 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 					(query.provider === undefined || query.provider === "maple")
 						? query.actor
 						: undefined
-				const actorAlias =
+				// The filter's answer depends on this lookup, so an outage fails the request: a
+				// page that silently left the member's Maple events out would read as complete.
+				const filterDirectory =
 					emailActor === undefined
-						? Option.none()
-						: yield* Effect.map(readDirectory, (directory) =>
-								memberByEmail(directory, emailActor),
+						? undefined
+						: yield* orgMemberDirectoryOrFail(members, tenant.orgId).pipe(
+								Effect.mapError(
+									(error) =>
+										new AuditTrailPersistenceError({
+											message:
+												"The member directory is unavailable, so an email cannot be matched to a member",
+											cause: error._tag,
+										}),
+								),
 							)
+				const actorAlias =
+					emailActor === undefined || filterDirectory === undefined
+						? Option.none()
+						: memberByEmail(filterDirectory, emailActor)
 				const page = yield* trail.list(tenant.orgId, {
 					...(query.provider !== undefined ? { provider: query.provider } : undefined),
 					...(query.account !== undefined ? { account: query.account } : undefined),
@@ -87,9 +103,12 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 					...(query.cursor !== undefined ? { before: parseCursor(query.cursor) } : undefined),
 					limit: query.limit ?? DEFAULT_PAGE_LIMIT,
 				})
-				const directory = Arr.some(page.events, (event) => unnamedMapleUserId(event) !== null)
-					? yield* readDirectory
-					: new Map<string, OrgMember>()
+				// Names are decoration: without a directory the page still shows every id.
+				const directory =
+					filterDirectory ??
+					(Arr.some(page.events, (event) => unnamedMapleUserId(event) !== null)
+						? yield* orgMemberDirectory(members, tenant.orgId)
+						: new Map<string, OrgMember>())
 				return {
 					events: nameMapleUsers(page.events, directory),
 					nextCursor: page.next === null ? null : `${page.next.occurredAtMs}:${page.next.id}`,

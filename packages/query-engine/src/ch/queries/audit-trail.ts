@@ -33,52 +33,57 @@ export interface AuditTrailEventsOpts {
  * ReplacingMergeTree has not merged yet can appear twice; the service collapses it by id.
  */
 export function auditTrailEventsQuery(opts: AuditTrailEventsOpts) {
-	return from(Datasources.auditTrailEvents)
-		.select(($) => ({
-			id: $.Id,
-			occurredAt: $.OccurredAt,
-			ingestedAt: $.IngestedAt,
-			provider: $.Provider,
-			account: $.Account,
-			providerEventId: $.ProviderEventId,
-			actorType: $.ActorType,
-			actorId: $.ActorId,
-			actorName: $.ActorName,
-			actorEmail: $.ActorEmail,
-			action: $.Action,
-			category: $.Category,
-			outcome: $.Outcome,
-			targetType: $.TargetType,
-			targetId: $.TargetId,
-			targetName: $.TargetName,
-			originIp: $.OriginIp,
-			originCountry: $.OriginCountry,
-			userAgent: $.UserAgent,
-			raw: $.Raw,
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			CH.whenTrue(!!opts.provider, () => $.Provider.eq(param.string("provider"))),
-			CH.whenTrue(!!opts.account, () => $.Account.eq(param.string("account"))),
-			CH.whenTrue(!!opts.category, () => $.Category.eq(param.string("category"))),
-			CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
-			CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
-			CH.whenTrue(!!opts.actor, () => {
-				const byActor = $.ActorId.eq(param.string("actor")).or($.ActorEmail.eq(param.string("actor")))
-				return opts.actorAlias ? byActor.or($.ActorId.eq(param.string("actorAlias"))) : byActor
-			}),
-			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
-			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
-			CH.whenTrue(!!opts.before, () =>
-				$.OccurredAt.lt(param.dateTime("beforeOccurredAt")).or(
-					$.OccurredAt.eq(param.dateTime("beforeOccurredAt")).and(
-						$.Id.lt(param.string("beforeId")),
+	return (
+		from(Datasources.auditTrailEvents)
+			.select(($) => ({
+				id: $.Id,
+				occurredAt: $.OccurredAt,
+				ingestedAt: $.IngestedAt,
+				provider: $.Provider,
+				account: $.Account,
+				providerEventId: $.ProviderEventId,
+				actorType: $.ActorType,
+				actorId: $.ActorId,
+				actorName: $.ActorName,
+				actorEmail: $.ActorEmail,
+				action: $.Action,
+				category: $.Category,
+				outcome: $.Outcome,
+				targetType: $.TargetType,
+				targetId: $.TargetId,
+				targetName: $.TargetName,
+				originIp: $.OriginIp,
+				originCountry: $.OriginCountry,
+				userAgent: $.UserAgent,
+				raw: $.Raw,
+			}))
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				CH.whenTrue(!!opts.provider, () => $.Provider.eq(param.string("provider"))),
+				CH.whenTrue(!!opts.account, () => $.Account.eq(param.string("account"))),
+				CH.whenTrue(!!opts.category, () => $.Category.eq(param.string("category"))),
+				CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
+				CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
+				CH.whenTrue(!!opts.actor, () => {
+					const byActor = $.ActorId.eq(param.string("actor")).or(
+						$.ActorEmail.eq(param.string("actor")),
+					)
+					return opts.actorAlias ? byActor.or($.ActorId.eq(param.string("actorAlias"))) : byActor
+				}),
+				CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
+				CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
+				CH.whenTrue(!!opts.before, () =>
+					$.OccurredAt.lt(param.dateTime("beforeOccurredAt")).or(
+						$.OccurredAt.eq(param.dateTime("beforeOccurredAt")).and(
+							$.Id.lt(param.string("beforeId")),
+						),
 					),
 				),
-			),
-		])
-		.orderBy(["occurredAt", "desc"], ["id", "desc"])
-		.limit(opts.limit)
-		.format("JSON")
-		.route("ingest")
+			])
+			// Unmerged copies of one event: the first write first, the one the service keeps.
+			.orderBy(["occurredAt", "desc"], ["id", "desc"], ["ingestedAt", "asc"])
+			.limit(opts.limit)
+			.format("JSON")
+			.route("ingest")
+	)
 }
