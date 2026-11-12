@@ -27,6 +27,7 @@ import type { ResolvedModel } from "../../platform/Llm"
 import { MODEL_RETRIES } from "../budgets"
 import type { ChildFindings } from "./child-findings"
 import { accumulateUsage, type RunUsage } from "../usage"
+import { reportedCost } from "../../platform/reported-cost"
 
 export const REVIEW_FILES = "review_files"
 
@@ -240,7 +241,8 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		toolkit: Toolkit.make(delegation.tool),
 		layer: Subagent.layer(delegation, answeringWhenWarned(model.layer), {
 			mapChildFailure: childFailureMessage,
-			child: { budget: accumulateUsage(usage) },
+			// The children bill like the parent: OpenRouter's reported cost, not Autumn's token rates.
+			child: { budget: accumulateUsage(usage), estimateCostMicrousd: reportedCost },
 		}).pipe(Layer.provideMerge(SubagentReservationsMemoryLive)),
 	}
 }
