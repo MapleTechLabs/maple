@@ -17,8 +17,7 @@ import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../../../kit/relative-time"
 import { integrationIconPlate } from "../../../kit/integration-empty"
-import { textLink } from "@maple/views/ui/text-link"
-import { switchControl } from "@maple/views/ui/switch"
+import { switchRow } from "../../../kit/switch-row"
 import {
 	type AwsModuleInfo,
 	isMetricsPanelOpen,
@@ -54,6 +53,8 @@ const BRAND = providerBrand("aws")
 export const AWS_FLOW_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
 
 const COST_HREF = hrefOf(AppRoute.Cost({ search: {} }))
+
+const COST_BILLING_NOTE = "AWS bills USD 0.01 per Cost Explorer request."
 
 const MODULES_ADMIN_ONLY = "Only org admins and engineers can change what Maple reads from AWS."
 
@@ -534,41 +535,39 @@ const setupToggle = (h: H, model: Model, connection: V2AwsConnection, label: str
 	)
 }
 
-const moduleNote = (h: H, glyph: "done" | "warn" | null, children: ReadonlyArray<Html | string>): Html =>
-	hstack(h, { gap: "2", align: "start" }, [
-		...(glyph === null
-			? []
-			: [
-					icon(h, STEP_GLYPH[glyph].icon, {
-						size: 14,
-						className: cn("mt-px shrink-0", STEP_GLYPH[glyph].className),
-					}),
-				]),
-		typography(h, { size: "xs", tone: "muted", as: "p" }, children),
-	])
+type CostRowState = Readonly<{
+	/** What the module is doing, beside its name; nothing while it is off. */
+	badge: Readonly<{ variant: "ok" | "warn" | "muted"; label: string }> | null
+	description: string
+	/** The one thing to do next, beside the switch. */
+	action: Html | null
+}>
 
 /** What the Cost module is doing on this connection: off, waiting for the stack, or being read. */
-const costState = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArray<Html> => {
+const costState = (h: H, model: Model, connection: V2AwsConnection, info: AwsModuleInfo): CostRowState => {
 	switch (moduleStateOf(connection, "cost")) {
 		case "off":
-			return [moduleNote(h, null, ["Off. Maple does not read this account's cost."])]
+			return { badge: null, description: info.summary, action: null }
 		case "ungranted":
 			// Before the first deploy the role step already asks for the stack.
 			return connection.verified_at === null
-				? [moduleNote(h, null, ["On. Maple reads cost once the stack is deployed."])]
-				: [
-						moduleNote(h, "warn", [
-							"On, but the role does not allow cost reads yet. Update the stack for Maple to read cost.",
-						]),
-						h.div([], [setupToggle(h, model, connection, "Update the stack")]),
-					]
+				? {
+						badge: { variant: "muted", label: "Waiting for the stack" },
+						description: "Maple starts reading this account's cost once the stack is deployed.",
+						action: null,
+					}
+				: {
+						badge: { variant: "warn", label: "Needs a stack update" },
+						description:
+							"The role does not allow cost reads yet. Update the stack to add read-only billing access.",
+						action: setupToggle(h, model, connection, "Update the stack"),
+					}
 		case "granted":
-			return [
-				moduleNote(h, "done", [
-					"On. Maple reads this account's cost. ",
-					textLink(h, { href: COST_HREF }, ["Open Cost"]),
-				]),
-			]
+			return {
+				badge: { variant: "ok", label: "Reading" },
+				description: `Maple reads this account's daily spend. ${COST_BILLING_NOTE}`,
+				action: linkButton(h, { size: "sm", variant: "outline", href: COST_HREF }, ["Open Cost"]),
+			}
 	}
 }
 
@@ -576,38 +575,24 @@ const costState = (h: H, model: Model, connection: V2AwsConnection): ReadonlyArr
 const costRow = (h: H, model: Model, connection: V2AwsConnection, info: AwsModuleInfo): Html => {
 	const save = model.awsCard.moduleSave
 	const error = moduleErrorOf(save, connection.id)
-	const id = `aws-cost-${connection.id}`
-	return vstack(
+	const state = costState(h, model, connection, info)
+	return switchRow(
 		h,
 		{
-			gap: "2",
-			as: "section",
-			className: "w-full border-t pt-3",
-			attributes: [h.AriaLabel(info.title)],
+			id: `aws-cost-${connection.id}`,
+			framed: true,
+			icon: icon(h, "CircleDollarIcon", { size: 16, className: "mt-0.5 text-muted-foreground" }),
+			label: info.title,
+			...(state.badge !== null && {
+				status: badge(h, { variant: state.badge.variant }, [state.badge.label]),
+			}),
+			description: state.description,
+			isChecked: moduleStateOf(connection, "cost") !== "off",
+			isDisabled: !canManage(model) || save._tag === "Saving",
+			onToggle: Message.ToggledAwsModule({ id: connection.id, module: "cost" }),
+			before: state.action === null ? [] : [state.action],
 		},
 		[
-			hstack(h, { gap: "4", justify: "between" }, [
-				vstack(h, { gap: "0.5", shrink: true }, [
-					typography(h, { size: "sm", weight: "medium", attributes: [h.Id(`${id}-label`)] }, [
-						info.title,
-					]),
-					typography(
-						h,
-						{ size: "xs", tone: "muted", as: "p", attributes: [h.Id(`${id}-description`)] },
-						[info.summary],
-					),
-				]),
-				...switchControl(h, {
-					id,
-					inputId: `${id}-input`,
-					isChecked: moduleStateOf(connection, "cost") !== "off",
-					isDisabled: !canManage(model) || save._tag === "Saving",
-					labelledBy: `${id}-label`,
-					describedBy: `${id}-description`,
-					onToggle: Message.ToggledAwsModule({ id: connection.id, module: "cost" }),
-				}),
-			]),
-			...costState(h, model, connection),
 			...(error === null
 				? []
 				: [
