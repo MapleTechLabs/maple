@@ -72,7 +72,7 @@ describe("AI credits page", () => {
 			expectView(text("Reviewed 7×")).toExist(),
 			expectView(text("deepseek/deepseek-v4.1-flash")).toExist(),
 			expectView(text("Unattributed")).toExist(),
-			expectView(text(/12 of this cycle's reviews ran before/u)).toExist(),
+			expectView(text(/12 of this cycle's reviews have no recorded cost/u)).toExist(),
 		)
 	})
 

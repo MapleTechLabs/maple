@@ -320,7 +320,7 @@ const codeReviewDetail = <M>(h: HtmlBuilder<M>, review: CodeReviewSpend): Readon
 			...(review.unpricedReviews > 0
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-							`${review.unpricedReviews.toLocaleString("en-US")} of this cycle's reviews ran before Maple recorded each review's cost. They count above, without credits.`,
+							`${review.unpricedReviews.toLocaleString("en-US")} of this cycle's reviews have no recorded cost: they ran before Maple kept each review's cost, or the model provider reported none. They count above, without credits.`,
 						]),
 					]
 				: []),
