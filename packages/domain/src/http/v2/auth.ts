@@ -3,6 +3,7 @@ import { Schema, Array as Arr, String as Str } from "effect"
 import { ApiKeyLookupPersistenceError, type ApiKeyKind } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
 import {
+	V2InsufficientPermissions,
 	V2InsufficientScope,
 	V2InvalidCredentials,
 	V2InvalidDpopProof,
@@ -34,6 +35,7 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 		V2InvalidCredentials.schema,
 		V2InvalidDpopProof.schema,
 		V2InsufficientScope.schema,
+		V2InsufficientPermissions.schema,
 		V2RateLimited.schema,
 		V2OrganizationAccessDenied.schema,
 		V2NoActiveOrganization.schema,

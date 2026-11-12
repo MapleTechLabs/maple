@@ -44,6 +44,7 @@ import {
 	PathsInclude,
 } from "@maple/query-model"
 import { WireRow } from "../wire"
+import { ObserverAccess } from "./observer-access"
 
 /**
  * A timeseries bucket width.
@@ -5068,5 +5069,7 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 	)
 	.prefix("/internal/query-engine")
 	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an observer may call it.
+	.annotate(ObserverAccess, "read")
 	// Every endpoint here reads telemetry for the dashboard.
 	.annotate(AuditedRead, "telemetry.read") {}

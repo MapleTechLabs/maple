@@ -726,13 +726,16 @@ const makeHarness = (
 		}
 	}
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
 				return yield* service.create(ORG, USER, {
 					name: "phase1-test",
 					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
 				})
 			}),
 		)
@@ -896,6 +899,24 @@ describe("v2 error_issues over HTTP", () => {
 			{ action: "release", actorId: actorFixture.id, opts: { transitionTo: "in_review" } },
 		])
 		expect(harness.ensuredUsers()).toHaveLength(4)
+		await harness.dispose()
+	})
+
+	it("lets an observer read an issue and refuses to let them triage it", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(undefined, ["org:observer"])
+
+		const read = await harness.request("GET", `/v2/error_issues/${ISS_ID}`, { token: key.secret })
+		expect(read.status).toBe(200)
+
+		const refused = await harness.request("POST", `/v2/error_issues/${ISS_ID}/transitions`, {
+			token: key.secret,
+			body: { to_state: "todo", expected_state: "triage" },
+		})
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.code).toBe("insufficient_permissions")
+		expect(refused.body.error.message).toContain("Observers can read Maple")
+		expect(harness.issueActions()).toEqual([])
 		await harness.dispose()
 	})
 

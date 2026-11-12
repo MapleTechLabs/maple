@@ -7,6 +7,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { McpConnectionPublicId } from "./resource-ids"
+import { ObserverAccess } from "../observer-access"
 
 const mcpConnectionExample = {
 	id: "mcpc_p12S8T8agEHUkYc825nMz6",
@@ -80,14 +81,16 @@ export class V2McpConnectionsApiGroup extends HttpApiGroup.make("mcpConnections"
 			params: { id: McpConnectionPublicId },
 			success: V2McpConnection,
 			error: [notFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "revokeMcpConnection",
-				summary: "Revoke an MCP connection",
-				description:
-					"Ends the connection and every access token it minted, and returns the final object. The client has to be approved again to reconnect. Members may revoke their own connections; org admins may revoke any. Requires the `mcp_connections:write` scope.",
-			}),
-		),
+		})
+			.annotate(ObserverAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "revokeMcpConnection",
+					summary: "Revoke an MCP connection",
+					description:
+						"Ends the connection and every access token it minted, and returns the final object. The client has to be approved again to reconnect. Members may revoke their own connections; org admins may revoke any. Requires the `mcp_connections:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/mcp_connections")
 	.middleware(AuthorizationV2)

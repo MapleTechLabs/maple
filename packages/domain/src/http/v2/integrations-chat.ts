@@ -14,6 +14,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { ObserverAccess } from "../observer-access"
 
 // The chat-platform surface: one contract for every chat platform Maple can
 // connect to. The platform is a value (`connector`), never a path segment or a
@@ -389,14 +390,16 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 			params: { connector: ChatConnectorId },
 			success: V2ChatIdentityDeleteResponse,
 			error: [V2InsufficientPermissions.schema, chatNotFound, chatPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "deleteChatIdentity",
-				summary: "Unlink your chat account",
-				description:
-					"Removes the link between your chat account and your Maple user on this connector. Your organization's workspaces stay linked; only your own account is forgotten, and nothing you do on the chat platform is attributed to you afterwards. Unlinking when you hold no link is not an error. Like linking, it must be called with a signed-in session rather than an API key. Requires the `integrations:write` scope.",
-			}),
-		),
+		})
+			.annotate(ObserverAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "deleteChatIdentity",
+					summary: "Unlink your chat account",
+					description:
+						"Removes the link between your chat account and your Maple user on this connector. Your organization's workspaces stay linked; only your own account is forgotten, and nothing you do on the chat platform is attributed to you afterwards. Unlinking when you hold no link is not an error. Like linking, it must be called with a signed-in session rather than an API key. Requires the `integrations:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.patch("updateWorkspace", "/chat_workspaces/:id", {

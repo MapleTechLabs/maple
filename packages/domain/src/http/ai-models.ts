@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
+import { ObserverAccess } from "./observer-access"
 
 // AI model detection: a model string as an instrumentation reported it
 // (`gen_ai.request.model`, an OpenRouter id, a Bedrock id) → the model's
@@ -73,4 +74,6 @@ export class AiModelsInternalApiGroup extends HttpApiGroup.make("aiModelsInterna
 		}),
 	)
 	.prefix("/internal/ai-models")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an observer may call it.
+	.annotate(ObserverAccess, "read") {}

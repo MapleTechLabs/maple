@@ -90,11 +90,17 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "mobile-test", scopes })
+				return yield* service.create(ORG, USER, {
+					name: "mobile-test",
+					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+				})
 			}),
 		)
 
@@ -179,6 +185,26 @@ describe("v2 mobile devices", () => {
 
 			const empty = await harness.request("GET", "/v2/mobile_devices", key.secret)
 			expect(empty.body.data).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets an observer register and remove their own device", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey(undefined, ["org:observer"])
+			const created = await harness.request("PUT", `/v2/mobile_devices/${TOKEN}`, key.secret, {
+				platform: "ios",
+				environment: "sandbox",
+				bundle_id: "com.maple.mobile",
+			})
+			expect(created.status).toBe(200)
+			expect(created.body.token).toBe(TOKEN)
+
+			const removed = await harness.request("DELETE", `/v2/mobile_devices/${TOKEN}`, key.secret)
+			expect(removed.status).toBe(200)
+			expect(removed.body.deleted).toBe(true)
 		} finally {
 			await harness.dispose()
 		}

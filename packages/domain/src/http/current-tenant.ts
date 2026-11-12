@@ -3,6 +3,7 @@ import { Schema, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
+import { readOnlyMessage } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -90,6 +91,21 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
+/** An observer asked to change the organization. 403: the session is fine, the role only reads. */
+export class ReadOnlyRoleError extends HttpTaggedError<ReadOnlyRoleError>()(
+	"@maple/http/errors/ReadOnlyRoleError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "read_only_role",
+		title: "Read-only access",
+		message: readOnlyMessage,
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
+) {}
+
 /**
  * Who a request, tool call or job acts as. `TenantSchema` is the form the HTTP middleware
  * provides; the optional fields below it are set only by the MCP and chat surfaces.
@@ -135,6 +151,7 @@ export class Authorization extends HttpApiMiddleware.Service<
 		UnauthorizedError,
 		AuthorizationUnavailableError,
 		OrganizationAccessDeniedError,
+		ReadOnlyRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -184,6 +201,7 @@ export class SessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
+		ReadOnlyRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -228,6 +246,7 @@ export class RegionlessSessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
+		ReadOnlyRoleError,
 	],
 	security: {
 		bearer: HttpApiSecurity.bearer,

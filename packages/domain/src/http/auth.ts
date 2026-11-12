@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import { Authorization, SessionAuthorization, TenantSchema, UnauthorizedError } from "./current-tenant"
+import { ObserverAccess } from "./observer-access"
 
 export class CliDeviceStartRequest extends Schema.Class<CliDeviceStartRequest>("CliDeviceStartRequest")({
 	deviceName: Schema.String,
@@ -264,13 +265,13 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 		HttpApiEndpoint.post("sessionRefresh", "/session/refresh", {
 			success: SelfHostedLoginResponse,
 			error: [SelfHostedAuthDisabledError, UnauthorizedError],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.delete("cliSessionRevoke", "/cli/session", {
 			success: CliDeviceActionResponse,
 			error: [CliDeviceConflictError, CliDevicePersistenceError],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.prefix("/api/auth")
 	.middleware(Authorization) {}
@@ -297,7 +298,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				CliDeviceConflictError,
 				CliDevicePersistenceError,
 			],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("cliDeviceDeny", "/cli/device/:userCode/deny", {
@@ -309,7 +310,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				CliDeviceConflictError,
 				CliDevicePersistenceError,
 			],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("mcpOAuthAuthorizationInspect", "/mcp/oauth/authorization/:requestId", {
@@ -332,7 +333,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				McpOAuthAuthorizationConflictError,
 				McpOAuthPersistenceError,
 			],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("mcpOAuthAuthorizationDeny", "/mcp/oauth/authorization/:requestId/deny", {
@@ -344,7 +345,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				McpOAuthAuthorizationConflictError,
 				McpOAuthPersistenceError,
 			],
-		}),
+		}).annotate(ObserverAccess, "personal"),
 	)
 	.prefix("/api/auth")
 	.middleware(SessionAuthorization) {}

@@ -111,6 +111,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/PreviewSignInInvalidKeyError",
 	"@maple/http/errors/QueryEngineValidationError",
 	"@maple/http/errors/RawSqlValidationError",
+	"@maple/http/errors/ReadOnlyRoleError",
 	"@maple/http/errors/RecommendationIssueNotFoundError",
 	"@maple/http/errors/ScrapeTargetLimitReachedError",
 	"@maple/http/errors/ScrapeTargetNotFoundError",

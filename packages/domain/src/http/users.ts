@@ -7,6 +7,7 @@ import { TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
+import { ObserverAccess } from "./observer-access"
 
 // End users endpoint schemas (`/users`): the people Maple's customers identified with `identify()`
 // or a `user.id` span attribute, read by `ch/queries/users.ts` and `user-activity.ts`. Times are
@@ -458,4 +459,6 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 	)
 	.prefix("/internal/users")
 	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an observer may call it.
+	.annotate(ObserverAccess, "read")
 	.annotate(AuditedRead, "telemetry.read") {}

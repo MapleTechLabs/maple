@@ -12,6 +12,7 @@ import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { AgentFeedbackPublicId } from "./resource-ids"
+import { ObserverAccess } from "../observer-access"
 
 const isNotBlank = Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 	description: "Must contain a non-whitespace character",
@@ -134,14 +135,16 @@ export class V2AgentFeedbackApiGroup extends HttpApiGroup.make("agentFeedback")
 			payload: V2AgentFeedbackCreateParams,
 			success: V2AgentFeedback,
 			error: [persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "createAgentFeedback",
-				summary: "Send feedback",
-				description:
-					"Sends feedback about Maple from an agent to the Maple team: say what kind it is, which agent is sending it, and why. Needs no scope: any API key of the organization can send feedback.",
-			}),
-		),
+		})
+			.annotate(ObserverAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "createAgentFeedback",
+					summary: "Send feedback",
+					description:
+						"Sends feedback about Maple from an agent to the Maple team: say what kind it is, which agent is sending it, and why. Needs no scope: any API key of the organization can send feedback.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("list", "/", {
