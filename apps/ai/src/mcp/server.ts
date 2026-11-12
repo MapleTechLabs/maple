@@ -7,7 +7,7 @@ import {
 	McpToolsUnavailableError,
 } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./tenant"
-import { refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
+import { isReadOnlyTenant, refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
 
 /**
@@ -69,13 +69,13 @@ const annotateToolFailure = (result: McpToolResult) =>
 		: Effect.void
 
 /**
- * Hides a tool from a read-only credential's `tools/list`, and answers a call to it as unknown:
+ * Hides a tool from a read-only credential's or an observer's `tools/list`, and answers a call to it as unknown:
  * the registry would refuse every such call anyway, and a listed tool invites it.
  */
 const HiddenFromReadOnlyCredentials = EffectMcpServer.visibility(() =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpRequestTenant
-		return tenant?.readOnly !== true
+		return tenant === undefined || !isReadOnlyTenant(tenant)
 	}),
 )
 

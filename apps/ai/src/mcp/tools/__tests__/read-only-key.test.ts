@@ -11,21 +11,21 @@ import { executeRegisteredMcpToolUnscoped } from "../registry"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const tenant = (readOnly: boolean, scopes?: ReadonlyArray<string>): TenantContext => ({
+const tenant = (readOnly: boolean, scopes?: ReadonlyArray<string>, role = "root"): TenantContext => ({
 	orgId: Schema.decodeSync(OrgId)("org_read_only_key"),
 	userId: Schema.decodeSync(UserId)("user_read_only_key"),
-	roles: [Schema.decodeSync(RoleName)("root")],
+	roles: [Schema.decodeSync(RoleName)(role)],
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
 	...(scopes === undefined ? undefined : { scopes }),
 })
 
-const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>) => {
+const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>, role?: string) => {
 	const database = createTestDb(createdDbs).layer
 	return Layer.mergeAll(
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
 		database,
-		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes)),
+		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes, role)),
 		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () => Effect.succeed({ destinations: [] }),
 		} as never),
@@ -68,6 +68,30 @@ describe("read-only API key over MCP", () => {
 			const result = yield* call("update_error_notification_policy", updatePolicy)
 			expect(Result.isSuccess(result)).toBe(true)
 		}).pipe(Effect.provide(makeLayer(false))),
+	)
+})
+
+describe("an observer over MCP", () => {
+	// A layer per test: each owns a database that `afterEach` removes.
+	const observer = () => makeLayer(false, undefined, "org:observer")
+
+	it.effect("runs read tools", () =>
+		Effect.gen(function* () {
+			const result = yield* call("get_error_notification_policy", {})
+			expect(Result.isSuccess(result)).toBe(true)
+		}).pipe(Effect.provide(observer())),
+	)
+
+	it.effect("refuses a tool that changes data and says which role can", () =>
+		Effect.gen(function* () {
+			const result = yield* call("update_error_notification_policy", updatePolicy)
+			expect(Result.isFailure(result)).toBe(true)
+			if (Result.isFailure(result)) {
+				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
+				expect(result.failure.message).toContain("update_error_notification_policy")
+				expect(result.failure.message).toContain("Ask an org admin for the Member role")
+			}
+		}).pipe(Effect.provide(observer())),
 	)
 })
 

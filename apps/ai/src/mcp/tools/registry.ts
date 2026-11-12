@@ -1,4 +1,5 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
+import * as Policy from "@maple/domain/policy"
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -133,6 +134,7 @@ import {
 	type McpToolPhrases,
 	type McpToolRegistrar,
 	type McpToolResult,
+	isReadOnlyTenant,
 	refusesReadOnlyCredential,
 } from "./types"
 import { unknownToolMessage } from "../lib/tool-suggestions"
@@ -750,9 +752,11 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 
 	if (refusesReadOnlyCredential(definition.name, definition.hints.readOnly)) {
 		const tenant = yield* CurrentMcpTenant
-		if (tenant.readOnly === true) {
+		if (isReadOnlyTenant(tenant)) {
 			return yield* new McpAuthInvalidError({
-				message: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+				message: Policy.isReadOnly(tenant.roles)
+					? `\`${definition.name}\` changes data. ${Policy.readOnlyMessage}`
+					: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
 				reason: "insufficient_scope",
 			})
 		}

@@ -6,7 +6,9 @@
  * surface and be billed, traced or prompted as another.
  */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import type { PermissionRuleset } from "@maple/domain/permission"
+import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr } from "effect"
 import type { AgentDefinition } from "./agents"
 import { READ_ONLY_RULESET } from "./permissions"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
@@ -20,6 +22,16 @@ export interface TurnProfile {
 	readonly ruleset: PermissionRuleset
 	readonly prompt: string
 }
+
+/** The ruleset with every approval-gated tool withheld: an observer could not approve one. */
+const withoutProposals = (ruleset: PermissionRuleset): PermissionRuleset =>
+	Arr.map(ruleset, (rule) =>
+		rule.action === "ask" ? new PermissionRule({ tool: rule.tool, action: "deny" }) : rule,
+	)
+
+/** The profile for whoever the turn's tools run as: an observer is offered nothing that changes data. */
+export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<string>): TurnProfile =>
+	Policy.isReadOnly(roles) ? { ...profile, ruleset: withoutProposals(profile.ruleset) } : profile
 
 export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): TurnProfile => {
 	switch (origin.kind) {

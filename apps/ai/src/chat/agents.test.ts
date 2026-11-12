@@ -20,7 +20,7 @@ import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForTurn } from "./profiles"
+import { profileForRoles, profileForTurn } from "./profiles"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
 
@@ -134,6 +134,25 @@ describe("profileForTurn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.property(tools, name, `${name} was withheld from the connector`)
 			assert.equal(evaluatePermission(profile.ruleset, name), "ask", name)
+		}
+	})
+
+	it("offers an observer's turn the read tools and none that change data", () => {
+		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:observer",
+		])
+		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit
+		assert.property(tools, "search_traces")
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.notProperty(tools, name, `${name} was offered to an observer`)
+		}
+		// A member's turn on the same session still proposes them.
+		const member = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:member",
+		])
+		assert.isNotEmpty([...MUTATING_TOOL_NAMES])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
 		}
 	})
 

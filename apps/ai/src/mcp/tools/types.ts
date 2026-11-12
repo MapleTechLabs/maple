@@ -4,6 +4,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
+import * as Policy from "@maple/domain/policy"
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -122,6 +123,12 @@ export const FEEDBACK_TOOL = "send_maple_feedback"
  */
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
 	!readOnly && name !== FEEDBACK_TOOL
+
+/** Whether the caller may only read: a read-only API key, or anyone whose role is observer. */
+export const isReadOnlyTenant = (tenant: {
+	readonly readOnly?: true
+	readonly roles: ReadonlyArray<string>
+}): boolean => tenant.readOnly === true || Policy.isReadOnly(tenant.roles)
 
 /**
  * Who a tool is for.
