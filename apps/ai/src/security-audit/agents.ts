@@ -15,7 +15,6 @@ import { AgentPolicy } from "@yielded/agent/agent-policy"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
-import type { RunCostEstimator } from "@yielded/agent/run-options"
 import { Cause, type Duration, Effect, Layer, Ref, Schema, String as Str } from "effect"
 import {
 	AUDIT_MAX_LIVE_CONTEXT_TOKENS,
@@ -24,7 +23,7 @@ import {
 	REPEATED_TOOL_CALLS,
 	TOOL_CONCURRENCY,
 } from "../chat/budgets"
-import { reportedCostOf } from "../platform/genai-spans"
+import { reportedCost } from "../platform/reported-cost"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import {
 	type AuditExecutionApi,
@@ -101,16 +100,6 @@ const executingAgent = (role: AuditRole, model: ResolvedModel) =>
 		Agent.make(`security-audit-${role}`, { ...agentSpec(role, model), toolkit: EXECUTION_TOOLKIT }),
 		model.layer,
 	)
-
-/** OpenRouter's own price for each call; Maple never prices tokens itself. */
-const reportedCost: RunCostEstimator = (request) => {
-	const cost = reportedCostOf(request.finishMetadata)
-	return Effect.succeed(
-		cost === undefined
-			? { costMicrousd: 0, pricingStatus: "unknown" as const }
-			: { costMicrousd: Math.round(cost * 1_000_000), pricingStatus: "estimated" as const },
-	)
-}
 
 const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 

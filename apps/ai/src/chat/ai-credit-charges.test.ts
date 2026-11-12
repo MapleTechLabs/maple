@@ -22,6 +22,8 @@ interface Call {
 	readonly cacheRead?: number
 	readonly text: number
 	readonly reasoning?: number
+	/** What the provider reported the call cost, in microdollars; absent when it reported none. */
+	readonly costMicrousd?: number
 }
 
 const consume = (usage: RunUsage, call: Call) => {
@@ -50,7 +52,8 @@ const consume = (usage: RunUsage, call: Call) => {
 				cacheWrite: 0,
 			}),
 			outputTokens: new OutputTokenUsage({ total: output, text: call.text, reasoning }),
-			costMicrousd: 0,
+			costMicrousd: call.costMicrousd ?? 0,
+			pricingStatus: call.costMicrousd === undefined ? "unknown" : "estimated",
 		}),
 	}
 	return Effect.runPromise(accumulateUsage(usage).consume(delta))
@@ -125,6 +128,26 @@ describe("AI credit charges", () => {
 				"openrouter/anthropic/claude-sonnet-5.5",
 				"openrouter/z-ai/glm-5.3-flash",
 			],
+		)
+	})
+
+	it("carries the provider's cost, summed across merged calls", async () => {
+		const usage = makeRunUsage()
+		await consume(usage, { model: GLM, uncached: 3000, text: 100, costMicrousd: 1200 })
+		await consume(usage, { model: GLM, uncached: 4000, text: 200, costMicrousd: 1800 })
+
+		assert.strictEqual(usage.charges.length, 1)
+		assert.strictEqual(usage.charges[0]?.providerCostMicrousd, 3000)
+	})
+
+	it("keeps a call with no reported cost apart from priced ones, to bill by its tokens", async () => {
+		const usage = makeRunUsage()
+		await consume(usage, { model: GLM, uncached: 1000, text: 100, costMicrousd: 500 })
+		await consume(usage, { model: GLM, uncached: 1000, text: 100 })
+
+		assert.deepEqual(
+			Arr.map(usage.charges, (charge) => charge.providerCostMicrousd),
+			[500, undefined],
 		)
 	})
 })
