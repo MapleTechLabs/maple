@@ -154,6 +154,21 @@ const outcomeMark = (h: H, event: AuditTrailEntry): ReadonlyArray<Html> =>
 const detailField = (h: H, label: string, value: string | null, mono = false): ReadonlyArray<Html> =>
 	value === null ? [] : [keyValue(h, { label, wrap: true, mono }, [value])]
 
+/** A Maple event is an entry of the Settings audit log too: its id opens it there, diff and all. */
+const eventIdValue = (h: H, event: AuditTrailEntry): Html | string =>
+	event.provider === "maple"
+		? textLink(
+				h,
+				{
+					className: "underline",
+					href: hrefOf(
+						AppRoute.Settings({ search: { tab: "audit-log", entry: event.providerEventId } }),
+					),
+				},
+				[event.providerEventId],
+			)
+		: event.providerEventId
+
 /** Everything recorded about one event, under its row: nothing the row cut off is lost. */
 const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html => {
 	const at = (value: number) => timestamp(h, { value, ...clock, withYear: true, className: "tabular-nums" })
@@ -176,7 +191,7 @@ const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html => {
 			...detailField(h, "Account", event.account, true),
 			keyValue(h, { label: "Occurred", wrap: true }, [at(event.occurredAt)]),
 			keyValue(h, { label: "Recorded", wrap: true }, [at(event.ingestedAt)]),
-			keyValue(h, { label: "Event id", wrap: true, mono: true }, [event.providerEventId]),
+			keyValue(h, { label: "Event id", wrap: true, mono: true }, [eventIdValue(h, event)]),
 		]),
 		...(event.raw === null
 			? []
@@ -380,6 +395,9 @@ const listBody = (h: H, model: Model, clock: Clock): Html =>
 			}),
 		onData: () => {
 			const events = eventsOf(model) ?? []
+			const isRefetching = Keyed.isInFlight(model.firstPage)
+			// An empty answer to the previous filters says nothing about the ones now loading.
+			if (events.length === 0 && isRefetching) return placeholderRows(h, 6)
 			if (events.length === 0 && isFiltered(model.search))
 				return filteredEmpty(h, {
 					noun: "events",
@@ -399,7 +417,6 @@ const listBody = (h: H, model: Model, clock: Clock): Html =>
 				onLoadMore: Message.ClickedLoadMore(),
 				className: "border-t",
 			})
-			const isRefetching = Keyed.isInFlight(model.firstPage)
 			return vstack(
 				h,
 				{ className: refreshingClass(isRefetching), attributes: [h.AriaBusy(isRefetching)] },
@@ -417,9 +434,9 @@ const footnote = (h: H): Html =>
 			{
 				tone: "muted",
 				className: "underline",
-				href: hrefOf(AppRoute.Settings({ search: { tab: "audit-log" } })),
+				href: hrefOf(AppRoute.Settings({ search: { tab: "audit-log", kind: "access" } })),
 			},
-			["Settings, Audit log"],
+			["Settings, Audit log, Data access"],
 		),
 		".",
 	])

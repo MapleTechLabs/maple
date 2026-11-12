@@ -1,5 +1,6 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
+import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 
 import {
 	auditLogSearchFrom,
@@ -132,6 +133,12 @@ describe("the resource, action, request and kind filters", () => {
 })
 
 describe("parseAuditLookup", () => {
+	it("reads an entry's own id as that entry, not as a resource to filter by", () => {
+		const entryId = encodePublicId(PublicIdPrefixes.auditLogEntry, "9d2c1e3a-6a1b-4f0e-9c1d-2b3a4c5d6e7f")
+
+		expect(Option.getOrNull(parseAuditLookup(entryId))).toEqual({ key: "entry", value: entryId })
+	})
+
 	it("reads each id shape as its filter", () => {
 		expect(Option.getOrNull(parseAuditLookup("user_2fj3K9dLqWm8xYbT"))).toEqual({
 			key: "actorId",

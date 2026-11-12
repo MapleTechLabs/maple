@@ -1,6 +1,7 @@
 import { definePage } from "../../contract"
 import { breadcrumbsOf } from "../kit/layout"
 import { Message, Model } from "./model"
+import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view } from "./view"
 
@@ -15,6 +16,7 @@ export const page = definePage(
 		update,
 		routeChanged,
 		view,
+		subscriptions,
 		breadcrumbs: () => breadcrumbsOf("auditLog"),
 	},
 )

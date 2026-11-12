@@ -280,6 +280,38 @@ describe("security audit log", () => {
 		})
 	})
 
+	// An empty answer to the old filters is not an answer to the new ones.
+	test("an empty result does not stand in for the filters that are still loading", () => {
+		const changed = routeChanged(
+			loaded(noAuditEvents, { outcome: "denied" }),
+			routeOf({ outcome: "success" }),
+			context,
+		)
+
+		scene(
+			{ update: pageUpdate, view },
+			given(changed.model),
+			expectView(role("button", { name: "Clear filters" })).toExist(),
+			expectView(text("No events match these filters")).toBeAbsent(),
+			expectView(text("No audit events yet")).toBeAbsent(),
+		)
+	})
+
+	test("a Maple event's id opens the same entry in the Settings audit log", () => {
+		const model = loaded()
+		const first = eventsOf(model)?.[0]
+		const opened = pageUpdate(model, Message.ToggledEvent({ id: first?.id ?? "" })).model
+
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			expectView(role("link", { name: first?.providerEventId ?? "" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.Settings({ search: { tab: "audit-log", entry: first?.providerEventId } })),
+			),
+		)
+	})
+
 	test("an empty log says what will show up; an empty filter result offers to clear the filters", () => {
 		scene(
 			{ update: pageUpdate, view },

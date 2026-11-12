@@ -473,13 +473,26 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 				onNone: () => ({
 					model: { ...model, isLookupUnknown: Str.isNonEmpty(Str.trim(model.lookup)) },
 				}),
-				onSome: (lookup) =>
-					navigateFilters({ ...model, lookup: "", isLookupUnknown: false }, search, {
+				onSome: (lookup) => {
+					const cleared = { ...model, lookup: "", isLookupUnknown: false }
+					// An entry's own id is a link to it, not a filter over the list.
+					if (lookup.key === "entry")
+						return {
+							model: cleared,
+							outMessage: PageOutMessage.RequestedNavigation({
+								url: hrefOf(
+									AppRoute.Settings({ search: { ...search, entry: lookup.value } }),
+								),
+								isReplace: true,
+							}),
+						}
+					return navigateFilters(cleared, search, {
 						...filters,
 						[lookup.key]: lookup.value,
 						// A looked-up action names its resource type; a stale one would hide it.
 						...(lookup.key === "action" && { resourceType: undefined }),
-					}),
+					})
+				},
 			}),
 		RemovedFilter: ({ key }) => navigateFilters(model, search, withoutFilter(filters, key)),
 		ClickedPivot: ({ key, value }) => {

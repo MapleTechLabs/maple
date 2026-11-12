@@ -57,9 +57,10 @@ const SEEDS: ReadonlyArray<Seed> = [
 	{
 		minutesAgo: 19,
 		action: "api.request",
-		category: "authentication",
+		category: "permission",
 		outcome: "denied",
 		actor: deployKey,
+		target: { type: "api", name: "POST /v2/dashboards" },
 		originIp: "198.51.100.24",
 		originCountry: "US",
 		outcomeReason: "The key lacks the dashboards:write scope.",
