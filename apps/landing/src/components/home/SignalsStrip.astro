@@ -51,7 +51,8 @@ const columns = [
 			{
 				columns.map((col) => (
 					<div class="flex flex-col gap-5">
-						<div>
+						{/* flex-1 so the three plates share a top edge whatever the copy wraps to. */}
+						<div class="flex-1">
 							<h2 class="font-display text-[22px] leading-tight tracking-[-0.01em] text-fg md:text-2xl lg:text-[26px]">
 								{col.title}
 							</h2>

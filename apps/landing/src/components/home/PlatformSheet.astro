@@ -214,11 +214,8 @@ const cells: Cell[] = [
 			class="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:mt-16 md:grid-cols-2 lg:grid-cols-3"
 		>
 			{
-				cells.map((cell, i) => (
+				cells.map((cell) => (
 					<div class="flex flex-col gap-4 bg-bg p-6 md:p-8">
-						<span class="text-[11px] font-medium tabular-nums text-fg-muted">
-							{String(i + 1).padStart(2, "0")}
-						</span>
 						<div>
 							<h3 class="font-display text-lg leading-snug tracking-[-0.01em] text-fg md:text-xl">
 								{cell.name}
