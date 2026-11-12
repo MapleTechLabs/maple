@@ -30,6 +30,7 @@ import {
 	LAB_SOURCES,
 	LAB_TODAY,
 	labBreakdown,
+	labSourcesWith,
 	labTimeseries,
 	labTotals,
 } from "./cost-fixture"
@@ -67,13 +68,20 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 	),
 }))
 
-export const Model = Schema.Struct({ state: LabState, cost: CostModel })
+export const Model = Schema.Struct({
+	state: LabState,
+	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
+	openRouter: Schema.NullOr(Schema.Boolean),
+	cost: CostModel,
+})
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessage } })
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
+/** What the lab answers from: the state it loaded in, and what the reader did to OpenRouter since. */
+type World = Readonly<{ state: LabState; openRouter: boolean | null }>
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -152,7 +160,8 @@ const settled = <A>(state: LabState, value: () => A): Result.Result<A, typeof fa
 	state === "error" ? Result.fail(failure) : Result.succeed(value())
 
 /** A read the page asked for, answered from the fixture the way the API would. */
-const answerOf = (state: LabState, search: Search, command: CostCommand): Option.Option<CostMessage> => {
+const answerOf = (world: World, search: Search, command: CostCommand): Option.Option<CostMessage> => {
+	const { state } = world
 	if (command.name === ResolveWindow.name)
 		return Option.some(
 			CostMessage.CompletedResolveWindow({
@@ -169,7 +178,10 @@ const answerOf = (state: LabState, search: Search, command: CostCommand): Option
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
-				CostMessage.CompletedLoadSources({ key, result: Result.succeed(sourcesFor(state)) }),
+				CostMessage.CompletedLoadSources({
+					key,
+					result: Result.succeed(labSourcesWith(sourcesFor(state), world.openRouter)),
+				}),
 			)
 		case FetchCostTotals.name:
 			return Option.map(windowArgs(command.args), ({ key, input }) =>
@@ -227,17 +239,28 @@ const answerOf = (state: LabState, search: Search, command: CostCommand): Option
 }
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
+type Settled = Step & Pick<World, "openRouter">
+
+/** A saved key adds OpenRouter to the sources the lab answers with next, a removal takes it out. */
+const openRouterAfter = (openRouter: boolean | null, answers: ReadonlyArray<CostMessage>) =>
+	Arr.reduce(answers, openRouter, (current, answer) =>
+		answer._tag === "CompletedSaveKey" && Result.isSuccess(answer.result)
+			? true
+			: answer._tag === "CompletedRemoveKey" && Result.isSuccess(answer.result)
+				? false
+				: current,
+	)
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the
  * sources' answer asks for the window's reads). Kit commands are kept for the runtime.
  */
-const settle = (state: LabState, step: Step): Step => {
+const settle = (world: World, step: Step): Settled => {
 	const answers = Arr.flatMap(step.commands, (command) =>
-		Option.toArray(answerOf(state, step.model.search, command)),
+		Option.toArray(answerOf(world, step.model.search, command)),
 	)
 	const kept = keepLocal(step.commands)
-	if (answers.length === 0) return { model: step.model, commands: kept }
+	if (answers.length === 0) return { model: step.model, commands: kept, openRouter: world.openRouter }
 	const next = Arr.reduce(
 		answers,
 		{ model: step.model, commands: Arr.empty<CostCommand>() },
@@ -246,8 +269,8 @@ const settle = (state: LabState, step: Step): Step => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle(state, next)
-	return { model: rest.model, commands: [...kept, ...rest.commands] }
+	const rest = settle({ ...world, openRouter: openRouterAfter(world.openRouter, answers) }, next)
+	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
 const lift = (commands: ReadonlyArray<CostCommand>) =>
@@ -265,13 +288,20 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const loaded = settle(flags.state, { model: entered.model, commands: entered.commands ?? [] })
+	const world: World = { state: flags.state, openRouter: null }
+	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
-		const settled = settle(flags.state, { model: next.model, commands: next.commands ?? [] })
-		return { model: settled.model, commands: [...step.commands, ...settled.commands] }
+		const settled = settle(
+			{ ...world, openRouter: step.openRouter },
+			{ model: next.model, commands: next.commands ?? [] },
+		)
+		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
-	return { model: { state: flags.state, cost: ready.model }, commands: lift(ready.commands) }
+	return {
+		model: { state: flags.state, openRouter: ready.openRouter, cost: ready.model },
+		commands: lift(ready.commands),
+	}
 }
 
 export const update = (model: Model, message: Message): Return =>
@@ -283,11 +313,14 @@ export const update = (model: Model, message: Message): Return =>
 				out?._tag === "RequestedNavigation"
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
-			const ready = settle(model.state, {
-				model: moved.model,
-				commands: [...(step.commands ?? []), ...(moved.commands ?? [])],
-			})
-			return { model: { ...model, cost: ready.model }, commands: lift(ready.commands) }
+			const ready = settle(
+				{ state: model.state, openRouter: model.openRouter },
+				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
+			)
+			return {
+				model: { ...model, openRouter: ready.openRouter, cost: ready.model },
+				commands: lift(ready.commands),
+			}
 		},
 	})
 

@@ -222,6 +222,13 @@ describe("cost page", () => {
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveOpenRouterCostKey", args: { apiKey: "sk-or-v1-regular-key-0123456789" } },
 		])
+		// A key the request would refuse to carry is never sent, and the dialog says why.
+		const oversized = pageUpdate(typed(form, `sk-or-v1-${Str.repeat(300)("a")}`), Message.SubmittedKey())
+		expect(names(oversized.commands)).toEqual([])
+		expect([oversized.model.sourceWrite, oversized.model.keyError]).toEqual([
+			"Idle",
+			"That is too long to be an OpenRouter key.",
+		])
 		// A second submit while the first is in flight sends nothing more.
 		expect(names(pageUpdate(saving.model, Message.SubmittedKey()).commands)).toEqual([])
 

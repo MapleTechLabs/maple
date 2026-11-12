@@ -1,3 +1,4 @@
+import { OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -322,12 +323,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		SubmittedKey: () => {
 			const apiKey = Str.trim(model.keyDraft.value)
-			return apiKey === "" || model.sourceWrite !== "Idle"
-				? { model }
-				: {
-						model: { ...model, sourceWrite: "Saving", keyError: null },
-						commands: [SaveOpenRouterCostKey({ apiKey })],
-					}
+			if (apiKey === "" || model.sourceWrite !== "Idle") return { model }
+			// The request refuses a longer key before it is sent, which would leave the save unanswered.
+			if (apiKey.length > OPENROUTER_KEY_MAX_LENGTH) {
+				return { model: { ...model, keyError: "That is too long to be an OpenRouter key." } }
+			}
+			return {
+				model: { ...model, sourceWrite: "Saving", keyError: null },
+				commands: [SaveOpenRouterCostKey({ apiKey })],
+			}
 		},
 		// A refused key keeps the dialog open with the reason under the field.
 		CompletedSaveKey: ({ result }) =>

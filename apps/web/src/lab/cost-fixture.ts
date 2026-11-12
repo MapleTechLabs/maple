@@ -242,6 +242,34 @@ const openRouterSource = source({
 	requestsThisMonth: 0,
 })
 
+/**
+ * `sources` after the lab's reader added OpenRouter (true: it waits for its first sync) or removed
+ * it (false); null leaves them as the state has them.
+ */
+export const labSourcesWith = (
+	sources: CostSourcesResponse,
+	openRouter: boolean | null,
+): CostSourcesResponse => {
+	if (openRouter === null) return sources
+	const others = Arr.filter(sources.sources, (entry) => entry.provider !== "openrouter")
+	if (!openRouter) return new CostSourcesResponse({ sources: others })
+	return others.length === sources.sources.length
+		? decodeSources({
+				sources: [
+					...Schema.encodeSync(CostSourcesResponse)(sources).sources,
+					{
+						...openRouterSource,
+						status: "pending",
+						watermarkDate: null,
+						backfillDate: null,
+						historyComplete: false,
+						lastSyncedAt: null,
+					},
+				],
+			})
+		: sources
+}
+
 export const LAB_SOURCES = {
 	synced: decodeSources({ sources: [source({}), openRouterSource] }),
 	none: decodeSources({ sources: [] }),
