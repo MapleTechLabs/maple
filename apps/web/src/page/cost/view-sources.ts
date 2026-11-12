@@ -11,7 +11,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
-import { CREDENTIAL_SOURCES } from "./credential-sources"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
 import { COST_PROVIDERS, type CostProviderEntry, credentialProviderOf } from "./providers"
@@ -109,6 +109,15 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [source.lastError])]
 				: []
 
+/** What the provider's source says about its own figures, whatever its status. */
+const providerNote = (h: H, source: CostSourceSummary): ReadonlyArray<Html> => {
+	const provider = credentialProviderOf(source.provider)
+	const entry: CredentialSource | null = provider === null ? null : CREDENTIAL_SOURCES[provider]
+	return entry?.rowNote === undefined
+		? []
+		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.rowNote])]
+}
+
 const sourceRow = (
 	h: H,
 	source: CostSourceSummary,
@@ -156,6 +165,7 @@ const sourceRow = (
 						typography(h, { size: "xs", tone: "muted" }, [fact]),
 					),
 				),
+				...providerNote(h, source),
 				...note(h, source),
 			]),
 		],

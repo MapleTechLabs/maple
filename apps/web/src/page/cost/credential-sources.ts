@@ -64,6 +64,8 @@ export type CredentialSource = Readonly<{
 		toast: string
 	}>
 	remove: Readonly<{ title: string; description: string; toast: string }>
+	/** What a reader of the figures must know about how this source's days come about, on its Sources row. */
+	rowNote?: string
 	save: (secret: string, identifiers: ReadonlyArray<string>) => Cmd
 	delete: () => Cmd
 }>
@@ -198,6 +200,7 @@ export const CREDENTIAL_SOURCES = {
 				"Maple deletes the token and stops reading the organization's invoices, and its cost leaves this page. Adding PlanetScale again reads the last year again.",
 			toast: "PlanetScale removed",
 		},
+		rowNote: "PlanetScale bills by the month: each day is an even share of its branch's invoice line.",
 		save: (token, [organization = "", tokenId = ""]) =>
 			SavePlanetScaleCostToken({ organization, tokenId, token }),
 		delete: () => RemovePlanetScaleCostToken(),
