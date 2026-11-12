@@ -17,7 +17,6 @@ import { cyclePanel, cyclePanelSkeleton } from "./view-cycle"
 import { planSection } from "./view-plan"
 import { detailsSection, invoicesSection, unpaidInvoicesNotice } from "./view-records"
 import { usageTable, usageTableSkeleton } from "./view-usage"
-import { aiCreditsSection } from "./view-ai-credits"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 
 export type ViewInputs = Readonly<{
@@ -132,7 +131,6 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				),
 			],
 		),
-		...aiCreditsSection(h, model, isLoading ? null : spend),
 		planSection(h, model, {
 			spend: isLoading ? null : spend,
 			customer,

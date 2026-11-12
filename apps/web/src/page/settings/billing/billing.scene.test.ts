@@ -15,7 +15,6 @@ import { Message, type Model } from "./model"
 import { Message as DetailsMessage } from "./details/model"
 import { customerChanged, init, requestRuleStats, revisit, spendModelOf, update } from "./update"
 import { usageTable } from "./view-usage"
-import { aiCreditsSection } from "./view-ai-credits"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as CheckoutReturn from "../../kit/checkout-return"
 
@@ -56,13 +55,6 @@ const usageView = Submodel.defineView<Model, Message, Readonly<{ readonly none?:
 )
 const view = withViewInputs(usageView, {})()
 
-/** The AI credits section alone. */
-const aiCreditsView = withViewInputs(
-	Submodel.defineView<Model, Message, Readonly<{ readonly none?: never }>>((model, _inputs, h) =>
-		h.div([], aiCreditsSection(h, model, spendModelOf(model, customer, NOW))),
-	),
-	{},
-)()
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
 /** The tab once the account says this org pays for itself. */
 const entered = () =>
@@ -130,6 +122,8 @@ describe("billing tab", () => {
 
 	test("the AI credits row says which surfaces spent them, and offers a retry when that read fails", () => {
 		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
+			cycleStartMs: 0,
+			cycleEndMs: 1,
 			bySource: [
 				{ source: "triage", credits: 3.1 },
 				{ source: "chat", credits: 1.05 },
@@ -148,6 +142,7 @@ describe("billing tab", () => {
 			given(loaded),
 			expectView(text("AI credits")).toExist(),
 			expectView(text("Investigations $3.10 · Chat $1.05 · Other <$0.01")).toExist(),
+			expectView(text("Details")).toExist(),
 		)
 		const failed = step(
 			init(ADMIN, false, true).model,
@@ -160,77 +155,6 @@ describe("billing tab", () => {
 		)
 		expect(names(step(failed.model, Message.ClickedRetryAiUsage()).commands)).toContain(
 			"FetchBillingAiCreditUsage",
-		)
-	})
-
-	test("the AI credits section shows code review spend by repository and pull request", () => {
-		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
-			bySource: [{ source: "review", credits: 14.08 }],
-			days: [{ date: "1970-01-02", credits: 14.08 }],
-			byModel: [{ model: "openrouter/deepseek/deepseek-v4.1-flash", credits: 14.08 }],
-			codeReview: {
-				reviews: 230,
-				pullRequests: 160,
-				credits: 14.08,
-				unpricedReviews: 12,
-				reReviews: 70,
-				reReviewCredits: 5.2,
-				repositories: [
-					{
-						repositoryId: "00000000-0000-4000-8000-000000000001",
-						fullName: "acme/web",
-						pullRequests: 160,
-						reviews: 230,
-						credits: 14.08,
-					},
-				],
-				topPullRequests: [
-					{
-						repositoryId: "00000000-0000-4000-8000-000000000001",
-						fullName: "acme/web",
-						number: 2210,
-						title: "Faster sync",
-						url: "https://github.com/acme/web/pull/2210",
-						reviews: 7,
-						credits: 0.78,
-					},
-				],
-			},
-		})
-		scene(
-			{ update: step, view: aiCreditsView },
-			given(
-				step(
-					init(ADMIN, false, true).model,
-					Message.CompletedFetchAiUsage({ result: Result.succeed(aiUsage) }),
-				).model,
-			),
-			expectView(text("Code review by repository")).toExist(),
-			expectView(text("acme/web")).toExist(),
-			expectView(text("#2210")).toExist(),
-			expectView(text("Reviewed 7×")).toExist(),
-			expectView(text("deepseek/deepseek-v4.1-flash")).toExist(),
-			expectView(text("70")).toExist(),
-			expectView(text(/12 of this cycle's reviews ran before/u)).toExist(),
-		)
-	})
-
-	test("the AI credits section stays away while nothing was spent", () => {
-		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
-			bySource: [],
-			days: [],
-			byModel: [],
-			codeReview: null,
-		})
-		scene(
-			{ update: step, view: aiCreditsView },
-			given(
-				step(
-					init(ADMIN, false, true).model,
-					Message.CompletedFetchAiUsage({ result: Result.succeed(aiUsage) }),
-				).model,
-			),
-			expectView(text("By model")).not.toExist(),
 		)
 	})
 

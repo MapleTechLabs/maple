@@ -6,7 +6,7 @@ import { camelizeKeys } from "./autumn-http"
 /** Autumn's raw snake_case answer, through the client's own key renaming and the endpoint's decode. */
 const decode = (raw: unknown) => Schema.decodeUnknownSync(AutumnGroupedAggregate)(camelizeKeys(raw))
 const fromAutumn = (raw: unknown, byModel: unknown = { list: [] }) =>
-	aiCreditUsageOf(decode(raw), decode(byModel), null)
+	aiCreditUsageOf({ start: 0, end: 1 }, decode(raw), decode(byModel), null)
 
 const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
 

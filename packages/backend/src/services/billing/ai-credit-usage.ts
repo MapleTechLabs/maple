@@ -56,6 +56,7 @@ const byCreditsDesc = <A extends { readonly credits: number }>() =>
  * model, beside the org's code review spend.
  */
 export const aiCreditUsageOf = (
+	cycle: { readonly start: number; readonly end: number },
 	bySourceAggregate: AutumnGroupedAggregate,
 	byModelAggregate: AutumnGroupedAggregate,
 	codeReview: CodeReviewSpend | null,
@@ -66,6 +67,8 @@ export const aiCreditUsageOf = (
 		sources.set(source, (sources.get(source) ?? 0) + credits)
 	})
 	return new AiCreditUsageResponse({
+		cycleStartMs: cycle.start,
+		cycleEndMs: cycle.end,
 		bySource: Arr.sort(
 			Arr.flatMap(Arr.fromIterable(sources), ([source, credits]) =>
 				credits > 0 ? [new AiCreditSourceUsage({ source, credits })] : [],

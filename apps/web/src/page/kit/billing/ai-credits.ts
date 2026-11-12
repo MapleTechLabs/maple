@@ -1,4 +1,3 @@
-import { AI_CREDITS_FEATURE_ID, AI_CREDITS_MARKUP_PERCENT } from "@maple/domain/billing"
 import type {
 	AiCreditSourceUsage,
 	AiCreditUsageResponse,
@@ -6,7 +5,6 @@ import type {
 	CodeReviewSpendPullRequest,
 } from "@maple/domain/http"
 import { Array as Arr, Number as Num, Option, String as Str } from "effect"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { grid } from "@maple/views/ui/grid"
@@ -26,16 +24,23 @@ import {
 } from "@maple/views/ui/table"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import { sectionHeading } from "../../kit/section-heading"
-import { settingsSection } from "../../kit/settings-section"
-import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
-import type { Message, Model } from "./model"
-import { formatCredits, type SpendModel } from "./spend"
-import { AI_SOURCE_LABELS } from "./view-usage"
+import { sectionHeading } from "../section-heading"
+import { statRail, statRailItem, statRailLoading } from "../stat-rail"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
+import { formatCredits } from "./usage"
 
-type H = HtmlBuilder<Message>
+// Where a billing cycle's AI credits went: totals, each surface and model, and code review by
+// repository and pull request, for the AI credits page.
 
-export const AI_CREDITS_SECTION_ID = "settings-billing-ai-credits"
+/** Names for the `source` each AI credit charge is tracked with. */
+export const AI_SOURCE_LABELS = {
+	chat: "Chat",
+	triage: "Investigations",
+	review: "Code review",
+	bot: "Slack and Discord",
+	security_audit: "Security audits",
+	other: "Other",
+} satisfies Record<AiCreditSourceUsage["source"], string>
 
 /** A chart colour per surface, the same wherever a surface's credits are drawn. */
 const SOURCE_COLORS = {
@@ -57,69 +62,53 @@ export const modelLabel = (model: string): string =>
 		onSome: (slash) => Str.slice(slash + 1)(model),
 	})
 
-const shareBar = (h: H, value: number, total: number, color: string): Html =>
+const shareBar = <M>(h: HtmlBuilder<M>, value: number, total: number, color: string): Html =>
 	segmentedBar(h, {
 		className: "h-1 w-full rounded-none bg-muted",
 		total,
 		segments: [{ key: "share", value, color }],
 	})
 
-const figure = (h: H, value: string): Html => typography(h, { mono: true, numeric: true }, [value])
+const figure = <M>(h: HtmlBuilder<M>, value: string): Html =>
+	typography(h, { mono: true, numeric: true }, [value])
 
-/** Where this cycle's AI credits went: totals, each surface and model, and code review in detail. */
-export const aiCreditsSection = (h: H, model: Model, spend: SpendModel | null): ReadonlyArray<Html> => {
-	if (AsyncData.isLoading(model.aiUsage)) return [section(h, [statRailLoading(h, 4, 4)])]
-	const usage = AsyncData.getOrElse(model.aiUsage, () => null)
-	// A failed read already says so (with a retry) on the AI credits usage row.
-	if (usage === null) return []
+/** The breakdown's loading state: the totals rail's tiles. */
+export const aiCreditsBreakdownLoading = <M>(h: HtmlBuilder<M>): Html => statRailLoading(h, 4, 4)
+
+/**
+ * Where a cycle's AI credits went: totals, each surface and model, and code review by repository and
+ * pull request. Nothing spent and no reviews run reads as a quiet empty line.
+ */
+export const aiCreditsBreakdown = <M>(
+	h: HtmlBuilder<M>,
+	usage: AiCreditUsageResponse,
+	timeZone: string,
+): ReadonlyArray<Html> => {
 	const total = Num.sumAll(Arr.map(usage.bySource, (entry) => entry.credits))
-	if (total <= 0 && usage.codeReview === null) return []
-	const feature =
-		spend === null
-			? null
-			: Option.getOrNull(
-					Arr.findFirst(spend.features, (entry) => entry.featureId === AI_CREDITS_FEATURE_ID),
-				)
+	if (total <= 0 && usage.codeReview === null)
+		return [
+			typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
+				"No AI credits spent this cycle yet. Code review, chat, investigations and the Slack and Discord bot draw on them.",
+			]),
+		]
 	return [
-		section(h, [
-			totalsRail(h, usage, total, feature),
-			grid(h, { lg: 2, gap: "4" }, [sourcesTable(h, usage, total), modelsTable(h, usage, total)]),
-			...(usage.codeReview === null ? [] : codeReviewDetail(h, usage.codeReview)),
-		]),
+		totalsRail(h, usage, total, timeZone),
+		grid(h, { lg: 2, gap: "4" }, [sourcesTable(h, usage, total), modelsTable(h, usage, total)]),
+		...(usage.codeReview === null ? [] : codeReviewDetail(h, usage.codeReview)),
 	]
 }
 
-const section = (h: H, children: ReadonlyArray<Html>): Html =>
-	settingsSection(
-		h,
-		{
-			id: AI_CREDITS_SECTION_ID,
-			title: "AI credits",
-			description: [
-				`Where this cycle's AI credits went. Each model call is priced at what the model provider charged, plus ${AI_CREDITS_MARKUP_PERCENT}%; one credit is one dollar.`,
-			],
-			framed: false,
-		},
-		[vstack(h, { gap: "6" }, children)],
-	)
-
-const totalsRail = (
-	h: H,
+const totalsRail = <M>(
+	h: HtmlBuilder<M>,
 	usage: AiCreditUsageResponse,
 	total: number,
-	feature: { readonly included: number | null; readonly overageUnits: number } | null,
+	timeZone: string,
 ): Html => {
 	const review = usage.codeReview
-	const included = feature?.included ?? null
 	const spentTile = statRailItem(h, {
 		eyebrow: "Spent this cycle",
 		value: formatCredits(total),
-		subline:
-			included === null || feature === null
-				? "This billing cycle"
-				: feature.overageUnits > 0
-					? `${formatCredits(feature.overageUnits)} overage`
-					: `of ${formatCredits(included)} included`,
+		subline: `Since ${formatDateInTimezone(new Date(usage.cycleStartMs), { timeZone, withYear: false })}`,
 	})
 	if (review === null) {
 		const top = usage.bySource[0]
@@ -155,7 +144,7 @@ const totalsRail = (
 	])
 }
 
-const sourcesTable = (h: H, usage: AiCreditUsageResponse, total: number): Html =>
+const sourcesTable = <M>(h: HtmlBuilder<M>, usage: AiCreditUsageResponse, total: number): Html =>
 	vstack(h, { gap: "3" }, [
 		sectionHeading(h, { title: "By feature", as: "h3" }),
 		panel(h, {}, [
@@ -206,7 +195,7 @@ const sourcesTable = (h: H, usage: AiCreditUsageResponse, total: number): Html =
 /** Spend no model is named on (a security audit's sandbox fee) shows as its own row, so the table adds up. */
 const UNATTRIBUTED = "Unattributed"
 
-const modelsTable = (h: H, usage: AiCreditUsageResponse, total: number): Html => {
+const modelsTable = <M>(h: HtmlBuilder<M>, usage: AiCreditUsageResponse, total: number): Html => {
 	const named = Num.sumAll(Arr.map(usage.byModel, (entry) => entry.credits))
 	const rest = total - named
 	const rows = rest >= 0.005 ? [...usage.byModel, { model: UNATTRIBUTED, credits: rest }] : usage.byModel
@@ -257,7 +246,7 @@ const modelsTable = (h: H, usage: AiCreditUsageResponse, total: number): Html =>
 	])
 }
 
-const codeReviewDetail = (h: H, review: CodeReviewSpend): ReadonlyArray<Html> => {
+const codeReviewDetail = <M>(h: HtmlBuilder<M>, review: CodeReviewSpend): ReadonlyArray<Html> => {
 	const manyRepositories = review.repositories.length > 1
 	return [
 		vstack(h, { gap: "3" }, [
@@ -339,7 +328,11 @@ const codeReviewDetail = (h: H, review: CodeReviewSpend): ReadonlyArray<Html> =>
 	]
 }
 
-const pullRequestRow = (h: H, pr: CodeReviewSpendPullRequest, showRepository: boolean): Html => {
+const pullRequestRow = <M>(
+	h: HtmlBuilder<M>,
+	pr: CodeReviewSpendPullRequest,
+	showRepository: boolean,
+): Html => {
 	const isRepeated = pr.reviews >= REPEATED_REVIEWS
 	return tableRow(
 		h,
@@ -397,7 +390,7 @@ const pullRequestRow = (h: H, pr: CodeReviewSpendPullRequest, showRepository: bo
 	)
 }
 
-const emptyRow = (h: H, columns: number, text: string): Html =>
+const emptyRow = <M>(h: HtmlBuilder<M>, columns: number, text: string): Html =>
 	tableRow(h, [
 		tableCell(h, [typography(h, { tone: "muted" }, [text])], undefined, [
 			h.Attribute("colspan", String(columns)),

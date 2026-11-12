@@ -305,7 +305,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							],
 							{ concurrency: "unbounded" },
 						)
-						return aiCreditUsageOf(bySource, byModel, codeReview)
+						return aiCreditUsageOf(customRange, bySource, byModel, codeReview)
 					}),
 				)
 				// Invoices ride along on getOrCreateCustomer via `expand`, but through a

@@ -268,6 +268,9 @@ export class AiCreditModelUsage extends Schema.Class<AiCreditModelUsage>("AiCred
 
 /** This cycle's AI credit spend, split by surface, by day and by model. One credit is one dollar. */
 export class AiCreditUsageResponse extends Schema.Class<AiCreditUsageResponse>("AiCreditUsageResponse")({
+	/** The billing cycle the figures cover, epoch ms. */
+	cycleStartMs: Schema.Number,
+	cycleEndMs: Schema.Number,
 	/** Largest first with `other` last, surfaces that spent nothing left out. */
 	bySource: Schema.Array(AiCreditSourceUsage),
 	/** Ascending by date, days that spent nothing left out. */
