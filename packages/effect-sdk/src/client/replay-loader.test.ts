@@ -94,6 +94,18 @@ describe("startClientSession replay", () => {
 		await session.stop()
 	})
 
+	it("gives the replay session the noise filter, for the sink it starts after a rotation", async () => {
+		stubPage()
+		const session = startClientSession(BASE)
+		await vi.waitFor(() => expect(startReplaySession).toHaveBeenCalledTimes(1))
+		const filter = vi.mocked(startReplaySession).mock.calls[0]?.[0].isErrorNoise
+		expect(
+			filter?.("ResizeObserver loop completed with undelivered notifications.", "window.onerror"),
+		).toBe(true)
+		expect(filter?.(new Error("boom"), "window.onerror", "https://app.example.com/app.js")).toBe(false)
+		await session.stop()
+	})
+
 	it("records no replay for a crawler, which still gets its session events", async () => {
 		stubPage("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
 		const session = startClientSession(BASE)

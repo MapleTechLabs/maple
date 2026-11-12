@@ -151,6 +151,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 						serviceVersion: config.serviceVersion,
 						maskAllInputs: engineConfig.maskAllInputs,
 						maskAllText: engineConfig.maskAllText,
+						isErrorNoise: engineConfig.isErrorNoise,
 						canvasFps: config.replay?.canvasFps,
 						getIdentity: getCurrentIdentity,
 						captureUserEmail: config.privacy?.captureUserEmail,

@@ -260,6 +260,7 @@ function start(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 					maskAllInputs: config.maskAllInputs,
 					maskAllText: config.maskAllText,
 					mode: replayMode,
+					isErrorNoise,
 					canvasFps: config.canvasFps,
 					networkBodies: config.networkBodies,
 				})
