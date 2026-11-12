@@ -141,7 +141,6 @@ describe("billing tab", () => {
 			{ update: step, view },
 			given(loaded),
 			expectView(text("AI credits")).toExist(),
-			expectView(text("Investigations $3.10 · Chat $1.05 · Other <$0.01")).toExist(),
 			expectView(text("Details")).toExist(),
 		)
 		const failed = step(

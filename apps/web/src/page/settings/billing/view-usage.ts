@@ -12,7 +12,6 @@ import {
 	type SpendModel,
 	usageMeter,
 } from "./spend"
-import { AI_SOURCE_LABELS } from "../../kit/billing/ai-credits"
 import { formatCount, formatCredits, formatUsage, formatUsageAgainst } from "../../kit/billing/usage"
 import { aiCreditsHref } from "../ai-credits/hrefs"
 import { textLink } from "@maple/views/ui/text-link"
@@ -185,7 +184,7 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 			]
 }
 
-/** Where this cycle's AI credits went, "Investigations $3.10 · Chat $1.05", and the page that breaks it down. */
+/** The AI credits row's link to the page that breaks the spend down. */
 const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray<Html> => {
 	if (feature.featureId !== AI_CREDITS_FEATURE_ID) return []
 	if (AsyncData.isFailure(model.aiUsage))
@@ -201,30 +200,9 @@ const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray
 				),
 			]),
 		]
-	const sources = AsyncData.getOrElse(model.aiUsage, () => null)?.bySource ?? []
 	return [
-		hstack(h, { gap: "2", shrink: true }, [
-			...(sources.length === 0
-				? []
-				: [
-						typography(
-							h,
-							{ size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true },
-							[
-								Arr.join(
-									Arr.map(
-										sources,
-										(entry) =>
-											`${AI_SOURCE_LABELS[entry.source]} ${formatCredits(entry.credits)}`,
-									),
-									" · ",
-								),
-							],
-						),
-					]),
-			typography(h, { size: "2xs", className: "shrink-0" }, [
-				textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
-			]),
+		typography(h, { size: "2xs" }, [
+			textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
 		]),
 	]
 }
