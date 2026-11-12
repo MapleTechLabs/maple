@@ -18,7 +18,7 @@ const FAMILY_CATEGORIES = new Map([
 const OTHER_CATEGORY = "Other"
 
 /** `CloudService` of every subscription fee: the plans are not products with usage of their own. */
-export const SUBSCRIPTIONS_SERVICE = "Subscriptions"
+const SUBSCRIPTIONS_SERVICE = "Subscriptions"
 
 const dayOf = (timestamp: string): string => Str.slice(0, 10)(timestamp)
 
@@ -84,6 +84,9 @@ export const toUsageRows = (
 	})
 }
 
+/** States whose listed price was not charged: a trial is free, the other two were never paid. */
+const UNCHARGED_STATES = ["Trial", "Failed", "Expired"]
+
 /** Monthly periods a fee is stepped back over: the sync reads a year, and a period starts within the last month. */
 const MONTHLY_PERIODS = 14
 
@@ -107,10 +110,8 @@ const periodStarts = (subscription: Subscription, window: CostPullWindow): Reado
 }
 
 /**
- * Each paid subscription's fee, as a purchase on the day a billing period started inside the
- * window. Cloudflare reports the current period only: earlier months are stepped back from it at
- * today's price, which assumes the price did not change. A yearly fee is on its current period's
- * start alone.
+ * Each paid subscription's fee, as a purchase on the days its billing periods started in the window.
+ * Cloudflare reports the current period only: earlier ones use today's price, as if it never changed.
  */
 export const toSubscriptionRows = (
 	subscriptions: ReadonlyArray<Subscription>,
@@ -120,7 +121,7 @@ export const toSubscriptionRows = (
 ): ReadonlyArray<CostPullRow> => {
 	const fees = Arr.flatMap(subscriptions, (subscription) => {
 		const price = subscription.price ?? 0
-		return price > 0
+		return price > 0 && !Arr.contains(UNCHARGED_STATES, subscription.state ?? "")
 			? Arr.map(periodStarts(subscription, window), (day) => ({
 					day,
 					price,

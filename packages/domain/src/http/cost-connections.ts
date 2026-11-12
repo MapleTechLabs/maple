@@ -17,7 +17,7 @@ export class CostConnectionRemoved extends Schema.Class<CostConnectionRemoved>("
 /** The database or the provider could not be reached; its own text can carry internals, so it stays server-side. */
 export class CostConnectionPersistenceError extends HttpTaggedError<CostConnectionPersistenceError>()(
 	"@maple/http/cost-connections/CostConnectionPersistenceError",
-	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+	{ message: Schema.String },
 	{
 		status: 503,
 		code: "cost_connection_unavailable",

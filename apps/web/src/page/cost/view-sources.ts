@@ -11,9 +11,10 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
-import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry, credentialProviderOf } from "./providers"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 
 type H = HtmlBuilder<Message>
@@ -30,19 +31,21 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
-/** What a row offers: an AWS source is its connection's, an OpenRouter one is its key. */
-const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> =>
-	source.provider === "openrouter"
-		? [
+/** What a row offers: a connection's source is managed there, a pasted credential's here. */
+const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
+	const provider = credentialProviderOf(source.provider)
+	return provider === null
+		? [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
+		: [
 				button(
 					h,
 					{
 						variant: "ghost",
 						size: "sm",
 						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedReplaceKey())],
+						attributes: [h.OnClick(Message.ClickedReplaceCredential({ provider }))],
 					},
-					["Replace key"],
+					[CREDENTIAL_SOURCES[provider].replace.label],
 				),
 				button(
 					h,
@@ -50,12 +53,12 @@ const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArra
 						variant: "ghost",
 						size: "sm",
 						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedRemoveSource())],
+						attributes: [h.OnClick(Message.ClickedRemoveSource({ provider }))],
 					},
 					["Remove"],
 				),
 			]
-		: [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
+}
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
 const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {

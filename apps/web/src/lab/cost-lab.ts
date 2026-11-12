@@ -1,8 +1,7 @@
-import { OpenRouterCostKeyRemoved, OpenRouterCostKeySaved } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
-import { Array as Arr, Effect, Option, Result, Schema } from "effect"
+import { Array as Arr, Effect, Option, Record as Rec, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -14,23 +13,26 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	ReadCostGrants,
+	RemoveCloudflareCostToken,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
+	SaveCloudflareCostToken,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
+import type { CredentialProvider } from "../page/cost/providers"
 import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
 import {
 	LAB_NOW_MS,
-	LAB_OPENROUTER_KEY,
 	LAB_SOURCES,
 	LAB_TODAY,
+	type LabSourceChanges,
 	labBreakdown,
 	labSourcesWith,
 	labTimeseries,
@@ -57,6 +59,10 @@ export const LabState = Schema.Literals([
 	"key-refused",
 	"replace-key",
 	"remove-source",
+	"add-cloudflare",
+	"token-refused",
+	"replace-token",
+	"remove-cloudflare",
 	"member",
 	"member-onramp",
 ])
@@ -74,8 +80,11 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 
 export const Model = Schema.Struct({
 	state: LabState,
-	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
-	openRouter: Schema.NullOr(Schema.Boolean),
+	/** Each pasted-credential source added (true) or removed (false) since the state loaded; null before either. */
+	changes: Schema.Struct({
+		openrouter: Schema.NullOr(Schema.Boolean),
+		cloudflare: Schema.NullOr(Schema.Boolean),
+	}),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -84,8 +93,10 @@ export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessa
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
-/** What the lab answers from: the state it loaded in, and what the reader did to OpenRouter since. */
-type World = Readonly<{ state: LabState; openRouter: boolean | null }>
+/** What the lab answers from: the state it loaded in, and what the reader did to its sources since. */
+type World = Readonly<{ state: LabState; changes: LabSourceChanges }>
+
+const NO_CHANGES: LabSourceChanges = { openrouter: null, cloudflare: null }
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -101,7 +112,9 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "member-onramp" ||
 	state === "add-source" ||
 	state === "add-openrouter" ||
-	state === "key-refused"
+	state === "key-refused" ||
+	state === "add-cloudflare" ||
+	state === "token-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -109,20 +122,35 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "add-source":
 			return [CostMessage.ClickedAddSource()]
 		case "add-openrouter":
-			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddOpenRouter()]
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
 		case "key-refused":
 			return [
 				CostMessage.ClickedAddSource(),
-				CostMessage.ClickedAddOpenRouter(),
-				CostMessage.GotKeyDraftMessage({
+				CostMessage.PickedProvider({ provider: "openrouter" }),
+				CostMessage.GotCredentialDraftMessage({
 					message: Field.Message.ChangedValue({ value: "sk-or-v1-0123456789abcdef0123456789" }),
 				}),
-				CostMessage.SubmittedKey(),
+				CostMessage.SubmittedCredential(),
 			]
 		case "replace-key":
-			return [CostMessage.ClickedReplaceKey()]
+			return [CostMessage.ClickedReplaceCredential({ provider: "openrouter" })]
 		case "remove-source":
-			return [CostMessage.ClickedRemoveSource()]
+			return [CostMessage.ClickedRemoveSource({ provider: "openrouter" })]
+		case "add-cloudflare":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "cloudflare" })]
+		case "token-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.PickedProvider({ provider: "cloudflare" }),
+				CostMessage.GotCredentialDraftMessage({
+					message: Field.Message.ChangedValue({ value: "cfut_0123456789abcdefghij0123456789" }),
+				}),
+				CostMessage.SubmittedCredential(),
+			]
+		case "replace-token":
+			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
+		case "remove-cloudflare":
+			return [CostMessage.ClickedRemoveSource({ provider: "cloudflare" })]
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -136,6 +164,11 @@ const refusedKey = {
 	...toLoadFailure("refused"),
 	message:
 		"This is a regular API key. Reading spend needs a management key, which you create under Settings, Management keys in OpenRouter.",
+}
+
+const refusedToken = {
+	...toLoadFailure("refused"),
+	message: "This token can read 3 accounts. Create one limited to a single account.",
 }
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -167,6 +200,9 @@ const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
 
+const removedAnswer = (provider: CredentialProvider) =>
+	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
+
 /** A read's answer: the fixture's, or the outage in the `error` state. */
 const settled = <A>(state: LabState, value: () => A): Result.Result<A, typeof failure> =>
 	state === "error" ? Result.fail(failure) : Result.succeed(value())
@@ -188,13 +224,15 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	const filtersOf = (filters: WindowInput["filters"]) =>
 		state === "empty-window" ? { account: ["000000000000"] } : filters
 	// A removed source's cost is not read any more, under any filter.
-	const withoutOpenRouter = world.openRouter === false
+	const removed = Arr.flatMap(Rec.toEntries(world.changes), ([provider, added]) =>
+		added === false ? [provider] : [],
+	)
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
 				CostMessage.CompletedLoadSources({
 					key,
-					result: Result.succeed(labSourcesWith(sourcesFor(state), world.openRouter)),
+					result: Result.succeed(labSourcesWith(sourcesFor(state), world.changes)),
 				}),
 			)
 		case FetchCostTotals.name:
@@ -202,7 +240,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedLoadTotals({
 					key,
 					result: settled(state, () =>
-						labTotals({ days, filters: filtersOf(input.filters), withoutOpenRouter }),
+						labTotals({ days, filters: filtersOf(input.filters), removed }),
 					),
 				}),
 			)
@@ -214,7 +252,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labTimeseries({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							removed,
 							groupBy: input.groupBy,
 							limit: input.limit,
 						}),
@@ -229,7 +267,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labBreakdown({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							removed,
 							groupBy: input.groupBy,
 							sortBy: input.sortBy,
 						}),
@@ -244,34 +282,37 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			)
 		case SaveOpenRouterCostKey.name:
 			return Option.some(
-				CostMessage.CompletedSaveKey({
-					result:
-						state === "key-refused"
-							? Result.fail(refusedKey)
-							: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: LAB_OPENROUTER_KEY })),
+				CostMessage.CompletedSaveCredential({
+					provider: "openrouter",
+					result: state === "key-refused" ? Result.fail(refusedKey) : Result.succeed(undefined),
+				}),
+			)
+		case SaveCloudflareCostToken.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "cloudflare",
+					result: state === "token-refused" ? Result.fail(refusedToken) : Result.succeed(undefined),
 				}),
 			)
 		case RemoveOpenRouterCostKey.name:
-			return Option.some(
-				CostMessage.CompletedRemoveKey({
-					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
-				}),
-			)
+			return Option.some(removedAnswer("openrouter"))
+		case RemoveCloudflareCostToken.name:
+			return Option.some(removedAnswer("cloudflare"))
 		default:
 			return Option.none()
 	}
 }
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
-type Settled = Step & Pick<World, "openRouter">
+type Settled = Step & Pick<World, "changes">
 
-/** A saved key adds OpenRouter to the sources the lab answers with next, a removal takes it out. */
-const openRouterAfter = (openRouter: boolean | null, answers: ReadonlyArray<CostMessage>) =>
-	Arr.reduce(answers, openRouter, (current, answer) =>
-		answer._tag === "CompletedSaveKey" && Result.isSuccess(answer.result)
-			? true
-			: answer._tag === "CompletedRemoveKey" && Result.isSuccess(answer.result)
-				? false
+/** A saved credential adds its provider to the sources the lab answers with next, a removal takes it out. */
+const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMessage>): LabSourceChanges =>
+	Arr.reduce(answers, changes, (current, answer) =>
+		answer._tag === "CompletedSaveCredential" && Result.isSuccess(answer.result)
+			? { ...current, [answer.provider]: true }
+			: answer._tag === "CompletedRemoveCredential" && Result.isSuccess(answer.result)
+				? { ...current, [answer.provider]: false }
 				: current,
 	)
 
@@ -284,7 +325,7 @@ const settle = (world: World, step: Step): Settled => {
 		Option.toArray(answerOf(world, step.model.search, command)),
 	)
 	const kept = keepLocal(step.commands)
-	if (answers.length === 0) return { model: step.model, commands: kept, openRouter: world.openRouter }
+	if (answers.length === 0) return { model: step.model, commands: kept, changes: world.changes }
 	const next = Arr.reduce(
 		answers,
 		{ model: step.model, commands: Arr.empty<CostCommand>() },
@@ -293,7 +334,7 @@ const settle = (world: World, step: Step): Settled => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle({ ...world, openRouter: openRouterAfter(world.openRouter, answers) }, next)
+	const rest = settle({ ...world, changes: changesAfter(world.changes, answers) }, next)
 	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
@@ -312,18 +353,18 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null }
+	const world: World = { state: flags.state, changes: NO_CHANGES }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
 		const settled = settle(
-			{ ...world, openRouter: step.openRouter },
+			{ ...world, changes: step.changes },
 			{ model: next.model, commands: next.commands ?? [] },
 		)
 		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
 	return {
-		model: { state: flags.state, openRouter: ready.openRouter, cost: ready.model },
+		model: { state: flags.state, changes: ready.changes, cost: ready.model },
 		commands: lift(ready.commands),
 	}
 }
@@ -338,11 +379,11 @@ export const update = (model: Model, message: Message): Return =>
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
 			const ready = settle(
-				{ state: model.state, openRouter: model.openRouter },
+				{ state: model.state, changes: model.changes },
 				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
 			)
 			return {
-				model: { ...model, openRouter: ready.openRouter, cost: ready.model },
+				model: { ...model, changes: ready.changes, cost: ready.model },
 				commands: lift(ready.commands),
 			}
 		},

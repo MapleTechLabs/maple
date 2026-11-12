@@ -1,5 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
+import { Option, Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -11,26 +12,32 @@ export type CostProviderEntry = Readonly<{
 	icon: IconName
 	iconClassName?: string
 	requestUsd: number | null
+	/** What its first sync brings in: this month and the last with older months after, or all it keeps. */
+	firstSync: "months" | "four_weeks"
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
+// Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
 export const COST_PROVIDERS = {
 	aws: {
 		name: PROVIDERS.aws.name,
 		icon: PROVIDERS.aws.icon,
 		iconClassName: PROVIDERS.aws.iconClassName,
 		requestUsd: 0.01,
+		firstSync: "months",
 	},
 	openrouter: {
 		name: "OpenRouter",
 		icon: "OpenRouterIcon",
 		iconClassName: "text-foreground",
 		requestUsd: null,
+		firstSync: "four_weeks",
 	},
 	cloudflare: {
 		name: PROVIDERS.cloudflare.name,
 		icon: PROVIDERS.cloudflare.icon,
 		requestUsd: null,
+		firstSync: "months",
 	},
 	planetscale: {
 		name: PROVIDERS.planetscale.name,
@@ -38,3 +45,16 @@ export const COST_PROVIDERS = {
 		requestUsd: null,
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
+
+/**
+ * The providers added by pasting a credential on the Cost page, which can also replace it and
+ * remove the source. Each one's form and wording are in `credential-sources.ts`.
+ */
+export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
+export type CredentialProvider = typeof CredentialProvider.Type
+
+const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)
+
+/** `provider` as one whose source is its pasted credential, or null for a connection's source. */
+export const credentialProviderOf = (provider: CostProvider): CredentialProvider | null =>
+	Option.getOrNull(decodeCredentialProvider(provider))

@@ -1,7 +1,6 @@
-// Brings `cost_sources` in step with `cost_connections` for one provider that is read with a
-// pasted credential: a source while the credential exists, named after its account, gone with it.
-// The sync lane runs it for every org each tick; a credential write runs it for its own org, so
-// the Cost page sees the source before the next tick.
+// Brings `cost_sources` in step with `cost_connections` for one provider read with a pasted
+// credential: a source while the credential exists, named after its account, gone with it. The
+// sync lane runs it for every org each tick, a credential write for its own org at once.
 import type { MapleDb } from "@maple/db/client"
 import { CostConnections, CostSources } from "@maple/db/tables"
 import type { CostProvider } from "@maple/domain/cost"
@@ -11,10 +10,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { Array as Arr, Effect } from "effect"
 import { randomUUID } from "node:crypto"
 
-/**
- * The providers whose credential lives in `cost_connections`. The sync reconciles each one: a
- * provider added here needs no table, slot or reconcile of its own.
- */
+/** The providers whose credential lives in `cost_connections`: one added here needs no table, slot or reconcile of its own. */
 export const COST_CONNECTION_PROVIDERS = [
 	"cloudflare",
 	"planetscale",

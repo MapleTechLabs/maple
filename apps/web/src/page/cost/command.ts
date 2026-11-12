@@ -1,4 +1,9 @@
-import { CostBreakdownSortBy, CostFilters, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
+import {
+	CloudflareCostTokenRequest,
+	CostBreakdownSortBy,
+	CostFilters,
+	OpenRouterKeyUpdateRequest,
+} from "@maple/domain/http"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -91,19 +96,46 @@ export const ReadCostGrants = Command.define("ReadCostGrants", {
 	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
+// A credential's save and removal answer with their provider: the page reads only whether they worked.
+
 /** Saves the org's OpenRouter management key, which makes (or keeps) its cost source. */
 export const SaveOpenRouterCostKey = Command.define("SaveOpenRouterCostKey", {
 	args: { apiKey: Schema.String },
-	messages: [Message.CompletedSaveKey],
+	messages: [Message.CompletedSaveCredential],
 	execute: ({ apiKey }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.openRouterCost.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
-		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "openrouter", result })),
+		),
 })
 
 export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey", {
-	messages: [Message.CompletedRemoveKey],
+	messages: [Message.CompletedRemoveCredential],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterCost.remove()).pipe(
-		settleTo((result) => Message.CompletedRemoveKey({ result })),
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "openrouter", result })),
+	),
+})
+
+/** Saves the org's Cloudflare API token, which makes (or keeps) its cost source. */
+export const SaveCloudflareCostToken = Command.define("SaveCloudflareCostToken", {
+	args: { apiToken: Schema.String },
+	messages: [Message.CompletedSaveCredential],
+	execute: ({ apiToken }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.cloudflareCost.set({ payload: new CloudflareCostTokenRequest({ apiToken }) }),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "cloudflare", result })),
+		),
+})
+
+export const RemoveCloudflareCostToken = Command.define("RemoveCloudflareCostToken", {
+	messages: [Message.CompletedRemoveCredential],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.cloudflareCost.remove()).pipe(
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "cloudflare", result })),
 	),
 })

@@ -1,16 +1,19 @@
-/**
- * The slice of Cloudflare's REST API the cost source uses: the accounts a token reads, an
- * account's daily billable usage and its subscriptions. Each call reads the status off a plain
- * request and decodes only the fields Maple reads. Failures fold into one
- * {@link CloudflareBillingError} whose `kind` says what the caller does next.
- */
+// The slice of Cloudflare's REST API the cost source uses: the accounts a token reads, an account's
+// daily billable usage and its subscriptions. Each call reads the status off a plain request, and
+// every failure is one `CloudflareBillingError` whose `kind` says what the caller does next.
 import { Duration, Effect, Redacted, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import type { CostPullWindow } from "../../CostProvider"
+import { addDays } from "../../sync-plan"
 
 const BASE_URL = "https://api.cloudflare.com/client/v4"
 const REQUEST_TIMEOUT = Duration.seconds(30)
 const PAGE_SIZE = 50
 const MAX_SUBSCRIPTION_PAGES = 10
+
+/** What a save and a pull both say about an account `billable-usage/info` reports as not covered. */
+export const NOT_COVERED =
+	"Cloudflare has no usage-based billing data for this account. Accounts on an enterprise contract are not supported yet."
 
 export class CloudflareBillingError extends Schema.TaggedError<CloudflareBillingError>()(
 	"@maple/backend/cost/CloudflareBillingError",
@@ -86,6 +89,13 @@ const call = <S extends Schema.Top>(
 			TimeoutError: failed("upstream", "request timed out"),
 			SchemaError: failed("invalid_response", "answered with a body Maple cannot read"),
 		}),
+		// Callers show their own message; which failure it was stays on the span.
+		Effect.tapError((error) =>
+			Effect.annotateCurrentSpan({
+				"maple.cost.cloudflare.error": error.kind,
+				"maple.cost.cloudflare.status": error.status ?? 0,
+			}),
+		),
 		// A redirect is not Cloudflare answering, so the token is never followed to another host.
 		Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 		Effect.annotateSpans("peer.service", "cloudflare"),
@@ -93,7 +103,6 @@ const call = <S extends Schema.Top>(
 }
 
 const Account = Schema.Struct({ id: Schema.String, name: Schema.String })
-export type CloudflareAccount = typeof Account.Type
 
 /**
  * The accounts the token can see, and how many there are in all. A token limited to one account
@@ -149,23 +158,26 @@ export const UsageRow = Schema.Struct({
 })
 export type UsageRow = typeof UsageRow.Type
 
+/** A billing period is 31 days at most: a range starting this long before a day includes its period's start. */
+const PERIOD_LEAD_DAYS = 31
+
 /**
- * The days before `to` of every billing period that starts in `[from, to)`: `to` is exclusive, and
- * a period that started before `from` returns nothing, whatever days of it the range covers. The
- * range is 90 days at most. One answer, no paging.
+ * Every usage row of the window's days. Cloudflare answers the days before `to` of each billing
+ * period that starts in `[from, to)`, so the range starts a period before the window and ends the
+ * day after it, and the answer also holds days before the window. 90 days at most, no paging.
  */
 export const getBillableUsage = (
 	httpClient: HttpClient.HttpClient,
 	token: Redacted.Redacted,
 	accountId: string,
-	range: { readonly from: string; readonly to: string },
+	window: CostPullWindow,
 ) =>
 	call(
 		httpClient,
 		token,
 		HttpClientRequest.setUrlParams(
 			HttpClientRequest.get(`${BASE_URL}/accounts/${encodeURIComponent(accountId)}/billable-usage`),
-			range,
+			{ from: addDays(window.startDay, -PERIOD_LEAD_DAYS), to: addDays(window.endDay, 1) },
 		),
 		Schema.Array(UsageRow),
 	).pipe(Effect.map((body) => body.result))
@@ -175,6 +187,8 @@ export const Subscription = Schema.Struct({
 	price: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	currency: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	frequency: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** `Paid`, `Trial`, `Cancelled`, `Failed`, `Expired` and others. */
+	state: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	current_period_start: Schema.optionalKey(Schema.NullOr(isoDay)),
 	created_date: Schema.optionalKey(Schema.NullOr(isoDay)),
 	rate_plan: Schema.optionalKey(
@@ -205,7 +219,7 @@ const subscriptionsPage = (
 		Schema.Array(Subscription),
 	)
 
-/** Every subscription of the account, zone plans included, over as many pages as it takes. */
+/** Every subscription of the account, zone plans included. More pages than Maple reads fail: part of them would under-count. */
 export const listSubscriptions = (
 	httpClient: HttpClient.HttpClient,
 	token: Redacted.Redacted,
@@ -213,7 +227,13 @@ export const listSubscriptions = (
 ) =>
 	Effect.gen(function* () {
 		const first = yield* subscriptionsPage(httpClient, token, accountId, 1)
-		const pages = Math.min(first.result_info?.total_pages ?? 1, MAX_SUBSCRIPTION_PAGES)
+		const pages = first.result_info?.total_pages ?? 1
+		if (pages > MAX_SUBSCRIPTION_PAGES) {
+			return yield* new CloudflareBillingError({
+				message: `Cloudflare lists ${pages} pages of subscriptions, more than Maple reads`,
+				kind: "invalid_response",
+			})
+		}
 		const rest = yield* Effect.forEach(pages < 2 ? [] : Arr.range(2, pages), (page) =>
 			Effect.map(subscriptionsPage(httpClient, token, accountId, page), (body) => body.result),
 		)

@@ -1,8 +1,6 @@
-/**
- * The Cloudflare API token an org's Cloudflare charges are read with: checked with Cloudflare,
- * then kept in the shared cost connection store. Saving it makes the org's Cloudflare cost source,
- * replacing it keeps the source and its history, removing it removes the source.
- */
+// The Cloudflare API token an org's Cloudflare charges are read with: checked with Cloudflare, then
+// kept in the shared cost connection store. Saving it makes the org's Cloudflare cost source,
+// replacing it keeps the source and its history, removing it removes the source.
 import {
 	CLOUDFLARE_COST_TOKEN_MAX_LENGTH,
 	CloudCostDisabledError,
@@ -19,9 +17,6 @@ import * as CloudflareBilling from "./providers/cloudflare/cloudflare-billing-ap
 import { addDays, utcToday } from "./sync-plan"
 
 const VALIDATE_TIMEOUT = Duration.seconds(20)
-
-/** What the usage read of the check asks for: enough days back to include a billing period's start. */
-const CHECK_DAYS = 32
 
 const NO_BILLING_ACCESS =
 	"This token cannot read the account's billing. Create a custom token with the Billing: Read permission."
@@ -76,17 +71,7 @@ export class CloudflareCostConnectionService extends Context.Service<
 		const asked = <A>(
 			step: "accounts" | "billing",
 			call: Effect.Effect<A, CloudflareBilling.CloudflareBillingError>,
-		) =>
-			call.pipe(
-				// The page shows the mapped message; which failure it was stays on the span.
-				Effect.tapError((error) =>
-					Effect.annotateCurrentSpan({
-						"maple.cost.cloudflare.error": error.kind,
-						"maple.cost.cloudflare.status": error.status ?? 0,
-					}),
-				),
-				Effect.mapError(toTokenError(step)),
-			)
+		) => Effect.mapError(call, toTokenError(step))
 
 		/**
 		 * The one account the token reads, once it has proved it can read that account's billing:
@@ -110,17 +95,16 @@ export class CloudflareCostConnectionService extends Context.Service<
 					CloudflareBilling.getBillableUsageInfo(httpClient, token, account.id),
 				)
 				if (!info.covered) {
-					return yield* refused(
-						"Cloudflare has no usage-based billing data for this account. Accounts on an enterprise contract are not supported yet.",
-					)
+					return yield* refused(CloudflareBilling.NOT_COVERED)
 				}
 				const now = yield* Clock.currentTimeMillis
-				const today = utcToday(now)
+				// Yesterday is the newest day Cloudflare serves.
+				const yesterday = addDays(utcToday(now), -1)
 				yield* asked(
 					"billing",
 					CloudflareBilling.getBillableUsage(httpClient, token, account.id, {
-						from: addDays(today, -CHECK_DAYS),
-						to: today,
+						startDay: yesterday,
+						endDay: yesterday,
 					}),
 				)
 				return { accountId: account.id, accountLabel: account.name }

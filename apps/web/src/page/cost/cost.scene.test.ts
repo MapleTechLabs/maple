@@ -5,8 +5,6 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
-	OpenRouterCostKeyRemoved,
-	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -183,7 +181,7 @@ describe("cost page", () => {
 			expectView(text("Add a cost source")).toExist(),
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
-			expectView(text(/OpenRouter requests are free/)).toExist(),
+			expectView(text(/OpenRouter and Cloudflare requests are free/)).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
 			expectView(
 				role("link", { name: "Turn on Cost for an AWS account that is connected" }),
@@ -193,7 +191,7 @@ describe("cost page", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(opened, Message.ClickedAddOpenRouter()).model),
+			given(pageUpdate(opened, Message.PickedProvider({ provider: "openrouter" })).model),
 			resolveTheme,
 			dialogMounted,
 			expectView(text("Add OpenRouter")).toExist(),
@@ -211,31 +209,40 @@ describe("cost page", () => {
 	test("a saved key is sent trimmed; a refusal stays under the field until the key changes", () => {
 		const form = pageUpdate(
 			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
-			Message.ClickedAddOpenRouter(),
+			Message.PickedProvider({ provider: "openrouter" }),
 		).model
 		const typed = (model: Model, value: string) =>
-			pageUpdate(model, Message.GotKeyDraftMessage({ message: Field.Message.ChangedValue({ value }) }))
-				.model
+			pageUpdate(
+				model,
+				Message.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
 		// Nothing typed sends nothing.
-		expect(names(pageUpdate(form, Message.SubmittedKey()).commands)).toEqual([])
+		expect(names(pageUpdate(form, Message.SubmittedCredential()).commands)).toEqual([])
 
-		const saving = pageUpdate(typed(form, "  sk-or-v1-regular-key-0123456789  "), Message.SubmittedKey())
+		const saving = pageUpdate(
+			typed(form, "  sk-or-v1-regular-key-0123456789  "),
+			Message.SubmittedCredential(),
+		)
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveOpenRouterCostKey", args: { apiKey: "sk-or-v1-regular-key-0123456789" } },
 		])
 		// A key the request would refuse to carry is never sent, and the dialog says why.
-		const oversized = pageUpdate(typed(form, `sk-or-v1-${Str.repeat(300)("a")}`), Message.SubmittedKey())
+		const oversized = pageUpdate(
+			typed(form, `sk-or-v1-${Str.repeat(300)("a")}`),
+			Message.SubmittedCredential(),
+		)
 		expect(names(oversized.commands)).toEqual([])
-		expect([oversized.model.sourceWrite, oversized.model.keyError]).toEqual([
+		expect([oversized.model.sourceWrite, oversized.model.credentialError]).toEqual([
 			"Idle",
 			"That is too long to be an OpenRouter key.",
 		])
 		// A second submit while the first is in flight sends nothing more.
-		expect(names(pageUpdate(saving.model, Message.SubmittedKey()).commands)).toEqual([])
+		expect(names(pageUpdate(saving.model, Message.SubmittedCredential()).commands)).toEqual([])
 
 		const refused = pageUpdate(
 			saving.model,
-			Message.CompletedSaveKey({
+			Message.CompletedSaveCredential({
+				provider: "openrouter",
 				result: Result.fail({
 					...toLoadFailure("refused"),
 					message: "This is a regular API key. Reading spend needs a management key.",
@@ -252,32 +259,30 @@ describe("cost page", () => {
 				"This is a regular API key. Reading spend needs a management key.",
 			),
 		)
-		expect(typed(refused, "sk-or-v1-management-key-0123456789").keyError).toBeNull()
+		expect(typed(refused, "sk-or-v1-management-key-0123456789").credentialError).toBeNull()
 	})
 
 	test("a saved key closes the dialog, says when the sync runs and reads the sources again", () => {
 		const form = pageUpdate(
 			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
-			Message.ClickedAddOpenRouter(),
+			Message.PickedProvider({ provider: "openrouter" }),
 		).model
 		const saving = pageUpdate(
 			pageUpdate(
 				form,
-				Message.GotKeyDraftMessage({
+				Message.GotCredentialDraftMessage({
 					message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
 				}),
 			).model,
-			Message.SubmittedKey(),
+			Message.SubmittedCredential(),
 		).model
 		const saved = pageUpdate(
 			saving,
-			Message.CompletedSaveKey({
-				result: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: "sk-or-v1-man...789" })),
-			}),
+			Message.CompletedSaveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(saved.model.addDialog.isOpen).toBe(false)
 		// The key does not outlive the dialog.
-		expect(saved.model.keyDraft.value).toBe("")
+		expect(saved.model.credentialDraft.value).toBe("")
 		expect(names(saved.commands)).toContain("FetchCostSources")
 		expect(saved.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -315,7 +320,10 @@ describe("cost page", () => {
 		)
 
 		// Replace opens the key form with no providers to go back to.
-		const replacing = pageUpdate(model, Message.ClickedReplaceKey()).model
+		const replacing = pageUpdate(
+			model,
+			Message.ClickedReplaceCredential({ provider: "openrouter" }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(replacing),
@@ -334,15 +342,13 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
 		)
 
-		const confirming = pageUpdate(model, Message.ClickedRemoveSource()).model
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "openrouter" })).model
 		expect(confirming.removeDialog.isOpen).toBe(true)
 		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
 		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
 		const removed = pageUpdate(
 			removing.model,
-			Message.CompletedRemoveKey({
-				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
-			}),
+			Message.CompletedRemoveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(removed.model.removeDialog.isOpen).toBe(false)
 		// The reads name the org's sources: without reading them again the removed source's cost stays.
@@ -387,9 +393,7 @@ describe("cost page", () => {
 		const staleKey = reloading.sources.key ?? ""
 		const afterWrite = pageUpdate(
 			reloading,
-			Message.CompletedRemoveKey({
-				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
-			}),
+			Message.CompletedRemoveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(names(afterWrite.commands)).toContain("FetchCostSources")
 		const stale = pageUpdate(
@@ -407,15 +411,13 @@ describe("cost page", () => {
 			pageUpdate(
 				pageUpdate(
 					replacing,
-					Message.GotKeyDraftMessage({
+					Message.GotCredentialDraftMessage({
 						message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
 					}),
 				).model,
-				Message.SubmittedKey(),
+				Message.SubmittedCredential(),
 			).model,
-			Message.CompletedSaveKey({
-				result: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: "sk-or-v1-man...789" })),
-			}),
+			Message.CompletedSaveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(replaced.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -423,6 +425,191 @@ describe("cost page", () => {
 				title: "OpenRouter key replaced",
 				description: "The next sync runs within a few minutes.",
 			}),
+		)
+	})
+
+	test("Cloudflare is added by pasting an API token, and a refused one says why under the field", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^Cloudflare/ })).toExist(),
+			expectView(text("Daily charges by product, plus plan fees")).toExist(),
+		)
+		const form = pageUpdate(opened, Message.PickedProvider({ provider: "cloudflare" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(form),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add Cloudflare")).toExist(),
+			expectView(text("API token")).toExist(),
+			expectView(role("link", { name: "Create a custom token" })).toHaveAttr(
+				"href",
+				"https://dash.cloudflare.com/profile/api-tokens",
+			),
+			expectView(text(/with the Billing: Read permission on one account/)).toExist(),
+			// The other provider's form is not this one.
+			expectView(text("Management key")).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+			expectView(role("button", { name: "Back" })).toExist(),
+		)
+		const typed = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
+
+		const saving = pageUpdate(
+			typed(form, "  cfut_0123456789abcdefghij0123456789  "),
+			Message.SubmittedCredential(),
+		)
+		expect(saving.commands).toMatchObject([
+			{ name: "SaveCloudflareCostToken", args: { apiToken: "cfut_0123456789abcdefghij0123456789" } },
+		])
+		const oversized = pageUpdate(
+			typed(form, `cfut_${Str.repeat(300)("a")}`),
+			Message.SubmittedCredential(),
+		)
+		expect(names(oversized.commands)).toEqual([])
+		expect(oversized.model.credentialError).toBe("That is too long to be a Cloudflare API token.")
+
+		const refused = pageUpdate(
+			saving.model,
+			Message.CompletedSaveCredential({
+				provider: "cloudflare",
+				result: Result.fail({
+					...toLoadFailure("refused"),
+					message: "This token can read 3 accounts. Create one limited to a single account.",
+				}),
+			}),
+		).model
+		expect(refused.addDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText(
+				"This token can read 3 accounts. Create one limited to a single account.",
+			),
+		)
+
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
+		)
+		expect(saved.model.addDialog.isOpen).toBe(false)
+		expect(saved.model.credentialDraft.value).toBe("")
+		expect(names(saved.commands)).toContain("FetchCostSources")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Cloudflare added",
+				description: "The first sync runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("a Cloudflare source has its token replaced or is removed, and the OpenRouter source beside it stays", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+			requestsThisMonth: 0,
+		})
+		const cloudflare = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "cloudflare",
+			accountId: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+			backfillDate: "2025-12-01",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [openRouter, cloudflare]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Cloudflare")).toExist(),
+			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).toExist(),
+			// Neither provider bills for requests.
+			expectView(text(/provider requests/)).not.toExist(),
+			expectView(role("button", { name: "Replace token" })).toExist(),
+			expectView(role("button", { name: "Replace key" })).toExist(),
+		)
+
+		const replacing = pageUpdate(
+			model,
+			Message.ClickedReplaceCredential({ provider: "cloudflare" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(replacing),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Replace the Cloudflare token")).toExist(),
+			expectView(text(/Use a token for the same Cloudflare account/)).toExist(),
+			expectView(role("button", { name: "Back" })).not.toExist(),
+		)
+		const replaced = pageUpdate(
+			pageUpdate(
+				pageUpdate(
+					replacing,
+					Message.GotCredentialDraftMessage({
+						message: Field.Message.ChangedValue({ value: "cfut_0123456789abcdefghij0123456789" }),
+					}),
+				).model,
+				Message.SubmittedCredential(),
+			).model,
+			Message.CompletedSaveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
+		)
+		expect(replaced.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Cloudflare token replaced",
+				description: "The next sync runs within a few minutes.",
+			}),
+		)
+
+		// Both exist: the list offers neither again.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.ClickedAddSource()).model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^Cloudflare/ })).not.toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(text("Replace its token in the Sources panel")).toExist(),
+		)
+
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "cloudflare" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the Cloudflare source?")).toExist(),
+		)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(names(removing.commands)).toEqual(["RemoveCloudflareCostToken"])
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
+		)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Cloudflare removed", description: "" }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).not.toExist(),
+			expectView(role("button", { name: "Replace token" })).not.toExist(),
+			// The other provider's source is still listed.
+			expectView(text("user_2openrouterAccount")).toExist(),
 		)
 	})
 
@@ -499,6 +686,7 @@ describe("cost page", () => {
 	test("grouped by provider, a row reads the provider's name and filters by its id", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")
+		expect(keyLabel("provider", "cloudflare")).toBe("Cloudflare")
 		// A provider this build does not know still shows, as the rows name it.
 		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
 		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })
@@ -570,6 +758,28 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("Waiting for the first sync")).toExist(),
 			expectView(text(/AWS brings in this month and the last/)).toExist(),
+			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+		)
+		// Cloudflare keeps a year: alone it reads like AWS, and beside AWS both are named.
+		const cloudflare = source({
+			...unsynced,
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "cloudflare",
+			status: "pending",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [cloudflare]).model),
+			resolveTheme,
+			expectView(
+				text(/It brings in this month and the last, and older months fill in after that/),
+			).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [failingAws, cloudflare, openRouter]).model),
+			resolveTheme,
+			expectView(text(/AWS and Cloudflare bring in this month and the last/)).toExist(),
 			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
 		)
 	})

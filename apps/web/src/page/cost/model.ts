@@ -15,11 +15,12 @@ import * as Field from "@maple/views/ui/field"
 import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's two faces: the providers, then the chosen one's form. */
-export const AddStep = Schema.Literals(["pick", "openrouter"])
+/** The add-source dialog's two faces: the providers, then the chosen one's credential form. */
+export const AddStep = Schema.Union([Schema.Literal("pick"), CredentialProvider])
 export type AddStep = typeof AddStep.Type
 
 export const Model = Schema.Struct({
@@ -40,11 +41,13 @@ export const Model = Schema.Struct({
 	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
-	/** The OpenRouter management key being typed; cleared whichever way the dialog closes. */
-	keyDraft: Field.Model,
-	/** Why the last save was refused, shown under the field until the key changes. */
-	keyError: Schema.NullOr(Schema.String),
+	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
+	credentialDraft: Field.Model,
+	/** Why the last save was refused, shown under the field until the credential changes. */
+	credentialError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
+	/** The provider whose source the remove dialog asks about; null until it first opens. */
+	removeProvider: Schema.NullOr(CredentialProvider),
 	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })

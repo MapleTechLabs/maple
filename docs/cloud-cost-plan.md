@@ -1,7 +1,7 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter followed on 2026-11-12 as the second source.
+into `cost_daily` and shown on `/cost`. OpenRouter and Cloudflare followed on 2026-11-12.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -44,8 +44,14 @@ warehouse are not.
 
 One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
 The registry covers cost only. The integrations themselves are not refactored. A provider that is
-not an integration (OpenRouter) keeps its credential in a table of its own, and
-`cost_sources.connection_ref` points at that row.
+not read through an integration's connection keeps a pasted credential, and
+`cost_sources.connection_ref` points at its row. OpenRouter has a table of its own
+(`openrouter_cost_connections`). Every later provider shares `cost_connections`: one row per org
+and provider, with the sealed credential, the vendor's account id and a label. `CostConnectionStore`
+seals, upserts (refusing a credential of another account), removes and loads it, and
+`reconcileCostConnectionSources` keeps `cost_sources` in step for each provider named in
+`COST_CONNECTION_PROVIDERS`. A new provider of this kind needs no migration, slot or reconcile: it
+adds its literal there, and brings its own vendor check, adapter and endpoints.
 
 ```ts
 interface CostProvider {
@@ -113,7 +119,8 @@ The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROF
 `sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
 reaches outside them, because a day the provider no longer serves comes back empty, and an empty
 day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
-never for today.
+never for today. Cloudflare serves a year of completed days: its history stops at the first day of
+the eleventh month back, and it never asks for today either.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -140,12 +147,13 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
   daily chart, a breakdown by service, provider, category, region, usage type or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
-  connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
-  also replace or remove. Recommendations (list and detail with the evidence chart) come with
+  connection (which has a Cost switch), OpenRouter by pasting a management key and Cloudflare by
+  pasting an API token, which the page can also replace or remove. The pasted-credential step is
+  one form described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence chart) come with
   phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE /internal/cost/openrouter` for the
-  OpenRouter key. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE` on `/internal/cost/openrouter` and
+  `/internal/cost/cloudflare` for the pasted credentials. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -229,14 +237,61 @@ currency the figures are in and lists the others. Nothing is added across curren
   overprovisioned, Cloud Run cost, commitments. Negative cost is the saving.
 - Until the export exists, Maple can still show the recommender's savings and its own rules.
 
-### Cloudflare (billed for pay-as-you-go, else estimated)
+### Cloudflare (billed, pay-as-you-go accounts)
 
-- Schema: `GET /accounts/{id}/billable-usage` returns FOCUS-style daily rows with `BilledCost`. It
-  is marked alpha, covers usage overages (not plan fees), and is not available to enterprise
-  accounts. Plan fees come from the subscription endpoints.
-- All of it needs the "Billing Read" permission. Open: whether the OAuth app can be granted a
-  billing scope. If not, this source needs an API token.
-- Fallback: usage from the GraphQL analytics datasets (already authorized) times list price.
+"Live" here means checked against a real pay-as-you-go account on 2026-11-12.
+
+- It needs an API token with the "Billing: Read" permission on one account. No billing scope is
+  known for the OAuth app, so the integration's connection is not used: the org pastes a token on
+  the Cost page, which Maple checks and stores sealed in `cost_connections`.
+- Live: `GET /accounts` lists the accounts the token reads. A token for one account lists one,
+  and its id is the source's account. A token that lists none or several is refused. A
+  replacement token must read the same account, since another account's charges would overwrite
+  the source's days. Live: a token Cloudflare does not know answers 403 on this call, and 401 on
+  the billing calls.
+- Live: `GET /accounts/{id}/billable-usage/info` answers `covered`. Schema: usage-based billing
+  data is not available to enterprise accounts. A save is refused and a pull reports "not ready"
+  while it is false.
+- Live: `GET /accounts/{id}/billable-usage?from=&to=` (marked "Version 1, Alpha") answers
+  FOCUS-style rows, one per UTC day and priced metric, in one answer without paging (about 1,100
+  rows for six weeks). Most rows bill nothing, being inside the included allowance.
+- Live: `to` is exclusive. `from=2026-10-01&to=2026-10-02` answers 1 October only, and equal
+  dates are refused.
+- Live: a billing period's rows come back only when the period starts inside `[from, to)`. A
+  range that starts a day after the period did answers nothing for it. So every request asks from
+  31 days before its first day to the day after its last, and keeps only its own days.
+- Live: a range over 90 days is refused (`max_date_range_days`), so a window is read in pieces of
+  55 days. Requests are free, so the source counts none.
+- Live: yesterday is served, today is not, and the oldest day served is one year before today.
+  The profile asks from the first day of the eleventh month back through yesterday. The two newest
+  days are stored as not final.
+- Live: a range that reaches past the year is answered, not refused, with the older days left out,
+  and a period that started before the year still returns its days inside it. So the 31 days asked
+  before the oldest month cost nothing.
+- Live: a wrong or revoked token answers 401 (sync reason `auth`), a token without billing access
+  403 (`not_ready`). A 400 is a request Maple wrote wrong (`upstream`).
+- Rows: the product family (`Workers`, `R2`, `D1` ...) is `CloudService`, the priced metric is
+  `UsageType`, the region is `global`, and the category comes from a small map of the families.
+  Rows with no billed and no list cost are left out.
+- Live: usage rows do not include plan fees. `GET /accounts/{id}/subscriptions` (paged) lists them
+  with `price`, `frequency` and `current_period_start`. Each paid monthly subscription becomes a
+  purchase row (`CloudService` "Subscriptions", the rate plan as `UsageType`, the zone as the
+  resource) on the day each billing period started, stepped back month by month from the current
+  period and never before the subscription was created. A yearly one gets one row on its current
+  period's start.
+- Assumed: Cloudflare reports the current period only, so earlier months use today's price. A plan
+  whose price changed shows the new price for its past months too.
+- Schema: a subscription's `state` is one of `Trial`, `Provisioned`, `Paid`, `AwaitingPayment`,
+  `Cancelled`, `Failed`, `Expired`. Live: every listed one was `Paid`, free items included.
+  Assumed: `Trial`, `Failed` and `Expired` were not charged, so they get no fee row.
+- Known limit: a fee is known only while its subscription is listed. If Cloudflare drops a
+  cancelled subscription from the list, the next re-pull of the open months stores those days
+  without its fee. Months already walked as history keep theirs.
+- More than 500 subscriptions (10 pages) fail the pull as an answer Maple cannot read, since part
+  of the list would under-count.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily.
+- Not built: enterprise contracts, zone-level analytics, the restricted "Version 2" endpoints,
+  invoices and credits.
 
 ### Railway (estimated per service, billed per workspace)
 
@@ -308,9 +363,12 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter and PlanetScale are built. Railway, GCP, Supabase, Cloudflare,
-   one PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
-   sync profile.
+3. **More providers.** OpenRouter, Cloudflare and PlanetScale are built. Railway, GCP, Supabase,
+   one PR each. Each provider adds a literal to `CostProvider`, an adapter and a sync profile. One
+   read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS`, a connection
+   service that checks the credential with the vendor, its `PUT` / `DELETE` endpoints, and on the
+   Cost page two commands and an entry in `CREDENTIAL_SOURCES`. One read through a connection adds
+   a reconcile function instead.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -327,7 +385,8 @@ Each phase is one PR stack.
 
 ## Open questions
 
-- Cloudflare: is there an OAuth billing scope.
+- Cloudflare: is there an OAuth billing scope. With one, the integration's connection could
+  supply cost and no token would be pasted.
 - Railway: can a workspace token read `customer`.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.

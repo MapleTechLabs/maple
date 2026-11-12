@@ -253,6 +253,12 @@ describe("toSubscriptionRows", () => {
 		).toEqual([])
 	})
 
+	it("charges a paid or cancelled subscription, not one in trial or one that was never paid", () => {
+		const charged = (state: string) => fees([plan({ state })]).length
+		expect([charged("Paid"), charged("Cancelled"), charged("Provisioned")]).toEqual([2, 2, 2])
+		expect([charged("Trial"), charged("Failed"), charged("Expired")]).toEqual([0, 0, 0])
+	})
+
 	it("adds up two subscriptions to one plan on one day, and marks an open day", () => {
 		const rows = fees([
 			plan({ current_period_start: "2026-11-09T00:00:00Z" }),

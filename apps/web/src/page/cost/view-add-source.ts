@@ -15,9 +15,11 @@ import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
+import { hasSourceOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
 
 type H = HtmlBuilder<Message>
 
@@ -26,17 +28,47 @@ const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aw
 /** Where an AWS connection and its Cost module are changed. */
 export const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
 
-const OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/management-keys"
-
-/** Whether the org has its OpenRouter source, which there is at most one of. */
-const hasOpenRouterSource = (sources: ReadonlyArray<CostSourceSummary>): boolean =>
-	Arr.some(sources, (source) => source.provider === "openrouter")
-
 const mark = (h: H, provider: CostProviderEntry): Html =>
 	icon(h, provider.icon, { size: 18, className: cn("shrink-0", provider.iconClassName) })
 
-/** The providers to add: AWS goes to its connect flow, OpenRouter to the key form. */
-const providers = (h: H, hasOpenRouter: boolean): Html =>
+/** A provider added by pasting a credential: to its form, or named as added once its source exists. */
+const credentialRow = (
+	h: H,
+	provider: CredentialProvider,
+	sources: ReadonlyArray<CostSourceSummary>,
+	isLast: boolean,
+): Html => {
+	const entry: CostProviderEntry = COST_PROVIDERS[provider]
+	const { pick } = CREDENTIAL_SOURCES[provider]
+	return hasSourceOf(sources, provider)
+		? listRow(h, {
+				divided: !isLast,
+				leading: mark(h, entry),
+				title: entry.name,
+				meta: pick.addedMeta,
+				trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
+			})
+		: listRow(h, {
+				divided: !isLast,
+				onClick: Message.PickedProvider({ provider }),
+				leading: mark(h, entry),
+				title: entry.name,
+				meta: pick.meta,
+				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+			})
+}
+
+/** The providers that bill nothing for the requests Maple makes, by name. */
+const FREE_REQUESTS = Arr.join(
+	Arr.map(
+		Arr.filter(CredentialProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+		(provider) => COST_PROVIDERS[provider].name,
+	),
+	" and ",
+)
+
+/** The providers to add: AWS goes to its connect flow, the others to their credential form. */
+const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
 		vstack(h, { gap: "0" }, [
 			listRow(h, {
@@ -47,23 +79,12 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 				meta: "Daily cost by service, region and usage type",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
-			hasOpenRouter
-				? listRow(h, {
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Replace its key in the Sources panel",
-						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
-					})
-				: listRow(h, {
-						onClick: Message.ClickedAddOpenRouter(),
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Daily spend by model and serving provider",
-						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-					}),
+			...Arr.map(CredentialProvider.literals, (provider, index) =>
+				credentialRow(h, provider, sources, index === CredentialProvider.literals.length - 1),
+			),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter requests are free. ",
+			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
 				"Turn on Cost for an AWS account that is connected",
 			]),
@@ -71,60 +92,105 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 		]),
 	])
 
-const KEY_IDS: FieldIds = {
-	control: "cost-openrouter-key",
-	label: "cost-openrouter-key-label",
-	error: "cost-openrouter-key-error",
-	description: "cost-openrouter-key-description",
+const CREDENTIAL_IDS: FieldIds = {
+	control: "cost-source-credential",
+	label: "cost-source-credential-label",
+	error: "cost-source-credential-error",
+	description: "cost-source-credential-description",
 }
 
-const keyField = (h: H, model: Model): Html => {
-	const state = Field.stateOf(model.keyDraft, model.keyError !== null)
+const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
+	const state = Field.stateOf(model.credentialDraft, model.credentialError !== null)
 	return field(h, { state }, [
-		fieldLabel(h, { ids: KEY_IDS, state }, "Management key"),
+		fieldLabel(h, { ids: CREDENTIAL_IDS, state }, text.label),
 		input(h, {
-			ids: KEY_IDS,
+			ids: CREDENTIAL_IDS,
 			state,
 			attributes: [
 				h.Type("password"),
 				h.Attribute("autocomplete", "off"),
-				h.Placeholder("sk-or-v1-..."),
+				h.Placeholder(text.placeholder),
 				...(model.sourceWrite === "Saving" ? [h.Disabled(true)] : []),
-				...Field.controlAttributes(h, model.keyDraft, (message) =>
-					Message.GotKeyDraftMessage({ message }),
+				...Field.controlAttributes(h, model.credentialDraft, (message) =>
+					Message.GotCredentialDraftMessage({ message }),
 				),
 			],
 		}),
-		...(model.keyError === null
+		...(model.credentialError === null
 			? []
-			: [fieldError(h, { ids: KEY_IDS, state, attributes: [h.Role("alert")] }, [model.keyError])]),
-		fieldDescription(h, { ids: KEY_IDS, state }, [
-			"Create one under ",
+			: [
+					fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [
+						model.credentialError,
+					]),
+				]),
+		fieldDescription(h, { ids: CREDENTIAL_IDS, state }, [
+			text.help.before,
 			textLink(
 				h,
 				{
-					href: OPENROUTER_KEYS_URL,
+					href: text.help.href,
 					tone: "inherit",
 					className: "underline",
 					attributes: [h.Target("_blank"), h.Rel("noreferrer")],
 				},
-				["Management keys"],
+				[text.help.link],
 			),
-			" in OpenRouter. A regular API key cannot read spend. Maple checks the key with OpenRouter, then stores it encrypted.",
+			text.help.after,
+		]),
+	])
+}
+
+/** The chosen provider's credential form: adding its source, or replacing the credential of the one that exists. */
+const credentialForm = (
+	h: H,
+	model: Model,
+	provider: CredentialProvider,
+	sources: ReadonlyArray<CostSourceSummary>,
+	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
+): Html => {
+	const id = model.addDialog.id
+	const source = CREDENTIAL_SOURCES[provider]
+	const isReplacing = hasSourceOf(sources, provider)
+	const isSaving = model.sourceWrite === "Saving"
+	const canSubmit = !isSaving && Str.trim(model.credentialDraft.value) !== ""
+	const text = isReplacing ? source.replace : source.add
+	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
+		DialogView.dialogHeader(h, "dialog", [
+			DialogView.dialogTitle(h, "dialog", id, text.title),
+			DialogView.dialogDescription(h, "dialog", id, text.description),
+		]),
+		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
+		DialogView.dialogFooter(h, "dialog", [
+			// A replace has no providers to go back to.
+			isReplacing
+				? button(
+						h,
+						{ variant: "outline", isDisabled: isSaving, attributes: isSaving ? [] : [...close] },
+						["Cancel"],
+					)
+				: button(
+						h,
+						{
+							variant: "outline",
+							isDisabled: isSaving,
+							attributes: [h.OnClick(Message.ClickedBackToProviders())],
+						},
+						["Back"],
+					),
+			button(h, { type: "submit", isLoading: isSaving, isDisabled: !canSubmit }, [
+				isReplacing ? source.replace.label : "Add source",
+			]),
 		]),
 	])
 }
 
 /**
- * Add a source, or replace the OpenRouter key: the providers first, then OpenRouter's key form.
- * Opened on the form for a replace, which has no providers to go back to.
+ * Add a source, or replace a source's credential: the providers first, then the chosen one's
+ * form. Opened on the form for a replace.
  */
 export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const id = model.addDialog.id
-	const isReplacing = hasOpenRouterSource(sources)
-	const isSaving = model.sourceWrite === "Saving"
-	const canSubmit = !isSaving && Str.trim(model.keyDraft.value) !== ""
-	const onPick = model.addStep === "pick"
+	const step = model.addStep
 	return h.submodel({
 		slotId: "cost-add-source",
 		model: model.addDialog,
@@ -135,7 +201,7 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			hasDescription: true,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				onPick
+				step === "pick"
 					? [
 							DialogView.dialogHeader(h, "dialog", [
 								DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
@@ -146,76 +212,28 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 									"Maple reads what the source bills each day and keeps it next to your telemetry.",
 								),
 							]),
-							DialogView.dialogPanel(h, "dialog", id, [providers(h, isReplacing)]),
+							DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
 							DialogView.dialogFooter(h, "dialog", [
 								button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 							]),
 						]
-					: [
-							formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
-								DialogView.dialogHeader(h, "dialog", [
-									DialogView.dialogTitle(
-										h,
-										"dialog",
-										id,
-										isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
-									),
-									DialogView.dialogDescription(
-										h,
-										"dialog",
-										id,
-										isReplacing
-											? "The source and its history stay. Use a key from the same OpenRouter account."
-											: "Maple reads the last four weeks at once, then every day from here on.",
-									),
-								]),
-								DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
-								DialogView.dialogFooter(h, "dialog", [
-									isReplacing
-										? button(
-												h,
-												{
-													variant: "outline",
-													isDisabled: isSaving,
-													attributes: isSaving ? [] : [...close],
-												},
-												["Cancel"],
-											)
-										: button(
-												h,
-												{
-													variant: "outline",
-													isDisabled: isSaving,
-													attributes: [h.OnClick(Message.ClickedBackToProviders())],
-												},
-												["Back"],
-											),
-									button(
-										h,
-										{
-											type: "submit",
-											isLoading: isSaving,
-											isDisabled: !canSubmit,
-										},
-										[isReplacing ? "Replace key" : "Add source"],
-									),
-								]),
-							]),
-						],
+					: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
 
-/** Removing the OpenRouter source: what leaves the page, and what adding it again brings back. */
-export const removeSourceDialog = (h: H, model: Model): Html =>
-	confirmDialog(h, {
+/** Removing a credential's source: what leaves the page, and what adding it again brings back. */
+export const removeSourceDialog = (h: H, model: Model): Html => {
+	if (model.removeProvider === null) return h.empty
+	const { remove } = CREDENTIAL_SOURCES[model.removeProvider]
+	return confirmDialog(h, {
 		slotId: "cost-remove-source",
 		model: model.removeDialog,
 		toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
-		title: "Remove the OpenRouter source?",
-		description:
-			"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
+		title: remove.title,
+		description: remove.description,
 		confirmLabel: "Remove source",
 		onConfirm: Message.ClickedConfirmRemove(),
 		isPending: model.sourceWrite === "Removing",
 	})
+}
