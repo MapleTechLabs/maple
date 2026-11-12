@@ -261,8 +261,8 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						[auditEventToRow(event, now)],
 						{ bestEffort: true, retryTransient: true },
 					)
-					// A change or a refusal also goes to the unified audit trail.
-					yield* trail.write(event.orgId, mapleAuditTrailEvents([event]))
+					// A change or a refusal also goes to the unified audit trail, dropped the same way.
+					yield* trail.write(event.orgId, mapleAuditTrailEvents([event]), { bestEffort: true })
 				})
 
 			/**

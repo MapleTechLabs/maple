@@ -221,6 +221,30 @@ describe("GET /internal/audit-trail/events", () => {
 		}
 	})
 
+	it("reads the directory once to resolve an email filter and name the page it returns", async () => {
+		const harness = makeHarness(ADMIN, { events: [mapleUser()], next: null })
+		try {
+			const { events } = asPage((await harness.list("?actor=ada@acme.test")).body)
+
+			expect(events[0]?.actor.name).toBe("Ada")
+			expect(harness.directoryReads()).toBe(1)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("does not resolve an email against Maple's members when another platform is asked for", async () => {
+		const harness = makeHarness(ADMIN, { events: [], next: null })
+		try {
+			await harness.list("?provider=github&actor=ada@acme.test")
+
+			expect(harness.asked).toEqual([{ provider: "github", actor: "ada@acme.test", limit: 50 }])
+			expect(harness.directoryReads()).toBe(0)
+		} finally {
+			await harness.dispose()
+		}
+	})
+
 	// Maple's own events store the user id, and the page shows the email next to it.
 	it("finds a member's Maple events when filtering by the email the page showed", async () => {
 		const harness = makeHarness(ADMIN, { events: [], next: null })

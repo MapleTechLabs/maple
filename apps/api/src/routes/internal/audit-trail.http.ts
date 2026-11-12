@@ -61,8 +61,13 @@ export const HttpAuditTrailLive = HttpApiBuilder.group(MapleInternalApi, "auditT
 				)
 				// Read at most once a request: to resolve an email filter, or to name the page.
 				const readDirectory = yield* Effect.cached(orgMemberDirectory(members, tenant.orgId))
+				// Only Maple's own events store a user id where the page shows an email.
 				const emailActor =
-					query.actor !== undefined && Str.includes("@")(query.actor) ? query.actor : undefined
+					query.actor !== undefined &&
+					Str.includes("@")(query.actor) &&
+					(query.provider === undefined || query.provider === "maple")
+						? query.actor
+						: undefined
 				const actorAlias =
 					emailActor === undefined
 						? Option.none()

@@ -25,13 +25,15 @@ const down = new WarehouseUpstreamError({
 const fakeWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = [], failing = false) => {
 	const sql: Array<string> = []
 	const written: Array<Record<string, unknown>> = []
+	const bestEffort: Array<boolean> = []
 	const layer = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
-			ingest: (_tenant, _datasource, batch) =>
+			ingest: (_tenant, _datasource, batch, options) =>
 				failing
 					? Effect.fail(down)
 					: Effect.sync(() => {
+							bestEffort.push(options?.bestEffort === true)
 							// SAFETY: every warehouse row is a record of column values.
 							written.push(...(batch as ReadonlyArray<Record<string, unknown>>))
 						}),
@@ -47,7 +49,7 @@ const fakeWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = [], failin
 				})) as never,
 		}),
 	)
-	return { sql, written, layer }
+	return { sql, written, bestEffort, ingests: () => bestEffort.length, layer }
 }
 
 const withTrail = <A, E>(
@@ -229,13 +231,24 @@ describe("AuditTrailService.write", () => {
 		}),
 	)
 
-	it.effect("writes nothing for an empty batch", () =>
+	it.effect("does not reach the warehouse for an empty batch", () =>
 		Effect.gen(function* () {
-			const warehouse = fakeWarehouse([], true)
-			// A failing warehouse proves the point: it is never reached.
+			const warehouse = fakeWarehouse()
 			yield* withTrail(warehouse, (trail) => trail.write(ORG, []))
+			yield* withTrail(warehouse, (trail) => trail.write(ORG, [event]))
 
-			expect(warehouse.written).toEqual([])
+			expect(warehouse.ingests()).toBe(1)
+		}),
+	)
+
+	// A caller that drops the events on failure asks for a Warn, not an Error span.
+	it.effect("passes best effort through to the insert", () =>
+		Effect.gen(function* () {
+			const warehouse = fakeWarehouse()
+			yield* withTrail(warehouse, (trail) => trail.write(ORG, [event], { bestEffort: true }))
+			yield* withTrail(warehouse, (trail) => trail.write(ORG, [event]))
+
+			expect(warehouse.bestEffort).toEqual([true, false])
 		}),
 	)
 

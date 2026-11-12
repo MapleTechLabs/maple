@@ -70,23 +70,30 @@ const dyingWarehouse = withTrail(
 const AUDIT_LOG = "audit_log"
 const AUDIT_TRAIL = "audit_trail_events"
 
-/** A warehouse whose `ingest` records each call, failing the ones to the `failing` datasources. */
-const warehouse = (failing: ReadonlyArray<string> = []) => {
+/**
+ * A warehouse whose `ingest` records each call, failing the ones to the `failing` datasources.
+ * `trailCopy` makes the write to the audit trail die or be interrupted instead.
+ */
+const warehouse = (failing: ReadonlyArray<string> = [], trailCopy?: "dies" | "interrupted") => {
 	const written: Array<{ orgId: string; datasource: string; rows: ReadonlyArray<unknown> }> = []
 	const layer = withTrail(
 		makeWarehouseServiceStub({
 			ingest: (tenant, datasource, rows) =>
-				failing.includes(datasource)
-					? Effect.fail(
-							new WarehouseUpstreamError({
-								message: "tinybird down",
-								pipeName: datasource,
-								cause: new Error("down"),
-							}),
-						)
-					: Effect.sync(() => {
-							written.push({ orgId: tenant.orgId, datasource, rows })
-						}),
+				datasource === AUDIT_TRAIL && trailCopy === "dies"
+					? Effect.die(new Error("trail exploded"))
+					: datasource === AUDIT_TRAIL && trailCopy === "interrupted"
+						? Effect.interrupt
+						: failing.includes(datasource)
+							? Effect.fail(
+									new WarehouseUpstreamError({
+										message: "tinybird down",
+										pipeName: datasource,
+										cause: new Error("down"),
+									}),
+								)
+							: Effect.sync(() => {
+									written.push({ orgId: tenant.orgId, datasource, rows })
+								}),
 		}),
 	)
 	/** `[orgId, row count]` per write to one datasource, in a stable order. */
@@ -165,6 +172,32 @@ describe("processAuditEventsBatch", () => {
 
 	// `audit_log` is the record. A message retried because only its copy failed would be
 	// rewritten there on every attempt and end in the DLQ for an entry that was stored.
+	it.effect("acks an entry whose audit trail copy died", () =>
+		Effect.gen(function* () {
+			const store = warehouse([], "dies")
+			const change = message(event("11111111-1111-4111-8111-111111111111"), 1)
+			yield* processAuditEventsBatch(batchOf(change), MAX_RETRIES).pipe(Effect.provide(store.layer))
+
+			expect(change.calls).toEqual(["ack"])
+			expect(store.writesTo(AUDIT_LOG)).toEqual([[ORG, 1]])
+		}),
+	)
+
+	// A deploy landing between the two writes: unacked, so the platform redelivers the entry.
+	it.effect("leaves an entry unacked when its audit trail copy is interrupted", () =>
+		Effect.gen(function* () {
+			const store = warehouse([], "interrupted")
+			const change = message(event("11111111-1111-4111-8111-111111111111"), 1)
+			const exit = yield* processAuditEventsBatch(batchOf(change), MAX_RETRIES).pipe(
+				Effect.provide(store.layer),
+				Effect.exit,
+			)
+
+			expect(exit._tag).toBe("Failure")
+			expect(change.calls).toEqual([])
+		}),
+	)
+
 	it.effect("acks an entry whose audit trail copy failed", () =>
 		Effect.gen(function* () {
 			const store = warehouse([AUDIT_TRAIL])

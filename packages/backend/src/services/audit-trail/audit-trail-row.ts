@@ -17,7 +17,7 @@ const sha256Hex = (value: string) => createHash("sha256").update(value, "utf8").
 
 /**
  * The stored row's key, the first 32 hex characters of sha256 over `provider\naccount\neventId`.
- * The ingest gateway derives the same key for the providers it writes.
+ * A writer in another language has to derive the same key, or its redeliveries stop collapsing.
  */
 export const auditTrailEventId = (
 	event: Pick<AuditTrailEvent, "provider" | "account" | "providerEventId">,

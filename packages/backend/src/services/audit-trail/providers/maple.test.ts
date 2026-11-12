@@ -87,14 +87,34 @@ describe("mapleAuditTrailEvents", () => {
 		})
 	})
 
-	it("files a secret rotated on a non-credential resource under credential", () => {
+	it("files a secret set or removed on a non-credential resource under credential", () => {
+		const categoryOf = (action: string) => trailEventOf({ action, resourceType: "status_page" })?.category
+
 		expect(
-			trailEventOf({ action: "status_page.break_glass_rotated", resourceType: "status_page" })
-				?.category,
-		).toBe("credential")
-		expect(trailEventOf({ action: "status_page.updated", resourceType: "status_page" })?.category).toBe(
-			"resource",
-		)
+			Arr.map(
+				[
+					"status_page.break_glass_rotated",
+					"status_page.break_glass_revoked",
+					"status_page.password_set",
+					"status_page.password_removed",
+				],
+				categoryOf,
+			),
+		).toEqual(["credential", "credential", "credential", "credential"])
+		expect(categoryOf("status_page.updated")).toBe("resource")
+	})
+
+	it("files linking and unlinking a chat identity under permission", () => {
+		const categoryOf = (action: string) =>
+			trailEventOf({ action, resourceType: "chat_integration" })?.category
+
+		expect(
+			Arr.map(
+				["chat_integration.identity_link_started", "chat_integration.identity_unlinked"],
+				categoryOf,
+			),
+		).toEqual(["permission", "permission"])
+		expect(categoryOf("chat_integration.settings_updated")).toBe("configuration")
 	})
 
 	it("files a resource this build does not know under other", () => {

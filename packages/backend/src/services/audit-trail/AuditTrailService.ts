@@ -34,10 +34,14 @@ export interface AuditTrailPage {
 }
 
 export interface AuditTrailServiceApi {
-	/** Store one org's events. Safe to repeat: the same event writes the same row. */
+	/**
+	 * Store one org's events. Safe to repeat: the same event writes the same row. `bestEffort`
+	 * is for a caller that drops the events on failure: the failed insert is a Warn, not an Error span.
+	 */
 	readonly write: (
 		orgId: OrgId,
 		events: ReadonlyArray<AuditTrailEvent>,
+		options?: { readonly bestEffort?: boolean },
 	) => Effect.Effect<void, AuditTrailPersistenceError>
 	/** One org's audit events, newest first, `filters.limit` to a page. */
 	readonly list: (
@@ -97,6 +101,7 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 			const writeRows = Effect.fn("AuditTrailService.write")(function* (
 				orgId: OrgId,
 				events: ReadonlyArray<AuditTrailEvent>,
+				bestEffort: boolean,
 			) {
 				const now = yield* Clock.currentTimeMillis
 				yield* warehouse
@@ -104,13 +109,13 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 						AUDIT_TRAIL_DATASOURCE,
 						Arr.map(events, (event) => auditTrailEventToRow(orgId, event, now)),
-						{ retryTransient: true },
+						{ bestEffort, retryTransient: true },
 					)
 					.pipe(Effect.mapError(persistenceError("The audit trail could not be written")))
 			})
 
-			const write: AuditTrailServiceApi["write"] = (orgId, events) =>
-				events.length === 0 ? Effect.void : writeRows(orgId, events)
+			const write: AuditTrailServiceApi["write"] = (orgId, events, options) =>
+				events.length === 0 ? Effect.void : writeRows(orgId, events, options?.bestEffort === true)
 
 			const list: AuditTrailServiceApi["list"] = Effect.fn("AuditTrailService.list")(
 				function* (orgId, filters) {

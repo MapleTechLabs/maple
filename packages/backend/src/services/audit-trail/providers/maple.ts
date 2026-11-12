@@ -67,11 +67,14 @@ const CATEGORY_BY_RESOURCE = {
 const CATEGORY_BY_ACTION = {
 	"source.rolled": "credential",
 	"status_page.break_glass_rotated": "credential",
+	"status_page.break_glass_revoked": "credential",
 	"status_page.password_set": "credential",
+	"status_page.password_removed": "credential",
 	"planetscale_integration.metrics_token_set": "credential",
 	"mcp_connection.revoked": "credential",
 	// The link is standing authority to act as the member from the chat platform.
 	"chat_integration.identity_link_started": "permission",
+	"chat_integration.identity_unlinked": "permission",
 } as const satisfies Partial<Record<AuditAction, AuditTrailCategory>>
 
 const isAuditResourceType = (type: string): type is AuditResourceType =>
