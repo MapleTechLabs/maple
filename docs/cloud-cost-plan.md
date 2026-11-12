@@ -274,11 +274,18 @@ currency the figures are in and lists the others. Nothing is added across curren
   `UsageType`, the region is `global`, and the category comes from a small map of the families.
   Rows with no billed and no list cost are left out.
 - Live: usage rows do not include plan fees. `GET /accounts/{id}/subscriptions` (paged) lists them
-  with `price`, `frequency` and `current_period_start`. Each paid monthly subscription becomes a
-  purchase row (`CloudService` "Subscriptions", the rate plan as `UsageType`, the zone as the
-  resource) on the day each billing period started, stepped back month by month from the current
-  period and never before the subscription was created. A yearly one gets one row on its current
-  period's start.
+  with `price`, `frequency` and `current_period_start`. Each paid subscription becomes a purchase
+  row (`CloudService` "Subscriptions", the rate plan as `UsageType`, the zone as the resource) on
+  the day each billing period started, stepped back from the current period by its frequency
+  (a week, a month or three months) and never before the subscription was created. A yearly one
+  gets one row on its current period's start.
+- A subscription made on the 29th to 31st has later starts clamped to shorter months, so stepping
+  back lands days before it was made: that first period's fee goes on the day it was made.
+- Live: `created_date` was on every subscription. Schema: the published response does not list
+  it. Without it only the current period's fee is stored, since earlier periods cannot be told
+  from months before the subscription existed.
+- A priced subscription Maple cannot place on a day (another frequency, or no period start) has
+  no row. The pull's span counts them as `maple.cost.cloudflare.fees_skipped`.
 - Assumed: Cloudflare reports the current period only, so earlier months use today's price. A plan
   whose price changed shows the new price for its past months too.
 - Schema: a subscription's `state` is one of `Trial`, `Provisioned`, `Paid`, `AwaitingPayment`,
@@ -287,8 +294,13 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Known limit: a fee is known only while its subscription is listed. If Cloudflare drops a
   cancelled subscription from the list, the next re-pull of the open months stores those days
   without its fee. Months already walked as history keep theirs.
-- More than 500 subscriptions (10 pages) fail the pull as an answer Maple cannot read, since part
-  of the list would under-count.
+- Live: the listing's `result_info` has `per_page`, `total_pages` and `total_count`. Schema: only
+  the count is documented, so the page count falls back to the count over the page size. A list
+  read short of its count, over 10 pages, or a full page that says nothing of its paging, fails
+  the pull as an answer Maple cannot read: part of the list would under-count.
+- Every answer must say `success: true`. Read as an answer, a 200 with an empty result would
+  store every day of the window as empty. Live: the usage answer has no `result_info`. One that
+  appears and lists more rows than it returned fails the pull too.
 - Open: whether a completed day is ever restated. The four newest days are pulled again daily.
 - Not built: enterprise contracts, zone-level analytics, the restricted "Version 2" endpoints,
   invoices and credits.

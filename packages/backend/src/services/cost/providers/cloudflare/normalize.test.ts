@@ -2,7 +2,7 @@ import { Schema, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { Subscription, UsageRow } from "./cloudflare-billing-api"
 import { FAKE_ACCOUNT, type FakeSubscription, usageRow } from "./fake-cloudflare"
-import { toSubscriptionRows, toUsageRows } from "./normalize"
+import { toSubscriptionRows, toUsageRows, unplacedFees } from "./normalize"
 
 const ACCOUNT = FAKE_ACCOUNT.id
 const WINDOW = { startDay: "2026-10-01", endDay: "2026-11-10" }
@@ -122,6 +122,22 @@ describe("toUsageRows", () => {
 			["Email", "Other"],
 			["Something New", "Other"],
 			["", "Other"],
+		])
+	})
+
+	it("never adds quantities of another unit to a row, though their cost is one", () => {
+		const rows = usage([
+			usageRow("2026-10-05", "R2", "R2 Storage", 1.5, {
+				ConsumedQuantity: 10,
+				ConsumedUnit: "GB-months",
+			}),
+			usageRow("2026-10-05", "R2", "R2 Storage", 2, {
+				ConsumedQuantity: 700,
+				ConsumedUnit: "Gigabytes",
+			}),
+		])
+		expect(Arr.map(rows, (row) => [row.billedCost, row.consumedQuantity, row.consumedUnit])).toEqual([
+			[3.5, 10, "GB-months"],
 		])
 	})
 
@@ -247,10 +263,71 @@ describe("toSubscriptionRows", () => {
 				plan({ price: 0 }),
 				{ price: 0, frequency: "not-applicable", created_date: "2025-01-01T00:00:00Z" },
 				plan({ frequency: "not-applicable" }),
-				plan({ frequency: "quarterly" }),
+				plan({ frequency: "biennial" }),
 				plan({ current_period_start: null }),
 			]),
 		).toEqual([])
+	})
+
+	it("counts the charged subscriptions it could not place on a day, and no free or unpaid one", () => {
+		const decode = Schema.decodeSync(Schema.Array(Subscription))
+		expect(
+			unplacedFees(
+				decode([
+					plan(),
+					plan({ frequency: "biennial" }),
+					plan({ current_period_start: null }),
+					plan({ frequency: "biennial", price: 0 }),
+					plan({ frequency: "biennial", state: "Trial" }),
+				]),
+			),
+		).toBe(2)
+	})
+
+	it("keeps the first period of a subscription made on the 31st, whose later starts were clamped", () => {
+		const rows = fees(
+			[plan({ created_date: "2025-10-31T08:00:00Z", current_period_start: "2026-02-28T00:00:00Z" })],
+			{ startDay: "2025-10-01", endDay: "2026-03-10" },
+		)
+		expect(Arr.map(rows, (row) => row.day)).toEqual([
+			"2026-02-28",
+			"2026-01-28",
+			"2025-12-28",
+			"2025-11-28",
+			"2025-10-31",
+		])
+		// A start that is early for another reason is not a period: nothing is charged before the 20th.
+		const moved = plan({
+			created_date: "2026-10-20T00:00:00Z",
+			current_period_start: "2026-11-15T00:00:00Z",
+		})
+		expect(
+			Arr.map(fees([moved], { startDay: "2026-10-01", endDay: "2026-11-20" }), (row) => row.day),
+		).toEqual(["2026-11-15"])
+	})
+
+	it("charges only the current period when Cloudflare does not say when the subscription was made", () => {
+		const { created_date: _made, ...undated } = plan()
+		expect(Arr.map(fees([undated]), (row) => row.day)).toEqual(["2026-11-04"])
+		expect(Arr.map(fees([plan({ created_date: null })]), (row) => row.day)).toEqual(["2026-11-04"])
+	})
+
+	it("steps a quarterly fee by three months and a weekly one by seven days", () => {
+		const quarterly = plan({
+			frequency: "quarterly",
+			price: 30,
+			current_period_start: "2026-11-01T00:00:00Z",
+		})
+		expect(
+			Arr.map(fees([quarterly], { startDay: "2026-01-01", endDay: "2026-11-10" }), (row) => row.day),
+		).toEqual(["2026-11-01", "2026-08-01", "2026-05-01", "2026-02-01"])
+		const weekly = plan({
+			frequency: "weekly",
+			current_period_start: "2026-11-09T00:00:00Z",
+			created_date: "2026-10-21T00:00:00Z",
+		})
+		// Made on a Wednesday, billed on Mondays: the week it was made in is not a period of its own.
+		expect(Arr.map(fees([weekly]), (row) => row.day)).toEqual(["2026-11-09", "2026-11-02", "2026-10-26"])
 	})
 
 	it("charges a paid or cancelled subscription, not one in trial or one that was never paid", () => {

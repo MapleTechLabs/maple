@@ -60,6 +60,7 @@ export const toUsageRows = (
 		const first = Arr.headNonEmpty(group)
 		const day = dayOf(first.ChargePeriodStart)
 		const family = first.ServiceFamilyName ?? ""
+		const unit = first.ConsumedUnit ?? ""
 		return {
 			day,
 			accountId,
@@ -76,8 +77,11 @@ export const toUsageRows = (
 			billedCost: sum(group, (item) => item.BilledCost),
 			effectiveCost: sum(group, (item) => item.EffectiveCost),
 			listCost: sum(group, (item) => item.ListCost),
-			consumedQuantity: sum(group, (item) => item.ConsumedQuantity ?? 0),
-			consumedUnit: first.ConsumedUnit ?? "",
+			// Rows of one key are one cost. Only quantities in the row's own unit add up.
+			consumedQuantity: sum(group, (item) =>
+				(item.ConsumedUnit ?? "") === unit ? (item.ConsumedQuantity ?? 0) : 0,
+			),
+			consumedUnit: unit,
 			tags: {},
 			estimated: day >= openDay,
 		}
@@ -87,27 +91,69 @@ export const toUsageRows = (
 /** States whose listed price was not charged: a trial is free, the other two were never paid. */
 const UNCHARGED_STATES = ["Trial", "Failed", "Expired"]
 
-/** Monthly periods a fee is stepped back over: the sync reads a year, and a period starts within the last month. */
-const MONTHLY_PERIODS = 14
+/** Months back a fee is stepped over: the sync reads a year, and a period starts within the last one. */
+const MONTHS_BACK = 14
 
-/** `day` moved back by `months`, on the same day of the month or the month's last. */
-const monthsBefore = (day: string, months: number): string =>
-	DateTime.formatIsoDateUtc(DateTime.subtract(DateTime.makeUnsafe(`${day}T00:00:00Z`), { months }))
+/** How often a subscription bills, as the step between its period starts and how many reach `MONTHS_BACK`. */
+const FREQUENCIES = new Map<
+	string,
+	{ readonly step: { readonly months?: number; readonly days?: number }; readonly periods: number }
+>([
+	["weekly", { step: { days: 7 }, periods: 62 }],
+	["monthly", { step: { months: 1 }, periods: MONTHS_BACK }],
+	["quarterly", { step: { months: 3 }, periods: 5 }],
+	// A year back is before anything the sync reads.
+	["yearly", { step: { months: 12 }, periods: 1 }],
+])
 
-/** The days in the window a subscription's billing period started on, by how often it bills. */
-const periodStarts = (subscription: Subscription, window: CostPullWindow): ReadonlyArray<string> => {
+const monthOf = (day: string): string => Str.slice(0, 7)(day)
+const dayOfMonth = (day: string): number => Number(Str.slice(8, 10)(day))
+/** A month step can only move a start earlier in its month from this day on. */
+const SHORTEST_MONTH_DAYS = 28
+
+/**
+ * The days a subscription's billing periods started on, newest first: stepped back from the
+ * current one, never before the subscription was made. None when it cannot be placed on a day.
+ */
+const periodStarts = (subscription: Subscription): ReadonlyArray<string> => {
 	const start = subscription.current_period_start
-	if (start === undefined || start === null) return []
+	const frequency = FREQUENCIES.get(subscription.frequency ?? "")
+	if (start === undefined || start === null || frequency === undefined) return []
 	const current = dayOf(start)
-	const created = dayOf(subscription.created_date ?? "")
-	const starts =
-		subscription.frequency === "monthly"
-			? Arr.makeBy(MONTHLY_PERIODS, (months) => monthsBefore(current, months))
-			: subscription.frequency === "yearly"
-				? [current]
-				: []
-	return Arr.filter(starts, (day) => inWindow(day, window) && day >= created)
+	const made = subscription.created_date
+	// Without the day it was made there is no telling which earlier periods existed: only this one.
+	if (made === undefined || made === null) return [current]
+	const created = dayOf(made)
+	const from = DateTime.makeUnsafe(`${current}T00:00:00Z`)
+	const starts = Arr.makeBy(frequency.periods, (index) => {
+		const day = DateTime.formatIsoDateUtc(
+			DateTime.subtract(from, {
+				months: (frequency.step.months ?? 0) * index,
+				days: (frequency.step.days ?? 0) * index,
+			}),
+		)
+		// A start on the 29th to 31st is clamped in shorter months, which shifts every step before
+		// it: the first period then lands days before the subscription was made, in the same month.
+		const isClamped =
+			frequency.step.months !== undefined &&
+			day < created &&
+			monthOf(day) === monthOf(created) &&
+			dayOfMonth(day) >= SHORTEST_MONTH_DAYS
+		return isClamped ? created : day
+	})
+	return Arr.dedupe(Arr.filter(starts, (day) => day >= created))
 }
+
+/** Whether a subscription's listed price is charged: it has one, and its state is not a free or unpaid one. */
+const isCharged = (subscription: Subscription): boolean =>
+	(subscription.price ?? 0) > 0 && !Arr.contains(UNCHARGED_STATES, subscription.state ?? "")
+
+/** Charged subscriptions whose fee is in no row: they bill by a frequency Maple does not step, or name no period. */
+export const unplacedFees = (subscriptions: ReadonlyArray<Subscription>): number =>
+	Arr.filter(
+		subscriptions,
+		(subscription) => isCharged(subscription) && periodStarts(subscription).length === 0,
+	).length
 
 /**
  * Each paid subscription's fee, as a purchase on the days its billing periods started in the window.
@@ -121,14 +167,17 @@ export const toSubscriptionRows = (
 ): ReadonlyArray<CostPullRow> => {
 	const fees = Arr.flatMap(subscriptions, (subscription) => {
 		const price = subscription.price ?? 0
-		return price > 0 && !Arr.contains(UNCHARGED_STATES, subscription.state ?? "")
-			? Arr.map(periodStarts(subscription, window), (day) => ({
-					day,
-					price,
-					plan: subscription.rate_plan?.public_name ?? subscription.product?.name ?? "",
-					zone: subscription.zone?.name ?? "",
-					currency: subscription.currency ?? "USD",
-				}))
+		return isCharged(subscription)
+			? Arr.map(
+					Arr.filter(periodStarts(subscription), (day) => inWindow(day, window)),
+					(day) => ({
+						day,
+						price,
+						plan: subscription.rate_plan?.public_name ?? subscription.product?.name ?? "",
+						zone: subscription.zone?.name ?? "",
+						currency: subscription.currency ?? "USD",
+					}),
+				)
 			: []
 	})
 	// Two subscriptions to one plan (and zone) on one day are one key, so their fees add up.
