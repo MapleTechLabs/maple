@@ -86,11 +86,20 @@ const onRamp = (h: H): Html =>
 		emptyFrameClass("dashed"),
 	)
 
-/** What a first sync brings in: AWS keeps over a year, OpenRouter four weeks. */
-const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string =>
-	Arr.some(sources, (source) => source.status === "pending" && source.provider !== "openrouter")
-		? "It brings in this month and the last, and older months fill in after that."
-		: "It brings in the last four weeks, which is all OpenRouter keeps."
+/**
+ * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
+ * alike): AWS keeps over a year, OpenRouter four weeks.
+ */
+const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
+	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
+	const hasOpenRouter = Arr.some(unsynced, (source) => source.provider === "openrouter")
+	const hasOther = Arr.some(unsynced, (source) => source.provider !== "openrouter")
+	return hasOpenRouter && hasOther
+		? "AWS brings in this month and the last, and older months fill in after that. OpenRouter brings in its last four weeks."
+		: hasOpenRouter
+			? "It brings in the last four weeks, which is all OpenRouter keeps."
+			: "It brings in this month and the last, and older months fill in after that."
+}
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */
 const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {

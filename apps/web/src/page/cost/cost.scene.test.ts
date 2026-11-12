@@ -441,6 +441,42 @@ describe("cost page", () => {
 		expect(names(pageUpdate(step.model, Message.ClickedReload()).commands)).toContain("FetchCostSources")
 	})
 
+	test("the wait says what each unsynced provider brings in, a failing AWS source included", () => {
+		const unsynced = {
+			watermarkDate: null,
+			backfillDate: null,
+			historyComplete: false,
+			lastSyncedAt: null,
+		}
+		const openRouter = source({
+			...unsynced,
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			status: "pending",
+		})
+		const failingAws = source({
+			...unsynced,
+			status: "error",
+			lastError: "AccessDeniedException",
+			lastErrorReason: "not_ready",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [openRouter]).model),
+			resolveTheme,
+			expectView(text(/It brings in the last four weeks, which is all OpenRouter keeps/)).toExist(),
+		)
+		// The AWS source failed its first pull and will bring in months when it retries.
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [failingAws, openRouter]).model),
+			resolveTheme,
+			expectView(text("Waiting for the first sync")).toExist(),
+			expectView(text(/AWS brings in this month and the last/)).toExist(),
+			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+		)
+	})
+
 	test("a synced source asks for the totals, the daily series and the breakdown of the window", () => {
 		const step = entered({}, [source()])
 		expect(inputOf(step.commands, "FetchCostTotals")).toEqual(window)
