@@ -80,7 +80,8 @@ export const securityAuditSpendWindow = (
 /**
  * The models an org may pick for its audits, as OpenRouter ids. `eu` marks a model the EU instance
  * serves; there, a pick without it runs on the region's default. `verifies` is false for a model
- * that refused verifier prompts in the phase 0 eval.
+ * that refused verifier prompts in the phase 0 eval. `inputUsd` and `outputUsd` are OpenRouter's
+ * list prices per million tokens (checked 2026-11-12).
  */
 export const SECURITY_AUDIT_MODELS = [
 	{
@@ -89,6 +90,8 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "DeepSeek",
 		eu: false,
 		verifies: true,
+		inputUsd: 0.15,
+		outputUsd: 0.6,
 	},
 	{
 		id: "anthropic/claude-sonnet-5.5",
@@ -96,6 +99,8 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "Anthropic",
 		eu: true,
 		verifies: true,
+		inputUsd: 2,
+		outputUsd: 10,
 	},
 	{
 		id: "anthropic/claude-haiku-5.5",
@@ -103,9 +108,27 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "Anthropic",
 		eu: true,
 		verifies: true,
+		inputUsd: 0.1,
+		outputUsd: 0.5,
 	},
-	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", provider: "OpenAI", eu: true, verifies: false },
-	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", provider: "OpenAI", eu: true, verifies: true },
+	{
+		id: "openai/gpt-6.1-sol",
+		label: "GPT-6.1 Sol",
+		provider: "OpenAI",
+		eu: true,
+		verifies: false,
+		inputUsd: 2,
+		outputUsd: 10,
+	},
+	{
+		id: "openai/gpt-6-luna",
+		label: "GPT-6 Luna",
+		provider: "OpenAI",
+		eu: true,
+		verifies: true,
+		inputUsd: 0.1,
+		outputUsd: 0.5,
+	},
 ] as const
 
 export type SecurityAuditModelOption = (typeof SECURITY_AUDIT_MODELS)[number]
@@ -124,6 +147,25 @@ export const SecurityAuditValidationModel = Schema.Literals(
 	),
 )
 export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.Type
+
+/** Audit agents read far more than they write (about 4.6M input tokens a run), so input weighs 3 to 1. */
+type ListPrice = Readonly<{ inputUsd: number; outputUsd: number }>
+
+const blendedUsdPerMillion = (model: ListPrice): number => (3 * model.inputUsd + model.outputUsd) / 4
+
+/** Upper bounds, in blended dollars per million tokens, of price levels 1 to 4; above the last is 5. */
+const PRICE_LEVEL_BOUNDS = [0.5, 1.5, 5, 15] as const
+
+/** A model's list price as a level from 1 (cheapest) to 5, on a roughly 3x-per-step scale. */
+export const securityAuditPriceLevel = (model: ListPrice): number => {
+	const blended = blendedUsdPerMillion(model)
+	return (
+		Option.getOrElse(
+			Arr.findFirstIndex(PRICE_LEVEL_BOUNDS, (bound) => blended <= bound),
+			() => PRICE_LEVEL_BOUNDS.length,
+		) + 1
+	)
+}
 
 /** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
 export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>

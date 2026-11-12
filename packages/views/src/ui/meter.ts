@@ -4,6 +4,10 @@ import {
 	backdropBarLeftStyles,
 	backdropBarRightStyles,
 	backdropBarStyles,
+	levelMeterPipOffStyles,
+	levelMeterPipOnStyles,
+	levelMeterPipStyles,
+	levelMeterStyles,
 	meterFillStyles,
 	meterFillUntonedStyles,
 	meterStyles,
@@ -13,7 +17,7 @@ import {
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Meter, SegmentedBar and BackdropBar.
+// Meter, SegmentedBar, BackdropBar and LevelMeter.
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
 const widthPercent = (fraction: number, minVisible: number): number =>
@@ -137,3 +141,29 @@ export const backdropBar = <M>(
 /** The classes of a bar's fill pinned to the left of its `relative` track, sized by an inline width. */
 export const barFillClass = (className?: string): string =>
 	cn("absolute inset-y-0 left-0 rounded-xs", className)
+
+/** `LevelMeter`: a rating as `max` pips with the first `value` lit, such as a price from 1 to 5. */
+export const levelMeter = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ value: number; max?: number; label: string; className?: string }>,
+): Html => {
+	const max = options.max ?? 5
+	return h.div(
+		[
+			h.Class(cn(levelMeterStyles, options.className)),
+			h.DataAttribute("slot", "level-meter"),
+			h.Role("img"),
+			h.AriaLabel(options.label),
+		],
+		Arr.makeBy(max, (index) =>
+			h.div([
+				h.Class(
+					cn(
+						levelMeterPipStyles,
+						index < options.value ? levelMeterPipOnStyles : levelMeterPipOffStyles,
+					),
+				),
+			]),
+		),
+	)
+}

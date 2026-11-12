@@ -1,10 +1,16 @@
-import { SECURITY_AUDIT_MODELS } from "@maple/domain/security-audit"
+import {
+	SECURITY_AUDIT_MODELS,
+	securityAuditModelOption,
+	securityAuditPriceLevel,
+	type SecurityAuditModelOption,
+} from "@maple/domain/security-audit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Select from "@maple/views/ui/select"
+import { levelMeter } from "@maple/views/ui/meter"
 import * as SelectView from "@maple/views/ui/select-view"
 import { modelLabel } from "./format"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The two model pickers both dialogs show: which model hunts, and which one verifies.
@@ -23,11 +29,34 @@ const optionsFor = (stage: ModelStage) =>
 export const modelIdsFor = (stage: ModelStage): ReadonlyArray<string> =>
 	Arr.map(optionsFor(stage), (model) => model.id)
 
+/** The list price a row's tooltip spells out behind its price pips. */
+const priceTitle = (model: SecurityAuditModelOption): string =>
+	`$${model.inputUsd} in, $${model.outputUsd} out per million tokens (list price)`
+
 const entriesFor = (stage: ModelStage): ReadonlyArray<SelectView.SelectEntry> =>
 	Arr.map(optionsFor(stage), (model) => ({
 		_tag: "Item",
-		item: { value: model.id, label: model.label, title: model.provider },
+		item: { value: model.id, label: model.label, title: priceTitle(model) },
 	}))
+
+/** A picker row: the model and its provider, then its price as five pips. */
+const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): ReadonlyArray<Html> => {
+	const model = securityAuditModelOption(option.value)
+	if (model === undefined) return [typography(h, {}, [option.label])]
+	const level = securityAuditPriceLevel(model)
+	return [
+		hstack(h, { gap: "4", align: "center", justify: "between" }, [
+			hstack(h, { gap: "2", align: "baseline" }, [
+				typography(h, {}, [model.label]),
+				typography(h, { size: "xs", tone: "muted" }, [model.provider]),
+			]),
+			hstack(h, { gap: "1.5", align: "center" }, [
+				typography(h, { size: "xs", tone: "muted", attributes: [h.AriaHidden(true)] }, ["$"]),
+				levelMeter(h, { value: level, label: `Price ${level} of 5` }),
+			]),
+		]),
+	]
+}
 
 /** One labelled picker; `wrap` lifts the Select's messages into the dialog's. */
 export const modelPicker = <M>(
@@ -53,10 +82,7 @@ export const modelPicker = <M>(
 				labelledBy: labelId,
 				className: "w-full",
 				renderValue: (value) => [modelLabel(value)],
-				renderItem: (option) => [
-					option.label,
-					typography(h, { size: "xs", tone: "muted", className: "ml-2" }, [option.title ?? ""]),
-				],
+				renderItem: (option) => modelRow(h, option),
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
 			toParentMessage: options.wrap,

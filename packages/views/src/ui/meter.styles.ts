@@ -13,3 +13,11 @@ export const backdropBarStyles = "pointer-events-none absolute inset-y-1.5 round
 export const backdropBarLeftStyles = "left-2"
 
 export const backdropBarRightStyles = "right-2"
+
+export const levelMeterStyles = "inline-flex shrink-0 items-end gap-0.5"
+
+export const levelMeterPipStyles = "h-2.5 w-1 rounded-xs"
+
+export const levelMeterPipOnStyles = "bg-muted-foreground"
+
+export const levelMeterPipOffStyles = "bg-surface-strong"
