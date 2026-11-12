@@ -38,6 +38,7 @@ import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./der
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { canManageSources, cannotManageSources, type Model } from "./model"
+import { COST_PROVIDERS } from "./providers"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -63,7 +64,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model, a Cloudflare account by product.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -104,19 +105,27 @@ const onRamp = (
 		emptyFrameClass("dashed"),
 	)
 
+const MONTHS_SCOPE = "this month and the last, and older months fill in after that"
+
 /**
  * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
- * alike): AWS keeps over a year, OpenRouter four weeks.
+ * alike): AWS and Cloudflare keep a year or more, OpenRouter four weeks.
  */
 const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
-	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
-	const hasOpenRouter = Arr.some(unsynced, (source) => source.provider === "openrouter")
-	const hasOther = Arr.some(unsynced, (source) => source.provider !== "openrouter")
-	return hasOpenRouter && hasOther
-		? "AWS brings in this month and the last, and older months fill in after that. OpenRouter brings in its last four weeks."
-		: hasOpenRouter
-			? "It brings in the last four weeks, which is all OpenRouter keeps."
-			: "It brings in this month and the last, and older months fill in after that."
+	const unsynced = Arr.dedupe(
+		Arr.map(
+			Arr.filter(sources, (source) => source.watermarkDate === null),
+			(source) => source.provider,
+		),
+	)
+	const months = Arr.filter(unsynced, (provider) => COST_PROVIDERS[provider].firstSync === "months")
+	if (months.length === unsynced.length) return `It brings in ${MONTHS_SCOPE}.`
+	if (months.length === 0) return "It brings in the last four weeks, which is all OpenRouter keeps."
+	const names = Arr.join(
+		Arr.map(months, (provider) => COST_PROVIDERS[provider].name),
+		" and ",
+	)
+	return `${names} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. OpenRouter brings in its last four weeks.`
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */

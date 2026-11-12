@@ -8,6 +8,7 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Number as Num, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
+import type { CredentialProvider } from "../page/cost/providers"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
 // Nothing here is read by the product.
@@ -40,8 +41,6 @@ const line = (
 	drift,
 })
 
-/** A saved OpenRouter key, as OpenRouter masks it. */
-export const LAB_OPENROUTER_KEY = "sk-or-v1-4f2...c81"
 /** The OpenRouter account the lab's source reads: a personal account's user id. */
 const LAB_OPENROUTER_ACCOUNT = "user_2labExampleAccount0000000000"
 
@@ -52,6 +51,26 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 	region: "global",
 	usage_type: servedBy,
 	account: LAB_OPENROUTER_ACCOUNT,
+	daily,
+	drift,
+})
+
+/** The Cloudflare account the lab's source reads. */
+const LAB_CLOUDFLARE_ACCOUNT = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+
+const productLine = (
+	product: string,
+	category: string,
+	metric: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "cloudflare",
+	service_category: category,
+	region: "global",
+	usage_type: metric,
+	account: LAB_CLOUDFLARE_ACCOUNT,
 	daily,
 	drift,
 })
@@ -79,6 +98,10 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
+	productLine("Workers", "Compute", "Workers Requests", 9.4, 0.25),
+	productLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
+	productLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
+	productLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -104,15 +127,14 @@ const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 type Request = Readonly<{
 	days: number
 	filters: CostFilters | undefined
-	/** The lab's reader removed OpenRouter: its lines are in no read, whatever the filters say. */
-	withoutOpenRouter?: boolean
+	/** Providers the lab's reader removed: their lines are in no read, whatever the filters say. */
+	removed?: ReadonlyArray<string>
 }>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
 const windowOf = (request: Request) =>
 	Arr.flatMap(LINES, (entry, index) =>
-		matches(entry, request.filters) &&
-		!(request.withoutOpenRouter === true && entry.provider === "openrouter")
+		matches(entry, request.filters) && !Arr.contains(request.removed ?? [], entry.provider)
 			? [
 					{
 						entry,
@@ -248,36 +270,52 @@ const openRouterSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Cloudflare source: history back to the eleventh month before this one, and no billed requests. */
+const cloudflareSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c061",
+	provider: "cloudflare",
+	accountId: LAB_CLOUDFLARE_ACCOUNT,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+const CREDENTIAL_SOURCES = { openrouter: openRouterSource, cloudflare: cloudflareSource } as const
+
+/** What the lab's reader did to each pasted-credential source since the state loaded; null for nothing. */
+export type LabSourceChanges = Readonly<Record<CredentialProvider, boolean | null>>
+
 /**
- * `sources` after the lab's reader added OpenRouter (true: it waits for its first sync) or removed
- * it (false); null leaves them as the state has them.
+ * `sources` after the lab's reader added a provider (true: it waits for its first sync) or removed
+ * it (false); null leaves it as the state has it.
  */
 export const labSourcesWith = (
 	sources: CostSourcesResponse,
-	openRouter: boolean | null,
-): CostSourcesResponse => {
-	if (openRouter === null) return sources
-	const others = Arr.filter(sources.sources, (entry) => entry.provider !== "openrouter")
-	if (!openRouter) return new CostSourcesResponse({ sources: others })
-	return others.length === sources.sources.length
-		? decodeSources({
-				sources: [
-					...Schema.encodeSync(CostSourcesResponse)(sources).sources,
-					{
-						...openRouterSource,
-						status: "pending",
-						watermarkDate: null,
-						backfillDate: null,
-						historyComplete: false,
-						lastSyncedAt: null,
-					},
-				],
-			})
-		: sources
-}
+	changes: LabSourceChanges,
+): CostSourcesResponse =>
+	Arr.reduce(Rec.toEntries(changes), sources, (current, [provider, added]) => {
+		if (added === null) return current
+		const others = Arr.filter(current.sources, (entry) => entry.provider !== provider)
+		if (!added) return new CostSourcesResponse({ sources: others })
+		return others.length === current.sources.length
+			? decodeSources({
+					sources: [
+						...Schema.encodeSync(CostSourcesResponse)(current).sources,
+						{
+							...CREDENTIAL_SOURCES[provider],
+							status: "pending",
+							watermarkDate: null,
+							backfillDate: null,
+							historyComplete: false,
+							lastSyncedAt: null,
+						},
+					],
+				})
+			: current
+	})
 
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({}), openRouterSource] }),
+	synced: decodeSources({ sources: [source({}), openRouterSource, cloudflareSource] }),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [

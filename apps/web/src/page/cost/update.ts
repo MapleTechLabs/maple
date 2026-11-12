@@ -1,4 +1,4 @@
-import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import { CostSourcesResponse } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -27,9 +27,7 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	ReadCostGrants,
-	RemoveOpenRouterCostKey,
 	ResolveWindow,
-	SaveOpenRouterCostKey,
 	type TimeseriesInput,
 	type WindowInput,
 } from "./command"
@@ -44,8 +42,10 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
+import { credentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { AddStep, Model, Search } from "./model"
+import type { CredentialProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -150,6 +150,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		keyDraft: Field.init(),
 		keyError: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
+		removeProvider: "openrouter",
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
@@ -202,10 +203,10 @@ const withReread = (step: Return, context: PageContext): Return =>
 	)
 
 /**
- * The list on show without the OpenRouter source, which a removal just deleted: its row is gone
+ * The list on show without `provider`'s source, which a removal just deleted: its row is gone
  * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutOpenRouterSource = (model: Model): Model => ({
+const withoutSourceOf = (model: Model, provider: CredentialProvider): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -213,16 +214,16 @@ const withoutOpenRouterSource = (model: Model): Model => ({
 			model.sources.data,
 			(response) =>
 				new CostSourcesResponse({
-					sources: Arr.filter(response.sources, (source) => source.provider !== "openrouter"),
+					sources: Arr.filter(response.sources, (source) => source.provider !== provider),
 				}),
 		),
 	},
 })
 
-/** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
-const hasOpenRouterSource = (model: Model): boolean =>
+/** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
+const hasSourceOf = (model: Model, provider: CredentialProvider): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
-		Arr.some(sources, (source) => source.provider === "openrouter"),
+		Arr.some(sources, (source) => source.provider === provider),
 	)
 
 export const routeChanged = (
@@ -343,10 +344,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
+		PickedProvider: ({ provider }) => ({ model: { ...clearedKey(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
 			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
-		ClickedReplaceKey: () => openAdd(model, "openrouter"),
+		ClickedReplaceKey: ({ provider }) => openAdd(model, provider),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
 			if (model.sourceWrite === "Saving") return { model }
@@ -368,19 +369,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					},
 		SubmittedKey: () => {
-			const apiKey = Str.trim(model.keyDraft.value)
-			if (apiKey === "" || model.sourceWrite !== "Idle") return { model }
-			// The request refuses a longer key before it is sent, which would leave the save unanswered.
-			if (apiKey.length > OPENROUTER_KEY_MAX_LENGTH) {
-				return { model: { ...model, keyError: "That is too long to be an OpenRouter key." } }
+			const secret = Str.trim(model.keyDraft.value)
+			if (secret === "" || model.sourceWrite !== "Idle" || model.addStep === "pick") return { model }
+			const source = credentialSource(model.addStep)
+			// The request refuses a longer one before it is sent, which would leave the save unanswered.
+			if (secret.length > source.field.maxLength) {
+				return { model: { ...model, keyError: source.field.tooLong } }
 			}
 			return {
 				model: { ...model, sourceWrite: "Saving", keyError: null },
-				commands: [SaveOpenRouterCostKey({ apiKey })],
+				commands: [source.save(secret)],
 			}
 		},
-		// A refused key keeps the dialog open with the reason under the field.
-		CompletedSaveKey: ({ result }) =>
+		// A refused credential keeps the dialog open with the reason under the field.
+		CompletedSaveKey: ({ provider, result }) =>
 			Result.match(result, {
 				onFailure: (failure): Return => ({
 					model: { ...model, sourceWrite: "Idle", keyError: failureMessage(failure) },
@@ -390,20 +392,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						clearedKey({ ...model, sourceWrite: "Settling" }),
 						Dialog.close(model.addDialog),
 					)
-					const outMessage = hasOpenRouterSource(model)
-						? toast(
-								"success",
-								"OpenRouter key replaced",
-								"The next sync runs within a few minutes.",
-							)
-						: toast("success", "OpenRouter added", "The first sync runs within a few minutes.")
+					const source = credentialSource(provider)
+					const outMessage = hasSourceOf(model, provider)
+						? toast("success", source.replace.toast, "The next sync runs within a few minutes.")
+						: toast("success", source.add.toast, "The first sync runs within a few minutes.")
 					return withReread({ ...closed, outMessage }, context)
 				},
 			}),
-		ClickedRemoveSource: () =>
+		ClickedRemoveSource: ({ provider }) =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+				: liftRemoveDialog({ ...model, removeProvider: provider }, Dialog.open(model.removeDialog)),
 		GotRemoveDialogMessage: ({ message: inner }) =>
 			model.sourceWrite === "Removing"
 				? { model }
@@ -411,11 +410,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedConfirmRemove: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
-		CompletedRemoveKey: ({ result }) => {
+				: {
+						model: { ...model, sourceWrite: "Removing" },
+						commands: [credentialSource(model.removeProvider).delete()],
+					},
+		CompletedRemoveKey: ({ provider, result }) => {
 			const closed = liftRemoveDialog(
 				Result.isSuccess(result)
-					? withoutOpenRouterSource({ ...model, sourceWrite: "Settling" })
+					? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
 					: { ...model, sourceWrite: "Idle" },
 				Dialog.close(model.removeDialog),
 			)
@@ -425,7 +427,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
 				}),
 				onSuccess: (): Return =>
-					withReread({ ...closed, outMessage: toast("success", "OpenRouter removed") }, context),
+					withReread(
+						{ ...closed, outMessage: toast("success", credentialSource(provider).remove.toast) },
+						context,
+					),
 			})
 		},
 		...chartEnvHandlers(model),

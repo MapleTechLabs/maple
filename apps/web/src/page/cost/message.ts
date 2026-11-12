@@ -4,8 +4,6 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
-	OpenRouterCostKeyRemoved,
-	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
@@ -19,6 +17,7 @@ import * as Field from "@maple/views/ui/field"
 import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { CredentialProvider } from "./providers"
 
 /** A read's answer; `key` is what it was requested under, so a stale one is dropped. */
 const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
@@ -48,18 +47,19 @@ export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
-	ClickedAddOpenRouter: {},
+	/** Picks a provider added by pasting a credential: the dialog moves to its form. */
+	PickedProvider: { provider: CredentialProvider },
 	ClickedBackToProviders: {},
-	/** Opens the dialog on the key form, for the source that exists. */
-	ClickedReplaceKey: {},
+	/** Opens the dialog on the provider's form, for the source that exists. */
+	ClickedReplaceKey: { provider: CredentialProvider },
 	GotAddDialogMessage: { message: Dialog.Message },
 	GotKeyDraftMessage: { message: Field.Message },
 	SubmittedKey: {},
-	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
-	ClickedRemoveSource: {},
+	CompletedSaveKey: { provider: CredentialProvider, result: Schema.Result(Schema.Void, LoadFailure) },
+	ClickedRemoveSource: { provider: CredentialProvider },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
-	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
+	CompletedRemoveKey: { provider: CredentialProvider, result: Schema.Result(Schema.Void, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type
