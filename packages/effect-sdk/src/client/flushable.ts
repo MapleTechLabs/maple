@@ -28,7 +28,7 @@ import {
 	type Resolved,
 	type ResourceInput,
 	runFlush,
-	type SignalState,
+	makeSignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
@@ -288,9 +288,9 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		keyless: "send",
 	})
 
-	const tracesState: SignalState = { disabledUntil: 0 }
-	const logsState: SignalState = { disabledUntil: 0 }
-	const metricsState: SignalState = { disabledUntil: 0 }
+	const tracesState = makeSignalState()
+	const logsState = makeSignalState()
+	const metricsState = makeSignalState()
 
 	// A request rejected around `pagehide` is not restored, cooled down or
 	// logged: an unloading document rejects keepalive fetches that ingest still
