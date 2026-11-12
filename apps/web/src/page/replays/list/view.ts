@@ -145,14 +145,14 @@ const activeUserFilter = (
 		],
 	)
 
-/** The sentinel or the Load more button, then the cap footer and the loading row. */
+/** The sentinel, or the Load more button (also the retry of a failed page), then the cap footer and the loading row. */
 const listFooterParts = (
 	h: H,
 	model: Model,
 	items: ReturnType<typeof sessionListItems>,
 ): ReadonlyArray<Html> => {
 	const hasMore = nextCursor(model) !== null
-	const { isFetching } = model.pagination
+	const { isFetching, isFailed } = model.pagination
 	const hidesSessions = Arr.some(items, (item) => item.kind === "quiet" && !item.expanded)
 	// Folded pages barely grow the list, so the sentinel stays in view: stop once pages show nothing.
 	const isManual = hidesSessions && stalledPages(model) >= STALLED_PAGE_LIMIT
@@ -168,11 +168,13 @@ const listFooterParts = (
 	return [
 		...(hasMore
 			? [
-					isManual
+					isManual || isFailed
 						? listFooter(h, {
 								hasMore: true,
+								isFailed,
 								isLoading: isFetching,
 								onLoadMore: Message.ClickedLoadMore(),
+								children: isFailed ? [h.span([], ["Couldn't load more sessions"])] : [],
 							})
 						: h.div(
 								[

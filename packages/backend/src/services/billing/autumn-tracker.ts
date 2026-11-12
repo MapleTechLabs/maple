@@ -12,7 +12,7 @@
  */
 import { Config, Duration, Effect, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { AI_CREDITS_FEATURE_ID, type AiCreditSource } from "@maple/domain/billing"
+import { AI_CREDITS_FEATURE_ID, type AiCreditSource, aiCreditsUsd } from "@maple/domain/billing"
 import type { BillingCustomerId } from "@maple/domain/http"
 import {
 	AUTUMN_TRACK_PATH,
@@ -58,6 +58,11 @@ export interface AiModelSpend {
 	readonly cacheReadTokens: number
 	readonly cacheWriteTokens: number
 	readonly reasoningTokens: number
+	/**
+	 * What the provider billed for these calls, in microdollars, when it reported it. A charge that
+	 * has it is billed at that cost plus the AI credit markup, not from Autumn's price table.
+	 */
+	readonly providerCostMicrousd?: number
 }
 
 export interface TrackAiCreditsOptions {
@@ -199,11 +204,66 @@ const spendsAnything = (spend: AiModelSpend) =>
 		spend.reasoningTokens >
 	0
 
+/** One charge as the request that bills it: the provider's cost when known, else its tokens. */
+const creditRequest = (
+	customerId: BillingCustomerId,
+	source: AiUsageSource,
+	spend: AiModelSpend,
+	key: string,
+): ReadonlyArray<UsageRequest> => {
+	if (spend.providerCostMicrousd !== undefined) {
+		const providerUsd = spend.providerCostMicrousd / 1_000_000
+		if (!(providerUsd > 0)) return []
+		return [
+			{
+				path: AUTUMN_TRACK_PATH,
+				label: spend.modelId,
+				idempotencyKey: key,
+				body: {
+					customer_id: customerId,
+					feature_id: AI_CREDITS_FEATURE_ID,
+					value: aiCreditsUsd(providerUsd),
+					idempotency_key: key,
+					properties: {
+						source,
+						model: spend.modelId,
+						provider_usd: providerUsd,
+						input_tokens: spend.inputTokens,
+						output_tokens: spend.outputTokens,
+						cache_read_tokens: spend.cacheReadTokens,
+						cache_write_tokens: spend.cacheWriteTokens,
+						reasoning_tokens: spend.reasoningTokens,
+					},
+				},
+			},
+		]
+	}
+	return [
+		{
+			path: AUTUMN_TRACK_TOKENS_PATH,
+			label: spend.modelId,
+			idempotencyKey: key,
+			body: {
+				customer_id: customerId,
+				feature_id: AI_CREDITS_FEATURE_ID,
+				model_id: spend.modelId,
+				input_tokens: spend.inputTokens,
+				output_tokens: spend.outputTokens,
+				cache_read_tokens: spend.cacheReadTokens,
+				cache_write_tokens: spend.cacheWriteTokens,
+				reasoning_tokens: spend.reasoningTokens,
+				properties: { source },
+			},
+		},
+	]
+}
+
 /**
- * Charge a turn's model calls to the org's AI credits, one `track_tokens` call per charge.
+ * Charge a turn's model calls to the org's AI credits, one track call per charge.
  *
- * Autumn turns tokens into dollars from the model's published rates plus the markup configured
- * on the feature, so a cache read or a cheap model costs what it actually costs. The default
+ * A charge the provider priced bills that cost plus the AI credit markup: Autumn's per-model rate
+ * table follows models.dev, which has billed an OpenRouter model at a fraction of its real price.
+ * A charge without one (Workers AI) falls back to `track_tokens` and Autumn's rates. The default
  * overage behaviour is kept on purpose: `overflow` would ignore the org's spend limit.
  */
 export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function* ({
@@ -214,26 +274,10 @@ export const trackAiCredits = Effect.fn("AutumnTracker.trackAiCredits")(function
 }: TrackAiCreditsOptions) {
 	yield* postAll(
 		customerId,
-		Arr.map(
-			Arr.flatMap(spends, (spend, index) =>
-				spendsAnything(spend) ? [{ spend, key: `${idempotencyKey}:${source}:credits:${index}` }] : [],
-			),
-			({ spend, key }) => ({
-				path: AUTUMN_TRACK_TOKENS_PATH,
-				label: spend.modelId,
-				idempotencyKey: key,
-				body: {
-					customer_id: customerId,
-					feature_id: AI_CREDITS_FEATURE_ID,
-					model_id: spend.modelId,
-					input_tokens: spend.inputTokens,
-					output_tokens: spend.outputTokens,
-					cache_read_tokens: spend.cacheReadTokens,
-					cache_write_tokens: spend.cacheWriteTokens,
-					reasoning_tokens: spend.reasoningTokens,
-					properties: { source },
-				},
-			}),
+		Arr.flatMap(spends, (spend, index) =>
+			spendsAnything(spend)
+				? creditRequest(customerId, source, spend, `${idempotencyKey}:${source}:credits:${index}`)
+				: [],
 		),
 	)
 })

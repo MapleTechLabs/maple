@@ -11,7 +11,9 @@ import { Array as Arr } from "effect"
  * rolling; "1d" would be today since midnight (relative ranges count calendar days). */
 export const PRESET_VALUES = ["5m", "15m", "30m", "1h", "6h", "12h", "24h", "3d", "1w", "2w", "1mo"] as const
 export const LONG_RANGE_PRESET_VALUES = [...PRESET_VALUES, "3mo", "6mo", "12mo"] as const
-export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number]
+/** The rail of a page whose data is one value per whole day (cost): nothing shorter than a week. */
+export const DAY_RANGE_PRESET_VALUES = ["1w", "2w", "30d", "3mo", "6mo", "12mo"] as const
+export type PresetValue = (typeof LONG_RANGE_PRESET_VALUES)[number] | (typeof DAY_RANGE_PRESET_VALUES)[number]
 
 export const isPresetValue = (value: string): value is PresetValue =>
 	Arr.some(LONG_RANGE_PRESET_VALUES, (preset) => preset === value)

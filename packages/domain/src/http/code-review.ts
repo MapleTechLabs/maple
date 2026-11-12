@@ -141,6 +141,48 @@ export class CodeReviewVerdicts extends Schema.Class<CodeReviewVerdicts>("CodeRe
 	notApplicable: Schema.Number,
 }) {}
 
+/** One repository's code review spend over a billing window. Credits are dollars, markup included. */
+export class CodeReviewSpendRepository extends Schema.Class<CodeReviewSpendRepository>(
+	"CodeReviewSpendRepository",
+)({
+	repositoryId: VcsRepositoryId,
+	fullName: Schema.String,
+	pullRequests: Schema.Number,
+	reviews: Schema.Number,
+	credits: Schema.Number,
+}) {}
+
+/** One pull request's reviews over a billing window, every push counted. */
+export class CodeReviewSpendPullRequest extends Schema.Class<CodeReviewSpendPullRequest>(
+	"CodeReviewSpendPullRequest",
+)({
+	repositoryId: VcsRepositoryId,
+	fullName: Schema.String,
+	number: Schema.Number,
+	title: Schema.NullOr(Schema.String),
+	url: Schema.String,
+	reviews: Schema.Number,
+	credits: Schema.Number,
+}) {}
+
+/**
+ * Where an org's code review credits went over a billing window. Reviews that ran before their
+ * cost was recorded count in `reviews` but add nothing to `credits`; `unpricedReviews` says how many.
+ */
+export class CodeReviewSpend extends Schema.Class<CodeReviewSpend>("CodeReviewSpend")({
+	reviews: Schema.Number,
+	pullRequests: Schema.Number,
+	credits: Schema.Number,
+	unpricedReviews: Schema.Number,
+	/** Reviews after a pull request's first in the window: a run per later push. */
+	reReviews: Schema.Number,
+	reReviewCredits: Schema.Number,
+	/** Most credits first, at most eight. */
+	repositories: Schema.Array(CodeReviewSpendRepository),
+	/** Most credits first, at most eight. */
+	topPullRequests: Schema.Array(CodeReviewSpendPullRequest),
+}) {}
+
 export class CodeReviewAnalytics extends Schema.Class<CodeReviewAnalytics>("CodeReviewAnalytics")({
 	bucketSeconds: Schema.Number,
 	current: CodeReviewTotals,

@@ -100,6 +100,59 @@ describe("startBaselineCapture", () => {
 		expect(events[0]?.message).toBe("boom")
 	})
 
+	describe("with the SDK's error noise filter", () => {
+		// What Chromium reports: a message and no error object.
+		const RESIZE_NOTICE = "ResizeObserver loop completed with undelivered notifications."
+		const isResizeNotice = (error: unknown): boolean =>
+			(error instanceof Error ? error.message : error) === RESIZE_NOTICE
+		const reject = (reason: unknown): void => {
+			const promise = Promise.reject(reason)
+			promise.catch(() => {})
+			window.dispatchEvent(new PromiseRejectionEvent("unhandledrejection", { promise, reason }))
+		}
+
+		it("leaves a benign ResizeObserver notice out and still captures a real error", () => {
+			stop = startBaselineCapture((ev) => events.push(ev), false, isResizeNotice)
+			window.dispatchEvent(new ErrorEvent("error", { message: RESIZE_NOTICE }))
+			window.dispatchEvent(new ErrorEvent("error", { message: "boom", error: new Error("boom") }))
+			reject(new Error(RESIZE_NOTICE))
+			reject(new Error("request failed"))
+
+			expect(events.map((ev) => [ev.type, ev.message])).toEqual([
+				["error", "boom"],
+				["error", "request failed"],
+			])
+		})
+
+		it("gives the filter the script the error came from", () => {
+			const seen: Array<string | undefined> = []
+			stop = startBaselineCapture(
+				(ev) => events.push(ev),
+				false,
+				(_error, _source, filename) => seen.push(filename) < 0,
+			)
+			window.dispatchEvent(
+				new ErrorEvent("error", { message: "boom", filename: "chrome-extension://abc/inpage.js" }),
+			)
+			window.dispatchEvent(new ErrorEvent("error", { message: "boom" }))
+
+			expect(seen).toEqual(["chrome-extension://abc/inpage.js", undefined])
+		})
+
+		it("captures the error when the filter itself throws", () => {
+			stop = startBaselineCapture(
+				(ev) => events.push(ev),
+				false,
+				() => {
+					throw new Error("filter exploded")
+				},
+			)
+			window.dispatchEvent(new ErrorEvent("error", { message: "boom" }))
+
+			expect(events.map((ev) => ev.message)).toEqual(["boom"])
+		})
+	})
+
 	it("never records input values, only that an input happened", () => {
 		start()
 		const input = document.createElement("input")

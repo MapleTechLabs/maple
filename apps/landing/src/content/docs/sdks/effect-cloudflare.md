@@ -88,7 +88,7 @@ Run `wrangler tail` and look for lines starting with `[MapleCloudflareSDK]`:
 
 - **`no ingest key configured`.** The Worker has no `MAPLE_INGEST_KEY` in `env`. Set it with `wrangler secret put MAPLE_INGEST_KEY`.
 - **`flush failed; cooldown 60s`** with `OTLP 401`. The key is wrong, or it belongs to the other region. An EU key needs `MAPLE_REGION=eu`.
-- **`flush skipped (cooldown ...)`.** An earlier flush failed. Look further back in the log for the failure.
+- **Only one `flush failed` line.** An outage is logged once per signal. Retries every 60s stay silent, and `flush recovered` follows when export works again.
 - **No lines and no data.** `ctx.waitUntil(telemetry.flush(env))` is not being called, so the isolate stops before the request is sent. Or `telemetry.layer` is provided to a different runtime than your routes.
 
 ## Next steps

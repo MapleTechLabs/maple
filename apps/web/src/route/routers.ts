@@ -142,6 +142,7 @@ const routers = {
 		slash(segment("ruleId")),
 		Route.mapTo(AppRoute.IngestRule),
 	),
+	BillingAiCredits: pipe(path("settings", "billing", "ai-credits"), Route.mapTo(AppRoute.BillingAiCredits)),
 	// Retired: `routeRedirect` sends it to `/status-pages/$pageId`.
 	AlertsStatusPage: pipe(
 		path("alerts", "status-pages"),
@@ -317,6 +318,7 @@ const routers = {
 	Analytics: pipe(path("analytics"), search(Search.AnalyticsSearch), Route.mapTo(AppRoute.Analytics)),
 	Anomalies: pipe(path("anomalies"), search(Search.AnomaliesSearch), Route.mapTo(AppRoute.Anomalies)),
 	CodeReview: pipe(path("code-review"), search(Search.CodeReviewSearch), Route.mapTo(AppRoute.CodeReview)),
+	Cost: pipe(path("cost"), search(Search.CostSearch), Route.mapTo(AppRoute.Cost)),
 	Dashboards: pipe(path("dashboards"), search(Search.DashboardsSearch), Route.mapTo(AppRoute.Dashboards)),
 	Errors: pipe(path("errors"), search(Search.ErrorsSearch), Route.mapTo(AppRoute.Errors)),
 	Infra: pipe(path("infra"), search(Search.InfraSearch), Route.mapTo(AppRoute.Infra)),
@@ -574,6 +576,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.AlertsEscalationChain,
 		routers.IngestRuleNew,
 		routers.IngestRule,
+		routers.BillingAiCredits,
 		routers.AlertsStatusPage,
 		routers.StatusPageNew,
 		routers.StatusPageView,

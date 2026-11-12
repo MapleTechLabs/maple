@@ -34,8 +34,6 @@ export const Message = defineMessageUnion({
 	ClickedPlan: { planId: Schema.String },
 	SucceededAttach: { paymentUrl: Schema.NullOr(Schema.String) },
 	FailedAttach: { message: Schema.String },
-	ClickedEnterpriseContact: {},
-	CompletedOpenEnterpriseContact: {},
 	CompletedOpenCheckout: {},
 	CompletedTrackCheckoutStarted: {},
 	GotCheckoutReturnMessage: { message: CheckoutReturn.Message },
@@ -100,15 +98,8 @@ export const TrackCheckoutStarted = Command.define("TrackCheckoutStarted", {
 		),
 })
 
-const ENTERPRISE_CONTACT_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
-
-export const OpenEnterpriseContact = Command.define("OpenEnterpriseContact", {
-	messages: [Message.CompletedOpenEnterpriseContact],
-	execute: Effect.sync(() => {
-		window.open(ENTERPRISE_CONTACT_URL, "_blank", "noopener,noreferrer")
-		return Message.CompletedOpenEnterpriseContact()
-	}),
-})
+/** The founder's booking page, the Enterprise card's link. */
+export const ENTERPRISE_CONTACT_URL = "https://cal.com/david-granzin/30min?overlayCalendar=true"
 
 /**
  * A return from Stripe while the customer is still planless waits on the sync. Once the plan
@@ -179,8 +170,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, loadingPlanId: null },
 			outMessage: OutMessage.FailedChangePlan({ message: failure }),
 		}),
-		ClickedEnterpriseContact: () => ({ model, commands: [OpenEnterpriseContact()] }),
-		CompletedOpenEnterpriseContact: () => ({ model }),
 		CompletedOpenCheckout: () => ({ model }),
 		CompletedTrackCheckoutStarted: () => ({ model }),
 		GotCheckoutReturnMessage: ({ message: child }) => {

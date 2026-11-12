@@ -26,6 +26,7 @@ import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrRe
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { CostSyncService } from "@maple/backend/services/cost/CostSyncService"
 import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
@@ -92,6 +93,7 @@ export const layerTick = (
 		VercelIntegrationService.layer,
 		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
+		CostSyncService.layer,
 		SecretResealService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
@@ -413,6 +415,22 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const costSyncTick = makeTick(
+	CostSyncService.use((cost) => cost.pollAllSources),
+	"cost_sync",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					synced: result.synced,
+					skipped: result.skipped,
+					failures: result.failures,
+					rowsWritten: result.rowsWritten,
+					requests: result.requests,
+				}
+			: undefined,
+)
+
 const vercelTick = makeTick(
 	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs),
 	"vercel",
@@ -565,6 +583,7 @@ const scheduledTicks = {
 	anomaly: anomalyTick,
 	awsConnections: awsConnectionsTick,
 	cloudflareAnalytics: cloudflareAnalyticsTick,
+	costSync: costSyncTick,
 	digest: digestTick,
 	error: errorTick,
 	escalation: escalationTick,
@@ -628,6 +647,7 @@ const LANE_TICKS = {
 	supabase_insights: ["supabaseInsights"],
 	maintenance_windows: ["maintenanceWindows"],
 	search_console: ["searchConsole"],
+	cost_sync: ["costSync"],
 	vercel: ["vercel"],
 } as const satisfies Record<TickLane, ReadonlyArray<ScheduledTickName>>
 

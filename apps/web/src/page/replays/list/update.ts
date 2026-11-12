@@ -301,7 +301,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		ReachedListEnd: () => fetchNext(model),
+		// A failed page waits for its retry (Load more), not for the sentinel.
+		ReachedListEnd: () => (model.pagination.isFailed ? { model } : fetchNext(model)),
 		ChangedVirtualWindow: ({ window }) => ({ model: { ...model, virtualWindow: window } }),
 		ClickedLoadMore: () => fetchNext(model),
 		CompletedLoadSignalPresence: ({ result }) => ({

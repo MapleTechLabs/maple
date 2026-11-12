@@ -129,6 +129,8 @@ export const AuditResources = {
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
 	cloudflare_integration: { verbs: ["zones_updated"] },
+	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
+	cost_source_key: { verbs: ["updated", "deleted"] },
 	/**
 	 * Org membership, learned from Clerk's webhook; the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
@@ -245,6 +247,7 @@ export const AuditResourceLabels = {
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
+	cost_source_key: "Cost source key",
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
@@ -370,6 +373,8 @@ export const AuditActionLabels = {
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
+	"cost_source_key.updated": "Updated cost source key",
+	"cost_source_key.deleted": "Removed cost source key",
 	"member.added": "Added member",
 	"member.role_changed": "Changed member role",
 	"member.removed": "Removed member",

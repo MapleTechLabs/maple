@@ -33,6 +33,7 @@ import * as AlertsSchedule from "./alerts/schedule"
 import * as AlertsScheduleNew from "./alerts/schedule-form"
 import * as AlertsEscalationChain from "./alerts/escalation-chain"
 import * as IngestRuleEditor from "./settings/ingest-rule"
+import * as BillingAiCredits from "./settings/ai-credits"
 import * as DashboardsList from "./dashboards/list"
 import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
@@ -79,6 +80,7 @@ import * as LogsList from "./logs/list"
 import * as LogPage from "./logs/log"
 import * as MetricsBrowse from "./metrics/browse"
 import * as Analytics from "./analytics"
+import * as Cost from "./cost"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
@@ -188,6 +190,7 @@ export const pages = [
 	InvestigationDetail.page,
 	Settings.page,
 	IngestRuleEditor.page,
+	BillingAiCredits.page,
 	McpPage.page,
 	SourcesList.page,
 	SourcesNew.page,
@@ -199,6 +202,7 @@ export const pages = [
 	UserDetail.page,
 	Share.page,
 	Analytics.page,
+	Cost.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

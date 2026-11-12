@@ -30,6 +30,13 @@ export interface AwsRoleReport {
 	readonly attachedPolicyNames: ReadonlyArray<string>
 }
 
+/** A role Maple assumed: what `@distilled.cloud/aws` calls sign with, for the session's 15 minutes. */
+export interface AwsRoleSession {
+	/** The account of the session AWS handed out. */
+	readonly accountId: string
+	readonly credentials: Credentials.Credentials["Service"]
+}
+
 // STS answers these when it cannot verify Maple's token: on Maple's side, not the customer's.
 // `IDPCommunicationError` (STS could not fetch the JWKS) is left out: usually brief, it is `upstream`.
 const MAPLE_TOKEN_CODES = new Set(["InvalidIdentityToken", "ExpiredTokenException"])
@@ -156,7 +163,27 @@ const assumeWithToken = (
 				? Effect.fail(stsError(answer.Error.Code, answer.Error.Message))
 				: Effect.succeed(answer.AssumeRoleWithWebIdentityResponse.AssumeRoleWithWebIdentityResult),
 		),
+		// The connection check and the cost pull both assume the role here: one client span for STS.
+		Effect.withSpan("AwsSts.AssumeRoleWithWebIdentity", {
+			kind: "client",
+			attributes: { "peer.service": "aws-sts" },
+		}),
 	)
+
+/** Assumes `target` with Maple's token. The session signs in us-east-1 and is kept nowhere. */
+export const assumeRole = (
+	httpClient: HttpClient.HttpClient,
+	token: Redacted.Redacted,
+	target: AwsRoleTarget,
+): Effect.Effect<AwsRoleSession, AwsApiError> =>
+	Effect.map(assumeWithToken(httpClient, token, target), (assumed) => ({
+		accountId: /^arn:aws:sts::([0-9]{12}):/u.exec(assumed.AssumedRoleUser.Arn)?.[1] ?? "",
+		credentials: signWith({
+			accessKeyId: Redacted.make(assumed.Credentials.AccessKeyId),
+			secretAccessKey: Redacted.make(assumed.Credentials.SecretAccessKey),
+			sessionToken: Redacted.make(assumed.Credentials.SessionToken),
+		}),
+	}))
 
 /**
  * Assumes `target` with Maple's token, then reads the role's tags and attached policies with the
@@ -168,14 +195,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 	target: AwsRoleTarget,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.aws.role_arn": target.roleArn })
-	const assumed = yield* assumeWithToken(httpClient, token, target)
-	const credentials = assumed.Credentials
-	const sessionArn = assumed.AssumedRoleUser.Arn
-	const session = signWith({
-		accessKeyId: Redacted.make(credentials.AccessKeyId),
-		secretAccessKey: Redacted.make(credentials.SecretAccessKey),
-		sessionToken: Redacted.make(credentials.SessionToken),
-	})
+	const { accountId, credentials: session } = yield* assumeRole(httpClient, token, target)
 	const asRole = <A, E extends { readonly _tag: string }>(what: string, effect: Effect.Effect<A, E>) =>
 		effect.pipe(
 			Effect.timeoutOrElse({ duration: REQUEST_TIMEOUT, orElse: () => Effect.fail(timedOut(what)) }),
@@ -205,7 +225,7 @@ export const checkRole = Effect.fn("AwsApi.checkRole")(function* (
 		{ concurrency: 1 },
 	)
 	return {
-		accountId: /^arn:aws:sts::([0-9]{12}):/u.exec(sessionArn)?.[1] ?? "",
+		accountId,
 		tags: Arr.map(role.Role.Tags ?? [], (tag) => ({ key: tag.Key, value: tag.Value })),
 		attachedPolicyNames: Arr.flatMap(attached, (policy) =>
 			policy.PolicyName === undefined ? [] : [policy.PolicyName],

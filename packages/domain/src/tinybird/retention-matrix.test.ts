@@ -7,6 +7,8 @@ const RETENTION_DAYS = {
 	// CI projections outlive their raw traces on purpose: a year of run history.
 	ci_jobs: 365,
 	ci_runs: 365,
+	// Two years and a month: every month keeps the same month a year earlier beside it.
+	cost_daily: 760,
 	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.

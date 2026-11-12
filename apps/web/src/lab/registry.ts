@@ -134,6 +134,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ai-credits",
+		title: "AI credits",
+		description:
+			"The AI credits page under Settings › Billing: spend by feature and model, and code review by repository and pull request (`?state=` code-review, chat, empty, loading, error).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:
@@ -162,6 +170,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Google Cloud connections",
 		description:
 			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/cost",
+		title: "Cost",
+		description:
+			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -424,6 +440,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Settings dialogs",
 		description:
 			"The integration disconnect, dashboard delete, key create and alert destination dialogs, open, and the settings danger zones and save bars (General, Profile, a source's Settings) over fixtures. Pick one with ?item=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/aws-connection",
+		title: "AWS connection",
+		description:
+			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, the card before its stack is deployed, with a failing role, a stopped stream and metrics off, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|pending|failing|stopped|metrics-off|flow|flow-before).",
 		kind: "lab",
 		session: "none",
 	},

@@ -1096,8 +1096,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				| WarehouseQueryPathError
 			> {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": rule.id })
-				// An uptime rule observes its monitor, never the warehouse, and never skips:
-				// 1 while down, 0 otherwise. A monitor that is gone observes nothing.
+				// An uptime rule observes its monitor, never the warehouse: 1 while down, 0 otherwise.
+				// A probe with no recent check has no data, so it skips and shows as a blind spot
+				// instead of reading healthy. A monitor that is gone observes nothing.
 				if (rule.signalType === "uptime") {
 					const observedAt = yield* now
 					const observation = yield* uptimeAlerts
@@ -1105,16 +1106,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						.pipe(Effect.mapError(makePersistenceError))
 					return Option.match(observation, {
 						onNone: () => [],
-						onSome: (observed) => [
-							{
-								evaluation: applyEvaluationLogic(
-									rule,
-									{ value: observed.down ? 1 : 0, sampleCount: 1, hasData: true },
-									observed.detail ?? "The check is passing",
-								),
-								groupKey: observed.groupKey,
-							},
-						],
+						onSome: (observed) => {
+							const reason = observed.detail ?? "The check is passing"
+							const evaluation = applyEvaluationLogic(
+								rule,
+								observed.stale
+									? EMPTY_OBSERVATION
+									: { value: observed.down ? 1 : 0, sampleCount: 1, hasData: true },
+								reason,
+							)
+							return [
+								{
+									evaluation: observed.stale ? { ...evaluation, reason } : evaluation,
+									groupKey: observed.groupKey,
+								},
+							]
+						},
 					})
 				}
 				// An anomaly rule observes the detector's open incidents: one group per anomaly

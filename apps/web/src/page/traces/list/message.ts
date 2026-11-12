@@ -44,6 +44,8 @@ export const Message = defineMessageUnion({
 	/** A later page; `key` is the first page's key it continues. */
 	CompletedFetchNextPage: { ...result(TracesPage), generation: Schema.Number, offset: Schema.Number },
 	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
+	/** "Try again" in the footer, after a later page failed. */
+	ClickedRetryNextPage: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },

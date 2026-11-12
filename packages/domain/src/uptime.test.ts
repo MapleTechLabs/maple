@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
+	describeStaleProbe,
 	effectiveAssertions,
 	firstFailedAssertion,
 	isMapleService,
@@ -215,5 +216,15 @@ describe("isMapleService", () => {
 				isMapleService,
 			),
 		).toEqual([true, true, false, false, false])
+	})
+})
+
+describe("describeStaleProbe", () => {
+	it("names the last check and how long ago it was", () => {
+		const now = Date.parse("2026-10-26T14:15:00Z")
+		expect(describeStaleProbe(Date.parse("2026-10-26T14:03:20Z"), now)).toBe(
+			"No check result since 2026-10-26 14:03 UTC (12 min ago)",
+		)
+		expect(describeStaleProbe(null, now)).toBe("No check result yet")
 	})
 })

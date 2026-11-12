@@ -32,6 +32,7 @@ import {
 } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import {
+	AI_CREDIT_MODEL_PROPERTY,
 	AI_CREDIT_SOURCE_PROPERTY,
 	aiCreditUsageOf,
 	AutumnGroupedAggregate,
@@ -54,6 +55,7 @@ import { DailySpendService } from "@maple/backend/services/billing/DailySpendSer
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 // Pull the `invoices` array off a raw expanded `getOrCreateCustomer` response.
@@ -138,6 +140,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const edgeCache = yield* EdgeCacheService
 		const dailySpend = yield* DailySpendService
 		const autumn = yield* AutumnClient
+		const codeReviews = yield* PrReviewAnalyticsService
 		const stripe = yield* StripeClient
 		const productEvents = yield* ProductEventsService
 		const organizations = yield* OrganizationService
@@ -259,15 +262,71 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const now = yield* Clock.currentTimeMillis
 						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						const result = yield* autumn.aggregateEvents(customerId, {
-							featureId: AI_CREDITS_FEATURE_ID,
-							customRange: { start: cycle.startMs, end: cycle.endMs },
-							groupBy: AI_CREDIT_SOURCE_PROPERTY,
-						})
-						const aggregate = yield* ensureOk(result).pipe(
-							Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
+						const customRange = { start: cycle.startMs, end: cycle.endMs }
+						const grouped = (groupBy: string) =>
+							autumn
+								.aggregateEvents(customerId, {
+									featureId: AI_CREDITS_FEATURE_ID,
+									customRange,
+									groupBy,
+								})
+								.pipe(
+									Effect.flatMap(ensureOk),
+									Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
+								)
+						const [bySource, byModel, codeReview] = yield* Effect.all(
+							[
+								grouped(AI_CREDIT_SOURCE_PROPERTY),
+								// The model split and the code review breakdown are extra detail: a failed or slow
+								// read drops that part, never the spend.
+								grouped(AI_CREDIT_MODEL_PROPERTY).pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not read AI credits by model").pipe(
+											Effect.annotateLogs({
+												orgId: tenant.orgId,
+												error: String(error),
+											}),
+											Effect.as(AutumnGroupedAggregate.make({ list: [] })),
+										),
+									),
+								),
+								// The bill is the paying org's and its members', so the breakdown covers them all,
+								// whichever of them is looking.
+								billingCustomers.billingOrgId(tenant.orgId).pipe(
+									Effect.flatMap((payer) =>
+										billingOrgs
+											.members(payer)
+											.pipe(
+												Effect.flatMap((members) =>
+													codeReviews.spend(
+														[
+															payer,
+															...Arr.map(members, (member) => member.orgId),
+														],
+														customRange,
+													),
+												),
+											),
+									),
+									Effect.map((spend) => (spend.reviews > 0 ? spend : null)),
+									Effect.timeoutOrElse({
+										duration: "5 seconds",
+										orElse: () => Effect.succeed(null),
+									}),
+									Effect.catch((error) =>
+										Effect.logWarning("Could not read code review spend").pipe(
+											Effect.annotateLogs({
+												orgId: tenant.orgId,
+												error: error.message,
+											}),
+											Effect.as(null),
+										),
+									),
+								),
+							],
+							{ concurrency: "unbounded" },
 						)
-						return aiCreditUsageOf(aggregate)
+						return aiCreditUsageOf(customRange, bySource, byModel, codeReview)
 					}),
 				)
 				// Invoices ride along on getOrCreateCustomer via `expand`, but through a

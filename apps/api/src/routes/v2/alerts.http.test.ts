@@ -1012,12 +1012,135 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("previews a raw SQL alert for alerts:write keys", async () => {
+	const errorRatePreview = {
+		rule: {
+			name: "Error rate preview",
+			severity: "warning",
+			signal_type: "error_rate",
+			comparator: "gt",
+			threshold: 5,
+			window_minutes: 5,
+			destination_ids: [],
+		},
+		start_time: "2026-01-01T00:00:00.000Z",
+		end_time: "2026-01-01T00:30:00.000Z",
+	}
+
+	it("refuses a preview to a key that cannot read the telemetry the rule queries", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		// The preview returns what the query measured, grouped however the caller chose,
+		// so an alerts-only key would otherwise read traces it was never granted.
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const response = await harness.request(
+			"POST",
+			"/v2/alerts/rules/preview",
+			key.secret,
+			errorRatePreview,
+		)
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	const logsBuilderPreview = {
+		rule: {
+			name: "Logs builder preview",
+			severity: "warning",
+			signal_type: "builder_query",
+			query_builder_draft: { id: "q", name: "A", dataSource: "logs", aggregation: "count" },
+			comparator: "gt",
+			threshold: 10,
+			window_minutes: 5,
+			destination_ids: [],
+		},
+		start_time: "2026-01-01T00:00:00.000Z",
+		end_time: "2026-01-01T00:30:00.000Z",
+	}
+
+	it("refuses a logs builder preview to a key that reads only traces", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"])
+		const response = await harness.request(
+			"POST",
+			"/v2/alerts/rules/preview",
+			key.secret,
+			logsBuilderPreview,
+		)
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	it("refuses a rule test to a key that cannot read the telemetry the rule queries", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			compiledQuery: (tenant, compiled) => {
+				warehouseCalls += 1
+				return warehouseStub.compiledQuery(tenant, compiled)
+			},
+		})
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"])
+		const response = await harness.request("POST", "/v2/alerts/rules/test", key.secret, {
+			rule: logsBuilderPreview.rule,
+			send_notification: false,
+		})
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	it("refuses a raw SQL preview to a key missing one telemetry family", async () => {
+		let warehouseCalls = 0
+		const harness = makeHarness({
+			...warehouseStub,
+			rawSqlQuery: () => {
+				warehouseCalls += 1
+				return Effect.succeed([])
+			},
+		})
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read", "logs:read"])
+		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
+			rule: {
+				name: "Raw preview",
+				severity: "warning",
+				signal_type: "raw_query",
+				raw_query_sql:
+					"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				raw_query_reducer: "max",
+				comparator: "gt",
+				threshold: 10,
+				window_minutes: 5,
+				destination_ids: [],
+			},
+			start_time: "2026-01-01T00:00:00.000Z",
+			end_time: "2026-01-01T00:30:00.000Z",
+		})
+		expect(response.status).toBe(403)
+		expect(warehouseCalls).toBe(0)
+		await harness.dispose()
+	})
+
+	it("previews a raw SQL alert for keys that can write alerts and read all telemetry", async () => {
 		const harness = makeHarness({
 			...warehouseStub,
 			rawSqlQuery: () => Effect.succeed([{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }]),
 		})
-		const key = await harness.bootstrapKey(["alerts:write"])
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read", "logs:read", "metrics:read"])
 		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
 			rule: {
 				name: "Raw preview",
@@ -1063,7 +1186,7 @@ describe("v2 alerts over HTTP", () => {
 						)
 					: Effect.succeed([{ value: 1, samples: 1 }]),
 		})
-		const key = await harness.bootstrapKey(["alerts:write"])
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read", "logs:read", "metrics:read"])
 		const response = await harness.request("POST", "/v2/alerts/rules/preview", key.secret, {
 			rule: {
 				name: "Heavy raw preview",

@@ -238,26 +238,22 @@ const requestAll = (
 }
 
 /**
- * Once the window's last row is within `FETCH_THRESHOLD` of the end, the next page is fetched, one
- * at a time, never while the first page refreshes.
+ * Asks for the next page, one at a time, never while the first page refreshes; also the retry of
+ * a page that failed.
  */
-const fetchIfNearEnd =
+const fetchNext =
 	(context: PageContext) =>
 	(result: Return): Return => {
 		const { model } = result
 		const firstPage = firstPageOf(model)
-		const lastIndex = model.stream.window.at(-1)?.index ?? -1
-		const count = allLogs(firstPage, model.pagination).length
 		const cursor = lastCursor(firstPage, model.pagination)
 		if (
-			lastIndex < 0 ||
 			model.window === null ||
 			model.firstPage.key === null ||
 			model.pagination.isFetching ||
 			AsyncData.isRefreshing(model.firstPage.data) ||
 			!hasNextPage(firstPage, model.pagination) ||
-			cursor === null ||
-			lastIndex < count - FETCH_THRESHOLD
+			cursor === null
 		)
 			return result
 		return {
@@ -275,6 +271,21 @@ const fetchIfNearEnd =
 				}),
 			],
 		}
+	}
+
+/**
+ * Once the window's last row is within `FETCH_THRESHOLD` of the end, the next page is fetched.
+ * A failed page waits for its retry.
+ */
+const fetchIfNearEnd =
+	(context: PageContext) =>
+	(result: Return): Return => {
+		const { model } = result
+		const lastIndex = model.stream.window.at(-1)?.index ?? -1
+		const count = allLogs(firstPageOf(model), model.pagination).length
+		return lastIndex < 0 || model.pagination.isFailed || lastIndex < count - FETCH_THRESHOLD
+			? result
+			: fetchNext(context)(result)
 	}
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Logs({ search }))
@@ -497,6 +508,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
 		ClickedReload: () => reload(model, context),
+		ClickedRetryNextPage: () => fetchNext(context)({ model }),
 		TickedAutoRefresh: () => reload(model, context),
 		ClickedJumpToLatest: () => {
 			const jumped = LogsStream.jumpToLatest(model.stream)

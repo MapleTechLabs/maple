@@ -19,6 +19,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
+import * as Tiles from "./tiles/update"
 
 // The warehouse answers feed `buildFlowElements` unchanged, so they stay the web-data shapes,
 // boxed as opaque values (as `SourceGraph` is) rather than re-declared as Schemas.
@@ -97,6 +98,8 @@ export const Model = Schema.Struct({
 	timePicker: TimeRangePicker.Model,
 	/** The 3D view's own state; fresh each time the view switches to 3D. */
 	scene3d: Scene3d.Model,
+	/** The tile view's board; kept across view switches, laid out again as the map changes. */
+	tiles: Tiles.Model,
 	/** Traces presence for the empty canvas, requested once it painted. */
 	presence: SignalPresenceData.schema,
 	...ChartEnvFields,

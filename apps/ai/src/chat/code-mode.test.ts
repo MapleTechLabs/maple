@@ -2,9 +2,10 @@
  * `run_code` through the real engine, a scripted model and the in-process executor: what a program
  * can call, what it cannot, and which runs are offered the tool at all.
  */
+import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
 import { inProcessCodeExecutorLayer } from "@yielded/agent-testing/code-executor-substitute"
-import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
@@ -321,6 +322,85 @@ describe("run_code", () => {
 		// The program's own call is one of the three, and it got to make the others.
 		assert.isAtLeast(dispatched.length, 1)
 		assert.isAtMost(dispatched.length, 2)
+	})
+
+	/**
+	 * The engine registers `run_code` itself, so its `execute_tool` span was content-free: every
+	 * failed program fell into one failure group with no arguments and no result.
+	 */
+	const programSpan = async (code: string, executor: McpToolExecutorApi) => {
+		const { model } = scriptedModel([callTool(RUN_CODE, { code }), answer("Done.")])
+		const { spans, tracer } = makeRecordingTracer()
+		const exit = await Effect.runPromiseExit(
+			runChatTurn({
+				sessionId: INVESTIGATION,
+				messageId: "msg-1",
+				tenant: TENANT,
+				origin: { kind: "app" },
+				toolExecutor: executor,
+				model,
+				completion: diagnosisCompletion({ kind: "app" }, () => Effect.void),
+				codeExecutor: inProcessCodeExecutorLayer,
+				text: "Investigate.",
+				history: [],
+				usage: makeRunUsage(),
+				holdsTurn: () => true,
+				append: () => {},
+			}).pipe(Effect.provide(llmClients), Effect.withTracer(tracer)),
+		)
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
+		const attributes = spansNamed(spans, `execute_tool ${RUN_CODE}`)[0]?.attributes
+		return {
+			arguments: String(attributes?.get("gen_ai.tool.call.arguments")),
+			result: String(attributes?.get("gen_ai.tool.call.result")),
+		}
+	}
+
+	it("records a program and what it returned on its span", async () => {
+		const span = await programSpan(
+			"async () => (await maple.list_services({})).toUpperCase()",
+			recordingExecutor().executor,
+		)
+
+		assert.include(span.arguments, "maple.list_services({})")
+		assert.include(span.result, "LIST_SERVICES RAN")
+	})
+
+	it("records which read failed a program, and why, on its span", async () => {
+		const executor: McpToolExecutorApi = {
+			...noRepositoryWarmup,
+			execute: (_tenant, name) =>
+				Effect.succeed(
+					name === "find_errors"
+						? {
+								isError: true,
+								content: [{ type: "text" as const, text: "No such service: checkout" }],
+							}
+						: { content: [{ type: "text" as const, text: `${name} ran` }] },
+				),
+		}
+
+		const span = await programSpan(
+			'async () => { await maple.list_services({}); return maple.find_errors({ service: "checkout" }) }',
+			executor,
+		)
+
+		assert.include(span.arguments, 'maple.find_errors({ service: \\"checkout\\" })')
+		assert.include(span.result, "CodeProgramFailedError")
+		assert.include(span.result, "No such service: checkout")
+		assert.include(span.result, "maple.find_errors (call 2 of 2) failed")
+		assert.notInclude(span.result, "maple.list_services")
+	})
+
+	it("keeps a program larger than the span's tool budget within it", async () => {
+		const span = await programSpan(
+			`async () => { /* ${Str.repeat(20_000)("x")} */ return maple.list_services({}) }`,
+			recordingExecutor().executor,
+		)
+
+		assert.include(span.arguments, "async () =>")
+		assert.isAtMost(span.arguments.length, 8_000)
+		assert.include(span.result, "list_services ran")
 	})
 
 	// Code-only children reach their reads through run_code alone, so the grant must name them too.

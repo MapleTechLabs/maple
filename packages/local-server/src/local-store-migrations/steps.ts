@@ -1923,6 +1923,22 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Purely additive: a new empty table, created by the bootstrap. Cost rows come from the
+		// hosted cost sync, so a local store has nothing to backfill.
+		slug: "cost-daily",
+		description: "Create cost_daily for cloud cost pulled from provider billing data",
+		clonedBefore: "additive DDL runs",
+		plan: [["install-cost-daily", "Install the empty cost_daily table via the v55 bootstrap"]],
+		dispositions: [
+			{
+				name: "cost_daily",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 
