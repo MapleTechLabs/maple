@@ -15,7 +15,8 @@ import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
-import { type CredentialSource, credentialSource } from "./credential-sources"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
+import { hasSourceOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
@@ -26,10 +27,6 @@ const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aw
 
 /** Where an AWS connection and its Cost module are changed. */
 export const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
-
-/** Whether the org has `provider`'s source, which there is at most one of. */
-const hasSourceOf = (sources: ReadonlyArray<CostSourceSummary>, provider: CredentialProvider): boolean =>
-	Arr.some(sources, (source) => source.provider === provider)
 
 const mark = (h: H, provider: CostProviderEntry): Html =>
 	icon(h, provider.icon, { size: 18, className: cn("shrink-0", provider.iconClassName) })
@@ -42,7 +39,7 @@ const credentialRow = (
 	isLast: boolean,
 ): Html => {
 	const entry: CostProviderEntry = COST_PROVIDERS[provider]
-	const { pick } = credentialSource(provider)
+	const { pick } = CREDENTIAL_SOURCES[provider]
 	return hasSourceOf(sources, provider)
 		? listRow(h, {
 				divided: !isLast,
@@ -61,6 +58,15 @@ const credentialRow = (
 			})
 }
 
+/** The providers that bill nothing for the requests Maple makes, by name. */
+const FREE_REQUESTS = Arr.join(
+	Arr.map(
+		Arr.filter(CredentialProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+		(provider) => COST_PROVIDERS[provider].name,
+	),
+	" and ",
+)
+
 /** The providers to add: AWS goes to its connect flow, the others to their credential form. */
 const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
@@ -78,7 +84,7 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 			),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter and Cloudflare requests are free. ",
+			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
 				"Turn on Cost for an AWS account that is connected",
 			]),
@@ -86,34 +92,38 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 		]),
 	])
 
-const KEY_IDS: FieldIds = {
+const CREDENTIAL_IDS: FieldIds = {
 	control: "cost-source-credential",
 	label: "cost-source-credential-label",
 	error: "cost-source-credential-error",
 	description: "cost-source-credential-description",
 }
 
-const keyField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
-	const state = Field.stateOf(model.keyDraft, model.keyError !== null)
+const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
+	const state = Field.stateOf(model.credentialDraft, model.credentialError !== null)
 	return field(h, { state }, [
-		fieldLabel(h, { ids: KEY_IDS, state }, text.label),
+		fieldLabel(h, { ids: CREDENTIAL_IDS, state }, text.label),
 		input(h, {
-			ids: KEY_IDS,
+			ids: CREDENTIAL_IDS,
 			state,
 			attributes: [
 				h.Type("password"),
 				h.Attribute("autocomplete", "off"),
 				h.Placeholder(text.placeholder),
 				...(model.sourceWrite === "Saving" ? [h.Disabled(true)] : []),
-				...Field.controlAttributes(h, model.keyDraft, (message) =>
-					Message.GotKeyDraftMessage({ message }),
+				...Field.controlAttributes(h, model.credentialDraft, (message) =>
+					Message.GotCredentialDraftMessage({ message }),
 				),
 			],
 		}),
-		...(model.keyError === null
+		...(model.credentialError === null
 			? []
-			: [fieldError(h, { ids: KEY_IDS, state, attributes: [h.Role("alert")] }, [model.keyError])]),
-		fieldDescription(h, { ids: KEY_IDS, state }, [
+			: [
+					fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [
+						model.credentialError,
+					]),
+				]),
+		fieldDescription(h, { ids: CREDENTIAL_IDS, state }, [
 			text.help.before,
 			textLink(
 				h,
@@ -139,17 +149,17 @@ const credentialForm = (
 	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
 ): Html => {
 	const id = model.addDialog.id
-	const source = credentialSource(provider)
+	const source = CREDENTIAL_SOURCES[provider]
 	const isReplacing = hasSourceOf(sources, provider)
 	const isSaving = model.sourceWrite === "Saving"
-	const canSubmit = !isSaving && Str.trim(model.keyDraft.value) !== ""
+	const canSubmit = !isSaving && Str.trim(model.credentialDraft.value) !== ""
 	const text = isReplacing ? source.replace : source.add
-	return formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
+	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
 		DialogView.dialogHeader(h, "dialog", [
 			DialogView.dialogTitle(h, "dialog", id, text.title),
 			DialogView.dialogDescription(h, "dialog", id, text.description),
 		]),
-		DialogView.dialogPanel(h, "dialog", id, [keyField(h, model, source)]),
+		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
 		DialogView.dialogFooter(h, "dialog", [
 			// A replace has no providers to go back to.
 			isReplacing
@@ -214,7 +224,8 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 
 /** Removing a credential's source: what leaves the page, and what adding it again brings back. */
 export const removeSourceDialog = (h: H, model: Model): Html => {
-	const { remove } = credentialSource(model.removeProvider)
+	if (model.removeProvider === null) return h.empty
+	const { remove } = CREDENTIAL_SOURCES[model.removeProvider]
 	return confirmDialog(h, {
 		slotId: "cost-remove-source",
 		model: model.removeDialog,

@@ -212,28 +212,36 @@ describe("cost page", () => {
 			Message.PickedProvider({ provider: "openrouter" }),
 		).model
 		const typed = (model: Model, value: string) =>
-			pageUpdate(model, Message.GotKeyDraftMessage({ message: Field.Message.ChangedValue({ value }) }))
-				.model
+			pageUpdate(
+				model,
+				Message.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
 		// Nothing typed sends nothing.
-		expect(names(pageUpdate(form, Message.SubmittedKey()).commands)).toEqual([])
+		expect(names(pageUpdate(form, Message.SubmittedCredential()).commands)).toEqual([])
 
-		const saving = pageUpdate(typed(form, "  sk-or-v1-regular-key-0123456789  "), Message.SubmittedKey())
+		const saving = pageUpdate(
+			typed(form, "  sk-or-v1-regular-key-0123456789  "),
+			Message.SubmittedCredential(),
+		)
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveOpenRouterCostKey", args: { apiKey: "sk-or-v1-regular-key-0123456789" } },
 		])
 		// A key the request would refuse to carry is never sent, and the dialog says why.
-		const oversized = pageUpdate(typed(form, `sk-or-v1-${Str.repeat(300)("a")}`), Message.SubmittedKey())
+		const oversized = pageUpdate(
+			typed(form, `sk-or-v1-${Str.repeat(300)("a")}`),
+			Message.SubmittedCredential(),
+		)
 		expect(names(oversized.commands)).toEqual([])
-		expect([oversized.model.sourceWrite, oversized.model.keyError]).toEqual([
+		expect([oversized.model.sourceWrite, oversized.model.credentialError]).toEqual([
 			"Idle",
 			"That is too long to be an OpenRouter key.",
 		])
 		// A second submit while the first is in flight sends nothing more.
-		expect(names(pageUpdate(saving.model, Message.SubmittedKey()).commands)).toEqual([])
+		expect(names(pageUpdate(saving.model, Message.SubmittedCredential()).commands)).toEqual([])
 
 		const refused = pageUpdate(
 			saving.model,
-			Message.CompletedSaveKey({
+			Message.CompletedSaveCredential({
 				provider: "openrouter",
 				result: Result.fail({
 					...toLoadFailure("refused"),
@@ -251,7 +259,7 @@ describe("cost page", () => {
 				"This is a regular API key. Reading spend needs a management key.",
 			),
 		)
-		expect(typed(refused, "sk-or-v1-management-key-0123456789").keyError).toBeNull()
+		expect(typed(refused, "sk-or-v1-management-key-0123456789").credentialError).toBeNull()
 	})
 
 	test("a saved key closes the dialog, says when the sync runs and reads the sources again", () => {
@@ -262,19 +270,19 @@ describe("cost page", () => {
 		const saving = pageUpdate(
 			pageUpdate(
 				form,
-				Message.GotKeyDraftMessage({
+				Message.GotCredentialDraftMessage({
 					message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
 				}),
 			).model,
-			Message.SubmittedKey(),
+			Message.SubmittedCredential(),
 		).model
 		const saved = pageUpdate(
 			saving,
-			Message.CompletedSaveKey({ provider: "openrouter", result: Result.succeed(undefined) }),
+			Message.CompletedSaveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(saved.model.addDialog.isOpen).toBe(false)
 		// The key does not outlive the dialog.
-		expect(saved.model.keyDraft.value).toBe("")
+		expect(saved.model.credentialDraft.value).toBe("")
 		expect(names(saved.commands)).toContain("FetchCostSources")
 		expect(saved.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -312,7 +320,10 @@ describe("cost page", () => {
 		)
 
 		// Replace opens the key form with no providers to go back to.
-		const replacing = pageUpdate(model, Message.ClickedReplaceKey({ provider: "openrouter" })).model
+		const replacing = pageUpdate(
+			model,
+			Message.ClickedReplaceCredential({ provider: "openrouter" }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(replacing),
@@ -337,7 +348,7 @@ describe("cost page", () => {
 		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
 		const removed = pageUpdate(
 			removing.model,
-			Message.CompletedRemoveKey({ provider: "openrouter", result: Result.succeed(undefined) }),
+			Message.CompletedRemoveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(removed.model.removeDialog.isOpen).toBe(false)
 		// The reads name the org's sources: without reading them again the removed source's cost stays.
@@ -382,7 +393,7 @@ describe("cost page", () => {
 		const staleKey = reloading.sources.key ?? ""
 		const afterWrite = pageUpdate(
 			reloading,
-			Message.CompletedRemoveKey({ provider: "openrouter", result: Result.succeed(undefined) }),
+			Message.CompletedRemoveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(names(afterWrite.commands)).toContain("FetchCostSources")
 		const stale = pageUpdate(
@@ -400,13 +411,13 @@ describe("cost page", () => {
 			pageUpdate(
 				pageUpdate(
 					replacing,
-					Message.GotKeyDraftMessage({
+					Message.GotCredentialDraftMessage({
 						message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
 					}),
 				).model,
-				Message.SubmittedKey(),
+				Message.SubmittedCredential(),
 			).model,
-			Message.CompletedSaveKey({ provider: "openrouter", result: Result.succeed(undefined) }),
+			Message.CompletedSaveCredential({ provider: "openrouter", result: Result.succeed(undefined) }),
 		)
 		expect(replaced.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -446,23 +457,28 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Back" })).toExist(),
 		)
 		const typed = (model: Model, value: string) =>
-			pageUpdate(model, Message.GotKeyDraftMessage({ message: Field.Message.ChangedValue({ value }) }))
-				.model
+			pageUpdate(
+				model,
+				Message.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
 
 		const saving = pageUpdate(
 			typed(form, "  cfut_0123456789abcdefghij0123456789  "),
-			Message.SubmittedKey(),
+			Message.SubmittedCredential(),
 		)
 		expect(saving.commands).toMatchObject([
 			{ name: "SaveCloudflareCostToken", args: { apiToken: "cfut_0123456789abcdefghij0123456789" } },
 		])
-		const oversized = pageUpdate(typed(form, `cfut_${Str.repeat(300)("a")}`), Message.SubmittedKey())
+		const oversized = pageUpdate(
+			typed(form, `cfut_${Str.repeat(300)("a")}`),
+			Message.SubmittedCredential(),
+		)
 		expect(names(oversized.commands)).toEqual([])
-		expect(oversized.model.keyError).toBe("That is too long to be a Cloudflare API token.")
+		expect(oversized.model.credentialError).toBe("That is too long to be a Cloudflare API token.")
 
 		const refused = pageUpdate(
 			saving.model,
-			Message.CompletedSaveKey({
+			Message.CompletedSaveCredential({
 				provider: "cloudflare",
 				result: Result.fail({
 					...toLoadFailure("refused"),
@@ -483,10 +499,10 @@ describe("cost page", () => {
 
 		const saved = pageUpdate(
 			saving.model,
-			Message.CompletedSaveKey({ provider: "cloudflare", result: Result.succeed(undefined) }),
+			Message.CompletedSaveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
 		)
 		expect(saved.model.addDialog.isOpen).toBe(false)
-		expect(saved.model.keyDraft.value).toBe("")
+		expect(saved.model.credentialDraft.value).toBe("")
 		expect(names(saved.commands)).toContain("FetchCostSources")
 		expect(saved.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -524,7 +540,10 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Replace key" })).toExist(),
 		)
 
-		const replacing = pageUpdate(model, Message.ClickedReplaceKey({ provider: "cloudflare" })).model
+		const replacing = pageUpdate(
+			model,
+			Message.ClickedReplaceCredential({ provider: "cloudflare" }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(replacing),
@@ -538,13 +557,13 @@ describe("cost page", () => {
 			pageUpdate(
 				pageUpdate(
 					replacing,
-					Message.GotKeyDraftMessage({
+					Message.GotCredentialDraftMessage({
 						message: Field.Message.ChangedValue({ value: "cfut_0123456789abcdefghij0123456789" }),
 					}),
 				).model,
-				Message.SubmittedKey(),
+				Message.SubmittedCredential(),
 			).model,
-			Message.CompletedSaveKey({ provider: "cloudflare", result: Result.succeed(undefined) }),
+			Message.CompletedSaveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
 		)
 		expect(replaced.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
@@ -577,7 +596,7 @@ describe("cost page", () => {
 		expect(names(removing.commands)).toEqual(["RemoveCloudflareCostToken"])
 		const removed = pageUpdate(
 			removing.model,
-			Message.CompletedRemoveKey({ provider: "cloudflare", result: Result.succeed(undefined) }),
+			Message.CompletedRemoveCredential({ provider: "cloudflare", result: Result.succeed(undefined) }),
 		)
 		expect(removed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Cloudflare removed", description: "" }),

@@ -280,7 +280,7 @@ const cloudflareSource = source({
 	requestsThisMonth: 0,
 })
 
-const CREDENTIAL_SOURCES = { openrouter: openRouterSource, cloudflare: cloudflareSource } as const
+const LAB_CREDENTIAL_SOURCES = { openrouter: openRouterSource, cloudflare: cloudflareSource } as const
 
 /** What the lab's reader did to each pasted-credential source since the state loaded; null for nothing. */
 export type LabSourceChanges = Readonly<Record<CredentialProvider, boolean | null>>
@@ -302,7 +302,7 @@ export const labSourcesWith = (
 					sources: [
 						...Schema.encodeSync(CostSourcesResponse)(current).sources,
 						{
-							...CREDENTIAL_SOURCES[provider],
+							...LAB_CREDENTIAL_SOURCES[provider],
 							status: "pending",
 							watermarkDate: null,
 							backfillDate: null,

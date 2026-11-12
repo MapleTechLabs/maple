@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { CloudflareCostConnectionService } from "../../CloudflareCostConnectionService"
 import type { CostProviderError } from "../../CostProvider"
-import { CloudflareCostProvider, piecesOf } from "./CloudflareCostProvider"
+import { CloudflareCostProvider } from "./CloudflareCostProvider"
 import {
 	FAKE_ACCOUNT,
 	type FakeCloudflare,
@@ -164,12 +164,8 @@ describe("CloudflareCostProvider", () => {
 			Effect.gen(function* () {
 				const connectionRef = yield* saveToken(testDb, world)
 				const pulled = yield* pull(ORG, connectionRef, window)
-				assert.deepStrictEqual(piecesOf(window), [
-					{ startDay: "2025-12-01", endDay: "2026-01-24" },
-					{ startDay: "2026-01-25", endDay: "2026-03-20" },
-					{ startDay: "2026-03-21", endDay: "2026-03-31" },
-				])
-				// The fake refuses a range over 90 days, as Cloudflare does.
+				// Three pieces of 55 days at most, each led by 31 days. The fake refuses a range over 90
+				// days, as Cloudflare does.
 				assert.deepStrictEqual(world.urls.slice(1, 4), [
 					`${ACCOUNT_PATH}/billable-usage?from=2025-10-31&to=2026-01-25`,
 					`${ACCOUNT_PATH}/billable-usage?from=2025-12-25&to=2026-03-21`,
@@ -187,6 +183,72 @@ describe("CloudflareCostProvider", () => {
 			}),
 		)
 	})
+
+	it.effect("reads the oldest month it keeps, though the range it asks reaches past what is served", () => {
+		const testDb = createTestDb(trackedDbs)
+		// Cloudflare serves a year: the lead before the floor month asks for older days and gets none.
+		const world = makeFakeCloudflare({
+			oldestDay: "2025-11-11",
+			anchorDay: 5,
+			usage: [
+				usageRow("2025-11-10", "R2", "R2 Storage", 9),
+				// These days belong to the period that started on 5 November, before the oldest day.
+				usageRow("2025-12-01", "R2", "R2 Storage", 1),
+				usageRow("2025-12-04", "R2", "R2 Storage", 2),
+				usageRow("2025-12-31", "R2", "R2 Storage", 3),
+			],
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* saveToken(testDb, world)
+				const pulled = yield* pull(ORG, connectionRef, {
+					startDay: "2025-12-01",
+					endDay: "2025-12-31",
+				})
+				assert.strictEqual(
+					world.urls[1],
+					`${ACCOUNT_PATH}/billable-usage?from=2025-10-31&to=2026-01-01`,
+				)
+				assert.deepStrictEqual(
+					Arr.map(pulled.rows, (row) => [row.day, row.billedCost]),
+					[
+						["2025-12-01", 1],
+						["2025-12-04", 2],
+						["2025-12-31", 3],
+					],
+				)
+			}),
+		)
+	})
+
+	it.effect(
+		"fails a subscription listing longer than it reads, since part of the fees would under-count",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = makeFakeCloudflare({
+				subscriptionsPageSize: 1,
+				subscriptions: Arr.makeBy(11, (index) => ({
+					price: 5,
+					frequency: "monthly",
+					current_period_start: "2026-11-01T00:00:00Z",
+					rate_plan: { public_name: `Plan ${index}` },
+				})),
+			})
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const connectionRef = yield* saveToken(testDb, world)
+					assert.strictEqual(
+						(yield* Effect.flip(pull(ORG, connectionRef))).reason,
+						"invalid_response",
+					)
+				}),
+			)
+		},
+	)
 
 	it.effect("reads every page of the subscriptions", () => {
 		const testDb = createTestDb(trackedDbs)

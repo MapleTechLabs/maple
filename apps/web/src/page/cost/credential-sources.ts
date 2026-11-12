@@ -14,7 +14,7 @@ type Cmd = Command.Command<Message, never, Resources>
 
 /**
  * A cost source added by pasting a credential: everything its dialog steps, its Sources row and
- * its toasts say, and the commands that save and remove it. A new provider is one entry here.
+ * its toasts say, and the commands that save and remove it. The form itself is shared.
  */
 export type CredentialSource = Readonly<{
 	/** The line under the provider's name in the list, and once its source exists. */
@@ -117,8 +117,4 @@ export const CREDENTIAL_SOURCES = {
 		save: (apiToken) => SaveCloudflareCostToken({ apiToken }),
 		delete: () => RemoveCloudflareCostToken(),
 	},
-} as const satisfies Record<CredentialProvider, CredentialSource>
-
-/** `provider`'s entry, as the shape every entry shares. */
-export const credentialSource = (provider: CredentialProvider): CredentialSource =>
-	CREDENTIAL_SOURCES[provider]
+} satisfies Record<CredentialProvider, CredentialSource>

@@ -27,6 +27,8 @@ export interface FakeCloudflare {
 	usage: ReadonlyArray<FakeUsageRow> | string
 	/** The day of the month a billing period starts on. */
 	anchorDay: number
+	/** The oldest day served: a year back on the real API. Older days of a range are left out, not refused. */
+	oldestDay: string
 	subscriptions: ReadonlyArray<FakeSubscription>
 	/** Subscriptions one page holds, to make a listing span pages. */
 	subscriptionsPageSize: number
@@ -45,6 +47,7 @@ export const makeFakeCloudflare = (overrides: Partial<FakeCloudflare> = {}): Fak
 	covered: true,
 	usage: [],
 	anchorDay: 1,
+	oldestDay: "2000-01-01",
 	subscriptions: [],
 	subscriptionsPageSize: 50,
 	cloudCost: true,
@@ -107,7 +110,7 @@ const usageAnswer = (world: FakeCloudflare, params: URLSearchParams): Response =
 		Arr.filter(world.usage, (row) => {
 			const day = Str.slice(0, 10)(row.ChargePeriodStart)
 			const start = periodStart(day, world.anchorDay)
-			return start >= from && start < to && day < to
+			return start >= from && start < to && day < to && day >= world.oldestDay
 		}),
 	)
 }

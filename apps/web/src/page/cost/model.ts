@@ -42,12 +42,12 @@ export const Model = Schema.Struct({
 	addDialog: Dialog.Model,
 	addStep: AddStep,
 	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
-	keyDraft: Field.Model,
+	credentialDraft: Field.Model,
 	/** Why the last save was refused, shown under the field until the credential changes. */
-	keyError: Schema.NullOr(Schema.String),
+	credentialError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
-	/** The provider whose source the remove dialog asks about. */
-	removeProvider: CredentialProvider,
+	/** The provider whose source the remove dialog asks about; null until it first opens. */
+	removeProvider: Schema.NullOr(CredentialProvider),
 	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })

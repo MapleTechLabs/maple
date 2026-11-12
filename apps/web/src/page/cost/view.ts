@@ -1,3 +1,4 @@
+import type { CostProvider } from "@maple/domain/cost"
 import type { CostSourceSummary } from "@maple/domain/http"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -107,9 +108,15 @@ const onRamp = (
 
 const MONTHS_SCOPE = "this month and the last, and older months fill in after that"
 
+const namesOf = (providers: ReadonlyArray<CostProvider>): string =>
+	Arr.join(
+		Arr.map(providers, (provider) => COST_PROVIDERS[provider].name),
+		" and ",
+	)
+
 /**
  * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
- * alike): AWS and Cloudflare keep a year or more, OpenRouter four weeks.
+ * alike): some keep a year or more, some four weeks.
  */
 const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
 	const unsynced = Arr.dedupe(
@@ -118,14 +125,14 @@ const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
 			(source) => source.provider,
 		),
 	)
-	const months = Arr.filter(unsynced, (provider) => COST_PROVIDERS[provider].firstSync === "months")
-	if (months.length === unsynced.length) return `It brings in ${MONTHS_SCOPE}.`
-	if (months.length === 0) return "It brings in the last four weeks, which is all OpenRouter keeps."
-	const names = Arr.join(
-		Arr.map(months, (provider) => COST_PROVIDERS[provider].name),
-		" and ",
-	)
-	return `${names} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. OpenRouter brings in its last four weeks.`
+	const keepsWeeks = (provider: CostProvider) => COST_PROVIDERS[provider].firstSync === "four_weeks"
+	const weeks = Arr.filter(unsynced, keepsWeeks)
+	const months = Arr.filter(unsynced, (provider) => !keepsWeeks(provider))
+	if (weeks.length === 0) return `It brings in ${MONTHS_SCOPE}.`
+	if (months.length === 0) {
+		return `It brings in the last four weeks, which is all ${namesOf(weeks)} ${weeks.length === 1 ? "keeps" : "keep"}.`
+	}
+	return `${namesOf(months)} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. ${namesOf(weeks)} ${weeks.length === 1 ? "brings in its" : "bring in their"} last four weeks.`
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */

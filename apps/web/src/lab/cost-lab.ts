@@ -127,13 +127,13 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [
 				CostMessage.ClickedAddSource(),
 				CostMessage.PickedProvider({ provider: "openrouter" }),
-				CostMessage.GotKeyDraftMessage({
+				CostMessage.GotCredentialDraftMessage({
 					message: Field.Message.ChangedValue({ value: "sk-or-v1-0123456789abcdef0123456789" }),
 				}),
-				CostMessage.SubmittedKey(),
+				CostMessage.SubmittedCredential(),
 			]
 		case "replace-key":
-			return [CostMessage.ClickedReplaceKey({ provider: "openrouter" })]
+			return [CostMessage.ClickedReplaceCredential({ provider: "openrouter" })]
 		case "remove-source":
 			return [CostMessage.ClickedRemoveSource({ provider: "openrouter" })]
 		case "add-cloudflare":
@@ -142,13 +142,13 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [
 				CostMessage.ClickedAddSource(),
 				CostMessage.PickedProvider({ provider: "cloudflare" }),
-				CostMessage.GotKeyDraftMessage({
+				CostMessage.GotCredentialDraftMessage({
 					message: Field.Message.ChangedValue({ value: "cfut_0123456789abcdefghij0123456789" }),
 				}),
-				CostMessage.SubmittedKey(),
+				CostMessage.SubmittedCredential(),
 			]
 		case "replace-token":
-			return [CostMessage.ClickedReplaceKey({ provider: "cloudflare" })]
+			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
 		case "remove-cloudflare":
 			return [CostMessage.ClickedRemoveSource({ provider: "cloudflare" })]
 		// Without Clerk the page starts with every permission: the member states take them away.
@@ -201,7 +201,7 @@ const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
 
 const removedAnswer = (provider: CredentialProvider) =>
-	CostMessage.CompletedRemoveKey({ provider, result: Result.succeed(undefined) })
+	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
 
 /** A read's answer: the fixture's, or the outage in the `error` state. */
 const settled = <A>(state: LabState, value: () => A): Result.Result<A, typeof failure> =>
@@ -282,14 +282,14 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			)
 		case SaveOpenRouterCostKey.name:
 			return Option.some(
-				CostMessage.CompletedSaveKey({
+				CostMessage.CompletedSaveCredential({
 					provider: "openrouter",
 					result: state === "key-refused" ? Result.fail(refusedKey) : Result.succeed(undefined),
 				}),
 			)
 		case SaveCloudflareCostToken.name:
 			return Option.some(
-				CostMessage.CompletedSaveKey({
+				CostMessage.CompletedSaveCredential({
 					provider: "cloudflare",
 					result: state === "token-refused" ? Result.fail(refusedToken) : Result.succeed(undefined),
 				}),
@@ -309,9 +309,9 @@ type Settled = Step & Pick<World, "changes">
 /** A saved credential adds its provider to the sources the lab answers with next, a removal takes it out. */
 const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMessage>): LabSourceChanges =>
 	Arr.reduce(answers, changes, (current, answer) =>
-		answer._tag === "CompletedSaveKey" && Result.isSuccess(answer.result)
+		answer._tag === "CompletedSaveCredential" && Result.isSuccess(answer.result)
 			? { ...current, [answer.provider]: true }
-			: answer._tag === "CompletedRemoveKey" && Result.isSuccess(answer.result)
+			: answer._tag === "CompletedRemoveCredential" && Result.isSuccess(answer.result)
 				? { ...current, [answer.provider]: false }
 				: current,
 	)

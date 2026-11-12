@@ -1,9 +1,6 @@
-/**
- * Where a pasted cost credential lives: sealed in `cost_connections`, one per org and provider.
- * Saving one makes the org's cost source for that provider, replacing it keeps the source and its
- * history, removing it removes the source. Each provider checks its credential with its vendor
- * first, then stores it here, and its adapter reads it back for a pull.
- */
+// Where a pasted cost credential lives: sealed in `cost_connections`, one per org and provider.
+// Saving one makes the provider's cost source, replacing it keeps the source and its history,
+// removing it removes the source. A provider checks its credential with its vendor before saving.
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { CostConnections, CostSources } from "@maple/db/tables"
 import type { OrgId, UserId } from "@maple/primitives"
@@ -14,7 +11,7 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { costConnectionSecretSlot } from "@maple/backend/platform/secret-slots"
-import type { CostPullSource } from "./CostProvider"
+import { CostProviderError, type CostPullSource } from "./CostProvider"
 import { type CostConnectionProvider, reconcileCostConnectionSources } from "./cost-connection-sources"
 
 /** `secret`: the deployment's key could not seal or open the value. `database`: Postgres failed. */
@@ -27,6 +24,17 @@ export class CostConnectionStoreError extends Schema.TaggedError<CostConnectionS
 ) {}
 
 const secretFailed = (message: string) => new CostConnectionStoreError({ message, reason: "secret" })
+
+/** A failed `load`, as what the sync does next: a credential that will not open needs replacing. */
+export const loadFailureOf =
+	(provider: CostConnectionProvider) =>
+	(error: CostConnectionStoreError): CostProviderError =>
+		new CostProviderError({
+			message: error.reason === "secret" ? error.message : "Cost connection database error",
+			provider,
+			reason: error.reason === "secret" ? "auth" : "upstream",
+			requests: 0,
+		})
 
 export interface CostConnectionInput {
 	readonly orgId: OrgId
@@ -41,14 +49,12 @@ export interface CostConnectionInput {
 export interface CostConnectionCredential {
 	readonly secret: Redacted.Redacted
 	readonly accountId: string
-	readonly accountLabel: string
 }
 
 export interface CostConnectionStoreApi {
 	/**
-	 * Seals and saves the credential, and makes the provider's cost source. `other_account`: the
-	 * org's source reads another account, whose days this one's spend would overwrite, so nothing
-	 * is written.
+	 * Seals and saves the credential, and makes the provider's cost source. `other_account`: the org's
+	 * source reads another account, whose days this one's spend would overwrite, so nothing is written.
 	 */
 	readonly save: (
 		input: CostConnectionInput,
@@ -200,7 +206,6 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 				return Option.some<CostConnectionCredential>({
 					secret: Redacted.make(secret),
 					accountId: row.accountId,
-					accountLabel: row.accountLabel,
 				})
 			})
 

@@ -10,7 +10,7 @@ import {
 import { SessionAuthorization } from "./current-tenant"
 import { CloudCostDisabledError } from "./query-engine"
 
-/** Cloudflare tokens are 40 to about 60 characters; anything longer is not one. */
+/** Far above any Cloudflare token (about 40 to 60 characters): it only bounds what the request carries. */
 export const CLOUDFLARE_COST_TOKEN_MAX_LENGTH = 256
 
 export class CloudflareCostTokenRequest extends Schema.Class<CloudflareCostTokenRequest>(

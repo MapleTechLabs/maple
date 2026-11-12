@@ -1,7 +1,7 @@
 // The deployment config the cost provider fakes run their services on.
 import { ConfigProvider } from "effect"
 
-export const FAKE_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64")
+const FAKE_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64")
 
 /** `encryptionKey` is `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, for a deployment whose secret key is unusable. */
 export const fakeCostEnvConfig = (encryptionKey = FAKE_ENCRYPTION_KEY) =>

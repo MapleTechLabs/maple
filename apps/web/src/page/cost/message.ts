@@ -51,15 +51,21 @@ export const Message = defineMessageUnion({
 	PickedProvider: { provider: CredentialProvider },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
-	ClickedReplaceKey: { provider: CredentialProvider },
+	ClickedReplaceCredential: { provider: CredentialProvider },
 	GotAddDialogMessage: { message: Dialog.Message },
-	GotKeyDraftMessage: { message: Field.Message },
-	SubmittedKey: {},
-	CompletedSaveKey: { provider: CredentialProvider, result: Schema.Result(Schema.Void, LoadFailure) },
+	GotCredentialDraftMessage: { message: Field.Message },
+	SubmittedCredential: {},
+	CompletedSaveCredential: {
+		provider: CredentialProvider,
+		result: Schema.Result(Schema.Void, LoadFailure),
+	},
 	ClickedRemoveSource: { provider: CredentialProvider },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
-	CompletedRemoveKey: { provider: CredentialProvider, result: Schema.Result(Schema.Void, LoadFailure) },
+	CompletedRemoveCredential: {
+		provider: CredentialProvider,
+		result: Schema.Result(Schema.Void, LoadFailure),
+	},
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

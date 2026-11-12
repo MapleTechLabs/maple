@@ -296,3 +296,7 @@ export const requestsCost = (provider: CostProvider, requests: number): string |
 	const { requestUsd } = COST_PROVIDERS[provider]
 	return requestUsd === null ? null : `USD ${(requests * requestUsd).toFixed(2)}`
 }
+
+/** Whether the org has a source of `provider`: a pasted-credential provider has one at most. */
+export const hasSourceOf = (sources: ReadonlyArray<CostSourceSummary>, provider: CostProvider): boolean =>
+	Arr.some(sources, (source) => source.provider === provider)

@@ -50,8 +50,8 @@ not read through an integration's connection keeps a pasted credential, and
 and provider, with the sealed credential, the vendor's account id and a label. `CostConnectionStore`
 seals, upserts (refusing a credential of another account), removes and loads it, and
 `reconcileCostConnectionSources` keeps `cost_sources` in step for each provider named in
-`COST_CONNECTION_PROVIDERS`. A new provider of this kind adds its literal there and needs no
-migration.
+`COST_CONNECTION_PROVIDERS`. A new provider of this kind needs no migration, slot or reconcile: it
+adds its literal there, and brings its own vendor check, adapter and endpoints.
 
 ```ts
 interface CostProvider {
@@ -265,6 +265,9 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Live: yesterday is served, today is not, and the oldest day served is one year before today.
   The profile asks from the first day of the eleventh month back through yesterday. The two newest
   days are stored as not final.
+- Live: a range that reaches past the year is answered, not refused, with the older days left out,
+  and a period that started before the year still returns its days inside it. So the 31 days asked
+  before the oldest month cost nothing.
 - Live: a wrong or revoked token answers 401 (sync reason `auth`), a token without billing access
   403 (`not_ready`). A 400 is a request Maple wrote wrong (`upstream`).
 - Rows: the product family (`Workers`, `R2`, `D1` ...) is `CloudService`, the priced metric is
@@ -278,8 +281,15 @@ currency the figures are in and lists the others. Nothing is added across curren
   period's start.
 - Assumed: Cloudflare reports the current period only, so earlier months use today's price. A plan
   whose price changed shows the new price for its past months too.
-- Open: whether a subscription in trial is charged its listed price, and whether a completed day
-  is ever restated. The four newest days are pulled again daily.
+- Schema: a subscription's `state` is one of `Trial`, `Provisioned`, `Paid`, `AwaitingPayment`,
+  `Cancelled`, `Failed`, `Expired`. Live: every listed one was `Paid`, free items included.
+  Assumed: `Trial`, `Failed` and `Expired` were not charged, so they get no fee row.
+- Known limit: a fee is known only while its subscription is listed. If Cloudflare drops a
+  cancelled subscription from the list, the next re-pull of the open months stores those days
+  without its fee. Months already walked as history keep theirs.
+- More than 500 subscriptions (10 pages) fail the pull as an answer Maple cannot read, since part
+  of the list would under-count.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily.
 - Not built: enterprise contracts, zone-level analytics, the restricted "Version 2" endpoints,
   invoices and credits.
 
@@ -319,8 +329,10 @@ Each phase is one PR stack.
    than they use.
 3. **More providers.** OpenRouter and Cloudflare are built. Railway, GCP, PlanetScale, Supabase,
    one PR each. Each provider adds a literal to `CostProvider`, an adapter and a sync profile. One
-   read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS` and to the Cost
-   page's `CREDENTIAL_SOURCES`; one read through a connection adds a reconcile function.
+   read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS`, a connection
+   service that checks the credential with the vendor, its `PUT` / `DELETE` endpoints, and on the
+   Cost page two commands and an entry in `CREDENTIAL_SOURCES`. One read through a connection adds
+   a reconcile function instead.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.

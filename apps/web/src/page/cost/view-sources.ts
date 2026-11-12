@@ -11,7 +11,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
-import { credentialSource } from "./credential-sources"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
 import { COST_PROVIDERS, type CostProviderEntry, credentialProviderOf } from "./providers"
@@ -43,9 +43,9 @@ const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArra
 						variant: "ghost",
 						size: "sm",
 						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedReplaceKey({ provider }))],
+						attributes: [h.OnClick(Message.ClickedReplaceCredential({ provider }))],
 					},
-					[credentialSource(provider).replace.label],
+					[CREDENTIAL_SOURCES[provider].replace.label],
 				),
 				button(
 					h,

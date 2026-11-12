@@ -11,18 +11,13 @@ import {
 	type CostPullSource,
 	type CostPullWindow,
 } from "../../CostProvider"
-import { CostConnectionStore, type CostConnectionStoreError } from "../../CostConnectionStore"
+import { CostConnectionStore, loadFailureOf } from "../../CostConnectionStore"
 import { addDays, utcToday } from "../../sync-plan"
 import * as CloudflareBilling from "./cloudflare-billing-api"
 import { toSubscriptionRows, toUsageRows } from "./normalize"
 
-/**
- * A billing period's rows come back only when the period starts inside the asked range, and a
- * period is 31 days at most: asking from this many days before a day always includes its period.
- */
-export const PERIOD_LEAD_DAYS = 31
-/** Days of a window one request reads: with the lead and the exclusive end, under the API's 90 day cap. */
-export const PIECE_DAYS = 55
+/** Days of a window one request reads: with the period it leads with, under the API's 90 day cap. */
+const PIECE_DAYS = 55
 /** The newest days Cloudflare may still be counting. */
 const OPEN_DAYS = 2
 
@@ -56,13 +51,8 @@ const toCostProviderError = (error: CloudflareBilling.CloudflareBillingError): C
 	}
 }
 
-const toStoreFailure = (error: CostConnectionStoreError): CostProviderError =>
-	error.reason === "secret"
-		? failed("auth", error.message)
-		: failed("upstream", "Cloudflare connection database error")
-
 /** The window as consecutive runs of at most `PIECE_DAYS` days, oldest first. */
-export const piecesOf = (window: CostPullWindow): ReadonlyArray<CostPullWindow> =>
+const piecesOf = (window: CostPullWindow): ReadonlyArray<CostPullWindow> =>
 	Arr.unfold(window.startDay, (startDay): Option.Option<readonly [CostPullWindow, string]> => {
 		if (startDay > window.endDay) return Option.none()
 		const last = addDays(startDay, PIECE_DAYS - 1)
@@ -87,43 +77,28 @@ export class CloudflareCostProvider extends Context.Service<CloudflareCostProvid
 					})
 					const credential = yield* connections
 						.load("cloudflare", source)
-						.pipe(Effect.mapError(toStoreFailure))
+						.pipe(Effect.mapError(loadFailureOf("cloudflare")))
 					if (Option.isNone(credential)) {
 						return yield* failed("auth", "No Cloudflare token is saved for this source.")
 					}
 					const { secret, accountId } = credential.value
 					const asked = <A>(call: Effect.Effect<A, CloudflareBilling.CloudflareBillingError>) =>
-						call.pipe(
-							// The page shows the mapped message; which failure it was stays on the span.
-							Effect.tapError((error) =>
-								Effect.annotateCurrentSpan({
-									"maple.cost.cloudflare.error": error.kind,
-									"maple.cost.cloudflare.status": error.status ?? 0,
-								}),
-							),
-							Effect.mapError(toCostProviderError),
-						)
+						Effect.mapError(call, toCostProviderError)
 
 					const info = yield* asked(
 						CloudflareBilling.getBillableUsageInfo(httpClient, secret, accountId),
 					)
 					if (!info.covered) {
-						return yield* failed(
-							"not_ready",
-							"Cloudflare has no usage-based billing data for this account. Accounts on an enterprise contract are not supported yet.",
-						)
+						return yield* failed("not_ready", CloudflareBilling.NOT_COVERED)
 					}
 					const now = yield* Clock.currentTimeMillis
 					const openDay = addDays(utcToday(now), -OPEN_DAYS)
-					// One request at a time. Each answer is cut to its own piece: it also holds the days
-					// of the lead, which belong to the piece before.
+					// One request at a time. Each answer is cut to its own piece: it also holds days from
+					// before it, which belong to the piece before.
 					const usage = yield* Effect.forEach(piecesOf(window), (piece) =>
-						asked(
-							CloudflareBilling.getBillableUsage(httpClient, secret, accountId, {
-								from: addDays(piece.startDay, -PERIOD_LEAD_DAYS),
-								to: addDays(piece.endDay, 1),
-							}),
-						).pipe(Effect.map((items) => toUsageRows(items, accountId, piece, openDay))),
+						asked(CloudflareBilling.getBillableUsage(httpClient, secret, accountId, piece)).pipe(
+							Effect.map((items) => toUsageRows(items, accountId, piece, openDay)),
+						),
 					)
 					const subscriptions = yield* asked(
 						CloudflareBilling.listSubscriptions(httpClient, secret, accountId),

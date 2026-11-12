@@ -101,41 +101,41 @@ export const ReadCostGrants = Command.define("ReadCostGrants", {
 /** Saves the org's OpenRouter management key, which makes (or keeps) its cost source. */
 export const SaveOpenRouterCostKey = Command.define("SaveOpenRouterCostKey", {
 	args: { apiKey: Schema.String },
-	messages: [Message.CompletedSaveKey],
+	messages: [Message.CompletedSaveCredential],
 	execute: ({ apiKey }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.openRouterCost.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
 		).pipe(
 			Effect.asVoid,
-			settleTo((result) => Message.CompletedSaveKey({ provider: "openrouter", result })),
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "openrouter", result })),
 		),
 })
 
 export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey", {
-	messages: [Message.CompletedRemoveKey],
+	messages: [Message.CompletedRemoveCredential],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterCost.remove()).pipe(
 		Effect.asVoid,
-		settleTo((result) => Message.CompletedRemoveKey({ provider: "openrouter", result })),
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "openrouter", result })),
 	),
 })
 
 /** Saves the org's Cloudflare API token, which makes (or keeps) its cost source. */
 export const SaveCloudflareCostToken = Command.define("SaveCloudflareCostToken", {
 	args: { apiToken: Schema.String },
-	messages: [Message.CompletedSaveKey],
+	messages: [Message.CompletedSaveCredential],
 	execute: ({ apiToken }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.cloudflareCost.set({ payload: new CloudflareCostTokenRequest({ apiToken }) }),
 		).pipe(
 			Effect.asVoid,
-			settleTo((result) => Message.CompletedSaveKey({ provider: "cloudflare", result })),
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "cloudflare", result })),
 		),
 })
 
 export const RemoveCloudflareCostToken = Command.define("RemoveCloudflareCostToken", {
-	messages: [Message.CompletedRemoveKey],
+	messages: [Message.CompletedRemoveCredential],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.cloudflareCost.remove()).pipe(
 		Effect.asVoid,
-		settleTo((result) => Message.CompletedRemoveKey({ provider: "cloudflare", result })),
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "cloudflare", result })),
 	),
 })
