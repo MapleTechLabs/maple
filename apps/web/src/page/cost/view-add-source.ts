@@ -51,7 +51,7 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 				? listRow(h, {
 						leading: mark(h, COST_PROVIDERS.openrouter),
 						title: COST_PROVIDERS.openrouter.name,
-						meta: "This organization's account is a source already",
+						meta: "Replace its key in the Sources panel",
 						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
 					})
 				: listRow(h, {
