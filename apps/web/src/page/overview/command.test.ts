@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest"
 import { makeExecuteBatcher } from "../../data/execute-batcher"
 import { FetchLogSeries, FetchOverviewSeries } from "./command"
 
-const window = {
+const range = {
 	startTime: "2026-11-11 10:00:00",
 	endTime: "2026-11-12 10:00:00",
 	environments: ["production"],
@@ -39,8 +39,8 @@ describe("the overview's log volume read", () => {
 						),
 					)
 
-				const logs = yield* run("logs", FetchLogSeries({ key: "logs", input: window }).effect)
-				yield* run("series", FetchOverviewSeries({ key: "series", input: window }).effect)
+				const logs = yield* run("logs", FetchLogSeries({ key: "logs", input: range }).effect)
+				yield* run("series", FetchOverviewSeries({ key: "series", input: range }).effect)
 				yield* TestClock.adjust("400 millis")
 
 				expect(yield* Ref.get(batches)).toEqual([["logs"], ["traces"]])
