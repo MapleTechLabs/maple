@@ -78,8 +78,8 @@ export class GithubCostInstallationNotFoundError extends HttpTaggedError<GithubC
 ) {}
 
 /**
- * The installation cannot supply cost as it stands: a user account, a suspended installation, or
- * an organization that has not let Maple read its billing report. The message says which.
+ * The installation cannot supply cost as it stands: a user account, a suspended installation, an
+ * organization without a billing report, or one Maple can no longer act for. The message says which.
  */
 export class GithubCostNotReadyError extends HttpTaggedError<GithubCostNotReadyError>()(
 	"@maple/http/github-cost/GithubCostNotReadyError",
@@ -88,6 +88,20 @@ export class GithubCostNotReadyError extends HttpTaggedError<GithubCostNotReadyE
 		status: 409,
 		code: "github_cost_not_ready",
 		title: "GitHub billing cannot be read yet",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The organization has not let Maple read its billing report, which it lifts in its GitHub App settings. */
+export class GithubCostPermissionMissingError extends HttpTaggedError<GithubCostPermissionMissingError>()(
+	"@maple/http/github-cost/GithubCostPermissionMissingError",
+	{ message: Schema.String },
+	{
+		status: 409,
+		code: "github_cost_permission_missing",
+		title: "GitHub has not granted access to billing",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "public_message",
@@ -116,6 +130,7 @@ export class GithubCostApiGroup extends HttpApiGroup.make("githubCost")
 				GithubCostForbiddenError,
 				GithubCostInstallationNotFoundError,
 				GithubCostNotReadyError,
+				GithubCostPermissionMissingError,
 				CloudCostDisabledError,
 			],
 		}),

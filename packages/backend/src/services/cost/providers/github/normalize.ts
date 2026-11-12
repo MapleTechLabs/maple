@@ -21,8 +21,8 @@ export const UsageItem = Schema.Struct({
 })
 export type UsageItem = typeof UsageItem.Type
 
-/** A month with no usage answers an empty list; the spec also lets the list be left out. */
-export const UsageReport = Schema.Struct({ usageItems: Schema.optionalKey(Schema.Array(UsageItem)) })
+/** A month with no usage answers an empty list. An answer without the list is not a report. */
+export const UsageReport = Schema.Struct({ usageItems: Schema.Array(UsageItem) })
 
 /** FOCUS `ServiceCategory` of every GitHub charge. */
 const SERVICE_CATEGORY = "Developer Tools"

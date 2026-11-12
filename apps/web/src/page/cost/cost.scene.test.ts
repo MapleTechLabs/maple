@@ -44,7 +44,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
-import { contextChanged, GITHUB_NOT_READY_CODE, init, routeChanged, update } from "./update"
+import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -201,6 +201,7 @@ const githubListed = (model: Model, installations: ReadonlyArray<InstallationWir
 	pageUpdate(
 		model,
 		Message.CompletedLoadGithubInstallations({
+			request: model.githubRead,
 			result: Result.succeed(Schema.decodeSync(GithubCostInstallations)({ installations })),
 		}),
 	).model
@@ -536,10 +537,23 @@ describe("cost page", () => {
 				"/sources/new?integration=github",
 			),
 		)
+		// An answer to a read the step has since replaced is dropped.
+		expect(
+			pageUpdate(
+				reading.model,
+				Message.CompletedLoadGithubInstallations({
+					request: reading.model.githubRead - 1,
+					result: Result.fail(toLoadFailure("late")),
+				}),
+			).model.githubInstallations,
+		).toEqual(reading.model.githubInstallations)
 		// A list that could not be read says so, and can be asked for again.
 		const unread = pageUpdate(
 			reading.model,
-			Message.CompletedLoadGithubInstallations({ result: Result.fail(toLoadFailure("unreachable")) }),
+			Message.CompletedLoadGithubInstallations({
+				request: reading.model.githubRead,
+				result: Result.fail(toLoadFailure("unreachable")),
+			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
@@ -585,7 +599,7 @@ describe("cost page", () => {
 				installationId: GITHUB_LABS,
 				result: Result.fail({
 					...toLoadFailure("refused"),
-					code: GITHUB_NOT_READY_CODE,
+					code: GITHUB_PERMISSION_MISSING_CODE,
 					message: "GitHub has not granted Maple access to billing yet.",
 				}),
 			}),

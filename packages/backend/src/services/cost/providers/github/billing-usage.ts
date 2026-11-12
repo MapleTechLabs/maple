@@ -17,6 +17,14 @@ export const failed = (reason: Reason, message: string) =>
 const BILLING_NOT_GRANTED =
 	"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings."
 
+/** A 404 does not say which: GitHub answers it for a missing permission and for a name it does not know. */
+const BILLING_NOT_FOUND =
+	"GitHub found no billing report for this organization. Accept the new permission in the organization's GitHub App settings, or reconnect GitHub if the organization was renamed."
+
+/** The refusal is one the organization lifts in its GitHub App settings. */
+export const needsBillingGrant = (error: CostProviderError): boolean =>
+	error.message === BILLING_NOT_GRANTED || error.message === BILLING_NOT_FOUND
+
 const NOT_ON_BILLING_PLATFORM =
 	"GitHub has no usage report for this organization: it is not on GitHub's enhanced billing platform."
 
@@ -46,8 +54,9 @@ const refused = (status: number, body: string): CostProviderError => {
 	}
 	// An organization on the older billing has no report: GitHub says so in the body, whatever the status.
 	if (/billing platform/i.test(body)) return failed("not_ready", NOT_ON_BILLING_PLATFORM)
-	return status === 403 || status === 404
-		? failed("not_ready", BILLING_NOT_GRANTED)
+	if (status === 403) return failed("not_ready", BILLING_NOT_GRANTED)
+	return status === 404
+		? failed("not_ready", BILLING_NOT_FOUND)
 		: failed("upstream", `GitHub answered ${status} to the billing request.`)
 }
 
@@ -84,7 +93,7 @@ export const readUsageMonth = (
 				case "Usage":
 					return decodeReport(answer.body).pipe(
 						Effect.mapBoth({
-							onSuccess: (report) => report.usageItems ?? [],
+							onSuccess: (report) => report.usageItems,
 							onFailure: () =>
 								failed("invalid_response", "GitHub's billing answer could not be read."),
 						}),

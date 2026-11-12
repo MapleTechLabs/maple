@@ -157,6 +157,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/github-cost/GithubCostForbiddenError",
 	"@maple/http/github-cost/GithubCostInstallationNotFoundError",
 	"@maple/http/github-cost/GithubCostNotReadyError",
+	"@maple/http/github-cost/GithubCostPermissionMissingError",
 	"@maple/http/investigations/InvestigationNotFoundError",
 	"@maple/http/investigations/InvestigationQuotaError",
 	"@maple/http/investigations/InvestigationTransitionError",

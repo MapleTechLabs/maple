@@ -9,6 +9,7 @@ import {
 	type GithubCostInstallationState,
 	GithubCostInstallationNotFoundError,
 	GithubCostNotReadyError,
+	GithubCostPermissionMissingError,
 	GithubCostUnavailableError,
 	type OrgId,
 } from "@maple/domain/http"
@@ -23,7 +24,7 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { CostProviderError } from "./CostProvider"
-import { monthOf, readUsageMonth } from "./providers/github/billing-usage"
+import { monthOf, needsBillingGrant, readUsageMonth } from "./providers/github/billing-usage"
 import { utcToday } from "./sync-plan"
 
 const CHECK_TIMEOUT = Duration.seconds(20)
@@ -39,10 +40,14 @@ const toUnavailable = makePersistenceErrorMapper(
 )
 
 /** A failed billing read, as what the Cost page shows next to the installation. */
-const toAddError = (error: CostProviderError): GithubCostNotReadyError | GithubCostUnavailableError =>
-	error.reason === "not_ready" || error.reason === "auth"
+const toAddError = (
+	error: CostProviderError,
+): GithubCostPermissionMissingError | GithubCostNotReadyError | GithubCostUnavailableError => {
+	if (needsBillingGrant(error)) return new GithubCostPermissionMissingError({ message: error.message })
+	return error.reason === "not_ready" || error.reason === "auth"
 		? new GithubCostNotReadyError({ message: error.message })
 		: new GithubCostUnavailableError({ message: error.message })
+}
 
 type Installation = Pick<
 	VcsInstallationRow,
@@ -77,6 +82,7 @@ export interface GithubCostSourceServiceApi {
 		| GithubCostUnavailableError
 		| GithubCostInstallationNotFoundError
 		| GithubCostNotReadyError
+		| GithubCostPermissionMissingError
 		| CloudCostDisabledError
 	>
 	/** The organization of the source it removed, or null when there was none. */

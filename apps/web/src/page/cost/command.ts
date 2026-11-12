@@ -111,10 +111,12 @@ export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey",
 
 /** The org's GitHub installations, with which can supply cost. */
 export const FetchGithubCostInstallations = Command.define("FetchGithubCostInstallations", {
+	args: { request: Schema.Number },
 	messages: [Message.CompletedLoadGithubInstallations],
-	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.githubCost.list()).pipe(
-		settleTo((result) => Message.CompletedLoadGithubInstallations({ result })),
-	),
+	execute: ({ request }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.githubCost.list()).pipe(
+			settleTo((result) => Message.CompletedLoadGithubInstallations({ request, result })),
+		),
 })
 
 /** Makes the installation's cost source, once GitHub lets Maple read its billing report. */

@@ -179,7 +179,7 @@ const removalOf = (provider: "openrouter" | "github"): ReadonlyArray<CostMessage
 
 const refusedBilling = {
 	...toLoadFailure("refused"),
-	code: Cost.GITHUB_NOT_READY_CODE,
+	code: Cost.GITHUB_PERMISSION_MISSING_CODE,
 	message:
 		"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
 }
@@ -219,6 +219,7 @@ const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
 const installationArgs = Schema.decodeUnknownOption(Schema.Struct({ installationId: VcsInstallationId }))
+const readArgs = Schema.decodeUnknownOption(Schema.Struct({ request: Schema.Number }))
 
 /** A read's answer: the fixture's, or the outage in the `error` state. */
 const settled = <A>(state: LabState, value: () => A): Result.Result<A, typeof failure> =>
@@ -311,8 +312,9 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				}),
 			)
 		case FetchGithubCostInstallations.name:
-			return Option.some(
+			return Option.map(readArgs(command.args), ({ request }) =>
 				CostMessage.CompletedLoadGithubInstallations({
+					request,
 					result: Result.succeed(
 						state === "github-none"
 							? new GithubCostInstallations({ installations: [] })

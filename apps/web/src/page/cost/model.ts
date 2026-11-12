@@ -50,6 +50,8 @@ export const Model = Schema.Struct({
 	keyError: Schema.NullOr(Schema.String),
 	/** The org's GitHub installations, read when the dialog's GitHub step opens. */
 	githubInstallations: AsyncData.Schema(GithubCostInstallations, LoadFailure).schema,
+	/** The number of the installations read on show: an answer to an older read is dropped. */
+	githubRead: Schema.Number,
 	/** The installation an add is in flight for. */
 	githubAdding: Schema.NullOr(VcsInstallationId),
 	/**

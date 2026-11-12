@@ -158,7 +158,7 @@ describe("GithubCostSourceService", () => {
 			world,
 			Effect.gen(function* () {
 				const missing = yield* Effect.flip(add(ORGANIZATION))
-				assert.strictEqual(missing._tag, "@maple/http/github-cost/GithubCostNotReadyError")
+				assert.strictEqual(missing._tag, "@maple/http/github-cost/GithubCostPermissionMissingError")
 				assert.strictEqual(
 					missing.message,
 					"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
@@ -169,8 +169,14 @@ describe("GithubCostSourceService", () => {
 				world.usageStatus = 404
 				yield* TestClock.adjust("1 minute")
 				const refused = yield* Effect.flip(add(ORGANIZATION))
-				assert.strictEqual(refused._tag, "@maple/http/github-cost/GithubCostNotReadyError")
-				assert.include(refused.message, "has not granted Maple access to billing")
+				assert.strictEqual(refused._tag, "@maple/http/github-cost/GithubCostPermissionMissingError")
+				assert.include(refused.message, "found no billing report for this organization")
+
+				// An organization on the older billing is not one its GitHub App settings can fix.
+				world.usageStatus = 403
+				world.refusal = "This endpoint requires the enhanced billing platform."
+				const older = yield* Effect.flip(add(ORGANIZATION))
+				assert.strictEqual(older._tag, "@maple/http/github-cost/GithubCostNotReadyError")
 				assert.deepStrictEqual(yield* sources(testDb), [])
 			}),
 		)

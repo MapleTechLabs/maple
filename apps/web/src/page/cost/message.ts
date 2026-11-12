@@ -63,7 +63,10 @@ export const Message = defineMessageUnion({
 	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
 	/** Opens the dialog on the org's GitHub installations, and reads them. */
 	ClickedAddGithub: {},
-	CompletedLoadGithubInstallations: { result: Schema.Result(GithubCostInstallations, LoadFailure) },
+	CompletedLoadGithubInstallations: {
+		request: Schema.Number,
+		result: Schema.Result(GithubCostInstallations, LoadFailure),
+	},
 	ClickedAddGithubInstallation: { installationId: VcsInstallationId },
 	CompletedAddGithubSource: {
 		installationId: VcsInstallationId,

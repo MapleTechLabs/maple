@@ -156,6 +156,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		keyDraft: Field.init(),
 		keyError: null,
 		githubInstallations: AsyncData.Idle(),
+		githubRead: 0,
 		githubAdding: null,
 		githubRefusal: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
@@ -242,8 +243,8 @@ const sourceOf = (model: Model, sourceId: CostSourceId): CostSourceSummary | und
 
 const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
 
-/** The public code of `GithubCostNotReadyError`: GitHub does not let Maple read the billing report yet. */
-export const GITHUB_NOT_READY_CODE = "github_cost_not_ready"
+/** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
+export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
 
 /** The call that removes `source`: OpenRouter's key, or the GitHub source of its installation. */
 const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
@@ -479,18 +480,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							...clearedDialog(model),
 							addStep: "github",
 							githubInstallations: AsyncData.Loading(),
+							githubRead: model.githubRead + 1,
 						},
-						commands: [FetchGithubCostInstallations()],
+						commands: [FetchGithubCostInstallations({ request: model.githubRead + 1 })],
 					},
-		CompletedLoadGithubInstallations: ({ result }) => ({
-			model: {
-				...model,
-				githubInstallations: Result.match(result, {
-					onFailure: (failure) => AsyncData.fail(failure),
-					onSuccess: (installations) => AsyncData.succeed(installations),
-				}),
-			},
-		}),
+		// An answer to a read the step has since replaced would show a list from before a later add.
+		CompletedLoadGithubInstallations: ({ request, result }) =>
+			request !== model.githubRead
+				? { model }
+				: {
+						model: {
+							...model,
+							githubInstallations: Result.match(result, {
+								onFailure: (failure) => AsyncData.fail(failure),
+								onSuccess: (installations) => AsyncData.succeed(installations),
+							}),
+						},
+					},
 		ClickedAddGithubInstallation: ({ installationId }) =>
 			model.sourceWrite !== "Idle"
 				? { model }
@@ -514,7 +520,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						githubRefusal: {
 							installationId,
 							message: failureMessage(failure),
-							needsPermission: failure.code === GITHUB_NOT_READY_CODE,
+							needsPermission: failure.code === GITHUB_PERMISSION_MISSING_CODE,
 						},
 					},
 				}),
