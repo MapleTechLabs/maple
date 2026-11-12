@@ -5,6 +5,8 @@ import { QueryEngineExecutionError, WarehouseQuotaExceededError } from "@maple/d
 import {
 	BillingConflictError,
 	BillingPaymentRequiredError,
+	CostConnectionPersistenceError,
+	CostConnectionValidationError,
 	OpenRouterKeyPersistenceError,
 	OpenRouterKeyValidationError,
 } from "@maple/domain/http"
@@ -145,6 +147,22 @@ describe("displayError", () => {
 		})
 		expect(displayError(failed).message).toBe(
 			"The key could not be checked or saved right now. Try again in a few seconds.",
+		)
+	})
+
+	it("keeps the reason a cost credential was refused, and hides what a failed save answered", () => {
+		const refused = new CostConnectionValidationError({
+			message: "This token can read 3 accounts. Create one limited to a single account.",
+		})
+		expect(displayError(refused).message).toBe(
+			"This token can read 3 accounts. Create one limited to a single account.",
+		)
+
+		const failed = new CostConnectionPersistenceError({
+			message: 'insert into "cost_connections" failed: connection reset',
+		})
+		expect(displayError(failed).message).toBe(
+			"The credential could not be checked or saved right now. Try again in a few seconds.",
 		)
 	})
 
