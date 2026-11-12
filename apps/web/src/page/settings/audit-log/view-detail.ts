@@ -25,6 +25,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { jsonBlock } from "../../kit/json-block"
 
 type H = HtmlBuilder<Message>
 
@@ -145,14 +146,7 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 				const block = metadataBlock(metadata[key])
 				return field(h, { label: metadataLabel(key) }, [
 					block !== null
-						? h.pre(
-								[
-									h.Class(
-										"bg-surface-well max-h-64 overflow-auto rounded-md border px-2.5 py-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap wrap-anywhere",
-									),
-								],
-								[block],
-							)
+						? jsonBlock(h, block)
 						: typography(h, { size: "2xs", mono: true, className: "wrap-anywhere" }, [
 								changeValue(h, metadata[key]),
 							]),

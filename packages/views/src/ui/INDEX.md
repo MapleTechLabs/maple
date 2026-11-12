@@ -236,6 +236,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/issue-actor.ts` `resolveActorIdentity`, `identityAvatar`, `actorAvatar`, `noActor`, `actorChip`: Actor avatars and chips.
 - `apps/web/src/page/kit/issue-severity.ts` `isIssueSeverity`, `severityDot`, `severityBadge`, `severityIcon`: The severity badge's maps and marks.
 - `apps/web/src/page/kit/issue-workflow.ts` `workflowRingIcon`: The state as a ring that fills as the work progresses.
+- `apps/web/src/page/kit/json-block.ts` `jsonBlock`: A JSON document or other preformatted text in a scrolling well (an audit entry's payload).
 - `apps/web/src/page/kit/k8s-chart.ts` `k8sChart`: The Kubernetes metric chart and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend, in a chart card.
 - `apps/web/src/page/kit/keyed-step.ts` `keyed`, `keyedSlot`, `applySteps`, `runSteps`, `seriesSteps`, `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
 - `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.

@@ -208,6 +208,11 @@ const routers = {
 		search(Search.SecurityDependenciesSearch),
 		Route.mapTo(AppRoute.SecurityDependencies),
 	),
+	SecurityAuditLog: pipe(
+		path("security", "audit-log"),
+		search(Search.SecurityAuditLogSearch),
+		Route.mapTo(AppRoute.SecurityAuditLog),
+	),
 	SecurityRun: pipe(
 		path("security", "code", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),

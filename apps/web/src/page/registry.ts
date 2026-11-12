@@ -38,6 +38,7 @@ import * as DashboardTemplates from "./dashboards/templates"
 import * as DashboardView from "./dashboards/view"
 import * as DashboardWidget from "./dashboards/widget"
 import * as CodeReview from "./code-review"
+import * as SecurityAuditLog from "./security/audit-log"
 import * as SecurityDependencies from "./security/dependencies"
 import * as SecurityFinding from "./security/finding"
 import * as SecurityRun from "./security/run"
@@ -173,6 +174,7 @@ export const pages = [
 	SecurityTabs.page,
 	SecurityTelemetry.page,
 	SecurityDependencies.page,
+	SecurityAuditLog.page,
 	SecurityRun.page,
 	SecurityFinding.page,
 	AgentSessionsList.page,
