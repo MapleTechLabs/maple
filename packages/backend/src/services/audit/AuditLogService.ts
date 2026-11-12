@@ -262,7 +262,14 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						{ bestEffort: true, retryTransient: true },
 					)
 					// A change or a refusal also goes to the unified audit trail, dropped the same way.
-					yield* trail.write(event.orgId, mapleAuditTrailEvents([event]), { bestEffort: true })
+					// Logged under its own name: here the entry is stored and only its copy is missing.
+					yield* trail
+						.write(event.orgId, mapleAuditTrailEvents([event]), { bestEffort: true })
+						.pipe(
+							Effect.catch((cause) =>
+								Effect.logWarning("Audit trail copy failed", { action: event.action, cause }),
+							),
+						)
 				})
 
 			/**
