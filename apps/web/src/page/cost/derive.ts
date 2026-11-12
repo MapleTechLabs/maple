@@ -1,3 +1,4 @@
+import type { CostProvider } from "@maple/domain/cost"
 import {
 	COST_FILTER_MAX_VALUE_LENGTH,
 	COST_FILTER_MAX_VALUES,
@@ -12,6 +13,7 @@ import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
+import { COST_PROVIDERS } from "./providers"
 
 // What the cost page reads off its URL and its answers: the grouping, the filters, money and days.
 
@@ -268,8 +270,8 @@ export const previousPeriodOf = (
 		: "beyond"
 }
 
-/** AWS bills each Cost Explorer request USD 0.01. */
-const REQUEST_COST_USD = 0.01
-
-/** What a source's provider requests cost its account this month. */
-export const requestsCost = (requests: number): string => `USD ${(requests * REQUEST_COST_USD).toFixed(2)}`
+/** What a source's provider requests cost its account this month, or null when the provider bills none. */
+export const requestsCost = (provider: CostProvider, requests: number): string | null => {
+	const { requestUsd } = COST_PROVIDERS[provider]
+	return requestUsd === null ? null : `USD ${(requests * requestUsd).toFixed(2)}`
+}

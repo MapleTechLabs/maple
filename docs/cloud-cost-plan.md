@@ -1,8 +1,9 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. Phase 0 checked the provider APIs against docs, public
-schemas and one real AWS account. Recommendations (phase 2) and the other providers are not built.
+into `cost_daily` and shown on `/cost`. OpenRouter followed on 2026-11-12 as the second source.
+Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
+Recommendations (phase 2) and the other providers are not built.
 
 ## Goal
 
@@ -41,8 +42,10 @@ warehouse are not.
 
 ### Cost provider contract
 
-One adapter per integration, in `packages/backend/src/services/cost/providers/`, behind one port.
-The registry covers cost only. The integrations themselves are not refactored.
+One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
+The registry covers cost only. The integrations themselves are not refactored. A provider that is
+not an integration (OpenRouter) keeps its credential in a table of its own, and
+`cost_sources.connection_ref` points at that row.
 
 ```ts
 interface CostProvider {
@@ -106,6 +109,12 @@ the same write, so the Cost page shows the wait before the first tick. Per sourc
 - History walks down one calendar month per step, to thirteen months back.
 - A source held for long resumes from its watermark, so no day in between is skipped.
 
+The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROFILES` in
+`sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
+reaches outside them, because a day the provider no longer serves comes back empty, and an empty
+day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
+never for today.
+
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
 
@@ -133,7 +142,8 @@ currency the figures are in and lists the others. Nothing is added across curren
   each source's sync state. The AWS connection has a Cost switch. Recommendations (list and detail
   with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`). A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE /internal/cost/openrouter` for the
+  OpenRouter key. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -175,6 +185,33 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Permissions: the `cost` module now lists every read above (23 actions, all `Resource: "*"`). IAM
   Access Analyzer validates the rendered policy with no findings. No write action is included:
   enrolling in the hub or starting a recommendation run stays with the customer.
+
+### OpenRouter (billed)
+
+- Spec: `GET /api/v1/activity` returns one row per UTC day, model and serving endpoint for the
+  last 30 completed days, all in one answer. `usage` is USD billed by OpenRouter.
+- It needs a management key. A regular API key gets 403, so the key an org's AI turns run on
+  cannot be reused. The org pastes a management key on the Cost page, which Maple checks
+  (`GET /key`, then one activity read) and stores sealed.
+- Live: `GET /key` names the key's account: `organization_id`, or `creator_user_id` on a personal
+  account (`organization_id` is then null). That id is the source's account. A replacement key
+  must name the same one, since another account's spend would overwrite the source's days. A
+  replaced key also makes a failing source due again at once.
+- Spec: a management key can be scoped to one workspace, and then reads only that workspace.
+  Live: a key for the whole account answers 404 for a workspace the account does not have, where
+  the spec says a scoped key answers 403. Maple asks that when the key is saved and refuses a
+  scoped key, since its pulls would miss the rest of the account's spend without saying so.
+- Requests are free, so the source counts none.
+- Rows: the model is `CloudService`, the serving provider is `UsageType`, the category is "AI and
+  Machine Learning", the region is `global`. Rows OpenRouter billed nothing for are left out.
+- Not counted: spend on the account's own provider keys (`byok_usage_inference`). OpenRouter
+  estimates it at market rates, and the page does not yet tell billed from estimated.
+- Not split: workspaces and API keys. The activity API can filter by either.
+- Spec: the EU host documents inference only. Every instance reads activity from the global host.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily,
+  and yesterday is marked as not final, since it may have ended minutes before the pull.
+- A day OpenRouter answers nothing for is stored as empty, like any provider's. An empty answer
+  for an account that had spend would hide up to 28 days until the next weekly re-pull.
 
 ### GCP (billed, needs a customer export)
 
@@ -233,7 +270,9 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** Railway, GCP, PlanetScale, Supabase, Cloudflare, one PR each.
+3. **More providers.** OpenRouter is built. Railway, GCP, PlanetScale, Supabase, Cloudflare, one
+   PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
+   sync profile.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.

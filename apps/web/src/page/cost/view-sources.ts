@@ -11,10 +11,10 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import { PROVIDERS, providerBrand } from "../kit/providers"
 import { relativeTime } from "../kit/relative-time"
 import { formatDay, requestsCost } from "./derive"
 import type { Message } from "./message"
+import { COST_PROVIDERS } from "./providers"
 
 type H = HtmlBuilder<Message>
 
@@ -32,6 +32,16 @@ const STATUS = {
 
 /** Where the org's connections are listed and changed. */
 const SOURCES_HREF = hrefOf(AppRoute.Sources())
+
+/** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
+const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {
+	const cost = requestsCost(source.provider, source.requestsThisMonth)
+	return cost === null
+		? []
+		: [
+				`${formatNumber(source.requestsThisMonth)} provider ${pluralize(source.requestsThisMonth, "request")} this month (${cost})`,
+			]
+}
 
 /** How far the sync is: the newest day, how far back history goes, and when it last ran. */
 const facts = (
@@ -54,7 +64,7 @@ const facts = (
 					relativeTime(h, { value: source.lastSyncedAt, nowMs, timeZone }),
 				]),
 			]),
-	`${formatNumber(source.requestsThisMonth)} provider ${pluralize(source.requestsThisMonth, "request")} this month (${requestsCost(source.requestsThisMonth)})`,
+	...requestsFact(source),
 ]
 
 /** What the status alone does not say: why a sync fails or waits, and what pausing keeps. */
@@ -73,7 +83,7 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				: []
 
 const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: string): Html => {
-	const brand = providerBrand(source.provider)
+	const provider = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
 	return hstack(
 		h,
@@ -85,10 +95,10 @@ const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: str
 			attributes: [h.Key(source.id)],
 		},
 		[
-			icon(h, brand.icon, { size: 18, className: cn("mt-0.5 shrink-0", brand.iconClassName) }),
+			icon(h, provider.icon, { size: 18, className: cn("mt-0.5 shrink-0", provider.iconClassName) }),
 			vstack(h, { gap: "1", grow: true, shrink: true }, [
 				hstack(h, { gap: "2", wrap: true }, [
-					typography(h, { size: "sm", weight: "medium" }, [PROVIDERS[source.provider].name]),
+					typography(h, { size: "sm", weight: "medium" }, [provider.name]),
 					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
 						source.accountId,
 					]),

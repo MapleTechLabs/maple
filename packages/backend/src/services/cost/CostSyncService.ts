@@ -2,7 +2,7 @@
 // then claims due sources and runs a few plan steps each: HEAD (the trailing days), SETTLE (the open
 // months) or BACKFILL (a month toward the floor). A step pulls its window through the provider's
 // adapter and writes it whole under one `IngestedAt`; a failure backs the source off.
-import type { CostProvider } from "@maple/domain/cost"
+import { CostProvider } from "@maple/domain/cost"
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import type { CostDailyRow } from "@maple/domain/tinybird"
 import { CostSourceId } from "@maple/primitives"
@@ -29,7 +29,9 @@ import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
+import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -162,6 +164,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			// One adapter per provider literal: a new provider does not compile until it has one.
 			const adapters = {
 				aws: yield* AwsCostProvider,
+				openrouter: yield* OpenRouterCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -189,12 +192,25 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** OpenRouter sources in step with every org's saved key (see `reconcileOpenRouterCostSources`). */
+			const reconcileOpenRouter = Effect.fn("CostSyncService.reconcileOpenRouter")(function* (
+				now: number,
+			) {
+				const reconciled = yield* dbExecute((db) => reconcileOpenRouterCostSources(db, now))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "openrouter",
+					"maple.cost.sources_created": reconciled.created,
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** One function per provider; each owns the sources of its own connection table. */
-			const reconcile = (now: number) => Effect.all([reconcileAws(now)], { discard: true })
+			const reconcile = (now: number) =>
+				Effect.all([reconcileAws(now), reconcileOpenRouter(now)], { discard: true })
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
-				const floor = historyFloor(utcToday(now))
+				const today = utcToday(now)
 				return dbExecute((db) =>
 					db.run(
 						PG.from(CostSources)
@@ -211,7 +227,13 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
 									$.lastSyncedAt.lte(now - HEAD_INTERVAL_MS),
-									$.backfillDate.gt(floor),
+									// History left to walk, down to each provider's own floor.
+									...Arr.map(CostProvider.literals, (provider) =>
+										PG.and(
+											$.provider.eq(provider),
+											$.backfillDate.gt(historyFloor(provider, today)),
+										),
+									),
 									// A budget hold that ran out is claimed once more, if only to clear it.
 									$.lastErrorReason.eq(BUDGET_REASON),
 								),
@@ -645,6 +667,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 		Layer.provide(
 			Layer.mergeAll(
 				AwsCostProvider.layer,
+				OpenRouterCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

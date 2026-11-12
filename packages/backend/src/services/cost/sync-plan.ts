@@ -7,7 +7,7 @@ import type { CostPullRow, CostPullWindow } from "./CostProvider"
 
 export const COST_DATASOURCE = "cost_daily"
 
-/** Days a head pull covers, today included: providers keep revising the last few. */
+/** Days a head pull covers, the newest served day included: providers keep revising the last few. */
 export const HEAD_DAYS = 4
 // An hour under a day: a source pulled a few minutes past the hour is due at that hour tomorrow.
 export const HEAD_INTERVAL_MS = 23 * 60 * 60_000
@@ -24,8 +24,13 @@ export const ROLLOUT_REASON = "rollout"
 export const isCostHold = (reason: string | null): boolean =>
 	reason === BUDGET_REASON || reason === ROLLOUT_REASON
 
-/** History goes back to the first day of the month this many months before the current one. */
+/** AWS history goes back to the first day of the month this many months before the current one. */
 export const HISTORY_MONTHS = 13
+/**
+ * OpenRouter serves the last 30 completed UTC days. Two days short of that: a day the API has
+ * dropped comes back empty, and an empty day replaces the stored one.
+ */
+const OPENROUTER_HISTORY_DAYS = 28
 // Through this day of the month the previous month's bill is still open; the first settle after
 // it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
@@ -50,8 +55,22 @@ export const addDays = (day: string, days: number): string =>
 export const monthStart = (day: string, months = 0): string =>
 	DateTime.formatIsoDateUtc(DateTime.add(dayStart(`${Str.slice(0, 7)(day)}-01`), { months }))
 
-/** The oldest day the sync pulls: the first day of the month `HISTORY_MONTHS` before `today`'s. */
-export const historyFloor = (today: string): string => monthStart(today, -HISTORY_MONTHS)
+/** What a provider's cost API serves, which bounds every window the plan asks for. */
+interface CostSyncProfile {
+	/** The oldest day a pull may ask for, when it is `today` in UTC. */
+	readonly floor: (today: string) => string
+	/** Days the newest day served trails today: 0 when today itself is served. */
+	readonly lagDays: number
+}
+
+const COST_SYNC_PROFILES = {
+	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
+	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
+} as const satisfies Record<CostProvider, CostSyncProfile>
+
+/** The oldest day the sync pulls from `provider`. */
+export const historyFloor = (provider: CostProvider, today: string): string =>
+	COST_SYNC_PROFILES[provider].floor(today)
 
 const minDay = (a: string, b: string) => (a < b ? a : b)
 const maxDay = (a: string, b: string) => (a > b ? a : b)
@@ -81,6 +100,7 @@ export interface CostSyncFrontiers {
 }
 
 export interface CostSyncState extends CostSyncFrontiers {
+	readonly provider: CostProvider
 	/** The UTC month (`YYYY-MM`) `requestsCount` counts billable requests in. */
 	readonly requestsMonth: string | null
 	readonly requestsCount: number
@@ -114,28 +134,30 @@ const settlesPreviousMonth = (today: string, lastSettledAt: number | null): bool
  * The next pull of a source. SETTLE (the open months, whole) when it is new or a head is due and
  * the last settle is a week old; HEAD (the trailing days) when only the head is due; otherwise one
  * calendar month of BACKFILL until the floor. The month's request budgets stop history first, then all.
+ * No window reaches below the provider's floor or past the newest day it serves.
  */
 export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan => {
 	const requests = requestsThisMonth(state, now)
 	if (requests >= MONTHLY_REQUEST_BUDGET) return { mode: "idle", budget: "monthly" }
 	const today = utcToday(now)
+	const floor = historyFloor(state.provider, today)
+	const latest = addDays(today, -COST_SYNC_PROFILES[state.provider].lagDays)
 	// The first pull takes the previous month too, so there is something to compare against at once.
 	if (state.watermarkDate === null) {
-		return { mode: "settle", startDay: monthStart(today, -1), endDay: today }
+		return { mode: "settle", startDay: maxDay(floor, monthStart(today, -1)), endDay: latest }
 	}
-	const floor = historyFloor(today)
 	const headDue = state.lastSyncedAt === null || now - state.lastSyncedAt >= HEAD_INTERVAL_MS
 	if (headDue) {
 		const settleDue = state.lastSettledAt === null || now - state.lastSettledAt >= SETTLE_INTERVAL_MS
 		const usualStart = settleDue
 			? monthStart(today, settlesPreviousMonth(today, state.lastSettledAt) ? -1 : 0)
-			: addDays(today, -(HEAD_DAYS - 1))
+			: addDays(latest, -(HEAD_DAYS - 1))
 		// A gap below the usual start: the days up to the watermark were pulled while their month was
 		// open and no later window revisits them. Resume a month before the watermark's, so that month
 		// and the one before it (still open then, perhaps) get their final amounts.
 		const gap = addDays(state.watermarkDate, 1) < usualStart
 		const startDay = maxDay(floor, gap ? monthStart(state.watermarkDate, -1) : usualStart)
-		return { mode: settleDue ? "settle" : "head", startDay, endDay: today }
+		return { mode: settleDue ? "settle" : "head", startDay, endDay: latest }
 	}
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }
 	if (requests >= BACKFILL_REQUEST_BUDGET) return { mode: "idle", budget: "backfill" }

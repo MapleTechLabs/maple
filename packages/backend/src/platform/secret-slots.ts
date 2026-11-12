@@ -90,6 +90,12 @@ export const openRouterKeySlot: SecretSlot<OrgRef> = {
 	binding: orgBinding,
 }
 
+/** The management key an org's OpenRouter spend is read with; the table is one row per org. */
+export const openRouterCostKeySlot: SecretSlot<OrgRef> = {
+	name: "openrouter_cost_connections.key",
+	binding: orgBinding,
+}
+
 export const planetScaleWebhookSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "planetscale_connections.webhook_secret",
 	binding: orgRowBinding,
