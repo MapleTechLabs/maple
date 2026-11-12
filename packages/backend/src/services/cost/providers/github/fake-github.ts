@@ -16,6 +16,8 @@ export interface FakeGithub {
 	usageStatus: number
 	/** The body of a refused report. */
 	refusal: string
+	/** `authorization` values GitHub answers 401 to, as a token revoked since it was minted. */
+	rejected: ReadonlyArray<string>
 	/** `retry-after` seconds on a 403, the way GitHub's secondary rate limit answers. */
 	retryAfter: number | null
 	/** The usage lines, whatever month is asked for, or raw text for a malformed answer. */
@@ -33,6 +35,7 @@ export const makeFakeGithub = (overrides: Partial<FakeGithub> = {}): FakeGithub 
 	permissions: { organization_administration: "read", metadata: "read" },
 	usageStatus: 200,
 	refusal: "Not Found",
+	rejected: [],
 	retryAfter: null,
 	usage: [],
 	cloudCost: true,
@@ -63,6 +66,9 @@ const http = (world: FakeGithub) =>
 			return json(world.permissions === null ? token : { ...token, permissions: world.permissions })
 		}
 		world.authorizations.push(headers["authorization"])
+		if (Arr.contains(world.rejected, headers["authorization"] ?? "")) {
+			return json({ message: "Bad credentials" }, { status: 401 })
+		}
 		if (world.usageStatus !== 200) {
 			return json(
 				{ message: world.refusal },
@@ -88,7 +94,7 @@ export const fakeGithubDeps = (testDb: TestDb, world: FakeGithub) =>
 		testDb.layer,
 	)
 
-export interface FakeInstallation {
+interface FakeInstallation {
 	readonly id: string
 	readonly orgId: string
 	readonly login: string

@@ -65,22 +65,25 @@ export interface GithubCostSourceServiceApi {
 		ReadonlyArray<GithubCostInstallation>,
 		GithubCostUnavailableError | CloudCostDisabledError
 	>
-	/** Makes the installation's cost source once GitHub has let Maple read its billing report. */
+	/**
+	 * Makes the installation's cost source once GitHub has let Maple read its billing report.
+	 * `created` is false when it was a source already.
+	 */
 	readonly add: (
 		orgId: OrgId,
 		installationId: VcsInstallationId,
 	) => Effect.Effect<
-		{ readonly accountLogin: string },
+		{ readonly accountLogin: string; readonly created: boolean },
 		| GithubCostUnavailableError
 		| GithubCostInstallationNotFoundError
 		| GithubCostNotReadyError
 		| CloudCostDisabledError
 	>
-	/** Whether there was a source to remove. */
+	/** The organization of the source it removed, or null when there was none. */
 	readonly remove: (
 		orgId: OrgId,
 		installationId: VcsInstallationId,
-	) => Effect.Effect<{ readonly removed: boolean }, GithubCostUnavailableError>
+	) => Effect.Effect<{ readonly accountLogin: string | null }, GithubCostUnavailableError>
 }
 
 export class GithubCostSourceService extends Context.Service<
@@ -188,7 +191,7 @@ export class GithubCostSourceService extends Context.Service<
 						),
 				}),
 			)
-			yield* dbExecute((db) =>
+			const inserted = yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CostSources)
 						.values({
@@ -201,10 +204,11 @@ export class GithubCostSourceService extends Context.Service<
 							updatedAt: now,
 						})
 						// It is a source already: adding again changes nothing.
-						.onConflictDoNothing(),
+						.onConflictDoNothing()
+						.returning(($) => ({ id: $.id })),
 				),
 			)
-			return { accountLogin: installation.accountLogin }
+			return { accountLogin: installation.accountLogin, created: inserted.length > 0 }
 		})
 
 		const remove = Effect.fn("GithubCostSourceService.remove")(function* (
@@ -220,10 +224,10 @@ export class GithubCostSourceService extends Context.Service<
 							$.provider.eq("github"),
 							$.connectionRef.eq(installationId),
 						])
-						.returning(($) => ({ id: $.id })),
+						.returning(($) => ({ accountId: $.accountId })),
 				),
 			)
-			return { removed: removed.length > 0 }
+			return { accountLogin: removed[0]?.accountId ?? null }
 		})
 
 		return { list, add, remove } satisfies GithubCostSourceServiceApi

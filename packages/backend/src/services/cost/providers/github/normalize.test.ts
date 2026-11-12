@@ -165,6 +165,16 @@ describe("toCostRows", () => {
 		)
 	})
 
+	it("sums a product GitHub spelled two ways into one row", () => {
+		assert.deepStrictEqual(
+			summary([
+				item({ product: "actions", grossAmount: 1, netAmount: 1, quantity: 1 }),
+				item({ product: "Actions", grossAmount: 2, netAmount: 2, quantity: 2 }),
+			]),
+			["2026-11-02 | Actions | Actions Linux | example-org/api | 3 | 3 | 3"],
+		)
+	})
+
 	it("marks yesterday and today as not final, and the days before as final", () => {
 		const rows = rowsOf([
 			item({ date: "2026-11-01T00:00:00Z" }),

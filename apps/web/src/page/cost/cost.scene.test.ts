@@ -44,7 +44,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { contextChanged, GITHUB_NOT_READY_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -585,6 +585,7 @@ describe("cost page", () => {
 				installationId: GITHUB_LABS,
 				result: Result.fail({
 					...toLoadFailure("refused"),
+					code: GITHUB_NOT_READY_CODE,
 					message: "GitHub has not granted Maple access to billing yet.",
 				}),
 			}),
@@ -601,6 +602,23 @@ describe("cost page", () => {
 				"https://github.com/organizations/example-labs/settings/installations/1000002",
 			),
 			expectView(role("button", { name: "Add example-labs" })).toBeEnabled(),
+		)
+		// A failure the organization cannot fix in GitHub (an outage) says so without the settings link.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					adding.model,
+					Message.CompletedAddGithubSource({
+						installationId: GITHUB_LABS,
+						result: Result.fail(toLoadFailure("unreachable")),
+					}),
+				).model,
+			),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toExist(),
+			expectView(role("link", { name: "Open the GitHub App settings" })).not.toExist(),
 		)
 		// Trying again takes the old reason away while GitHub is asked.
 		const retrying = pageUpdate(

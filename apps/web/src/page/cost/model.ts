@@ -52,9 +52,16 @@ export const Model = Schema.Struct({
 	githubInstallations: AsyncData.Schema(GithubCostInstallations, LoadFailure).schema,
 	/** The installation an add is in flight for. */
 	githubAdding: Schema.NullOr(VcsInstallationId),
-	/** The installation whose add was refused, with the reason, shown in its row until the next try. */
+	/**
+	 * The installation whose add failed, with the reason, shown in its row until the next try.
+	 * `needsPermission`: GitHub refused the billing read, which the organization fixes in GitHub.
+	 */
 	githubRefusal: Schema.NullOr(
-		Schema.Struct({ installationId: VcsInstallationId, message: Schema.String }),
+		Schema.Struct({
+			installationId: VcsInstallationId,
+			message: Schema.String,
+			needsPermission: Schema.Boolean,
+		}),
 	),
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */

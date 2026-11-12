@@ -141,13 +141,12 @@ const GITHUB_STATE_NOTE = {
 /** One installation: an organization that can be added, one that is, or why it cannot be. */
 const githubInstallationRow = (h: H, model: Model, installation: GithubCostInstallation): Html => {
 	const refusal =
-		model.githubRefusal?.installationId === installation.installationId
-			? model.githubRefusal.message
-			: undefined
-	const note = GITHUB_STATE_NOTE[installation.state]
+		model.githubRefusal?.installationId === installation.installationId ? model.githubRefusal : undefined
 	const row = listRow(h, {
 		leading: mark(h, COST_PROVIDERS.github),
 		title: installation.accountLogin,
+		meta: GITHUB_STATE_NOTE[installation.state],
+		wrapMeta: true,
 		trailing:
 			installation.state === "available"
 				? button(
@@ -174,14 +173,6 @@ const githubInstallationRow = (h: H, model: Model, installation: GithubCostInsta
 	})
 	return vstack(h, { as: "li", gap: "1", attributes: [h.Key(installation.installationId)] }, [
 		row,
-		// Under the row, not in it: the row's second line is cut off at a phone's width.
-		...(note === undefined
-			? []
-			: [
-					typography(h, { size: "xs", tone: "muted", as: "p", className: "px-2 pb-2 font-prose" }, [
-						note,
-					]),
-				]),
 		...(refusal === undefined
 			? []
 			: [
@@ -195,17 +186,23 @@ const githubInstallationRow = (h: H, model: Model, installation: GithubCostInsta
 							attributes: [h.Role("alert")],
 						},
 						[
-							`${refusal} `,
-							textLink(
-								h,
-								{
-									href: installation.settingsUrl,
-									tone: "inherit",
-									className: "underline",
-									attributes: [h.Target("_blank"), h.Rel("noreferrer")],
-								},
-								["Open the GitHub App settings"],
-							),
+							refusal.message,
+							// Only a missing permission is fixed in GitHub: an outage or a missing role is not.
+							...(refusal.needsPermission
+								? [
+										" ",
+										textLink(
+											h,
+											{
+												href: installation.settingsUrl,
+												tone: "inherit",
+												className: "underline",
+												attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+											},
+											["Open the GitHub App settings"],
+										),
+									]
+								: []),
 						],
 					),
 				]),

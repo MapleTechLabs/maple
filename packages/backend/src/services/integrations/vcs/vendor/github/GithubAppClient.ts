@@ -26,7 +26,7 @@ import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 import { parseRetryAfterSeconds } from "../../../vendor-retry"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
 import { type InstallationToken, SharedInstallationTokens } from "../../installation-tokens"
-import type { VcsBillingUsageAnswer } from "../../VcsProviderClient"
+import type { VcsBillingMonth, VcsBillingUsageAnswer } from "../../VcsProviderClient"
 
 // GitHub App REST client. Vendor-specific: mints a short-lived App JWT (RS256,
 // Web Crypto), exchanges it for per-installation tokens, and calls the GitHub
@@ -150,6 +150,9 @@ const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
 // A cached token that lacks `actions: read` is re-minted once it is this old, so a permission
 // accepted since the mint applies within minutes, not when the token expires.
 const PERMISSION_DENIAL_RECHECK_MS = 5 * 60_000
+// A token without the billing permission is re-minted once it is this old: a person who accepts the
+// permission in GitHub and tries again is not kept waiting, and two reads in a row mint once.
+const BILLING_PERMISSION_RECHECK_MS = 10_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
@@ -922,10 +925,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// Job logs need `actions: read`. An installation that has not accepted it gets a 403 on
 			// every log download, so callers skip the download. No permissions listed: assume granted.
-			const grantsActions = ({ permissions }: InstallationToken) =>
-				permissions === undefined ||
-				permissions["actions"] === "read" ||
-				permissions["actions"] === "write"
+			const grants =
+				(permission: string) =>
+				({ permissions }: InstallationToken) =>
+					permissions === undefined ||
+					permissions[permission] === "read" ||
+					permissions[permission] === "write"
+			const grantsActions = grants("actions")
 			const canReadActions = Effect.fnUntraced(function* (externalInstallationId: string) {
 				const token = yield* installationToken(externalInstallationId)
 				const now = yield* Clock.currentTimeMillis
@@ -959,33 +965,42 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 
 			// The billing report needs organization "Administration: read", which a token lists as
-			// `organization_administration`. No permissions listed: assume granted.
-			const grantsBillingRead = ({ permissions }: InstallationToken) =>
-				permissions === undefined ||
-				permissions["organization_administration"] === "read" ||
-				permissions["organization_administration"] === "write"
+			// `organization_administration`.
+			const grantsBillingRead = grants("organization_administration")
+
+			// A token minted before the organization accepted the permission never gains it, so one
+			// that lacks it is minted again, unless it is so new that it shows what is accepted now.
+			const billingToken = Effect.fnUntraced(function* (externalInstallationId: string) {
+				const cached = yield* installationToken(externalInstallationId)
+				const now = yield* Clock.currentTimeMillis
+				if (grantsBillingRead(cached) || now - cached.mintedAtMs < BILLING_PERMISSION_RECHECK_MS) {
+					return cached
+				}
+				yield* installationTokens.remove(externalInstallationId)
+				return yield* installationToken(externalInstallationId)
+			})
 
 			/** One month of an organization's billed usage, or how GitHub refused it: a 4xx is an answer. */
 			const getOrganizationBillingUsage = Effect.fn("GithubAppClient.getOrganizationBillingUsage")(
 				function* (
 					externalInstallationId: string,
 					org: string,
-					period: { readonly year: number; readonly month: number },
+					period: VcsBillingMonth,
 				): Effect.fn.Return<VcsBillingUsageAnswer, GithubAppError> {
 					const config = yield* resolveConfig
-					const cached = yield* installationToken(externalInstallationId)
-					// A token minted before the organization accepted the permission never gains it.
-					const token = grantsBillingRead(cached)
-						? cached
-						: yield* installationTokens
-								.remove(externalInstallationId)
-								.pipe(Effect.andThen(installationToken(externalInstallationId)))
-					if (!grantsBillingRead(token)) return { _tag: "NotGranted" }
-					const response = yield* authedGet(
-						config,
-						token.token,
-						`${config.apiBaseUrl}/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${period.year}&month=${period.month}`,
-					)
+					const read = Effect.gen(function* () {
+						const token = yield* billingToken(externalInstallationId)
+						if (!grantsBillingRead(token)) return undefined
+						return yield* authedGet(
+							config,
+							token.token,
+							`${config.apiBaseUrl}/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${period.year}&month=${period.month}`,
+						)
+					})
+					const first = yield* read
+					// A cached token GitHub rejects was evicted by the request: one more try mints a new one.
+					const response = first?.status === 401 ? yield* read : first
+					if (response === undefined) return { _tag: "NotGranted" }
 					if (response.status >= 500) return yield* failure(response, "Billing usage report")
 					const body = yield* response.text.pipe(
 						Effect.mapError(

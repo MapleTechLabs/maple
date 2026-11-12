@@ -28,6 +28,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { insertInstallation } from "./providers/github/fake-github"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
@@ -295,24 +296,16 @@ const harness = (options: FakeProviderOptions = {}) => {
 		readonly orgId?: string
 		readonly source?: boolean
 	}) =>
-		Effect.promise(async () => {
+		Effect.gen(function* () {
 			const orgId = installation.orgId ?? "org_a"
-			const sourceId = await insertTestSource(testDb, {
+			yield* insertInstallation(testDb, {
+				id: installation.id,
 				orgId,
-				platform: "github",
-				name: installation.id,
+				login: installation.login,
+				externalId: installation.id,
 			})
-			await executeSql(
-				testDb,
-				`INSERT INTO vcs_installations
-				   (id, org_id, source_id, provider, external_installation_id, account_login, account_type,
-				    external_account_id, status, installed_by_user_id, created_at, updated_at)
-				 VALUES ($1, $2, $3, 'github', $1, $4, 'organization', $1, 'active', 'user_a', now(), now())`,
-				[installation.id, orgId, sourceId, installation.login],
-			)
 			if (installation.source === false) return
-			await executeSql(
-				testDb,
+			yield* sql(
 				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
 				 VALUES (gen_random_uuid()::text, $1, 'github', $2, $3, now(), now())`,
 				[orgId, installation.id, installation.login],

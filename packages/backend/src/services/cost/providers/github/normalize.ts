@@ -46,10 +46,9 @@ const sum = (items: ReadonlyArray<UsageItem>, of: (item: UsageItem) => number): 
 	Arr.reduce(items, 0, (total, item) => total + of(item))
 
 /**
- * The window's days of a report, summed per day, product, SKU and repository. The billed cost is
- * the net amount and the list cost the gross one, so usage a plan allowance or a public
- * repository made free keeps its list cost. A line with neither is left out. Days from `openDay`
- * on can still change: usage keeps arriving for a day or two.
+ * The window's days of a report, summed per day, product, SKU and repository. Billed is the net
+ * amount and list the gross one, so usage a plan allowance or a public repository made free keeps
+ * its list cost. A line with neither is left out. Days from `openDay` on can still change.
  */
 export const toCostRows = (
 	items: ReadonlyArray<UsageItem>,
@@ -61,9 +60,10 @@ export const toCostRows = (
 		const day = dayOf(item)
 		return day >= window.startDay && day <= window.endDay
 	})
-	// NUL cannot be in a day, a product, a SKU or a repository name, so the key keeps them apart.
+	// By the name a row is written with: two spellings of a product must not make two rows of one
+	// key. NUL cannot be in a day, a product, a SKU or a repository name, so it keeps them apart.
 	const groups = Arr.groupBy(inWindow, (item) =>
-		Arr.join([dayOf(item), item.product, item.sku, repositoryOf(item)], "\u0000"),
+		Arr.join([dayOf(item), productName(item.product), item.sku, repositoryOf(item)], "\u0000"),
 	)
 	return Arr.flatMap(Rec.values(groups), (group): ReadonlyArray<CostPullRow> => {
 		const first = Arr.headNonEmpty(group)

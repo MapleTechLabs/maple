@@ -8,7 +8,7 @@ import {
 	CostTotalsResponse,
 	GithubCostInstallations,
 } from "@maple/domain/http"
-import { Array as Arr, Number as Num, Order, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Number as Num, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
@@ -294,46 +294,71 @@ const justAdded = (entry: SourceWire): SourceWire => ({
 	lastSyncedAt: null,
 })
 
-/** What the lab's reader did since the state loaded: added (true), removed (false), or neither (null). */
-export type LabSourceChanges = Readonly<{ openRouter: boolean | null; github: boolean | null }>
+/** The organizations the lab's reader can add and remove, each with the source it gets. */
+const LAB_GITHUB_ORGS = [
+	{ installationId: LAB_GITHUB_INSTALLATION, login: LAB_GITHUB_ORG, sourceId: githubSource.id },
+	{
+		installationId: LAB_GITHUB_OTHER_INSTALLATION,
+		login: LAB_GITHUB_OTHER_ORG,
+		sourceId: "0190f2b3-0000-7000-8000-00000000c062",
+	},
+]
 
-/** The providers whose sources the lab's reader removed: their cost is in no read any more. */
+/** The organization of a lab installation, as the add's answer names it. */
+export const labGithubLogin = (installationId: string): string =>
+	Arr.findFirst(LAB_GITHUB_ORGS, (org) => org.installationId === installationId).pipe(
+		Option.match({ onNone: () => installationId, onSome: (org) => org.login }),
+	)
+
+/**
+ * What the lab's reader did since the state loaded. `openRouter`: added (true), removed (false) or
+ * neither (null). `github`: an installation's id to whether it is a source now.
+ */
+export type LabSourceChanges = Readonly<{
+	openRouter: boolean | null
+	github: Readonly<Record<string, boolean>>
+}>
+
+/**
+ * The providers whose cost is in no read any more. GitHub's cost is all `example-org`'s: it leaves
+ * when that source is removed, and stays out while a source added again waits for its first sync.
+ */
 export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<CostProvider> =>
 	Arr.filter(
 		CostProvider.literals,
 		(provider) =>
 			(provider === "openrouter" && changes.openRouter === false) ||
-			(provider === "github" && changes.github === false),
+			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)),
 	)
 
 /**
- * `sources` after the lab's reader added a provider's source (it then waits for its first sync) or
- * removed the provider's sources.
+ * `sources` after what the lab's reader did: a source that was added waits for its first sync, one
+ * that was removed is gone.
  */
 export const labSourcesWith = (
 	sources: CostSourcesResponse,
 	changes: LabSourceChanges,
 ): CostSourcesResponse => {
-	const removed = labRemovedProviders(changes)
-	const kept = Arr.filter(
-		Schema.encodeSync(CostSourcesResponse)(sources).sources,
-		(entry) => !Arr.contains(removed, entry.provider),
+	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
+		entry.provider === "openrouter"
+			? changes.openRouter !== false
+			: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
 	)
 	const hasOpenRouter = Arr.some(kept, (entry) => entry.provider === "openrouter")
 	return decodeSources({
 		sources: [
 			...kept,
 			...(changes.openRouter === true && !hasOpenRouter ? [justAdded(openRouterSource)] : []),
-			...(changes.github === true
-				? [
-						justAdded({
-							...githubSource,
-							id: "0190f2b3-0000-7000-8000-00000000c062",
-							connectionRef: LAB_GITHUB_OTHER_INSTALLATION,
-							accountId: LAB_GITHUB_OTHER_ORG,
-						}),
-					]
-				: []),
+			...Arr.map(
+				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
+				(org) =>
+					justAdded({
+						...githubSource,
+						id: org.sourceId,
+						connectionRef: org.installationId,
+						accountId: org.login,
+					}),
+			),
 		],
 	})
 }

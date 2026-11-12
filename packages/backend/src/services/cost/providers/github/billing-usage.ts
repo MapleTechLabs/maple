@@ -14,7 +14,7 @@ export const failed = (reason: Reason, message: string) =>
 	new CostProviderError({ message, provider: "github", reason, requests: 0 })
 
 /** The organization has not accepted the permission the billing report needs. */
-export const BILLING_NOT_GRANTED =
+const BILLING_NOT_GRANTED =
 	"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings."
 
 const NOT_ON_BILLING_PLATFORM =
@@ -44,11 +44,10 @@ const refused = (status: number, body: string): CostProviderError => {
 	if (status === 401) {
 		return failed("auth", "GitHub rejected Maple's access to this organization. Reconnect GitHub.")
 	}
-	if (status === 403 || status === 404) return failed("not_ready", BILLING_NOT_GRANTED)
-	if (status === 429) return failed("rate_limited", "GitHub is rate limiting billing requests.")
-	// An organization on the older billing has no report: GitHub says so in the body.
-	return /billing platform/i.test(body)
-		? failed("not_ready", NOT_ON_BILLING_PLATFORM)
+	// An organization on the older billing has no report: GitHub says so in the body, whatever the status.
+	if (/billing platform/i.test(body)) return failed("not_ready", NOT_ON_BILLING_PLATFORM)
+	return status === 403 || status === 404
+		? failed("not_ready", BILLING_NOT_GRANTED)
 		: failed("upstream", `GitHub answered ${status} to the billing request.`)
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr } from "effect"
+import { DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { CostProviderError } from "../../CostProvider"
@@ -146,13 +146,17 @@ describe("GithubCostProvider", () => {
 				world.retryAfter = 600
 				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "rate_limited")
 
-				// An organization on the older billing is told so, and waiting will not change it.
-				world.usageStatus = 400
+				// An organization on the older billing is told so, whatever status GitHub refuses it with.
 				world.retryAfter = null
 				world.refusal = "This endpoint requires the enhanced billing platform."
-				const older = yield* Effect.flip(pull(ORG, INSTALLATION))
-				assert.strictEqual(older.reason, "not_ready")
-				assert.include(older.message, "enhanced billing platform")
+				const older = yield* Effect.forEach([400, 403, 404], (status) =>
+					Effect.gen(function* () {
+						world.usageStatus = status
+						const error = yield* Effect.flip(pull(ORG, INSTALLATION))
+						return [error.reason, Str.includes("enhanced billing platform")(error.message)]
+					}),
+				)
+				assert.deepStrictEqual(older, Arr.replicate(["not_ready", true], 3))
 			}),
 		)
 	})
@@ -167,13 +171,35 @@ describe("GithubCostProvider", () => {
 				const error = yield* Effect.flip(pull(ORG, INSTALLATION))
 				assert.deepStrictEqual(reasonOf(error), ["not_ready", 0, "github"])
 				assert.include(error.message, "has not granted Maple access to billing")
-				assert.deepStrictEqual(world.authorizations, [])
+				// A second read right after mints no second token: the first shows what is accepted now.
+				yield* Effect.flip(pull(ORG, INSTALLATION))
+				assert.deepStrictEqual(world.paths, ["/app/installations/4242/access_tokens"])
 
 				// The organization accepts it: the old token never gains it, so a new one is minted.
 				world.permissions = { actions: "read", organization_administration: "read" }
+				yield* TestClock.adjust("1 minute")
 				const pulled = yield* pull(ORG, INSTALLATION)
 				assert.deepStrictEqual(pulled.rows, [])
-				assert.deepStrictEqual(world.authorizations, ["token token-3"])
+				assert.deepStrictEqual(world.authorizations, ["token token-2"])
+			}),
+		)
+	})
+
+	it.effect("mints a new token and asks once more when GitHub rejects the cached one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeGithub({ rejected: ["token token-1"] })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const pulled = yield* pull(ORG, INSTALLATION)
+				assert.deepStrictEqual(pulled.rows, [])
+				assert.deepStrictEqual(world.authorizations, ["token token-1", "token token-2"])
+
+				// A token GitHub keeps rejecting is asked with twice, then the pull fails as auth.
+				world.rejected = ["token token-2", "token token-3"]
+				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "auth")
+				assert.lengthOf(world.authorizations, 4)
 			}),
 		)
 	})

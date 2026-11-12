@@ -122,7 +122,10 @@ describe("GithubCostSourceService", () => {
 			testDb,
 			world,
 			Effect.gen(function* () {
-				assert.deepStrictEqual(yield* add(ORGANIZATION), { accountLogin: "example-org" })
+				assert.deepStrictEqual(yield* add(ORGANIZATION), {
+					accountLogin: "example-org",
+					created: true,
+				})
 				assert.deepStrictEqual(world.paths, [
 					"/app/installations/4242/access_tokens",
 					"/organizations/example-org/settings/billing/usage?year=2026&month=11",
@@ -140,8 +143,8 @@ describe("GithubCostSourceService", () => {
 					["added", "inactive", "user_account"],
 				)
 
-				// Adding it again keeps the one source.
-				yield* add(ORGANIZATION)
+				// Adding it again keeps the one source, and says nothing was made.
+				assert.strictEqual((yield* add(ORGANIZATION)).created, false)
 				assert.lengthOf(yield* sources(testDb), 1)
 			}),
 		)
@@ -164,6 +167,7 @@ describe("GithubCostSourceService", () => {
 				// The token lists the permission, and GitHub still refuses the report.
 				world.permissions = { organization_administration: "read" }
 				world.usageStatus = 404
+				yield* TestClock.adjust("1 minute")
 				const refused = yield* Effect.flip(add(ORGANIZATION))
 				assert.strictEqual(refused._tag, "@maple/http/github-cost/GithubCostNotReadyError")
 				assert.include(refused.message, "has not granted Maple access to billing")
@@ -272,11 +276,11 @@ describe("GithubCostSourceService", () => {
 					yield* add(ORGANIZATION)
 					world.cloudCost = false
 					// Another org naming this installation removes nothing.
-					assert.deepStrictEqual(yield* remove(ORGANIZATION, OTHER_ORG), { removed: false })
+					assert.deepStrictEqual(yield* remove(ORGANIZATION, OTHER_ORG), { accountLogin: null })
 					assert.lengthOf(yield* sources(testDb), 1)
-					assert.deepStrictEqual(yield* remove(ORGANIZATION), { removed: true })
+					assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: "example-org" })
 					assert.deepStrictEqual(yield* sources(testDb), [])
-					assert.deepStrictEqual(yield* remove(ORGANIZATION), { removed: false })
+					assert.deepStrictEqual(yield* remove(ORGANIZATION), { accountLogin: null })
 				}),
 			)
 		},

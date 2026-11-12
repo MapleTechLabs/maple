@@ -193,7 +193,7 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 })
 
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedKey = (model: Model): Model => ({
+const clearedDialog = (model: Model): Model => ({
 	...model,
 	keyDraft: Field.init(),
 	keyError: null,
@@ -203,7 +203,7 @@ const clearedKey = (model: Model): Model => ({
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedKey(model), addStep }, Dialog.open(model.addDialog))
+		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -235,12 +235,15 @@ const withoutSource = (model: Model, sourceId: CostSourceId | undefined): Model 
 })
 
 const sourceOf = (model: Model, sourceId: CostSourceId): CostSourceSummary | undefined =>
-	Arr.findFirst(
-		Option.getOrUndefined(AsyncData.getData(model.sources.data))?.sources ?? [],
-		(source) => source.id === sourceId,
-	).pipe(Option.getOrUndefined)
+	AsyncData.getData(model.sources.data).pipe(
+		Option.flatMap(({ sources }) => Arr.findFirst(sources, (source) => source.id === sourceId)),
+		Option.getOrUndefined,
+	)
 
 const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
+
+/** The public code of `GithubCostNotReadyError`: GitHub does not let Maple read the billing report yet. */
+export const GITHUB_NOT_READY_CODE = "github_cost_not_ready"
 
 /** The call that removes `source`: OpenRouter's key, or the GitHub source of its installation. */
 const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
@@ -409,9 +412,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
+		ClickedAddOpenRouter: () => ({ model: { ...clearedDialog(model), addStep: "openrouter" } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
+			model.sourceWrite === "Idle"
+				? { model: { ...clearedDialog(model), addStep: "pick" } }
+				: { model },
 		ClickedReplaceKey: () => openAdd(model, "openrouter"),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
@@ -419,7 +424,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"
-				? { ...lifted, model: clearedKey(lifted.model) }
+				? { ...lifted, model: clearedDialog(lifted.model) }
 				: lifted
 		},
 		GotKeyDraftMessage: ({ message: inner }) =>
@@ -453,7 +458,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onSuccess: (): Return => {
 					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Settling" }),
+						clearedDialog({ ...model, sourceWrite: "Settling" }),
 						Dialog.close(model.addDialog),
 					)
 					const outMessage = hasOpenRouterSource(model)
@@ -471,7 +476,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: {
 						model: {
-							...clearedKey(model),
+							...clearedDialog(model),
 							addStep: "github",
 							githubInstallations: AsyncData.Loading(),
 						},
@@ -506,12 +511,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						...model,
 						sourceWrite: "Idle",
 						githubAdding: null,
-						githubRefusal: { installationId, message: failureMessage(failure) },
+						githubRefusal: {
+							installationId,
+							message: failureMessage(failure),
+							needsPermission: failure.code === GITHUB_NOT_READY_CODE,
+						},
 					},
 				}),
 				onSuccess: (added): Return => {
 					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Settling", githubAdding: null }),
+						clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
 						Dialog.close(model.addDialog),
 					)
 					const outMessage = toast(

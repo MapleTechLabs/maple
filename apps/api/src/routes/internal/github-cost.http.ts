@@ -36,22 +36,28 @@ export const HttpGithubCostLive = HttpApiBuilder.group(MapleInternalApi, "github
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireIntegrationsManager(tenant.roles)
-					const added = yield* sources.add(tenant.orgId, params.installationId)
-					yield* recordHttpAudit("cost_source.created", {
-						metadata: { provider: "github", account: added.accountLogin },
-					})
-					return new GithubCostSourceAdded(added)
+					const { accountLogin, created } = yield* sources.add(tenant.orgId, params.installationId)
+					// It was a source already: nothing happened to record.
+					if (created) {
+						yield* recordHttpAudit("cost_source.created", {
+							metadata: { provider: "github", account: accountLogin },
+						})
+					}
+					return new GithubCostSourceAdded({ accountLogin })
 				}).pipe(Effect.withSpan("HttpGithubCost.add")),
 			)
 			.handle("remove", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireIntegrationsManager(tenant.roles)
-					const removed = yield* sources.remove(tenant.orgId, params.installationId)
-					yield* recordHttpAudit("cost_source.deleted", {
-						metadata: { provider: "github", installationId: params.installationId },
-					})
-					return new GithubCostSourceRemoved(removed)
+					const { accountLogin } = yield* sources.remove(tenant.orgId, params.installationId)
+					// Nothing was there to remove: nothing happened to record.
+					if (accountLogin !== null) {
+						yield* recordHttpAudit("cost_source.deleted", {
+							metadata: { provider: "github", account: accountLogin },
+						})
+					}
+					return new GithubCostSourceRemoved({ removed: accountLogin !== null })
 				}).pipe(Effect.withSpan("HttpGithubCost.remove")),
 			)
 	}),

@@ -44,6 +44,7 @@ import {
 	type LabSourceChanges,
 	labBreakdown,
 	labGithubInstallations,
+	labGithubLogin,
 	labRemovedProviders,
 	labSourcesWith,
 	labTimeseries,
@@ -93,8 +94,8 @@ export const Model = Schema.Struct({
 	state: LabState,
 	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
 	openRouter: Schema.NullOr(Schema.Boolean),
-	/** The same for GitHub. */
-	github: Schema.NullOr(Schema.Boolean),
+	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
+	github: Schema.Record(Schema.String, Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -178,6 +179,7 @@ const removalOf = (provider: "openrouter" | "github"): ReadonlyArray<CostMessage
 
 const refusedBilling = {
 	...toLoadFailure("refused"),
+	code: Cost.GITHUB_NOT_READY_CODE,
 	message:
 		"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
 }
@@ -325,7 +327,11 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result:
 						state === "github-refused"
 							? Result.fail(refusedBilling)
-							: Result.succeed(new GithubCostSourceAdded({ accountLogin: "example-labs" })),
+							: Result.succeed(
+									new GithubCostSourceAdded({
+										accountLogin: labGithubLogin(installationId),
+									}),
+								),
 				}),
 			)
 		case RemoveGithubCostSource.name:
@@ -342,18 +348,29 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
 type Settled = Step & LabSourceChanges
 
-/** A successful add puts a provider's source in what the lab answers with next, a removal takes it out. */
-const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMessage>): LabSourceChanges =>
-	Arr.reduce(answers, changes, (current, answer): LabSourceChanges => {
+type Answered = Readonly<{ command: CostCommand; answer: CostMessage }>
+
+/** A successful add puts a source in what the lab answers with next, a removal takes it out. */
+const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answered>): LabSourceChanges =>
+	Arr.reduce(answered, changes, (current, { command, answer }): LabSourceChanges => {
+		const withGithub = (installationId: string, isSource: boolean): LabSourceChanges => ({
+			openRouter: current.openRouter,
+			github: { ...current.github, [installationId]: isSource },
+		})
 		switch (answer._tag) {
 			case "CompletedSaveKey":
 				return Result.isSuccess(answer.result) ? { ...current, openRouter: true } : current
 			case "CompletedRemoveKey":
 				return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
 			case "CompletedAddGithubSource":
-				return Result.isSuccess(answer.result) ? { ...current, github: true } : current
+				return Result.isSuccess(answer.result) ? withGithub(answer.installationId, true) : current
+			// The answer does not name the installation: the removal that was asked for does.
 			case "CompletedRemoveGithubSource":
-				return Result.isSuccess(answer.result) ? { ...current, github: false } : current
+				return Option.match(installationArgs(command.args), {
+					onNone: () => current,
+					onSome: ({ installationId }) =>
+						Result.isSuccess(answer.result) ? withGithub(installationId, false) : current,
+				})
 			default:
 				return current
 		}
@@ -364,9 +381,12 @@ const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMess
  * sources' answer asks for the window's reads). Kit commands are kept for the runtime.
  */
 const settle = (world: World, step: Step): Settled => {
-	const answers = Arr.flatMap(step.commands, (command) =>
-		Option.toArray(answerOf(world, step.model.search, command)),
+	const answered = Arr.flatMap(step.commands, (command) =>
+		Option.toArray(
+			Option.map(answerOf(world, step.model.search, command), (answer) => ({ command, answer })),
+		),
 	)
+	const answers = Arr.map(answered, ({ answer }) => answer)
 	const kept = keepLocal(step.commands)
 	if (answers.length === 0) {
 		return { model: step.model, commands: kept, openRouter: world.openRouter, github: world.github }
@@ -379,7 +399,7 @@ const settle = (world: World, step: Step): Settled => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle({ ...world, ...changesAfter(world, answers) }, next)
+	const rest = settle({ ...world, ...changesAfter(world, answered) }, next)
 	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
@@ -398,7 +418,7 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null, github: null }
+	const world: World = { state: flags.state, openRouter: null, github: {} }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
