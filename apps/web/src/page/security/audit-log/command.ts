@@ -23,6 +23,7 @@ const listEvents = (search: SecurityAuditLogSearch, cursor: string | undefined) 
 	Effect.flatMap(MapleInternalApiClient, (api) =>
 		api.auditTrail.list({
 			query: {
+				...(search.provider !== undefined ? { provider: search.provider } : undefined),
 				...(search.category !== undefined ? { category: search.category } : undefined),
 				...(search.outcome !== undefined ? { outcome: search.outcome } : undefined),
 				...(search.actor !== undefined ? { actor: search.actor } : undefined),

@@ -60,7 +60,8 @@ export const CAPABILITIES = {
 	logs: {
 		title: "Log forwarding",
 		flag: "logs_enabled",
-		description: "Request, audit and managed-service logs, through a Log Router sink and Pub/Sub.",
+		description:
+			"Request and managed-service logs, through a Log Router sink and Pub/Sub. Admin activity goes to the Security audit log.",
 		run: { on: "Log sink and Pub/Sub topic", off: "Removes the log sink" },
 		effects: {
 			"starts-after-script": "Starts once it's set up in Google Cloud",

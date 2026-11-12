@@ -22,7 +22,6 @@ import {
 	VERCEL_API_AI_GATEWAY,
 	VERCEL_API_DEPLOYMENTS,
 	VERCEL_API_DETAIL,
-	VERCEL_AUDIT_LOG,
 	VERCEL_BREAKDOWN,
 	VERCEL_BUCKETS,
 	VERCEL_DEPENDENCIES,
@@ -106,7 +105,6 @@ const vercelList = (flags: Flags): VercelList.Model => ({
 	deployments: answered(VERCEL_TEAM_DEPLOYMENTS),
 	speedInsights: answered(VERCEL_SPEED_INSIGHTS),
 	webAnalytics: answered(VERCEL_WEB_ANALYTICS),
-	auditLog: answered(VERCEL_AUDIT_LOG),
 })
 
 const vercelProject = (flags: Flags): VercelProject.Model => ({

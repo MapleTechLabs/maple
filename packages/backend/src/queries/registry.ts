@@ -558,14 +558,6 @@ const vercelWebAnalyticsReferrers = vercelWebAnalyticsTop("vercelWebAnalyticsRef
 const vercelWebAnalyticsCountries = vercelWebAnalyticsTop("vercelWebAnalyticsCountries", "country")
 const vercelWebAnalyticsEvents = vercelWebAnalyticsTop("vercelWebAnalyticsEvents", "event")
 
-const vercelAuditLog = defineQuery({
-	id: "vercelAuditLog",
-	profile: "aggregation",
-	cache: 15,
-	compile: (payload: VercelInfraProjectsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.vercelAuditLogSQL(), vercelWindow(payload, orgId)),
-})
-
 // /infra/supabase: gauges and counter rates are separate reads (metrics_gauge, metrics_sum),
 // merged per project or bucket by the handler.
 const supabaseInfraProjectGauges = defineQuery({
@@ -1317,7 +1309,6 @@ export const Queries = {
 	vercelWebAnalyticsReferrers,
 	vercelWebAnalyticsCountries,
 	vercelWebAnalyticsEvents,
-	vercelAuditLog,
 	supabaseInfraProjectGauges,
 	supabaseInfraProjectCpu,
 	supabaseInfraProjectGaugeSeries,

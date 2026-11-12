@@ -76,7 +76,7 @@ Turning something off takes effect in Maple at once. Google Cloud keeps the sink
 
 ### Log filter
 
-Platform, request and audit logs are forwarded. The default filter leaves out what costs a lot and says little:
+Platform, request and audit logs are forwarded. Admin Activity and Policy Denied audit entries do not land in logs: they go to the audit log in the Security section, which only organization admins can read. System Event audit entries stay in logs. The default filter leaves out what costs a lot and says little:
 
 | Left out                    | Reason                                                                                                                                                                                     |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

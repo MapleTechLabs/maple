@@ -1,12 +1,18 @@
-import type { AuditTrailCategory, AuditTrailOutcome } from "@maple/domain/audit-trail"
+import type { AuditTrailCategory, AuditTrailOutcome, AuditTrailProvider } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Model, Search } from "./model"
 
-// What the audit log shows of an event: the names of categories and outcomes, who acted and on
-// what. A value this build does not know shows as itself.
+// What the audit log shows of an event: the names of platforms, categories and outcomes, who acted
+// and on what. A value this build does not know shows as itself.
+
+export const PROVIDER_LABEL = {
+	maple: "Maple",
+	vercel: "Vercel",
+	gcp: "Google Cloud",
+} satisfies Record<AuditTrailProvider, string>
 
 export const CATEGORY_LABEL = {
 	authentication: "Authentication",
@@ -27,8 +33,12 @@ export const OUTCOME_LABEL = {
 	unknown: "Unknown",
 } satisfies Record<AuditTrailOutcome, string>
 
-/** The outcomes a platform writes today: Maple records what went through and what it refused. */
-export const OUTCOME_FILTERS = ["success", "denied"] as const satisfies ReadonlyArray<AuditTrailOutcome>
+/** The outcomes worth filtering by. `unknown` is a platform that did not say, not something to look for. */
+export const OUTCOME_FILTERS = [
+	"success",
+	"failure",
+	"denied",
+] as const satisfies ReadonlyArray<AuditTrailOutcome>
 
 const ACTOR_TYPE_LABEL = {
 	user: "User",
@@ -41,6 +51,7 @@ const ACTOR_TYPE_LABEL = {
 export const labelIn = (labels: Readonly<Record<string, string>>, value: string): string =>
 	Option.getOrElse(Rec.get(labels, value), () => value)
 
+export const providerLabel = (provider: string): string => labelIn(PROVIDER_LABEL, provider)
 export const categoryLabel = (category: string): string => labelIn(CATEGORY_LABEL, category)
 export const outcomeLabel = (outcome: string): string => labelIn(OUTCOME_LABEL, outcome)
 export const actorTypeLabel = (type: string): string => labelIn(ACTOR_TYPE_LABEL, type)
@@ -60,7 +71,10 @@ export const targetText = (event: AuditTrailEntry): string | null => event.targe
 export const isMarked = (event: AuditTrailEntry): boolean => event.outcome !== "success"
 
 export const isFiltered = (search: Search): boolean =>
-	search.category !== undefined || search.outcome !== undefined || search.actor !== undefined
+	search.provider !== undefined ||
+	search.category !== undefined ||
+	search.outcome !== undefined ||
+	search.actor !== undefined
 
 /** The API refused the viewer: the same thing the session says for a member without the permission. */
 export const isForbidden = (failure: LoadFailure): boolean => failure.code === "audit_trail_forbidden"

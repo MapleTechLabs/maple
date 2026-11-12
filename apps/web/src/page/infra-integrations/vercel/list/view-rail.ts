@@ -16,14 +16,14 @@ import { type Clock, dataOf } from "../view-parts"
 import type { Overview } from "./derive"
 import type { Message, Model } from "./model"
 
-// `VercelOverviewRail`: the team, its drains, the deploys in the window and the team's activity.
+// `VercelOverviewRail`: the team, its drains, the deploys in the window and where its audit events are.
 
 type H = HtmlBuilder<Message>
 
 const RAIL_DEPLOYS = 5
-const RAIL_EVENTS = 3
 
 const settingsHref = () => hrefOf(AppRoute.Integrations({ search: { integration: "vercel" } }))
+const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: { provider: "vercel" } }))
 
 const value = (h: H, text: string): Html =>
 	typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true }, [text])
@@ -170,42 +170,18 @@ const deploysGroup = (h: H, model: Model, o: Overview, clock: Clock): Html | nul
 	)
 }
 
-const activityGroup = (h: H, model: Model, o: Overview, clock: Clock): Html | null => {
-	const events = dataOf(model.auditLog.data)
-	if (!o.status.auditLogEnabled || events === null) return null
-	const newest = Arr.take(
-		Arr.sort(
-			events,
-			Order.mapInput(Order.flip(Order.String), (e: (typeof events)[number]) => e.timestamp),
-		),
-		RAIL_EVENTS,
-	)
-	return detailRailGroup(
-		h,
-		"Team activity",
-		newest.length === 0
-			? [typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No team activity in this window"])]
-			: Arr.map(newest, (event) =>
-					vstack(h, { gap: "0.5", className: "py-1" }, [
-						typography(h, { size: "xs", tone: "foreground", mono: true, truncate: true }, [
-							event.action,
-						]),
-						hstack(h, { gap: "1" }, [
-							typography(h, { size: "3xs", tone: "muted", truncate: true }, [
-								`${event.actor} · ${event.projectId === "" ? "team" : o.projectName(event.projectId)} ·`,
-							]),
-							relativeTime(h, {
-								value: event.timestamp,
-								...clock,
-								variant: "short",
-								mono: true,
-								className: "shrink-0 text-3xs text-muted-foreground",
-							}),
-						]),
-					]),
-				),
-	)
-}
+// Audit events are admin-only, so they live in the Security audit log: the rail points there.
+const activityGroup = (h: H, o: Overview): Html | null =>
+	o.status.auditLogEnabled
+		? detailRailGroup(h, "Team activity", [
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Audit events from this team are in the Security audit log.",
+				]),
+				typography(h, { size: "2xs", className: "self-start" }, [
+					textLink(h, { href: auditLogHref() }, ["Open the audit log"]),
+				]),
+			])
+		: null
 
 export const overviewRail = (h: H, model: Model, o: Overview, clock: Clock): Html =>
 	vstack(
@@ -216,7 +192,7 @@ export const overviewRail = (h: H, model: Model, o: Overview, clock: Clock): Htm
 				teamGroup(h, o, clock),
 				drainsGroup(h, o),
 				deploysGroup(h, model, o, clock),
-				activityGroup(h, model, o, clock),
+				activityGroup(h, o),
 			],
 			(group): group is Html => group !== null,
 		),

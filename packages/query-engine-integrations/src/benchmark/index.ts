@@ -961,12 +961,6 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 			compileUnsafe(CH.vercelWebAnalyticsTopSQL("event", { projectId: VERCEL_PROJECT_ID }), window),
 	},
 	{
-		module: "vercel-event-drains",
-		name: "vercelAuditLogSQL",
-		label: "default",
-		compile: () => compileUnsafe(CH.vercelAuditLogSQL(), window),
-	},
-	{
 		module: "vercel-ai-gateway",
 		name: "vercelAiGatewaySummarySQL",
 		label: "default",

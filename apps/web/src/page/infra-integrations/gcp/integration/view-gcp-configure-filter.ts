@@ -134,7 +134,7 @@ export const filterField = (
 				h,
 				icon(h, "CheckIcon", { size: 14, className: "text-severity-info" }),
 				"Platform logs",
-				"Requests, audit, deploys, crashes, scaling",
+				"Requests, deploys, crashes, scaling, and admin activity for the audit log",
 			),
 			summaryRow(
 				h,

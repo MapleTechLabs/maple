@@ -4,7 +4,6 @@ import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import { resolveWindow, TimeWindow } from "../../../../data/time-range"
 import {
 	loadVercelAiGateway,
-	loadVercelAuditLog,
 	loadVercelDeployments,
 	loadVercelLatencySeries,
 	loadVercelProjects,
@@ -100,13 +99,6 @@ export const FetchWebAnalytics = Command.define("FetchVercelWebAnalytics", {
 		Effect.map(loadVercelWebAnalytics(input), (result) =>
 			Message.CompletedFetchWebAnalytics({ key, result }),
 		),
-})
-
-export const FetchAuditLog = Command.define("FetchVercelAuditLog", {
-	args: { key: Schema.String, window: TimeWindow },
-	messages: [Message.CompletedFetchAuditLog],
-	execute: ({ key, window }) =>
-		Effect.map(loadVercelAuditLog(window), (result) => Message.CompletedFetchAuditLog({ key, result })),
 })
 
 export const CompleteReloadSpin = Command.define("CompleteVercelReloadSpin", {

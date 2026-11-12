@@ -1,4 +1,4 @@
-import { AuditTrailCategory } from "@maple/domain/audit-trail"
+import { AuditTrailCategory, AuditTrailProvider } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -48,7 +48,7 @@ import { expandChevron } from "../../kit/expand-chevron"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
 import { refusedBadge } from "../../kit/refused-badge"
 import { relativeTime } from "../../kit/relative-time"
-import { securityLayout, WIDE_COLUMN } from "../kit/layout"
+import { ROOMY_COLUMN, securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
 	actorDetail,
@@ -65,6 +65,8 @@ import {
 	OUTCOME_FILTERS,
 	OUTCOME_LABEL,
 	outcomeLabel,
+	PROVIDER_LABEL,
+	providerLabel,
 	targetText,
 } from "./derive"
 import { accessOf, Message, type Model, type SelectFilter } from "./model"
@@ -72,11 +74,11 @@ import { accessOf, Message, type Model, type SelectFilter } from "./model"
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const COLUMN_COUNT = 5
+const COLUMN_COUNT = 6
 
 // On a phone the two text columns share the width left of the time, so neither scrolls away.
 const NARROW_ACTOR = "max-w-32 sm:max-w-56"
-const NARROW_ACTION = "max-w-36 sm:max-w-72"
+const NARROW_ACTION = "max-w-36 sm:max-w-64"
 
 /** One filter as a native select: "All …" clears it. The URL holds the value it shows. */
 const filterSelect = (
@@ -107,6 +109,15 @@ const filterSelect = (
 
 const toolbar = (h: H, model: Model): Html =>
 	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
+		filterSelect(
+			h,
+			"provider",
+			"Platform",
+			model.search.provider,
+			"All platforms",
+			PROVIDER_LABEL,
+			AuditTrailProvider.literals,
+		),
 		filterSelect(
 			h,
 			"category",
@@ -184,6 +195,7 @@ const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html => {
 			...detailField(h, "IP address", event.originIp, true),
 			...detailField(h, "Country", event.originCountry),
 			...detailField(h, "User agent", event.userAgent, true),
+			keyValue(h, { label: "Platform", wrap: true }, [providerLabel(event.provider)]),
 			...detailField(h, "Account", event.account, true),
 			keyValue(h, { label: "Occurred", wrap: true }, [at(event.occurredAt)]),
 			keyValue(h, { label: "Recorded", wrap: true }, [at(event.ingestedAt)]),
@@ -232,6 +244,7 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 					],
 					"p-0",
 				),
+				tableCell(h, [providerLabel(event.provider)], WIDE_COLUMN),
 				tableCell(
 					h,
 					[
@@ -288,7 +301,7 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 									className: typographyClass({ size: "xs", tone: "muted" }),
 								}),
 							],
-					`max-w-64 ${WIDE_COLUMN}`,
+					`max-w-64 ${ROOMY_COLUMN}`,
 				),
 				tableCell(h, outcomeMark(h, event), WIDE_COLUMN),
 			],
@@ -340,9 +353,11 @@ const eventsTable = (h: H, model: Model, events: ReadonlyArray<AuditTrailEntry>,
 		tableHeader(h, [
 			tableRow(h, [
 				tableHead(h, ["Time"], "w-24"),
+				tableHead(h, ["Platform"], WIDE_COLUMN),
 				tableHead(h, ["Actor"]),
 				tableHead(h, ["Action"]),
-				tableHead(h, ["Target"], WIDE_COLUMN),
+				// Beside the rail a laptop has no room for it; the detail and the wide screen do.
+				tableHead(h, ["Target"], ROOMY_COLUMN),
 				tableHead(h, ["Outcome"], `w-28 ${WIDE_COLUMN}`),
 			]),
 		]),
@@ -372,7 +387,7 @@ const noEvents = (h: H): Html =>
 				emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
 				emptyTitle(h, ["No audit events yet"]),
 				emptyDescription(h, [
-					"Changes made in Maple, and requests it refused, appear here as they happen.",
+					"Changes made in Maple, and requests it refused, appear here as they happen. So do audit events from Vercel and Google Cloud once their audit feeds are on.",
 				]),
 			]),
 		],

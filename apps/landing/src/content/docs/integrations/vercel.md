@@ -69,13 +69,18 @@ Request logs carry `http.request.method`, `url.path` (and `url.query` when the r
 
 Vercel sends deployment traces with the `vercel.projectId` and `vercel.deploymentId` resource attributes. Its platform spans come in two services: `vercel.edge-network` for routing and caching, and `vercel.serverless-runtime` for functions. Maple moves each function invocation (`Invoke Function`) and its outbound calls to a service named after the project, the same name its logs use, so every project is its own service on the service map with its own dependencies. Cold-start steps (`Start VM`, `Spawn Node.js`, `Init User Code`) and `waitUntil` stay under `vercel.serverless-runtime`. Every function span keeps `maple_vercel.platform_service = vercel.serverless-runtime` as a resource attribute.
 
-### Speed Insights, Web Analytics and audit log
+### Speed Insights and Web Analytics
 
-These drains arrive as logs, each under its own `service.name`: `vercel-speed-insights`, `vercel-web-analytics` and `vercel-audit-log`. The resource carries `cloud.provider` set to `vercel`, the team id and, where Vercel sends them, the project id, deployment id and environment.
+These drains arrive as logs, each under its own `service.name`: `vercel-speed-insights` and `vercel-web-analytics`. The resource carries `cloud.provider` set to `vercel`, the team id and, where Vercel sends them, the project id, deployment id and environment.
 
 - **Speed Insights**: one log per measurement, such as `LCP 2.41s /dashboard`. The metric is in `vercel.speed_insights.metric` (`LCP`, `INP`, `CLS`, `FCP`, `TTFB` or `FID`) and the value in `vercel.speed_insights.value`, in milliseconds (CLS is a score). Each log also carries `url.path`, `vercel.route`, the visitor's country, region and city (`geo.*`), browser and OS (`user_agent.*`) and device.
 - **Web Analytics**: one log per page view or custom event, such as `pageview /pricing`. It carries `vercel.web_analytics.event.type` and `.event.name`, the event data as JSON in `vercel.web_analytics.event.data`, `url.path`, `url.query`, the referrer, and the same visitor fields as Speed Insights.
-- **Audit log**: one log per change, such as `drain-created by Jane Doe`. It carries `vercel.audit.action`, the actor (`vercel.audit.actor.type`, `.id`, `.name`, `.email`), `client.address`, `user_agent.original`, and the event's details as JSON in `vercel.audit.payload`.
+
+### Audit log
+
+Audit events do not arrive as logs. They go to the audit log in the Security section, which only organization admins can read: an audit event names a person, their email and their IP address, and every member can read logs.
+
+Each event shows who acted (name, email and id), the action as Vercel names it, such as `drain-created`, the time, the IP address and user agent, and the event's full payload. The drain has to be created with your organization's private ingest key, which is what Maple uses when it creates the drain for you.
 
 ## AI Gateway
 

@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { AuditTrailForbiddenError, AuditTrailPersistenceError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Result, Schema, Array as Arr, String as Str } from "effect"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -186,23 +186,53 @@ describe("security audit log", () => {
 		)
 	})
 
-	test("opening an event shows what was recorded about it, and closing hides it", () => {
+	/** The first loaded event from `provider`, opened. */
+	const openedFrom = (provider: string) => {
 		const model = loaded()
-		const first = eventsOf(model)?.[0]
-		const opened = pageUpdate(model, Message.ToggledEvent({ id: first?.id ?? "" })).model
+		const event = Arr.findFirst(eventsOf(model) ?? [], (candidate) => candidate.provider === provider)
+		const id = Option.match(event, { onNone: () => "", onSome: (found) => found.id })
+		return {
+			event: Option.getOrUndefined(event),
+			id,
+			opened: pageUpdate(model, Message.ToggledEvent({ id })).model,
+		}
+	}
+
+	test("opening an event shows what was recorded about it, and closing hides it", () => {
+		const { event, id, opened } = openedFrom("maple")
 
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
 			expectView(text("Payload")).toExist(),
-			expectView(text(first?.providerEventId ?? "")).toExist(),
-			expectView(text("203.0.113.7")).toExist(),
+			expectView(text(event?.providerEventId ?? "")).toExist(),
+			expectView(text(event?.originIp ?? "")).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(pageUpdate(opened, Message.ToggledEvent({ id: first?.id ?? "" })).model),
+			given(pageUpdate(opened, Message.ToggledEvent({ id })).model),
 			expectView(text("Payload")).toBeAbsent(),
 		)
+	})
+
+	test("each event names the platform it came from, and the account on it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(within(eventsTable, text("Vercel"))).toExist(),
+			expectView(within(eventsTable, text("Google Cloud"))).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(openedFrom("gcp").opened),
+			expectView(text("acme-prod")).toExist(),
+		)
+	})
+
+	test("the platform filter goes to the URL like the others", () => {
+		const vercel = pageUpdate(loaded(), Message.ChangedFilter({ filter: "provider", value: "vercel" }))
+
+		expect(vercel.outMessage).toMatchObject({ url: hrefOf(routeOf({ provider: "vercel" })) })
 	})
 
 	test("a filter change goes to the URL, and choosing All drops it", () => {
@@ -313,17 +343,27 @@ describe("security audit log", () => {
 	})
 
 	test("a Maple event's id opens the same entry in the Settings audit log", () => {
-		const model = loaded()
-		const first = eventsOf(model)?.[0]
-		const opened = pageUpdate(model, Message.ToggledEvent({ id: first?.id ?? "" })).model
+		const { event, opened } = openedFrom("maple")
 
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
-			expectView(role("link", { name: first?.providerEventId ?? "" })).toHaveAttr(
+			expectView(role("link", { name: event?.providerEventId ?? "" })).toHaveAttr(
 				"href",
-				auditEntryHref(first?.occurredAt ?? 0, first?.providerEventId ?? ""),
+				auditEntryHref(event?.occurredAt ?? 0, event?.providerEventId ?? ""),
 			),
+		)
+	})
+
+	// Only Maple's own events are entries of the Settings audit log.
+	test("another platform's event id is text, not a link into Maple's own audit log", () => {
+		const { event, opened } = openedFrom("vercel")
+
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			expectView(text(event?.providerEventId ?? "")).toExist(),
+			expectView(role("link", { name: event?.providerEventId ?? "" })).toBeAbsent(),
 		)
 	})
 

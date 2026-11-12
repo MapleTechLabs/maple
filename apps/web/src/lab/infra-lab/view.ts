@@ -25,7 +25,6 @@ import * as VercelProject from "../../page/infra-integrations/vercel/project/mod
 import { projectPage } from "../../page/infra-integrations/vercel/project/view"
 import { projectRail } from "../../page/infra-integrations/vercel/project/view-rail"
 import {
-	auditLogSection,
 	buildsSection,
 	dependenciesSection,
 	functionsSection,
@@ -36,12 +35,13 @@ import {
 import { pickTimeSearch } from "../../page/kit/view-tabs"
 import { sectionHeading } from "../../page/kit/section-heading"
 import { sortRowsBy } from "../../page/kit/table-sort"
+import { cn } from "@maple/ui/lib/utils"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { pageRightSidebarWidthStyles } from "@maple/views/ui/page-layout.styles"
 import { AsyncData } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	VERCEL_ALL_DRAINS_STATUS,
-	VERCEL_AUDIT_LOG,
 	VERCEL_DEPENDENCIES,
 	VERCEL_EMPTY_SPEED_INSIGHTS,
 	VERCEL_EMPTY_WEB_ANALYTICS,
@@ -184,7 +184,13 @@ type VercelInputs = Readonly<{ timeZone: string }>
 /** `VercelListPage` over the fixtures, in the view its search names. */
 /** A page's main column beside its right rail, as `dashboardPage` lays them out at lg. */
 const withRail = <M>(h: HtmlBuilder<M>, main: Html, rail: Html): Html =>
-	h.div([h.Class("flex items-start gap-6")], [h.div([h.Class("min-w-0 flex-1")], [main]), rail])
+	h.div(
+		[h.Class("flex items-start gap-6")],
+		[
+			h.div([h.Class("min-w-0 flex-1")], [main]),
+			h.div([h.Class(cn("shrink-0", pageRightSidebarWidthStyles))], [rail]),
+		],
+	)
 
 const vercelListView = Submodel.defineView<VercelList.Model, VercelList.Message, VercelInputs>(
 	(list, inputs, h) => {
@@ -269,14 +275,6 @@ const vercelSections = (h: H, model: Model): Html => {
 				read: sectionRead(state, VERCEL_WEB_ANALYTICS, VERCEL_EMPTY_WEB_ANALYTICS),
 				enabled: state !== "off",
 				compact: false,
-			}),
-		),
-		...variants("Audit log", (state) =>
-			auditLogSection(h, {
-				read: sectionRead(state, VERCEL_AUDIT_LOG, []),
-				enabled: state !== "off",
-				clock,
-				projectName: nameOf,
 			}),
 		),
 	])

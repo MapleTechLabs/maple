@@ -1,4 +1,5 @@
 pub mod ai_session;
+pub mod audit_trail;
 pub mod aws;
 pub mod aws_metric_stream;
 pub mod clickhouse_insert_mappings;

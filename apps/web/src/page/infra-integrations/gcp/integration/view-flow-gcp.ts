@@ -188,7 +188,7 @@ const chooseRail = (h: H): Html =>
 			{
 				icon: "UnorderedListIcon",
 				title: "Google Cloud's logs",
-				detail: "Request, audit and managed-service logs",
+				detail: "Request and managed-service logs, and admin activity for the audit log",
 			},
 			{
 				icon: "ServerIcon",

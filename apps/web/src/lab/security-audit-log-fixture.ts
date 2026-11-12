@@ -7,6 +7,8 @@ import { Array as Arr, String as Str } from "effect"
 const MINUTE = 60_000
 
 type Seed = Readonly<{
+	provider?: string
+	account?: string
 	minutesAgo: number
 	action: string
 	category: string
@@ -40,6 +42,34 @@ const deployKey: AuditTrailEntry["actor"] = {
 const system: AuditTrailEntry["actor"] = { type: "system", id: null, name: null, email: null }
 
 const SEEDS: ReadonlyArray<Seed> = [
+	{
+		provider: "vercel",
+		account: "team_acme",
+		minutesAgo: 2,
+		action: "project.env-var.created",
+		category: "credential",
+		actor: { type: "user", id: "usr_9f2c", name: "Grace Hopper", email: "grace@acme.test" },
+		originIp: "203.0.113.90",
+		raw: { id: "evt_1", action: "project.env-var.created", payload: { projectId: "prj_web" } },
+	},
+	{
+		provider: "gcp",
+		account: "acme-prod",
+		minutesAgo: 11,
+		action: "google.iam.admin.v1.CreateServiceAccountKey",
+		category: "credential",
+		outcome: "denied",
+		outcomeReason: "Permission iam.serviceAccountKeys.create denied",
+		actor: {
+			type: "service",
+			id: "ci@acme-prod.iam.gserviceaccount.com",
+			name: null,
+			email: "ci@acme-prod.iam.gserviceaccount.com",
+		},
+		target: { type: "service_account", name: "projects/-/serviceAccounts/deploy@acme-prod" },
+		originIp: "198.51.100.24",
+		raw: { insertId: "abc123", protoPayload: { serviceName: "iam.googleapis.com" } },
+	},
 	{
 		minutesAgo: 4,
 		action: "alert_rule.updated",
@@ -130,8 +160,8 @@ const eventOf = (seed: Seed, index: number, nowMs: number): AuditTrailEntry => {
 	const occurredAt = nowMs - seed.minutesAgo * MINUTE
 	return {
 		id: Str.padStart(32, "0")(index.toString(16)),
-		provider: "maple",
-		account: null,
+		provider: seed.provider ?? "maple",
+		account: seed.account ?? null,
 		providerEventId: `alog_4CzLmR1pTxWvYbNhQd82K${index}`,
 		occurredAt,
 		ingestedAt: occurredAt + 900,

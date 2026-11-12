@@ -348,7 +348,7 @@ const SIGNALS = [
 		title: "Audit log",
 		drain: "Maple audit log",
 		description:
-			"Who changed what on the team, for the whole team whatever projects you pick. Enterprise plan only.",
+			"Who changed what on the team, whatever projects you pick. Shown in the Security audit log to org admins. Enterprise plan only.",
 	},
 ] as const
 

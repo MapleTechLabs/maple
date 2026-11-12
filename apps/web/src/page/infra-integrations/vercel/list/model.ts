@@ -1,6 +1,5 @@
 import {
 	VercelAiGatewayResponse,
-	VercelAuditEvent,
 	VercelDeploymentSummary,
 	VercelInfraLatencyBucket,
 	VercelInfraProject,
@@ -37,7 +36,6 @@ export const Model = Schema.Struct({
 	deployments: KeyedSchema(Schema.Array(VercelDeploymentSummary), LoadFailure),
 	speedInsights: KeyedSchema(VercelSpeedInsightsResponse, LoadFailure),
 	webAnalytics: KeyedSchema(VercelWebAnalyticsResponse, LoadFailure),
-	auditLog: KeyedSchema(Schema.Array(VercelAuditEvent), LoadFailure),
 	charts: Schema.Record(Schema.String, Chart.Model),
 	chartRuntime: ChartRuntime,
 	themeColors: Schema.NullOr(ThemeColors),
@@ -65,7 +63,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchDeployments: result(Schema.Array(VercelDeploymentSummary)),
 	CompletedFetchSpeedInsights: result(VercelSpeedInsightsResponse),
 	CompletedFetchWebAnalytics: result(VercelWebAnalyticsResponse),
-	CompletedFetchAuditLog: result(Schema.Array(VercelAuditEvent)),
 	CompletedLoadChartRuntime: {},
 	FailedLoadChartRuntime: { reason: Schema.String },
 	ResolvedThemeColors: { colors: ThemeColors },
@@ -80,7 +77,6 @@ export const Message = defineMessageUnion({
 	ClickedRetryDeployments: {},
 	ClickedRetrySpeedInsights: {},
 	ClickedRetryWebAnalytics: {},
-	ClickedRetryAuditLog: {},
 	ChangedSearch: { value: Schema.String },
 	ClickedClearSearch: {},
 	/** A fleet band cell: its health filter on the projects table, or none to leave it. */
