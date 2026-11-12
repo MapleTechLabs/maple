@@ -607,8 +607,6 @@ export const update = (
 			}),
 		ClickedRetryDaily: () =>
 			same({ model: { ...model, daily: AsyncData.Loading() }, commands: [FetchDaily()] }),
-		ClickedRetryAiUsage: () =>
-			same({ model: { ...model, aiUsage: AsyncData.Loading() }, commands: [FetchAiUsage()] }),
 		ClickedRetryInvoices: () =>
 			same({ model: { ...model, invoices: AsyncData.Loading() }, commands: [FetchInvoices()] }),
 		ClickedRetryProfile: () =>
