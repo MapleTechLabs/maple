@@ -223,6 +223,20 @@ describe("security audit log", () => {
 		expect(submitted.outMessage).toMatchObject({ url: hrefOf(routeOf({ actor: "ada@acme.test" })) })
 	})
 
+	test("an actor typed but not applied survives a change of another filter", () => {
+		const typed = pageUpdate(loaded(), Message.ChangedActorText({ value: "ada@acme.test" })).model
+
+		expect(routeChanged(typed, routeOf({ outcome: "denied" }), context).model.actorText).toBe(
+			"ada@acme.test",
+		)
+	})
+
+	test("the actor field follows the URL when Back leaves an applied actor behind", () => {
+		const applied = loaded(PAGE, { actor: "ada@acme.test" })
+
+		expect(routeChanged(applied, routeOf(), context).model.actorText).toBe("")
+	})
+
 	test("load more continues from the last event shown and appends what comes back", () => {
 		const asked = pageUpdate(loaded(), Message.ClickedLoadMore())
 

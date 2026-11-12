@@ -114,13 +114,23 @@ export const enter = (
 export const init = (route: SecurityAuditLogRoute, context: PageContext): Return =>
 	enter(route, context, isClerkAuthEnabled)
 
-/** Same instance, other filters: the URL is the filter state, so the list follows it. */
-export const routeChanged = (model: Model, route: SecurityAuditLogRoute, context: PageContext): Return =>
-	readFirstPage(
-		{ ...model, search: route.search, actorText: route.search.actor ?? "", expanded: [] },
+/**
+ * Same instance, other filters: the URL is the filter state, so the list follows it. The actor
+ * field follows it too, unless it holds text that was typed and not yet applied.
+ */
+export const routeChanged = (model: Model, route: SecurityAuditLogRoute, context: PageContext): Return => {
+	const hasDraft = model.actorText !== (model.search.actor ?? "")
+	return readFirstPage(
+		{
+			...model,
+			search: route.search,
+			actorText: hasDraft ? model.actorText : (route.search.actor ?? ""),
+			expanded: [],
+		},
 		context,
 		"Load",
 	)
+}
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match(message, {
