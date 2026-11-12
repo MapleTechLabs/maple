@@ -1,5 +1,15 @@
 # @maple-dev/alchemy
 
+## 0.6.1
+
+### Patch Changes
+
+- Updated dependencies [c022d7f]
+- Updated dependencies [613df48]
+- Updated dependencies [58c2b10]
+- Updated dependencies [04fd697]
+    - @maple-dev/effect-sdk@0.14.1
+
 ## 0.6.0
 
 ### Minor Changes
