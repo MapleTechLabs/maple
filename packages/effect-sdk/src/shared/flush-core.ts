@@ -57,7 +57,11 @@ interface OtlpResourceLike {
 /** Per-signal cooldown bookkeeping (mutated in place by {@link flushSignal}). */
 export interface SignalState {
 	disabledUntil: number
+	/** Failed flushes in a row. Only the first is logged; a success resets it. */
+	failures: number
 }
+
+export const makeSignalState = (): SignalState => ({ disabledUntil: 0, failures: 0 })
 
 /**
  * How a preset delivers an encoded OTLP body. The default {@link fetchTransport}
@@ -189,12 +193,8 @@ const flushSignal = async <A>(args: {
 	readonly ignoreCooldown: boolean | undefined
 }): Promise<void> => {
 	const { url, headers, buffer, body, state, signal, transport, logPrefix, tailBytes } = args
-	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) {
-		console.warn(
-			`${logPrefix} ${signal} flush skipped (cooldown ${state.disabledUntil - Date.now()}ms remaining)`,
-		)
-		return
-	}
+	// Silent: the failure line already announced the cooldown, and this runs on every flush tick.
+	if (!args.ignoreCooldown && state.disabledUntil > 0 && Date.now() < state.disabledUntil) return
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
@@ -221,11 +221,24 @@ const flushSignal = async <A>(args: {
 		Result.isFailure(result) ? [{ chunk, cause: result.failure }] : [],
 	)
 	const [first] = failed
-	if (first !== undefined) {
-		// One restore, back in drain order.
-		buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
-		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, first.cause.cause)
+	if (first === undefined) {
+		if (state.failures > 0) {
+			const attempts = state.failures === 1 ? "1 failed attempt" : `${state.failures} failed attempts`
+			console.info(`${logPrefix} ${signal} flush recovered after ${attempts}`)
+			state.failures = 0
+		}
+		return
+	}
+	// One restore, back in drain order.
+	buffer.restore(Arr.flatMap(failed.reverse(), ({ chunk }) => chunk))
+	state.disabledUntil = Date.now() + COOLDOWN_MS
+	state.failures += 1
+	// Once per outage: an endpoint a browser blocks fails every cooldown for the whole session.
+	if (state.failures === 1) {
+		console.error(
+			`${logPrefix} ${signal} flush failed; cooldown 60s, retries stay quiet until one succeeds:`,
+			first.cause.cause,
+		)
 	}
 }
 
