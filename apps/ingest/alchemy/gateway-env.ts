@@ -24,6 +24,9 @@ export const gatewayTuningEnv: Config.Config<PlainEnv> = Config.all([
 	// switch rule application off in an emergency.
 	optionalPlain("INGEST_RULES_ENABLED"),
 	optionalPlain("INGEST_RULES_CACHE_TTL_SECS"),
+	// Provider audit events go to the audit trail instead of the logs. The gateway defaults to off:
+	// set "true" once `audit_trail_events` exists and every task runs a build that knows the switch.
+	optionalPlain("INGEST_AUDIT_TRAIL_ENABLED"),
 	optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODED_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES"),

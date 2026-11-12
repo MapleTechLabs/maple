@@ -206,6 +206,9 @@ struct AppConfig {
     org_routing_cache_ttl_secs: u64,
     /// `INGEST_RULES_ENABLED` (default on): apply customer drop/redact rules. Off reads nothing and costs nothing.
     ingest_rules_enabled: bool,
+    /// `INGEST_AUDIT_TRAIL_ENABLED` (default off): keep provider audit events in
+    /// the audit trail instead of as logs. See `stores_audit_trail`.
+    audit_trail_enabled: bool,
     /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
     ingest_rules_cache_ttl_secs: u64,
     /// Ceiling on the total decompressed rrweb payload a single replay session
@@ -304,6 +307,12 @@ enum KeyStoreBackend {
 }
 
 impl AppConfig {
+    /// Whether provider audit events go to the audit trail. Off, or on a gateway
+    /// that only forwards and so has no such table, they stay logs.
+    fn stores_audit_trail(&self) -> bool {
+        self.audit_trail_enabled && self.write_mode.uses_tinybird()
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one branch per environment variable, read in the order the deployment docs list \
@@ -629,6 +638,14 @@ impl AppConfig {
             std::env::var("INGEST_RULES_ENABLED").ok(),
             true,
         )?;
+        // Off by default. Turn it on once the table exists and every running task
+        // is a build that reads the audit trail's WAL frames: an older build that
+        // recovers one drops the rest of that segment.
+        let audit_trail_enabled = parse_bool(
+            "INGEST_AUDIT_TRAIL_ENABLED",
+            std::env::var("INGEST_AUDIT_TRAIL_ENABLED").ok(),
+            false,
+        )?;
         let ingest_rules_cache_ttl_secs = parse_u64(
             "INGEST_RULES_CACHE_TTL_SECS",
             std::env::var("INGEST_RULES_CACHE_TTL_SECS").ok(),
@@ -790,6 +807,7 @@ impl AppConfig {
             ingest_key_cache_ttl_secs,
             org_routing_cache_ttl_secs,
             ingest_rules_enabled,
+            audit_trail_enabled,
             ingest_rules_cache_ttl_secs,
             replay_max_session_bytes,
             replay_blob_store,
@@ -4106,10 +4124,7 @@ async fn handle_vercel_event_drain(
     let Some(drain) = EventDrain::from_path(&drain) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    // Audit events go to the audit trail wherever the gateway writes its own
-    // rows. A gateway that only forwards has no such table, so there they
-    // stay logs, as before.
-    if drain == EventDrain::AuditLog && state.config.write_mode.uses_tinybird() {
+    if drain == EventDrain::AuditLog && state.config.stores_audit_trail() {
         return handle_vercel_audit_trail(state, headers, body).await;
     }
     handle_signal(state, headers, body, Ingress::VercelEventDrain(drain)).await
@@ -4141,19 +4156,25 @@ async fn handle_vercel_audit_trail(
         "maple.audit_trail.skipped" = tracing::field::Empty,
     );
     let span_handle = span.clone();
-    match handle_vercel_audit_trail_inner(&state, &headers, &body)
+    let start = Instant::now();
+    let result = handle_vercel_audit_trail_inner(&state, &headers, &body)
         .instrument(span)
-        .await
-    {
+        .await;
+    let duration = start.elapsed().as_secs_f64();
+    let signal = TelemetrySignal::AuditTrail.as_str();
+    match result {
         Ok(count) => {
             span_handle.record("http.response.status_code", 200u16);
             span_handle.record("otel.status_code", "Ok");
+            metrics::request_completed(signal, "ok", "none", duration);
             (StatusCode::OK, axum::Json(AcceptedBody { accepted: count })).into_response()
         }
         Err(error) => {
             let status = error.status.as_u16();
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
+            // A drain Vercel keeps retrying has to move an error rate, like any other ingest route.
+            metrics::request_completed(signal, "error", error.error_kind(), duration);
             record_rejection_reason(
                 &span_handle,
                 status,
@@ -4165,6 +4186,35 @@ async fn handle_vercel_audit_trail(
     }
 }
 
+/// Audit deliveries one org may make each second, across the fleet. Well above
+/// what the people of a team or a cloud organization do; past it the sender is
+/// told to retry, so a burst is delayed and not lost.
+const AUDIT_TRAIL_VERCEL_ORG_RPS: u32 = 10;
+const AUDIT_TRAIL_GCP_ORG_RPS: u32 = 100;
+
+/// The most a Vercel audit delivery may be once inflated. A batch of audit
+/// events is kilobytes; the telemetry ceiling is for bodies that are metered.
+const AUDIT_TRAIL_MAX_DECODED_BYTES: usize = 4 * 1024 * 1024;
+
+/// Refuses an org's audit delivery past `rps`. The rows are not metered, so
+/// this is what bounds how many a sender can store.
+async fn audit_trail_rate_gate(
+    state: &AppState,
+    org_id: &str,
+    provider: &'static str,
+    rps: u32,
+) -> Result<(), ApiError> {
+    let key = format!("audit_trail:{provider}:{org_id}");
+    if state.key_rate_limiter.try_acquire(&key, rps).await {
+        return Ok(());
+    }
+    metrics::org_throttled(org_id, "audit_trail_rate");
+    warn!(org_id, provider, "Audit event rate limit exceeded");
+    Err(ApiError::too_many_requests(
+        "Audit event rate limit exceeded",
+    ))
+}
+
 async fn handle_vercel_audit_trail_inner(
     state: &AppState,
     headers: &HeaderMap,
@@ -4174,36 +4224,44 @@ async fn handle_vercel_audit_trail_inner(
     else {
         return Ok(0);
     };
-    // The drain is created with the org's private key. The public key ships in
-    // browser bundles: with it, anyone could write the org an audit event.
-    if matches!(resolved_key.key_type, IngestKeyType::Public) {
-        return Err(ApiError::unauthorized(
-            "Audit events need a private ingest key",
-        ));
-    }
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
 
-    // The Vercel integration's source, named on the drain: paused, the delivery
-    // is acked and dropped like its logs are.
+    // The drain Maple creates sends the org's private key and names the Vercel
+    // connection's source. Anything else posting here could write the org an
+    // audit event of its own invention: a source token, the public key (it
+    // ships in browser bundles), or a private key naming no integration source.
+    let unknown_sender = || {
+        ApiError::unauthorized(
+            "Audit events are accepted only from the drain Maple creates on the Vercel team",
+        )
+    };
+    if !matches!(resolved_key.key_type, IngestKeyType::Private)
+        || !resolved_key.accepts_source_claims()
+    {
+        return Err(unknown_sender());
+    }
     let claim = headers
         .get(SOURCE_ID_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|claim| !claim.is_empty() && claim.len() <= MAX_PUBLIC_ID_LEN)
-        .filter(|_| resolved_key.accepts_source_claims());
-    if let Some(claim) = claim {
-        let verified = state
-            .resolver
-            .verify_source_claims(&org_id, vec![claim.to_owned()])
-            .await;
-        if verified.paused.iter().any(|paused| paused == claim) {
-            metrics::source_paused_drop(&org_id, TelemetrySignal::AuditTrail.as_str());
-            Span::current().record("maple.ingest.reject_reason", "source_paused");
-            return Ok(0);
-        }
+        .ok_or_else(unknown_sender)?;
+    let verified = state
+        .resolver
+        .verify_source_claims(&org_id, vec![claim.to_owned()])
+        .await;
+    // Paused, the delivery is acked and dropped like the source's logs are.
+    if verified.paused.iter().any(|paused| paused == claim) {
+        metrics::source_paused_drop(&org_id, TelemetrySignal::AuditTrail.as_str());
+        Span::current().record("maple.ingest.reject_reason", "source_paused");
+        return Ok(0);
+    }
+    if !verified.active.iter().any(|active| active == claim) {
+        return Err(unknown_sender());
     }
 
+    audit_trail_rate_gate(state, &org_id, "vercel", AUDIT_TRAIL_VERCEL_ORG_RPS).await?;
     let _org_inflight_permit =
         state
             .org_inflight_limiter
@@ -4218,28 +4276,22 @@ async fn handle_vercel_audit_trail_inner(
         "Audit event storage is not configured",
     )?;
 
-    let content_encoding = headers
+    let gzip = match headers
         .get(CONTENT_ENCODING)
         .and_then(|value| value.to_str().ok())
         .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| !value.is_empty() && value != "identity");
-    let payload = decode_payload(
-        body,
-        content_encoding.as_deref(),
-        state.config.max_decoded_body_bytes,
-    )?;
-    let parsed = vercel_logs::parse(&payload).map_err(|e| {
-        ApiError::bad_request(format!("Invalid Vercel Audit Log drain payload: {e}"))
-    })?;
-
-    let now_ms = audit_trail::now_ms();
-    let rows: Vec<Vec<u8>> = parsed
-        .entries
-        .iter()
-        .filter_map(|event| audit_trail::vercel_event(event, now_ms))
-        .map(|event| event.to_row(&org_id, now_ms))
-        .collect();
-    let skipped = parsed.entries.len() - rows.len() + parsed.malformed_lines;
+        .as_deref()
+    {
+        None | Some("" | "identity") => false,
+        Some("gzip") => true,
+        Some(_) => {
+            return Err(ApiError::unsupported_media_type(
+                "Unsupported content-encoding",
+            ))
+        }
+    };
+    let (rows, skipped) =
+        decode_vercel_audit_drain(state, body.clone(), gzip, org_id.clone()).await?;
     Span::current().record("maple.audit_trail.events", rows.len());
     Span::current().record("maple.audit_trail.skipped", skipped);
     if skipped > 0 {
@@ -4248,6 +4300,83 @@ async fn handle_vercel_audit_trail_inner(
     let count = store_audit_trail_rows(pipeline, &org_id, rows).await?;
     state.resolver.note_source_use(&resolved_key, false);
     Ok(count)
+}
+
+/// A Vercel audit delivery as rows, and how many of its events were skipped.
+/// Inflated and parsed on the blocking pool inside the process-wide decode
+/// memory budget, like an OTLP body: a small gzip can inflate into a body that
+/// parses into gigabytes.
+async fn decode_vercel_audit_drain(
+    state: &AppState,
+    body: Bytes,
+    gzip: bool,
+    org_id: String,
+) -> Result<(Vec<Vec<u8>>, usize), ApiError> {
+    let mut reservation = state.decode_memory.reservation();
+    let heap_budget = state.config.max_decode_heap_bytes;
+    let max_decoded = state
+        .config
+        .max_decoded_body_bytes
+        .min(AUDIT_TRAIL_MAX_DECODED_BYTES);
+    tokio::task::spawn_blocking(move || {
+        let busy = || {
+            ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            )
+        };
+        let too_large = || ApiError::payload_too_large("Audit delivery too large");
+        if body.len() > max_decoded {
+            return Err(too_large());
+        }
+        if !reservation.try_add(body.len() as u64) {
+            return Err(busy());
+        }
+        let payload = if gzip {
+            let invalid = || ApiError::bad_request("Invalid gzip body");
+            let declared = decode_budget::gzip_declared_len(&body).ok_or_else(invalid)?;
+            let declared = usize::try_from(declared).unwrap_or(usize::MAX);
+            if declared > max_decoded {
+                return Err(too_large());
+            }
+            if !reservation.try_add(declared as u64) {
+                return Err(busy());
+            }
+            let inflated = gunzip_declared(&body, declared).map_err(|error| match error {
+                GunzipError::Invalid(_) => invalid(),
+                GunzipError::TooLarge => too_large(),
+            })?;
+            drop(body);
+            Bytes::from(inflated)
+        } else {
+            body
+        };
+        let estimate = decode_budget::json_cost(&payload, heap_budget)
+            .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget))?;
+        if !reservation.try_add(estimate) {
+            return Err(busy());
+        }
+        let parsed = vercel_logs::parse(&payload).map_err(|e| {
+            ApiError::bad_request(format!("Invalid Vercel Audit Log drain payload: {e}"))
+        })?;
+        let now_ms = audit_trail::now_ms();
+        let rows: Vec<Vec<u8>> = parsed
+            .entries
+            .iter()
+            .filter_map(|event| audit_trail::vercel_event(event, now_ms))
+            .map(|event| event.to_row(&org_id, now_ms))
+            .collect();
+        let skipped = parsed.entries.len() - rows.len() + parsed.malformed_lines;
+        Ok((rows, skipped))
+    })
+    .await
+    .unwrap_or_else(|join_error| {
+        error!(error = %join_error, "Audit delivery decode task failed");
+        Err(ApiError::service_unavailable(
+            "Ingest gateway failed to decode the request",
+        ))
+    })
 }
 
 /// Audit rows to the managed warehouse: the table is pinned there, whatever
@@ -6561,11 +6690,15 @@ async fn handle_gcp_logpush_inner(
     };
 
     // An Admin Activity or Policy Denied entry is an audit event, not a log:
-    // it goes to the audit trail, unmetered, ahead of the plan check on logs.
-    // A gateway that only forwards has no such table, so there it stays a log.
-    if state.config.write_mode.uses_tinybird() {
+    // it goes to the audit trail, unmetered, ahead of the plan check on logs
+    // and of the org's ingest rules, which are about what it keeps of its logs.
+    if state.config.stores_audit_trail() {
         let now_ms = audit_trail::now_ms();
         if let Some(event) = audit_trail::gcp_entry(&entry, now_ms) {
+            // Refused, Pub/Sub redelivers with backoff: delayed, not lost.
+            audit_trail_rate_gate(state, org_id, "gcp", AUDIT_TRAIL_GCP_ORG_RPS)
+                .await
+                .map_err(|error| (error, "throttle"))?;
             let pipeline = native_rows_pipeline_for(
                 state,
                 ExportDestination::Tinybird,
@@ -12611,6 +12744,7 @@ mod tests {
                 ingest_key_cache_ttl_secs: 60,
                 org_routing_cache_ttl_secs: 5,
                 ingest_rules_enabled: false,
+                audit_trail_enabled: false,
                 ingest_rules_cache_ttl_secs: 30,
                 replay_max_session_bytes: 1024 * 1024 * 1024,
                 replay_blob_store: None,
@@ -13170,74 +13304,267 @@ mod tests {
         "\n",
     );
 
-    /// A gateway that writes its own rows, as the hosted one does: the fixture's
-    /// default only forwards, and there an audit drain stays a log.
-    async fn audit_trail_test_state(raw_key: &str, org_id: &str, queue_dir: PathBuf) -> AppState {
-        let mut state = replay_blob_test_state(raw_key, org_id, queue_dir).await;
-        state.config.write_mode = WriteMode::Tinybird;
-        state
+    /// The Vercel connection's source in the fixtures, as its uuid and as the
+    /// public id a drain names in `x-maple-source-id`.
+    const AUDIT_SOURCE_UUID: &str = "0f8e6c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+    const AUDIT_SOURCE_ID: &str = "src_aXunrkWtzvXSkw9Z2smcft";
+
+    /// What the fake Tinybird is sent: `(datasource, NDJSON rows)`.
+    type TinybirdImports = tokio::sync::mpsc::UnboundedReceiver<(String, String)>;
+
+    async fn fake_tinybird_import(
+        State(tx): State<tokio::sync::mpsc::UnboundedSender<(String, String)>>,
+        Query(query): Query<HashMap<String, String>>,
+        body: Bytes,
+    ) -> StatusCode {
+        let rows = gunzip_bounded(&body, usize::MAX).unwrap_or_else(|_| body.to_vec());
+        drop(tx.send((
+            query.get("name").cloned().unwrap_or_default(),
+            String::from_utf8(rows).expect("Tinybird should receive UTF-8 NDJSON"),
+        )));
+        StatusCode::OK
     }
 
-    #[tokio::test]
-    async fn vercel_audit_drain_stores_each_event_that_names_an_action() {
-        let queue_dir = unique_main_test_dir("vercel-audit-trail");
-        let state =
-            audit_trail_test_state("maple_sk_test_audit", "org_audit", queue_dir.clone()).await;
-
-        let accepted = handle_vercel_audit_trail_inner(
-            &state,
-            &bearer_headers("maple_sk_test_audit"),
-            &Bytes::from_static(VERCEL_AUDIT_DELIVERY.as_bytes()),
+    /// Turns the audit trail on, as the hosted gateway has it, with a pipeline
+    /// that writes to a fake Tinybird the test can read.
+    async fn store_audit_trail(
+        state: &mut AppState,
+        queue_dir: &std::path::Path,
+    ) -> TinybirdImports {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let pipeline = TelemetryPipeline::new(
+            TinybirdConfig {
+                endpoint,
+                token: "token".to_owned(),
+                ..test_tinybird_config(queue_dir.join("audit-trail"))
+            },
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
         )
         .await
-        .expect("a private key's delivery should be accepted");
-
-        // The second event names no action: there is nothing to say happened.
-        assert_eq!(accepted, 1);
-        let _ = std::fs::remove_dir_all(&queue_dir);
+        .expect("the audit trail pipeline should start");
+        state.config.write_mode = WriteMode::Tinybird;
+        state.config.audit_trail_enabled = true;
+        state.telemetry_pipeline = Some(pipeline);
+        rx
     }
 
-    // The public key ships in browser bundles. Audit events written with it
-    // could be anyone's invention.
-    #[tokio::test]
-    async fn vercel_audit_drain_refuses_the_public_ingest_key() {
-        let queue_dir = unique_main_test_dir("vercel-audit-trail-public");
+    /// An org with a private key and a Vercel connection whose source is
+    /// `AUDIT_SOURCE_ID`, on a gateway that stores the audit trail.
+    async fn audit_trail_test_state(
+        raw_key: &str,
+        org_id: &str,
+        queue_dir: PathBuf,
+    ) -> (AppState, Arc<FakeKeyStore>, TinybirdImports) {
         let store = Arc::new(FakeKeyStore::default());
-        let hash = hash_ingest_key("maple_pk_test_audit", "test-hmac-key").unwrap();
-        store.set_org_routing(
-            "org_audit_public",
-            OrgRouting {
-                self_managed: false,
-                clickhouse_ready: false,
-            },
-        );
-        store.keys.lock().unwrap().insert(
-            (hash, "public_key_hash"),
+        store.insert_private(
+            raw_key,
             KeyRow {
-                org_id: "org_audit_public".to_owned(),
+                org_id: org_id.to_owned(),
                 self_managed: false,
                 clickhouse_ready: false,
             },
         );
+        store.insert_source_row(org_id, AUDIT_SOURCE_UUID, "integration");
         let mut state = test_app_state(
-            store,
+            Arc::clone(&store),
             queue_dir.clone(),
             "http://127.0.0.1:1".to_owned(),
             Duration::from_secs(30),
         )
         .await;
-        state.config.write_mode = WriteMode::Tinybird;
+        let imports = store_audit_trail(&mut state, &queue_dir).await;
+        (state, store, imports)
+    }
 
-        let refused = handle_vercel_audit_trail_inner(
-            &state,
-            &bearer_headers("maple_pk_test_audit"),
+    /// The headers of the drain Maple creates: the key and the connection's source.
+    fn vercel_drain_headers(raw_key: &str, source_id: &str) -> HeaderMap {
+        let mut headers = bearer_headers(raw_key);
+        headers.insert(SOURCE_ID_HEADER, source_id.parse().unwrap());
+        headers
+    }
+
+    async fn vercel_audit_delivery(
+        state: &AppState,
+        headers: &HeaderMap,
+    ) -> Result<usize, ApiError> {
+        handle_vercel_audit_trail_inner(
+            state,
+            headers,
             &Bytes::from_static(VERCEL_AUDIT_DELIVERY.as_bytes()),
         )
         .await
-        .expect_err("a public key must not write audit events");
+    }
 
-        assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
-        let _ = std::fs::remove_dir_all(&queue_dir);
+    async fn nothing_reaches_the_audit_trail(imports: &mut TinybirdImports) -> bool {
+        tokio::time::timeout(Duration::from_millis(200), imports.recv())
+            .await
+            .is_err()
+    }
+
+    #[tokio::test]
+    async fn vercel_audit_drain_stores_each_event_that_names_an_action() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail");
+        let (state, _store, mut imports) =
+            audit_trail_test_state("maple_sk_test_audit", "org_audit", queue_dir.clone()).await;
+
+        let accepted = vercel_audit_delivery(
+            &state,
+            &vercel_drain_headers("maple_sk_test_audit", AUDIT_SOURCE_ID),
+        )
+        .await
+        .expect("the drain's delivery should be accepted");
+
+        // The second event names no action: there is nothing to say happened.
+        assert_eq!(accepted, 1);
+        let (datasource, rows) = tokio::time::timeout(Duration::from_secs(2), imports.recv())
+            .await
+            .expect("the event should reach Tinybird")
+            .expect("the Tinybird channel should stay open");
+        assert_eq!(datasource, "audit_trail_events");
+        let row: serde_json::Value = serde_json::from_str(rows.trim()).expect("one NDJSON row");
+        assert_eq!(
+            (
+                row["OrgId"].as_str(),
+                row["ProviderEventId"].as_str(),
+                row["Action"].as_str()
+            ),
+            (Some("org_audit"), Some("evt_1"), Some("project.created"))
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // The drain Maple creates sends the private key and names the connection's
+    // source. Any other sender could write the org an audit event it made up.
+    #[tokio::test]
+    async fn vercel_audit_drain_refuses_a_sender_that_is_not_the_orgs_drain() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-senders");
+        let (state, store, mut imports) =
+            audit_trail_test_state("maple_sk_test_senders", "org_senders", queue_dir.clone()).await;
+        // The public key ships in browser bundles.
+        let public_hash = hash_ingest_key("maple_pk_test_senders", "test-hmac-key").unwrap();
+        store.keys.lock().unwrap().insert(
+            (public_hash, "public_key_hash"),
+            KeyRow {
+                org_id: "org_senders".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        // A log shipper's token: allowed to send logs, and nothing else.
+        let token = "maple_src_audit_senders_0000000000000000000000";
+        store.insert_source(
+            token,
+            source_row(
+                "org_senders",
+                source_config(Some(r#"["logs"]"#), None, "[]"),
+            ),
+        );
+        // Another org's integration source, named by this org's key.
+        let foreign = "5b8f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11";
+        store.insert_source_row("org_other", foreign, "integration");
+        let foreign_id = sources::public_source_id(foreign).expect("a uuid has a public id");
+
+        for (sender, headers) in [
+            (
+                "the public key",
+                vercel_drain_headers("maple_pk_test_senders", AUDIT_SOURCE_ID),
+            ),
+            (
+                "a source token",
+                vercel_drain_headers(token, AUDIT_SOURCE_ID),
+            ),
+            (
+                "the private key naming no source",
+                bearer_headers("maple_sk_test_senders"),
+            ),
+            (
+                "the private key naming another org's source",
+                vercel_drain_headers("maple_sk_test_senders", &foreign_id),
+            ),
+        ] {
+            let refused = vercel_audit_delivery(&state, &headers)
+                .await
+                .expect_err(sender);
+            assert_eq!(refused.status, StatusCode::UNAUTHORIZED, "{sender}");
+        }
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn vercel_audit_drain_acks_and_drops_while_the_integration_is_paused() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-paused");
+        let (state, store, mut imports) =
+            audit_trail_test_state("maple_sk_test_paused", "org_paused", queue_dir.clone()).await;
+        store.pause_source(AUDIT_SOURCE_UUID, current_time_millis() - 1000, None);
+
+        let accepted = vercel_audit_delivery(
+            &state,
+            &vercel_drain_headers("maple_sk_test_paused", AUDIT_SOURCE_ID),
+        )
+        .await
+        .expect("a paused source's delivery is acked");
+
+        assert_eq!(accepted, 0);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A few hundred bytes of gzip can inflate into a body that parses into
+    // gigabytes; an audit delivery has no reason to be large.
+    #[tokio::test]
+    async fn vercel_audit_drain_refuses_a_delivery_that_inflates_past_its_limit() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-bomb");
+        let (state, _store, mut imports) =
+            audit_trail_test_state("maple_sk_test_bomb", "org_bomb", queue_dir.clone()).await;
+        let mut headers = vercel_drain_headers("maple_sk_test_bomb", AUDIT_SOURCE_ID);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        let body = gzip_bytes("[],".repeat(AUDIT_TRAIL_MAX_DECODED_BYTES / 2));
+
+        let refused = handle_vercel_audit_trail_inner(&state, &headers, &body)
+            .await
+            .expect_err("a delivery past the limit must be refused");
+
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Audit rows are not metered, so the rate is what bounds a sender.
+    #[tokio::test]
+    async fn an_orgs_audit_deliveries_are_refused_past_their_rate() {
+        let queue_dir = unique_main_test_dir("audit-trail-rate");
+        let (state, _store, _imports) =
+            audit_trail_test_state("maple_sk_test_rate", "org_rate", queue_dir.clone()).await;
+
+        assert!(audit_trail_rate_gate(&state, "org_rate", "gcp", 1)
+            .await
+            .is_ok());
+        let refused = audit_trail_rate_gate(&state, "org_rate", "gcp", 1)
+            .await
+            .expect_err("a second delivery inside the second is past a rate of one");
+        assert_eq!(refused.status, StatusCode::TOO_MANY_REQUESTS);
+        // Another org, and the same org's other provider, have their own allowance.
+        assert!(audit_trail_rate_gate(&state, "org_other", "gcp", 1)
+            .await
+            .is_ok());
+        assert!(audit_trail_rate_gate(&state, "org_rate", "vercel", 1)
+            .await
+            .is_ok());
+        drop(std::fs::remove_dir_all(&queue_dir));
     }
 
     #[tokio::test]
@@ -14836,15 +15163,30 @@ mod tests {
     async fn gcp_logpush_stores_an_audit_entry_in_the_audit_trail_and_not_as_a_log() {
         let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
         let (mut state, store, queue_dir) = gcp_logpush_state("gcp-logpush-audit", &ch_url).await;
-        Arc::get_mut(&mut state)
-            .expect("the state is not shared yet")
-            .config
-            .write_mode = WriteMode::Tinybird;
+        let mut imports = store_audit_trail(
+            Arc::get_mut(&mut state).expect("the state is not shared yet"),
+            &queue_dir,
+        )
+        .await;
 
         let accepted = gcp_push(&state, "gcp_conn_1", Some("gcp-secret"), GCP_AUDIT_ENTRY).await;
 
         assert_eq!(accepted.status(), StatusCode::OK);
         assert_eq!(store.connector_successes.load(Ordering::Relaxed), 1);
+        let (datasource, rows) = tokio::time::timeout(Duration::from_secs(2), imports.recv())
+            .await
+            .expect("the entry should reach Tinybird")
+            .expect("the Tinybird channel should stay open");
+        assert_eq!(datasource, "audit_trail_events");
+        let row: serde_json::Value = serde_json::from_str(rows.trim()).expect("one NDJSON row");
+        assert_eq!(
+            (
+                row["OrgId"].as_str(),
+                row["ProviderEventId"].as_str(),
+                row["ActorEmail"].as_str()
+            ),
+            (Some("org_gcp"), Some("abc123"), Some("ada@acme.test"))
+        );
         assert!(
             tokio::time::timeout(Duration::from_millis(200), ch_rx.recv())
                 .await
@@ -14854,8 +15196,8 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
-    // A gateway that only forwards has no audit trail table: there the entry
-    // stays a log, as it was before the trail existed.
+    // A gateway that only forwards has no audit trail table, and one where the
+    // trail is not turned on does not write to it: there the entry stays a log.
     #[tokio::test]
     async fn gcp_logpush_keeps_an_audit_entry_as_a_log_where_the_gateway_only_forwards() {
         let (ch_url, mut ch_rx) = spawn_fake_clickhouse().await;
