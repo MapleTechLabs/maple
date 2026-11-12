@@ -10,7 +10,7 @@ import { makeRestProtocol } from "@distilled.cloud/core/protocol-rest"
 import * as T from "@distilled.cloud/core/trait"
 import { OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
 import { Context, Effect, Predicate, Redacted, Schema, String as Str } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 export const OPENROUTER_API_URLS = {
 	us: "https://openrouter.ai/api/v1",
@@ -186,21 +186,6 @@ const getActivityBody = API.make(() => ({
 export const getActivity = (input: typeof GetActivityRequest.Type) =>
 	getActivityBody(input).pipe(Effect.flatMap(decoded(ActivityResponse)))
 
-const GetWorkspaceActivityRequest = Schema.Struct({
-	workspaceId: Schema.String.pipe(T.Query("workspace_id")),
-}).pipe(T.Http({ method: "GET", uri: "/activity", code: 200 }))
-
-/**
- * One workspace's activity. A key for the whole account is answered 404 for a workspace the
- * account does not have; a key scoped to one workspace is answered 403 for any other.
- */
-export const getWorkspaceActivity = API.make(() => ({
-	input: GetWorkspaceActivityRequest,
-	output: Schema.Unknown,
-	errors: [BadRequest, Unauthorized, Forbidden, NotFound],
-	protocol: OpenRouterProtocol,
-}))
-
 const CreateChatCompletionRequest = Schema.Struct({
 	model: Schema.String,
 	messages: Schema.Array(Schema.Struct({ role: Schema.Literal("user"), content: Schema.String })),
@@ -231,4 +216,44 @@ export const withKey =
 			withCredentials(config),
 			Effect.provideService(HttpClient.HttpClient, httpClient),
 			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+		)
+
+/** A workspace id no account has. */
+const NO_SUCH_WORKSPACE = "00000000-0000-4000-8000-000000000000"
+
+/**
+ * Whether the key reads one workspace only. Asked for the activity of a workspace no account has,
+ * a key for the whole account is answered 404 and a workspace-scoped one 403. Read off the
+ * status, not through an operation: there the expected 404 fails a span on every saved key.
+ */
+export const readsOneWorkspaceOnly = (httpClient: HttpClient.HttpClient, config: Config) =>
+	httpClient
+		.execute(
+			HttpClientRequest.get(`${config.apiBaseUrl}/activity`).pipe(
+				HttpClientRequest.setUrlParam("workspace_id", NO_SUCH_WORKSPACE),
+				HttpClientRequest.bearerToken(config.apiKey),
+			),
+		)
+		.pipe(
+			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+			Effect.annotateSpans("peer.service", "openrouter"),
+			Effect.mapError(
+				(error) =>
+					new UnknownOpenRouterError({
+						status: 0,
+						message: `OpenRouter request failed: ${error.message}`,
+					}),
+			),
+			Effect.flatMap((response) =>
+				response.status === 403
+					? Effect.succeed(true)
+					: response.status === 404 || response.status === 200
+						? Effect.succeed(false)
+						: Effect.fail(
+								new UnknownOpenRouterError({
+									status: response.status,
+									message: `OpenRouter answered ${response.status} to the workspace check`,
+								}),
+							),
+			),
 		)
