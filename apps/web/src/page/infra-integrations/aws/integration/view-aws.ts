@@ -144,18 +144,17 @@ const STEP_LABEL = {
 	todo: "Not yet",
 } satisfies Record<StepState, string>
 
-const stepGlyph = (h: H, state: StepState, index: number): Html =>
+const stepGlyph = (h: H, state: StepState): Html =>
 	state === "todo"
-		? hstack(
-				h,
-				{
-					align: "center",
-					justify: "center",
-					as: "span",
-					className:
-						"size-4 shrink-0 rounded-full border text-3xs tabular-nums text-muted-foreground",
-				},
-				[String(index + 1)],
+		? // Not reached yet: an empty ring where the others carry a mark.
+			h.span(
+				[
+					h.Class(
+						"m-px block size-3.5 shrink-0 rounded-full border border-dashed border-muted-foreground",
+					),
+					h.AriaHidden(true),
+				],
+				[],
 			)
 		: icon(h, STEP_GLYPH[state].icon, {
 				size: 16,
@@ -165,7 +164,7 @@ const stepGlyph = (h: H, state: StepState, index: number): Html =>
 const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 	h.ol(
 		[h.Class("flex w-full flex-col gap-2.5"), h.AriaLabel("Connection status")],
-		Arr.map(steps, (step, index) =>
+		Arr.map(steps, (step) =>
 			hstack(
 				h,
 				{
@@ -175,7 +174,7 @@ const stepList = (h: H, steps: ReadonlyArray<Step>): Html =>
 					attributes: [h.DataAttribute("step-state", step.state)],
 				},
 				[
-					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state, index)]),
+					h.span([h.Class("mt-0.5")], [stepGlyph(h, step.state)]),
 					vstack(h, { gap: "1", shrink: true, grow: true }, [
 						h.p(
 							[
@@ -273,79 +272,59 @@ const streamStep = (connection: V2AwsConnection): Step => {
 	}
 }
 
-const deliverySteps = (
-	h: H,
-	model: Model,
-	connection: V2AwsConnection,
-	timeZone: string,
-): ReadonlyArray<Step> => {
+/** Where the stream's deliveries stand: the first one until it arrived, the latest one after. */
+const deliveryStep = (h: H, model: Model, connection: V2AwsConnection, timeZone: string): Step => {
 	const at = (value: number, prefix: string) =>
 		relativeTime(h, { value, nowMs: model.nowMs, timeZone, prefix })
 	const first = "First delivery"
 	const latest = "Latest delivery"
-	const notYet: Step = { title: latest, state: "todo", detail: [] }
 	const stream = awsStreamOf(connection, model.nowMs)
 	switch (stream._tag) {
 		case "off":
-			return [{ title: first, state: "todo", detail: [] }, notYet]
+			return { title: first, state: "todo", detail: [] }
 		case "waiting":
-			return [
-				connection.verified_at === null
-					? {
-							title: first,
-							state: "todo",
-							detail: ["Arrives a few minutes after the stack is deployed."],
-						}
-					: {
-							title: first,
-							state: "current",
-							detail: [
-								"Waiting. Metrics arrive a few minutes after the setup script deploys the stream. Run it again if you have not since turning the stream on.",
-							],
-						},
-				notYet,
-			]
+			return connection.verified_at === null
+				? {
+						title: first,
+						state: "todo",
+						detail: ["Arrives a few minutes after the stack is deployed."],
+					}
+				: {
+						title: first,
+						state: "current",
+						detail: [
+							"Waiting. Metrics arrive a few minutes after the setup script deploys the stream. Run it again if you have not since turning the stream on.",
+						],
+					}
 		case "undelivered":
-			return [
-				{
-					title: first,
-					state: "crit",
-					detail: [
-						"Nothing has arrived since the stream was set up ",
-						at(stream.since, ""),
-						". Run the setup script again: it deploys the stream in each region.",
-					],
-				},
-				notYet,
-			]
+			return {
+				title: first,
+				state: "crit",
+				detail: [
+					"Nothing has arrived since the stream was set up ",
+					at(stream.since, ""),
+					". Run the setup script again: it deploys the stream in each region.",
+				],
+			}
 		case "refused":
 			return stream.receivedAt === null
-				? [{ title: first, state: "crit", detail: [stream.error] }, notYet]
-				: [
-						{ title: first, state: "done", detail: [] },
-						{
-							title: latest,
-							state: "crit",
-							detail: [stream.error, " · ", at(stream.receivedAt, "last accepted")],
-						},
-					]
+				? { title: first, state: "crit", detail: [stream.error] }
+				: {
+						title: latest,
+						state: "crit",
+						detail: [stream.error, " · ", at(stream.receivedAt, "last accepted")],
+					}
 		case "silent":
-			return [
-				{ title: first, state: "done", detail: [] },
-				{
-					title: latest,
-					state: "warn",
-					detail: [
-						at(stream.receivedAt, ""),
-						". CloudWatch stopped sending: check that each region's stack still exists, or run the setup script again.",
-					],
-				},
-			]
+			return {
+				title: latest,
+				state: "warn",
+				detail: [
+					at(stream.receivedAt, ""),
+					". CloudWatch stopped sending: check that each region's stack still exists, or run the setup script again.",
+				],
+			}
 		case "delivering":
-			return [
-				{ title: first, state: "done", detail: [] },
-				{ title: latest, state: "done", detail: [at(stream.receivedAt, "")] },
-			]
+			return { title: latest, state: "done", detail: [at(stream.receivedAt, "")] }
 	}
 }
 
@@ -503,18 +482,20 @@ export const ingestPanel = (
 	]
 }
 
+type ActionVariant = "default" | "outline" | "destructive-outline"
+
 /** A connection's action; one that opens a panel reads pressed while the panel is open. */
 const actionButton = (
 	h: H,
 	label: string,
 	message: Message,
-	extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean }> = {},
+	extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean; variant?: ActionVariant }> = {},
 ): Html =>
 	button(
 		h,
 		{
 			size: "sm",
-			variant: extra.isExpanded === true ? "secondary" : "outline",
+			variant: extra.isExpanded === true ? "secondary" : (extra.variant ?? "outline"),
 			isLoading: extra.isLoading,
 			attributes: [
 				h.OnClick(message),
@@ -525,13 +506,19 @@ const actionButton = (
 	)
 
 /** Opens the connection's setup (the stack's script), or closes it when it is the open one. */
-const setupToggle = (h: H, model: Model, connection: V2AwsConnection, label: string): Html => {
+const setupToggle = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	label: string,
+	variant: ActionVariant = "outline",
+): Html => {
 	const isOpen = model.awsCard.setupId === connection.id
 	return actionButton(
 		h,
 		label,
 		isOpen ? Message.ClickedAwsSetupClose() : Message.ClickedAwsSetup({ id: connection.id }),
-		{ isExpanded: isOpen },
+		{ isExpanded: isOpen, variant },
 	)
 }
 
@@ -623,7 +610,7 @@ const connectionRow = (
 	const action = (
 		label: string,
 		message: Message,
-		extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean }> = {},
+		extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean; variant?: ActionVariant }> = {},
 	) => actionButton(h, label, message, extra)
 	return mediaCard(h, integrationIconPlate(h, BRAND), [
 		itemContent(
@@ -644,7 +631,7 @@ const connectionRow = (
 				stepList(h, [
 					roleStep(h, model, connection, timeZone),
 					streamStep(connection),
-					...deliverySteps(h, model, connection, timeZone),
+					deliveryStep(h, model, connection, timeZone),
 				]),
 				...ingestPanel(h, model, connection, timeZone),
 				...Option.match(offeredModule(status, "cost"), {
@@ -652,8 +639,11 @@ const connectionRow = (
 					onSome: (info) => [costRow(h, model, connection, info)],
 				}),
 				hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
-					// Reconnect deploys the stack again: it finishes a setup and updates an old one.
-					setupToggle(h, model, connection, "Reconnect"),
+					// The stack's script: it finishes a setup, which is the one thing to do then, and
+					// updates an old one.
+					connection.verified_at === null
+						? setupToggle(h, model, connection, "Finish setup", "default")
+						: setupToggle(h, model, connection, "Reconnect"),
 					...(connection.verified_at === null
 						? []
 						: [
@@ -668,7 +658,15 @@ const connectionRow = (
 					action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
 						isLoading: isChecking,
 					}),
-					action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id })),
+					// Apart from the routine actions: it ends the connection.
+					h.span(
+						[h.Class("ml-auto")],
+						[
+							action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id }), {
+								variant: "destructive-outline",
+							}),
+						],
+					),
 				]),
 				...(isEditing ? [editDataPanel(h, model, connection)] : []),
 				...(isOpen ? [setupPanel(h, model, connection)] : []),

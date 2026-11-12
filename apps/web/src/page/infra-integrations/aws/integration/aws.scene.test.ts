@@ -439,6 +439,53 @@ describe("aws card", () => {
 		)
 	})
 
+	test("deliveries are one step: the first until something arrived, the latest after", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const at = (connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				withStatus(entered(), connections),
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-23T09:00:00.000Z") }),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(at([connection({ verified_at, metric_stream: stream })])),
+			expectView(text("First delivery", { exact: false })).toExist(),
+			expectView(text("Latest delivery", { exact: false })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				at([
+					connection({
+						verified_at,
+						metric_stream: stream,
+						metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+					}),
+				]),
+			),
+			expectView(text("Latest delivery", { exact: false })).toExist(),
+			expectView(text("First delivery", { exact: false })).not.toExist(),
+		)
+	})
+
+	test("a connection whose stack was never deployed leads with Finish setup; a verified one offers Reconnect", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection()])),
+			expectView(role("button", { name: "Finish setup" })).toExist(),
+			expectView(role("button", { name: "Reconnect" })).not.toExist(),
+			// Nothing to edit before Maple sees the account.
+			expectView(role("button", { name: "Edit data" })).not.toExist(),
+		)
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection({ verified_at })])),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+			expectView(role("button", { name: "Finish setup" })).not.toExist(),
+		)
+	})
+
 	test("a streaming connection's ingest is read with its status and shown by namespace and region", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
 		const delivering = connection({
