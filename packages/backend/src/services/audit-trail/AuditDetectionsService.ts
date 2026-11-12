@@ -119,7 +119,9 @@ const claimRuleWrite = Effect.fnUntraced(function* (
 			.limit(1),
 	)
 	if (sameName.length > 0) {
-		return yield* invalid(`An alert rule named '${rule.name}' already exists; pick another name`)
+		return yield* invalid(
+			`A detection or alert rule named '${rule.name}' already exists; pick another name`,
+		)
 	}
 })
 

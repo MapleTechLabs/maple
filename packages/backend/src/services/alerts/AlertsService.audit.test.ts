@@ -122,7 +122,7 @@ describe("AlertsService audit log detections", () => {
 
 	it.effect("opens an incident at the count, notifies the destination, and resolves below it", () => {
 		const trail: Trail = { matchingEvents: 3 }
-		const { layer } = harness(trail)
+		const { layer, testDb } = harness(trail)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* alertServices
@@ -143,6 +143,15 @@ describe("AlertsService audit log detections", () => {
 				Arr.map((yield* alerts.listDeliveryEvents(orgId)).events, (event) => event.eventType),
 				["trigger"],
 			)
+			// No fault in a service: the incident files nothing in the errors triage queue.
+			const issues = yield* Effect.promise(() =>
+				queryFirstRow<{ issues: number }>(
+					testDb,
+					"select count(*)::int as issues from error_issues where org_id = $1",
+					[orgId],
+				),
+			)
+			assert.deepInclude(issues, { issues: 0 })
 
 			// The events slide out of the window: the count is a real zero, so it resolves.
 			trail.matchingEvents = 0
@@ -183,15 +192,41 @@ describe("AlertsService audit log detections", () => {
 			const alerts = yield* alertServices
 			yield* createDetection({ provider: "vercel", action: "team.member.added" })
 
+			// Saved at 22:13:20 UTC. Eleven minutes on, the window ends at the snapped minute
+			// 22:24 and reaches back its full 10 minutes, all of them after the save.
+			yield* TestClock.adjust(Duration.minutes(11))
 			yield* alerts.runSchedulerTick()
 
-			// 1_700_000_000_000 is 22:13:20 UTC: the window ends at 22:13 and reaches back 10 minutes.
 			assert.lengthOf(counted, 1)
 			assert.include(counted[0], `OrgId = '${orgId}'`)
-			assert.include(counted[0], "IngestedAt > '2023-11-14 22:03:00'")
-			assert.include(counted[0], "IngestedAt <= '2023-11-14 22:13:00'")
+			assert.include(counted[0], "IngestedAt > '2023-11-14 22:14:00'")
+			assert.include(counted[0], "IngestedAt <= '2023-11-14 22:24:00'")
 			assert.include(counted[0], "Provider = 'vercel'")
 			assert.include(counted[0], "Action = 'team.member.added'")
+		}).pipe(Effect.provide(layer))
+	})
+
+	// A new detection, or one whose window was just widened, would otherwise fire at once on
+	// events that were already there, some of them already alerted on.
+	it.effect("counts only what arrived since the detection was last saved", () => {
+		const { layer, counted } = harness({ matchingEvents: 0 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const detections = yield* AuditDetectionsService
+			const detection = yield* createDetection()
+
+			// Three minutes after the save at 22:13:20 the 10 minute window starts at the save.
+			yield* TestClock.adjust(Duration.minutes(3))
+			yield* alerts.runSchedulerTick()
+			assert.include(counted[0], "IngestedAt > '2023-11-14 22:13:20'")
+			assert.include(counted[0], "IngestedAt <= '2023-11-14 22:16:00'")
+
+			// Widened at 22:16:20: the wider window does not reach back past the edit.
+			yield* detections.update(orgId, detection.id, { windowMinutes: 60, updatedBy: userId })
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.include(counted[1], "IngestedAt > '2023-11-14 22:16:20'")
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -652,6 +652,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 								}
 							: undefined),
 						limit: limit + 1,
+						publicApi: true,
 					})
 
 					const hasMore = response.checks.length > limit
@@ -671,6 +672,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					const summary = yield* readModels.summarizeRuleChecks(tenant.orgId, params.id, {
 						since: query.since,
 						until: query.until,
+						publicApi: true,
 					})
 
 					return {
