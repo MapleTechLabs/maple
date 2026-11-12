@@ -95,7 +95,9 @@ It is a small table (hundreds of rows per source per day), so it needs no rollup
 
 ### Sync
 
-A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit). Per source:
+A `cost_sync` lane on the `2-59/5` cron (the `*/5` one is at its lane limit), so a new source has
+cost within minutes. A connection that turns cost on, off or loses its grant updates its source in
+the same write, so the Cost page shows the wait before the first tick. Per source:
 
 - First pull: the previous month through today.
 - Then the last four days about daily, and the open months about weekly. The previous month stays
@@ -114,7 +116,7 @@ What bounds the provider's bill for requests:
 - Per source and month: past 500 requests history waits for the next month, past 1,500 the source
   stops until then.
 - A pull too large to read or to store is held a day. A source whose org left the rollout is not
-  pulled, and is asked about again on the next hourly run.
+  pulled, and is asked about again within the hour.
 - A source resuming after a gap starts at the month before its watermark's, so days pulled while
   their month was still open get their final amounts.
 
