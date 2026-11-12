@@ -31,6 +31,20 @@ export const AuditTrailOutcome = Schema.Literals(["success", "failure", "denied"
 export type AuditTrailOutcome = typeof AuditTrailOutcome.Type
 
 /**
+ * What an audit log detection counts. `action` matches exactly. No actor or origin filter on
+ * purpose: rule rows sync to every member's browser, so nothing in a rule may name a person.
+ */
+export const AuditDetectionFilters = Schema.Struct({
+	provider: Schema.optionalKey(AuditTrailProvider),
+	category: Schema.optionalKey(AuditTrailCategory),
+	outcome: Schema.optionalKey(AuditTrailOutcome),
+	action: Schema.optionalKey(
+		Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(256)),
+	),
+})
+export type AuditDetectionFilters = typeof AuditDetectionFilters.Type
+
+/**
  * One audit event as a provider adapter hands it over. `provider`, `account` and
  * `providerEventId` make the stored row's key: a redelivery collapses only when it also
  * carries the same `occurredAtMs`. `raw` is the platform's payload, kept for the detail view.

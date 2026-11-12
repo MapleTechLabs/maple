@@ -1,5 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
+import { AlertDestinationId, AlertRuleId } from "@maple/primitives"
+import { AlertSeverity } from "../alerts"
+import { AuditDetectionFilters } from "../audit-trail"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
@@ -86,6 +89,72 @@ export const AuditTrailListResponse = Schema.Struct({
 })
 export type AuditTrailListResponse = typeof AuditTrailListResponse.Type
 
+// A detection is an alert rule that counts audit events as they arrive. Its incidents and
+// notifications carry the count, never an event.
+
+/** Each detection reads the warehouse every minute; the cap bounds that per org. */
+export const MAX_AUDIT_DETECTIONS_PER_ORG = 50
+
+const DetectionName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(120))
+const DetectionWindowMinutes = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 5, maximum: 1440 }),
+)
+const DetectionThreshold = Schema.Number.check(
+	Schema.isInt(),
+	Schema.isBetween({ minimum: 1, maximum: 100_000 }),
+)
+const DetectionDestinationIds = Schema.Array(AlertDestinationId).check(Schema.isMaxLength(20))
+
+/** Fires when `threshold` or more matching events arrived in the last `windowMinutes`. */
+export const AuditDetection = Schema.Struct({
+	id: AlertRuleId,
+	name: Schema.String,
+	enabled: Schema.Boolean,
+	filters: AuditDetectionFilters,
+	windowMinutes: Schema.Number,
+	threshold: Schema.Number,
+	severity: AlertSeverity,
+	destinationIds: Schema.Array(AlertDestinationId),
+	/** Epoch ms. */
+	createdAt: Schema.Finite,
+	updatedAt: Schema.Finite,
+})
+export type AuditDetection = typeof AuditDetection.Type
+
+export const AuditDetectionCreateRequest = Schema.Struct({
+	name: DetectionName,
+	enabled: Schema.optionalKey(Schema.Boolean),
+	/** Absent or empty counts every event. */
+	filters: Schema.optionalKey(AuditDetectionFilters),
+	windowMinutes: DetectionWindowMinutes,
+	threshold: DetectionThreshold,
+	severity: AlertSeverity,
+	destinationIds: Schema.optionalKey(DetectionDestinationIds),
+})
+export type AuditDetectionCreateRequest = typeof AuditDetectionCreateRequest.Type
+
+/** Only the fields sent change. `filters` replaces the stored filters whole. */
+export const AuditDetectionUpdateRequest = Schema.Struct({
+	name: Schema.optionalKey(DetectionName),
+	enabled: Schema.optionalKey(Schema.Boolean),
+	filters: Schema.optionalKey(AuditDetectionFilters),
+	windowMinutes: Schema.optionalKey(DetectionWindowMinutes),
+	threshold: Schema.optionalKey(DetectionThreshold),
+	severity: Schema.optionalKey(AlertSeverity),
+	destinationIds: Schema.optionalKey(DetectionDestinationIds),
+})
+export type AuditDetectionUpdateRequest = typeof AuditDetectionUpdateRequest.Type
+
+/** Newest first. */
+export const AuditDetectionListResponse = Schema.Struct({
+	detections: Schema.Array(AuditDetection),
+})
+export type AuditDetectionListResponse = typeof AuditDetectionListResponse.Type
+
+export const AuditDetectionDeleteResponse = Schema.Struct({ id: AlertRuleId })
+export type AuditDetectionDeleteResponse = typeof AuditDetectionDeleteResponse.Type
+
 export class AuditTrailPersistenceError extends HttpTaggedError<AuditTrailPersistenceError>()(
 	"@maple/http/errors/AuditTrailPersistenceError",
 	/** `cause` names the failure behind it (its tag), never its details. */
@@ -114,12 +183,74 @@ export class AuditTrailForbiddenError extends HttpTaggedError<AuditTrailForbidde
 	},
 ) {}
 
+export class AuditDetectionNotFoundError extends HttpTaggedError<AuditDetectionNotFoundError>()(
+	"@maple/http/errors/AuditDetectionNotFoundError",
+	{ detectionId: AlertRuleId, message: Schema.String },
+	{
+		status: 404,
+		code: "audit_detection_not_found",
+		title: "Detection not found",
+		message: "No such detection.",
+		param: "id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
+) {}
+
+/** An unknown destination, a name another alert rule has, or the per-org cap. */
+export class AuditDetectionInvalidError extends HttpTaggedError<AuditDetectionInvalidError>()(
+	"@maple/http/errors/AuditDetectionInvalidError",
+	{ message: Schema.String },
+	{
+		status: 400,
+		code: "audit_detection_invalid",
+		title: "Invalid detection",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")
 	.add(
 		HttpApiEndpoint.get("list", "/events", {
 			query: AuditTrailListQuery,
 			success: AuditTrailListResponse,
 			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listDetections", "/detections", {
+			success: AuditDetectionListResponse,
+			error: [AuditTrailPersistenceError, AuditTrailForbiddenError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("createDetection", "/detections", {
+			payload: AuditDetectionCreateRequest,
+			success: AuditDetection,
+			error: [AuditTrailPersistenceError, AuditTrailForbiddenError, AuditDetectionInvalidError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.patch("updateDetection", "/detections/:id", {
+			params: { id: AlertRuleId },
+			payload: AuditDetectionUpdateRequest,
+			success: AuditDetection,
+			error: [
+				AuditTrailPersistenceError,
+				AuditTrailForbiddenError,
+				AuditDetectionNotFoundError,
+				AuditDetectionInvalidError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("deleteDetection", "/detections/:id", {
+			params: { id: AlertRuleId },
+			success: AuditDetectionDeleteResponse,
+			error: [AuditTrailPersistenceError, AuditTrailForbiddenError, AuditDetectionNotFoundError],
 		}),
 	)
 	.prefix("/internal/audit-trail")

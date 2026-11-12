@@ -2,9 +2,11 @@
 // Every read is pinned to the managed route, like `audit_log`: the table is written through
 // `ingest` and does not exist in a BYO ClickHouse.
 
+import { Schema } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { CHNumber } from "../schema"
 import { orgIdParam } from "../tables"
 
 /**
@@ -87,4 +89,40 @@ export function auditTrailEventsQuery(opts: AuditTrailEventsOpts) {
 			.format("JSON")
 			.route("ingest")
 	)
+}
+
+/** Which optional filters a count applies; each set flag binds a parameter of the same name. */
+export interface AuditTrailCountOpts {
+	readonly provider?: boolean
+	readonly category?: boolean
+	readonly outcome?: boolean
+	readonly action?: boolean
+}
+
+export const auditTrailCountRowSchema = Schema.Struct({ events: CHNumber })
+
+/** How far back an event may have happened and still be counted when it arrives. */
+const AUDIT_TRAIL_LATE_ARRIVAL_SECONDS = 7 * 24 * 60 * 60
+
+/**
+ * How many of one org's events arrived in `(start, end]`, for a detection. Distinct ids, not
+ * rows: a redelivery is a second row until the table merges it. Params: orgId, start, end.
+ */
+export function auditTrailCountQuery(opts: AuditTrailCountOpts = {}) {
+	return from(Datasources.auditTrailEvents)
+		.select(($) => ({ events: CH.uniqExact($.Id) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.IngestedAt.gt(param.dateTime("start")),
+			$.IngestedAt.lte(param.dateTime("end")),
+			// Prunes partitions and the sorting key, which follow OccurredAt. An event can
+			// arrive late; a week covers every provider's delivery delay.
+			$.OccurredAt.gte(CH.intervalSub(param.dateTime("start"), AUDIT_TRAIL_LATE_ARRIVAL_SECONDS)),
+			CH.whenTrue(!!opts.provider, () => $.Provider.eq(param.string("provider"))),
+			CH.whenTrue(!!opts.category, () => $.Category.eq(param.string("category"))),
+			CH.whenTrue(!!opts.outcome, () => $.Outcome.eq(param.string("outcome"))),
+			CH.whenTrue(!!opts.action, () => $.Action.eq(param.string("action"))),
+		])
+		.format("JSON")
+		.route("ingest")
 }

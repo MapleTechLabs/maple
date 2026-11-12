@@ -1502,6 +1502,25 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				},
 			),
 	},
+	// Audit detection count (AuditTrailService.ts `count`), every optional filter bound.
+	{
+		module: "audit-trail",
+		name: "auditTrailCountQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.auditTrailCountQuery({ provider: true, category: true, outcome: true, action: true }),
+				{
+					orgId: ORG_ID,
+					provider: "vercel",
+					category: "membership",
+					outcome: "success",
+					action: "team.member.added",
+					start: START_TIME,
+					end: END_TIME,
+				},
+			),
+	},
 	// Cancellation evidence (CancellationTelemetryEvidence.read).
 	{
 		module: "cancellation-evidence",

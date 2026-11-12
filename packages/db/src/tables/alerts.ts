@@ -15,6 +15,7 @@ import {
 import { StoredAlertMaintenanceSchedule } from "@maple/domain/alert-maintenance-windows"
 import { AlertIncidentLabels } from "@maple/domain/alerts"
 import { AnomalySignalType } from "@maple/domain/anomalies"
+import { AuditDetectionFilters } from "@maple/domain/audit-trail"
 import { Schema } from "effect"
 
 const StringArray = Schema.Array(Schema.String)
@@ -82,6 +83,10 @@ export const AlertRules = PG.table("alert_rules", {
 		/** Anomaly rules only: detector signals in scope. Null/empty means every signal. */
 		anomalySignalsJson: PG.column(PG.nullable(PG.jsonb(Schema.Array(AnomalySignalType))), {
 			name: "anomaly_signals_json",
+		}),
+		/** Audit detections only: which events the rule counts. Null/empty means every event. */
+		auditFiltersJson: PG.column(PG.nullable(PG.jsonb(AuditDetectionFilters)), {
+			name: "audit_filters_json",
 		}),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
 		tagsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "tags_json" }),

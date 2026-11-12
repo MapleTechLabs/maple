@@ -373,6 +373,20 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
+-- builder:audit-trail:auditTrailCountQuery:filtered  [ee015597]
+SELECT
+          uniqExact(audit_trail_events.Id) AS events
+        FROM audit_trail_events
+        WHERE audit_trail_events.OrgId = 'org_sql_catalog'
+          AND audit_trail_events.IngestedAt > '2026-01-01 10:30:00'
+          AND audit_trail_events.IngestedAt <= '2026-01-03 14:15:00'
+          AND audit_trail_events.OccurredAt >= '2026-01-01 10:30:00' - INTERVAL 604800 SECOND
+          AND audit_trail_events.Provider = 'vercel'
+          AND audit_trail_events.Category = 'membership'
+          AND audit_trail_events.Outcome = 'success'
+          AND audit_trail_events.Action = 'team.member.added'
+        FORMAT JSON
+
 -- builder:audit-trail:auditTrailEventsQuery:default  [9ab77231]
 SELECT
           audit_trail_events.Id AS id,
