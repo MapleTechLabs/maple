@@ -860,7 +860,7 @@ describe("MapleFlush.make (client)", () => {
 		dom.setHidden()
 		dom.fire("visibilitychange")
 		expect(traceCalls(calls)).toHaveLength(1)
-		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(warnSpy).not.toHaveBeenCalled()
 
 		dom.fire("pagehide")
 		expect(spanNames(traceCalls(calls).slice(1))).toEqual(["rejected"])
@@ -1158,7 +1158,7 @@ describe("MapleFlush.make (client)", () => {
 
 		fail = false
 		await telemetry.flush()
-		expect(warnSpy).toHaveBeenCalledTimes(1)
+		expect(warnSpy).not.toHaveBeenCalled()
 		expect(traceCalls(calls)).toHaveLength(1)
 		vi.advanceTimersByTime(60_000)
 		await telemetry.flush()

@@ -8,6 +8,9 @@ const info = { status: 200, queryId: "query-test", exceptionTag: "abcdefghijklmn
 const collect = (chunks: Uint8Array[], limits = {}) =>
 	Stream.runCollect(decodeRows(Stream.fromIterable(chunks), info, limits))
 const chunksAt = (bytes: Uint8Array, cut: number) => [bytes.subarray(0, cut), bytes.subarray(cut)]
+/** Wire bytes from text parts and raw byte parts, for sequences a string cannot hold. */
+const concat = (...parts: ReadonlyArray<string | ReadonlyArray<number>>) =>
+	Uint8Array.from(Arr.flatMap(parts, (part) => (typeof part === "string" ? [...encode(part)] : part)))
 const message = "Code: 395. DB::Exception: oh no 🦊. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)\n"
 const frame = `\r\n__exception__\r\n${info.exceptionTag}\r\n${message}${encode(message).length} ${info.exceptionTag}\r\n__exception__\r\n`
 
@@ -78,17 +81,44 @@ describe("JSONEachRow framing", () => {
 			}),
 		)
 	}
-	for (const bytes of [
-		Uint8Array.of(0xff, 10),
-		Uint8Array.of(0xc3),
-		Uint8Array.of(123, 34, 120, 34, 58, 34, 0xc3, 34, 125, 10),
-	]) {
-		it.effect(`rejects invalid UTF-8 ${bytes}`, () =>
+	// Invalid bytes outside a JSON string leave no row to recover.
+	for (const bytes of [Uint8Array.of(0xff, 10), Uint8Array.of(0xc3), concat('{"x":1}', [0xff], "\n")]) {
+		it.effect(`rejects invalid UTF-8 outside a string ${bytes}`, () =>
 			Effect.gen(function* () {
 				assert.instanceOf(yield* Effect.flip(collect([bytes])), ClickHouseProtocolError)
 			}),
 		)
 	}
+	// "h" plus the first byte of "é" (a cut character), a lone 0xff and an overlong "/".
+	const lossyWire = concat(
+		'{"before":"東京"}\n{"cut":"h',
+		[0xc3],
+		'","raw":"a',
+		[0xff],
+		'b","overlong":"',
+		[0xc0, 0xaf],
+		'","ok":"é🦊"}\n{"after":"🦊"}\n',
+	)
+	const lossyRows = [
+		{ before: "東京" },
+		{ cut: "h�", raw: "a�b", overlong: "��", ok: "é🦊" },
+		{ after: "🦊" },
+	]
+	for (let cut = 0; cut <= lossyWire.length; cut++) {
+		it.effect(`replaces invalid UTF-8 in a cell and keeps valid text at byte split ${cut}`, () =>
+			Effect.gen(function* () {
+				assert.deepStrictEqual(yield* collect(chunksAt(lossyWire, cut)), lossyRows)
+			}),
+		)
+	}
+	it.effect("replaces invalid UTF-8 across one-byte chunks", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(
+				yield* collect(Arr.map([...lossyWire], (byte) => Uint8Array.of(byte))),
+				lossyRows,
+			)
+		}),
+	)
 	it.effect("does not mistake exception-looking JSON strings for server errors", () =>
 		Effect.gen(function* () {
 			const rows = [{ text: frame }, { text: message }]
@@ -129,6 +159,50 @@ describe("errors after HTTP 200", () => {
 			)
 		}
 	}
+	// The server counts the message in raw bytes, so 0xff is one byte, not a 3-byte U+FFFD.
+	const rawMessage = concat(
+		"Code: 6. DB::Exception: Cannot parse string 'h",
+		[0xc3, 0xff],
+		"'. (CANNOT_PARSE_TEXT)\n",
+	)
+	const rawFrame = concat(
+		'{"partial":"h',
+		[0xc3],
+		`\r\n__exception__\r\n${info.exceptionTag}\r\n`,
+		[...rawMessage],
+		`${rawMessage.length} ${info.exceptionTag}\r\n__exception__\r\n`,
+	)
+	for (const [name, bytes] of [
+		["framed", rawFrame],
+		["legacy", concat('{"ok":1}\n', [...rawMessage])],
+	] as const)
+		for (let cut = 0; cut <= bytes.length; cut++) {
+			it.effect(`${name} exception with invalid UTF-8 survives byte split ${cut}`, () =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(collect(chunksAt(bytes, cut)))
+					assert.instanceOf(error, ClickHouseServerError)
+					if (Schema.is(ClickHouseServerError)(error)) {
+						assert.strictEqual(error.code, "6")
+						assert.strictEqual(error.type, "CANNOT_PARSE_TEXT")
+						assert.include(error.message, "Cannot parse string 'h��'")
+					}
+				}),
+			)
+		}
+	it.effect("bounds an exception payload by raw bytes, not by its decoded size", () =>
+		Effect.gen(function* () {
+			const head = "Code: 6. DB::Exception: "
+			const tail = " (CANNOT_PARSE_TEXT)\n"
+			const fill = (size: number) =>
+				concat(
+					head,
+					Array.from({ length: size - head.length - tail.length }, () => 0xff),
+					tail,
+				)
+			assert.instanceOf(yield* Effect.flip(collect([fill(16 * 1024)])), ClickHouseServerError)
+			assert.instanceOf(yield* Effect.flip(collect([fill(16 * 1024 + 1)])), ClickHouseProtocolError)
+		}),
+	)
 	for (const [name, bad] of [
 		["wrong tag", Str.replaceAll(info.exceptionTag, "wrong")(frame)],
 		["wrong length", Str.replace(`${encode(message).length} `, "1 ")(frame)],
@@ -152,6 +226,18 @@ describe("bounds before row assembly", () => {
 			const error = yield* Effect.flip(collect([bytes], { maxBytes: bytes.length - 1 }))
 			assert.instanceOf(error, ClickHouseLimitError)
 			if (Schema.is(ClickHouseLimitError)(error)) assert.strictEqual(error.kind, "bytes")
+		}),
+	)
+	it.effect("counts an invalid byte once against the byte and row limits", () =>
+		Effect.gen(function* () {
+			const bytes = concat('{"s":"', [0xff], '"}\n')
+			const row = [{ s: "�" }]
+			assert.deepStrictEqual(yield* collect([bytes], { maxBytes: bytes.length }), row)
+			assert.deepStrictEqual(yield* collect([bytes], { maxRowBytes: bytes.length - 1 }), row)
+			assert.instanceOf(
+				yield* Effect.flip(collect([bytes], { maxRowBytes: bytes.length - 2 })),
+				ClickHouseLimitError,
+			)
 		}),
 	)
 	it.effect("fails before pulling the rest of a never-terminated giant row", () =>

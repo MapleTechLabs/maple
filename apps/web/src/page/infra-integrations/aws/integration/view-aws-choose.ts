@@ -62,7 +62,10 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 		(code) => ({ code, location: "" }),
 	)
 	return h.ul(
-		[h.Class("grid grid-cols-1 gap-x-4 @2xl/page:grid-cols-2"), h.AriaLabel("Regions")],
+		[
+			h.Class("grid grid-cols-1 gap-x-6 @2xl/page:grid-cols-2 @3xl/page:grid-cols-3"),
+			h.AriaLabel("Regions"),
+		],
 		Arr.map([...REGIONS, ...extra], (region) => {
 			const isPicked = selection.regions.includes(region.code)
 			const inputId = `aws-region-${region.code}`
@@ -90,7 +93,10 @@ const regionList = (h: H, connection: V2AwsConnection, selection: AwsSelection):
 
 const serviceGrid = (h: H, connection: V2AwsConnection, selection: AwsSelection): Html =>
 	h.ul(
-		[h.Class("grid grid-cols-1 gap-2 @2xl/page:grid-cols-2"), h.AriaLabel("Services")],
+		[
+			h.Class("grid grid-cols-1 gap-2 @2xl/page:grid-cols-2 @5xl/page:grid-cols-3"),
+			h.AriaLabel("Services"),
+		],
 		Arr.map(AWS_METRIC_NAMESPACES, (namespace) => {
 			const isPicked = selection.namespaces.includes(namespace)
 			const id = `aws-namespace-${Str.toLowerCase(Str.replace("/", "-")(namespace))}`

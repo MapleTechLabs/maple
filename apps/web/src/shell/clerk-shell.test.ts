@@ -3,14 +3,15 @@ import type { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene, text } from "foldkit/scene"
-import { describe, expect, test } from "vitest"
-import { isRedirectOnlyRoute } from "../page/chrome"
-import { AppRoute } from "../route"
+import { describe, expect, test, vi } from "vitest"
+
+// Clerk mode is read at import: without it the shell reads no checklist at all.
+vi.hoisted(() => vi.stubEnv("VITE_MAPLE_AUTH_MODE", "clerk"))
 import * as Popover from "@maple/views/ui/popover"
 import { billingBanners } from "./billing-banners"
 import { Message as ShellMessage, type Message } from "./message"
 import { init } from "./model"
-import { checklistRefreshOnNavigation, update } from "./update"
+import { enter, routeChanged, update } from "./update"
 import * as Checklist from "./onboarding-checklist"
 import * as SupportChannel from "./support-channel"
 
@@ -63,27 +64,94 @@ describe("onboarding reward pill", () => {
 		expect(Checklist.update(open, Checklist.Message.ClickedDone()).model.isJustClaimed).toBe(false)
 	})
 
-	test("a navigation re-reads an in-progress checklist only onto a page with the top bar", () => {
-		const base = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
-		const withStatus = (status: V2OnboardingChecklist["status"]) => ({
-			...base,
-			checklist: { ...loaded, checklist: checklist(status) },
-		})
-		const shell = withStatus("in_progress")
-		expect(names({ commands: checklistRefreshOnNavigation(shell, true, true) })).toEqual([
-			"LoadOnboardingChecklist",
-		])
-		expect(checklistRefreshOnNavigation(shell, false, true)).toEqual([])
-		expect(checklistRefreshOnNavigation({ ...base, checklist: Checklist.init() }, true, true)).toEqual([])
-		for (const settled of ["claimable", "claimed", "expired"] as const)
-			expect(checklistRefreshOnNavigation(withStatus(settled), true, true)).toEqual([])
+	const base = init({ isMobile: false, theme: "light", pinnedNamespaces: {}, dashboardFavorites: [] })
+	const landed = (status: V2OnboardingChecklist["status"]) =>
+		Checklist.Message.SucceededLoadChecklist({ checklist: checklist(status), nowMs: 0 })
+	const shellStep = (model: typeof base, message: Checklist.Message) =>
+		update(model, ShellMessage.GotChecklistMessage({ message })).model
+	/** The countdown's clock, `seconds` after the read landed at 0. */
+	const later = (model: Checklist.Model, seconds: number) =>
+		Checklist.update(model, Checklist.Message.TickedClock({ nowMs: seconds * 1000 })).model
+
+	test("the org's first read is not repeated by a navigation that follows it", () => {
+		const first = Checklist.enter(Checklist.init())
+		expect(names(first)).toContain("LoadOnboardingChecklist")
+		// The shell reads the pill and its viewer on entering an org, and enters an org once.
+		const entered = enter("org_1")(base)
+		expect(names(entered)).toEqual(
+			expect.arrayContaining(["LoadOnboardingChecklist", "LoadOnboardingChecklistViewer"]),
+		)
+		expect(names(enter("org_1")(entered.model))).toEqual([])
+
+		// Not while the first read is still out, and not once it has landed, whatever it said.
+		const reading = { ...base, checklist: first.model }
+		expect(names(routeChanged(false)(reading))).toEqual([])
+		for (const status of ["in_progress", "claimable", "claimed", "expired"] as const) {
+			const shell = shellStep(reading, landed(status))
+			expect(shell.checklist.checklist?.status).toBe(status)
+			expect(names(routeChanged(false)(shell))).toEqual([])
+			expect(names(routeChanged(true)(shell))).toEqual([])
+		}
 	})
 
-	test("leaving a retired settings tab's redirect is not a navigation the pill saw", () => {
-		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "organization" } }))).toBe(true)
-		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "notifications" } }))).toBe(true)
-		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: { tab: "general" } }))).toBe(false)
-		expect(isRedirectOnlyRoute(AppRoute.Settings({ search: {} }))).toBe(false)
+	test("only one read is in flight: a second trigger waits for the first to land", () => {
+		const open = Checklist.Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() })
+		const first = Checklist.update(loaded, open)
+		expect(names(first)).toContain("LoadOnboardingChecklist")
+		// A navigation onto a stale in-progress checklist starts no second read beside it.
+		const inProgress = later({ ...first.model, checklist: checklist("in_progress") }, 120)
+		expect(names(Checklist.navigated(inProgress))).toEqual([])
+		// Closed and opened again before the answer: still the one read.
+		const closed = { ...first.model, popover: loaded.popover }
+		expect(names(Checklist.update(closed, open))).not.toContain("LoadOnboardingChecklist")
+		// Once it lands the popover reads again, and so does a failed read.
+		const after = Checklist.update(closed, landed("claimable")).model
+		expect(names(Checklist.update(after, open))).toContain("LoadOnboardingChecklist")
+		const failed = Checklist.update(closed, Checklist.Message.FailedLoadChecklist()).model
+		expect(names(Checklist.update(failed, open))).toContain("LoadOnboardingChecklist")
+	})
+
+	test("a claim that lands during a read is read again after it, not beside it", () => {
+		const reading = Checklist.update(
+			{ ...loaded, isClaimPending: true },
+			Checklist.Message.GotPopoverMessage({ message: Popover.Message.ClickedTrigger() }),
+		).model
+		const claimed = Checklist.update(reading, Checklist.Message.SucceededClaim())
+		expect(names(claimed)).toEqual([])
+		// The answer in flight predates the credit: the claim's own read follows it, once.
+		const stale = Checklist.update(claimed.model, landed("claimable"))
+		expect(names(stale)).toEqual(["LoadOnboardingChecklist"])
+		expect(names(Checklist.update(stale.model, landed("claimed")))).toEqual([])
+	})
+
+	test("a navigation re-reads an in-progress checklist once it is stale, and a burst reads once", () => {
+		const withStatus = (status: V2OnboardingChecklist["status"]) =>
+			Checklist.update(Checklist.init(), landed(status)).model
+		const inProgress = withStatus("in_progress")
+		// Pages opened within seconds of the read reuse its answer.
+		expect(names(Checklist.navigated(later(inProgress, 5)))).toEqual([])
+		expect(names(Checklist.navigated(later(inProgress, 29)))).toEqual([])
+		// A stale answer is read again, and the pages opened while that read is out add nothing.
+		const reread = Checklist.navigated(later(inProgress, 30))
+		expect(names(reread)).toEqual(["LoadOnboardingChecklist"])
+		expect(names(Checklist.navigated(later(reread.model, 31)))).toEqual([])
+		// Its answer is fresh again from the clock it landed at.
+		const fresh = Checklist.update(
+			reread.model,
+			Checklist.Message.SucceededLoadChecklist({ checklist: checklist("in_progress"), nowMs: 31_000 }),
+		).model
+		expect(names(Checklist.navigated(later(fresh, 40)))).toEqual([])
+		expect(names(Checklist.navigated(later(fresh, 61)))).toEqual(["LoadOnboardingChecklist"])
+		// A settled checklist changes only through the claim, and no pill has nothing to refresh.
+		for (const settled of ["claimable", "claimed", "expired"] as const)
+			expect(names(Checklist.navigated(later(withStatus(settled), 600)))).toEqual([])
+		expect(names(Checklist.navigated(later(Checklist.init(), 600)))).toEqual([])
+		// The shell asks on a new page only, not on a search change within one.
+		const stale = { ...base, checklist: later(inProgress, 30) }
+		expect(names(routeChanged(false)(stale))).toEqual(["LoadOnboardingChecklist"])
+		expect(names(routeChanged(true)(stale))).toEqual([])
+		// A page with no top bar mounts no pill, so there is nothing to refresh on the way to it.
+		expect(names(routeChanged(false, false)(stale))).toEqual([])
 	})
 
 	test("a refused claim shows why", () => {
