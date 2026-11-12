@@ -1,4 +1,4 @@
-import { OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -201,6 +201,24 @@ const withReread = (step: Return, context: PageContext): Return =>
 		(next) => requestData(next, context, "Supersede"),
 	)
 
+/**
+ * The list on show without the OpenRouter source, which a removal just deleted: its row is gone
+ * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
+ */
+const withoutOpenRouterSource = (model: Model): Model => ({
+	...model,
+	sources: {
+		...model.sources,
+		data: AsyncData.map(
+			model.sources.data,
+			(response) =>
+				new CostSourcesResponse({
+					sources: Arr.filter(response.sources, (source) => source.provider !== "openrouter"),
+				}),
+		),
+	},
+})
+
 /** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
 const hasOpenRouterSource = (model: Model): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
@@ -396,7 +414,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
 		CompletedRemoveKey: ({ result }) => {
 			const closed = liftRemoveDialog(
-				{ ...model, sourceWrite: Result.isSuccess(result) ? "Settling" : "Idle" },
+				Result.isSuccess(result)
+					? withoutOpenRouterSource({ ...model, sourceWrite: "Settling" })
+					: { ...model, sourceWrite: "Idle" },
 				Dialog.close(model.removeDialog),
 			)
 			return Result.match(result, {

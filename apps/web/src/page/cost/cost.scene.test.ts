@@ -354,28 +354,30 @@ describe("cost page", () => {
 				"FetchCostBreakdown",
 			]),
 		)
-		// Until the new list is in, the row on show is the removed source's: its actions wait.
+		// The removed source's row is gone at once, and adding waits for the list read after the write.
 		scene(
 			{ update: pageUpdate, view },
 			given(removed.model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: "Replace key" })).toBeDisabled(),
-			expectView(role("button", { name: "Remove" })).toBeDisabled(),
+			expectView(text("user_2openrouterAccount")).not.toExist(),
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeDisabled(),
 		)
-		const settled = pageUpdate(
+		// That read failing brings no action back on the removed source: the list keeps without it.
+		const refreshFailed = pageUpdate(
 			removed.model,
 			Message.CompletedLoadSources({
 				key: removed.model.sources.key ?? "",
-				result: Result.succeed(sources([source()])),
+				result: Result.fail(toLoadFailure("unreachable")),
 			}),
 		).model
 		scene(
 			{ update: pageUpdate, view },
-			given(settled),
+			given(refreshFailed),
 			resolveTheme,
 			dialogMounted,
+			expectView(text("123456789012")).toExist(),
 			expectView(role("button", { name: "Replace key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 		)
