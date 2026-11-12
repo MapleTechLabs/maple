@@ -2,6 +2,7 @@ import { Array as Arr, Order } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	SECURITY_AUDIT_MODELS,
+	securityAuditIntelligenceLevel,
 	securityAuditPriceLevel,
 	type SecurityAuditModelOption,
 } from "./security-audit"
@@ -29,5 +30,22 @@ describe("securityAuditPriceLevel", () => {
 		expect(securityAuditPriceLevel(priced(1, 0.1))).toBeGreaterThan(
 			securityAuditPriceLevel(priced(0.1, 1)),
 		)
+	})
+})
+
+describe("securityAuditIntelligenceLevel", () => {
+	it("never rates a lower-scoring model above a higher-scoring one", () => {
+		const byScore = Order.mapInput(
+			Order.Number,
+			(model: SecurityAuditModelOption) => model.intelligenceIndex,
+		)
+		const levels = Arr.map(Arr.sort(SECURITY_AUDIT_MODELS, byScore), securityAuditIntelligenceLevel)
+		expect(levels).toEqual(Arr.sort(levels, Order.Number))
+	})
+
+	it("spans 1 for small models to 5 for the top of the leaderboard", () => {
+		expect(securityAuditIntelligenceLevel({ intelligenceIndex: 10 })).toBe(1)
+		expect(securityAuditIntelligenceLevel({ intelligenceIndex: 30 })).toBe(3)
+		expect(securityAuditIntelligenceLevel({ intelligenceIndex: 65 })).toBe(5)
 	})
 })

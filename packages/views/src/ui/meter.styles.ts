@@ -20,10 +20,10 @@ export const levelMeterPipStyles = "h-2.5 w-1 rounded-xs"
 
 export const levelMeterPipOnStyles = "bg-muted-foreground"
 
-export const levelMeterPipLowStyles = "bg-success"
+export const levelMeterPipGoodStyles = "bg-success"
 
 export const levelMeterPipMidStyles = "bg-warning"
 
-export const levelMeterPipHighStyles = "bg-destructive"
+export const levelMeterPipBadStyles = "bg-destructive"
 
 export const levelMeterPipOffStyles = "bg-surface-strong"

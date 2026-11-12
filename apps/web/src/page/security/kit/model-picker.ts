@@ -1,13 +1,16 @@
 import {
+	SECURITY_AUDIT_INTELLIGENCE_SOURCE,
 	SECURITY_AUDIT_MODELS,
-	SECURITY_AUDIT_PRICE_LEVELS,
+	SECURITY_AUDIT_RATING_LEVELS,
+	securityAuditIntelligenceLevel,
 	securityAuditModelOption,
 	securityAuditPriceLevel,
 	type SecurityAuditModelOption,
 } from "@maple/domain/security-audit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Select from "@maple/views/ui/select"
-import { levelMeter } from "@maple/views/ui/meter"
+import { icon } from "@maple/views/ui/icon"
+import { levelMeter, type LevelRamp } from "@maple/views/ui/meter"
 import * as SelectView from "@maple/views/ui/select-view"
 import { modelLabel } from "./format"
 import { typography } from "@maple/views/ui/typography"
@@ -30,34 +33,63 @@ const optionsFor = (stage: ModelStage) =>
 export const modelIdsFor = (stage: ModelStage): ReadonlyArray<string> =>
 	Arr.map(optionsFor(stage), (model) => model.id)
 
-/** The list price a row's tooltip spells out behind its price pips. */
-const priceTitle = (model: SecurityAuditModelOption): string =>
+/** What a row's tooltip spells out behind its pips: the benchmark score and the list price. */
+const ratingTitle = (model: SecurityAuditModelOption): string =>
+	`Intelligence ${model.intelligenceIndex} (${SECURITY_AUDIT_INTELLIGENCE_SOURCE}) · ` +
 	`$${model.inputUsd} in, $${model.outputUsd} out per million tokens (list price)`
 
 const entriesFor = (stage: ModelStage): ReadonlyArray<SelectView.SelectEntry> =>
 	Arr.map(optionsFor(stage), (model) => ({
 		_tag: "Item",
-		item: { value: model.id, label: model.label, title: priceTitle(model) },
+		item: { value: model.id, label: model.label, title: ratingTitle(model) },
 	}))
 
-/** A picker row: the model and its provider, then its price as pips. */
+/** One rating: its icon, then its level as pips. */
+const rating = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		name: string
+		glyph: "SparkleIcon" | "CircleDollarIcon"
+		level: number
+		ramp: LevelRamp
+	}>,
+): Html =>
+	hstack(h, { gap: "1", align: "center" }, [
+		icon(h, options.glyph, {
+			size: 12,
+			className: "text-muted-foreground",
+			attributes: [h.AriaHidden(true)],
+		}),
+		levelMeter(h, {
+			value: options.level,
+			max: SECURITY_AUDIT_RATING_LEVELS,
+			ramp: options.ramp,
+			label: `${options.name} ${options.level} of ${SECURITY_AUDIT_RATING_LEVELS}`,
+		}),
+	])
+
+/** A picker row: the model and its provider, then its intelligence and price as pips. */
 const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): ReadonlyArray<Html> => {
 	const model = securityAuditModelOption(option.value)
 	if (model === undefined) return [typography(h, {}, [option.label])]
-	const level = securityAuditPriceLevel(model)
 	return [
 		hstack(h, { gap: "4", align: "center", justify: "between" }, [
 			hstack(h, { gap: "2", align: "baseline" }, [
 				typography(h, {}, [model.label]),
 				typography(h, { size: "xs", tone: "muted" }, [model.provider]),
 			]),
-			hstack(h, { gap: "1.5", align: "center" }, [
-				typography(h, { size: "xs", tone: "muted", attributes: [h.AriaHidden(true)] }, ["$"]),
-				levelMeter(h, {
-					value: level,
-					max: SECURITY_AUDIT_PRICE_LEVELS,
-					ramp: true,
-					label: `Price ${level} of ${SECURITY_AUDIT_PRICE_LEVELS}`,
+			hstack(h, { gap: "3", align: "center" }, [
+				rating(h, {
+					name: "Intelligence",
+					glyph: "SparkleIcon",
+					level: securityAuditIntelligenceLevel(model),
+					ramp: "high-is-good",
+				}),
+				rating(h, {
+					name: "Price",
+					glyph: "CircleDollarIcon",
+					level: securityAuditPriceLevel(model),
+					ramp: "low-is-good",
 				}),
 			]),
 		]),

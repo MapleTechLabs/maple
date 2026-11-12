@@ -81,7 +81,8 @@ export const securityAuditSpendWindow = (
  * The models an org may pick for its audits, as OpenRouter ids. `eu` marks a model the EU instance
  * serves; there, a pick without it runs on the region's default. `verifies` is false for a model
  * that refused verifier prompts in the phase 0 eval. `inputUsd` and `outputUsd` are OpenRouter's
- * list prices per million tokens (checked 2026-11-12).
+ * list prices per million tokens; `intelligenceIndex` is the public benchmark score named by
+ * `SECURITY_AUDIT_INTELLIGENCE_SOURCE` (both checked 2026-11-12).
  */
 export const SECURITY_AUDIT_MODELS = [
 	{
@@ -92,6 +93,7 @@ export const SECURITY_AUDIT_MODELS = [
 		verifies: true,
 		inputUsd: 0.15,
 		outputUsd: 0.6,
+		intelligenceIndex: 29,
 	},
 	{
 		id: "anthropic/claude-sonnet-5.5",
@@ -101,6 +103,7 @@ export const SECURITY_AUDIT_MODELS = [
 		verifies: true,
 		inputUsd: 2,
 		outputUsd: 10,
+		intelligenceIndex: 42,
 	},
 	{
 		id: "anthropic/claude-haiku-5.5",
@@ -110,6 +113,7 @@ export const SECURITY_AUDIT_MODELS = [
 		verifies: true,
 		inputUsd: 0.1,
 		outputUsd: 0.5,
+		intelligenceIndex: 30,
 	},
 	{
 		id: "openai/gpt-6-luna",
@@ -119,6 +123,7 @@ export const SECURITY_AUDIT_MODELS = [
 		verifies: true,
 		inputUsd: 0.1,
 		outputUsd: 0.5,
+		intelligenceIndex: 21,
 	},
 ] as const
 
@@ -139,27 +144,37 @@ export const SecurityAuditValidationModel = Schema.Literals(
 )
 export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.Type
 
+/** Upper bounds of levels 1 to 4 on a five-level rating; anything above the last is level 5. */
+type LevelBounds = readonly [number, number, number, number]
+
+/** How many levels a price or intelligence rating has: one per bound, plus the open-ended top. */
+export const SECURITY_AUDIT_RATING_LEVELS = 5
+
+const levelWithin = (bounds: LevelBounds, value: number): number =>
+	Option.getOrElse(
+		Arr.findFirstIndex(bounds, (bound) => value <= bound),
+		() => bounds.length,
+	) + 1
+
 /** Audit agents read far more than they write (about 4.6M input tokens a run), so input weighs 3 to 1. */
 type ListPrice = Readonly<{ inputUsd: number; outputUsd: number }>
 
-const blendedUsdPerMillion = (model: ListPrice): number => (3 * model.inputUsd + model.outputUsd) / 4
+/** Blended dollars per million tokens; each step is roughly 3x the last. */
+const PRICE_LEVEL_BOUNDS: LevelBounds = [0.5, 1.5, 5, 15]
 
-/** Upper bounds, in blended dollars per million tokens, of price levels 1 to 4; above the last is 5. */
-const PRICE_LEVEL_BOUNDS = [0.5, 1.5, 5, 15] as const
+/** A model's list price as a level from 1 (cheapest) to 5. */
+export const securityAuditPriceLevel = (model: ListPrice): number =>
+	levelWithin(PRICE_LEVEL_BOUNDS, (3 * model.inputUsd + model.outputUsd) / 4)
 
-/** How many price levels there are: one per bound, plus the open-ended top level. */
-export const SECURITY_AUDIT_PRICE_LEVELS = PRICE_LEVEL_BOUNDS.length + 1
+/** Where `intelligenceIndex` comes from, as the picker's tooltip names it. */
+export const SECURITY_AUDIT_INTELLIGENCE_SOURCE = "Artificial Analysis Intelligence Index v5.0.1, high effort"
 
-/** A model's list price as a level from 1 (cheapest) to 5, on a roughly 3x-per-step scale. */
-export const securityAuditPriceLevel = (model: ListPrice): number => {
-	const blended = blendedUsdPerMillion(model)
-	return (
-		Option.getOrElse(
-			Arr.findFirstIndex(PRICE_LEVEL_BOUNDS, (bound) => blended <= bound),
-			() => PRICE_LEVEL_BOUNDS.length,
-		) + 1
-	)
-}
+/** Index points, 10 per level; the leaderboard tops out in the 60s. */
+const INTELLIGENCE_LEVEL_BOUNDS: LevelBounds = [15, 25, 35, 45]
+
+/** A model's public benchmark score as a level from 1 to 5. */
+export const securityAuditIntelligenceLevel = (model: Readonly<{ intelligenceIndex: number }>): number =>
+	levelWithin(INTELLIGENCE_LEVEL_BOUNDS, model.intelligenceIndex)
 
 /** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
 export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>

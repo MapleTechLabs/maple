@@ -4,8 +4,8 @@ import {
 	backdropBarLeftStyles,
 	backdropBarRightStyles,
 	backdropBarStyles,
-	levelMeterPipHighStyles,
-	levelMeterPipLowStyles,
+	levelMeterPipBadStyles,
+	levelMeterPipGoodStyles,
 	levelMeterPipMidStyles,
 	levelMeterPipOffStyles,
 	levelMeterPipOnStyles,
@@ -145,24 +145,34 @@ export const backdropBar = <M>(
 export const barFillClass = (className?: string): string =>
 	cn("absolute inset-y-0 left-0 rounded-xs", className)
 
-/** Lit pips by how far up the scale the level sits: the bottom two fifths low, the top two high. */
-const rampFill = (value: number, max: number): string => {
+/** Which end of a level scale is the good one, for `ramp`. */
+export type LevelRamp = "low-is-good" | "high-is-good"
+
+/** Lit pips by where the level sits: the bottom two fifths, the middle fifth or the top two. */
+const rampFill = (value: number, max: number, ramp: LevelRamp): string => {
 	const fraction = max > 0 ? value / max : 0
-	if (fraction <= 0.4) return levelMeterPipLowStyles
-	if (fraction <= 0.6) return levelMeterPipMidStyles
-	return levelMeterPipHighStyles
+	if (fraction > 0.4 && fraction <= 0.6) return levelMeterPipMidStyles
+	const isLow = fraction <= 0.4
+	return isLow === (ramp === "low-is-good") ? levelMeterPipGoodStyles : levelMeterPipBadStyles
 }
 
 /**
  * `LevelMeter`: a rating as `max` pips with the first `value` lit, such as a price from 1 to 5.
- * `ramp` colours the lit pips green, amber or red by level, for a scale where higher costs more.
+ * `ramp` colours the lit pips green, amber or red by level, green at the end named good.
  */
 export const levelMeter = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ value: number; max?: number; label: string; ramp?: boolean; className?: string }>,
+	options: Readonly<{
+		value: number
+		max?: number
+		label: string
+		ramp?: LevelRamp
+		className?: string
+	}>,
 ): Html => {
 	const max = options.max ?? 5
-	const litFill = options.ramp === true ? rampFill(options.value, max) : levelMeterPipOnStyles
+	const litFill =
+		options.ramp === undefined ? levelMeterPipOnStyles : rampFill(options.value, max, options.ramp)
 	return h.div(
 		[
 			h.Class(cn(levelMeterStyles, options.className)),
