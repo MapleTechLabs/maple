@@ -467,4 +467,46 @@ describe("mergePrReviewConfig", () => {
 		const repository = new PrReviewRepositoryConfig({ dailyLimit: 3 })
 		assert.strictEqual(mergePrReviewConfig(undefined, repository), repository)
 	})
+
+	it.effect("sums code review credits by repository and pull request, with each later push as a re-review", () =>
+		provide(
+			Effect.gen(function* () {
+				yield* seed
+				const database = yield* Database
+				const price = (n: number, costMicrousd: number) =>
+					database.execute((db) =>
+						db.run(
+							PG.update(PrReviews)
+								.set({ costMicrousd })
+								.where(($) => [$.id.eq(reviewId(n))]),
+						),
+					)
+				// Two pushes of #10 priced, #11 ran before costs were kept, and another tenant's review.
+				yield* price(1, 1_000_000)
+				yield* price(2, 500_000)
+				yield* price(5, 9_000_000)
+				const spend = yield* (yield* PrReviewAnalyticsService).spend(ORG, {
+					start: START,
+					end: START + 10 * DAY,
+				})
+				assert.strictEqual(spend.reviews, 3)
+				assert.strictEqual(spend.pullRequests, 2)
+				assert.closeTo(spend.credits, 1.8, 1e-9)
+				assert.strictEqual(spend.unpricedReviews, 1)
+				assert.strictEqual(spend.reReviews, 1)
+				assert.closeTo(spend.reReviewCredits, 0.6, 1e-9)
+				assert.deepStrictEqual(
+					Arr.map(spend.repositories, (repo) => [repo.fullName, repo.pullRequests, repo.reviews]),
+					[["acme/web", 2, 3]],
+				)
+				assert.deepStrictEqual(
+					Arr.map(spend.topPullRequests, (pr) => [pr.number, pr.reviews, pr.title]),
+					[
+						[10, 2, "PR 10"],
+						[11, 1, "PR 11"],
+					],
+				)
+			}),
+		),
+	)
 })

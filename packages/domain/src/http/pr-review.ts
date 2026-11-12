@@ -425,6 +425,8 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	model: Schema.optionalKey(Schema.String),
 	inputTokens: Schema.optionalKey(Schema.Number),
 	outputTokens: Schema.optionalKey(Schema.Number),
+	/** What the model provider billed for the review's calls, in microdollars; absent when unreported. */
+	costMicrousd: Schema.optionalKey(Schema.Number),
 	/** Filed by the close-out turn after the pass ended without a report; posted as a partial. */
 	partial: Schema.optionalKey(Schema.Boolean),
 	/** Why the pass that preceded a partial stopped; the pull request is told this, not `ended_early`. */

@@ -1,11 +1,20 @@
 import { AI_CREDITS_FEATURE_ID, AiCreditSource } from "@maple/domain/billing"
 // The same day keys as `DailyVolume.date`, which the chart joins against.
 import { toUtcDateKey } from "@maple/backend/services/billing/DailySpendService"
-import { AiCreditDay, AiCreditSourceUsage, AiCreditUsageResponse } from "@maple/domain/http"
+import {
+	AiCreditDay,
+	AiCreditModelUsage,
+	AiCreditSourceUsage,
+	AiCreditUsageResponse,
+	type CodeReviewSpend,
+} from "@maple/domain/http"
 import { Array as Arr, Number as Num, Option, Order, Record as Rec, Schema } from "effect"
 
 /** The event property every AI credit charge is tracked with (`trackAiCredits`, `trackSecurityAuditCharge`). */
 export const AI_CREDIT_SOURCE_PROPERTY = "properties.source"
+
+/** The model a charge was for: Autumn's own on `track_tokens`, Maple's on a dollar charge. */
+export const AI_CREDIT_MODEL_PROPERTY = "properties.model"
 
 /** `/v1/events.aggregate` with `group_by`: per-day values, split per group. */
 export const AutumnGroupedAggregate = Schema.Struct({
@@ -28,31 +37,57 @@ type Source = AiCreditSourceUsage["source"]
 const sourceOf = (raw: string): Source =>
 	Option.getOrElse(Schema.decodeUnknownOption(AiCreditSource)(raw), (): Source => "other")
 
-/** This cycle's AI credit spend from Autumn's day-binned aggregate, split by source and by day. */
-export const aiCreditUsageOf = (aggregate: AutumnGroupedAggregate): AiCreditUsageResponse => {
-	const totals = new Map<Source, number>()
+/** One group's credits over every day of a grouped aggregate. */
+const groupTotals = (aggregate: AutumnGroupedAggregate): ReadonlyMap<string, number> => {
+	const totals = new Map<string, number>()
 	Arr.forEach(aggregate.list, (entry) =>
-		Arr.forEach(Rec.toEntries(entry.groupedValues?.[AI_CREDITS_FEATURE_ID] ?? {}), ([raw, credits]) => {
-			const source = sourceOf(raw)
-			totals.set(source, (totals.get(source) ?? 0) + credits)
-		}),
+		Arr.forEach(Rec.toEntries(entry.groupedValues?.[AI_CREDITS_FEATURE_ID] ?? {}), ([group, credits]) =>
+			totals.set(group, (totals.get(group) ?? 0) + credits),
+		),
 	)
+	return totals
+}
+
+const byCreditsDesc = <A extends { readonly credits: number }>() =>
+	Order.mapInput(Order.flip(Num.Order), (entry: A) => entry.credits)
+
+/**
+ * This cycle's AI credit spend from Autumn's day-binned aggregates, one grouped by source and one by
+ * model, beside the org's code review spend.
+ */
+export const aiCreditUsageOf = (
+	bySourceAggregate: AutumnGroupedAggregate,
+	byModelAggregate: AutumnGroupedAggregate,
+	codeReview: CodeReviewSpend | null,
+): AiCreditUsageResponse => {
+	const sources = new Map<Source, number>()
+	Arr.forEach(Arr.fromIterable(groupTotals(bySourceAggregate)), ([raw, credits]) => {
+		const source = sourceOf(raw)
+		sources.set(source, (sources.get(source) ?? 0) + credits)
+	})
 	return new AiCreditUsageResponse({
 		bySource: Arr.sort(
-			Arr.flatMap(Arr.fromIterable(totals), ([source, credits]) =>
+			Arr.flatMap(Arr.fromIterable(sources), ([source, credits]) =>
 				credits > 0 ? [new AiCreditSourceUsage({ source, credits })] : [],
 			),
 			Order.combine(
 				Order.mapInput(Order.Boolean, (entry: AiCreditSourceUsage) => entry.source === "other"),
-				Order.mapInput(Order.flip(Num.Order), (entry: AiCreditSourceUsage) => entry.credits),
+				byCreditsDesc<AiCreditSourceUsage>(),
 			),
 		),
 		days: Arr.sort(
-			Arr.flatMap(aggregate.list, (entry) => {
+			Arr.flatMap(bySourceAggregate.list, (entry) => {
 				const credits = entry.values[AI_CREDITS_FEATURE_ID] ?? 0
 				return credits > 0 ? [new AiCreditDay({ date: toUtcDateKey(entry.period), credits })] : []
 			}),
 			Order.mapInput(Order.String, (day: AiCreditDay) => day.date),
 		),
+		byModel: Arr.sort(
+			Arr.flatMap(Arr.fromIterable(groupTotals(byModelAggregate)), ([model, credits]) =>
+				credits > 0 ? [new AiCreditModelUsage({ model, credits })] : [],
+			),
+			byCreditsDesc<AiCreditModelUsage>(),
+		),
+		codeReview,
 	})
 }

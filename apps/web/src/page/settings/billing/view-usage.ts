@@ -20,6 +20,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
 import { segmentedBar } from "@maple/views/ui/meter"
+import { swatch } from "@maple/views/ui/swatch"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
@@ -183,7 +184,7 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 }
 
 /** Names for the `source` each AI credit charge is tracked with. */
-const AI_SOURCE_LABELS = {
+export const AI_SOURCE_LABELS = {
 	chat: "Chat",
 	triage: "Investigations",
 	review: "Code review",
@@ -243,11 +244,7 @@ const featureRow = (
 		[
 			tableCell(h, [
 				hstack(h, { gap: "2", shrink: true }, [
-					h.span([
-						h.AriaHidden(true),
-						h.Class("size-2 shrink-0 rounded-full"),
-						h.Style({ background: color }),
-					]),
+					swatch(h, { color, round: true, ariaHidden: true }),
 					typography(h, { truncate: true }, [feature.label]),
 				]),
 			]),

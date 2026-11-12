@@ -763,6 +763,8 @@ describe("AI credits", () => {
 			}),
 			aiDaily: new AiCreditUsageResponse({
 				bySource: [],
+				byModel: [],
+				codeReview: null,
 				days: [
 					new AiCreditDay({ date: "2026-07-01", credits: 8 }),
 					new AiCreditDay({ date: "2026-07-03", credits: 6 }),

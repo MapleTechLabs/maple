@@ -32,6 +32,7 @@ import {
 } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import {
+	AI_CREDIT_MODEL_PROPERTY,
 	AI_CREDIT_SOURCE_PROPERTY,
 	aiCreditUsageOf,
 	AutumnGroupedAggregate,
@@ -54,6 +55,7 @@ import { DailySpendService } from "@maple/backend/services/billing/DailySpendSer
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { BillingOrgService } from "@maple/backend/services/billing/BillingOrgService"
+import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 // Pull the `invoices` array off a raw expanded `getOrCreateCustomer` response.
@@ -138,6 +140,7 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 		const edgeCache = yield* EdgeCacheService
 		const dailySpend = yield* DailySpendService
 		const autumn = yield* AutumnClient
+		const codeReviews = yield* PrReviewAnalyticsService
 		const stripe = yield* StripeClient
 		const productEvents = yield* ProductEventsService
 		const organizations = yield* OrganizationService
@@ -259,15 +262,32 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const now = yield* Clock.currentTimeMillis
 						const cycle = resolveCycleWindow(customer, now)
 						yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-						const result = yield* autumn.aggregateEvents(customerId, {
-							featureId: AI_CREDITS_FEATURE_ID,
-							customRange: { start: cycle.startMs, end: cycle.endMs },
-							groupBy: AI_CREDIT_SOURCE_PROPERTY,
-						})
-						const aggregate = yield* ensureOk(result).pipe(
-							Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
+						const customRange = { start: cycle.startMs, end: cycle.endMs }
+						const grouped = (groupBy: string) =>
+							autumn
+								.aggregateEvents(customerId, { featureId: AI_CREDITS_FEATURE_ID, customRange, groupBy })
+								.pipe(
+									Effect.flatMap(ensureOk),
+									Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
+								)
+						const [bySource, byModel, codeReview] = yield* Effect.all(
+							[
+								grouped(AI_CREDIT_SOURCE_PROPERTY),
+								grouped(AI_CREDIT_MODEL_PROPERTY),
+								// The breakdown is extra detail: a failed read drops it, never the spend.
+								codeReviews.spend(tenant.orgId, customRange).pipe(
+									Effect.map((spend) => (spend.reviews > 0 ? spend : null)),
+									Effect.catchTag("@maple/http/pr-review/PrReviewPersistenceError", (error) =>
+										Effect.logWarning("Could not read code review spend").pipe(
+											Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+											Effect.as(null),
+										),
+									),
+								),
+							],
+							{ concurrency: "unbounded" },
 						)
-						return aiCreditUsageOf(aggregate)
+						return aiCreditUsageOf(bySource, byModel, codeReview)
 					}),
 				)
 				// Invoices ride along on getOrCreateCustomer via `expand`, but through a

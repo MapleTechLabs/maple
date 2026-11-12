@@ -5,7 +5,7 @@
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
 import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
 import type { ModelCallUsage } from "@yielded/agent/usage"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Number as Num } from "effect"
 import { autumnModelId } from "../platform/ai-credits"
 
 /**
@@ -85,6 +85,14 @@ const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
 	if (last.providerCostMicrousd !== undefined && providerCostMicrousd !== undefined) {
 		last.providerCostMicrousd += providerCostMicrousd
 	}
+}
+
+/** What the provider reported the run's calls cost, in microdollars; undefined when none reported one. */
+export const reportedCostMicrousd = (usage: Pick<RunUsage, "charges">): number | undefined => {
+	const priced = Arr.flatMap(usage.charges, (charge) =>
+		charge.providerCostMicrousd === undefined ? [] : [charge.providerCostMicrousd],
+	)
+	return priced.length === 0 ? undefined : Num.sumAll(priced)
 }
 
 /**

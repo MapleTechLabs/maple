@@ -2712,6 +2712,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					model: request.model ?? null,
 					inputTokens: request.inputTokens ?? null,
 					outputTokens: request.outputTokens ?? null,
+					costMicrousd: request.costMicrousd ?? null,
 					finishedAt: nowMs,
 					updatedAt: nowMs,
 					...(Option.isNone(repository)

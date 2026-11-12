@@ -4,8 +4,9 @@ import { aiCreditUsageOf, AutumnGroupedAggregate } from "./ai-credit-usage"
 import { camelizeKeys } from "./autumn-http"
 
 /** Autumn's raw snake_case answer, through the client's own key renaming and the endpoint's decode. */
-const fromAutumn = (raw: unknown) =>
-	aiCreditUsageOf(Schema.decodeUnknownSync(AutumnGroupedAggregate)(camelizeKeys(raw)))
+const decode = (raw: unknown) => Schema.decodeUnknownSync(AutumnGroupedAggregate)(camelizeKeys(raw))
+const fromAutumn = (raw: unknown, byModel: unknown = { list: [] }) =>
+	aiCreditUsageOf(decode(raw), decode(byModel), null)
 
 const day = (date: string) => Date.parse(`${date}T00:00:00Z`)
 
@@ -60,5 +61,29 @@ describe("aiCreditUsageOf", () => {
 	it("reads an empty cycle as nothing spent", () => {
 		const usage = fromAutumn({ list: [] })
 		expect([usage.bySource, usage.days]).toEqual([[], []])
+	})
+
+	it("totals each model over the cycle, largest first", () => {
+		const usage = fromAutumn(
+			{ list: [] },
+			{
+				list: [
+					{
+						period: day("2026-11-02"),
+						values: { ai_credits: 0.6 },
+						grouped_values: { ai_credits: { "openrouter/a/small": 0.1, "openrouter/b/large": 0.5 } },
+					},
+					{
+						period: day("2026-11-03"),
+						values: { ai_credits: 0.7 },
+						grouped_values: { ai_credits: { "openrouter/a/small": 0.7, "openrouter/c/idle": 0 } },
+					},
+				],
+			},
+		)
+		expect(Arr.map(usage.byModel, (entry) => [entry.model, Math.round(entry.credits * 100) / 100])).toEqual([
+			["openrouter/a/small", 0.8],
+			["openrouter/b/large", 0.5],
+		])
 	})
 })

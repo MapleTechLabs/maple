@@ -161,7 +161,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
 - `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
 - `packages/views/src/ui/step-trail.ts` `stepTrail`: A step flow's place, over a dialog's title: `1 WRITE / 2 REVIEW`.
-- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill.
+- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill, `round` a dot for a series that is a share, not a line.
 - `packages/views/src/ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
 - `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: The loading placeholder for row tables.
 - `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: The Table and its parts.
