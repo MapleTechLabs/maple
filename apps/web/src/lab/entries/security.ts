@@ -6,12 +6,18 @@ import * as AuditLogPage from "../../page/security/audit-log/model"
 import * as AuditLogUpdate from "../../page/security/audit-log/update"
 import { view as auditLogView } from "../../page/security/audit-log/view"
 import * as DependenciesPage from "../../page/security/dependencies/model"
+import * as DetectionFormPage from "../../page/security/detection-form/model"
+import * as DetectionFormUpdate from "../../page/security/detection-form/update"
+import { view as detectionFormView } from "../../page/security/detection-form/view"
+import * as DetectionsPage from "../../page/security/detections/model"
+import * as DetectionsUpdate from "../../page/security/detections/update"
+import { view as detectionsView } from "../../page/security/detections/view"
 import * as DependenciesUpdate from "../../page/security/dependencies/update"
 import { view as dependenciesView } from "../../page/security/dependencies/view"
 import * as FindingPage from "../../page/security/finding/model"
 import * as FindingUpdate from "../../page/security/finding/update"
 import { breadcrumbsOf as findingCrumbs, view as findingView } from "../../page/security/finding/view"
-import { breadcrumbsOf as tabsCrumbs } from "../../page/security/kit/layout"
+import { breadcrumbsOf as tabsCrumbs, detectionFormCrumbs } from "../../page/security/kit/layout"
 import * as RunPage from "../../page/security/run/model"
 import * as RunUpdate from "../../page/security/run/update"
 import { breadcrumbsOf as runCrumbs, view as runView } from "../../page/security/run/view"
@@ -34,6 +40,8 @@ const Model = Schema.Struct({
 	finding: Schema.NullOr(FindingPage.Model),
 	telemetry: Schema.NullOr(TelemetryPage.Model),
 	auditLog: Schema.NullOr(AuditLogPage.Model),
+	detections: Schema.NullOr(DetectionsPage.Model),
+	detectionForm: Schema.NullOr(DetectionFormPage.Model),
 	dependencies: Schema.NullOr(DependenciesPage.Model),
 })
 type Model = typeof Model.Type
@@ -44,6 +52,8 @@ const Message = defineMessageUnion({
 	GotFindingMessage: { message: FindingPage.Message },
 	GotTelemetryMessage: { message: TelemetryPage.Message },
 	GotAuditLogMessage: { message: AuditLogPage.Message },
+	GotDetectionsMessage: { message: DetectionsPage.Message },
+	GotDetectionFormMessage: { message: DetectionFormPage.Message },
 	GotDependenciesMessage: { message: DependenciesPage.Message },
 })
 type Message = typeof Message.Type
@@ -71,6 +81,8 @@ const init = (input: typeof Flags.Type) => {
 		finding: null,
 		telemetry: null,
 		auditLog: null,
+		detections: null,
+		detectionForm: null,
 		dependencies: null,
 	}
 	switch (built._tag) {
@@ -107,6 +119,20 @@ const init = (input: typeof Flags.Type) => {
 				model: { ...empty, auditLog: built.step.model },
 				commands: Command.mapMessages(built.step.commands, (message) =>
 					Message.GotAuditLogMessage({ message }),
+				),
+			}
+		case "Detections":
+			return {
+				model: { ...empty, detections: built.step.model },
+				commands: Command.mapMessages(built.step.commands, (message) =>
+					Message.GotDetectionsMessage({ message }),
+				),
+			}
+		case "DetectionForm":
+			return {
+				model: { ...empty, detectionForm: built.step.model },
+				commands: Command.mapMessages(built.step.commands, (message) =>
+					Message.GotDetectionFormMessage({ message }),
 				),
 			}
 		case "Dependencies":
@@ -171,6 +197,26 @@ const update = (model: Model, message: Message) =>
 				),
 			}
 		},
+		GotDetectionsMessage: ({ message: inner }) => {
+			if (model.detections === null) return { model }
+			const next = DetectionsUpdate.update(model.detections, inner, context)
+			return {
+				model: { ...model, detections: next.model },
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
+					Message.GotDetectionsMessage({ message: child }),
+				),
+			}
+		},
+		GotDetectionFormMessage: ({ message: inner }) => {
+			if (model.detectionForm === null) return { model }
+			const next = DetectionFormUpdate.update(model.detectionForm, inner, context)
+			return {
+				model: { ...model, detectionForm: next.model },
+				commands: Command.mapMessages(Arr.filter(next.commands ?? [], isLocalCommand), (child) =>
+					Message.GotDetectionFormMessage({ message: child }),
+				),
+			}
+		},
 		GotDependenciesMessage: ({ message: inner }) => {
 			if (model.dependencies === null) return { model }
 			const next = DependenciesUpdate.update(model.dependencies, inner, context)
@@ -224,15 +270,33 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 								viewInputs: { context },
 								toParentMessage: (message) => Message.GotDependenciesMessage({ message }),
 							})
-						: model.auditLog !== null
+						: model.detections !== null
 							? h.submodel({
-									slotId: "security-lab-audit-log",
-									model: model.auditLog,
-									view: auditLogView,
+									slotId: "security-lab-detections",
+									model: model.detections,
+									view: detectionsView,
 									viewInputs: { context },
-									toParentMessage: (message) => Message.GotAuditLogMessage({ message }),
+									toParentMessage: (message) => Message.GotDetectionsMessage({ message }),
 								})
-							: h.empty
+							: model.detectionForm !== null
+								? h.submodel({
+										slotId: "security-lab-detection-form",
+										model: model.detectionForm,
+										view: detectionFormView,
+										viewInputs: { context },
+										toParentMessage: (message) =>
+											Message.GotDetectionFormMessage({ message }),
+									})
+								: model.auditLog !== null
+									? h.submodel({
+											slotId: "security-lab-audit-log",
+											model: model.auditLog,
+											view: auditLogView,
+											viewInputs: { context },
+											toParentMessage: (message) =>
+												Message.GotAuditLogMessage({ message }),
+										})
+									: h.empty
 
 export const lab = defineShellLab("Security Center", {
 	Model,
@@ -256,5 +320,9 @@ export const lab = defineShellLab("Security Center", {
 							? tabsCrumbs("dependencies")
 							: model.auditLog !== null
 								? tabsCrumbs("auditLog")
-								: [],
+								: model.detections !== null
+									? tabsCrumbs("detections")
+									: model.detectionForm !== null
+										? detectionFormCrumbs()
+										: [],
 })
