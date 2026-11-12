@@ -311,12 +311,12 @@ describe("cost page", () => {
 			// Request billing is AWS's: one line for the AWS source, none for OpenRouter.
 			expectView(text("86 provider requests this month (USD 0.86)")).toExist(),
 			expectView(text(/0 provider requests/)).not.toExist(),
-			expectView(role("link", { name: "Manage connection" })).toHaveAttr(
+			expectView(role("link", { name: "Manage AWS connection" })).toHaveAttr(
 				"href",
 				"/integrations?integration=aws",
 			),
-			expectView(role("button", { name: "Replace key" })).toExist(),
-			expectView(role("button", { name: "Remove" })).toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+			expectView(role("button", { name: "Remove OpenRouter source" })).toExist(),
 		)
 
 		// Replace opens the key form with no providers to go back to.
@@ -367,7 +367,7 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("user_2openrouterAccount")).not.toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeDisabled(),
 		)
 		// That read failing brings no action back on the removed source: the list keeps without it.
@@ -384,7 +384,7 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("123456789012")).toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 		)
 
@@ -536,8 +536,11 @@ describe("cost page", () => {
 			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).toExist(),
 			// Neither provider bills for requests.
 			expectView(text(/provider requests/)).not.toExist(),
-			expectView(role("button", { name: "Replace token" })).toExist(),
-			expectView(role("button", { name: "Replace key" })).toExist(),
+			expectView(role("button", { name: "Replace Cloudflare token" })).toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+			// Two rows offer Remove: each one's name says whose source it removes.
+			expectView(role("button", { name: "Remove Cloudflare source" })).toExist(),
+			expectView(role("button", { name: "Remove OpenRouter source" })).toExist(),
 		)
 
 		const replacing = pageUpdate(
@@ -607,7 +610,7 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).not.toExist(),
-			expectView(role("button", { name: "Replace token" })).not.toExist(),
+			expectView(role("button", { name: "Replace Cloudflare token" })).not.toExist(),
 			// The other provider's source is still listed.
 			expectView(text("user_2openrouterAccount")).toExist(),
 		)
@@ -647,9 +650,9 @@ describe("cost page", () => {
 			// The sources still show how their sync is doing.
 			expectView(text("user_2openrouterAccount")).toExist(),
 			expectView(role("button", { name: "Add source" })).not.toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
-			expectView(role("button", { name: "Remove" })).not.toExist(),
-			expectView(role("link", { name: "Manage connection" })).not.toExist(),
+			expectView(role("button", { name: /^Replace/ })).not.toExist(),
+			expectView(role("button", { name: /^Remove/ })).not.toExist(),
+			expectView(role("link", { name: /^Manage/ })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -679,7 +682,7 @@ describe("cost page", () => {
 			),
 			resolveTheme,
 			expectView(role("button", { name: "Add source" })).toExist(),
-			expectView(role("button", { name: "Replace key" })).toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
 		)
 	})
 
