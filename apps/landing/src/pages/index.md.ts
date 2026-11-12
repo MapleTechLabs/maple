@@ -20,7 +20,7 @@ export const GET: APIRoute = ({ site }) => {
 
 	return markdown(
 		blocks(
-			docHeader("Maple: open-source observability for traces, logs, and metrics", m.page_home_desc()),
+			docHeader("Maple: OpenTelemetry observability for traces, logs, and metrics", m.page_home_desc()),
 			`${m.hero_title()} ${m.hero_title_sub()} ${m.hero_title_accent()} ${m.hero_subtitle()}`,
 
 			"## What Maple is",
