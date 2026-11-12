@@ -92,3 +92,58 @@ describe("input masking with real rrweb", () => {
 		},
 	)
 })
+
+describe("a page's own failing stylesheet call, with real rrweb", () => {
+	// What the dashboard's auth widget inserts: a vendor-prefixed rule Chromium rejects.
+	const REJECTED_RULE = ".cl-internal-41zur7:focus::-moz-focus-inner{border:0;}"
+
+	/** How the thrown error reads to the page, or undefined when nothing was thrown. */
+	const thrownBy = (run: () => void): string | undefined => {
+		try {
+			run()
+		} catch (error) {
+			return error instanceof DOMException ? `${error.name}: ${error.message}` : String(error)
+		}
+		return undefined
+	}
+
+	const mountSheet = (): CSSStyleSheet => {
+		const style = document.createElement("style")
+		document.body.appendChild(style)
+		if (!style.sheet) throw new Error("the style element has no sheet")
+		return style.sheet
+	}
+
+	it("rethrows the browser's own error to the page and keeps recording", async () => {
+		const uploads = captureUploads()
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const sheet = mountSheet()
+		const withoutRecorder = thrownBy(() => sheet.insertRule(REJECTED_RULE, 0))
+		const recorder = startRecording({ ...CONFIG, maskAllInputs: false }, getSession().id)
+
+		const withRecorder = thrownBy(() => sheet.insertRule(REJECTED_RULE, 0))
+		// A rule the page inserts afterwards is still recorded, and still returns its index.
+		const index = sheet.insertRule(".after-the-throw{color:red}", 0)
+		await recorder.flush()
+		recorder.stop()
+
+		expect(withoutRecorder).toContain("SyntaxError: Failed to execute 'insertRule'")
+		expect(withRecorder).toBe(withoutRecorder)
+		expect(index).toBe(0)
+		expect(sheet.cssRules).toHaveLength(1)
+		expect(await uploads()).toContain("after-the-throw")
+		expect(warn).not.toHaveBeenCalled()
+		warn.mockRestore()
+	})
+
+	it("hands the stylesheet methods back to the page once recording stops", () => {
+		captureUploads()
+		const before = CSSStyleSheet.prototype.insertRule
+		const recorder = startRecording({ ...CONFIG, maskAllInputs: false }, getSession().id)
+		const during = CSSStyleSheet.prototype.insertRule
+		recorder.stop()
+
+		expect(during).not.toBe(before)
+		expect(CSSStyleSheet.prototype.insertRule).toBe(before)
+	})
+})

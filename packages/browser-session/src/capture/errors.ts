@@ -1,13 +1,27 @@
 import { activeTraceId } from "../events/trace-id"
 import { truncateText } from "../platform/text"
+import type { ErrorNoiseFilter } from "../platform/transport"
 import { type Emit, safeEmit } from "./shared"
 
 const MAX_STACK = 4_000
 const MAX_MESSAGE = 1_000
 
-/** Capture uncaught errors + unhandled promise rejections as session events. */
-export function installErrorCapture(emit: Emit): () => void {
+/**
+ * Capture uncaught errors + unhandled promise rejections as session events.
+ * What `isNoise` matches is left out, so it does not count as a session error.
+ */
+export function installErrorCapture(emit: Emit, isNoise?: ErrorNoiseFilter): () => void {
+	const noise: ErrorNoiseFilter = (error, source, filename) => {
+		try {
+			return isNoise?.(error, source, filename) === true
+		} catch {
+			// A filter that throws keeps the error: dropping a real one is the worse mistake.
+			return false
+		}
+	}
+
 	const onError = (event: ErrorEvent): void => {
+		if (noise(event.error ?? event.message, "window.onerror", event.filename || undefined)) return
 		safeEmit(emit, {
 			type: "error",
 			level: "error",
@@ -18,6 +32,7 @@ export function installErrorCapture(emit: Emit): () => void {
 	}
 
 	const onRejection = (event: PromiseRejectionEvent): void => {
+		if (noise(event.reason, "unhandledrejection")) return
 		const { message, stack } = describeRejection(event.reason)
 		safeEmit(emit, {
 			type: "error",

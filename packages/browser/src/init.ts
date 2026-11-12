@@ -28,7 +28,7 @@ import {
 import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
-import { configureErrorFilters } from "./error-filters"
+import { configureErrorFilters, isErrorNoise } from "./error-filters"
 import { closeExceptionCapture, onErrorRecorded, openExceptionCapture, setupErrorCapture } from "./errors"
 import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
@@ -204,6 +204,7 @@ function start(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 				maskAllInputs: config.maskAllInputs,
 				maskAllText: config.maskAllText,
 				getIdentity: () => config.identity,
+				isErrorNoise,
 			},
 			session.id,
 		)
@@ -259,6 +260,7 @@ function start(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 					maskAllInputs: config.maskAllInputs,
 					maskAllText: config.maskAllText,
 					mode: replayMode,
+					isErrorNoise,
 					canvasFps: config.canvasFps,
 					networkBodies: config.networkBodies,
 				})

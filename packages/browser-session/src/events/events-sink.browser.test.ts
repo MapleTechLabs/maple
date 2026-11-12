@@ -40,6 +40,17 @@ describe("startEventSink baseline counters", () => {
 		sink.stop()
 	})
 
+	it("counts no error the SDK's filter calls noise, so the session has no errors", () => {
+		const notice = "ResizeObserver loop completed with undelivered notifications."
+		const sink = startEventSink({ ...CONFIG, isErrorNoise: (error) => error === notice }, "sess-noise")
+		window.dispatchEvent(new ErrorEvent("error", { message: notice }))
+		expect(sink.getErrorCount()).toBe(0)
+
+		window.dispatchEvent(new ErrorEvent("error", { message: "boom" }))
+		expect(sink.getErrorCount()).toBe(1)
+		sink.stop()
+	})
+
 	it("counts unhandled rejections as errors", () => {
 		const sink = startEventSink(CONFIG, "sess-2")
 		window.dispatchEvent(new Event("unhandledrejection"))

@@ -62,7 +62,7 @@ vi.mock("../platform/transport", () => ({
 const { startBufferedRecording, startRecording } = await import("./record")
 const { clearPendingChunk } = await import("../session/pending-chunk")
 const { nextChunkSeq } = await import("../session/session")
-const { gzip, reserveKeepalive } = await import("../platform/transport")
+const { gzip, reserveKeepalive, warnDropped } = await import("../platform/transport")
 
 const CONFIG = {
 	endpoint: "https://ingest.example",
@@ -625,6 +625,16 @@ describe("rrweb's own failures", () => {
 		startRecording(CONFIG, "session-1").stop()
 		const handler = recordOptions?.errorHandler
 		expect(typeof handler === "function" && handler(new TypeError("observer failed"))).toBe(true)
+	})
+
+	it("are reported as a recording failure", () => {
+		startRecording(CONFIG, "session-1").stop()
+		const handler = recordOptions?.errorHandler
+		vi.mocked(warnDropped).mockClear()
+		const failure = new TypeError("observer failed")
+
+		expect(typeof handler === "function" && handler(failure)).toBe(true)
+		expect(warnDropped).toHaveBeenCalledWith("replay recording", failure)
 	})
 })
 
