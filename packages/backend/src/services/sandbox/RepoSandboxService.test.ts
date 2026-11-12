@@ -42,6 +42,9 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/README.md`, "# shop\n")
 	// git prints this name quoted in its index listing.
 	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
+	// A directory name holding a newline: one line of a listing cannot name what is under it.
+	mkdirSync(`${dir}/odd\nsrc`)
+	writeFileSync(`${dir}/odd\nsrc/lonely.ts`, "export const lonely = 1\n")
 	// A committed symlink out of the checkout: tracked, so a tracked-file check alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
@@ -327,6 +330,14 @@ describe("the git commands the tools build, against a real repository", () => {
 				isDirectory: false,
 				sameName: ['src/a"b.ts'],
 				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
+			// A namesake under a directory whose name holds a newline is left out, not half-named.
+			assert.deepStrictEqual(yield* miss("docs/lonely.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
 				nearestDirectory: ".",
 			})
 			// A name with pattern characters is compared as text, not matched.

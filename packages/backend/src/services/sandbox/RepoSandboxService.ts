@@ -82,8 +82,11 @@ const SAME_NAME_TOTAL_MARKER = "__MAPLE_SAME_NAME_TOTAL__"
 /** Tracked files a missed read names, so the answer stays one short message. */
 const SAME_NAME_LIMIT = 8
 
-/** Over `git ls-files`: the tracked files whose name is the missed one's, whatever its case. */
-const SAME_NAME_PROGRAM = `BEGIN { want = tolower(ENVIRON["MAPLE_NAME"]) } tolower($NF) == want { if (++n <= ${SAME_NAME_LIMIT}) printf "${SAME_NAME_MARKER} %s\\n", $0 } END { printf "${SAME_NAME_TOTAL_MARKER} %d\\n", n }`
+/**
+ * Over `git ls-files`: the tracked files whose name is the missed one's, whatever its case. A path
+ * holding a newline arrives marked with `\\001` and is skipped: a line cannot name it.
+ */
+const SAME_NAME_PROGRAM = `BEGIN { want = tolower(ENVIRON["MAPLE_NAME"]) } index($0, "\\001") == 0 && tolower($NF) == want { if (++n <= ${SAME_NAME_LIMIT}) printf "${SAME_NAME_MARKER} %s\\n", $0 } END { printf "${SAME_NAME_TOTAL_MARKER} %d\\n", n }`
 
 /**
  * `read_file` as one sandbox command over positional arguments: $1 path, $2 and $3 the line
@@ -104,8 +107,9 @@ const READ_FILE_SCRIPT = Arr.join(
 		`  while [ "$dir" != . ] && [ ! -d "./$dir" ]; do case "$dir" in */*) dir=\${dir%/*} ;; *) dir=. ;; esac; done`,
 		`  [ "$dir" = "$parent" ] || printf "${NEAREST_DIRECTORY_MARKER} %s\\n" "$dir"`,
 		// The name through the environment, not `-v`, which would read its backslashes as escapes.
-		// `-z` lists names as they are: without it git quotes one holding `"` or a backslash.
-		`  git ${Arr.join(GIT_COMMON, " ")} ls-files -z | tr '\\0' '\\n' | MAPLE_NAME="\${1##*/}" awk -F/ "$5"`,
+		// `-z` lists names as they are: without it git quotes one holding `"` or a backslash. Records
+		// become lines, and a newline inside a name becomes `\\001` so it cannot pass for a record.
+		`  git ${Arr.join(GIT_COMMON, " ")} ls-files -z | tr '\\n\\0' '\\001\\n' | MAPLE_NAME="\${1##*/}" awk -F/ "$5"`,
 		`  exit 1`,
 		`fi`,
 		`case "\${entry%% *}" in`,
