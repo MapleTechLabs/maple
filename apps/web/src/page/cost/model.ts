@@ -1,19 +1,23 @@
 import {
 	CostBreakdownResponse,
+	type CostSourceSummary,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
+import { CostFacets } from "./message"
 import * as TimeRangePicker from "../kit/time-range-picker"
 
 export type Search = typeof CostSearch.Type
@@ -31,6 +35,9 @@ export const Model = Schema.Struct({
 	totals: KeyedSchema(CostTotalsResponse, LoadFailure),
 	timeseries: KeyedSchema(CostTimeseriesResponse, LoadFailure),
 	breakdown: KeyedSchema(CostBreakdownResponse, LoadFailure),
+	/** The filter rail's values per dimension. */
+	facets: KeyedSchema(CostFacets, LoadFailure),
+	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
 	chart: Chart.Model,
 	...ChartEnvFields,
@@ -57,3 +64,7 @@ export const canManageSources = (model: Pick<Model, "grants">): boolean =>
 /** The viewer's roles are known and lack the permission: only then does the page say who has it. */
 export const cannotManageSources = (model: Pick<Model, "grants">): boolean =>
 	model.grants !== null && !Policy.has(model.grants, "integrations:manage")
+
+/** The org's cost sources once read; none before. */
+export const sourcesOf = (model: Pick<Model, "sources">): ReadonlyArray<CostSourceSummary> =>
+	Option.getOrUndefined(AsyncData.getData(model.sources.data))?.sources ?? []

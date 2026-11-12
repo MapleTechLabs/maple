@@ -13,6 +13,7 @@ import { readGrants } from "../../data/session-tenant"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { COST_GROUP_BYS } from "../../route/search"
 import { resolveWindowCommand } from "../kit/time-frame"
+import { perDimension } from "./derive"
 import { Message } from "./message"
 
 // Each read answers with the key it was sent under; its input is what the key was built from.
@@ -84,6 +85,42 @@ export const FetchCostBreakdown = Command.define("FetchCostBreakdown", {
 		getCostBreakdown({
 			data: { ...windowOf(input), groupBy: input.groupBy, sortBy: input.sortBy, limit: input.limit },
 		}).pipe(settleTo((result) => Message.CompletedLoadBreakdown({ key, result }))),
+})
+
+/** Per dimension, the filters its own facet reads under: every other dimension's, never its own. */
+export const FacetsInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	filters: Schema.Struct(perDimension(() => Schema.optional(CostFilters))),
+	limit: Schema.Number,
+})
+export type FacetsInput = typeof FacetsInput.Type
+
+/** The filter rail's values: one breakdown per dimension, read side by side. */
+export const FetchCostFacets = Command.define("FetchCostFacets", {
+	args: { key: Schema.String, input: FacetsInput },
+	messages: [Message.CompletedLoadFacets],
+	execute: ({ key, input }) =>
+		Effect.all(
+			perDimension((groupBy) =>
+				Effect.map(
+					getCostBreakdown({
+						data: {
+							...windowOf({
+								startTime: input.startTime,
+								endTime: input.endTime,
+								filters: input.filters[groupBy],
+							}),
+							groupBy,
+							sortBy: "cost",
+							limit: input.limit,
+						},
+					}),
+					(response) => response.rows,
+				),
+			),
+			{ concurrency: "unbounded" },
+		).pipe(settleTo((result) => Message.CompletedLoadFacets({ key, result }))),
 })
 
 export const ReadCostGrants = Command.define("ReadCostGrants", {

@@ -17,14 +17,22 @@ import { hstack } from "../ui/stack"
 import { swatch } from "../ui/swatch"
 import { Array as Arr } from "effect"
 import { typography } from "../ui/typography"
+import { icon, type IconName } from "../ui/icon"
 
 // The timeseries legend: the compact legend or the Min/Max/Mean/Last table, below or beside the
 // plot; shared by the line, area and bar charts.
+
+/** A mark drawn beside a series' name: a provider's logo, a model vendor's, a category's glyph. */
+export interface SeriesMark {
+	readonly icon: IconName
+	readonly className?: string
+}
 
 export interface LegendSeries {
 	readonly key: string
 	readonly label: string
 	readonly color: string
+	readonly mark?: SeriesMark | undefined
 }
 
 type LegendLayout = Readonly<{ isRight: boolean; maxHeight: number | null }>
@@ -65,7 +73,18 @@ const compactLegend = (
 					),
 					attributes: [h.Key(entry.key), h.Title(entry.label)],
 				},
-				[swatch(h, { color: entry.color }), typography(h, { truncate: true }, [entry.label])],
+				[
+					swatch(h, { color: entry.color }),
+					...(entry.mark === undefined
+						? []
+						: [
+								icon(h, entry.mark.icon, {
+									size: 12,
+									className: cn("shrink-0", entry.mark.className),
+								}),
+							]),
+					typography(h, { truncate: true }, [entry.label]),
+				],
 			),
 		),
 	)
