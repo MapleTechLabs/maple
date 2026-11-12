@@ -192,6 +192,41 @@ describe("AuditDetectionsService", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	// The floor is what stops a detection firing on events from before it counted them. It has
+	// to move when the detection counts more, and only then.
+	it.effect("starts counting at its creation, and again when it counts more than it did", () => {
+		const { layer, testDb } = harness()
+		const countFrom = (id: AlertRuleId) =>
+			Effect.promise(() =>
+				queryFirstRow<{ floor_ms: number }>(
+					testDb,
+					"select (extract(epoch from audit_count_from) * 1000)::float8 as floor_ms from alert_rules where id = $1",
+					[id],
+				),
+			).pipe(Effect.map((row) => row?.floor_ms))
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const detections = yield* AuditDetectionsService
+			const created = yield* detections.create(orgId, detectionInput())
+			assert.strictEqual(yield* countFrom(created.id), DEFAULT_CLOCK_EPOCH_MS)
+			const edit = (change: Omit<Parameters<typeof detections.update>[2], "updatedBy">) =>
+				Effect.gen(function* () {
+					yield* TestClock.adjust(Duration.minutes(1))
+					yield* detections.update(orgId, created.id, { ...change, updatedBy: editorId })
+					const floor = yield* countFrom(created.id)
+					return floor === undefined ? undefined : (floor - DEFAULT_CLOCK_EPOCH_MS) / 60_000
+				})
+
+			// Minutes after creation the floor sits at, after each edit one minute apart.
+			assert.strictEqual(yield* edit({ name: "Renamed", severity: "critical", threshold: 1 }), 0)
+			assert.strictEqual(yield* edit({ windowMinutes: 5 }), 0)
+			assert.strictEqual(yield* edit({ windowMinutes: 30 }), 3)
+			assert.strictEqual(yield* edit({ filters: { category: "credential" } }), 4)
+			assert.strictEqual(yield* edit({ enabled: false }), 4)
+			assert.strictEqual(yield* edit({ enabled: true }), 6)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("refuses an unknown destination and saves nothing", () => {
 		const { layer } = harness()
 		return Effect.gen(function* () {

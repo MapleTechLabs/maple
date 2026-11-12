@@ -111,6 +111,8 @@ export interface NormalizedRule {
 	readonly anomalySignals: ReadonlyArray<AnomalySignalType>
 	/** Audit detections only: which events the rule counts; empty is every event. */
 	readonly auditFilters: AuditDetectionFilters
+	/** Audit detections only: events that arrived before this do not count; null counts the whole window. */
+	readonly auditCountFrom: number | null
 	readonly tags: ReadonlyArray<string>
 	readonly groupBy: AlertGroupBy | null
 	readonly signalType: AlertSignalType
@@ -843,6 +845,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			environments: stored.environments,
 			anomalySignals: row.anomalySignalsJson ?? [],
 			auditFilters,
+			auditCountFrom: row.auditCountFrom,
 			tags: stored.tags,
 			groupBy: decoded.groupBy,
 			signalType: decoded.signalType,
@@ -1068,6 +1071,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			environments,
 			anomalySignals,
 			auditFilters: {},
+			auditCountFrom: null,
 			tags,
 			groupBy,
 			signalType: request.signalType,

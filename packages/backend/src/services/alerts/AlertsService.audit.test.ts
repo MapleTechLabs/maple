@@ -208,7 +208,7 @@ describe("AlertsService audit log detections", () => {
 
 	// A new detection, or one whose window was just widened, would otherwise fire at once on
 	// events that were already there, some of them already alerted on.
-	it.effect("counts only what arrived since the detection was last saved", () => {
+	it.effect("counts only what arrived since the detection started counting it", () => {
 		const { layer, counted } = harness({ matchingEvents: 0 })
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
@@ -216,7 +216,7 @@ describe("AlertsService audit log detections", () => {
 			const detections = yield* AuditDetectionsService
 			const detection = yield* createDetection()
 
-			// Three minutes after the save at 22:13:20 the 10 minute window starts at the save.
+			// Three minutes after it was created at 22:13:20 the 10 minute window starts there.
 			yield* TestClock.adjust(Duration.minutes(3))
 			yield* alerts.runSchedulerTick()
 			assert.include(counted[0], "IngestedAt > '2023-11-14 22:13:20'")
@@ -227,6 +227,34 @@ describe("AlertsService audit log detections", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			assert.include(counted[1], "IngestedAt > '2023-11-14 22:16:20'")
+		}).pipe(Effect.provide(layer))
+	})
+
+	// A rename counts nothing new. Moving the floor for it would empty the window, resolve the
+	// open incident and tell everyone it was over.
+	it.effect("an edit that changes nothing about what is counted keeps an open incident open", () => {
+		const { layer, counted } = harness({ matchingEvents: 3 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const detections = yield* AuditDetectionsService
+			const detection = yield* createDetection()
+			yield* TestClock.adjust(Duration.minutes(3))
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
+
+			yield* detections.update(orgId, detection.id, {
+				name: "Members added or removed",
+				severity: "warning",
+				threshold: 2,
+				windowMinutes: 5,
+				updatedBy: userId,
+			})
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			assert.include(counted[1], "IngestedAt > '2023-11-14 22:13:20'")
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "open")
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -203,6 +203,8 @@ export class AuditDetectionsService extends Context.Service<
 								id,
 								orgId,
 								...auditDetectionRuleFields(rule),
+								// Counts from here: what is already in the log did not happen on its watch.
+								auditCountFrom: now,
 								lastScheduledAt: null,
 								createdAt: now,
 								updatedAt: now,
@@ -261,6 +263,12 @@ export class AuditDetectionsService extends Context.Service<
 							rule.severity !== locked.severity ||
 							!sameIds(rule.destinationIds, locked.destinationIds)
 						if (!changed) return
+						// The floor moves only when the detection starts counting events it did not
+						// before. A rename or a new severity keeps the window, and an open incident.
+						const countsMore =
+							!sameFilters(rule.filters, locked.filters) ||
+							rule.windowMinutes > locked.windowMinutes ||
+							(rule.enabled && !locked.enabled)
 						yield* claimRuleWrite(db, orgId, id, rule)
 						// Ends a tick's claim on the old config, as a rule edit does.
 						yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(id)]))
@@ -268,6 +276,7 @@ export class AuditDetectionsService extends Context.Service<
 							PG.update(AlertRules)
 								.set({
 									...auditDetectionRuleFields(rule),
+									...(countsMore ? { auditCountFrom: now } : undefined),
 									updatedAt: now,
 									updatedBy: input.updatedBy,
 								})

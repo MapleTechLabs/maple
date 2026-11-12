@@ -88,6 +88,8 @@ export const AlertRules = PG.table("alert_rules", {
 		auditFiltersJson: PG.column(PG.nullable(PG.jsonb(AuditDetectionFilters)), {
 			name: "audit_filters_json",
 		}),
+		/** Audit detections only: events that arrived before this do not count. Moves when what is counted changes. */
+		auditCountFrom: PG.column(PG.nullable(PG.timestamptzMillis), { name: "audit_count_from" }),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
 		tagsJson: PG.column(PG.nullable(PG.jsonb(StringArray)), { name: "tags_json" }),
 		signalType: PG.column(PG.text, { name: "signal_type" }),

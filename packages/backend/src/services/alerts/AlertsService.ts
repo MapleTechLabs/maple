@@ -1184,11 +1184,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An audit detection counts the events that arrived in its window. The count is a
 				// fact even at zero, so an empty window reads healthy and not as missing data.
 				if (rule.signalType === "audit") {
-					// Only events that arrived since the detection was last saved: a new one, or one
-					// whose window was widened, must not fire on what was there before.
+					// Not before the detection's floor: a new one, or one that now counts more than it
+					// did, must not fire on what was already there.
 					const count = yield* auditTrail
 						.count(orgId, rule.auditFilters, {
-							startMs: Math.max(startMs, rule.updatedAt),
+							startMs: Math.max(startMs, rule.auditCountFrom ?? 0),
 							endMs,
 						})
 						.pipe(Effect.mapError(makePersistenceError))
