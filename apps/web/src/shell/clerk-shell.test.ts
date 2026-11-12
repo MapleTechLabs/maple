@@ -150,6 +150,8 @@ describe("onboarding reward pill", () => {
 		const stale = { ...base, checklist: later(inProgress, 30) }
 		expect(names(routeChanged(false)(stale))).toEqual(["LoadOnboardingChecklist"])
 		expect(names(routeChanged(true)(stale))).toEqual([])
+		// A page with no top bar mounts no pill, so there is nothing to refresh on the way to it.
+		expect(names(routeChanged(false, false)(stale))).toEqual([])
 	})
 
 	test("a refused claim shows why", () => {

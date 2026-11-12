@@ -315,10 +315,11 @@ export const connectPollTicked = (): Message =>
 /**
  * Navigation closes every menu, the Connect panel and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
- * A new page re-reads the reward pill only when its in-progress answer has gone stale.
+ * A new page re-reads the reward pill only when its in-progress answer has gone stale, and only
+ * where the top bar mounts the pill.
  */
 export const routeChanged =
-	(isSamePage: boolean) =>
+	(isSamePage: boolean, hasTopBar = true) =>
 	(model: Model): UpdateReturn => {
 		const connect = ConnectPanel.close(model.connect)
 		const closed = modifyFields(closeMenu(model), {
@@ -328,7 +329,7 @@ export const routeChanged =
 			connect: () => connect.model,
 		})
 		const pill =
-			isSamePage || !isClerkAuthEnabled
+			isSamePage || !hasTopBar || !isClerkAuthEnabled
 				? { model: closed }
 				: checklistStep(closed, Checklist.navigated(closed.checklist))
 		return {
