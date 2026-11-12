@@ -8151,7 +8151,7 @@
     },
     "/v2/alerts/rules/preview": {
       "post": {
-        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope.",
+        "description": "Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
         "operationId": "previewAlertRule",
         "parameters": [],
         "requestBody": {
