@@ -289,6 +289,45 @@ describe("anomaly notifications", () => {
 	})
 })
 
+describe("audit detection notifications", () => {
+	const auditContext: TemplateRenderContext = {
+		...baseContext,
+		ruleName: "Members added",
+		signalType: "audit",
+		signalDisplay: resolveSignalDisplay({ signalType: "audit" }),
+		comparator: "gte",
+		threshold: 3,
+		value: 4,
+		sampleCount: 4,
+		windowMinutes: 10,
+		detail: "4 matching audit events in the last 10 minutes",
+	}
+
+	it("says how many events matched and over which window", () => {
+		assert.deepStrictEqual(
+			[buildSummaryLine(auditContext, (value) => value), formatObservedSummary(auditContext)],
+			[
+				"4 matching audit events in the last 10 minutes",
+				"4 matching audit events in the last 10 minutes",
+			],
+		)
+	})
+
+	it("names the signal Audit log and reads the count as a whole number", () => {
+		const context = buildTemplateContext(auditContext, LINK, CHAT)
+		assert.strictEqual(context["signal.label"], "Audit log")
+		assert.strictEqual(context.observed, "4")
+		assert.strictEqual(context.threshold, "3")
+	})
+
+	// A test send observed nothing, so it describes the condition instead of a count.
+	it("a test notification describes the condition", () => {
+		const line = buildSummaryLine({ ...auditContext, eventType: "test" }, (value) => value)
+		assert.include(line, "Live alerts fire when Audit log is")
+		assert.notInclude(line, "matching audit events")
+	})
+})
+
 describe("buildDiscordEmbedsFromTemplate", () => {
 	it("maps title/body to the embed and color-codes by severity", () => {
 		const [embed] = buildDiscordEmbedsFromTemplate("T", "B", baseContext, LINK) as Array<{

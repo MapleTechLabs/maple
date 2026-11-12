@@ -36,6 +36,7 @@ import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { AppRoute, hrefOf } from "../../../route"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
 import { checkoutSlo } from "../shared/slo-test-fixtures"
 import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
@@ -283,6 +284,46 @@ describe("alert incident", () => {
 			expectView(text("SLO burning its error budget at 14.4x or more")).toExist(),
 			expectView(text(/0\.3x/u)).not.toExist(),
 			expectView(text(/now /u)).not.toExist(),
+		)
+	})
+
+	test("an audit detection incident asks for no rule preview, offers no rule edit, and links the audit log", () => {
+		const auditIncident = incidentRow({
+			rule_name: "Members added",
+			signal_type: "audit",
+			comparator: "gte",
+			threshold: 3,
+			last_observed_value: 4,
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [auditIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [ruleRow(2, { signal_type: "audit", name: "Members added" })],
+			}),
+		)
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentPreview")
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentChecks")
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			expectView(role("heading", { name: "Audit log 4" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(role("link", { name: "Open audit log" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityAuditLog({ search: {} })),
+			),
 		)
 	})
 

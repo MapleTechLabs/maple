@@ -40,7 +40,7 @@ describe("ruleReadFamilies", () => {
 		expect(ruleReadFamilies({ signalType: "raw_query" })).toEqual(["traces", "logs", "metrics"])
 	})
 
-	it.each(["anomaly", "uptime", "slo_burn_rate"] as const)(
+	it.each(["anomaly", "uptime", "slo_burn_rate", "audit"] as const)(
 		"%s runs no query of its own and needs none",
 		(signalType) => {
 			expect(ruleReadFamilies({ signalType })).toEqual([])
