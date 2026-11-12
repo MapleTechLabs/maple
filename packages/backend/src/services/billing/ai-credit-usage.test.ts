@@ -63,7 +63,7 @@ describe("aiCreditUsageOf", () => {
 		expect([usage.bySource, usage.days]).toEqual([[], []])
 	})
 
-	it("totals each model over the cycle, largest first", () => {
+	it("totals each model over the cycle, largest first, leaving out spend with no model", () => {
 		const usage = fromAutumn(
 			{ list: [] },
 			{
@@ -71,17 +71,23 @@ describe("aiCreditUsageOf", () => {
 					{
 						period: day("2026-11-02"),
 						values: { ai_credits: 0.6 },
-						grouped_values: { ai_credits: { "openrouter/a/small": 0.1, "openrouter/b/large": 0.5 } },
+						grouped_values: {
+							ai_credits: { "openrouter/a/small": 0.1, "openrouter/b/large": 0.5 },
+						},
 					},
 					{
 						period: day("2026-11-03"),
 						values: { ai_credits: 0.7 },
-						grouped_values: { ai_credits: { "openrouter/a/small": 0.7, "openrouter/c/idle": 0 } },
+						grouped_values: {
+							ai_credits: { "openrouter/a/small": 0.7, "openrouter/c/idle": 0, "": 0.4 },
+						},
 					},
 				],
 			},
 		)
-		expect(Arr.map(usage.byModel, (entry) => [entry.model, Math.round(entry.credits * 100) / 100])).toEqual([
+		expect(
+			Arr.map(usage.byModel, (entry) => [entry.model, Math.round(entry.credits * 100) / 100]),
+		).toEqual([
 			["openrouter/a/small", 0.8],
 			["openrouter/b/large", 0.5],
 		])

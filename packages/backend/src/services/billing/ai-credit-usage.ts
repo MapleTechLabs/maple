@@ -84,7 +84,9 @@ export const aiCreditUsageOf = (
 		),
 		byModel: Arr.sort(
 			Arr.flatMap(Arr.fromIterable(groupTotals(byModelAggregate)), ([model, credits]) =>
-				credits > 0 ? [new AiCreditModelUsage({ model, credits })] : [],
+				// Autumn reports spend with no model (a security audit's) as the empty key: the page shows
+				// it as Unattributed, the total less every named model.
+				credits > 0 && model !== "" ? [new AiCreditModelUsage({ model, credits })] : [],
 			),
 			byCreditsDesc<AiCreditModelUsage>(),
 		),
