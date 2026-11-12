@@ -41,7 +41,7 @@ import {
 	withFilter,
 } from "./derive"
 import { Message } from "./message"
-import type { Model, Search } from "./model"
+import type { Model, RemovableProvider, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -310,12 +310,12 @@ describe("cost page", () => {
 			// Request billing is AWS's: one line for the AWS source, none for OpenRouter.
 			expectView(text("86 provider requests this month (USD 0.86)")).toExist(),
 			expectView(text(/0 provider requests/)).not.toExist(),
-			expectView(role("link", { name: "Manage connection" })).toHaveAttr(
+			expectView(role("link", { name: "Manage AWS connection" })).toHaveAttr(
 				"href",
 				"/integrations?integration=aws",
 			),
-			expectView(role("button", { name: "Replace key" })).toExist(),
-			expectView(role("button", { name: "Remove" })).toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+			expectView(role("button", { name: "Remove OpenRouter source" })).toExist(),
 		)
 
 		// Replace opens the key form with no providers to go back to.
@@ -365,7 +365,7 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("user_2openrouterAccount")).not.toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeDisabled(),
 		)
 		// That read failing brings no action back on the removed source: the list keeps without it.
@@ -382,7 +382,7 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(text("123456789012")).toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 		)
 
@@ -430,7 +430,7 @@ describe("cost page", () => {
 		)
 	})
 
-	const vercelTeam = { name: "Acme Inc", slug: "acme" }
+	const vercelTeam = { id: "team_1", name: "Acme Inc", slug: "acme" }
 	const vercelStatus = (over: Partial<typeof VercelCostStatus.Encoded> = {}) =>
 		new VercelCostStatus({ team: vercelTeam, authFailed: false, added: false, ...over })
 
@@ -481,7 +481,8 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Back" })).toBeEnabled(),
 		)
 		const adding = pageUpdate(connected, Message.ClickedConfirmAddVercel())
-		expect(names(adding.commands)).toEqual(["AddVercelCostSource"])
+		// The add names the team on show: another one connected since is refused, not added.
+		expect(adding.commands).toMatchObject([{ name: "AddVercelCostSource", args: { teamId: "team_1" } }])
 		// A second click while the first is in flight sends nothing more, and Back waits.
 		expect(names(pageUpdate(adding.model, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
 		expect(pageUpdate(adding.model, Message.ClickedBackToProviders()).model.addStep).toBe("vercel")
@@ -535,6 +536,21 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Add source" })).not.toExist(),
 		)
 		expect(names(pageUpdate(rejected, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+
+		// A team that is a source already and has lost its token: the dialog says how to repair it.
+		scene(
+			{ update: pageUpdate, view },
+			given(vercelStepWith(vercelStatus({ added: true, authFailed: true }))),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Already added")).toExist(),
+			expectView(text(/its cost has stopped syncing/)).toExist(),
+			expectView(role("link", { name: "Open the Vercel connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=vercel",
+			),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
 
 		// Added by someone else since the page's list was read: said, with nothing to add twice.
 		scene(
@@ -679,9 +695,13 @@ describe("cost page", () => {
 			// Request billing is AWS's: one line for the AWS source, none for Vercel.
 			expectView(text("86 provider requests this month (USD 0.86)")).toExist(),
 			expectView(text(/0 provider requests/)).not.toExist(),
-			// The connection holds the token: there is no key to replace here.
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
-			expectView(role("button", { name: "Remove" })).toExist(),
+			// The connection holds the token: it is replaced there, and there is no key to replace here.
+			expectView(role("link", { name: "Manage Vercel connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=vercel",
+			),
+			expectView(role("button", { name: /^Replace/ })).not.toExist(),
+			expectView(role("button", { name: "Remove Vercel source" })).toExist(),
 		)
 		// The providers list the team as added, with nothing to click.
 		scene(
@@ -718,7 +738,7 @@ describe("cost page", () => {
 			given(failed.model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: "Remove" })).toBeEnabled(),
+			expectView(role("button", { name: "Remove Vercel source" })).toBeEnabled(),
 		)
 
 		const removed = pageUpdate(
@@ -748,6 +768,71 @@ describe("cost page", () => {
 			expectView(text("acme")).not.toExist(),
 			expectView(text("123456789012")).toExist(),
 		)
+	})
+
+	test("cost read for a source that was removed never stands in for the next source's", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+		})
+		const vercel = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "vercel",
+			accountId: "acme",
+		})
+		const removals: ReadonlyArray<
+			Readonly<{ only: SourceWire; provider: RemovableProvider; removed: Message }>
+		> = [
+			{
+				only: vercel,
+				provider: "vercel",
+				removed: Message.CompletedRemoveVercel({
+					result: Result.succeed(new VercelCostSourceRemoved({ removed: true })),
+				}),
+			},
+			{
+				only: openRouter,
+				provider: "openrouter",
+				removed: Message.CompletedRemoveKey({
+					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+				}),
+			},
+		]
+		Arr.forEach(removals, ({ only, provider, removed: answer }) => {
+			// The removed source was the only one with cost: the reads are skipped, not refreshed.
+			const model = answered(entered({}, [only]).model)
+			const totalsKey = model.totals.key ?? ""
+			const removed = pageUpdate(
+				pageUpdate(
+					pageUpdate(model, Message.ClickedRemoveSource({ provider })).model,
+					Message.ClickedConfirmRemove(),
+				).model,
+				answer,
+			)
+			expect(names(removed.commands)).toContain("FetchCostSources")
+			expect(names(removed.commands)).not.toContain("FetchCostTotals")
+			// Another source has synced by the time the list is read again, over the same window.
+			const next = pageUpdate(
+				removed.model,
+				Message.CompletedLoadSources({
+					key: removed.model.sources.key ?? "",
+					result: Result.succeed(sources([source()])),
+				}),
+			)
+			// Its cost is asked for: the removed source's answer under the same key is not kept.
+			expect(names(next.commands)).toEqual(
+				expect.arrayContaining(["FetchCostTotals", "FetchCostTimeseries", "FetchCostBreakdown"]),
+			)
+			expect(next.model.totals.key).toBe(totalsKey)
+			scene(
+				{ update: pageUpdate, view },
+				given(next.model),
+				resolveTheme,
+				dialogMounted,
+				expectView(text("$1,200.00")).not.toExist(),
+			)
+		})
 	})
 
 	test("removing one provider's source leaves the other's on the page", () => {
@@ -818,9 +903,9 @@ describe("cost page", () => {
 			// The sources still show how their sync is doing.
 			expectView(text("user_2openrouterAccount")).toExist(),
 			expectView(role("button", { name: "Add source" })).not.toExist(),
-			expectView(role("button", { name: "Replace key" })).not.toExist(),
-			expectView(role("button", { name: "Remove" })).not.toExist(),
-			expectView(role("link", { name: "Manage connection" })).not.toExist(),
+			expectView(role("button", { name: /^Replace/ })).not.toExist(),
+			expectView(role("button", { name: /^Remove/ })).not.toExist(),
+			expectView(role("link", { name: /^Manage/ })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -850,7 +935,7 @@ describe("cost page", () => {
 			),
 			resolveTheme,
 			expectView(role("button", { name: "Add source" })).toExist(),
-			expectView(role("button", { name: "Replace key" })).toExist(),
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
 		)
 	})
 

@@ -28,15 +28,21 @@ export type AddStep = typeof AddStep.Type
 export const RemovableProvider = Schema.Literals(["openrouter", "vercel"])
 export type RemovableProvider = typeof RemovableProvider.Type
 
-/** What the Vercel step can do with the connection it read: only a `Ready` team can be added. */
+/**
+ * What the Vercel step can do with the connection it read: only a `Ready` team can be added. A
+ * team that is a source already can still have lost its token, which stops its sync.
+ */
 export type VercelStep =
 	| Readonly<{ _tag: "NotConnected" }>
-	| Readonly<{ _tag: "Added" | "TokenRejected" | "Ready"; team: VercelCostTeam }>
+	| Readonly<{ _tag: "TokenRejected" | "Ready"; team: VercelCostTeam }>
+	| Readonly<{ _tag: "Added"; team: VercelCostTeam; isTokenRejected: boolean }>
 
-export const vercelStepOf = (status: VercelCostStatus): VercelStep =>
-	status.team === null
-		? { _tag: "NotConnected" }
-		: { _tag: status.added ? "Added" : status.authFailed ? "TokenRejected" : "Ready", team: status.team }
+export const vercelStepOf = (status: VercelCostStatus): VercelStep => {
+	if (status.team === null) return { _tag: "NotConnected" }
+	return status.added
+		? { _tag: "Added", team: status.team, isTokenRejected: status.authFailed }
+		: { _tag: status.authFailed ? "TokenRejected" : "Ready", team: status.team }
+}
 
 export const Model = Schema.Struct({
 	search: CostSearch,

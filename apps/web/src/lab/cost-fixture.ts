@@ -59,7 +59,11 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 })
 
 /** The Vercel team the lab's source reads, by its slug. */
-export const LAB_VERCEL_TEAM = { name: "Example Team", slug: "example-team" }
+export const LAB_VERCEL_TEAM = {
+	id: "team_labExample000000000000",
+	name: "Example Team",
+	slug: "example-team",
+}
 
 const productLine = (
 	product: string,
@@ -325,8 +329,8 @@ const ADDABLE = { openrouter: openRouterSource, vercel: vercelSource } as const
 type LabAddable = keyof typeof ADDABLE
 
 /**
- * `sources` after the lab's reader added a provider's source (true: it waits for its first sync)
- * or removed it (false); null leaves it as the state has it.
+ * `sources` after the lab's reader added a provider's source (true: a new one, which waits for
+ * its first sync whatever the state had) or removed it (false); null leaves it as the state has it.
  */
 export const labSourcesWith = (
 	sources: CostSourcesResponse,
@@ -336,21 +340,19 @@ export const labSourcesWith = (
 	if (added === null) return sources
 	const others = Arr.filter(sources.sources, (entry) => entry.provider !== provider)
 	if (!added) return new CostSourcesResponse({ sources: others })
-	return others.length === sources.sources.length
-		? decodeSources({
-				sources: [
-					...Schema.encodeSync(CostSourcesResponse)(sources).sources,
-					{
-						...ADDABLE[provider],
-						status: "pending",
-						watermarkDate: null,
-						backfillDate: null,
-						historyComplete: false,
-						lastSyncedAt: null,
-					},
-				],
-			})
-		: sources
+	return decodeSources({
+		sources: [
+			...Schema.encodeSync(CostSourcesResponse)(new CostSourcesResponse({ sources: others })).sources,
+			{
+				...ADDABLE[provider],
+				status: "pending",
+				watermarkDate: null,
+				backfillDate: null,
+				historyComplete: false,
+				lastSyncedAt: null,
+			},
+		],
+	})
 }
 
 export const LAB_SOURCES = {

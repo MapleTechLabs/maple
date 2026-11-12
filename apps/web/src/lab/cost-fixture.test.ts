@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
-import { labBreakdown, labTimeseries, labTotals } from "./cost-fixture"
+import { LAB_SOURCES, labBreakdown, labSourcesWith, labTimeseries, labTotals } from "./cost-fixture"
 
 const window = { days: 30, filters: undefined }
 const openRouterOnly = { days: 30, filters: { provider: ["openrouter"] } }
@@ -43,6 +43,24 @@ describe("cost lab fixture", () => {
 			Arr.map(labBreakdown({ ...removed, groupBy: "provider", sortBy: "cost" }).rows, (row) => row.key),
 		).toEqual(["aws", "openrouter"])
 		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
+	})
+
+	test("a source added again after its removal is a new one that waits for its first sync", () => {
+		const statusOf = (response: typeof LAB_SOURCES.synced, provider: string) =>
+			Arr.map(
+				Arr.filter(response.sources, (source) => source.provider === provider),
+				(source) => [source.status, source.watermarkDate],
+			)
+		// As the state has it, then removed, then added: not the synced row it started with.
+		expect(statusOf(labSourcesWith(LAB_SOURCES.synced, "vercel", null), "vercel")).toEqual([
+			["ok", "2026-11-09"],
+		])
+		expect(statusOf(labSourcesWith(LAB_SOURCES.synced, "vercel", false), "vercel")).toEqual([])
+		const readded = labSourcesWith(LAB_SOURCES.synced, "vercel", true)
+		expect(statusOf(readded, "vercel")).toEqual([["pending", null]])
+		// The other sources are untouched.
+		expect(statusOf(readded, "aws")).toEqual([["ok", "2026-11-09"]])
+		expect(readded.sources).toHaveLength(LAB_SOURCES.synced.sources.length)
 	})
 
 	test("grouped by resource, a Vercel team's cost splits by project and the rest has none", () => {

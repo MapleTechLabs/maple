@@ -192,11 +192,13 @@ const toolbar = (h: H, model: Model): Html => {
 		className: "mb-0",
 	})
 	return hstack(h, { gap: "4", wrap: true, className: "gap-y-2" }, [
-		hstack(h, { gap: "2" }, [
-			typography(h, { size: "xs", tone: "muted" }, ["Group by"]),
+		hstack(h, { gap: "2", className: "min-w-0 max-w-full" }, [
+			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group by"]),
 			segmentedSelect(h, {
 				ariaLabel: "Group by",
 				size: "sm",
+				// Seven options outgrow a narrow page: the group scrolls, not the page.
+				className: "min-w-0 overflow-x-auto",
 				value: groupByOf(model.search),
 				options: Arr.map(COST_GROUP_BYS, (dimension) => ({
 					value: dimension,

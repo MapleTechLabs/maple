@@ -24,7 +24,7 @@ type H = HtmlBuilder<Message>
 const CONNECT_VERCEL_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "vercel" } }))
 
 /** Where the Vercel connection's token is replaced. */
-const VERCEL_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "vercel" } }))
+export const VERCEL_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "vercel" } }))
 
 /** A provider's mark, as the dialog's rows lead with it. */
 export const providerMark = (h: H, provider: CostProviderEntry): Html =>
@@ -51,7 +51,18 @@ const connection = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> =
 				]),
 			]
 		case "Added":
-			return [teamRow(h, step.team, true)]
+			return [
+				teamRow(h, step.team, true),
+				...(step.isTokenRejected
+					? [
+							alert(h, { variant: "warn", size: "sm" }, [
+								alertDescription(h, [
+									"Vercel rejected this team's token, so its cost has stopped syncing. Replace the token on the Vercel connection.",
+								]),
+							]),
+						]
+					: []),
+			]
 		case "TokenRejected":
 			return [
 				teamRow(h, step.team, false),
@@ -91,15 +102,18 @@ const connection = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> =
 	}
 }
 
+const connectionLink = (h: H): Html =>
+	linkButton(h, { href: VERCEL_INTEGRATION_HREF }, ["Open the Vercel connection"])
+
 /** The step's primary action, by what the connection allows: add it, connect one, or fix its token. */
 const primary = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> => {
 	switch (step._tag) {
 		case "NotConnected":
 			return [linkButton(h, { href: CONNECT_VERCEL_HREF }, ["Connect Vercel"])]
 		case "Added":
-			return []
+			return step.isTokenRejected ? [connectionLink(h)] : []
 		case "TokenRejected":
-			return [linkButton(h, { href: VERCEL_INTEGRATION_HREF }, ["Open the Vercel connection"])]
+			return [connectionLink(h)]
 		case "Ready":
 			return [
 				button(

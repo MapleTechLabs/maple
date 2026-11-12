@@ -1,4 +1,9 @@
-import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH, type VercelCostStatus } from "@maple/domain/http"
+import {
+	CostSourcesResponse,
+	OPENROUTER_KEY_MAX_LENGTH,
+	type VercelCostStatus,
+	type VercelCostTeam,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -91,7 +96,14 @@ const requestSources = (model: Model, context: PageContext, mode: Keyed.ReadMode
 /** The window's reads, once a source has cost to read: an org with none sends no warehouse query. */
 const requestData = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const sources = Option.getOrUndefined(AsyncData.getData(model.sources.data))
-	if (model.window === null || sources === undefined || !hasSynced(sources.sources)) return { model }
+	if (model.window === null || sources === undefined) return { model }
+	// No source has cost: what was read for the sources there were is dropped. The reads are
+	// keyed by the window, not by the sources, so it would stand in for the next source's cost.
+	if (!hasSynced(sources.sources)) {
+		return {
+			model: { ...model, totals: Keyed.idle(), timeseries: Keyed.idle(), breakdown: Keyed.idle() },
+		}
+	}
 	const filters = requestFilters(model.search)
 	const window: WindowInput = {
 		startTime: model.window.startTime,
@@ -213,9 +225,12 @@ const requestVercelStatus = (model: Model, context: PageContext): Return =>
 		),
 	])
 
-/** Whether the connection on show can be added: a team, a token Vercel takes, and no source yet. */
-const canAddVercel = (model: Model): boolean =>
-	Option.exists(AsyncData.getData(model.vercel.data), (status) => vercelStepOf(status)._tag === "Ready")
+/** The team on show, when it can be added: a token Vercel takes and no source yet. */
+const addableVercelTeam = (model: Model): Option.Option<VercelCostTeam> =>
+	Option.flatMap(AsyncData.getData(model.vercel.data), (status) => {
+		const step = vercelStepOf(status)
+		return step._tag === "Ready" ? Option.some(step.team) : Option.none()
+	})
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
@@ -422,13 +437,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadVercelStatus: ({ key, result }) => ({
 			model: { ...model, vercel: Keyed.accept(model.vercel, key, result) },
 		}),
+		// The add names the team on show: one connected since is refused, not added in its place.
 		ClickedConfirmAddVercel: () =>
-			model.sourceWrite !== "Idle" || !canAddVercel(model)
-				? { model }
-				: {
-						model: { ...model, sourceWrite: "Saving", vercelError: null },
-						commands: [AddVercelCostSource()],
-					},
+			Option.match(model.sourceWrite === "Idle" ? addableVercelTeam(model) : Option.none(), {
+				onNone: (): Return => ({ model }),
+				onSome: (team): Return => ({
+					model: { ...model, sourceWrite: "Saving", vercelError: null },
+					commands: [AddVercelCostSource({ teamId: team.id })],
+				}),
+			}),
 		// A refused add keeps the dialog open with Vercel's reason under the team.
 		CompletedAddVercel: ({ result }) =>
 			Result.match(result, {

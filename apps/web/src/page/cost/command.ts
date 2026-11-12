@@ -1,4 +1,9 @@
-import { CostBreakdownSortBy, CostFilters, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
+import {
+	CostBreakdownSortBy,
+	CostFilters,
+	OpenRouterKeyUpdateRequest,
+	VercelCostAddRequest,
+} from "@maple/domain/http"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -120,10 +125,13 @@ export const FetchVercelCostStatus = Command.define("FetchVercelCostStatus", {
 
 /** Makes the connected Vercel team a cost source, once Vercel let its token read the billing. */
 export const AddVercelCostSource = Command.define("AddVercelCostSource", {
+	// The team the dialog showed: the API refuses the add when another one is connected by now.
+	args: { teamId: Schema.String },
 	messages: [Message.CompletedAddVercel],
-	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.add()).pipe(
-		settleTo((result) => Message.CompletedAddVercel({ result })),
-	),
+	execute: ({ teamId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.vercelCost.add({ payload: new VercelCostAddRequest({ teamId }) }),
+		).pipe(settleTo((result) => Message.CompletedAddVercel({ result }))),
 })
 
 export const RemoveVercelCostSource = Command.define("RemoveVercelCostSource", {

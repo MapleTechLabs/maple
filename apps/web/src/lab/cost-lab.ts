@@ -101,7 +101,10 @@ export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessa
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
-/** What the reader added (true) or removed (false) since the state loaded; null before either. */
+/**
+ * What the reader did to each source since the state loaded: added it (true: a new source, with
+ * no cost until a sync the lab does not model) or removed it (false); null before either.
+ */
 type Changes = Readonly<{ openRouter: boolean | null; vercel: boolean | null }>
 /** What the lab answers from: the state it loaded in, and what the reader did to its sources since. */
 type World = Readonly<{ state: LabState }> & Changes
@@ -179,14 +182,16 @@ const refusedVercel = {
 		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
 }
 
+/** Whether the state starts with a source of the provider. */
+const stateHas = (state: LabState, provider: "openrouter" | "vercel"): boolean =>
+	Arr.some(sourcesFor(state).sources, (source) => source.provider === provider)
+
 /** The org's Vercel connection as the state has it, and whether the page's sources hold its team. */
 const vercelStatusOf = (world: World): VercelCostStatus =>
 	new VercelCostStatus({
 		team: world.state === "vercel-not-connected" ? null : LAB_VERCEL_TEAM,
 		authFailed: false,
-		added:
-			world.vercel ??
-			Arr.some(sourcesFor(world.state).sources, (source) => source.provider === "vercel"),
+		added: world.vercel ?? stateHas(world.state, "vercel"),
 	})
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -238,10 +243,10 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	// An empty window: the sources have synced, and nothing matches.
 	const filtersOf = (filters: WindowInput["filters"]) =>
 		state === "empty-window" ? { account: ["000000000000"] } : filters
-	// A removed source's cost is not read any more, under any filter.
+	// A removed source's cost is not read any more, under any filter, and one added since has none yet.
 	const without = [
-		...(world.openRouter === false ? ["openrouter"] : []),
-		...(world.vercel === false ? ["vercel"] : []),
+		...(world.openRouter === null ? [] : ["openrouter"]),
+		...(world.vercel === null ? [] : ["vercel"]),
 	]
 	switch (command.name) {
 		case FetchCostSources.name:
@@ -344,22 +349,30 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
 type Settled = Step & Changes
 
-/** A saved key or an added team joins the sources the lab answers with next, a removal takes it out. */
-const changesAfter = (changes: Changes, answers: ReadonlyArray<CostMessage>): Changes =>
-	Arr.reduce(answers, changes, (current, answer) => {
-		switch (answer._tag) {
-			case "CompletedSaveKey":
-				return Result.isSuccess(answer.result) ? { ...current, openRouter: true } : current
-			case "CompletedRemoveKey":
-				return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
-			case "CompletedAddVercel":
-				return Result.isSuccess(answer.result) ? { ...current, vercel: true } : current
-			case "CompletedRemoveVercel":
-				return Result.isSuccess(answer.result) ? { ...current, vercel: false } : current
-			default:
-				return current
-		}
-	})
+/** A saved key or an added team is a new source in what the lab answers next, a removal takes it out. */
+const changesAfter = (world: World, answers: ReadonlyArray<CostMessage>): Changes =>
+	Arr.reduce(
+		answers,
+		{ openRouter: world.openRouter, vercel: world.vercel },
+		(current, answer): Changes => {
+			switch (answer._tag) {
+				// A key saved while the source exists replaces its key: the source stays as it is.
+				case "CompletedSaveKey":
+					return Result.isSuccess(answer.result) &&
+						!(current.openRouter ?? stateHas(world.state, "openrouter"))
+						? { ...current, openRouter: true }
+						: current
+				case "CompletedRemoveKey":
+					return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
+				case "CompletedAddVercel":
+					return Result.isSuccess(answer.result) ? { ...current, vercel: true } : current
+				case "CompletedRemoveVercel":
+					return Result.isSuccess(answer.result) ? { ...current, vercel: false } : current
+				default:
+					return current
+			}
+		},
+	)
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the
