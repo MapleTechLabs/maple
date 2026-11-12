@@ -248,12 +248,45 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Open: whether a workspace token can read `customer`.
 - Recommendations are Maple's own: CPU and memory usage against the limit is already polled.
 
-### PlanetScale (billed, monthly)
+### PlanetScale (billed, monthly invoices spread over days)
 
-- Schema: invoices and line items per database, with scope `organization:read_invoices`. The scope
-  must be added to the registered OAuth app, and connected orgs must authorize again.
-- Schema: `cluster-size-skus?rates=true` returns rates with the scope Maple already holds. Daily
-  figures are an estimate from those rates, corrected by the invoice.
+"Live" here means checked on 2026-11-12 with a service token that has only `read_invoices`.
+
+- Live: `GET /organizations/{org}/invoices` lists one invoice per calendar month, newest first,
+  the open month included (`paid: false`). `billing_period_end` is exclusive: the first instant of
+  the next month. An organization's first invoice can start mid-month, and months with no invoice
+  are simply missing.
+- Live: `GET /organizations/{org}/invoices/{id}/line-items` names the database, the branch (with
+  when it was made and deleted), the SKU (`metric_name`) and a `subtotal` in USD as a decimal
+  string. Vitess and Postgres clusters look the same.
+- Live: a closed invoice's line items add up to its `total`. The open invoice's `total` lags its
+  line items, so Maple reads line items only.
+- Live: a cluster's line on the open invoice already carries the whole month's charge, not a
+  month-to-date figure.
+- Live: a branch deleted or resized mid-month has its charge line plus a negative "Prorated ...
+  discount" line with the same database, branch and SKU. The two together are what it cost.
+- There are no daily figures. Each line item is spread evenly over the days of the invoice's month
+  on which its branch existed (the whole month for a line with no branch), a discount line the
+  same way, so a branch's days net out to what it cost. The shares of a line add up to its
+  subtotal. The open month shows its days so far, marked as not final. The page says that
+  PlanetScale days are a monthly invoice spread evenly.
+- It needs a service token with the `read_invoices` organization access, sent as
+  `Authorization: <token id>:<token>`. Maple's PlanetScale OAuth app has no invoice scope, so the
+  existing connection is not used: the org pastes the organization name, the token ID and the
+  token on the Cost page. Maple checks them (the invoice list, then the newest invoice's line
+  items) and stores the pair sealed.
+- Live: a token PlanetScale does not know and an organization the token cannot see both answer
+  404, so that refusal names both. Docs: a token without `read_invoices` answers 403.
+- A replacement token must be for the same organization: another one's invoices would overwrite
+  the source's days.
+- Rows: the database is `CloudService` (the engine is not in the response), the SKU is
+  `UsageType`, the branch is the resource, the category is "Databases", the region is `global`.
+- Sync: twelve months back, through today. A pull is one invoice list plus one line-item read per
+  month in its window. Requests are free, so the source counts none.
+- Not used: `cluster-size-skus?rates=true`. A daily estimate from rates would only be replaced by
+  the invoice.
+- Open: how soon after a month closes its invoice is paid. Its days stay marked as not final until
+  a pull sees it paid, and the previous month is pulled again until the eleventh.
 
 ### Supabase (estimated)
 
@@ -272,8 +305,8 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter is built. Railway, GCP, PlanetScale, Supabase, Cloudflare, one
-   PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
+3. **More providers.** OpenRouter and PlanetScale are built. Railway, GCP, Supabase, Cloudflare,
+   one PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
    sync profile.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
@@ -293,7 +326,6 @@ Each phase is one PR stack.
 
 - Cloudflare: is there an OAuth billing scope.
 - Railway: can a workspace token read `customer`.
-- PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
 - AWS: a management account's rows include its member accounts and carry the connected account's
