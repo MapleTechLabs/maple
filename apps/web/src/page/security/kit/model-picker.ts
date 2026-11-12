@@ -64,7 +64,9 @@ const rating = <M>(
 			value: options.level,
 			max: SECURITY_AUDIT_RATING_LEVELS,
 			ramp: options.ramp,
-			label: `${options.name} ${options.level} of ${SECURITY_AUDIT_RATING_LEVELS}`,
+			label: `${options.name} ${options.level} of ${SECURITY_AUDIT_RATING_LEVELS} (${
+				options.ramp === "low-is-good" ? "lower is better" : "higher is better"
+			})`,
 		}),
 	])
 
