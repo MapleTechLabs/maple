@@ -128,7 +128,8 @@
 	"sov_link_otel": "Why OpenTelemetry",
 	"sov_link_pricing": "See the calculator",
 
-	"mcp_eyebrow": "Agents",
+	"mcp_eyebrow": "\uc5d0\uc774\uc804\ud2b8",
+	"analytics_eyebrow": "\uc6f9 \ubd84\uc11d",
 	"mcp_title": "\uc778\uc2dc\ub358\ud2b8 \uc870\uc0ac\ub97c, \uc5d0\uc774\uc804\ud2b8\uc5d0\uac8c.",
 	"mcp_lede": "\ud2b8\ub79c\uc2a4\ud06c\ub9bd\ud2b8\ub294 \uc11c\ube44\uc2a4 \ubaa9\ub85d\ubd80\ud130 \uc218\uc815 \uc81c\uc548\uae4c\uc9c0 MCP \ud074\ub77c\uc774\uc5b8\ud2b8\uac00 Maple\uc5d0 \ud638\ucd9c\ud558\ub294 \ub3c4\uad6c\uc758 \uc21c\uc11c\uc785\ub2c8\ub2e4.",
 	"mcp_point_1_title": "트레이스 뒤의 코드를 읽습니다",
@@ -155,7 +156,7 @@
 	"k8s_summary_cluster_cpu": "클러스터 CPU",
 	"k8s_summary_cluster_mem": "클러스터 메모리",
 
-	"bill_eyebrow": "The bill",
+	"bill_eyebrow": "\uc694\uae08 \ube44\uad50",
 	"bill_title": "\uccad\uad6c\uc11c\ub97c \ud55c \uc904\uc529.",
 	"bill_lede": "\uc815\uac00 \uae30\uc900\uc73c\ub85c \ub098\ub780\ud788 \ube44\uad50. \uc7ac\ubb34\ud300\uc774 \ubb3c\uc5b4\ubcfc \uc9c8\ubb38\uc5d0 \ubbf8\ub9ac \ub2f5\ud569\ub2c8\ub2e4.",
 	"bill_col_metric": "Line item",
