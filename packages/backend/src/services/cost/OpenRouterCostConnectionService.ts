@@ -26,9 +26,6 @@ import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 
 const VALIDATE_TIMEOUT = Duration.seconds(15)
 
-/** A workspace id no account has: how a key answers for it says whether it is scoped to one. */
-const NO_SUCH_WORKSPACE = "00000000-0000-4000-8000-000000000000"
-
 const WORKSPACE_SCOPED_KEY =
 	"This management key reads one workspace only, so the source would miss the rest of the account's spend. Use a management key for the whole account."
 
@@ -101,8 +98,12 @@ export class OpenRouterCostConnectionService extends Context.Service<
 		 * The key's name and account at OpenRouter, once it has proved it can read the account's
 		 * activity: a key that cannot would save and then fail every sync.
 		 */
-		const validateWithOpenRouter = (apiKey: string) =>
-			Effect.gen(function* () {
+		const validateWithOpenRouter = (apiKey: string) => {
+			const credentials = {
+				apiKey: Redacted.make(apiKey),
+				apiBaseUrl: OpenRouterApi.OPENROUTER_MANAGEMENT_API_URL,
+			}
+			return Effect.gen(function* () {
 				const { data } = yield* asked(OpenRouterApi.getKeyInfo({}))
 				if (data.is_management_key !== true && data.is_provisioning_key !== true) {
 					return yield* new OpenRouterKeyValidationError({ message: NOT_A_MANAGEMENT_KEY })
@@ -115,23 +116,11 @@ export class OpenRouterCostConnectionService extends Context.Service<
 				}
 				yield* asked(OpenRouterApi.getActivity({}))
 				// A key scoped to one workspace reads only that one, and nothing in a pull would say so.
-				const scoped = yield* OpenRouterApi.getWorkspaceActivity({
-					workspaceId: NO_SUCH_WORKSPACE,
-				}).pipe(
-					Effect.as(false),
-					Effect.catchTags({
-						"@maple/backend/openrouter/NotFound": () => Effect.succeed(false),
-						"@maple/backend/openrouter/Forbidden": () => Effect.succeed(true),
-					}),
-					asked,
-				)
+				const scoped = yield* asked(OpenRouterApi.readsOneWorkspaceOnly(httpClient, credentials))
 				if (scoped) return yield* new OpenRouterKeyValidationError({ message: WORKSPACE_SCOPED_KEY })
 				return { keyLabel: data.label, accountId }
 			}).pipe(
-				OpenRouterApi.withKey(httpClient, {
-					apiKey: Redacted.make(apiKey),
-					apiBaseUrl: OpenRouterApi.OPENROUTER_MANAGEMENT_API_URL,
-				}),
+				OpenRouterApi.withKey(httpClient, credentials),
 				Effect.timeoutOrElse({
 					duration: VALIDATE_TIMEOUT,
 					orElse: () =>
@@ -143,6 +132,7 @@ export class OpenRouterCostConnectionService extends Context.Service<
 				}),
 				Effect.withSpan("OpenRouterCostConnectionService.validateWithOpenRouter"),
 			)
+		}
 
 		const set = Effect.fn("OpenRouterCostConnectionService.set")(function* (
 			orgId: OrgId,
