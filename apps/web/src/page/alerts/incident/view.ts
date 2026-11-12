@@ -60,7 +60,7 @@ import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, canReadAuditLog } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -264,6 +264,8 @@ export type IncidentBodyInputs<M> = Readonly<{
 	escalation?: EscalationData
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
+	/** The viewer may open the audit log. An audit incident links it only then: anyone else is sent home. */
+	canReadAuditLog?: boolean
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
@@ -275,23 +277,30 @@ export type IncidentBodyInputs<M> = Readonly<{
 /** Where an audit detection's events are listed; only org admins can open it. */
 const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
 
-/** A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until known). */
+/**
+ * A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until
+ * known). With neither a link nor a fallback it is the note alone.
+ */
 const sourceNote = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		text: string
 		href: string | null
 		label: string
-		fallback: Readonly<{ href: string; label: string }>
+		fallback?: Readonly<{ href: string; label: string }>
 	}>,
-): Html =>
-	vstack(h, { gap: "3", align: "start" }, [
+): Html => {
+	const href = options.href ?? options.fallback?.href
+	return vstack(h, { gap: "3", align: "start" }, [
 		typography(h, { size: "sm", tone: "muted", as: "p" }, [options.text]),
-		linkButton(h, { size: "sm", variant: "outline", href: options.href ?? options.fallback.href }, [
-			options.href === null ? options.fallback.label : options.label,
-			icon(h, "ArrowRightIcon"),
-		]),
+		href === undefined
+			? h.empty
+			: linkButton(h, { size: "sm", variant: "outline", href }, [
+					options.href === null ? (options.fallback?.label ?? options.label) : options.label,
+					icon(h, "ArrowRightIcon"),
+				]),
 	])
+}
 
 /** Signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
@@ -337,13 +346,12 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 													})
 												: incident.signalType === "audit"
 													? sourceNote(h, {
-															text: "This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. The audit log lists the events.",
-															href: auditLogHref(),
+															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === true ? "The audit log lists the events." : "The audit log lists the events; only org admins can open it."}`,
+															href:
+																inputs.canReadAuditLog === true
+																	? auditLogHref()
+																	: null,
 															label: "Open audit log",
-															fallback: {
-																href: auditLogHref(),
-																label: "Open audit log",
-															},
 														})
 													: rule === null
 														? typography(
@@ -426,6 +434,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
+		canReadAuditLog: canReadAuditLog(model),
 		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),

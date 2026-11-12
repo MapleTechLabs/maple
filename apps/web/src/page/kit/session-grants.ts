@@ -34,3 +34,6 @@ export const acceptGrants = <M extends Grants>(
 
 /** The viewer may change alert rules, schedules, SLOs and routing (`alerts:manage`). */
 export const canManageAlerts = (model: Grants): boolean => Policy.has(model.grants, "alerts:manage")
+
+/** The viewer may open the audit log (`audit_log:read`); false until the session answers. */
+export const canReadAuditLog = (model: Grants): boolean => Policy.has(model.grants, "audit_log:read")

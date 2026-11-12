@@ -1184,8 +1184,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An audit detection counts the events that arrived in its window. The count is a
 				// fact even at zero, so an empty window reads healthy and not as missing data.
 				if (rule.signalType === "audit") {
+					// Only events that arrived since the detection was last saved: a new one, or one
+					// whose window was widened, must not fire on what was there before.
 					const count = yield* auditTrail
-						.count(orgId, rule.auditFilters, { startMs, endMs })
+						.count(orgId, rule.auditFilters, {
+							startMs: Math.max(startMs, rule.updatedAt),
+							endMs,
+						})
 						.pipe(Effect.mapError(makePersistenceError))
 					return [
 						{
@@ -4150,7 +4155,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
 				}
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
-				const ownsIssue = normalized.signalType !== "anomaly"
+				// An audit detection is no fault in a service: it has no place in the triage queue,
+				// and a root-cause run over telemetry has nothing to find.
+				const ownsIssue = normalized.signalType !== "anomaly" && normalized.signalType !== "audit"
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,

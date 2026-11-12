@@ -287,7 +287,7 @@ describe("alert incident", () => {
 		)
 	})
 
-	test("an audit detection incident asks for no rule preview, offers no rule edit, and links the audit log", () => {
+	test("an audit detection incident asks for no rule preview, offers no rule edit, and links the audit log for an admin", () => {
 		const auditIncident = incidentRow({
 			rule_name: "Members added",
 			signal_type: "audit",
@@ -320,6 +320,23 @@ describe("alert incident", () => {
 			expectView(role("heading", { name: "Audit log 4" })).toExist(),
 			expectView(text(/__total__/u)).not.toExist(),
 			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			// Until the session answers, and for a member after it, the audit log is no page to
+			// offer: the router would send them home.
+			expectView(role("link", { name: "Open audit log" })).not.toExist(),
+		)
+		const seenBy = (roles: ReadonlyArray<string>) =>
+			step(withRule.model, Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(["org:member"])),
+			themeResolved(),
+			expectView(text(/only org admins can open it/u)).toExist(),
+			expectView(role("link", { name: "Open audit log" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(["org:admin"])),
+			themeResolved(),
 			expectView(role("link", { name: "Open audit log" })).toHaveAttr(
 				"href",
 				hrefOf(AppRoute.SecurityAuditLog({ search: {} })),
