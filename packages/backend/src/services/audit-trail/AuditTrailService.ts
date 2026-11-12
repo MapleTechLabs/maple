@@ -1,4 +1,4 @@
-import type { AuditTrailEvent } from "@maple/domain/audit-trail"
+import type { AuditDetectionFilters, AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AuditTrailPersistenceError } from "@maple/domain/http"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import type { OrgId } from "@maple/primitives"
@@ -48,6 +48,12 @@ export interface AuditTrailServiceApi {
 		orgId: OrgId,
 		filters: AuditTrailListFilters,
 	) => Effect.Effect<AuditTrailPage, AuditTrailPersistenceError>
+	/** How many matching events arrived in `(startMs, endMs]`; a redelivered event counts once. */
+	readonly count: (
+		orgId: OrgId,
+		filters: AuditDetectionFilters,
+		window: { readonly startMs: number; readonly endMs: number },
+	) => Effect.Effect<number, AuditTrailPersistenceError>
 }
 
 const persistenceError = (message: string) => (error: { readonly _tag: string }) =>
@@ -146,7 +152,34 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 				},
 			)
 
-			return { write, list }
+			const count: AuditTrailServiceApi["count"] = Effect.fn("AuditTrailService.count")(
+				function* (orgId, filters, window) {
+					const rows = yield* warehouse
+						.compiledQuery(
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+							CH.compile(
+								CH.auditTrailCountQuery({
+									provider: filters.provider !== undefined,
+									category: filters.category !== undefined,
+									outcome: filters.outcome !== undefined,
+									action: filters.action !== undefined,
+								}),
+								{
+									orgId,
+									...filters,
+									start: DateTime.makeUnsafe(window.startMs),
+									end: DateTime.makeUnsafe(window.endMs),
+								},
+								{ rowSchema: CH.auditTrailCountRowSchema },
+							),
+							{ profile: "aggregation", context: "auditTrailCount" },
+						)
+						.pipe(Effect.mapError(persistenceError("The audit trail could not be counted")))
+					return rows[0]?.events ?? 0
+				},
+			)
+
+			return { write, list, count }
 		}),
 	},
 ) {

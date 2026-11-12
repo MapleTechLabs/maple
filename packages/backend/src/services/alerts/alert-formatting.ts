@@ -207,7 +207,10 @@ const uptimeObserved = (context: Pick<ObservedContext, "value" | "detail">): str
 
 /** Whether a rule's notifications carry the evaluator's reason as their `detail`. */
 export const signalCarriesDetail = (signalType: string): boolean =>
-	signalType === "uptime" || signalType === "slo_burn_rate" || signalType === "anomaly"
+	signalType === "uptime" ||
+	signalType === "slo_burn_rate" ||
+	signalType === "anomaly" ||
+	signalType === "audit"
 
 /** An anomaly rule's value is its severity code; what it says is the detector's sentence. */
 const anomalyObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
@@ -233,7 +236,8 @@ export const formatObservedSummary = (context: ObservedContext): string =>
 		? uptimeObserved(context)
 		: context.signalType === "anomaly"
 			? anomalyObserved(context)
-			: context.signalType === "slo_burn_rate" && context.detail != null
+			: (context.signalType === "slo_burn_rate" || context.signalType === "audit") &&
+				  context.detail != null
 				? context.detail
 				: context.value === null
 					? `No data (threshold ${formatThresholdSummary(context)})`

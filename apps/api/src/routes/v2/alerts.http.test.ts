@@ -45,6 +45,7 @@ import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/Aler
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -219,6 +220,7 @@ const makeHarness = (
 					Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
 				),
+				Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provide(warehouseLive)),
 			),
 		),
 	)

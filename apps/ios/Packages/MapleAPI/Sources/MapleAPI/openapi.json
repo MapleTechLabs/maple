@@ -7224,7 +7224,8 @@
           "raw_query",
           "uptime",
           "slo_burn_rate",
-          "anomaly"
+          "anomaly",
+          "audit"
         ],
         "examples": [
           "error_rate"

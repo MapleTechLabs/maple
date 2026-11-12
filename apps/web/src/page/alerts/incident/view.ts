@@ -272,6 +272,9 @@ export type IncidentBodyInputs<M> = Readonly<{
 	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
+/** Where an audit detection's events are listed; only org admins can open it. */
+const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
+
 /** A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until known). */
 const sourceNote = <M>(
 	h: HtmlBuilder<M>,
@@ -332,31 +335,45 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 														label: "Open SLO",
 														fallback: { href: slosTabHref(), label: "Open SLOs" },
 													})
-												: rule === null
-													? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-															"The rule behind this incident was deleted, so its signal cannot be replayed.",
-														])
-													: ruleChart(h, {
-															chartId: inputs.chartId,
-															chart: inputs.chart,
-															toChartMessage: inputs.toChartMessage,
-															colors: inputs.colors,
-															timeZone: inputs.timeZone,
-															preview: inputs.preview,
-															checks: inputs.checks,
-															incidents: [incident],
-															threshold: incident.threshold,
-															thresholdUpper: incident.thresholdUpper,
-															comparator: incident.comparator,
-															signalType: incident.signalType,
-															window: {
-																min: inputs.range.start,
-																max: inputs.range.end,
+												: incident.signalType === "audit"
+													? sourceNote(h, {
+															text: "This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. The audit log lists the events.",
+															href: auditLogHref(),
+															label: "Open audit log",
+															fallback: {
+																href: auditLogHref(),
+																label: "Open audit log",
 															},
-															source: "preview",
-															isLoading: inputs.isPreviewLoading,
-															error: inputs.previewError,
-														}),
+														})
+													: rule === null
+														? typography(
+																h,
+																{ size: "sm", tone: "muted", as: "p" },
+																[
+																	"The rule behind this incident was deleted, so its signal cannot be replayed.",
+																],
+															)
+														: ruleChart(h, {
+																chartId: inputs.chartId,
+																chart: inputs.chart,
+																toChartMessage: inputs.toChartMessage,
+																colors: inputs.colors,
+																timeZone: inputs.timeZone,
+																preview: inputs.preview,
+																checks: inputs.checks,
+																incidents: [incident],
+																threshold: incident.threshold,
+																thresholdUpper: incident.thresholdUpper,
+																comparator: incident.comparator,
+																signalType: incident.signalType,
+																window: {
+																	min: inputs.range.start,
+																	max: inputs.range.end,
+																},
+																source: "preview",
+																isLoading: inputs.isPreviewLoading,
+																error: inputs.previewError,
+															}),
 								],
 							),
 					incidentTimeline(h, {
