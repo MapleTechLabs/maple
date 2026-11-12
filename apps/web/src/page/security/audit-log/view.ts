@@ -2,6 +2,7 @@ import { AuditTrailCategory } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import * as Keyed from "@maple/views/data/keyed"
 import { Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -190,12 +191,13 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 				tableCell(
 					h,
 					[
-						// The whole cell, so a thumb has more than a line of text to hit.
+						// The whole cell, so a thumb has more than a line of text to hit. Its label
+						// replaces its content for a screen reader, so it says when as well as what.
 						pressable(
 							h,
 							{
 								onClick: Message.ToggledEvent({ id: event.id }),
-								label: `${isExpanded ? "Hide" : "Show"} details: ${event.action}`,
+								label: `${isExpanded ? "Hide" : "Show"} details: ${event.action}, ${formatTimestampInTimezone(event.occurredAt, { timeZone: clock.timeZone, withYear: true })}`,
 								className:
 									"focus-visible:ring-ring flex min-h-10 w-full items-center gap-1.5 px-2.5 focus-visible:ring-1 focus-visible:outline-none focus-visible:ring-inset",
 								attributes: [h.AriaExpanded(isExpanded), h.AriaControls(detailId)],

@@ -143,6 +143,16 @@ describe("security audit log", () => {
 		)
 	})
 
+	// The toggle's label replaces its content for a screen reader: without the time in it, the
+	// row would say what happened and never when.
+	test("a row's toggle names the action and when it happened", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(role("button", { name: /Show details: alert_rule\.updated, .*2026/ })).toExist(),
+		)
+	})
+
 	test("a log with no refusals shows no refusal mark", () => {
 		const calm = { ...PAGE, events: Arr.filter(PAGE.events, (event) => event.outcome === "success") }
 
