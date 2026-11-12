@@ -347,15 +347,58 @@ describe("cost page", () => {
 		expect(removed.model.removeDialog.isOpen).toBe(false)
 		// The reads name the org's sources: without reading them again the removed source's cost stays.
 		expect(names(removed.commands)).toEqual(
-			expect.arrayContaining(["FetchCostSources", "ResolveCostWindow"]),
+			expect.arrayContaining([
+				"FetchCostSources",
+				"FetchCostTotals",
+				"FetchCostTimeseries",
+				"FetchCostBreakdown",
+			]),
 		)
-		const reread = pageUpdate(
+		// Until the new list is in, the row on show is the removed source's: its actions wait.
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Replace key" })).toBeDisabled(),
+			expectView(role("button", { name: "Remove" })).toBeDisabled(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+		)
+		const settled = pageUpdate(
 			removed.model,
-			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+			Message.CompletedLoadSources({
+				key: removed.model.sources.key ?? "",
+				result: Result.succeed(sources([source()])),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(settled),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 		)
-		expect(names(reread.commands)).toEqual(
-			expect.arrayContaining(["FetchCostTotals", "FetchCostTimeseries", "FetchCostBreakdown"]),
+
+		// A reload that was still in flight when the removal answered cannot answer for the re-read.
+		const reloading = pageUpdate(removing.model, Message.ClickedReload()).model
+		const staleKey = reloading.sources.key ?? ""
+		const afterWrite = pageUpdate(
+			reloading,
+			Message.CompletedRemoveKey({
+				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+			}),
 		)
+		expect(names(afterWrite.commands)).toContain("FetchCostSources")
+		const stale = pageUpdate(
+			afterWrite.model,
+			Message.CompletedLoadSources({
+				key: staleKey,
+				result: Result.succeed(sources([source(), openRouter])),
+			}),
+		).model
+		// The reload's list, read before the removal, is dropped: the page still waits for the new one.
+		expect(stale.sourceWrite).toBe("Settling")
 
 		// A key saved while the source exists replaces its key, and the toast says so.
 		const replaced = pageUpdate(
@@ -425,6 +468,15 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
 			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
+			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+		)
+		// Before the viewer's roles are known the page neither offers the button nor says who can add.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...entered({}, []).model, grants: null }),
+			resolveTheme,
+			expectView(text("No cost source yet")).toExist(),
+			expectView(text(/Only organization admins/)).not.toExist(),
 			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
 		)
 		// An engineer is offered them.

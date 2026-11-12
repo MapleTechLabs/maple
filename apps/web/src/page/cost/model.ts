@@ -36,8 +36,8 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
-	/** What the viewer's roles allow; empty until the session read answers. */
-	grants: Schema.Array(Policy.PermissionName),
+	/** What the viewer's roles allow; null until the session read answers. */
+	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
 	/** The OpenRouter management key being typed; cleared whichever way the dialog closes. */
@@ -45,10 +45,15 @@ export const Model = Schema.Struct({
 	/** Why the last save was refused, shown under the field until the key changes. */
 	keyError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
-	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing"]),
+	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
+	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })
 export type Model = typeof Model.Type
 
 /** The saves need this permission: a viewer without it is offered no action that would be refused. */
 export const canManageSources = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "integrations:manage")
+	model.grants !== null && Policy.has(model.grants, "integrations:manage")
+
+/** The viewer's roles are known and lack the permission: only then does the page say who has it. */
+export const cannotManageSources = (model: Pick<Model, "grants">): boolean =>
+	model.grants !== null && !Policy.has(model.grants, "integrations:manage")

@@ -37,7 +37,7 @@ import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
-import { canManageSources, type Model } from "./model"
+import { canManageSources, cannotManageSources, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -50,7 +50,10 @@ const DAY_SECONDS = 24 * 60 * 60
 type H = HtmlBuilder<Message>
 
 /** No cost source: how to get one. Never a sample of what the page would show. */
-const onRamp = (h: H, canManage: boolean): Html =>
+const onRamp = (
+	h: H,
+	options: Readonly<{ canManage: boolean; cannotManage: boolean; isBusy: boolean }>,
+): Html =>
 	empty(
 		h,
 		[
@@ -63,7 +66,7 @@ const onRamp = (h: H, canManage: boolean): Html =>
 						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
-					...(canManage
+					...(!options.cannotManage
 						? []
 						: [
 								emptyDescription(
@@ -75,7 +78,7 @@ const onRamp = (h: H, canManage: boolean): Html =>
 				],
 				"max-w-md",
 			),
-			...(canManage
+			...(options.canManage
 				? [
 						emptyContent(
 							h,
@@ -86,6 +89,7 @@ const onRamp = (h: H, canManage: boolean): Html =>
 										{
 											variant: "default",
 											size: "sm",
+											isDisabled: options.isBusy,
 											attributes: [h.OnClick(Message.ClickedAddSource())],
 										},
 										["Add a cost source"],
@@ -239,11 +243,12 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 			errorState(h, { failure, title: "Couldn't load cost", onRetry: Message.ClickedRetry() }),
 		],
 		onData: ({ sources }) => {
-			if (sources.length === 0) return [onRamp(h, canManageSources(model))]
-			const section = sourcesSection(h, sources, model.nowMs, timeZone, {
-				isBusy: model.sourceWrite !== "Idle",
-				canManage: canManageSources(model),
-			})
+			const isBusy = model.sourceWrite !== "Idle"
+			const canManage = canManageSources(model)
+			if (sources.length === 0) {
+				return [onRamp(h, { canManage, cannotManage: cannotManageSources(model), isBusy })]
+			}
+			const section = sourcesSection(h, sources, model.nowMs, timeZone, { isBusy, canManage })
 			return hasSynced(sources) ? [...content(h, model), section] : [firstSync(h, sources), section]
 		},
 	})

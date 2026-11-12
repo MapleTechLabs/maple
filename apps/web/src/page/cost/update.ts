@@ -73,7 +73,7 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-const requestSources = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return =>
+const requestSources = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
 	applySteps<Model, Message>(model, [
 		keyed(
 			model.sources,
@@ -85,7 +85,7 @@ const requestSources = (model: Model, context: PageContext, mode: Keyed.RequestM
 	])
 
 /** The window's reads, once a source has cost to read: an org with none sends no warehouse query. */
-const requestData = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
+const requestData = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const sources = Option.getOrUndefined(AsyncData.getData(model.sources.data))
 	if (model.window === null || sources === undefined || !hasSynced(sources.sources)) return { model }
 	const filters = requestFilters(model.search)
@@ -144,7 +144,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshVersion: 0,
 		isReloading: false,
 		// Without Clerk there are no roles: everyone may do everything.
-		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
+		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
 		keyDraft: Field.init(),
@@ -192,12 +192,13 @@ const openAdd = (model: Model, addStep: AddStep): Return =>
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
- * sources, so a removed one's cost would stay on the page until then.
+ * sources, so a removed one's cost would stay on the page until then. Superseding, so a reload
+ * that started before the write cannot answer for them.
  */
 const withReread = (step: Return, context: PageContext): Return =>
 	chain<Model, Message>(
-		{ ...step, commands: [...(step.commands ?? []), resolveCommand(step.model, context, "Refresh")] },
-		(next) => requestSources(next, context, "Refresh"),
+		chain<Model, Message>(step, (next) => requestSources(next, context, "Supersede")),
+		(next) => requestData(next, context, "Supersede"),
 	)
 
 /** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
@@ -236,7 +237,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			requestData({ ...model, window, nowMs }, context, mode),
 		// The sources' answer decides whether there is anything to read; a failed one reads nothing.
 		CompletedLoadSources: ({ key, result }) =>
-			requestData({ ...model, sources: Keyed.accept(model.sources, key, result) }, context, "Load"),
+			requestData(
+				{
+					...model,
+					sources: Keyed.accept(model.sources, key, result),
+					// The list read after a write is in: its rows are the real ones again.
+					sourceWrite:
+						model.sourceWrite === "Settling" && key === model.sources.key
+							? "Idle"
+							: model.sourceWrite,
+				},
+				context,
+				"Load",
+			),
 		CompletedLoadTotals: ({ key, result }) => ({
 			model: { ...model, totals: Keyed.accept(model.totals, key, result) },
 		}),
@@ -254,6 +267,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					commands: [
 						resolveCommand(reloaded, context, "Refresh"),
 						CompleteReloadSpin({ version: reloaded.refreshVersion }),
+						// A session read that failed left no grants: Reload asks again.
+						...(isClerkAuthEnabled ? [ReadCostGrants()] : []),
 					],
 				},
 				(next) => requestSources(next, context, "Refresh"),
@@ -354,7 +369,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onSuccess: (): Return => {
 					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Idle" }),
+						clearedKey({ ...model, sourceWrite: "Settling" }),
 						Dialog.close(model.addDialog),
 					)
 					const outMessage = hasOpenRouterSource(model)
@@ -381,7 +396,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
 		CompletedRemoveKey: ({ result }) => {
 			const closed = liftRemoveDialog(
-				{ ...model, sourceWrite: "Idle" },
+				{ ...model, sourceWrite: Result.isSuccess(result) ? "Settling" : "Idle" },
 				Dialog.close(model.removeDialog),
 			)
 			return Result.match(result, {

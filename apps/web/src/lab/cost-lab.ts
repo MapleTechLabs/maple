@@ -186,7 +186,12 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	const days = daysOf(search)
 	// An empty window: the sources have synced, and nothing matches.
 	const filtersOf = (filters: WindowInput["filters"]) =>
-		state === "empty-window" ? { account: ["000000000000"] } : filters
+		state === "empty-window"
+			? { account: ["000000000000"] }
+			: // A removed source's cost is not read any more.
+				world.openRouter === false
+				? { ...filters, provider: ["aws"] }
+				: filters
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
