@@ -165,7 +165,12 @@ export const sourcesSection = (
 			title: "Sources",
 			action: button(
 				h,
-				{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedAddSource())] },
+				{
+					variant: "outline",
+					size: "sm",
+					isDisabled: isBusy,
+					attributes: [h.OnClick(Message.ClickedAddSource())],
+				},
 				["Add source"],
 			),
 		}),
