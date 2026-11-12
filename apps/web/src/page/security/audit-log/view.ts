@@ -7,7 +7,7 @@ import * as Keyed from "@maple/views/data/keyed"
 import { Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { compactSearchInput } from "@maple/views/ui/compact-search-input"
 import {
 	empty,
@@ -51,22 +51,25 @@ import { relativeTime } from "../../kit/relative-time"
 import { ROOMY_COLUMN, securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
-	actorDetail,
-	actorText,
-	actorTypeLabel,
 	CATEGORY_LABEL,
 	categoryLabel,
-	eventsOf,
-	isFiltered,
-	isForbidden,
-	isMarked,
 	labelIn,
-	nextCursorOf,
 	OUTCOME_FILTERS,
 	OUTCOME_LABEL,
 	outcomeLabel,
 	PROVIDER_LABEL,
 	providerLabel,
+} from "../kit/audit-labels"
+import {
+	actorDetail,
+	actorText,
+	actorTypeLabel,
+	alertHref,
+	eventsOf,
+	isFiltered,
+	isForbidden,
+	isMarked,
+	nextCursorOf,
 	targetText,
 } from "./derive"
 import { accessOf, Message, type Model, type SelectFilter } from "./model"
@@ -106,6 +109,22 @@ const filterSelect = (
 			...Arr.map(values, (option) => nativeOption(option, labelIn(labels, option))),
 		],
 	)
+
+/**
+ * The filters on screen as a detection. With an actor applied the label says the detection will
+ * count everyone: it holds no actor, and must not read as if it did.
+ */
+const alertControl = (h: H, model: Model): Html | undefined => {
+	const href = alertHref(model.search)
+	return href === null
+		? undefined
+		: linkButton(h, { variant: "outline", size: "sm", href }, [
+				icon(h, "BellIcon"),
+				model.search.actor === undefined
+					? "Alert on these events"
+					: "Alert on these events, from any actor",
+			])
+}
 
 const toolbar = (h: H, model: Model): Html =>
 	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
@@ -463,19 +482,16 @@ const isRefused = (model: Model): boolean =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	if (accessOf(model) === "unknown")
+		return securityLayout(h, { source: "auditLog" }, [placeholderRows(h, 6)])
+	if (isRefused(model)) return securityLayout(h, { source: "auditLog" }, [adminsOnly(h)])
 	return securityLayout(
 		h,
-		{ source: "auditLog" },
-		accessOf(model) === "unknown"
-			? [placeholderRows(h, 6)]
-			: isRefused(model)
-				? [adminsOnly(h)]
-				: [
-						panel(h, { className: "overflow-hidden" }, [
-							toolbar(h, model),
-							listBody(h, model, clock),
-						]),
-						footnote(h),
-					],
+		// In the header, beside the title: the toolbar is full at laptop width and would wrap it.
+		{ source: "auditLog", actions: alertControl(h, model) },
+		[
+			panel(h, { className: "overflow-hidden" }, [toolbar(h, model), listBody(h, model, clock)]),
+			footnote(h),
+		],
 	)
 })
