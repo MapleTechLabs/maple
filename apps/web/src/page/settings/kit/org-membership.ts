@@ -7,9 +7,10 @@ export type OrgRole = Policy.ClerkRoleKey
 /** The assignable Clerk role keys, lowest role first. */
 export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.assignableRoles, (entry) => entry.clerkKey)
 
-const [memberEntry] = Policy.assignableRoles
+// `root`, which Clerk never assigns, has no entry of its own and shows as a member.
+const memberEntry = Policy.assignableRoles[1]
 
-/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are members). */
+/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are observers). */
 const entryOf = (role: string): Policy.AssignableRole => {
 	const policyRole = Policy.roleOf(role)
 	return Option.getOrElse(

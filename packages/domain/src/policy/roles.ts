@@ -21,6 +21,12 @@ const byRank: Order.Order<Role> = Order.mapInput(Order.Number, (role) => RANK[ro
 /** What the Members page shows for a role a person can be given in Clerk. */
 export const assignableRoles = [
 	{
+		role: "observer",
+		clerkKey: "org:observer",
+		label: "Observer",
+		summary: "Follows incidents, reliability, product analytics and cost, without changing anything.",
+	},
+	{
 		role: "member",
 		clerkKey: "org:member",
 		label: "Member",
@@ -43,16 +49,6 @@ export const assignableRoles = [
 export type AssignableRole = (typeof assignableRoles)[number]
 export type ClerkRoleKey = AssignableRole["clerkKey"]
 
-/** Read-only, for people who follow the product without operating it. Not offered on the Members page yet. */
-const observerRole = {
-	role: "observer",
-	clerkKey: "org:observer",
-	label: "Observer",
-	summary: "Follows incidents, reliability, product analytics and cost. Changes nothing.",
-} as const satisfies { role: Role; clerkKey: string; label: string; summary: string }
-
-const clerkRoles = [observerRole, ...assignableRoles] as const
-
 /**
  * A Clerk or session role string as a {@link Role}. A role this code does not know reads as
  * observer, the least it can hold.
@@ -61,7 +57,7 @@ export const roleOf = (name: string): Role => {
 	if (name === "root") return "root"
 	return Option.getOrElse(
 		Option.map(
-			Arr.findFirst(clerkRoles, (entry) => entry.clerkKey === name),
+			Arr.findFirst(assignableRoles, (entry) => entry.clerkKey === name),
 			(entry): Role => entry.role,
 		),
 		(): Role => "observer",

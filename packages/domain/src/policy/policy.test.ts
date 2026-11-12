@@ -113,17 +113,20 @@ describe("Policy.grantsOf", () => {
 describe("roleOf", () => {
 	it("maps the Clerk keys the Members page assigns", () => {
 		expect(Arr.map(Policy.assignableRoles, (entry) => Policy.roleOf(entry.clerkKey))).toEqual([
+			"observer",
 			"member",
 			"engineer",
 			"admin",
 		])
 	})
 
-	it("reads the observer key as observer, below every assignable role", () => {
-		expect(Policy.roleOf("org:observer")).toBe("observer")
-		for (const entry of Policy.assignableRoles) {
-			expect(Policy.outranks(entry.role, "observer")).toBe(true)
-		}
+	it("lists the assignable roles lowest first, so each outranks the one before it", () => {
+		const roles = Arr.map(Policy.assignableRoles, (entry) => entry.role)
+		expect(
+			Arr.every(Arr.zip(roles, Arr.drop(roles, 1)), ([lower, higher]) =>
+				Policy.outranks(higher, lower),
+			),
+		).toBe(true)
 	})
 })
 
