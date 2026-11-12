@@ -7773,7 +7773,8 @@ mod tests {
         let mapping = clickhouse_insert_mappings::mapping_for("logs").expect("logs mapping");
         let sql = build_clickhouse_insert_sql(mapping, "org_'one");
         assert!(sql.starts_with("INSERT INTO logs (OrgId, Timestamp"));
-        assert!(sql.contains("SELECT 'org_\\'one', timestamp, timestamp"));
+        // `input()` rejects reading one raw column twice, so the repeat is a cast.
+        assert!(sql.contains("SELECT 'org_\\'one', timestamp, CAST(timestamp AS DateTime)"));
         assert!(sql.contains("FROM input('timestamp DateTime64(9)"));
         assert!(sql.ends_with("FORMAT JSONEachRow"));
         assert!(!sql.contains("payment failed"));
