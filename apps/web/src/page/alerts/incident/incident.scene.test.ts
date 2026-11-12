@@ -320,9 +320,9 @@ describe("alert incident", () => {
 			expectView(role("heading", { name: "Audit log 4" })).toExist(),
 			expectView(text(/__total__/u)).not.toExist(),
 			expectView(role("link", { name: "Edit rule" })).not.toExist(),
-			// Until the session answers, and for a member after it, the audit log is no page to
-			// offer: the router would send them home.
+			// Until the session answers there is no link, and no word yet on who may open the log.
 			expectView(role("link", { name: "Open audit log" })).not.toExist(),
+			expectView(text(/only org admins can open it/u)).not.toExist(),
 		)
 		const seenBy = (roles: ReadonlyArray<string>) =>
 			step(withRule.model, Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) })).model
