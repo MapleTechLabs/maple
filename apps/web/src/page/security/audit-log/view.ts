@@ -120,9 +120,11 @@ const alertControl = (h: H, model: Model): Html | undefined => {
 		? undefined
 		: linkButton(h, { variant: "outline", size: "sm", href }, [
 				icon(h, "BellIcon"),
-				model.search.actor === undefined
-					? "Alert on these events"
-					: "Alert on these events, from any actor",
+				"Alert on these events",
+				// A phone has no room for the rest; the editor shows what the detection counts.
+				...(model.search.actor === undefined
+					? []
+					: [h.span([h.Class("hidden sm:inline")], [", from any actor"])]),
 			])
 }
 

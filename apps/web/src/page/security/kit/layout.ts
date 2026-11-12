@@ -203,5 +203,13 @@ export const NARROW_TWO_COLUMNS = "md:grid-cols-2 xl:grid-cols-4 md:divide-y xl:
 /** A table column phones drop; what they still need from it rides in the row's first cell. */
 export const WIDE_COLUMN = "hidden sm:table-cell"
 
+/**
+ * A column a laptop screen has room for beside the sidebar and the rail. Below that, what it
+ * says rides in the row's first cell, so the row's controls stay on screen.
+ */
+export const LAPTOP_COLUMN = "hidden min-[1360px]:table-cell"
+/** The first cell's stand-in for the `LAPTOP_COLUMN`s, shown wherever they are not. */
+export const BELOW_LAPTOP = "min-[1360px]:hidden"
+
 /** A column only a wide screen has room for beside the rail. */
 export const ROOMY_COLUMN = "hidden min-[1680px]:table-cell"

@@ -107,6 +107,25 @@ export const withTemplate = (form: Form, template: DetectionTemplate): Form => (
 })
 
 /**
+ * `form` with what a template set put back to a blank detection's. A name the user typed stays,
+ * like the destinations and the switch.
+ */
+export const withoutTemplate = (form: Form): Form => {
+	const blank = emptyForm()
+	return {
+		...form,
+		name: isTemplateTitle(form.name) ? blank.name : form.name,
+		provider: blank.provider,
+		category: blank.category,
+		outcome: blank.outcome,
+		action: blank.action,
+		threshold: blank.threshold,
+		windowMinutes: blank.windowMinutes,
+		severity: blank.severity,
+	}
+}
+
+/**
  * The form a link prefills: a ready-made template, then the audit log's filters over it. A
  * platform, category or outcome this build has no name for is dropped, not sent to the API.
  */

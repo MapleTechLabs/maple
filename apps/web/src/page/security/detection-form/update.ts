@@ -20,6 +20,7 @@ import {
 	formFromSearch,
 	formIssues,
 	wirePayload,
+	withoutTemplate,
 	withTemplate,
 } from "./derive"
 import type { Form } from "./form"
@@ -85,8 +86,9 @@ export const enter = (
 export const init = (route: SecurityDetectionNewRoute, context: PageContext): Return =>
 	enter(route, context, isClerkAuthEnabled)
 
+// A change answers the server's last refusal: its message is about the form as it was.
 const withForm = (model: Model, patch: Partial<Form>): Return => ({
-	model: { ...model, form: { ...model.form, ...patch } },
+	model: { ...model, form: { ...model.form, ...patch }, saveFailure: null },
 })
 
 /** The "Add destination" menu: a pick of a synced destination adds it. */
@@ -140,9 +142,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		PickedTemplate: ({ id }) =>
 			Option.match(templateOf(id), {
-				onNone: (): Return => ({ model: { ...model, templateId: "" } }),
+				// Back to a blank detection only from a template: nothing typed by hand is wiped.
+				onNone: (): Return => ({
+					model: {
+						...model,
+						templateId: "",
+						form: model.templateId === "" ? model.form : withoutTemplate(model.form),
+						saveFailure: null,
+					},
+				}),
 				onSome: (template): Return => ({
-					model: { ...model, templateId: template.id, form: withTemplate(model.form, template) },
+					model: {
+						...model,
+						templateId: template.id,
+						form: withTemplate(model.form, template),
+						saveFailure: null,
+					},
 				}),
 			}),
 		ChangedText: ({ field, value }) => withForm(model, { [field]: value }),

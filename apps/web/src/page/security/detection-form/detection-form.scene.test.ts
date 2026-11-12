@@ -370,6 +370,20 @@ describe("security detection editor", () => {
 		)
 	})
 
+	// The API's message is about the form as it was sent: it must not sit over a corrected one.
+	test("changing the form takes the API's refusal off the screen", () => {
+		const message = 'Another alert rule is already named "Burst of refused requests".'
+		const corrected = steps(fresh({ template: "refused" }), [
+			Message.ClickedSave(),
+			Message.CompletedSave({
+				result: Result.fail(toLoadFailure(new AuditDetectionInvalidError({ message }))),
+			}),
+			Message.ChangedText({ field: "name", value: "Refused requests, EU" }),
+		])
+
+		scene({ update: pageUpdate, view }, given(corrected), expectView(text(message)).not.toExist())
+	})
+
 	test("a save in flight is not sent twice", () => {
 		const saving = pageUpdate(fresh({ template: "refused" }), Message.ClickedSave())
 
@@ -409,6 +423,29 @@ describe("security detection editor", () => {
 		// A name that came from a template follows the next template.
 		const switched = steps(fresh({ template: "membership" }), [Message.PickedTemplate({ id: "refused" })])
 		expect(switched.form.name).toBe("Burst of refused requests")
+	})
+
+	test("going back to a blank detection undoes what the template set and keeps what was typed", () => {
+		const blank = wirePayload(fresh().form)
+		const fromTemplate = steps(fresh(), [
+			Message.PickedTemplate({ id: "refused" }),
+			Message.PickedTemplate({ id: "" }),
+		])
+		expect(wirePayload(fromTemplate.form)).toEqual(blank)
+
+		const named = steps(fresh(), [
+			Message.ChangedText({ field: "name", value: "Key churn" }),
+			Message.PickedTemplate({ id: "credential" }),
+			Message.PickedTemplate({ id: "" }),
+		])
+		expect(wirePayload(named.form)).toEqual({ ...blank, name: "Key churn" })
+
+		// With no template picked there is nothing to undo: filters set by hand stay.
+		const byHand = steps(fresh(), [
+			Message.ChangedSelect({ field: "outcome", value: "denied" }),
+			Message.PickedTemplate({ id: "" }),
+		])
+		expect(wirePayload(byHand.form)).toMatchObject({ filters: { outcome: "denied" } })
 	})
 
 	test("a detection the org no longer has, or an id that is not one, says so", () => {

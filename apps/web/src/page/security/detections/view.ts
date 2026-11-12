@@ -36,15 +36,16 @@ import {
 	matchText,
 } from "../kit/detection-format"
 import { DETECTION_TEMPLATES, type DetectionTemplate } from "../kit/detection-templates"
-import { securityLayout, WIDE_COLUMN } from "../kit/layout"
+import { BELOW_LAPTOP, LAPTOP_COLUMN, securityLayout } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import { detectionById, detectionsOf, notifiesText } from "./derive"
 import { accessOf, Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
-// On a phone the name column takes the width the hidden ones leave, and a long name wraps in it.
-const NARROW_NAME = "max-w-44 whitespace-normal sm:max-w-72 sm:whitespace-nowrap"
+// Below a laptop's width the name column takes what the hidden ones leave, and a long name wraps.
+const NARROW_NAME =
+	"max-w-44 whitespace-normal sm:max-w-none min-[1360px]:max-w-72 min-[1360px]:whitespace-nowrap"
 
 /** What the detection counts: the filters by name, then the exact action as the platform writes it. */
 const matchLine = (h: H, detection: AuditDetection): Html => {
@@ -114,14 +115,14 @@ const detectionRow = (h: H, model: Model, detection: AuditDetection): Html => {
 								className: typographyClass({
 									size: "sm",
 									weight: "medium",
-									className: "block break-words sm:truncate",
+									className: "block break-words min-[1360px]:truncate",
 								}),
 							},
 							[detection.name],
 						),
 						matchLine(h, detection),
-						// A phone has no Condition, Severity or Notifies column: they ride under the name.
-						hstack(h, { gap: "2", align: "center", wrap: true, className: "sm:hidden" }, [
+						// Without the Condition, Severity and Notifies columns they ride under the name.
+						hstack(h, { gap: "2", align: "center", wrap: true, className: BELOW_LAPTOP }, [
 							typography(h, { size: "xs", tone: "muted" }, [condition]),
 							severityBadge(h, detection.severity),
 							...(detection.destinationIds.length === 0 ? [notifies(h, detection)] : []),
@@ -130,9 +131,9 @@ const detectionRow = (h: H, model: Model, detection: AuditDetection): Html => {
 				],
 				NARROW_NAME,
 			),
-			tableCell(h, [typography(h, { size: "xs", numeric: true }, [condition])], WIDE_COLUMN),
-			tableCell(h, [severityBadge(h, detection.severity)], WIDE_COLUMN),
-			tableCell(h, [notifies(h, detection)], WIDE_COLUMN),
+			tableCell(h, [typography(h, { size: "xs", numeric: true }, [condition])], LAPTOP_COLUMN),
+			tableCell(h, [severityBadge(h, detection.severity)], LAPTOP_COLUMN),
+			tableCell(h, [notifies(h, detection)], LAPTOP_COLUMN),
 			tableCell(h, [
 				hstack(h, { gap: "1", align: "center", justify: "end" }, [
 					...switchControl(h, {
@@ -174,9 +175,9 @@ const detectionsTable = (h: H, model: Model, detections: ReadonlyArray<AuditDete
 		tableHeader(h, [
 			tableRow(h, [
 				tableHead(h, ["Detection"]),
-				tableHead(h, ["Fires on"], `w-44 ${WIDE_COLUMN}`),
-				tableHead(h, ["Severity"], `w-24 ${WIDE_COLUMN}`),
-				tableHead(h, ["Notifies"], `w-36 ${WIDE_COLUMN}`),
+				tableHead(h, ["Fires on"], `w-44 ${LAPTOP_COLUMN}`),
+				tableHead(h, ["Severity"], `w-24 ${LAPTOP_COLUMN}`),
+				tableHead(h, ["Notifies"], `w-36 ${LAPTOP_COLUMN}`),
 				tableHead(h, [typography(h, { className: "sr-only" }, ["Enabled and actions"])], "w-36"),
 			]),
 		]),
