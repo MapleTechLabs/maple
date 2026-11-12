@@ -30,32 +30,30 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
-/** What a row offers: an AWS source is its connection's, an OpenRouter one is its key. */
-const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> =>
-	source.provider === "openrouter"
-		? [
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedReplaceKey())],
-					},
-					["Replace key"],
-				),
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedRemoveSource())],
-					},
-					["Remove"],
-				),
+const rowButton = (h: H, label: string, onClick: Message, isBusy: boolean): Html =>
+	button(h, { variant: "ghost", size: "sm", isDisabled: isBusy, attributes: [h.OnClick(onClick)] }, [label])
+
+/**
+ * What a row offers: an AWS source is its connection's, an OpenRouter one is its key, and a
+ * Vercel one is removed here while its connection stays.
+ */
+const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
+	switch (source.provider) {
+		case "openrouter":
+			return [
+				rowButton(h, "Replace key", Message.ClickedReplaceKey(), isBusy),
+				rowButton(h, "Remove", Message.ClickedRemoveSource({ provider: "openrouter" }), isBusy),
 			]
-		: [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
+		case "vercel":
+			return [rowButton(h, "Remove", Message.ClickedRemoveSource({ provider: "vercel" }), isBusy)]
+		case "aws":
+			return [
+				linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, [
+					"Manage connection",
+				]),
+			]
+	}
+}
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
 const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {

@@ -6,7 +6,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
-import { failureMessage } from "@maple/views/data/load-failure"
+import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -20,14 +20,17 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
+	AddVercelCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
 	FetchCostBreakdown,
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveOpenRouterCostKey,
+	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
 	type TimeseriesInput,
@@ -45,7 +48,8 @@ import {
 	withoutFilters,
 } from "./derive"
 import { Message } from "./message"
-import type { AddStep, Model, Search } from "./model"
+import type { AddStep, Model, RemovableProvider, Search } from "./model"
+import { COST_PROVIDERS } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -149,7 +153,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addStep: "pick",
 		keyDraft: Field.init(),
 		keyError: null,
+		vercel: Keyed.idle(),
+		vercelError: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
+		removeProvider: "openrouter",
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
@@ -183,7 +190,34 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 })
 
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedKey = (model: Model): Model => ({ ...model, keyDraft: Field.init(), keyError: null })
+const clearedKey = (model: Model): Model => ({
+	...model,
+	keyDraft: Field.init(),
+	keyError: null,
+	vercelError: null,
+})
+
+/**
+ * The org's Vercel connection, read again each time the dialog turns to Vercel. A failed read is
+ * forgotten first, so Try again shows the read in flight and not the old error.
+ */
+const requestVercelStatus = (model: Model, context: PageContext): Return =>
+	applySteps<Model, Message>(model, [
+		keyed(
+			Keyed.forgetFailure(model.vercel),
+			requestKey(context.orgId, "vercelCostStatus", {}),
+			"Supersede",
+			(vercel) => ({ vercel }),
+			(key) => FetchVercelCostStatus({ key }),
+		),
+	])
+
+/** Whether the connection on show can be added: a team, a token Vercel takes, and no source yet. */
+const canAddVercel = (model: Model): boolean =>
+	Option.exists(
+		AsyncData.getData(model.vercel.data),
+		(status) => status.team !== null && !status.authFailed && !status.added,
+	)
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
@@ -202,10 +236,10 @@ const withReread = (step: Return, context: PageContext): Return =>
 	)
 
 /**
- * The list on show without the OpenRouter source, which a removal just deleted: its row is gone
+ * The list on show without the provider's source, which a removal just deleted: its row is gone
  * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutOpenRouterSource = (model: Model): Model => ({
+const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -213,7 +247,7 @@ const withoutOpenRouterSource = (model: Model): Model => ({
 			model.sources.data,
 			(response) =>
 				new CostSourcesResponse({
-					sources: Arr.filter(response.sources, (source) => source.provider !== "openrouter"),
+					sources: Arr.filter(response.sources, (source) => source.provider !== provider),
 				}),
 		),
 	},
@@ -224,6 +258,32 @@ const hasOpenRouterSource = (model: Model): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
 		Arr.some(sources, (source) => source.provider === "openrouter"),
 	)
+
+/** A removal's answer: the dialog closes either way, and a removed source leaves the page at once. */
+const removed = (
+	model: Model,
+	provider: RemovableProvider,
+	failure: Option.Option<LoadFailure>,
+	context: PageContext,
+): Return => {
+	const closed = liftRemoveDialog(
+		Option.isNone(failure)
+			? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
+			: { ...model, sourceWrite: "Idle" },
+		Dialog.close(model.removeDialog),
+	)
+	return Option.match(failure, {
+		onSome: (reason): Return => ({
+			...closed,
+			outMessage: toast("error", "Couldn't remove the source", failureMessage(reason)),
+		}),
+		onNone: (): Return =>
+			withReread(
+				{ ...closed, outMessage: toast("success", `${COST_PROVIDERS[provider].name} removed`) },
+				context,
+			),
+	})
+}
 
 export const routeChanged = (
 	model: Model,
@@ -344,6 +404,44 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
 		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
+		ClickedAddVercel: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestVercelStatus({ ...clearedKey(model), addStep: "vercel" }, context),
+		CompletedLoadVercelStatus: ({ key, result }) => ({
+			model: { ...model, vercel: Keyed.accept(model.vercel, key, result) },
+		}),
+		ClickedConfirmAddVercel: () =>
+			model.sourceWrite !== "Idle" || !canAddVercel(model)
+				? { model }
+				: {
+						model: { ...model, sourceWrite: "Saving", vercelError: null },
+						commands: [AddVercelCostSource()],
+					},
+		// A refused add keeps the dialog open with Vercel's reason under the team.
+		CompletedAddVercel: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: { ...model, sourceWrite: "Idle", vercelError: failureMessage(failure) },
+				}),
+				onSuccess: (): Return => {
+					const closed = liftAddDialog(
+						clearedKey({ ...model, sourceWrite: "Settling" }),
+						Dialog.close(model.addDialog),
+					)
+					return withReread(
+						{
+							...closed,
+							outMessage: toast(
+								"success",
+								"Vercel added",
+								"The first sync runs within a few minutes.",
+							),
+						},
+						context,
+					)
+				},
+			}),
 		ClickedBackToProviders: () =>
 			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
 		ClickedReplaceKey: () => openAdd(model, "openrouter"),
@@ -400,10 +498,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					return withReread({ ...closed, outMessage }, context)
 				},
 			}),
-		ClickedRemoveSource: () =>
+		ClickedRemoveSource: ({ provider }) =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+				: liftRemoveDialog({ ...model, removeProvider: provider }, Dialog.open(model.removeDialog)),
 		GotRemoveDialogMessage: ({ message: inner }) =>
 			model.sourceWrite === "Removing"
 				? { model }
@@ -411,22 +509,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedConfirmRemove: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
-		CompletedRemoveKey: ({ result }) => {
-			const closed = liftRemoveDialog(
-				Result.isSuccess(result)
-					? withoutOpenRouterSource({ ...model, sourceWrite: "Settling" })
-					: { ...model, sourceWrite: "Idle" },
-				Dialog.close(model.removeDialog),
-			)
-			return Result.match(result, {
-				onFailure: (failure): Return => ({
-					...closed,
-					outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
-				}),
-				onSuccess: (): Return =>
-					withReread({ ...closed, outMessage: toast("success", "OpenRouter removed") }, context),
-			})
-		},
+				: {
+						model: { ...model, sourceWrite: "Removing" },
+						commands: [
+							model.removeProvider === "vercel"
+								? RemoveVercelCostSource()
+								: RemoveOpenRouterCostKey(),
+						],
+					},
+		CompletedRemoveKey: ({ result }) => removed(model, "openrouter", Result.getFailure(result), context),
+		CompletedRemoveVercel: ({ result }) => removed(model, "vercel", Result.getFailure(result), context),
 		...chartEnvHandlers(model),
 	})

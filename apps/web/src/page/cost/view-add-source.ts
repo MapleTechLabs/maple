@@ -16,8 +16,9 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, RemovableProvider } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { vercelStep } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -28,15 +29,17 @@ export const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { int
 
 const OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/management-keys"
 
-/** Whether the org has its OpenRouter source, which there is at most one of. */
-const hasOpenRouterSource = (sources: ReadonlyArray<CostSourceSummary>): boolean =>
-	Arr.some(sources, (source) => source.provider === "openrouter")
+/** Whether the org has its source of a provider it can have one of at most. */
+const hasSourceOf = (
+	sources: ReadonlyArray<CostSourceSummary>,
+	provider: CostSourceSummary["provider"],
+): boolean => Arr.some(sources, (source) => source.provider === provider)
 
 const mark = (h: H, provider: CostProviderEntry): Html =>
 	icon(h, provider.icon, { size: 18, className: cn("shrink-0", provider.iconClassName) })
 
-/** The providers to add: AWS goes to its connect flow, OpenRouter to the key form. */
-const providers = (h: H, hasOpenRouter: boolean): Html =>
+/** The providers to add: AWS goes to its connect flow, OpenRouter to the key form, Vercel to its team. */
+const providers = (h: H, hasOpenRouter: boolean, hasVercel: boolean): Html =>
 	vstack(h, { gap: "3" }, [
 		vstack(h, { gap: "0" }, [
 			listRow(h, {
@@ -49,21 +52,37 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 			}),
 			hasOpenRouter
 				? listRow(h, {
+						divided: true,
 						leading: mark(h, COST_PROVIDERS.openrouter),
 						title: COST_PROVIDERS.openrouter.name,
 						meta: "Replace its key in the Sources panel",
 						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
 					})
 				: listRow(h, {
+						divided: true,
 						onClick: Message.ClickedAddOpenRouter(),
 						leading: mark(h, COST_PROVIDERS.openrouter),
 						title: COST_PROVIDERS.openrouter.name,
 						meta: "Daily spend by model and serving provider",
 						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 					}),
+			hasVercel
+				? listRow(h, {
+						leading: mark(h, COST_PROVIDERS.vercel),
+						title: COST_PROVIDERS.vercel.name,
+						meta: "Remove it in the Sources panel",
+						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
+					})
+				: listRow(h, {
+						onClick: Message.ClickedAddVercel(),
+						leading: mark(h, COST_PROVIDERS.vercel),
+						title: COST_PROVIDERS.vercel.name,
+						meta: "Daily charges by product, project and region",
+						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+					}),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter requests are free. ",
+			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter and Vercel requests are free. ",
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
 				"Turn on Cost for an AWS account that is connected",
 			]),
@@ -116,15 +135,14 @@ const keyField = (h: H, model: Model): Html => {
 }
 
 /**
- * Add a source, or replace the OpenRouter key: the providers first, then OpenRouter's key form.
- * Opened on the form for a replace, which has no providers to go back to.
+ * Add a source, or replace the OpenRouter key: the providers first, then the chosen one's step.
+ * Opened on the key form for a replace, which has no providers to go back to.
  */
 export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const id = model.addDialog.id
-	const isReplacing = hasOpenRouterSource(sources)
+	const isReplacing = hasSourceOf(sources, "openrouter")
 	const isSaving = model.sourceWrite === "Saving"
 	const canSubmit = !isSaving && Str.trim(model.keyDraft.value) !== ""
-	const onPick = model.addStep === "pick"
 	return h.submodel({
 		slotId: "cost-add-source",
 		model: model.addDialog,
@@ -135,86 +153,104 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			hasDescription: true,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				onPick
-					? [
-							DialogView.dialogHeader(h, "dialog", [
-								DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-								DialogView.dialogDescription(
-									h,
-									"dialog",
-									id,
-									"Maple reads what the source bills each day and keeps it next to your telemetry.",
-								),
-							]),
-							DialogView.dialogPanel(h, "dialog", id, [providers(h, isReplacing)]),
-							DialogView.dialogFooter(h, "dialog", [
-								button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
-							]),
-						]
-					: [
-							formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
+				model.addStep === "vercel"
+					? vercelStep(h, model, id)
+					: model.addStep === "pick"
+						? [
 								DialogView.dialogHeader(h, "dialog", [
-									DialogView.dialogTitle(
-										h,
-										"dialog",
-										id,
-										isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
-									),
+									DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
 									DialogView.dialogDescription(
 										h,
 										"dialog",
 										id,
-										isReplacing
-											? "The source and its history stay. Use a key from the same OpenRouter account."
-											: "Maple reads the last four weeks at once, then every day from here on.",
+										"Maple reads what the source bills each day and keeps it next to your telemetry.",
 									),
 								]),
-								DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
+								DialogView.dialogPanel(h, "dialog", id, [
+									providers(h, isReplacing, hasSourceOf(sources, "vercel")),
+								]),
 								DialogView.dialogFooter(h, "dialog", [
-									isReplacing
-										? button(
-												h,
-												{
-													variant: "outline",
-													isDisabled: isSaving,
-													attributes: isSaving ? [] : [...close],
-												},
-												["Cancel"],
-											)
-										: button(
-												h,
-												{
-													variant: "outline",
-													isDisabled: isSaving,
-													attributes: [h.OnClick(Message.ClickedBackToProviders())],
-												},
-												["Back"],
-											),
-									button(
-										h,
-										{
-											type: "submit",
-											isLoading: isSaving,
-											isDisabled: !canSubmit,
-										},
-										[isReplacing ? "Replace key" : "Add source"],
-									),
+									button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 								]),
-							]),
-						],
+							]
+						: [
+								formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
+									DialogView.dialogHeader(h, "dialog", [
+										DialogView.dialogTitle(
+											h,
+											"dialog",
+											id,
+											isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
+										),
+										DialogView.dialogDescription(
+											h,
+											"dialog",
+											id,
+											isReplacing
+												? "The source and its history stay. Use a key from the same OpenRouter account."
+												: "Maple reads the last four weeks at once, then every day from here on.",
+										),
+									]),
+									DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
+									DialogView.dialogFooter(h, "dialog", [
+										isReplacing
+											? button(
+													h,
+													{
+														variant: "outline",
+														isDisabled: isSaving,
+														attributes: isSaving ? [] : [...close],
+													},
+													["Cancel"],
+												)
+											: button(
+													h,
+													{
+														variant: "outline",
+														isDisabled: isSaving,
+														attributes: [
+															h.OnClick(Message.ClickedBackToProviders()),
+														],
+													},
+													["Back"],
+												),
+										button(
+											h,
+											{
+												type: "submit",
+												isLoading: isSaving,
+												isDisabled: !canSubmit,
+											},
+											[isReplacing ? "Replace key" : "Add source"],
+										),
+									]),
+								]),
+							],
 		},
 	})
 }
 
-/** Removing the OpenRouter source: what leaves the page, and what adding it again brings back. */
+/** What removing each provider's source takes away, and what adding it again brings back. */
+const REMOVAL = {
+	openrouter: {
+		title: "Remove the OpenRouter source?",
+		description:
+			"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
+	},
+	vercel: {
+		title: "Remove the Vercel source?",
+		description:
+			"Maple stops reading the team's charges, and its cost leaves this page. The Vercel connection stays as it is. Adding Vercel again reads the last eleven months again.",
+	},
+} as const satisfies Record<RemovableProvider, Readonly<{ title: string; description: string }>>
+
+/** Removing a source the page added: what leaves the page, and what adding it again brings back. */
 export const removeSourceDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
 		slotId: "cost-remove-source",
 		model: model.removeDialog,
 		toParentMessage: (message) => Message.GotRemoveDialogMessage({ message }),
-		title: "Remove the OpenRouter source?",
-		description:
-			"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
+		...REMOVAL[model.removeProvider],
 		confirmLabel: "Remove source",
 		onConfirm: Message.ClickedConfirmRemove(),
 		isPending: model.sourceWrite === "Removing",

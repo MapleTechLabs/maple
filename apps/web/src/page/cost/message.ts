@@ -6,6 +6,9 @@ import {
 	CostTotalsResponse,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
@@ -19,6 +22,7 @@ import * as Field from "@maple/views/ui/field"
 import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { RemovableProvider } from "./model"
 
 /** A read's answer; `key` is what it was requested under, so a stale one is dropped. */
 const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
@@ -49,6 +53,11 @@ export const Message = defineMessageUnion({
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
 	ClickedAddOpenRouter: {},
+	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */
+	ClickedAddVercel: {},
+	CompletedLoadVercelStatus: result(VercelCostStatus),
+	ClickedConfirmAddVercel: {},
+	CompletedAddVercel: { result: Schema.Result(VercelCostSourceAdded, LoadFailure) },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the key form, for the source that exists. */
 	ClickedReplaceKey: {},
@@ -56,10 +65,11 @@ export const Message = defineMessageUnion({
 	GotKeyDraftMessage: { message: Field.Message },
 	SubmittedKey: {},
 	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
-	ClickedRemoveSource: {},
+	ClickedRemoveSource: { provider: RemovableProvider },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
+	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

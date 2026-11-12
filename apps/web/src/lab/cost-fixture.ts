@@ -56,6 +56,27 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 	drift,
 })
 
+/** The Vercel team the lab's source reads, by its slug. */
+export const LAB_VERCEL_TEAM = { name: "Example Team", slug: "example-team" }
+
+const productLine = (
+	product: string,
+	category: string,
+	region: string,
+	sku: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "vercel",
+	service_category: category,
+	region,
+	usage_type: sku,
+	account: LAB_VERCEL_TEAM.slug,
+	daily,
+	drift,
+})
+
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
 	line("Example Compute", "Compute", "north-1", "north-1:instance-hours", 61.2, 0.18),
@@ -79,6 +100,12 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
+	productLine("Example Function Duration", "Compute", "east-1", "function-duration", 9.4, 0.2),
+	productLine("Example Function Duration", "Compute", "central-1", "function-duration", 3.1, 0.05),
+	productLine("Example Data Transfer", "Networking", "global", "data-transfer", 6.7, 0.12),
+	productLine("Example Image Optimization", "Web", "global", "image-optimization", 2.2, -0.08),
+	// The plan's monthly fee, as Vercel spreads it over the days.
+	productLine("Example Pro Plan", "Other", "global", "", 0.67, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -104,15 +131,14 @@ const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 type Request = Readonly<{
 	days: number
 	filters: CostFilters | undefined
-	/** The lab's reader removed OpenRouter: its lines are in no read, whatever the filters say. */
-	withoutOpenRouter?: boolean
+	/** Providers whose source the lab's reader removed: their lines are in no read, whatever the filters say. */
+	without?: ReadonlyArray<string>
 }>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
 const windowOf = (request: Request) =>
 	Arr.flatMap(LINES, (entry, index) =>
-		matches(entry, request.filters) &&
-		!(request.withoutOpenRouter === true && entry.provider === "openrouter")
+		matches(entry, request.filters) && !Arr.contains(request.without ?? [], entry.provider)
 			? [
 					{
 						entry,
@@ -248,23 +274,38 @@ const openRouterSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Vercel source: eleven months of history, all one request serves, and no billed requests. */
+const vercelSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c061",
+	provider: "vercel",
+	accountId: LAB_VERCEL_TEAM.slug,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/** The sources the lab's reader can add and remove on the page, as they are once synced. */
+const ADDABLE = { openrouter: openRouterSource, vercel: vercelSource } as const
+export type LabAddable = keyof typeof ADDABLE
+
 /**
- * `sources` after the lab's reader added OpenRouter (true: it waits for its first sync) or removed
- * it (false); null leaves them as the state has them.
+ * `sources` after the lab's reader added a provider's source (true: it waits for its first sync)
+ * or removed it (false); null leaves it as the state has it.
  */
 export const labSourcesWith = (
 	sources: CostSourcesResponse,
-	openRouter: boolean | null,
+	provider: LabAddable,
+	added: boolean | null,
 ): CostSourcesResponse => {
-	if (openRouter === null) return sources
-	const others = Arr.filter(sources.sources, (entry) => entry.provider !== "openrouter")
-	if (!openRouter) return new CostSourcesResponse({ sources: others })
+	if (added === null) return sources
+	const others = Arr.filter(sources.sources, (entry) => entry.provider !== provider)
+	if (!added) return new CostSourcesResponse({ sources: others })
 	return others.length === sources.sources.length
 		? decodeSources({
 				sources: [
 					...Schema.encodeSync(CostSourcesResponse)(sources).sources,
 					{
-						...openRouterSource,
+						...ADDABLE[provider],
 						status: "pending",
 						watermarkDate: null,
 						backfillDate: null,
@@ -277,7 +318,7 @@ export const labSourcesWith = (
 }
 
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({}), openRouterSource] }),
+	synced: decodeSources({ sources: [source({}), openRouterSource, vercelSource] }),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [
@@ -315,6 +356,7 @@ export const LAB_SOURCES = {
 				requestsThisMonth: 0,
 			}),
 			openRouterSource,
+			vercelSource,
 		],
 	}),
 } as const

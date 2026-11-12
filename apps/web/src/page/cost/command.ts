@@ -107,3 +107,28 @@ export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey",
 		settleTo((result) => Message.CompletedRemoveKey({ result })),
 	),
 })
+
+/** Whether the org has a Vercel team connected, and whether it is a cost source already. */
+export const FetchVercelCostStatus = Command.define("FetchVercelCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadVercelStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadVercelStatus({ key, result })),
+		),
+})
+
+/** Makes the connected Vercel team a cost source, once Vercel let its token read the billing. */
+export const AddVercelCostSource = Command.define("AddVercelCostSource", {
+	messages: [Message.CompletedAddVercel],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.add()).pipe(
+		settleTo((result) => Message.CompletedAddVercel({ result })),
+	),
+})
+
+export const RemoveVercelCostSource = Command.define("RemoveVercelCostSource", {
+	messages: [Message.CompletedRemoveVercel],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemoveVercel({ result })),
+	),
+})

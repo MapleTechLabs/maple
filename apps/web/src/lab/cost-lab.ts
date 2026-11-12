@@ -1,4 +1,10 @@
-import { OpenRouterCostKeyRemoved, OpenRouterCostKeySaved } from "@maple/domain/http"
+import {
+	OpenRouterCostKeyRemoved,
+	OpenRouterCostKeySaved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
@@ -8,13 +14,16 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
+	AddVercelCostSource,
 	BreakdownInput,
 	FetchCostBreakdown,
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveOpenRouterCostKey,
+	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
@@ -31,6 +40,7 @@ import {
 	LAB_OPENROUTER_KEY,
 	LAB_SOURCES,
 	LAB_TODAY,
+	LAB_VERCEL_TEAM,
 	labBreakdown,
 	labSourcesWith,
 	labTimeseries,
@@ -57,6 +67,10 @@ export const LabState = Schema.Literals([
 	"key-refused",
 	"replace-key",
 	"remove-source",
+	"add-vercel",
+	"vercel-not-connected",
+	"vercel-refused",
+	"remove-vercel",
 	"member",
 	"member-onramp",
 ])
@@ -76,6 +90,8 @@ export const Model = Schema.Struct({
 	state: LabState,
 	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
 	openRouter: Schema.NullOr(Schema.Boolean),
+	/** The same for Vercel. */
+	vercel: Schema.NullOr(Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -84,8 +100,10 @@ export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessa
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
-/** What the lab answers from: the state it loaded in, and what the reader did to OpenRouter since. */
-type World = Readonly<{ state: LabState; openRouter: boolean | null }>
+/** What the reader added (true) or removed (false) since the state loaded; null before either. */
+type Changes = Readonly<{ openRouter: boolean | null; vercel: boolean | null }>
+/** What the lab answers from: the state it loaded in, and what the reader did to its sources since. */
+type World = Readonly<{ state: LabState }> & Changes
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -101,7 +119,10 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "member-onramp" ||
 	state === "add-source" ||
 	state === "add-openrouter" ||
-	state === "key-refused"
+	state === "key-refused" ||
+	state === "add-vercel" ||
+	state === "vercel-not-connected" ||
+	state === "vercel-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -122,7 +143,18 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "replace-key":
 			return [CostMessage.ClickedReplaceKey()]
 		case "remove-source":
-			return [CostMessage.ClickedRemoveSource()]
+			return [CostMessage.ClickedRemoveSource({ provider: "openrouter" })]
+		case "add-vercel":
+		case "vercel-not-connected":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddVercel()]
+		case "vercel-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddVercel(),
+				CostMessage.ClickedConfirmAddVercel(),
+			]
+		case "remove-vercel":
+			return [CostMessage.ClickedRemoveSource({ provider: "vercel" })]
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -137,6 +169,20 @@ const refusedKey = {
 	message:
 		"This is a regular API key. Reading spend needs a management key, which you create under Settings, Management keys in OpenRouter.",
 }
+
+const refusedVercel = {
+	...toLoadFailure("refused"),
+	message:
+		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
+}
+
+/** The org's Vercel connection as the state has it, and whether the page's sources hold its team. */
+const vercelStatusOf = (world: World): VercelCostStatus =>
+	new VercelCostStatus({
+		team: world.state === "vercel-not-connected" ? null : LAB_VERCEL_TEAM,
+		authFailed: false,
+		added: world.vercel ?? !startsEmpty(world.state),
+	})
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
 const DAYS = new Map([
@@ -188,13 +234,22 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	const filtersOf = (filters: WindowInput["filters"]) =>
 		state === "empty-window" ? { account: ["000000000000"] } : filters
 	// A removed source's cost is not read any more, under any filter.
-	const withoutOpenRouter = world.openRouter === false
+	const without = [
+		...(world.openRouter === false ? ["openrouter"] : []),
+		...(world.vercel === false ? ["vercel"] : []),
+	]
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
 				CostMessage.CompletedLoadSources({
 					key,
-					result: Result.succeed(labSourcesWith(sourcesFor(state), world.openRouter)),
+					result: Result.succeed(
+						labSourcesWith(
+							labSourcesWith(sourcesFor(state), "openrouter", world.openRouter),
+							"vercel",
+							world.vercel,
+						),
+					),
 				}),
 			)
 		case FetchCostTotals.name:
@@ -202,7 +257,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedLoadTotals({
 					key,
 					result: settled(state, () =>
-						labTotals({ days, filters: filtersOf(input.filters), withoutOpenRouter }),
+						labTotals({ days, filters: filtersOf(input.filters), without }),
 					),
 				}),
 			)
@@ -214,7 +269,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labTimeseries({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							without,
 							groupBy: input.groupBy,
 							limit: input.limit,
 						}),
@@ -229,7 +284,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labBreakdown({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							without,
 							groupBy: input.groupBy,
 							sortBy: input.sortBy,
 						}),
@@ -257,23 +312,49 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
 				}),
 			)
+		case FetchVercelCostStatus.name:
+			return Option.map(keyArgs(command.args), ({ key }) =>
+				CostMessage.CompletedLoadVercelStatus({ key, result: Result.succeed(vercelStatusOf(world)) }),
+			)
+		case AddVercelCostSource.name:
+			return Option.some(
+				CostMessage.CompletedAddVercel({
+					result:
+						state === "vercel-refused"
+							? Result.fail(refusedVercel)
+							: Result.succeed(new VercelCostSourceAdded({ team: LAB_VERCEL_TEAM })),
+				}),
+			)
+		case RemoveVercelCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemoveVercel({
+					result: Result.succeed(new VercelCostSourceRemoved({ removed: true })),
+				}),
+			)
 		default:
 			return Option.none()
 	}
 }
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
-type Settled = Step & Pick<World, "openRouter">
+type Settled = Step & Changes
 
-/** A saved key adds OpenRouter to the sources the lab answers with next, a removal takes it out. */
-const openRouterAfter = (openRouter: boolean | null, answers: ReadonlyArray<CostMessage>) =>
-	Arr.reduce(answers, openRouter, (current, answer) =>
-		answer._tag === "CompletedSaveKey" && Result.isSuccess(answer.result)
-			? true
-			: answer._tag === "CompletedRemoveKey" && Result.isSuccess(answer.result)
-				? false
-				: current,
-	)
+/** A saved key or an added team joins the sources the lab answers with next, a removal takes it out. */
+const changesAfter = (changes: Changes, answers: ReadonlyArray<CostMessage>): Changes =>
+	Arr.reduce(answers, changes, (current, answer) => {
+		switch (answer._tag) {
+			case "CompletedSaveKey":
+				return Result.isSuccess(answer.result) ? { ...current, openRouter: true } : current
+			case "CompletedRemoveKey":
+				return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
+			case "CompletedAddVercel":
+				return Result.isSuccess(answer.result) ? { ...current, vercel: true } : current
+			case "CompletedRemoveVercel":
+				return Result.isSuccess(answer.result) ? { ...current, vercel: false } : current
+			default:
+				return current
+		}
+	})
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the
@@ -284,7 +365,9 @@ const settle = (world: World, step: Step): Settled => {
 		Option.toArray(answerOf(world, step.model.search, command)),
 	)
 	const kept = keepLocal(step.commands)
-	if (answers.length === 0) return { model: step.model, commands: kept, openRouter: world.openRouter }
+	if (answers.length === 0) {
+		return { model: step.model, commands: kept, openRouter: world.openRouter, vercel: world.vercel }
+	}
 	const next = Arr.reduce(
 		answers,
 		{ model: step.model, commands: Arr.empty<CostCommand>() },
@@ -293,7 +376,7 @@ const settle = (world: World, step: Step): Settled => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle({ ...world, openRouter: openRouterAfter(world.openRouter, answers) }, next)
+	const rest = settle({ ...world, ...changesAfter(world, answers) }, next)
 	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
@@ -312,18 +395,23 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null }
+	const world: World = { state: flags.state, openRouter: null, vercel: null }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
 		const settled = settle(
-			{ ...world, openRouter: step.openRouter },
+			{ ...world, openRouter: step.openRouter, vercel: step.vercel },
 			{ model: next.model, commands: next.commands ?? [] },
 		)
 		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
 	return {
-		model: { state: flags.state, openRouter: ready.openRouter, cost: ready.model },
+		model: {
+			state: flags.state,
+			openRouter: ready.openRouter,
+			vercel: ready.vercel,
+			cost: ready.model,
+		},
 		commands: lift(ready.commands),
 	}
 }
@@ -338,11 +426,11 @@ export const update = (model: Model, message: Message): Return =>
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
 			const ready = settle(
-				{ state: model.state, openRouter: model.openRouter },
+				{ state: model.state, openRouter: model.openRouter, vercel: model.vercel },
 				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
 			)
 			return {
-				model: { ...model, openRouter: ready.openRouter, cost: ready.model },
+				model: { ...model, openRouter: ready.openRouter, vercel: ready.vercel, cost: ready.model },
 				commands: lift(ready.commands),
 			}
 		},

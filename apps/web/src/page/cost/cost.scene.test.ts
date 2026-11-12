@@ -7,6 +7,9 @@ import {
 	CostTotalsResponse,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -173,7 +176,7 @@ describe("cost page", () => {
 		)
 	})
 
-	test("adding a source offers AWS through its connect flow and OpenRouter through a key form", () => {
+	test("adding a source offers AWS through its connect flow, OpenRouter through a key form and Vercel through its team", () => {
 		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
 		scene(
 			{ update: pageUpdate, view },
@@ -183,7 +186,8 @@ describe("cost page", () => {
 			expectView(text("Add a cost source")).toExist(),
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
-			expectView(text(/OpenRouter requests are free/)).toExist(),
+			expectView(text(/OpenRouter and Vercel requests are free/)).toExist(),
+			expectView(role("button", { name: /^Vercel/ })).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
 			expectView(
 				role("link", { name: "Turn on Cost for an AWS account that is connected" }),
@@ -334,7 +338,7 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
 		)
 
-		const confirming = pageUpdate(model, Message.ClickedRemoveSource()).model
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "openrouter" })).model
 		expect(confirming.removeDialog.isOpen).toBe(true)
 		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
 		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
@@ -426,6 +430,292 @@ describe("cost page", () => {
 		)
 	})
 
+	const vercelTeam = { name: "Acme Inc", slug: "acme" }
+	const vercelStatus = (over: Partial<typeof VercelCostStatus.Encoded> = {}) =>
+		new VercelCostStatus({ team: vercelTeam, authFailed: false, added: false, ...over })
+
+	/** The add dialog turned to Vercel, with the read of the org's connection in flight. */
+	const vercelStepOpened = () =>
+		pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedAddVercel(),
+		)
+
+	/** The Vercel step once the connection's read answered `status`. */
+	const vercelStepWith = (status: VercelCostStatus): Model => {
+		const opened = vercelStepOpened().model
+		return pageUpdate(
+			opened,
+			Message.CompletedLoadVercelStatus({
+				key: opened.vercel.key ?? "",
+				result: Result.succeed(status),
+			}),
+		).model
+	}
+
+	test("the Vercel step reads the org's connection and adds its team with one click", () => {
+		const opened = vercelStepOpened()
+		expect(names(opened.commands)).toEqual(["FetchVercelCostStatus"])
+		scene(
+			{ update: pageUpdate, view },
+			given(opened.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add Vercel")).toExist(),
+			expectView(text("Reading the Vercel connection")).toExist(),
+			// Nothing to add until the connection is known.
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		expect(names(pageUpdate(opened.model, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+
+		const connected = vercelStepWith(vercelStatus())
+		scene(
+			{ update: pageUpdate, view },
+			given(connected),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Acme Inc")).toExist(),
+			expectView(text("acme")).toExist(),
+			expectView(text(/Owner, Member, Developer or Billing role/)).toExist(),
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+			expectView(role("button", { name: "Back" })).toBeEnabled(),
+		)
+		const adding = pageUpdate(connected, Message.ClickedConfirmAddVercel())
+		expect(names(adding.commands)).toEqual(["AddVercelCostSource"])
+		// A second click while the first is in flight sends nothing more, and Back waits.
+		expect(names(pageUpdate(adding.model, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+		expect(pageUpdate(adding.model, Message.ClickedBackToProviders()).model.addStep).toBe("vercel")
+
+		const added = pageUpdate(
+			adding.model,
+			Message.CompletedAddVercel({
+				result: Result.succeed(new VercelCostSourceAdded({ team: vercelTeam })),
+			}),
+		)
+		expect(added.model.addDialog.isOpen).toBe(false)
+		expect(names(added.commands)).toContain("FetchCostSources")
+		expect(added.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Vercel added",
+				description: "The first sync runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("an org with no Vercel team is sent to connect one, and a rejected token to its connection", () => {
+		const notConnected = vercelStepWith(vercelStatus({ team: null }))
+		scene(
+			{ update: pageUpdate, view },
+			given(notConnected),
+			resolveTheme,
+			dialogMounted,
+			expectView(text(/No Vercel team is connected yet/)).toExist(),
+			expectView(role("link", { name: "Connect Vercel" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=vercel",
+			),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		// Nothing connected is nothing to add, however the message arrives.
+		expect(names(pageUpdate(notConnected, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+
+		const rejected = vercelStepWith(vercelStatus({ authFailed: true }))
+		scene(
+			{ update: pageUpdate, view },
+			given(rejected),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Acme Inc")).toExist(),
+			expectView(text(/Vercel rejected this team's token/)).toExist(),
+			expectView(role("link", { name: "Open the Vercel connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=vercel",
+			),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		expect(names(pageUpdate(rejected, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+
+		// Added by someone else since the page's list was read: said, with nothing to add twice.
+		scene(
+			{ update: pageUpdate, view },
+			given(vercelStepWith(vercelStatus({ added: true }))),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Already added")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+	})
+
+	test("an add Vercel refuses stays in the dialog with the reason, until the step is left", () => {
+		const adding = pageUpdate(vercelStepWith(vercelStatus()), Message.ClickedConfirmAddVercel()).model
+		const reason =
+			"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role."
+		const refused = pageUpdate(
+			adding,
+			Message.CompletedAddVercel({
+				result: Result.fail({ ...toLoadFailure("refused"), message: reason }),
+			}),
+		)
+		expect(refused.model.addDialog.isOpen).toBe(true)
+		expect(names(refused.commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(refused.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText(reason),
+			// The same click asks again, once the token's role is fixed.
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+		)
+		const back = pageUpdate(refused.model, Message.ClickedBackToProviders()).model
+		expect([back.addStep, back.vercelError]).toEqual(["pick", null])
+	})
+
+	test("a failed read of the Vercel connection says so and asks again on Try again", () => {
+		const opened = vercelStepOpened().model
+		const failed = pageUpdate(
+			opened,
+			Message.CompletedLoadVercelStatus({
+				key: opened.vercel.key ?? "",
+				result: Result.fail(toLoadFailure("unreachable")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+		)
+		// Try again reads it again, and shows the read in flight in place of the old error.
+		const retried = pageUpdate(failed, Message.ClickedAddVercel())
+		expect(names(retried.commands)).toEqual(["FetchVercelCostStatus"])
+		scene(
+			{ update: pageUpdate, view },
+			given(retried.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Reading the Vercel connection")).toExist(),
+			expectView(role("alert")).not.toExist(),
+		)
+	})
+
+	test("a Vercel source is named by its team, bills no requests and is removed after a confirm", () => {
+		const vercel = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "vercel",
+			accountId: "acme",
+			backfillDate: "2025-12-01",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [vercel]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Vercel")).toExist(),
+			expectView(text("acme")).toExist(),
+			expectView(text(/provider requests/)).not.toExist(),
+			// The connection holds the token: there is no key to replace here.
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Remove" })).toExist(),
+		)
+		// The providers list the team as added, with nothing to click.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.ClickedAddSource()).model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Already added")).toExist(),
+			expectView(role("button", { name: /^Vercel/ })).not.toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).toExist(),
+		)
+
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "vercel" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the Vercel source?")).toExist(),
+			expectView(text(/The Vercel connection stays as it is/)).toExist(),
+		)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(names(removing.commands)).toEqual(["RemoveVercelCostSource"])
+
+		// A removal that failed leaves the source where it was and says why.
+		const failed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveVercel({ result: Result.fail(toLoadFailure("unreachable")) }),
+		)
+		expect(failed.model.removeDialog.isOpen).toBe(false)
+		expect(failed.outMessage).toMatchObject({ type: "error", title: "Couldn't remove the source" })
+		scene(
+			{ update: pageUpdate, view },
+			given(failed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Remove" })).toBeEnabled(),
+		)
+
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveVercel({
+				result: Result.succeed(new VercelCostSourceRemoved({ removed: true })),
+			}),
+		)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "Vercel removed", description: "" }),
+		)
+		// The row is gone at once, and the sources are read again for what is left.
+		expect(names(removed.commands)).toContain("FetchCostSources")
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("acme")).not.toExist(),
+			expectView(text("No cost source yet")).toExist(),
+		)
+	})
+
+	test("removing one provider's source leaves the other's on the page", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+		})
+		const vercel = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "vercel",
+			accountId: "acme",
+		})
+		const model = answered(entered({}, [openRouter, vercel]).model)
+		const removing = pageUpdate(
+			pageUpdate(model, Message.ClickedRemoveSource({ provider: "openrouter" })).model,
+			Message.ClickedConfirmRemove(),
+		)
+		// The confirm removes the source its dialog asked about.
+		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveKey({
+				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(removed),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("user_2openrouterAccount")).not.toExist(),
+			expectView(text("acme")).toExist(),
+		)
+	})
+
 	test("a view filtered to a provider compares with the period before when that provider's history reaches it", () => {
 		const aws = Schema.decodeSync(CostSourcesResponse)({ sources: [source()] }).sources
 		const both = Schema.decodeSync(CostSourcesResponse)({
@@ -499,6 +789,7 @@ describe("cost page", () => {
 	test("grouped by provider, a row reads the provider's name and filters by its id", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")
+		expect(keyLabel("provider", "vercel")).toBe("Vercel")
 		// A provider this build does not know still shows, as the rows name it.
 		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
 		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })
@@ -571,6 +862,26 @@ describe("cost page", () => {
 			expectView(text("Waiting for the first sync")).toExist(),
 			expectView(text(/AWS brings in this month and the last/)).toExist(),
 			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+		)
+		// A Vercel team reads back like an AWS account: the two are named together.
+		const vercel = source({
+			...unsynced,
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "vercel",
+			accountId: "acme",
+			status: "pending",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [vercel]).model),
+			resolveTheme,
+			expectView(text(/It brings in this month and the last, and older months fill in/)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [failingAws, vercel, openRouter]).model),
+			resolveTheme,
+			expectView(text(/AWS and Vercel bring in this month and the last/)).toExist(),
 		)
 	})
 
