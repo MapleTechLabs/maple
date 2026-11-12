@@ -250,6 +250,94 @@ describe("CloudflareCostProvider", () => {
 		},
 	)
 
+	it.effect("reads every page of a listing that gives its count and no page count", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fee = (name: string) => ({
+			price: 5,
+			frequency: "monthly",
+			current_period_start: "2026-11-01T00:00:00Z",
+			rate_plan: { public_name: name },
+		})
+		const world = makeFakeCloudflare({
+			subscriptionsPageSize: 2,
+			subscriptionsInfo: "count",
+			subscriptions: [fee("Plan A"), fee("Plan B"), fee("Plan C")],
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* saveToken(testDb, world)
+				const pulled = yield* pull(ORG, connectionRef)
+				assert.deepStrictEqual(
+					Arr.map(pulled.rows, (row) => row.usageType),
+					["Plan A", "Plan B", "Plan C"],
+				)
+				// A listing that says nothing of its paging is whole only while its page is not full:
+				// 50 were asked for, so 50 may be part of more.
+				world.subscriptionsInfo = "none"
+				world.subscriptionsPageSize = 50
+				assert.lengthOf((yield* pull(ORG, connectionRef)).rows, 3)
+				world.subscriptions = Arr.makeBy(50, (index) => fee(`Plan ${index}`))
+				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "invalid_response")
+			}),
+		)
+	})
+
+	it.effect("fails a listing that counts more subscriptions than it returned", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeCloudflare({
+			subscriptionsNeverReturned: 1,
+			subscriptions: [
+				{
+					price: 5,
+					frequency: "monthly",
+					current_period_start: "2026-11-01T00:00:00Z",
+					rate_plan: { public_name: "Plan A" },
+				},
+			],
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* saveToken(testDb, world)
+				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "invalid_response")
+			}),
+		)
+	})
+
+	it.effect("fails an answer that does not say it succeeded, or that holds part of the usage", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeCloudflare()
+		const row =
+			'{"ServiceName":"R2 Storage","ChargePeriodStart":"2026-11-01T00:00:00Z","BillingCurrency":"USD","BilledCost":1,"EffectiveCost":1,"ListCost":1}'
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* saveToken(testDb, world)
+				// Read as an answer, the empty result would store every day of the window as empty.
+				const answers = [
+					'{"success":false,"errors":[{"code":1000,"message":"try later"}],"result":[]}',
+					'{"errors":[],"result":[]}',
+					`{"success":true,"result":[${row}],"result_info":{"page":1,"per_page":1,"total_pages":3,"total_count":3}}`,
+					`{"success":true,"result":[${row}],"result_info":{"total_count":2}}`,
+				]
+				const reasons = yield* Effect.forEach(answers, (answer) =>
+					Effect.gen(function* () {
+						world.usage = answer
+						return (yield* Effect.flip(pull(ORG, connectionRef))).reason
+					}),
+				)
+				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 4))
+				// The same row in an answer that holds all it lists is read.
+				world.usage = `{"success":true,"result":[${row}],"result_info":{"total_count":1}}`
+				assert.lengthOf((yield* pull(ORG, connectionRef)).rows, 1)
+			}),
+		)
+	})
+
 	it.effect("reads every page of the subscriptions", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fee = (name: string) => ({
