@@ -69,6 +69,7 @@ import {
 	layerLlm,
 	type LlmSettings,
 	loadLlmSettings,
+	resolveSecurityAuditDiscoveryFallback,
 	resolveSecurityAuditModel,
 	withOrgOpenRouterKey,
 } from "../platform/Llm"
@@ -754,6 +755,7 @@ const agentsOn = (
 		const models = {
 			discovery: resolveSecurityAuditModel(settings, "discovery", tags, payload.models.discovery),
 			validation: resolveSecurityAuditModel(settings, "validation", tags, payload.models.validation),
+			discoveryFallback: resolveSecurityAuditDiscoveryFallback(settings, payload.models, tags),
 		}
 		return yield* makeAuditAgents(models, source, execution).pipe(
 			// The Workflow run is the entry point that owns these clients.
