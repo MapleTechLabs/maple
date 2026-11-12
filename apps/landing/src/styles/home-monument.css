@@ -393,6 +393,10 @@ html:not([lang="en"]) .monument-hero h1 {
 	line-height: 1.13;
 	width: auto;
 }
+/* Japanese wraps between phrases, not in the middle of a katakana word. */
+html[lang="ja"] .monument-hero h1 span {
+	word-break: auto-phrase;
+}
 /* Large monitors: fixed-pixel type and a 120px proof rail read as miniature on
    a 2560px canvas, so the whole composition steps up together. */
 @media (min-width: 1800px) {
@@ -546,7 +550,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		font-size: 17px;
 	}
 	html:not([lang="en"]) .monument-hero h1 {
-		font-size: clamp(1.2rem, 4.9vw, 2.4rem);
+		font-size: clamp(1.5rem, 6.6vw, 2.4rem);
 	}
 }
 @media (prefers-reduced-motion: reduce) {

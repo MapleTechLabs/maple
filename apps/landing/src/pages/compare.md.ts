@@ -101,7 +101,7 @@ export const GET: APIRoute = ({ site }) => {
 				],
 				[
 					m.bill_row_retention(),
-					"30d default · custom",
+					"30d logs/traces · 90d metrics",
 					"15d indexed logs",
 					"30d logs · 8d traces",
 					"30d logs/traces · 13mo metrics",
