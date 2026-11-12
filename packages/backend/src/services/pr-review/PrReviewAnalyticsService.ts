@@ -832,16 +832,16 @@ export class PrReviewAnalyticsService extends Context.Service<
 				"maple.code_review.orgs": orgIds.length,
 				"maple.code_review.span_ms": window.end - window.start,
 			})
-			// Every review that ran a model: a superseded one started and was billed, a queued one
-			// or one skipped before it began was not.
+			// Every review that ran a model: a superseded one started and was billed; a queued one, or
+			// one skipped or failed before it began, was not.
 			const ran = ($: Reviews) => [
 				$.orgId.in_(...orgIds),
 				$.createdAt.gte(window.start),
 				$.createdAt.lt(window.end),
 				PG.or(
 					$.costMicrousd.isNotNull(),
-					$.status.in_("running", "completed", "failed"),
 					$.startedAt.isNotNull(),
+					$.status.in_("running", "completed"),
 				),
 			]
 			const costSum = ($: Reviews) => PG.sql(PG.float8)`coalesce(sum(${$.costMicrousd}), 0)::float8`

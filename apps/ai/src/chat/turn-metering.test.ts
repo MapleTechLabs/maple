@@ -476,8 +476,11 @@ describe("recordReviewCost", () => {
 		)
 	})
 
-	it("records nothing on the org's own key, outside a review, or when no call was priced", async () => {
-		assert.deepEqual(await record(REVIEW, [priced(1_000)], true), [])
+	it("records 0 on the org's own key, which Maple does not bill", async () => {
+		assert.deepEqual(await record(REVIEW, [priced(1_000)], true), [0])
+	})
+
+	it("records nothing outside a review, or when no call was priced", async () => {
 		assert.deepEqual(await record(undefined, [priced(1_000)], false), [])
 		assert.deepEqual(await record(REVIEW, [charge(GLM, 1000, 100)], false), [])
 	})

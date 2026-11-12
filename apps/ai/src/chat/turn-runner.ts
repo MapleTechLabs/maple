@@ -190,7 +190,7 @@ export const meterTurn = (
 
 /**
  * Adds the turn's reported cost to its review's row, which the billing page breaks code review spend
- * down by. Nothing on the org's own key, which Maple does not bill; a failed write loses only the detail.
+ * down by. A turn on the org's own key adds 0: it ran, and Maple billed nothing for it.
  */
 export const recordReviewCost = (
 	reviews: Pick<PrReviewServiceApi, "addCost">,
@@ -199,9 +199,8 @@ export const recordReviewCost = (
 	usage: Pick<RunUsage, "charges">,
 	ownKey: boolean,
 ): Effect.Effect<void> => {
-	const costMicrousd = reportedCostMicrousd(usage)
-	if (reviewId === undefined || ownKey || costMicrousd === undefined || costMicrousd <= 0)
-		return Effect.void
+	const costMicrousd = ownKey ? 0 : reportedCostMicrousd(usage)
+	if (reviewId === undefined || costMicrousd === undefined) return Effect.void
 	return reviews.addCost(orgId, reviewId, costMicrousd).pipe(
 		Effect.timeout(METERING_TIMEOUT),
 		Effect.catchCause((cause) =>

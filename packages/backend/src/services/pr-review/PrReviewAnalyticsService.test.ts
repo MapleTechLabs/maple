@@ -483,21 +483,34 @@ describe("mergePrReviewConfig", () => {
 									.where(($) => [$.id.eq(reviewId(n))]),
 							),
 						)
-					// Two pushes of #10 priced, #11 failed with no cost recorded, and another tenant's review.
+					// Two pushes of #10 priced, #11 failed after it started with no cost, another tenant's review.
 					yield* price(1, 1_000_000)
 					yield* price(2, 500_000)
 					yield* price(5, 9_000_000)
-					// A push of #10 superseded mid-run (billed, so it counts) and one skipped before it began.
-					const skipped = (n: number, startedAt: number | null, costMicrousd: number | null) => ({
+					yield* database.execute((db) =>
+						db.run(
+							PG.update(PrReviews)
+								.set({ startedAt: at(5) })
+								.where(($) => [$.id.eq(reviewId(3))]),
+						),
+					)
+					// A push of #10 superseded mid-run (billed, so it counts), one skipped before it began,
+					// and a failed review of #12 that never started: neither of those ran anything.
+					const ended = (
+						n: number,
+						status: "skipped" | "failed",
+						startedAt: number | null,
+						costMicrousd: number | null,
+					) => ({
 						id: reviewId(n),
 						orgId: ORG,
 						repositoryId: REPO,
-						number: 10,
+						number: status === "skipped" ? 10 : 12,
 						headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)(String(n % 10))),
 						url: "https://github.com/acme/web/pull/10",
 						title: "PR 10",
 						authorLogin: "ada",
-						status: "skipped" as const,
+						status,
 						startedAt,
 						costMicrousd,
 						createdAt: at(4),
@@ -506,8 +519,9 @@ describe("mergePrReviewConfig", () => {
 					yield* database.execute((db) =>
 						db.run(
 							PG.insertInto(PrReviews).values([
-								skipped(6, at(4), 250_000),
-								skipped(7, null, null),
+								ended(6, "skipped", at(4), 250_000),
+								ended(7, "skipped", null, null),
+								ended(8, "failed", null, null),
 							]),
 						),
 					)
