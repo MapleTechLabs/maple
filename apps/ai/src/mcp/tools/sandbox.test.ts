@@ -167,15 +167,90 @@ describe("the sandbox tools", () => {
 		Effect.gen(function* () {
 			const error = yield* failure(
 				"sandbox_grep",
-				{ repository: "octo/shop", pattern: "handle(" },
+				{ repository: "octo/shop", pattern: "items[" },
 				{
-					grep: () =>
-						Effect.succeed(ok("", 128, "fatal: command line, 'handle(': Unmatched ( or \\(")),
+					grep: (_org, _target, options) =>
+						Effect.succeed(
+							ok(
+								"",
+								128,
+								`fatal: command line, '${options.pattern}': Unmatched [, [^, [:, [., or [=`,
+							),
+						),
 				},
 			)
 			const message = invalidInput(error, "pattern")
+			// Not a parenthesis problem, so the pattern went to git as sent and git's error stands.
+			assert.include(message, "'items[': Unmatched [")
 			assert.include(message, "POSIX extended regex")
 			assert.include(message, "escape")
+		}),
+	)
+
+	it.effect("searches unpaired parentheses as literal text, and says what it searched", () =>
+		Effect.gen(function* () {
+			const sent: string[] = []
+			const grep: RepoSandboxServiceApi["grep"] = (_org, _target, options) => {
+				sent.push(options.pattern)
+				return Effect.succeed(ok("src/api.ts:4:const res = await fetch(url)"))
+			}
+			const result = yield* call(
+				"sandbox_grep",
+				{ repository: "octo/shop", pattern: "withSpan|fetch(" },
+				{ grep },
+			)
+			assert.include(result.text, "src/api.ts:4:")
+			assert.include(result.text, "## Sandbox grep: `withSpan|fetch(`")
+			assert.include(result.text, "Note: The pattern's parentheses do not balance")
+			assert.include(result.text, "`withSpan|fetch\\(`")
+			const output = Schema.decodeUnknownSync(SandboxGrepOutput)(result.structured)
+			assert.strictEqual(output.pattern, "withSpan|fetch(")
+			assert.strictEqual(output.searchedPattern, "withSpan|fetch\\(")
+			// Only the parentheses with no partner: a real group and an escaped one are kept.
+			yield* call("sandbox_grep", { repository: "octo/shop", pattern: "(get|set)Item(" }, { grep })
+			yield* call("sandbox_grep", { repository: "octo/shop", pattern: "it(|test(|run\\(" }, { grep })
+			yield* call("sandbox_grep", { repository: "octo/shop", pattern: "done)" }, { grep })
+			yield* call("sandbox_grep", { repository: "octo/shop", pattern: "[^)]call(" }, { grep })
+			assert.deepStrictEqual(sent, [
+				"withSpan|fetch\\(",
+				"(get|set)Item\\(",
+				"it\\(|test\\(|run\\(",
+				"done\\)",
+				"[^)]call\\(",
+			])
+		}),
+	)
+
+	it.effect("passes a pattern whose groups balance to git exactly as sent", () =>
+		Effect.gen(function* () {
+			const sent: string[] = []
+			const grep: RepoSandboxServiceApi["grep"] = (_org, _target, options) => {
+				sent.push(options.pattern)
+				return Effect.succeed(ok("src/a.ts:1:x"))
+			}
+			const patterns = [
+				"(foo|bar)baz",
+				"handle\\(event\\)",
+				"((a|b)c)+",
+				"[()]x",
+				"[]()]x",
+				"[[:alpha:](]+",
+				"a\\\\(b)",
+				"()",
+			]
+			const results = yield* Effect.forEach(patterns, (pattern) =>
+				call("sandbox_grep", { repository: "octo/shop", pattern }, { grep }),
+			)
+			assert.deepStrictEqual(sent, patterns)
+			assert.notInclude(
+				Arr.join(
+					Arr.map(results, (result) => result.text),
+					"\n",
+				),
+				"Note:",
+			)
+			const output = Schema.decodeUnknownSync(SandboxGrepOutput)(results[0]?.structured)
+			assert.notProperty(output, "searchedPattern")
 		}),
 	)
 
@@ -230,6 +305,60 @@ describe("the sandbox tools", () => {
 				{ readFile: () => Effect.succeed(ok("", 2, "awk: cannot open src/gone.ts")) },
 			)
 			assert.include(invalidInput(missing, "path"), "No readable file 'src/gone.ts' at that ref")
+		}),
+	)
+
+	it.effect("names the tracked files that share a missed file's name", () =>
+		Effect.gen(function* () {
+			const missing = yield* failure(
+				"sandbox_read_file",
+				{ repository: "octo/shop", path: "packages/db/AGENTS.md", ref: "abc123" },
+				{
+					readFile: () =>
+						Effect.succeed(
+							ok(
+								"__MAPLE_SAME_NAME__ AGENTS.md\n__MAPLE_SAME_NAME__ apps/web/AGENTS.md\n__MAPLE_SAME_NAME_TOTAL__ 11\n",
+								1,
+								"'packages/db/AGENTS.md' is not a tracked file at this commit",
+							),
+						),
+				},
+			)
+			const message = invalidInput(missing, "path")
+			assert.include(message, "No file 'packages/db/AGENTS.md' at ref 'abc123'.")
+			assert.include(
+				message,
+				"Tracked files named 'AGENTS.md': AGENTS.md, apps/web/AGENTS.md and 9 more",
+			)
+			assert.notInclude(message, "directory does not exist")
+		}),
+	)
+
+	it.effect("says when no file has the name, where the path stops, and which commit it read", () =>
+		Effect.gen(function* () {
+			const read = (params: SandboxToolParams, stdout: string) =>
+				failure("sandbox_read_file", params, { readFile: () => Effect.succeed(ok(stdout, 1, "")) })
+			const path = "apps/api/src/billing/provider-http.ts"
+			const none = yield* read(
+				{ repository: "octo/shop", path },
+				"__MAPLE_NEAREST_DIR__ apps/api/src\n__MAPLE_SAME_NAME_TOTAL__ 0\n",
+			)
+			const message = invalidInput(none, "path")
+			assert.include(message, `No file '${path}' at the repository's tracked branch.`)
+			assert.include(message, "No tracked file is named 'provider-http.ts' anywhere")
+			assert.include(message, "the deepest one that does is 'apps/api/src'")
+			// The usual cause: a file the pull request adds, read without the head as `ref`.
+			assert.include(message, "No `ref` was passed")
+			const rootless = yield* read(
+				{ repository: "octo/shop", path: "docs/CLAUDE.md", ref: "abc123" },
+				"__MAPLE_NEAREST_DIR__ .\n__MAPLE_SAME_NAME_TOTAL__ 0\n",
+			)
+			assert.include(invalidInput(rootless, "path"), "the deepest one that does is the repository root")
+			const directory = yield* read(
+				{ repository: "octo/shop", path: "src" },
+				"__MAPLE_IS_DIRECTORY__\n",
+			)
+			assert.include(invalidInput(directory, "path"), "'src' is a directory, not a file")
 		}),
 	)
 

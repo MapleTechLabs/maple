@@ -75,16 +75,38 @@ const rejectUnsafePath = (label: string, value: string | undefined) =>
 /** Numbers the requested lines and reports the total, so a truncated read can say how far it is from the end. */
 const READ_FILE_PROGRAM = `NR>=s && NR<=e { printf "%d: %s\\n", NR, $0 } END { printf "__MAPLE_TOTAL_LINES__ %d\\n", NR }`
 
+const IS_DIRECTORY_MARKER = "__MAPLE_IS_DIRECTORY__"
+const NEAREST_DIRECTORY_MARKER = "__MAPLE_NEAREST_DIR__"
+const SAME_NAME_MARKER = "__MAPLE_SAME_NAME__"
+const SAME_NAME_TOTAL_MARKER = "__MAPLE_SAME_NAME_TOTAL__"
+/** Tracked files a missed read names, so the answer stays one short message. */
+const SAME_NAME_LIMIT = 8
+
+/** Over `git ls-files`: the tracked files whose name is the missed one's, whatever its case. */
+const SAME_NAME_PROGRAM = `BEGIN { want = tolower(ENVIRON["MAPLE_NAME"]) } tolower($NF) == want { if (++n <= ${SAME_NAME_LIMIT}) printf "${SAME_NAME_MARKER} %s\\n", $0 } END { printf "${SAME_NAME_TOTAL_MARKER} %d\\n", n }`
+
 /**
  * `read_file` as one sandbox command over positional arguments: $1 path, $2 and $3 the line
- * bounds, $4 the awk program. A directory is refused by `-d`, not by comparing git's printed path,
- * which git quotes for names with `"` or `\`. The mode must be a regular file's: a committed
- * symlink is tracked too, and `awk` would follow it out. The `./` anchor stops a leading `-`.
+ * bounds, $4 the awk program, $5 the awk program for a miss. A directory is refused by `-d`, not
+ * by comparing git's printed path, which git quotes for names with `"` or `\`. The mode must be a
+ * regular file's: a committed symlink is tracked too, and `awk` would follow it out. The `./`
+ * anchor stops a leading `-`. A miss (exit 1) says on stdout where the path went wrong.
  */
 const READ_FILE_SCRIPT = Arr.join(
 	[
 		`entry=$(git ${Arr.join(GIT_COMMON, " ")} ls-files --stage -- ":(literal)$1") || exit 2`,
-		`if [ -z "$entry" ] || [ -d "./$1" ]; then printf "'%s' is not a tracked file at this commit\\n" "$1" >&2; exit 1; fi`,
+		`if [ -z "$entry" ] || [ -d "./$1" ]; then`,
+		`  printf "'%s' is not a tracked file at this commit\\n" "$1" >&2`,
+		`  if [ -d "./$1" ]; then printf "${IS_DIRECTORY_MARKER}\\n"; exit 1; fi`,
+		// Where the path stops existing: the deepest ancestor directory that is there.
+		`  parent=.; case "$1" in */*) parent=\${1%/*} ;; esac`,
+		`  dir=$parent`,
+		`  while [ "$dir" != . ] && [ ! -d "./$dir" ]; do case "$dir" in */*) dir=\${dir%/*} ;; *) dir=. ;; esac; done`,
+		`  [ "$dir" = "$parent" ] || printf "${NEAREST_DIRECTORY_MARKER} %s\\n" "$dir"`,
+		// The name through the environment, not `-v`, which would read its backslashes as escapes.
+		`  git ${Arr.join(GIT_COMMON, " ")} ls-files | MAPLE_NAME="\${1##*/}" awk -F/ "$5"`,
+		`  exit 1`,
+		`fi`,
 		`case "\${entry%% *}" in`,
 		`100644|100755) exec awk -v s="$2" -v e="$3" "$4" "./$1" ;;`,
 		`*) printf "'%s' is not a regular file in the repository\\n" "$1" >&2; exit 3 ;;`,
@@ -92,6 +114,38 @@ const READ_FILE_SCRIPT = Arr.join(
 	],
 	"\n",
 )
+
+/** What a `readFile` that exited 1 found in place of the file. */
+export interface MissedFile {
+	/** The path is a directory. */
+	readonly isDirectory: boolean
+	/** Tracked files with the same name, the first few. */
+	readonly sameName: ReadonlyArray<string>
+	/** How many tracked files have that name. */
+	readonly sameNameTotal: number
+	/** Set when the path's own directory does not exist: the deepest one that does, `.` for the root. */
+	readonly nearestDirectory?: string
+}
+
+const afterMarker = (lines: ReadonlyArray<string>, marker: string): ReadonlyArray<string> =>
+	Arr.flatMap(lines, (line) =>
+		Str.startsWith(`${marker} `)(line) ? [Str.slice(marker.length + 1)(line)] : [],
+	)
+
+/** Reads the stdout of a `readFile` that exited 1; undefined when it carries no account of the miss. */
+export const missedFile = (stdout: string): MissedFile | undefined => {
+	const lines = Str.split("\n")(stdout)
+	const isDirectory = lines.includes(IS_DIRECTORY_MARKER)
+	const total = afterMarker(lines, SAME_NAME_TOTAL_MARKER)[0]
+	if (!isDirectory && total === undefined) return undefined
+	const nearestDirectory = afterMarker(lines, NEAREST_DIRECTORY_MARKER)[0]
+	return {
+		isDirectory,
+		sameName: afterMarker(lines, SAME_NAME_MARKER),
+		sameNameTotal: total === undefined ? 0 : Number(total),
+		...(nearestDirectory === undefined ? undefined : { nearestDirectory }),
+	}
+}
 
 export interface SandboxCommandResult {
 	readonly exitCode: number
@@ -292,6 +346,7 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						String(options.startLine),
 						String(options.endLine),
 						READ_FILE_PROGRAM,
+						SAME_NAME_PROGRAM,
 					]
 					return yield* run(orgId, target, "sh", args, undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
 				},
