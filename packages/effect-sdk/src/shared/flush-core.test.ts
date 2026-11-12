@@ -496,4 +496,50 @@ describe("runFlush", () => {
 		expect(errorSpy).toHaveBeenCalledTimes(2)
 		expect(spans.size()).toBe(1)
 	})
+
+	vitestIt("does not take an unload flush for a recovery: the outage stays one outage", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] })
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const spans = makeSpanBuffer()
+		let fail = true
+		const tracesState = makeSignalState()
+		const flush = (ignoreCooldown?: boolean) =>
+			runFlush({
+				resolved,
+				spans,
+				logs: makeLogBuffer(),
+				metrics: makeMetricBuffer(),
+				tracesState,
+				logsState: makeSignalState(),
+				metricsState: makeSignalState(),
+				transport: {
+					post: async () => {
+						if (fail) throw new Error("collector unavailable")
+					},
+				},
+				logPrefix: "[test]",
+				ignoreCooldown,
+			})
+
+		await Effect.runPromise(recordSpan(spans, "first"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		// The unload transport reports a POST it could not wait for as sent.
+		fail = false
+		await flush(true)
+		expect(infoSpy).not.toHaveBeenCalled()
+
+		// The page came back and the endpoint is still down: the same outage, not a new one.
+		fail = true
+		await Effect.runPromise(recordSpan(spans, "second"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		fail = false
+		vi.advanceTimersByTime(60_000)
+		await flush()
+		expect(infoSpy.mock.calls).toEqual([["[test] traces flush recovered after 2 failed attempts"]])
+	})
 })

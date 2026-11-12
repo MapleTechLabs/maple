@@ -222,7 +222,9 @@ const flushSignal = async <A>(args: {
 	)
 	const [first] = failed
 	if (first === undefined) {
-		if (state.failures > 0) {
+		// Not the unload flush: its transport reports a POST the page could not wait for as sent,
+		// so it proves nothing. A real recovery is announced by the next regular flush.
+		if (state.failures > 0 && !args.ignoreCooldown) {
 			const attempts = state.failures === 1 ? "1 failed attempt" : `${state.failures} failed attempts`
 			console.info(`${logPrefix} ${signal} flush recovered after ${attempts}`)
 			state.failures = 0
