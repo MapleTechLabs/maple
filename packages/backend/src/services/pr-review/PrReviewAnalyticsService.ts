@@ -875,9 +875,10 @@ export class PrReviewAnalyticsService extends Context.Service<
 									reviews: PG.count(),
 									pullRequests: pullRequestCountOf($),
 									cost: costSum($),
-									// Finished without a recorded cost: ran before costs were kept.
+									// Every turn records its cost, so one that ran without it ran before costs were
+									// kept (a running review just has not ended its turn yet).
 									unpriced: PG.countIf(
-										PG.and($.status.eq("completed"), $.costMicrousd.isNull()),
+										PG.and($.costMicrousd.isNull(), $.status.neq("running")),
 									),
 								}))
 								.where(ran),

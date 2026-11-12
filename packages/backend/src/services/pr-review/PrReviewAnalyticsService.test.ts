@@ -532,8 +532,8 @@ describe("mergePrReviewConfig", () => {
 					assert.strictEqual(spend.reviews, 4)
 					assert.strictEqual(spend.pullRequests, 2)
 					assert.closeTo(spend.credits, 2.1, 1e-9)
-					// Only a completed review without a cost is one that ran before costs were kept.
-					assert.strictEqual(spend.unpricedReviews, 0)
+					// #11 ran (failed after it started) without a cost: it ran before costs were kept.
+					assert.strictEqual(spend.unpricedReviews, 1)
 					assert.strictEqual(spend.reReviews, 2)
 					assert.closeTo(spend.reReviewCredits, 0.9, 1e-9)
 					assert.deepStrictEqual(

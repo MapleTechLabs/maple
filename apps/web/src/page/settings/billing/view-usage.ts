@@ -222,8 +222,8 @@ const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray
 							],
 						),
 					]),
-			textLink(h, { href: aiCreditsHref(), tone: "primary", className: "shrink-0 text-2xs" }, [
-				"Details",
+			typography(h, { size: "2xs", className: "shrink-0" }, [
+				textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
 			]),
 		]),
 	]
