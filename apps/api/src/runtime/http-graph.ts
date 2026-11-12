@@ -14,6 +14,7 @@ import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
+import { HttpVercelCostLive } from "@/routes/internal/vercel-cost.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -168,6 +169,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpOpenRouterCostLive,
 			HttpOpenRouterKeyLive,
 			HttpServiceMapWorldLive,
+			HttpVercelCostLive,
 		),
 	),
 	Layer.provide(

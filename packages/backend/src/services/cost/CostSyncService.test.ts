@@ -29,6 +29,7 @@ import { type CostProviderAdapter, CostProviderError, type CostPullRow } from ".
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
@@ -43,6 +44,7 @@ const CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000a1"
 const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
 const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
 const OPENROUTER_KEY_A = "0190f2b3-0000-7000-8000-0000000000d1"
+const VERCEL_CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000e1"
 /** What every fake pull reports as billable. */
 const REQUESTS_PER_PULL = 2
 
@@ -240,6 +242,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 			Layer.mergeAll(
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
+				Layer.succeed(VercelCostProvider, adapterOf("vercel")),
 				warehouse,
 				featureFlags,
 			),
@@ -282,6 +285,26 @@ const harness = (options: FakeProviderOptions = {}) => {
 			 VALUES ($1, $2, 'sealed', 'iv', 'tag', 'sk-or-v1-abc...123', 'user_account_a', now(), now(), 'user_a')`,
 			[key.id, key.orgId ?? "org_a"],
 		)
+	/** An org's Vercel connection, and with `asCostSource` the source the org added for it. */
+	const connectVercel = (connection: { readonly id: string; readonly asCostSource: boolean }) =>
+		Effect.promise(async () => {
+			const sourceId = await insertTestSource(testDb, { orgId: "org_a", platform: "vercel" })
+			await executeSql(
+				testDb,
+				`INSERT INTO vercel_connections
+				   (id, org_id, source_id, team_id, team_slug, team_name, token_ciphertext, token_iv, token_tag,
+				    connected_by_user_id, project_scope, created_at, updated_at)
+				 VALUES ($1, 'org_a', $2, 'team_1', 'acme', 'Acme', 'sealed', 'iv', 'tag', 'user_a', 'all', now(), now())`,
+				[connection.id, sourceId],
+			)
+			if (!connection.asCostSource) return
+			await executeSql(
+				testDb,
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 VALUES ('0190f2b3-0000-7000-8000-0000000000f1', 'org_a', 'vercel', $1, 'acme', now(), now())`,
+				[connection.id],
+			)
+		})
 	const sourceRefs = Effect.promise(() =>
 		testDb.pglite.query<{ org: string; ref: string; account: string }>(
 			"SELECT org_id AS org, connection_ref AS ref, account_id AS account FROM cost_sources ORDER BY org_id, connection_ref",
@@ -322,6 +345,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 		sql,
 		connect,
 		saveOpenRouterKey,
+		connectVercel,
 		sourceRefs,
 		sourceState,
 		sourceStateOf,
@@ -428,6 +452,79 @@ describe("CostSyncService OpenRouter sources", () => {
 			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
 		}).pipe(Effect.provide(h.layer))
 	})
+})
+
+describe("CostSyncService Vercel sources", () => {
+	it.effect("makes no source for a Vercel connection the org did not add as one", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: false })
+			const summary = yield* poll
+			assert.deepStrictEqual([yield* h.sourceRefs, summary.due, h.pulls.length], [[], 0, 0])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("pulls an added source from the previous month through today, then a month of history", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+			// Today is served, and each window is one request far under Vercel's year.
+			assert.deepStrictEqual(h.windows(), [
+				["2026-10-01", "2026-11-11"],
+				["2026-09-01", "2026-09-30"],
+				["2026-08-01", "2026-08-31"],
+			])
+			const state = yield* h.sourceStateOf("org_a", VERCEL_CONNECTION_A)
+			assert.deepStrictEqual(
+				[state?.watermark, state?.backfill, state?.error],
+				["2026-11-11", "2026-08-01", null],
+			)
+			assert.isTrue(Arr.every(h.writtenRows(), (row) => row.Provider === "vercel"))
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("walks history down to eleven months before this one, and no further", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+			yield* h.sql(
+				`UPDATE cost_sources SET watermark_date = '2026-11-11', backfill_date = '2026-01-01',
+				        last_synced_at = now(), last_settled_at = now()`,
+			)
+			yield* poll
+			assert.deepStrictEqual(h.windows(), [["2025-12-01", "2025-12-31"]])
+			// The floor is reached: a year back from today would start a day past what one request serves.
+			yield* TestClock.adjust("5 minutes")
+			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect(
+		"removes the source of a connection that is gone, and leaves the org's AWS source alone",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+				yield* h.connect({ id: CONNECTION_A })
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [
+					["org_a", CONNECTION_A, "123456789012"],
+					["org_a", VERCEL_CONNECTION_A, "acme"],
+				])
+
+				yield* h.sql("DELETE FROM vercel_connections")
+				yield* TestClock.adjust("1 hour")
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
 })
 
 describe("CostSyncService sources", () => {

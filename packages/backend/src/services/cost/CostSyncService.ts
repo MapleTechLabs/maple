@@ -30,8 +30,10 @@ import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
+import { reconcileVercelCostSources } from "./vercel-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -165,6 +167,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const adapters = {
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
+				vercel: yield* VercelCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -204,9 +207,20 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** Vercel sources whose connection is gone are removed (see `reconcileVercelCostSources`). */
+			const reconcileVercel = Effect.fn("CostSyncService.reconcileVercel")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileVercelCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "vercel",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** One function per provider; each owns the sources of its own connection table. */
 			const reconcile = (now: number) =>
-				Effect.all([reconcileAws(now), reconcileOpenRouter(now)], { discard: true })
+				Effect.all([reconcileAws(now), reconcileOpenRouter(now), reconcileVercel()], {
+					discard: true,
+				})
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
@@ -668,6 +682,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			Layer.mergeAll(
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
+				VercelCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

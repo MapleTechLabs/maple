@@ -31,6 +31,11 @@ export const HISTORY_MONTHS = 13
  * dropped comes back empty, and an empty day replaces the stored one.
  */
 const OPENROUTER_HISTORY_DAYS = 28
+/**
+ * Vercel serves a year at most in one request, so its history starts at the first day of the month
+ * this many months before the current one: a window from there to today is never over a year.
+ */
+const VERCEL_HISTORY_MONTHS = 11
 // Through this day of the month the previous month's bill is still open; the first settle after
 // it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
@@ -66,6 +71,7 @@ interface CostSyncProfile {
 const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
+	vercel: { floor: (today) => monthStart(today, -VERCEL_HISTORY_MONTHS), lagDays: 0 },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */

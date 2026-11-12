@@ -1,7 +1,8 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter followed on 2026-11-12 as the second source.
+into `cost_daily` and shown on `/cost`. OpenRouter followed on 2026-11-12 as the second source,
+Vercel the same day as the third.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -11,8 +12,8 @@ An org sees what its cloud and platform accounts cost, per day, service and reso
 telemetry Maple already has for the same resources. Maple then lists what to cut, with the usage
 chart that backs each suggestion and an estimated monthly saving.
 
-It reads from the connections an org already has (AWS, GCP, Cloudflare, Railway, PlanetScale,
-Supabase). No second onboarding.
+It reads from the connections an org already has (AWS, Vercel, GCP, Cloudflare, Railway,
+PlanetScale, Supabase). No second onboarding.
 
 Non-goals for v1:
 
@@ -45,7 +46,9 @@ warehouse are not.
 One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
 The registry covers cost only. The integrations themselves are not refactored. A provider that is
 not an integration (OpenRouter) keeps its credential in a table of its own, and
-`cost_sources.connection_ref` points at that row.
+`cost_sources.connection_ref` points at that row. A connection that exists for more than cost
+(Vercel) supplies cost only once the org adds it on the Cost page: its `cost_sources` row is the
+opt-in, and no column on the connection says so.
 
 ```ts
 interface CostProvider {
@@ -90,7 +93,8 @@ It is a small table (hundreds of rows per source per day), so it needs no rollup
 - `cost_sources`: one row per connection that supplies cost. Its lease, frontiers (newest and
   oldest day pulled), last error and its reason, and the provider requests made this month. A
   connection that stops supplying cost pauses its source and keeps its history. Only a deleted
-  connection deletes it.
+  connection deletes it. A Vercel source is also deleted when the org removes it on the Cost page
+  and when its connection moves to another team, whose spend would overwrite the source's days.
 - `cost_recommendations` (phase 2): followed across runs by `(source, fingerprint)`. Kind,
   resource, title, estimated monthly saving and currency, effort, risk, evidence (jsonb), origin
   (`provider` or `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one
@@ -113,7 +117,8 @@ The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROF
 `sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
 reaches outside them, because a day the provider no longer serves comes back empty, and an empty
 day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
-never for today.
+never for today. Vercel serves a year in one request, today included: its history starts at the
+first day of the month eleven months back, so no window is longer than a year.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -141,17 +146,19 @@ currency the figures are in and lists the others. Nothing is added across curren
   daily chart, a breakdown by service, provider, category, region, usage type or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
-  also replace or remove. Recommendations (list and detail with the evidence chart) come with
-  phase 2.
+  also replace or remove, Vercel by adding the team the org has connected, which the page can
+  remove again. Recommendations (list and detail with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE /internal/cost/openrouter` for the
-  OpenRouter key. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE /internal/cost/openrouter` for the
+  OpenRouter key, and `GET` / `PUT` / `DELETE /internal/cost/vercel` for the Vercel source. A
+  public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
 ## Providers: what phase 0 found
 
-"Live" means checked against a real account on 2026-11-11. "Docs" and "schema" mean read, not run.
+"Live" means checked against a real account on 2026-11-11. "Docs", "spec" and "schema" mean read,
+not run.
 
 ### AWS (billed)
 
@@ -215,6 +222,44 @@ currency the figures are in and lists the others. Nothing is added across curren
 - A day OpenRouter answers nothing for is stored as empty, like any provider's. An empty answer
   for an account that had spend would hide up to 28 days until the next weekly re-pull.
 
+### Vercel (billed)
+
+Nothing here was run against a real team: there was none to test with. The request and the
+response shape are Vercel's OpenAPI spec. The adapter, the normalizer and the page are tested
+against a fake server that answers what the spec describes.
+
+- Spec: `GET /v1/billing/charges?teamId=&from=&to=` returns the team's billed charges as FOCUS
+  v1.3 JSONL, one charge per line, at one-day granularity. `from` is inclusive and `to` exclusive,
+  both ISO 8601 in UTC, a year apart at most. The answer is streamed, so Maple reads it line by
+  line and sums as it goes.
+- It takes the access token of the Vercel connection the org already has. No second credential
+  and no new table: the source points at `vercel_connections.id`, and its account is the team's
+  slug.
+- Spec: readable by the team's Owner, Member, Developer, Security, Billing and Enterprise Viewer
+  roles. A token of another role answers 403, which the source reports as not ready with the
+  roles that work. Adding the source reads yesterday once first, so that refusal shows in the
+  dialog and not as a first sync that fails.
+- Spec: 401 is a rejected token (the source needs the team connected again), 404 and 410 a team
+  or billing data that is gone, 429 a rate limit. A connection whose token the integration's
+  poller already found rejected is not asked at all.
+- Requests are free, so the source counts none.
+- Rows: the product (`ServiceName`) is `CloudService`, its `SkuId` the `UsageType` (left empty
+  when it equals the product name), `ServiceCategory` the category (`Other` when absent),
+  `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
+  `Tags.ProjectId`) the resource. `ChargeCategory` maps onto Maple's (`Usage`, `Purchase`,
+  `Credit`, `Tax`, `Adjustment`), so plan fees and credits are their own rows. Lines of one day,
+  product, SKU, project, region and kind of charge are summed. A sum with no billed and no
+  effective cost is left out. Credits are negative and kept.
+- Spec: no list price is reported, so `ListCost` is the billed cost.
+- Every field but `BilledCost`, `ChargePeriodStart` and `ServiceName` is read as optional, since
+  the spec is the only source. A line that is not such a charge fails the whole pull as an
+  invalid response: storing part of a day would hide the older pull of it.
+- Open: when a day stops changing. Today and yesterday are stored as not final, and the four
+  newest days are pulled again daily.
+- Open: how large a busy team's answer is. A day above 10,000 rows is refused like any
+  provider's.
+- Not split: the team's telemetry service per project. `ServiceName` (Maple's) stays empty.
+
 ### GCP (billed, needs a customer export)
 
 - Docs: no API returns cost. The customer must enable the detailed usage cost export to BigQuery
@@ -272,9 +317,9 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter is built. Railway, GCP, PlanetScale, Supabase, Cloudflare, one
-   PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
-   sync profile.
+3. **More providers.** OpenRouter and Vercel are built. Railway, GCP, PlanetScale, Supabase,
+   Cloudflare, one PR each. Each provider adds a literal to `CostProvider`, an adapter, a
+   reconcile function and a sync profile.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.

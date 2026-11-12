@@ -1396,6 +1396,49 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
+	it.effect(
+		"a cost source stays through a reconnect of its team, and goes with the team or the connection",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			fake.teams = [
+				{ id: "team_1", slug: "acme", name: "Acme" },
+				{ id: "team_2", slug: "beta", name: "Beta" },
+			]
+			/** The org adds its connected team as a cost source, the way the Cost page does. */
+			const addCostSource = Effect.promise(() =>
+				testDb.pglite.query(
+					`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 SELECT gen_random_uuid()::text, org_id, 'vercel', id, team_slug, now(), now() FROM vercel_connections`,
+				),
+			)
+			const costSources = Effect.promise(() =>
+				testDb.pglite.query<{ account: string }>(
+					"SELECT account_id AS account FROM cost_sources WHERE provider = 'vercel'",
+				),
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.account)))
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					yield* addCostSource
+					// A new token for the same team: the source and its history stay.
+					yield* connect({ token: "vc_token_456" })
+					assert.deepStrictEqual(yield* costSources, ["acme"])
+					// Another team: its spend would overwrite the days the source holds.
+					yield* connect({ token: "vc_token_789", teamId: "team_2" })
+					assert.deepStrictEqual(yield* costSources, [])
+
+					yield* addCostSource
+					assert.deepStrictEqual(yield* costSources, ["beta"])
+					yield* disconnect()
+					assert.deepStrictEqual(yield* costSources, [])
+				}),
+			)
+		},
+	)
+
 	it.effect("a first connect Vercel refuses deletes the drains it made and stays disconnected", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()
