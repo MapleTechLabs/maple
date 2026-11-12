@@ -185,27 +185,14 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 }
 
 /** The AI credits row's link to the page that breaks the spend down. */
-const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray<Html> => {
-	if (feature.featureId !== AI_CREDITS_FEATURE_ID) return []
-	if (AsyncData.isFailure(model.aiUsage))
-		return [
-			hstack(h, { gap: "1.5", shrink: true }, [
-				typography(h, { size: "2xs", tone: "muted", truncate: true }, [
-					"Couldn't load where it went",
+const aiCreditsLink = (h: H, feature: FeatureSpend): ReadonlyArray<Html> =>
+	feature.featureId === AI_CREDITS_FEATURE_ID
+		? [
+				typography(h, { size: "2xs" }, [
+					textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
 				]),
-				button(
-					h,
-					{ size: "xs", variant: "link", attributes: [h.OnClick(Message.ClickedRetryAiUsage())] },
-					["Try again"],
-				),
-			]),
-		]
-	return [
-		typography(h, { size: "2xs" }, [
-			textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
-		]),
-	]
-}
+			]
+		: []
 
 const featureRow = (
 	h: H,
@@ -244,7 +231,7 @@ const featureRow = (
 						usageLine(feature),
 					]),
 					...droppedLine(h, model, feature.featureId),
-					...aiSourcesLine(h, model, feature),
+					...aiCreditsLink(h, feature),
 				]),
 			]),
 			tableCell(
