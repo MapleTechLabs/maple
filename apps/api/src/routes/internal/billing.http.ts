@@ -265,7 +265,11 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const customRange = { start: cycle.startMs, end: cycle.endMs }
 						const grouped = (groupBy: string) =>
 							autumn
-								.aggregateEvents(customerId, { featureId: AI_CREDITS_FEATURE_ID, customRange, groupBy })
+								.aggregateEvents(customerId, {
+									featureId: AI_CREDITS_FEATURE_ID,
+									customRange,
+									groupBy,
+								})
 								.pipe(
 									Effect.flatMap(ensureOk),
 									Effect.flatMap((body) => decodeUpstream(AutumnGroupedAggregate, body)),
@@ -274,12 +278,26 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 							[
 								grouped(AI_CREDIT_SOURCE_PROPERTY),
 								grouped(AI_CREDIT_MODEL_PROPERTY),
-								// The breakdown is extra detail: a failed read drops it, never the spend.
-								codeReviews.spend(tenant.orgId, customRange).pipe(
+								// The breakdown is extra detail: a failed or slow read drops it, never the spend.
+								// A billing org's bill carries its members' reviews, so the breakdown does too.
+								billingOrgs.members(tenant.orgId).pipe(
+									Effect.flatMap((members) =>
+										codeReviews.spend(
+											[tenant.orgId, ...Arr.map(members, (member) => member.orgId)],
+											customRange,
+										),
+									),
 									Effect.map((spend) => (spend.reviews > 0 ? spend : null)),
-									Effect.catchTag("@maple/http/pr-review/PrReviewPersistenceError", (error) =>
+									Effect.timeoutOrElse({
+										duration: "5 seconds",
+										orElse: () => Effect.succeed(null),
+									}),
+									Effect.catch((error) =>
 										Effect.logWarning("Could not read code review spend").pipe(
-											Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+											Effect.annotateLogs({
+												orgId: tenant.orgId,
+												error: error.message,
+											}),
 											Effect.as(null),
 										),
 									),

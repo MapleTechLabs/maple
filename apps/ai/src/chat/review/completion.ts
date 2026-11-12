@@ -26,7 +26,7 @@ import { MapleToolFailure, summarizeToolFailure } from "../../mcp/tools/llm-tool
 import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { AutonomousOutcome } from "../autonomous-outcome"
 import { type CompletionRun, type RunCompletion, SUBMIT_REVIEW } from "../completion"
-import { reportedCostMicrousd, type RunUsage } from "../usage"
+import type { RunUsage } from "../usage"
 import {
 	type ChildFindings,
 	childFindingsRefusal,
@@ -108,12 +108,6 @@ const recordAnswer = (outcome: ReturnType<ReviewLedger["record"]>, count: number
 	}
 }
 
-/** The review's reported cost as a request field, absent when no call reported one. */
-const costOf = (usage: RunUsage) => {
-	const costMicrousd = reportedCostMicrousd(usage)
-	return costMicrousd === undefined ? undefined : { costMicrousd }
-}
-
 /**
  * The review a turn files itself when its findings were saved but no `submit_review` landed: a
  * partial with exactly those findings, so the deadline that stopped the pass does not lose them.
@@ -137,7 +131,6 @@ export const savedFindingsRequest = (input: {
 		model: input.modelName,
 		inputTokens: input.usage.input,
 		outputTokens: input.usage.output,
-		...costOf(input.usage),
 		partial: true,
 		...(input.reason === undefined ? undefined : { partialReason: input.reason }),
 	})
@@ -300,7 +293,6 @@ const buildReviewCompletion = (
 					model: modelName,
 					inputTokens: usage.input,
 					outputTokens: usage.output,
-					...costOf(usage),
 					...(partial ? { partial: true } : undefined),
 					...(resolved.length > 0 ? { resolved } : undefined),
 					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),

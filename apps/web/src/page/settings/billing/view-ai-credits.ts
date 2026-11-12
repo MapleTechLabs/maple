@@ -83,7 +83,7 @@ export const aiCreditsSection = (h: H, model: Model, spend: SpendModel | null): 
 	return [
 		section(h, [
 			totalsRail(h, usage, total, feature),
-			grid(h, { lg: 2, gap: "4" }, [sourcesTable(h, usage, total), modelsTable(h, usage)]),
+			grid(h, { lg: 2, gap: "4" }, [sourcesTable(h, usage, total), modelsTable(h, usage, total)]),
 			...(usage.codeReview === null ? [] : codeReviewDetail(h, usage.codeReview)),
 		]),
 	]
@@ -203,8 +203,13 @@ const sourcesTable = (h: H, usage: AiCreditUsageResponse, total: number): Html =
 		]),
 	])
 
-const modelsTable = (h: H, usage: AiCreditUsageResponse): Html => {
-	const total = Num.sumAll(Arr.map(usage.byModel, (entry) => entry.credits))
+/** Spend no model is named on (a security audit's sandbox fee) shows as its own row, so the table adds up. */
+const UNATTRIBUTED = "Unattributed"
+
+const modelsTable = (h: H, usage: AiCreditUsageResponse, total: number): Html => {
+	const named = Num.sumAll(Arr.map(usage.byModel, (entry) => entry.credits))
+	const rest = total - named
+	const rows = rest >= 0.005 ? [...usage.byModel, { model: UNATTRIBUTED, credits: rest }] : usage.byModel
 	return vstack(h, { gap: "3" }, [
 		sectionHeading(h, { title: "By model", as: "h3" }),
 		panel(h, {}, [
@@ -218,9 +223,9 @@ const modelsTable = (h: H, usage: AiCreditUsageResponse): Html => {
 				]),
 				tableBody(
 					h,
-					usage.byModel.length === 0
+					rows.length === 0
 						? [emptyRow(h, 3, "No model calls this cycle")]
-						: Arr.map(usage.byModel, (entry) =>
+						: Arr.map(rows, (entry) =>
 								tableRow(
 									h,
 									[
@@ -348,7 +353,13 @@ const pullRequestRow = (h: H, pr: CodeReviewSpendPullRequest, showRepository: bo
 								href: pr.url,
 								tone: "inherit",
 								isMono: true,
-								attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+								attributes: [
+									h.Target("_blank"),
+									h.Rel("noreferrer"),
+									h.AriaLabel(
+										`Pull request #${pr.number} in ${pr.fullName}, opens in a new tab`,
+									),
+								],
 							},
 							[`#${pr.number}`],
 						),

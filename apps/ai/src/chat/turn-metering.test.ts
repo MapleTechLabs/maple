@@ -22,8 +22,9 @@ import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } f
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { PrReviewId } from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
-import { meterTurn } from "./turn-runner"
+import { meterTurn, recordReviewCost } from "./turn-runner"
 
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
@@ -447,5 +448,37 @@ describe("meterTurn AI credits", () => {
 			Arr.map(charged, (c) => [c.modelId, c.key]),
 			[[SONNET, `${ORG}:default:msg-1:chat:credits:1`]],
 		)
+	})
+})
+
+describe("recordReviewCost", () => {
+	const REVIEW = Schema.decodeSync(PrReviewId)("00000000-0000-4000-9000-000000000001")
+	const org = Schema.decodeSync(OrgId)(ORG)
+	const record = (reviewId: typeof REVIEW | undefined, charges: Array<AiModelSpend>, ownKey: boolean) => {
+		const added: Array<number> = []
+		const reviews = {
+			addCost: (_orgId: OrgId, _reviewId: typeof REVIEW, cost: number) =>
+				Effect.sync(() => void added.push(cost)),
+		}
+		return Effect.runPromise(recordReviewCost(reviews, org, reviewId, { charges }, ownKey)).then(
+			() => added,
+		)
+	}
+	const priced = (providerCostMicrousd: number): AiModelSpend => ({
+		...charge(GLM, 1000, 100),
+		providerCostMicrousd,
+	})
+
+	it("adds the reported cost of every priced call to the review", async () => {
+		assert.deepEqual(
+			await record(REVIEW, [priced(1_000), charge(SONNET, 10, 10), priced(250)], false),
+			[1_250],
+		)
+	})
+
+	it("records nothing on the org's own key, outside a review, or when no call was priced", async () => {
+		assert.deepEqual(await record(REVIEW, [priced(1_000)], true), [])
+		assert.deepEqual(await record(undefined, [priced(1_000)], false), [])
+		assert.deepEqual(await record(REVIEW, [charge(GLM, 1000, 100)], false), [])
 	})
 })

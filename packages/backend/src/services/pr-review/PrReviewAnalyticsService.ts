@@ -48,9 +48,12 @@ export interface PrReviewAnalyticsServiceApi {
 		orgId: OrgId,
 		query: CodeReviewFindingsQuery,
 	) => Effect.Effect<CodeReviewFindingsResponse, PrReviewPersistenceError>
-	/** Where the org's code review credits went between two epoch-ms bounds (a billing cycle). */
+	/**
+	 * Where code review credits went between two epoch-ms bounds (a billing cycle), over every org
+	 * the bill covers: a billing org and the orgs it pays for.
+	 */
 	readonly spend: (
-		orgId: OrgId,
+		orgIds: ReadonlyArray<OrgId>,
 		window: { readonly start: number; readonly end: number },
 	) => Effect.Effect<CodeReviewSpend, PrReviewPersistenceError>
 }
@@ -821,17 +824,27 @@ export class PrReviewAnalyticsService extends Context.Service<
 			})
 		})
 
-		const spend = Effect.fn("PrReviewAnalyticsService.spend")(function* (orgId: OrgId, window: Window) {
-			yield* Effect.annotateCurrentSpan({ orgId, "maple.code_review.span_ms": window.end - window.start })
-			// A skipped review never ran a model, so it costs nothing and is not a review here.
+		const spend = Effect.fn("PrReviewAnalyticsService.spend")(function* (
+			orgIds: ReadonlyArray<OrgId>,
+			window: Window,
+		) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.code_review.orgs": orgIds.length,
+				"maple.code_review.span_ms": window.end - window.start,
+			})
+			// Every review that ran a model: a superseded one started and was billed, a queued one
+			// or one skipped before it began was not.
 			const ran = ($: Reviews) => [
-				$.orgId.eq(orgId),
+				$.orgId.in_(...orgIds),
 				$.createdAt.gte(window.start),
 				$.createdAt.lt(window.end),
-				$.status.neq("skipped"),
+				PG.or(
+					$.costMicrousd.isNotNull(),
+					$.status.in_("running", "completed", "failed"),
+					$.startedAt.isNotNull(),
+				),
 			]
-			const costSum = ($: Reviews) =>
-				PG.sql(PG.float8)`coalesce(sum(${$.costMicrousd}), 0)::float8`
+			const costSum = ($: Reviews) => PG.sql(PG.float8)`coalesce(sum(${$.costMicrousd}), 0)::float8`
 			// One row per pull request: its reviews, their cost, and the first one's cost.
 			const perPullRequest = () =>
 				PG.from(PrReviews)
@@ -862,7 +875,10 @@ export class PrReviewAnalyticsService extends Context.Service<
 									reviews: PG.count(),
 									pullRequests: pullRequestCountOf($),
 									cost: costSum($),
-									unpriced: PG.countIf($.costMicrousd.isNull()),
+									// Finished without a recorded cost: ran before costs were kept.
+									unpriced: PG.countIf(
+										PG.and($.status.eq("completed"), $.costMicrousd.isNull()),
+									),
 								}))
 								.where(ran),
 						),
@@ -924,7 +940,10 @@ export class PrReviewAnalyticsService extends Context.Service<
 				unpricedReviews: total?.unpriced ?? 0,
 				reReviews: repeat?.reReviews ?? 0,
 				reReviewCredits: creditsOf(repeat?.reReviewCost ?? 0),
-				repositories: Arr.map(repositoryRows, ({ cost, ...row }) => ({ ...row, credits: creditsOf(cost) })),
+				repositories: Arr.map(repositoryRows, ({ cost, ...row }) => ({
+					...row,
+					credits: creditsOf(cost),
+				})),
 				topPullRequests: Arr.map(pullRequestRows, ({ cost, ...row }) => ({
 					...row,
 					credits: creditsOf(cost),
@@ -932,7 +951,13 @@ export class PrReviewAnalyticsService extends Context.Service<
 			}).pipe(Effect.mapError(toPersistence))
 		})
 
-		return { analytics, listReviews, getReview, listFindings, spend } satisfies PrReviewAnalyticsServiceApi
+		return {
+			analytics,
+			listReviews,
+			getReview,
+			listFindings,
+			spend,
+		} satisfies PrReviewAnalyticsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

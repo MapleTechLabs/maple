@@ -468,45 +468,76 @@ describe("mergePrReviewConfig", () => {
 		assert.strictEqual(mergePrReviewConfig(undefined, repository), repository)
 	})
 
-	it.effect("sums code review credits by repository and pull request, with each later push as a re-review", () =>
-		provide(
-			Effect.gen(function* () {
-				yield* seed
-				const database = yield* Database
-				const price = (n: number, costMicrousd: number) =>
-					database.execute((db) =>
+	it.effect(
+		"sums code review credits by repository and pull request, with each later push as a re-review",
+		() =>
+			provide(
+				Effect.gen(function* () {
+					yield* seed
+					const database = yield* Database
+					const price = (n: number, costMicrousd: number) =>
+						database.execute((db) =>
+							db.run(
+								PG.update(PrReviews)
+									.set({ costMicrousd })
+									.where(($) => [$.id.eq(reviewId(n))]),
+							),
+						)
+					// Two pushes of #10 priced, #11 failed with no cost recorded, and another tenant's review.
+					yield* price(1, 1_000_000)
+					yield* price(2, 500_000)
+					yield* price(5, 9_000_000)
+					// A push of #10 superseded mid-run (billed, so it counts) and one skipped before it began.
+					const skipped = (n: number, startedAt: number | null, costMicrousd: number | null) => ({
+						id: reviewId(n),
+						orgId: ORG,
+						repositoryId: REPO,
+						number: 10,
+						headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)(String(n % 10))),
+						url: "https://github.com/acme/web/pull/10",
+						title: "PR 10",
+						authorLogin: "ada",
+						status: "skipped" as const,
+						startedAt,
+						costMicrousd,
+						createdAt: at(4),
+						updatedAt: at(4),
+					})
+					yield* database.execute((db) =>
 						db.run(
-							PG.update(PrReviews)
-								.set({ costMicrousd })
-								.where(($) => [$.id.eq(reviewId(n))]),
+							PG.insertInto(PrReviews).values([
+								skipped(6, at(4), 250_000),
+								skipped(7, null, null),
+							]),
 						),
 					)
-				// Two pushes of #10 priced, #11 ran before costs were kept, and another tenant's review.
-				yield* price(1, 1_000_000)
-				yield* price(2, 500_000)
-				yield* price(5, 9_000_000)
-				const spend = yield* (yield* PrReviewAnalyticsService).spend(ORG, {
-					start: START,
-					end: START + 10 * DAY,
-				})
-				assert.strictEqual(spend.reviews, 3)
-				assert.strictEqual(spend.pullRequests, 2)
-				assert.closeTo(spend.credits, 1.8, 1e-9)
-				assert.strictEqual(spend.unpricedReviews, 1)
-				assert.strictEqual(spend.reReviews, 1)
-				assert.closeTo(spend.reReviewCredits, 0.6, 1e-9)
-				assert.deepStrictEqual(
-					Arr.map(spend.repositories, (repo) => [repo.fullName, repo.pullRequests, repo.reviews]),
-					[["acme/web", 2, 3]],
-				)
-				assert.deepStrictEqual(
-					Arr.map(spend.topPullRequests, (pr) => [pr.number, pr.reviews, pr.title]),
-					[
-						[10, 2, "PR 10"],
-						[11, 1, "PR 11"],
-					],
-				)
-			}),
-		),
+					const spend = yield* (yield* PrReviewAnalyticsService).spend([ORG], {
+						start: START,
+						end: START + 10 * DAY,
+					})
+					assert.strictEqual(spend.reviews, 4)
+					assert.strictEqual(spend.pullRequests, 2)
+					assert.closeTo(spend.credits, 2.1, 1e-9)
+					// Only a completed review without a cost is one that ran before costs were kept.
+					assert.strictEqual(spend.unpricedReviews, 0)
+					assert.strictEqual(spend.reReviews, 2)
+					assert.closeTo(spend.reReviewCredits, 0.9, 1e-9)
+					assert.deepStrictEqual(
+						Arr.map(spend.repositories, (repo) => [
+							repo.fullName,
+							repo.pullRequests,
+							repo.reviews,
+						]),
+						[["acme/web", 2, 4]],
+					)
+					assert.deepStrictEqual(
+						Arr.map(spend.topPullRequests, (pr) => [pr.number, pr.reviews, pr.title]),
+						[
+							[10, 3, "PR 10"],
+							[11, 1, "PR 11"],
+						],
+					)
+				}),
+			),
 	)
 })
