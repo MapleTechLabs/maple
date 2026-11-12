@@ -125,7 +125,12 @@ const detectionRow = (h: H, model: Model, detection: AuditDetection): Html => {
 						hstack(h, { gap: "2", align: "center", wrap: true, className: BELOW_LAPTOP }, [
 							typography(h, { size: "xs", tone: "muted" }, [condition]),
 							severityBadge(h, detection.severity),
-							...(detection.destinationIds.length === 0 ? [notifies(h, detection)] : []),
+							// No column heading down here, so the count says what it counts.
+							detection.destinationIds.length === 0
+								? notifies(h, detection)
+								: typography(h, { size: "xs", tone: "muted" }, [
+										`Notifies ${notifiesText(detection) ?? ""}`,
+									]),
 						]),
 					]),
 				],
