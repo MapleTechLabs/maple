@@ -60,6 +60,26 @@ describe("mapleAuditTrailEvents", () => {
 		})
 	})
 
+	// A key that authenticated and was refused for a missing scope: a rule on refused
+	// permissions has to find it, and the row has to say what was asked for.
+	it("files a refused API request under permission, aimed at its method and path", () => {
+		const event = trailEventOf({
+			actorType: "api_key",
+			action: "api.request",
+			resourceType: "api",
+			outcome: "denied",
+			denialReason: "The key lacks the dashboards:write scope.",
+			metadata: { method: "POST", path: "/v2/dashboards" },
+		})
+
+		expect(event).toMatchObject({
+			category: "permission",
+			outcome: "denied",
+			outcomeReason: "The key lacks the dashboards:write scope.",
+			target: { type: "api", name: "POST /v2/dashboards" },
+		})
+	})
+
 	it("names an API key by its public id and the name it had, not by the person who minted it", () => {
 		const event = trailEventOf({
 			actorType: "api_key",

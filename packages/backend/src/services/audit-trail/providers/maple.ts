@@ -19,8 +19,8 @@ const CATEGORY_BY_RESOURCE = {
 	alert_maintenance_window: "configuration",
 	anomaly_incident: "resource",
 	anomaly_settings: "configuration",
-	// The only `api` action is a refused request: a credential that did not get in.
-	api: "authentication",
+	// The only `api` action is a request refused for a scope or role the credential lacks.
+	api: "permission",
 	api_key: "credential",
 	attribute_mapping: "configuration",
 	ingest_rule: "configuration",
@@ -130,6 +130,15 @@ const rawOf = (event: AuditLogEvent): Record<string, unknown> => ({
 	...(event.requestId !== undefined ? { requestId: event.requestId } : undefined),
 })
 
+/** A refused API request has no resource: what it was aimed at is its method and path. */
+const requestName = (event: AuditLogEvent): string | undefined => {
+	const method = event.metadata?.["method"]
+	const path = event.metadata?.["path"]
+	return event.action === "api.request" && typeof method === "string" && typeof path === "string"
+		? `${method} ${path}`
+		: undefined
+}
+
 /**
  * Maple's own audit entry as a trail event, or null for one the trail leaves out: an allowed
  * read, tool call or SQL run. A heavy agent user writes hundreds a day, and they would bury
@@ -139,11 +148,13 @@ const mapleAuditTrailEvent = (event: AuditLogEvent): AuditTrailEvent | null => {
 	if (isAuditAccessAction(event.action) && event.outcome !== "denied") return null
 	// A membership change names the member it happened to, not a resource id.
 	const targetId = event.resourceId ?? event.affectedUserId
+	const targetName = requestName(event)
 	const target =
 		event.resourceType !== undefined || targetId !== undefined
 			? {
 					...(event.resourceType !== undefined ? { type: event.resourceType } : undefined),
 					...(targetId !== undefined ? { id: targetId } : undefined),
+					...(targetName !== undefined ? { name: targetName } : undefined),
 				}
 			: undefined
 	return {
