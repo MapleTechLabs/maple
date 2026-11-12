@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
+import { HttpTaggedError } from "./error-policy"
 
 export const OPENROUTER_KEY_MAX_LENGTH = 256
 
@@ -25,30 +26,63 @@ export class OpenRouterKeyUpdateRequest extends Schema.Class<OpenRouterKeyUpdate
 	apiKey: Schema.String.check(Schema.isMaxLength(OPENROUTER_KEY_MAX_LENGTH)),
 }) {}
 
-export class OpenRouterKeyPersistenceError extends Schema.TaggedError<OpenRouterKeyPersistenceError>()(
+// The settings and Cost pages show these to the person saving a key, so each carries a public
+// body: a plain tagged error reaches the browser as "An unexpected error occurred".
+
+/** The database or OpenRouter could not be reached; its own text can carry internals, so it stays server-side. */
+export class OpenRouterKeyPersistenceError extends HttpTaggedError<OpenRouterKeyPersistenceError>()(
 	"@maple/http/openrouter-key/OpenRouterKeyPersistenceError",
 	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
-	{ httpApiStatus: 503 },
+	{
+		status: 503,
+		code: "openrouter_key_unavailable",
+		title: "OpenRouter keys are temporarily unavailable",
+		message: "The key could not be checked or saved right now. Try again in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
 ) {}
 
-export class OpenRouterKeyForbiddenError extends Schema.TaggedError<OpenRouterKeyForbiddenError>()(
+export class OpenRouterKeyForbiddenError extends HttpTaggedError<OpenRouterKeyForbiddenError>()(
 	"@maple/http/openrouter-key/OpenRouterKeyForbiddenError",
 	{ message: Schema.String },
-	{ httpApiStatus: 403 },
+	{
+		status: 403,
+		code: "openrouter_key_forbidden",
+		title: "Permission required",
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
 ) {}
 
 /** The org does not hold the `openrouter_byok` add-on. */
-export class OpenRouterKeyAddOnRequiredError extends Schema.TaggedError<OpenRouterKeyAddOnRequiredError>()(
+export class OpenRouterKeyAddOnRequiredError extends HttpTaggedError<OpenRouterKeyAddOnRequiredError>()(
 	"@maple/http/openrouter-key/OpenRouterKeyAddOnRequiredError",
 	{ message: Schema.String },
-	{ httpApiStatus: 402 },
+	{
+		status: 402,
+		code: "openrouter_key_add_on_required",
+		title: "Add-on required",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
 ) {}
 
-/** The key is malformed, or OpenRouter rejected it. */
-export class OpenRouterKeyValidationError extends Schema.TaggedError<OpenRouterKeyValidationError>()(
+/** The key is malformed, or OpenRouter rejected it. The message says which, and what to use instead. */
+export class OpenRouterKeyValidationError extends HttpTaggedError<OpenRouterKeyValidationError>()(
 	"@maple/http/openrouter-key/OpenRouterKeyValidationError",
 	{ message: Schema.String },
-	{ httpApiStatus: 400 },
+	{
+		status: 400,
+		code: "openrouter_key_invalid",
+		title: "OpenRouter key not accepted",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
 ) {}
 
 export class OpenRouterKeyApiGroup extends HttpApiGroup.make("openRouterKey")
