@@ -1,8 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { Array as Arr, Option, String as Str } from "effect"
-import { AsyncData } from "foldkit"
+import { Array as Arr, String as Str } from "effect"
 import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -10,7 +9,8 @@ import { appendedPage, fetchingNext, freshLaterPages } from "../../kit/infinite-
 import { chain, slotStep } from "../../kit/keyed-step"
 import { acceptGrants } from "../../kit/session-grants"
 import { FetchFirstPage, FetchNextPage, ReadAuditLogClock, ReadAuditLogGrants } from "./command"
-import { canRead, type LaterPages, Message, type Model, type Search } from "./model"
+import { nextCursorOf } from "./derive"
+import { accessOf, type LaterPages, Message, type Model, type Search } from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -24,11 +24,11 @@ const freshPages = (key: string | null, generation: number): LaterPages => ({
 })
 
 /**
- * The first page under the URL's filters, once the viewer is known to hold `audit_log:read`.
+ * The first page under the URL's filters, unless the session said the viewer may not read it.
  * New filters, or a refresh, start the later pages over.
  */
 const readFirstPage = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
-	if (!canRead(model)) return { model }
+	if (accessOf(model) !== "ask") return { model }
 	const key = keyOf(context, model.search)
 	const laterPages =
 		model.laterPages.key === key && mode === "Load"
@@ -44,22 +44,17 @@ const readFirstPage = (model: Model, context: PageContext, mode: Keyed.ReadMode)
 	)
 }
 
-/** The cursor after everything loaded so far, or null at the end of the list. */
-export const nextCursorOf = (model: Pick<Model, "firstPage" | "laterPages">): string | null =>
-	Option.match(Arr.last(model.laterPages.pages), {
-		onNone: () =>
-			AsyncData.matchData(model.firstPage.data, {
-				onEmpty: () => null,
-				onFailure: () => null,
-				onData: (page) => page.nextCursor,
-			}),
-		onSome: (page) => page.nextCursor,
-	})
-
 const fetchNext = (model: Model): Return => {
 	const cursor = nextCursorOf(model)
 	const { laterPages } = model
-	if (cursor === null || laterPages.key === null || laterPages.isFetching) return { model }
+	// While another first page is on its way the cursor belongs to rows about to be replaced.
+	if (
+		cursor === null ||
+		laterPages.key === null ||
+		laterPages.isFetching ||
+		!Keyed.canExtend(model.firstPage)
+	)
+		return { model }
 	return {
 		model: { ...model, laterPages: fetchingNext(laterPages) },
 		commands: [
@@ -87,12 +82,20 @@ const withFilter = (search: Search, filter: keyof Search, value: string): Search
 	return value === "" ? rest : { ...rest, [filter]: value }
 }
 
-export const init = (route: SecurityAuditLogRoute, context: PageContext): Return => {
+/**
+ * Entering the page. `sessionDecides`: the hosted product, where the session says what the viewer
+ * may read and nothing is asked before it answers. Self-hosted has one role and reads at once.
+ */
+export const enter = (
+	route: SecurityAuditLogRoute,
+	context: PageContext,
+	sessionDecides: boolean,
+): Return => {
 	const model: Model = {
 		search: route.search,
 		nowMs: 0,
-		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
-		isGrantsRead: !isClerkAuthEnabled,
+		grants: sessionDecides ? [] : Policy.allPermissions,
+		isGrantsRead: !sessionDecides,
 		firstPage: Keyed.idle(),
 		laterPages: freshPages(null, 0),
 		expanded: [],
@@ -102,11 +105,14 @@ export const init = (route: SecurityAuditLogRoute, context: PageContext): Return
 		model,
 		commands: [
 			ReadAuditLogClock(),
-			...(isClerkAuthEnabled ? [ReadAuditLogGrants({ orgId: context.orgId })] : []),
+			...(sessionDecides ? [ReadAuditLogGrants({ orgId: context.orgId })] : []),
 		],
 	}
 	return chain(entered, (next) => readFirstPage(next, context, "Load"))
 }
+
+export const init = (route: SecurityAuditLogRoute, context: PageContext): Return =>
+	enter(route, context, isClerkAuthEnabled)
 
 /** Same instance, other filters: the URL is the filter state, so the list follows it. */
 export const routeChanged = (model: Model, route: SecurityAuditLogRoute, context: PageContext): Return =>
@@ -128,9 +134,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFirstPage: ({ key, result }) => ({
 			model: { ...model, firstPage: Keyed.accept(model.firstPage, key, result) },
 		}),
-		CompletedFetchNextPage: ({ key, generation, result }) =>
+		CompletedFetchNextPage: ({ key, generation, cursor, result }) =>
 			key !== model.laterPages.key ||
 			generation !== model.laterPages.generation ||
+			cursor !== nextCursorOf(model) ||
 			!model.laterPages.isFetching
 				? { model }
 				: { model: { ...model, laterPages: appendedPage(model.laterPages, result) } },

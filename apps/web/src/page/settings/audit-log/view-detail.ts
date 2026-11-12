@@ -25,7 +25,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
 import { iconButton } from "@maple/views/ui/icon-button"
-import { jsonBlock } from "../../kit/json-block"
+import { jsonBlock, prettyJson } from "../../kit/json-block"
 
 type H = HtmlBuilder<Message>
 
@@ -58,7 +58,6 @@ const formatScalar = (value: unknown): string =>
 	typeof value === "string" ? value : Option.getOrElse(encodeJsonOption(value), () => "undefined")
 
 const parseJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
 /** Structured or long metadata renders as a block. */
 const metadataBlock = (value: unknown): string | null => {
@@ -68,10 +67,10 @@ const metadataBlock = (value: unknown): string | null => {
 			Str.startsWith("{")(trimmed) || Str.startsWith("[")(trimmed)
 				? Option.getOrNull(parseJson(trimmed))
 				: null
-		if (parsed !== null && typeof parsed === "object") return encodePrettyJson(parsed)
+		if (parsed !== null && typeof parsed === "object") return prettyJson(parsed)
 		return value.length > 72 || Str.includes("\n")(value) ? value : null
 	}
-	if (value !== null && typeof value === "object") return encodePrettyJson(value)
+	if (value !== null && typeof value === "object") return prettyJson(value)
 	return null
 }
 

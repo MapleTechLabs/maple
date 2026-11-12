@@ -1085,7 +1085,6 @@ export const SecurityDependenciesSearch = Schema.Struct({
 
 /** The Security hub's audit log filters; each absent one shows everything. */
 export const SecurityAuditLogSearch = Schema.Struct({
-	provider: StringParam,
 	category: StringParam,
 	outcome: StringParam,
 	/** An actor's id or email on the platform the event came from. */

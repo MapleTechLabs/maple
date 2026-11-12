@@ -1,13 +1,13 @@
-import { AuditTrailCategory, AuditTrailOutcome, AuditTrailProvider } from "@maple/domain/audit-trail"
+import { AuditTrailCategory } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr, DateTime, Schema } from "effect"
+import { refreshingClass } from "@maple/ui/lib/refreshing"
+import * as Keyed from "@maple/views/data/keyed"
+import { Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { compactSearchInput } from "@maple/views/ui/compact-search-input"
-import { badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -26,44 +26,57 @@ import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableGroupRow,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { typography } from "@maple/views/ui/typography"
+import { truncatedText } from "@maple/views/ui/truncated-text"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { AppRoute, hrefOf } from "../../../route"
 import type { PageViewInputs } from "../../contract"
-import { dayKey, dayLabel } from "../../kit/day-label"
-import { jsonBlock } from "../../kit/json-block"
+import { dayEyebrow, dayKey } from "../../kit/day-label"
+import { expandChevron } from "../../kit/expand-chevron"
+import { jsonBlock, prettyJson } from "../../kit/json-block"
+import { refusedBadge } from "../../kit/refused-badge"
 import { relativeTime } from "../../kit/relative-time"
 import { securityLayout, WIDE_COLUMN } from "../kit/layout"
-import { placeholder } from "../kit/parts"
+import { placeholderRows } from "../kit/parts"
 import {
 	actorDetail,
 	actorText,
+	actorTypeLabel,
 	CATEGORY_LABEL,
 	categoryLabel,
 	eventsOf,
 	isFiltered,
-	isRefused,
+	isForbidden,
+	isMarked,
+	labelIn,
+	nextCursorOf,
+	OUTCOME_FILTERS,
 	OUTCOME_LABEL,
 	outcomeLabel,
-	PROVIDER_LABEL,
-	providerLabel,
 	targetText,
 } from "./derive"
-import { canRead, Message, type Model, type SelectFilter } from "./model"
-import { nextCursorOf } from "./update"
+import { accessOf, Message, type Model, type SelectFilter } from "./model"
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
 
-const COLUMN_COUNT = 6
+const COLUMN_COUNT = 5
 
 // On a phone the two text columns share the width left of the time, so neither scrolls away.
 const NARROW_ACTOR = "max-w-32 sm:max-w-56"
 const NARROW_ACTION = "max-w-36 sm:max-w-72"
 
-const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
-
-/** One filter as a native select: "All …" clears it. Keyed on its value so a URL change shows. */
+/** One filter as a native select: "All …" clears it. The URL holds the value it shows. */
 const filterSelect = (
 	h: H,
 	filter: SelectFilter,
@@ -76,34 +89,20 @@ const filterSelect = (
 		h,
 		{
 			size: "sm",
-			defaultValue: value ?? "",
+			value: value ?? "",
 			attributes: [
-				h.Key(`${filter}:${value ?? ""}`),
 				h.AriaLabel(all),
 				h.OnChange((next) => Message.ChangedFilter({ filter, value: next })),
 			],
 		},
 		[
 			nativeOption("", all),
-			...Arr.map(values, (option) => nativeOption(option, labels[option] ?? option)),
+			...Arr.map(values, (option) => nativeOption(option, labelIn(labels, option))),
 		],
 	)
 
 const toolbar = (h: H, model: Model): Html =>
 	hstack(h, { gap: "2", align: "center", wrap: true, className: "border-b px-4 py-2.5" }, [
-		// One platform has nothing to choose between; the select appears with the second.
-		...(AuditTrailProvider.literals.length > 1
-			? [
-					filterSelect(
-						h,
-						"provider",
-						model.search.provider,
-						"All platforms",
-						PROVIDER_LABEL,
-						AuditTrailProvider.literals,
-					),
-				]
-			: []),
 		filterSelect(
 			h,
 			"category",
@@ -112,22 +111,15 @@ const toolbar = (h: H, model: Model): Html =>
 			CATEGORY_LABEL,
 			AuditTrailCategory.literals,
 		),
-		filterSelect(
-			h,
-			"outcome",
-			model.search.outcome,
-			"All outcomes",
-			OUTCOME_LABEL,
-			AuditTrailOutcome.literals,
-		),
+		filterSelect(h, "outcome", model.search.outcome, "All outcomes", OUTCOME_LABEL, OUTCOME_FILTERS),
 		compactSearchInput(h, {
 			value: model.actorText,
-			placeholder: "Actor id or email",
+			placeholder: "Actor id or email, then Enter",
 			ariaLabel: "Filter by actor",
 			onInput: (value) => Message.ChangedActorText({ value }),
 			onClear: Message.ClearedActor(),
 			onEnter: Message.SubmittedActor(),
-			className: "w-56",
+			className: "w-64",
 		}),
 		...(isFiltered(model.search)
 			? [
@@ -144,50 +136,34 @@ const toolbar = (h: H, model: Model): Html =>
 			: []),
 	])
 
-const outcomeBadge = (h: H, event: AuditTrailEntry): ReadonlyArray<Html> =>
-	isRefused(event)
-		? [
-				badge(h, { variant: "crit", size: "sm", className: "shrink-0" }, [
-					icon(h, "CircleXmarkIcon"),
-					outcomeLabel(event.outcome),
-				]),
-			]
-		: []
+const outcomeMark = (h: H, event: AuditTrailEntry): ReadonlyArray<Html> =>
+	isMarked(event) ? [refusedBadge(h, outcomeLabel(event.outcome))] : []
 
 const detailField = (h: H, label: string, value: string | null, mono = false): ReadonlyArray<Html> =>
 	value === null ? [] : [keyValue(h, { label, wrap: true, mono }, [value])]
 
-/** Everything the platform said about one event, under its row. */
-const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html =>
-	vstack(h, { gap: "3", className: "px-4 py-3" }, [
+/** Everything recorded about one event, under its row: nothing the row cut off is lost. */
+const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html => {
+	const at = (value: number) => timestamp(h, { value, ...clock, withYear: true, className: "tabular-nums" })
+	return vstack(h, { gap: "3", className: "px-4 py-3" }, [
 		keyValueList(h, { layout: "grid" }, [
-			keyValue(h, { label: "Happened", wrap: true }, [
-				timestamp(h, {
-					value: isoOf(event.occurredAt),
-					...clock,
-					withYear: true,
-					className: "tabular-nums",
-				}),
-			]),
-			keyValue(h, { label: "Recorded", wrap: true }, [
-				timestamp(h, {
-					value: isoOf(event.ingestedAt),
-					...clock,
-					withYear: true,
-					className: "tabular-nums",
-				}),
-			]),
-			keyValue(h, { label: "Platform", wrap: true }, [providerLabel(event.provider)]),
-			...detailField(h, "Account", event.account),
+			keyValue(h, { label: "Action", wrap: true, mono: true }, [event.action]),
 			keyValue(h, { label: "Category", wrap: true }, [categoryLabel(event.category)]),
 			keyValue(h, { label: "Outcome", wrap: true }, [outcomeLabel(event.outcome)]),
+			...detailField(h, "Reason", event.outcomeReason),
+			...detailField(h, "Actor", event.actor.name),
+			keyValue(h, { label: "Actor type", wrap: true }, [actorTypeLabel(event.actor.type)]),
 			...detailField(h, "Actor id", event.actor.id, true),
 			...detailField(h, "Actor email", event.actor.email),
+			...detailField(h, "Target", event.target.name),
 			...detailField(h, "Target type", event.target.type, true),
 			...detailField(h, "Target id", event.target.id, true),
-			...detailField(h, "Origin IP", event.originIp, true),
-			...detailField(h, "Origin country", event.originCountry),
+			...detailField(h, "IP address", event.originIp, true),
+			...detailField(h, "Country", event.originCountry),
 			...detailField(h, "User agent", event.userAgent, true),
+			...detailField(h, "Account", event.account, true),
+			keyValue(h, { label: "Occurred", wrap: true }, [at(event.occurredAt)]),
+			keyValue(h, { label: "Recorded", wrap: true }, [at(event.ingestedAt)]),
 			keyValue(h, { label: "Event id", wrap: true, mono: true }, [event.providerEventId]),
 		]),
 		...(event.raw === null
@@ -195,55 +171,51 @@ const eventDetail = (h: H, event: AuditTrailEntry, clock: Clock): Html =>
 			: [
 					vstack(h, { gap: "1.5" }, [
 						eyebrow(h, { variant: "mono" }, ["Payload"]),
-						jsonBlock(h, encodePrettyJson(event.raw)),
+						jsonBlock(h, prettyJson(event.raw)),
 					]),
 				]),
 	])
-
-const isoOf = (epochMs: number): string => DateTime.formatIso(DateTime.makeUnsafe(epochMs))
+}
 
 const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): ReadonlyArray<Html> => {
 	const isExpanded = Arr.contains(model.expanded, event.id)
 	const detailId = `audit-event-${event.id}`
 	const actor = actorDetail(event)
 	const target = targetText(event)
+	const small = typographyClass({ size: "2xs", tone: "muted" })
 	return [
 		tableRow(
 			h,
 			[
-				tableCell(h, [
-					pressable(
-						h,
-						{
-							onClick: Message.ToggledEvent({ id: event.id }),
-							label: `${isExpanded ? "Hide" : "Show"} details: ${event.action}`,
-							className:
-								"focus-visible:ring-ring rounded-sm focus-visible:ring-1 focus-visible:outline-none",
-							attributes: [h.AriaExpanded(isExpanded), h.AriaControls(detailId)],
-						},
-						[
-							hstack(h, { gap: "1.5", align: "center", as: "span" }, [
-								icon(h, "ChevronRightIcon", {
-									size: 12,
-									className: cn(
-										"text-foreground-subtle shrink-0 transition-transform",
-										isExpanded && "rotate-90",
-									),
-								}),
-								relativeTime(h, { value: isoOf(event.occurredAt), ...clock }),
-							]),
-						],
-					),
-				]),
-				tableCell(h, [providerLabel(event.provider)], WIDE_COLUMN),
+				tableCell(
+					h,
+					[
+						// The whole cell, so a thumb has more than a line of text to hit.
+						pressable(
+							h,
+							{
+								onClick: Message.ToggledEvent({ id: event.id }),
+								label: `${isExpanded ? "Hide" : "Show"} details: ${event.action}`,
+								className:
+									"focus-visible:ring-ring flex min-h-10 w-full items-center gap-1.5 px-2.5 focus-visible:ring-1 focus-visible:outline-none focus-visible:ring-inset",
+								attributes: [h.AriaExpanded(isExpanded), h.AriaControls(detailId)],
+							},
+							[
+								expandChevron(h, isExpanded),
+								relativeTime(h, { value: event.occurredAt, ...clock, variant: "short" }),
+							],
+						),
+					],
+					"p-0",
+				),
 				tableCell(
 					h,
 					[
 						vstack(h, { shrink: true }, [
-							typography(h, { truncate: true }, [actorText(event)]),
+							truncatedText(h, { text: actorText(event), tooltip: "overflow" }),
 							...(actor === null
 								? []
-								: [typography(h, { size: "2xs", tone: "muted", truncate: true }, [actor])]),
+								: [truncatedText(h, { text: actor, tooltip: "overflow", className: small })]),
 						]),
 					],
 					NARROW_ACTOR,
@@ -252,16 +224,30 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 					h,
 					[
 						vstack(h, { shrink: true }, [
-							typography(h, { mono: true, size: "xs", truncate: true }, [event.action]),
+							truncatedText(h, {
+								text: event.action,
+								mono: true,
+								tooltip: "overflow",
+								className: typographyClass({ size: "xs" }),
+							}),
 							hstack(h, { gap: "1.5", align: "center", wrap: true }, [
 								typography(h, { size: "2xs", tone: "muted" }, [
 									categoryLabel(event.category),
 								]),
-								// A phone has no Outcome column: a refusal still shows, under its action.
-								...Arr.map(outcomeBadge(h, event), (mark) =>
+								// A phone has no Outcome column: the mark still shows, under its action.
+								...Arr.map(outcomeMark(h, event), (mark) =>
 									h.span([h.Class("sm:hidden")], [mark]),
 								),
 							]),
+							...(event.outcomeReason === null
+								? []
+								: [
+										truncatedText(h, {
+											text: event.outcomeReason,
+											tooltip: "overflow",
+											className: small,
+										}),
+									]),
 						]),
 					],
 					NARROW_ACTION,
@@ -271,13 +257,16 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 					target === null
 						? []
 						: [
-								typography(h, { mono: true, size: "xs", tone: "muted", truncate: true }, [
-									target,
-								]),
+								truncatedText(h, {
+									text: target,
+									mono: true,
+									tooltip: "overflow",
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								}),
 							],
-					WIDE_COLUMN,
+					`max-w-64 ${WIDE_COLUMN}`,
 				),
-				tableCell(h, outcomeBadge(h, event), WIDE_COLUMN),
+				tableCell(h, outcomeMark(h, event), WIDE_COLUMN),
 			],
 			isExpanded ? "bg-surface-faint" : undefined,
 			[h.Key(event.id)],
@@ -313,25 +302,9 @@ const rowsByDay = (
 		return [
 			...(isNewDay
 				? [
-						tableRow(
-							h,
-							[
-								tableCell(
-									h,
-									[
-										eyebrow(
-											h,
-											{ variant: "mono", icon: "CalendarIcon", className: "gap-2" },
-											[dayLabel(event.occurredAt, clock)],
-										),
-									],
-									"bg-surface-faint py-1.5",
-									[h.Attribute("colspan", String(COLUMN_COUNT))],
-								),
-							],
-							"hover:bg-transparent active:bg-transparent",
-							[h.Key(`day-${day}`)],
-						),
+						tableGroupRow(h, { colSpan: COLUMN_COUNT, key: `day-${day}` }, [
+							dayEyebrow(h, event.occurredAt, clock),
+						]),
 					]
 				: []),
 			...eventRows(h, model, event, clock),
@@ -342,25 +315,17 @@ const eventsTable = (h: H, model: Model, events: ReadonlyArray<AuditTrailEntry>,
 	table(h, { ariaLabel: "Audit events" }, [
 		tableHeader(h, [
 			tableRow(h, [
-				tableHead(h, ["Time"], "w-28 sm:w-36"),
-				tableHead(h, ["Platform"], WIDE_COLUMN),
+				tableHead(h, ["Time"], "w-24"),
 				tableHead(h, ["Actor"]),
 				tableHead(h, ["Action"]),
 				tableHead(h, ["Target"], WIDE_COLUMN),
-				tableHead(h, ["Outcome"], cn("w-28", WIDE_COLUMN)),
+				tableHead(h, ["Outcome"], `w-28 ${WIDE_COLUMN}`),
 			]),
 		]),
 		tableBody(h, rowsByDay(h, model, events, clock)),
 	])
 
-const loading = (h: H): ReadonlyArray<Html> => [
-	vstack(h, { gap: "4", attributes: [h.AriaBusy(true), h.AriaLabel("Loading")] }, [
-		placeholder(h, "h-9 w-full"),
-		placeholder(h, "h-80 w-full"),
-	]),
-]
-
-/** Not an org admin: the page says who can read the log, and loads nothing. */
+/** Not an org admin: the page says who can read the log. */
 const adminsOnly = (h: H): Html =>
 	empty(
 		h,
@@ -392,7 +357,7 @@ const noEvents = (h: H): Html =>
 
 const listBody = (h: H, model: Model, clock: Clock): Html =>
 	AsyncData.matchData(model.firstPage.data, {
-		onEmpty: () => vstack(h, { className: "p-4" }, loading(h)),
+		onEmpty: () => placeholderRows(h, 6),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -410,17 +375,49 @@ const listBody = (h: H, model: Model, clock: Clock): Html =>
 					className: "py-8",
 				})
 			if (events.length === 0) return noEvents(h)
+			// While other filters load, the rows on screen are the old answer and cannot be extended.
+			const canExtend = Keyed.canExtend(model.firstPage)
 			const footer = listFooter(h, {
 				shown: events.length,
 				noun: "events",
-				hasMore: nextCursorOf(model) !== null,
+				hasMore: canExtend && nextCursorOf(model) !== null,
 				isLoading: model.laterPages.isFetching,
-				isFailed: model.laterPages.isFailed,
+				isFailed: canExtend && model.laterPages.isFailed,
 				onLoadMore: Message.ClickedLoadMore(),
 				className: "border-t",
 			})
-			return vstack(h, {}, [eventsTable(h, model, events, clock), ...(footer === null ? [] : [footer])])
+			const isRefetching = Keyed.isInFlight(model.firstPage)
+			return vstack(
+				h,
+				{ className: refreshingClass(isRefetching), attributes: [h.AriaBusy(isRefetching)] },
+				[eventsTable(h, model, events, clock), ...(footer === null ? [] : [footer])],
+			)
 		},
+	})
+
+/** Allowed reads are not here, and a reader should not take their absence for "nobody read". */
+const footnote = (h: H): Html =>
+	typography(h, { size: "xs", tone: "muted", as: "p" }, [
+		"Allowed reads, tool calls and SQL runs are not listed here. They are in ",
+		textLink(
+			h,
+			{
+				tone: "muted",
+				className: "underline",
+				href: hrefOf(AppRoute.Settings({ search: { tab: "audit-log" } })),
+			},
+			["Settings, Audit log"],
+		),
+		".",
+	])
+
+/** The session, or the API when the session could not say, refused the viewer. */
+const isRefused = (model: Model): boolean =>
+	accessOf(model) === "denied" ||
+	AsyncData.matchData(model.firstPage.data, {
+		onEmpty: () => false,
+		onFailure: isForbidden,
+		onData: () => false,
 	})
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
@@ -428,15 +425,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return securityLayout(
 		h,
 		{ source: "auditLog" },
-		!model.isGrantsRead
-			? loading(h)
-			: !canRead(model)
+		accessOf(model) === "unknown"
+			? [placeholderRows(h, 6)]
+			: isRefused(model)
 				? [adminsOnly(h)]
 				: [
 						panel(h, { className: "overflow-hidden" }, [
 							toolbar(h, model),
 							listBody(h, model, clock),
 						]),
+						footnote(h),
 					],
 	)
 })

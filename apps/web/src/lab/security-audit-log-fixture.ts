@@ -11,6 +11,7 @@ type Seed = Readonly<{
 	action: string
 	category: string
 	outcome?: string
+	outcomeReason?: string
 	actor: AuditTrailEntry["actor"]
 	target?: Partial<AuditTrailEntry["target"]>
 	originIp?: string
@@ -61,7 +62,8 @@ const SEEDS: ReadonlyArray<Seed> = [
 		actor: deployKey,
 		originIp: "198.51.100.24",
 		originCountry: "US",
-		raw: { source: "api", denialReason: "The key lacks the dashboards:write scope." },
+		outcomeReason: "The key lacks the dashboards:write scope.",
+		raw: { source: "api" },
 	},
 	{
 		minutesAgo: 47,
@@ -108,7 +110,8 @@ const SEEDS: ReadonlyArray<Seed> = [
 		outcome: "denied",
 		actor: { type: "service", id: "actor_8UjMki9OlP0qWeRtY1uI2o", name: "Triage agent", email: null },
 		target: { type: "telemetry" },
-		raw: { source: "mcp", denialReason: "The query reads a table this agent may not." },
+		outcomeReason: "The query reads a table this agent may not.",
+		raw: { source: "mcp" },
 	},
 	{
 		minutesAgo: 24 * 60 + 300,
@@ -128,13 +131,14 @@ const eventOf = (seed: Seed, index: number, nowMs: number): AuditTrailEntry => {
 		id: Str.padStart(32, "0")(index.toString(16)),
 		provider: "maple",
 		account: null,
-		providerEventId: `9d2c1e3a-6a1b-4f0e-9c1d-${Str.padStart(12, "0")(index.toString(16))}`,
+		providerEventId: `alog_4CzLmR1pTxWvYbNhQd82K${index}`,
 		occurredAt,
 		ingestedAt: occurredAt + 900,
 		actor: seed.actor,
 		action: seed.action,
 		category: seed.category,
 		outcome: seed.outcome ?? "success",
+		outcomeReason: seed.outcomeReason ?? null,
 		target: { type: null, id: null, name: null, ...seed.target },
 		originIp: seed.originIp ?? null,
 		originCountry: seed.originCountry ?? null,

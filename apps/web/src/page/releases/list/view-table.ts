@@ -15,7 +15,15 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableGroupRow,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { releaseHealthFigure, releaseHref } from "../kit"
@@ -268,18 +276,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 		const counts = input.issueCounts === undefined ? null : input.issueCounts.get(group.commitSha)
 		return [
 			...(showDay
-				? [
-						tableRow(
-							h,
-							[
-								tableCell(h, [eyebrow(h, {}, [day])], "bg-surface-sunken py-1", [
-									h.Attribute("colspan", "6"),
-								]),
-							],
-							"hover:bg-transparent active:bg-transparent",
-							[h.Key(`day:${group.commitSha}`)],
-						),
-					]
+				? [tableGroupRow(h, { colSpan: 6, key: `day:${group.commitSha}` }, [eyebrow(h, {}, [day])])]
 				: []),
 			tableRow(
 				h,

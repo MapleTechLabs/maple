@@ -25,7 +25,7 @@ export const LaterPages = Schema.Struct({
 export type LaterPages = typeof LaterPages.Type
 
 /** The filters a select sets; the actor is typed and applied on Enter. */
-export const SelectFilter = Schema.Literals(["provider", "category", "outcome"])
+export const SelectFilter = Schema.Literals(["category", "outcome"])
 export type SelectFilter = typeof SelectFilter.Type
 
 export const Model = Schema.Struct({
@@ -43,7 +43,16 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-export const canRead = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "audit_log:read")
+/**
+ * What the session says: `denied` only when it answered and the permission is missing. A session
+ * that answered with nothing failed to read, so the API is asked and gets the last word.
+ */
+export const accessOf = (model: Pick<Model, "grants" | "isGrantsRead">): "unknown" | "ask" | "denied" =>
+	!model.isGrantsRead
+		? "unknown"
+		: model.grants.length === 0 || Policy.has(model.grants, "audit_log:read")
+			? "ask"
+			: "denied"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },
@@ -52,6 +61,8 @@ export const Message = defineMessageUnion({
 	CompletedFetchNextPage: {
 		key: Schema.String,
 		generation: Schema.Number,
+		/** The cursor the page was asked from: an answer for another one is not the next page. */
+		cursor: Schema.String,
 		result: Schema.Result(EventsPage, LoadFailure),
 	},
 	ClickedRetry: {},

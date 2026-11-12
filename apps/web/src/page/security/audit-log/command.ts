@@ -23,7 +23,6 @@ const listEvents = (search: SecurityAuditLogSearch, cursor: string | undefined) 
 	Effect.flatMap(MapleInternalApiClient, (api) =>
 		api.auditTrail.list({
 			query: {
-				...(search.provider !== undefined ? { provider: search.provider } : undefined),
 				...(search.category !== undefined ? { category: search.category } : undefined),
 				...(search.outcome !== undefined ? { outcome: search.outcome } : undefined),
 				...(search.actor !== undefined ? { actor: search.actor } : undefined),
@@ -52,6 +51,6 @@ export const FetchNextPage = Command.define("SecurityApiAuditLogNextPage", {
 	messages: [Message.CompletedFetchNextPage],
 	execute: ({ key, generation, search, cursor }) =>
 		listEvents(search, cursor).pipe(
-			settleTo((result) => Message.CompletedFetchNextPage({ key, generation, result })),
+			settleTo((result) => Message.CompletedFetchNextPage({ key, generation, cursor, result })),
 		),
 })
