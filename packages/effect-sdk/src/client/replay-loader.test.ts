@@ -106,6 +106,37 @@ describe("startClientSession replay", () => {
 	})
 })
 
+describe("startClientSession session errors", () => {
+	/** The fields of an `ErrorEvent` the capture reads; node has no `ErrorEvent`. */
+	const uncaught = (message: string, filename = "https://app.example.com/assets/app.js"): Event =>
+		Object.assign(new Event("error"), { message, filename, error: null })
+
+	it("counts a real uncaught error and not the benign ResizeObserver notice", async () => {
+		stubPage()
+		const session = startClientSession({ ...BASE, replay: { enabled: false } })
+
+		window.dispatchEvent(uncaught("ResizeObserver loop completed with undelivered notifications."))
+		window.dispatchEvent(uncaught("ResizeObserver loop limit exceeded"))
+		expect(getActiveSink()?.getErrorCount()).toBe(0)
+
+		window.dispatchEvent(uncaught("Cannot read properties of undefined (reading 'id')"))
+		expect(getActiveSink()?.getErrorCount()).toBe(1)
+		await session.stop()
+	})
+
+	it("counts no error thrown by a browser extension's script", async () => {
+		stubPage()
+		const session = startClientSession({ ...BASE, replay: { enabled: false } })
+
+		window.dispatchEvent(
+			uncaught("boom", "chrome-extension://fmkadmapgofadopljbjfkapdkoienihi/build/a.js"),
+		)
+
+		expect(getActiveSink()?.getErrorCount()).toBe(0)
+		await session.stop()
+	})
+})
+
 describe("startClientSession privacy", () => {
 	it("removes its sanitizeUrl when stopped, so a remount does not stack another", async () => {
 		stubPage()

@@ -21,6 +21,7 @@ import {
 	type MetadataSessionHandle,
 } from "@maple/browser-session"
 import { browserNavigator } from "./browser-globals.js"
+import { isBrowserNoise } from "./error-noise.js"
 import { setupStandaloneSession } from "./standalone-session.js"
 import { getCurrentIdentity } from "./user.js"
 import { CLIENT_SDK_HINT } from "../version.js"
@@ -90,6 +91,8 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		maskAllInputs: config.replay?.maskAllInputs ?? true,
 		maskAllText: config.replay?.maskAllText ?? false,
 		getIdentity: getCurrentIdentity,
+		// The session's error count leaves out what the issue list leaves out.
+		isErrorNoise: isBrowserNoise,
 	}
 	// Crawlers keep their session row and events but record no replay. See `isLikelyBot`.
 	const replayEnabled =
