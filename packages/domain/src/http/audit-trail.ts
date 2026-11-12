@@ -1,6 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
+import { HttpTaggedError } from "./error-policy"
 
 // The Security hub's audit log: audit events from connected platforms and Maple itself in one
 // list. Dashboard only (the session tier refuses API keys) and behind `audit_log:read`.
@@ -85,17 +86,32 @@ export const AuditTrailListResponse = Schema.Struct({
 })
 export type AuditTrailListResponse = typeof AuditTrailListResponse.Type
 
-export class AuditTrailPersistenceError extends Schema.TaggedError<AuditTrailPersistenceError>()(
-	"@maple/http/audit-trail/AuditTrailPersistenceError",
+export class AuditTrailPersistenceError extends HttpTaggedError<AuditTrailPersistenceError>()(
+	"@maple/http/errors/AuditTrailPersistenceError",
 	/** `cause` names the failure behind it (its tag), never its details. */
 	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
-	{ httpApiStatus: 503 },
+	{
+		status: 503,
+		code: "audit_trail_unavailable",
+		title: "The audit log is temporarily unavailable",
+		message: "The audit log is temporarily unavailable. Retry in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
 ) {}
 
-export class AuditTrailForbiddenError extends Schema.TaggedError<AuditTrailForbiddenError>()(
-	"@maple/http/audit-trail/AuditTrailForbiddenError",
+export class AuditTrailForbiddenError extends HttpTaggedError<AuditTrailForbiddenError>()(
+	"@maple/http/errors/AuditTrailForbiddenError",
 	{ message: Schema.String },
-	{ httpApiStatus: 403 },
+	{
+		status: 403,
+		code: "audit_trail_forbidden",
+		title: "Permission required",
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
 ) {}
 
 export class AuditTrailApiGroup extends HttpApiGroup.make("auditTrail")

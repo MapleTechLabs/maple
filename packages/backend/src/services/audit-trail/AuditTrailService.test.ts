@@ -201,7 +201,7 @@ describe("AuditTrailService.list", () => {
 				trail.list(ORG, { limit: 2 }),
 			).pipe(Effect.flip)
 
-			expect(error._tag).toBe("@maple/http/audit-trail/AuditTrailPersistenceError")
+			expect(error._tag).toBe("@maple/http/errors/AuditTrailPersistenceError")
 		}),
 	)
 })
@@ -277,7 +277,7 @@ describe("AuditTrailService.write", () => {
 				trail.write(ORG, [event]),
 			).pipe(Effect.flip)
 
-			expect(error._tag).toBe("@maple/http/audit-trail/AuditTrailPersistenceError")
+			expect(error._tag).toBe("@maple/http/errors/AuditTrailPersistenceError")
 		}),
 	)
 })
