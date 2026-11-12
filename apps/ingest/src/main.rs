@@ -940,6 +940,8 @@ enum SourceClaim {
 struct VerifiedClaims {
     active: Vec<String>,
     paused: Vec<String>,
+    /// The store could not be asked: a claim in neither list may still be the org's.
+    unresolved: bool,
 }
 
 fn source_claims_cache(ttl: Duration) -> Cache<(String, String), SourceClaim> {
@@ -4258,6 +4260,12 @@ async fn handle_vercel_audit_trail_inner(
         return Ok(0);
     }
     if !verified.active.iter().any(|active| active == claim) {
+        // The store being down says nothing about the sender: Vercel retries a 503.
+        if verified.unresolved {
+            return Err(ApiError::service_unavailable(
+                "Ingest authentication unavailable",
+            ));
+        }
         return Err(unknown_sender());
     }
 
@@ -8763,6 +8771,7 @@ impl IngestKeyResolver {
                     org_id,
                     error, "Source claim lookup failed; replacing the claims"
                 );
+                verified.unresolved = true;
                 return verified;
             }
         };
@@ -13520,6 +13529,28 @@ mod tests {
 
         assert_eq!(accepted, 0);
         assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A store that cannot be asked has not said the sender is unknown: the drain
+    // must read as retryable, not as misconfigured.
+    #[tokio::test]
+    async fn vercel_audit_drain_asks_for_a_retry_while_its_source_cannot_be_checked() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-store-down");
+        let (state, store, mut imports) =
+            audit_trail_test_state("maple_sk_test_down", "org_down", queue_dir.clone()).await;
+        let headers = vercel_drain_headers("maple_sk_test_down", AUDIT_SOURCE_ID);
+        store.source_errors.store(true, Ordering::Relaxed);
+
+        let refused = vercel_audit_delivery(&state, &headers)
+            .await
+            .expect_err("an unchecked source must not be stored");
+        assert_eq!(refused.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+
+        // The store back, the same delivery is taken.
+        store.source_errors.store(false, Ordering::Relaxed);
+        assert_eq!(vercel_audit_delivery(&state, &headers).await.ok(), Some(1));
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
