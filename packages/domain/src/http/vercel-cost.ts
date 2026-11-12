@@ -11,8 +11,8 @@ import {
 } from "./integrations"
 import { CloudCostDisabledError } from "./query-engine"
 
-/** The Vercel team the org's connection reads, as the Cost page names it. */
-export const VercelCostTeam = Schema.Struct({ name: Schema.String, slug: Schema.String })
+/** The Vercel team the org's connection reads: its id at Vercel, and how the Cost page names it. */
+export const VercelCostTeam = Schema.Struct({ id: Schema.String, name: Schema.String, slug: Schema.String })
 export type VercelCostTeam = typeof VercelCostTeam.Type
 
 /** What the Cost page needs to offer Vercel: the connected team, if any, and whether it is a source. */
@@ -23,6 +23,11 @@ export class VercelCostStatus extends Schema.Class<VercelCostStatus>("VercelCost
 	authFailed: Schema.Boolean,
 	/** The team is a cost source already. */
 	added: Schema.Boolean,
+}) {}
+
+/** The team the dialog showed: an add of a connection that has moved to another team is refused. */
+export class VercelCostAddRequest extends Schema.Class<VercelCostAddRequest>("VercelCostAddRequest")({
+	teamId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
 }) {}
 
 export class VercelCostSourceAdded extends Schema.Class<VercelCostSourceAdded>("VercelCostSourceAdded")({
@@ -46,6 +51,7 @@ export class VercelCostApiGroup extends HttpApiGroup.make("vercelCost")
 	)
 	.add(
 		HttpApiEndpoint.put("add", "/", {
+			payload: VercelCostAddRequest,
 			success: VercelCostSourceAdded,
 			error: [
 				IntegrationsPersistenceError,

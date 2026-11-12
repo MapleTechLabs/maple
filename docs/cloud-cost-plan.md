@@ -234,7 +234,11 @@ against a fake server that answers what the spec describes.
   line and sums as it goes.
 - It takes the access token of the Vercel connection the org already has. No second credential
   and no new table: the source points at `vercel_connections.id`, and its account is the team's
-  slug.
+  slug. Rows are stamped with the connection's slug, and every write of that slug (a reconnect
+  after the team renamed itself) rewrites the source's account in the same transaction, so one
+  team is never two accounts.
+- Adding names the team the dialog showed. A connection that reads another team by then, or
+  whose token was replaced while the check read was in flight, is refused as changed.
 - Spec: readable by the team's Owner, Member, Developer, Security, Billing and Enterprise Viewer
   roles. A token of another role answers 403, which the source reports as not ready with the
   roles that work. Adding the source reads yesterday and today once first (the days every daily
@@ -242,20 +246,28 @@ against a fake server that answers what the spec describes.
 - Spec: 401 is a rejected token (the source needs the team connected again), 404 and 410 a team
   or billing data that is gone, 429 a rate limit. A connection whose token the integration's
   poller already found rejected is not asked at all. A new token saved for the same team makes
-  a source held for the old one due again at once. A 400 is a request Vercel calls invalid:
-  the source keeps Vercel's own message, since the request shape is the part not run live.
+  a source due at the next tick, whenever it last synced. A 400 is a request Vercel calls
+  invalid: the source keeps Vercel's own message, and an add shows it in the dialog, since the
+  request shape is the part not run live.
 - Requests are free, so the source counts none.
 - Rows: the product (`ServiceName`) is `CloudService`, its `SkuId` the `UsageType` (left empty
   when it equals the product name), `ServiceCategory` the category (`Other` when absent),
   `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
-  `Tags.ProjectId`) the resource, which the page groups and filters by. `ChargeCategory` maps onto Maple's (`Usage`, `Purchase`,
-  `Credit`, `Tax`, `Adjustment`), so plan fees and credits are their own rows. Lines of one day,
+  `Tags.ProjectId`) the resource, which the page groups and filters by. `ChargeCategory` maps
+  onto Maple's (`Usage`, `Purchase`, `Credit`, `Tax`, `Adjustment`), so plan fees and credits
+  are their own rows. Lines of one day,
   product, SKU, project, region and kind of charge are summed. A sum with no billed and no
   effective cost is left out. Credits are negative and kept.
 - Spec: no list price is reported, so `ListCost` is the billed cost.
 - Every field but `BilledCost`, `ChargePeriodStart` and `ServiceName` is read as optional, since
   the spec is the only source. A line that is not such a charge fails the whole pull as an
-  invalid response: storing part of a day would hide the older pull of it.
+  invalid response: storing part of a day would hide the older pull of it. So does a
+  `ChargePeriodStart` that is not a UTC date-time, and any answer but a 200 (a 204 or a 206
+  would store days empty or by halves).
+- Open risk: a 200 with an empty body reads as a team with no charges, and the window's days
+  are stored empty. Nothing in the answer tells an empty month from a broken one, so a broken
+  empty answer would hide up to two months until the next re-pull of them. The JSONL has no
+  count or end marker to check against.
 - Open: when a day stops changing. Today and yesterday are stored as not final, and the four
   newest days are pulled again daily.
 - Open: how large a busy team's answer is. A day above 10,000 rows is refused like any

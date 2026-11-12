@@ -505,6 +505,33 @@ describe("CostSyncService Vercel sources", () => {
 	})
 
 	it.effect(
+		"pulls a source whose token was replaced at the next tick, though it synced minutes ago",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+				// History walked to the floor and the head pulled just now: nothing is due for a day.
+				yield* h.sql(
+					`UPDATE cost_sources SET watermark_date = '2026-11-11', backfill_date = '2025-12-01',
+				        last_synced_at = now(), last_settled_at = now()`,
+				)
+				assert.strictEqual((yield* poll).due, 0)
+				// What a new token for the team writes to the source (`releaseVercelCostSources`).
+				yield* h.sql(
+					`UPDATE cost_sources SET last_synced_at = NULL, next_attempt_at = NULL, lease_until = NULL,
+				        last_error = NULL, last_error_reason = NULL, consecutive_failures = 0`,
+				)
+				yield* TestClock.adjust("5 minutes")
+				const summary = yield* poll
+				assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+				// The trailing days again, read with the new token; history is not walked twice.
+				assert.deepStrictEqual(h.windows(), [["2026-11-08", "2026-11-11"]])
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect(
 		"removes the source of a connection that is gone, and leaves the org's AWS source alone",
 		() => {
 			const h = harness()

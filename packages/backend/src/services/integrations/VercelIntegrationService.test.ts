@@ -1419,10 +1419,12 @@ describe("VercelIntegrationService", () => {
 					held: boolean
 					failures: number
 					leased: boolean
+					synced: boolean
 				}>(
 					testDb,
 					`SELECT last_error AS error, last_error_reason AS reason, next_attempt_at IS NOT NULL AS held,
-					        consecutive_failures AS failures, lease_until IS NOT NULL AS leased
+					        consecutive_failures AS failures, lease_until IS NOT NULL AS leased,
+					        last_synced_at IS NOT NULL AS synced
 					   FROM cost_sources WHERE provider = 'vercel'`,
 				),
 			)
@@ -1442,18 +1444,27 @@ describe("VercelIntegrationService", () => {
 						testDb.pglite.query(
 							`UPDATE cost_sources SET last_error = 'Vercel rejected the saved token.',
 							        last_error_reason = 'auth', next_attempt_at = now() + interval '6 hours',
-							        consecutive_failures = 3, lease_until = now() + interval '20 minutes'`,
+							        consecutive_failures = 3, lease_until = now() + interval '20 minutes',
+							        watermark_date = '2026-10-18', last_synced_at = now()`,
 						),
 					)
-					// A new token for the same team: the source and its history stay, and it is due again.
+					// The team renamed its slug at Vercel since: the connection learns it on the reconnect.
+					fake.teams = [
+						{ id: "team_1", slug: "acme-labs", name: "Acme" },
+						{ id: "team_2", slug: "beta", name: "Beta" },
+					]
+					// A new token for the same team: the source and its history stay, and its account
+					// follows the slug its rows are stamped with from here on.
 					yield* connect({ token: "vc_token_456" })
-					assert.deepStrictEqual(yield* costSources, ["acme"])
+					assert.deepStrictEqual(yield* costSources, ["acme-labs"])
+					// It is due at the next tick: no hold, no claim, and no last sync to wait a day from.
 					assert.deepStrictEqual(yield* held, {
 						error: null,
 						reason: null,
 						held: false,
 						failures: 0,
 						leased: false,
+						synced: false,
 					})
 					// Another team: its spend would overwrite the days the source holds.
 					yield* connect({ token: "vc_token_789", teamId: "team_2" })

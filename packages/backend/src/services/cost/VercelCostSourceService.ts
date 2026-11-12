@@ -21,12 +21,7 @@ import { randomUUID } from "node:crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import type { CostProviderError } from "./CostProvider"
-import {
-	VERCEL_NO_CONNECTION,
-	VERCEL_TOKEN_REJECTED,
-	VercelCostProvider,
-} from "./providers/vercel/VercelCostProvider"
+import { VercelCostProvider, type VercelCostReadError } from "./providers/vercel/VercelCostProvider"
 import { addDays, utcToday } from "./sync-plan"
 import { removeVercelCostSources } from "./vercel-cost-sources"
 
@@ -38,20 +33,24 @@ const toPersistenceError = makePersistenceErrorMapper(
 const CONNECTION_CHANGED = "The Vercel connection changed while the source was added. Try again."
 
 /**
- * Why the check read was refused, as what the Cost page shows. A token or a role Vercel refuses is
- * the org's to fix and keeps its reason. Anything else (an outage, a secret key Maple cannot use)
- * is not, and answers the upstream error's fixed sentence.
+ * Why the check read was refused, as what the Cost page shows. A token or role Vercel refuses and
+ * a request it calls invalid keep their reason: the first is the org's to fix, the second says
+ * what Vercel did not take. An outage or a secret key Maple cannot use answers a fixed sentence.
  */
 const toAddError = (
-	error: CostProviderError,
+	error: VercelCostReadError,
 ): IntegrationsValidationError | IntegrationsConnectionChangedError | IntegrationsUpstreamError => {
-	if (error.reason === "not_ready" || error.message === VERCEL_TOKEN_REJECTED) {
-		return new IntegrationsValidationError({ message: error.message })
+	switch (error.kind) {
+		case "token_rejected":
+		case "not_ready":
+		case "invalid_request":
+			return new IntegrationsValidationError({ message: error.message })
+		// Disconnected between the service's read of the connection and the adapter's.
+		case "no_connection":
+			return new IntegrationsConnectionChangedError({ message: CONNECTION_CHANGED })
+		case "other":
+			return new IntegrationsUpstreamError({ message: error.message })
 	}
-	// Disconnected between the service's read of the connection and the adapter's.
-	return error.message === VERCEL_NO_CONNECTION
-		? new IntegrationsConnectionChangedError({ message: CONNECTION_CHANGED })
-		: new IntegrationsUpstreamError({ message: error.message })
 }
 
 /** `VercelCostStatus` as plain data. */
@@ -63,10 +62,12 @@ export interface VercelCostSourceServiceApi {
 	) => Effect.Effect<VercelCostStatusInfo, IntegrationsPersistenceError | CloudCostDisabledError>
 	/**
 	 * Makes the connected team a cost source, once Vercel has let its token read the billing.
-	 * `created` is false when it was one already.
+	 * `teamId` is the team the caller was shown: another one connected since is refused.
+	 * `created` is false when it was a source already.
 	 */
 	readonly add: (
 		orgId: OrgId,
+		teamId: string,
 	) => Effect.Effect<
 		{ readonly team: VercelCostTeam; readonly created: boolean },
 		| CloudCostDisabledError
@@ -117,6 +118,7 @@ export class VercelCostSourceService extends Context.Service<
 							teamId: $.teamId,
 							teamSlug: $.teamSlug,
 							teamName: $.teamName,
+							tokenCiphertext: $.tokenCiphertext,
 							authFailedAt: $.authFailedAt,
 							sourceId: $.s.id,
 						}))
@@ -132,13 +134,13 @@ export class VercelCostSourceService extends Context.Service<
 			return connection === null
 				? { team: null, authFailed: false, added: false }
 				: {
-						team: { name: connection.teamName, slug: connection.teamSlug },
+						team: { id: connection.teamId, name: connection.teamName, slug: connection.teamSlug },
 						authFailed: connection.authFailedAt !== null,
 						added: connection.sourceId !== null,
 					}
 		})
 
-		const add = Effect.fn("VercelCostSourceService.add")(function* (orgId: OrgId) {
+		const add = Effect.fn("VercelCostSourceService.add")(function* (orgId: OrgId, teamId: string) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			yield* requireRollout(orgId)
 			const connection = yield* load(orgId)
@@ -147,14 +149,20 @@ export class VercelCostSourceService extends Context.Service<
 					message: "Connect a Vercel team first, then add it as a cost source.",
 				})
 			}
-			const team = { name: connection.teamName, slug: connection.teamSlug }
+			// The caller saw another team: this one's spend is not what they chose to add.
+			if (connection.teamId !== teamId) {
+				return yield* new IntegrationsConnectionChangedError({
+					message: `The Vercel connection now reads another team (${connection.teamSlug}). Check the team shown, then add it again.`,
+				})
+			}
+			const team = { id: connection.teamId, name: connection.teamName, slug: connection.teamSlug }
 			if (connection.sourceId !== null) return { team, created: false }
 			// Yesterday and today, read with the stored token: a token or role Vercel refuses is said
 			// now, not by a source that fails its first sync. Through today, as every head pull asks.
 			const now = yield* Clock.currentTimeMillis
 			const today = utcToday(now)
 			yield* provider
-				.pull(
+				.read(
 					{ orgId, connectionRef: connection.id },
 					{ startDay: addDays(today, -1), endDay: today },
 				)
@@ -162,7 +170,8 @@ export class VercelCostSourceService extends Context.Service<
 			const added = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						// The share lock makes a disconnect or a move to another team wait for the insert.
+						// The share lock makes a disconnect, a move to another team or a new token wait for
+						// the insert. A token saved since the check was not the one the check read with.
 						const [current] = yield* db.run(
 							PG.from(VercelConnections)
 								.select("id")
@@ -170,6 +179,7 @@ export class VercelCostSourceService extends Context.Service<
 									$.orgId.eq(orgId),
 									$.id.eq(connection.id),
 									$.teamId.eq(connection.teamId),
+									$.tokenCiphertext.eq(connection.tokenCiphertext),
 								])
 								.limit(1)
 								.forShare(),

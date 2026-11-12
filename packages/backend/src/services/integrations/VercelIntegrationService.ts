@@ -1255,7 +1255,7 @@ export class VercelIntegrationService extends Context.Service<
 						// The same team with a new token keeps it, and makes it due again at once.
 						Effect.tap(() =>
 							sameTeam
-								? Effect.asVoid(releaseVercelCostSources(db, orgId, now))
+								? Effect.asVoid(releaseVercelCostSources(db, orgId, team.slug, now))
 								: Effect.asVoid(removeVercelCostSources(db, orgId)),
 						),
 					),

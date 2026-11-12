@@ -42,7 +42,9 @@ const run = <A, E>(
 	)
 
 const status = VercelCostSourceService.use((service) => service.status(ORG))
-const add = VercelCostSourceService.use((service) => service.add(ORG))
+/** Adds the team the Cost page was shown, `team_1` unless said otherwise. */
+const addTeam = (teamId: string) => VercelCostSourceService.use((service) => service.add(ORG, teamId))
+const add = addTeam("team_1")
 const remove = VercelCostSourceService.use((service) => service.remove(ORG))
 
 interface Source {
@@ -74,7 +76,7 @@ describe("VercelCostSourceService", () => {
 			Effect.gen(function* () {
 				assert.deepStrictEqual(yield* status, { team: null, authFailed: false, added: false })
 				yield* connectFakeVercel({ orgId: ORG, teamName: "Acme Inc", teamSlug: "acme" })
-				const team = { name: "Acme Inc", slug: "acme" }
+				const team = { id: "team_1", name: "Acme Inc", slug: "acme" }
 				assert.deepStrictEqual(yield* status, { team, authFailed: false, added: false })
 				yield* add
 				assert.deepStrictEqual(yield* status, { team, authFailed: false, added: true })
@@ -95,7 +97,10 @@ describe("VercelCostSourceService", () => {
 			Effect.gen(function* () {
 				const connectionRef = yield* connectFakeVercel({ orgId: ORG, token: "vc_token_abc" })
 				const added = yield* add
-				assert.deepStrictEqual(added, { team: { name: "Acme", slug: "acme" }, created: true })
+				assert.deepStrictEqual(added, {
+					team: { id: "team_1", name: "Acme", slug: "acme" },
+					created: true,
+				})
 				assert.deepStrictEqual(world.urls, [CHECK_URL])
 				assert.deepStrictEqual(world.authorizations, ["Bearer vc_token_abc"])
 				// The source points at the connection and is named after the team's slug.
@@ -121,7 +126,10 @@ describe("VercelCostSourceService", () => {
 				const first = yield* source(testDb)
 				// Vercel would refuse now, but the source exists: there is nothing to check.
 				world.chargesStatus = 403
-				assert.deepStrictEqual(yield* add, { team: { name: "Acme", slug: "acme" }, created: false })
+				assert.deepStrictEqual(yield* add, {
+					team: { id: "team_1", name: "Acme", slug: "acme" },
+					created: false,
+				})
 				assert.lengthOf(world.urls, 1)
 				assert.deepStrictEqual(yield* source(testDb), first)
 			}),
@@ -268,11 +276,65 @@ describe("VercelCostSourceService", () => {
 				assert.strictEqual(moved._tag, "@maple/http/errors/IntegrationsConnectionChangedError")
 				assert.isUndefined(yield* source(testDb))
 
+				// A new token saved for the same team during the check: it was not the one that read.
+				yield* sql(testDb, "UPDATE vercel_connections SET team_id = 'team_1', team_slug = 'acme'")
+				world.onRequest = () =>
+					testDb.pglite
+						.query("UPDATE vercel_connections SET token_ciphertext = token_ciphertext || 'x'")
+						.then(() => undefined)
+				const replaced = yield* Effect.flip(add)
+				assert.strictEqual(replaced._tag, "@maple/http/errors/IntegrationsConnectionChangedError")
+				assert.isUndefined(yield* source(testDb))
+
 				// Disconnected during the check: the same answer.
 				world.onRequest = () =>
 					testDb.pglite.query("DELETE FROM vercel_connections").then(() => undefined)
 				const gone = yield* Effect.flip(add)
 				assert.strictEqual(gone._tag, "@maple/http/errors/IntegrationsConnectionChangedError")
+				assert.isUndefined(yield* source(testDb))
+				assert.lengthOf(world.urls, 3)
+			}),
+		)
+	})
+
+	it.effect("refuses to add another team than the one the Cost page showed, before any read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				// Shown team_1 in the dialog; the org's connection was moved to team_2 since.
+				yield* connectFakeVercel({ orgId: ORG, teamId: "team_2", teamSlug: "beta", teamName: "Beta" })
+				const error = yield* Effect.flip(addTeam("team_1"))
+				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsConnectionChangedError")
+				assert.include(error.message, "another team (beta)")
+				assert.deepStrictEqual(world.urls, [])
+				assert.isUndefined(yield* source(testDb))
+				// Naming the team that is connected adds it.
+				assert.strictEqual((yield* addTeam("team_2")).created, true)
+				assert.strictEqual((yield* source(testDb))?.account_id, "beta")
+			}),
+		)
+	})
+
+	it.effect("shows what Vercel said about a request it calls invalid, which no retry fixes", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel({ chargesStatus: 400 })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectFakeVercel({ orgId: ORG })
+				const error = yield* Effect.flip(add)
+				// A public error: the dialog shows this text, not a fixed sentence.
+				assert.deepStrictEqual(
+					[error._tag, error.message],
+					[
+						"@maple/http/errors/IntegrationsValidationError",
+						"Vercel refused the billing request as invalid: status 400",
+					],
+				)
 				assert.isUndefined(yield* source(testDb))
 			}),
 		)

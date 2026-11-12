@@ -32,11 +32,11 @@ export const HttpVercelCostLive = HttpApiBuilder.group(MapleInternalApi, "vercel
 					return new VercelCostStatus(status)
 				}).pipe(Effect.withSpan("HttpVercelCost.status")),
 			)
-			.handle("add", () =>
+			.handle("add", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* requireIntegrationsManager(tenant.roles)
-					const added = yield* sources.add(tenant.orgId)
+					const added = yield* sources.add(tenant.orgId, payload.teamId)
 					// Adding what is a source already changed nothing, so it leaves no entry.
 					if (added.created) {
 						yield* recordHttpAudit("cost_source.added", {

@@ -171,6 +171,9 @@ describe("VercelCostProvider", () => {
 					"<html>maintenance</html>",
 					jsonl([charge({ BilledCost: "1.50" })]),
 					jsonl([charge({ ChargePeriodStart: "soon" })]),
+					// A day followed by anything but a UTC time is not a day Maple may file the cost under.
+					jsonl([charge({ ChargePeriodStart: "2026-11-02invalid" })]),
+					jsonl([charge({ ChargePeriodStart: "2026-11-02T00:00:00+02:00" })]),
 					jsonl([{ BilledCost: 1, ChargePeriodStart: "2026-11-02T00:00:00Z" }]),
 				]
 				const reasons = yield* Effect.forEach(unreadable, (body) =>
@@ -179,7 +182,29 @@ describe("VercelCostProvider", () => {
 						return (yield* Effect.flip(pull(ORG, connectionRef))).reason
 					}),
 				)
-				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 4))
+				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 6))
+			}),
+		)
+	})
+
+	it.effect("takes only a 200 as the whole window: no content or part of it stores nothing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel({ charges: [charge()] })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* connectFakeVercel({ orgId: ORG })
+				const reasons = yield* Effect.forEach([204, 206], (status) =>
+					Effect.gen(function* () {
+						world.chargesStatus = status
+						return (yield* Effect.flip(pull(ORG, connectionRef))).reason
+					}),
+				)
+				// Stored, a 204 would empty the window's days and a 206 leave them by halves.
+				assert.deepStrictEqual(reasons, ["invalid_response", "invalid_response"])
+				world.chargesStatus = 200
+				assert.lengthOf((yield* pull(ORG, connectionRef)).rows, 1)
 			}),
 		)
 	})

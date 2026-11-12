@@ -21,14 +21,16 @@ export const removeVercelCostSources = (db: MapleDb, orgId: OrgId) =>
 		.pipe(Effect.map((rows) => rows.length))
 
 /**
- * A new token was saved for the team the source reads: a source held for the old token's failure
- * is due again, and a pull still in flight on the old token loses its claim, so its failure
- * writes no hold.
+ * A new token was saved for the team the source reads. The source is due at the next tick (no
+ * hold, and no last sync to wait a day from), a pull in flight on the old token loses its claim,
+ * and the account follows the team's slug, which the connection may just have rewritten.
  */
-export const releaseVercelCostSources = (db: MapleDb, orgId: OrgId, now: number) =>
+export const releaseVercelCostSources = (db: MapleDb, orgId: OrgId, teamSlug: string, now: number) =>
 	db.run(
 		PG.update(CostSources)
 			.set({
+				accountId: teamSlug,
+				lastSyncedAt: null,
 				leaseUntil: null,
 				lastError: null,
 				lastErrorReason: null,

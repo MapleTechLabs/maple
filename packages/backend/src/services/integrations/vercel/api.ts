@@ -479,6 +479,10 @@ export const deleteDrain = Effect.fn("VercelApi.deleteDrain")(function* (
 
 const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
 
+/** An ISO 8601 date-time in UTC, to the minute at least: `2026-11-02T00:00:00.000Z`. */
+const UTC_DATE_TIME =
+	/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]00:00)$/
+
 /**
  * One line of the charges answer: a FOCUS v1.3 charge. The shape is Vercel's OpenAPI spec, not a
  * recorded answer, so everything Maple can do without is optional and may be null.
@@ -486,7 +490,7 @@ const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.
 export const VercelCharge = Schema.Struct({
 	BilledCost: Schema.Number,
 	/** Inclusive, ISO 8601 in UTC: its first ten characters are the usage day. */
-	ChargePeriodStart: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}/)),
+	ChargePeriodStart: Schema.String.check(Schema.isPattern(UTC_DATE_TIME)),
 	/** The product's display name. */
 	ServiceName: Schema.String,
 	BillingCurrency: optional(Schema.String),
@@ -533,6 +537,14 @@ export const streamBillingCharges = (
 			if (response.status >= 300) {
 				const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
 				return yield* refusal(response.status, body)
+			}
+			// Only a 200 is the whole range: a 204 or a 206 would store days empty or by halves.
+			if (response.status !== 200) {
+				return yield* new VercelApiError({
+					message: `Vercel API answered ${response.status} where the charges are a 200`,
+					kind: "invalid_response",
+					status: response.status,
+				})
 			}
 			return response.stream.pipe(
 				Stream.decodeText(),

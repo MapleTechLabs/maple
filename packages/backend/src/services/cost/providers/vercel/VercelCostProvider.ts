@@ -4,7 +4,7 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VercelConnections } from "@maple/db/tables"
-import { Clock, Context, Duration, Effect, Layer, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -29,27 +29,47 @@ const MAX_REQUEST_DAYS = 366
 
 type Reason = CostProviderError["reason"]
 
-// Vercel does not bill for API requests, so no failure counts any.
-const failed = (reason: Reason, message: string) =>
-	new CostProviderError({ message, provider: "vercel", reason, requests: 0 })
+/**
+ * A read of the charges that failed. `reason` is what the sync does next; `kind` keeps apart what
+ * an add has to tell the person adding: no connection, a token or role Vercel refuses, a request
+ * Vercel calls invalid.
+ */
+export class VercelCostReadError extends Schema.TaggedError<VercelCostReadError>()(
+	"@maple/backend/cost/VercelCostReadError",
+	{
+		message: Schema.String,
+		reason: CostProviderError.fields.reason,
+		kind: Schema.Literals(["no_connection", "token_rejected", "not_ready", "invalid_request", "other"]),
+	},
+) {}
 
-/** The two `auth` failures a caller can tell apart from an unusable secret key: the token, and no connection. */
-export const VERCEL_TOKEN_REJECTED =
-	"Vercel rejected the saved token. Replace the token of the Vercel connection."
-export const VERCEL_NO_CONNECTION = "No Vercel connection is saved for this source."
+const failed = (reason: Reason, message: string, kind: VercelCostReadError["kind"] = "other") =>
+	new VercelCostReadError({ message, reason, kind })
+
+const tokenRejected = () =>
+	failed(
+		"auth",
+		"Vercel rejected the saved token. Replace the token of the Vercel connection.",
+		"token_rejected",
+	)
 
 /** Vercel's failures, as what the sync does next and the Cost page shows. */
-const toCostProviderError = (error: VercelApiError): CostProviderError => {
+const toReadError = (error: VercelApiError): VercelCostReadError => {
 	switch (error.kind) {
 		case "unauthorized":
-			return failed("auth", VERCEL_TOKEN_REJECTED)
+			return tokenRejected()
 		case "forbidden":
 			return failed(
 				"not_ready",
 				"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
+				"not_ready",
 			)
 		case "not_found":
-			return failed("not_ready", "Vercel has no billing data for this team, or the team is gone.")
+			return failed(
+				"not_ready",
+				"Vercel has no billing data for this team, or the team is gone.",
+				"not_ready",
+			)
 		case "rate_limited":
 			return failed("rate_limited", "Vercel is rate limiting billing requests.")
 		case "invalid_response":
@@ -60,12 +80,21 @@ const toCostProviderError = (error: VercelApiError): CostProviderError => {
 				? failed(
 						"upstream",
 						`Vercel refused the billing request as invalid${error.detail === undefined ? "" : `: ${error.detail}`}`,
+						"invalid_request",
 					)
 				: failed("upstream", "Vercel did not answer the billing request.")
 	}
 }
 
-export class VercelCostProvider extends Context.Service<VercelCostProvider, CostProviderAdapter>()(
+export interface VercelCostProviderApi extends CostProviderAdapter {
+	/** `pull`, failing with what an add needs to tell a refusal from an outage. */
+	readonly read: (
+		source: CostPullSource,
+		window: CostPullWindow,
+	) => Effect.Effect<CostPull, VercelCostReadError>
+}
+
+export class VercelCostProvider extends Context.Service<VercelCostProvider, VercelCostProviderApi>()(
 	"@maple/backend/services/cost/VercelCostProvider",
 	{
 		make: Effect.gen(function* () {
@@ -80,7 +109,7 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 				failed("upstream", "Vercel connection database error"),
 			)
 
-			const pull = Effect.fn("VercelCostProvider.pull")(
+			const read = Effect.fn("VercelCostProvider.read")(
 				function* (source: CostPullSource, window: CostPullWindow) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: source.orgId,
@@ -104,9 +133,15 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 								.limit(1),
 						),
 					)
-					if (row === undefined) return yield* failed("auth", VERCEL_NO_CONNECTION)
+					if (row === undefined) {
+						return yield* failed(
+							"auth",
+							"No Vercel connection is saved for this source.",
+							"no_connection",
+						)
+					}
 					// The integration's poller found the token rejected: asking again would only be refused.
-					if (row.authFailedAt !== null) return yield* failed("auth", VERCEL_TOKEN_REJECTED)
+					if (row.authFailedAt !== null) return yield* tokenRejected()
 					const secrets = yield* keyring
 					const token = yield* openVercelToken(secrets, row, (message) => failed("auth", message))
 					// Today and yesterday: Vercel may still be counting a day that ended hours ago.
@@ -117,6 +152,7 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 						// `to` is exclusive.
 						to: `${addDays(window.endDay, 1)}T00:00:00Z`,
 					}).pipe(
+						// The team's slug is the source's account: every write of it rewrites the source too.
 						Stream.runFold(emptyChargeTotals, (sums, charge) =>
 							addCharge(sums, charge, row.teamSlug, window, openDay),
 						),
@@ -128,7 +164,7 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 								"maple.cost.vercel.detail": error.detail ?? "",
 							}),
 						),
-						Effect.mapError(toCostProviderError),
+						Effect.mapError(toReadError),
 						Effect.timeoutOrElse({
 							duration: pullTimeout(days),
 							orElse: () => Effect.fail(failed("upstream", "Vercel took too long to answer.")),
@@ -146,7 +182,16 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 				),
 			)
 
-			return { provider: "vercel", pull } satisfies CostProviderAdapter
+			// Vercel does not bill for API requests, so no failure counts any.
+			const pull = (source: CostPullSource, window: CostPullWindow) =>
+				read(source, window).pipe(
+					Effect.mapError(
+						({ message, reason }) =>
+							new CostProviderError({ message, provider: "vercel", reason, requests: 0 }),
+					),
+				)
+
+			return { provider: "vercel", pull, read } satisfies VercelCostProviderApi
 		}),
 	},
 ) {

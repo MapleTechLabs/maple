@@ -54,6 +54,16 @@ const fetchStub =
 		world.urls.push(url)
 		world.authorizations.push(new Headers(init?.headers).get("authorization"))
 		await world.onRequest()
+		// A 2xx that is not the 200 the charges come with: no content, or part of them.
+		if (world.chargesStatus === 204) return new Response(null, { status: 204 })
+		if (world.chargesStatus === 206) {
+			return new Response(
+				typeof world.charges === "string" ? world.charges : jsonl(world.charges ?? []),
+				{
+					status: 206,
+				},
+			)
+		}
 		if (world.chargesStatus !== 200) {
 			return Response.json(
 				{ error: { code: "refused", message: `status ${world.chargesStatus}` } },
