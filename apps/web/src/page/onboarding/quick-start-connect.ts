@@ -12,6 +12,7 @@ import { IntegrationStatuses } from "../../data/integration-statuses"
 import { retrieveSetupKeys } from "../../data/ingest-keys"
 import { STACK_PLATFORM_IDS, type StackPlatform } from "./onboarding-stack"
 import type { Resources } from "../../platform/resources"
+import { AppRoute, hrefOf } from "../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
@@ -72,8 +73,25 @@ export const ConnectMessage = defineMessageUnion({
 	GotSetupTabsMessage: { message: Tabs.Message },
 	GotPackageTabsMessage: { message: Tabs.Message },
 	GotSnippetCopyMessage: { snippet: Schema.String, message: CopyButton.Message },
+	ClickedCopySetupLink: {},
 })
 export type ConnectMessage = typeof ConnectMessage.Type
+
+/** The copy state of the phone note's "Copy link", kept with the snippets'. */
+export const SETUP_LINK_COPY = "setup-link"
+
+/** This page's own address, read on the click, then copied like a snippet: setup carries on from a computer. */
+export const ReadSetupLink = Command.define("ReadOnboardingSetupLink", {
+	messages: [ConnectMessage.GotSnippetCopyMessage],
+	execute: Effect.sync(() =>
+		ConnectMessage.GotSnippetCopyMessage({
+			snippet: SETUP_LINK_COPY,
+			message: CopyButton.Message.ClickedCopy({
+				text: `${window.location.origin}${hrefOf(AppRoute.QuickStart({ search: {} }))}`,
+			}),
+		}),
+	),
+})
 
 /** 5 s polls for ten minutes of setup, then 30 s ones, stopping after an hour of visible time. */
 const FAST_POLLS = 120
@@ -405,6 +423,7 @@ export const updateConnect = (
 				),
 			}
 		},
+		ClickedCopySetupLink: () => ({ connect, commands: [ReadSetupLink()] }),
 	})
 
 /**
