@@ -28,7 +28,7 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 	),
 }))
 
-export const Model = Schema.Struct({ page: PageModel.Model })
+export const Model = Schema.Struct({ state: LabState, page: PageModel.Model })
 export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({ GotPageMessage: { message: PageMessage.Message } })
@@ -59,14 +59,22 @@ const usageOf = (state: LabState): PageModel.Model["usage"] => {
 	}
 }
 
-export const init = (flags: Flags): Return => ({ model: { page: { usage: usageOf(flags.state) } } })
+export const init = (flags: Flags): Return => ({
+	model: { state: flags.state, page: { usage: usageOf(flags.state) } },
+})
 
-/** Retries are dropped: the fixture is all the data there is. */
+/** No reads: a retry answers with the fixture (the loaded one, after the error state). */
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
-		GotPageMessage: ({ message: child }) => ({
-			model: { page: pageUpdate(model.page, child, context).model },
-		}),
+		GotPageMessage: ({ message: child }) =>
+			child._tag === "ClickedRetry"
+				? {
+						model: {
+							...model,
+							page: { usage: usageOf(model.state === "error" ? "code-review" : model.state) },
+						},
+					}
+				: { model: { ...model, page: pageUpdate(model.page, child, context).model } },
 	})
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>

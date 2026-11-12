@@ -1,4 +1,5 @@
 import { definePage } from "../../contract"
+import { settingsTabLabels } from "../nav"
 import { billingHref } from "./hrefs"
 import { Message } from "./message"
 import { Model } from "./model"
@@ -16,7 +17,7 @@ export const page = definePage(
 		view,
 		breadcrumbs: () => [
 			{ label: "Settings", href: "/settings" },
-			{ label: "Billing", href: billingHref() },
+			{ label: settingsTabLabels.billing, href: billingHref() },
 			{ label: "AI credits" },
 		],
 	},

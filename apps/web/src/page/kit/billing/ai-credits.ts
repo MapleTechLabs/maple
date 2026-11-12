@@ -116,8 +116,8 @@ const totalsRail = <M>(
 			spentTile,
 			statRailItem(h, {
 				eyebrow: "Most spent on",
-				value: top === undefined ? "Nothing yet" : AI_SOURCE_LABELS[top.source],
-				subline: top === undefined ? "No AI features ran" : formatCredits(top.credits),
+				value: top === undefined ? formatCredits(0) : formatCredits(top.credits),
+				subline: top === undefined ? "No AI features ran" : AI_SOURCE_LABELS[top.source],
 			}),
 		])
 	}

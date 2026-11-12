@@ -12,5 +12,5 @@ export const lab = defineShellLab("AI credits", {
 	update,
 	view,
 	currentPath: "/settings/billing/ai-credits",
-	breadcrumbs: [{ label: "Settings" }, { label: "Billing" }, { label: "AI credits" }],
+	breadcrumbs: [{ label: "Settings" }, { label: "Billing & usage" }, { label: "AI credits" }],
 })
