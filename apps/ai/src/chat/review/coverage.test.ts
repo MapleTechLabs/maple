@@ -45,6 +45,37 @@ describe("makeReviewCoverage", () => {
 		assert.deepEqual(coverage.unread(), ["src/a.ts"])
 	})
 
+	// submit_review refuses exactly while `unread()` is non-empty.
+	it("never owes a lockfile or a tool's output, so one left unread refuses nothing", () => {
+		const changed = [
+			...FILES,
+			file("packages/artifact-sdk/vendor.lock.json"),
+			file("skills-lock.json"),
+			file("deploy/k8s-infra/Chart.lock"),
+			file("apps/api/worker-configuration.d.ts"),
+			file("apps/api/drizzle/meta/0002_snapshot.json"),
+			file("apps/web/.open-next/server-functions/default/handler.mjs"),
+			file("apps/web/public/embed/outer-60c368c1e1eddba7bd149e4b4f5408df.js"),
+		]
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe(
+			"pr_changed_files",
+			Arr.getUnsafe(renderChangedFiles("octo/shop", 7, changed).content, 0).text,
+		)
+		coverage.observe("pr_file_diff", diffs("src/a.ts", "src/b.ts", "src/a.test.ts"))
+		assert.deepEqual(coverage.unread(), [])
+	})
+
+	it("still owes a source file listed beside a lockfile, and a string catalog", () => {
+		const changed = [file("bun.lock"), file("src/a.ts"), file("ios/Localizable.xcstrings")]
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe(
+			"pr_changed_files",
+			Arr.getUnsafe(renderChangedFiles("octo/shop", 7, changed).content, 0).text,
+		)
+		assert.deepEqual(coverage.unread(), ["src/a.ts", "ios/Localizable.xcstrings"])
+	})
+
 	it("counts only pr_file_diff answers as reads", () => {
 		const coverage = makeReviewCoverage("Review pull request #7.")
 		coverage.observe("pr_changed_files", listing)
