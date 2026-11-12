@@ -15,7 +15,10 @@ import { randomUUID } from "node:crypto"
  * The providers whose credential lives in `cost_connections`. The sync reconciles each one: a
  * provider added here needs no table, slot or reconcile of its own.
  */
-export const COST_CONNECTION_PROVIDERS = ["cloudflare"] as const satisfies ReadonlyArray<CostProvider>
+export const COST_CONNECTION_PROVIDERS = [
+	"cloudflare",
+	"planetscale",
+] as const satisfies ReadonlyArray<CostProvider>
 export type CostConnectionProvider = (typeof COST_CONNECTION_PROVIDERS)[number]
 
 /** Sources one run creates and removes, each. */

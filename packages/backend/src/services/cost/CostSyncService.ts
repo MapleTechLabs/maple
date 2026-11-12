@@ -35,6 +35,7 @@ import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -169,6 +170,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
+				planetscale: yield* PlanetScaleCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -690,6 +692,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
 				CloudflareCostProvider.layer,
+				PlanetScaleCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

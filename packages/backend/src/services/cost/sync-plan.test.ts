@@ -423,6 +423,59 @@ describe("planCostSync for a provider that serves a year of completed days", () 
 	})
 })
 
+describe("planCostSync for a provider that bills by the month, a year back", () => {
+	const PLANETSCALE_NEW: CostSyncState = { ...NEW, provider: "planetscale" }
+	const planetScalePulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({ ...pulled(now, backfillDate, ago), provider: "planetscale" })
+
+	it("first pulls the previous month's invoice and the open month through today", () => {
+		assert.deepStrictEqual(planCostSync(PLANETSCALE_NEW, at("2026-11-12T12:00:00Z")), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-12",
+		})
+	})
+
+	it("takes the four newest days of the open month as its head, today included", () => {
+		const now = at("2026-11-12T12:00:00Z")
+		const state = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "head",
+			startDay: "2026-11-09",
+			endDay: "2026-11-12",
+		})
+	})
+
+	it("walks history one invoice at a time and stops at the month twelve months back", () => {
+		const now = at("2026-11-12T12:00:00Z")
+		assert.strictEqual(historyFloor("planetscale", utcToday(now)), "2025-11-01")
+		assert.deepStrictEqual(
+			planCostSync(planetScalePulled(now, "2026-10-01", { head: HOUR_MS, settle: HOUR_MS }), now),
+			{ mode: "backfill", startDay: "2026-09-01", endDay: "2026-09-30" },
+		)
+		assert.deepStrictEqual(
+			planCostSync(planetScalePulled(now, "2025-11-01", { head: HOUR_MS, settle: HOUR_MS }), now),
+			{ mode: "idle" },
+		)
+	})
+
+	it("resumes at its floor after a hold of more than a year", () => {
+		const now = at("2026-11-12T12:00:00Z")
+		const state: CostSyncState = {
+			...planetScalePulled(now, "2025-01-01", { head: 400 * DAY_MS, settle: 400 * DAY_MS }),
+			watermarkDate: "2025-10-08",
+		}
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "settle",
+			startDay: "2025-11-01",
+			endDay: "2026-11-12",
+		})
+	})
+})
+
 describe("planCostSync request budgets", () => {
 	const now = at("2026-11-11T12:00:00Z")
 	const current = { head: HOUR_MS, settle: HOUR_MS }

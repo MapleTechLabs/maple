@@ -36,6 +36,8 @@ const OPENROUTER_HISTORY_DAYS = 28
  * months before the current one, which is always inside that year.
  */
 const CLOUDFLARE_HISTORY_MONTHS = 11
+/** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
+const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
 // it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
@@ -72,6 +74,8 @@ const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
 	cloudflare: { floor: (today) => monthStart(today, -CLOUDFLARE_HISTORY_MONTHS), lagDays: 1 },
+	// The open month's invoice is listed, and its days so far are a share of the month's lines.
+	planetscale: { floor: (today) => monthStart(today, -PLANETSCALE_HISTORY_MONTHS), lagDays: 0 },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */

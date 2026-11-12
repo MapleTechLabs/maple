@@ -32,4 +32,9 @@ export const COST_PROVIDERS = {
 		icon: PROVIDERS.cloudflare.icon,
 		requestUsd: null,
 	},
+	planetscale: {
+		name: PROVIDERS.planetscale.name,
+		icon: PROVIDERS.planetscale.icon,
+		requestUsd: null,
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>

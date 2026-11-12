@@ -14,6 +14,7 @@ import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
 import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
+import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
@@ -167,6 +168,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpCloudflareCostLive,
+			HttpPlanetScaleCostLive,
 			HttpOpenRouterCostLive,
 			HttpOpenRouterKeyLive,
 			HttpServiceMapWorldLive,

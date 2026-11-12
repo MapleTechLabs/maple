@@ -30,6 +30,7 @@ import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
@@ -45,6 +46,7 @@ const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
 const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
 const OPENROUTER_KEY_A = "0190f2b3-0000-7000-8000-0000000000d1"
 const CLOUDFLARE_TOKEN_A = "0190f2b3-0000-7000-8000-0000000000e1"
+const PLANETSCALE_TOKEN_A = "0190f2b3-0000-7000-8000-0000000000f1"
 /** What every fake pull reports as billable. */
 const REQUESTS_PER_PULL = 2
 
@@ -243,6 +245,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
 				Layer.succeed(CloudflareCostProvider, adapterOf("cloudflare")),
+				Layer.succeed(PlanetScaleCostProvider, adapterOf("planetscale")),
 				warehouse,
 				featureFlags,
 			),
@@ -472,6 +475,62 @@ describe("CostSyncService sources of a pasted credential", () => {
 				)
 				assert.deepStrictEqual(Arr.last(h.windows()), Option.some(["2025-12-01", "2025-12-31"]))
 				assert.isTrue(Arr.every(h.windows(), ([startDay]) => startDay >= "2025-12-01"))
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect(
+		"makes a PlanetScale source for a saved token and pulls through today, then walks twelve months back",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.saveCostConnection({ id: PLANETSCALE_TOKEN_A, provider: "planetscale" })
+				const summary = yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", PLANETSCALE_TOKEN_A, "account_a"]])
+				assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+				// Last month's invoice and the open month through today, whose days are a share of it.
+				assert.deepStrictEqual(h.windows()[0], ["2026-10-01", "2026-11-11"])
+				assert.isTrue(Arr.every(h.writtenRows(), (row) => row.Provider === "planetscale"))
+
+				// History then walks down one invoice per step and stops twelve months back.
+				yield* Effect.forEach(Arr.range(1, 12), () =>
+					Effect.andThen(TestClock.adjust("5 minutes"), poll),
+				)
+				const state = yield* h.sourceStateOf("org_a", PLANETSCALE_TOKEN_A)
+				assert.deepStrictEqual(
+					[state?.watermark, state?.backfill, state?.error],
+					["2026-11-11", "2025-11-01", null],
+				)
+				assert.deepStrictEqual(Arr.last(h.windows()), Option.some(["2025-11-01", "2025-11-30"]))
+				assert.isTrue(Arr.every(h.windows(), ([startDay]) => startDay >= "2025-11-01"))
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect(
+		"keeps the sources of two pasted credentials apart: removing one token leaves the other",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.saveCostConnection({ id: CLOUDFLARE_TOKEN_A, provider: "cloudflare" })
+				yield* h.saveCostConnection({ id: PLANETSCALE_TOKEN_A, provider: "planetscale" })
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [
+					["org_a", CLOUDFLARE_TOKEN_A, "account_a"],
+					["org_a", PLANETSCALE_TOKEN_A, "account_a"],
+				])
+				// Each source was pulled through its own adapter.
+				assert.deepStrictEqual(
+					Arr.sort(Arr.dedupe(Arr.map(h.writtenRows(), (row) => row.Provider)), Order.String),
+					["cloudflare", "planetscale"],
+				)
+
+				yield* h.sql("DELETE FROM cost_connections WHERE provider = 'planetscale'")
+				yield* TestClock.adjust("1 hour")
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CLOUDFLARE_TOKEN_A, "account_a"]])
 			}).pipe(Effect.provide(h.layer))
 		},
 	)
