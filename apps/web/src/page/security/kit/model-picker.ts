@@ -56,6 +56,7 @@ const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): Readon
 				levelMeter(h, {
 					value: level,
 					max: SECURITY_AUDIT_PRICE_LEVELS,
+					ramp: true,
 					label: `Price ${level} of ${SECURITY_AUDIT_PRICE_LEVELS}`,
 				}),
 			]),

@@ -4,6 +4,9 @@ import {
 	backdropBarLeftStyles,
 	backdropBarRightStyles,
 	backdropBarStyles,
+	levelMeterPipHighStyles,
+	levelMeterPipLowStyles,
+	levelMeterPipMidStyles,
 	levelMeterPipOffStyles,
 	levelMeterPipOnStyles,
 	levelMeterPipStyles,
@@ -142,12 +145,24 @@ export const backdropBar = <M>(
 export const barFillClass = (className?: string): string =>
 	cn("absolute inset-y-0 left-0 rounded-xs", className)
 
-/** `LevelMeter`: a rating as `max` pips with the first `value` lit, such as a price from 1 to 5. */
+/** Lit pips by how far up the scale the level sits: the bottom two fifths low, the top two high. */
+const rampFill = (value: number, max: number): string => {
+	const fraction = max > 0 ? value / max : 0
+	if (fraction <= 0.4) return levelMeterPipLowStyles
+	if (fraction <= 0.6) return levelMeterPipMidStyles
+	return levelMeterPipHighStyles
+}
+
+/**
+ * `LevelMeter`: a rating as `max` pips with the first `value` lit, such as a price from 1 to 5.
+ * `ramp` colours the lit pips green, amber or red by level, for a scale where higher costs more.
+ */
 export const levelMeter = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ value: number; max?: number; label: string; className?: string }>,
+	options: Readonly<{ value: number; max?: number; label: string; ramp?: boolean; className?: string }>,
 ): Html => {
 	const max = options.max ?? 5
+	const litFill = options.ramp === true ? rampFill(options.value, max) : levelMeterPipOnStyles
 	return h.div(
 		[
 			h.Class(cn(levelMeterStyles, options.className)),
@@ -157,12 +172,7 @@ export const levelMeter = <M>(
 		],
 		Arr.makeBy(max, (index) =>
 			h.div([
-				h.Class(
-					cn(
-						levelMeterPipStyles,
-						index < options.value ? levelMeterPipOnStyles : levelMeterPipOffStyles,
-					),
-				),
+				h.Class(cn(levelMeterPipStyles, index < options.value ? litFill : levelMeterPipOffStyles)),
 			]),
 		),
 	)
