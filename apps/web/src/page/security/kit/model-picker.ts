@@ -1,5 +1,6 @@
 import {
 	SECURITY_AUDIT_MODELS,
+	SECURITY_AUDIT_PRICE_LEVELS,
 	securityAuditModelOption,
 	securityAuditPriceLevel,
 	type SecurityAuditModelOption,
@@ -39,7 +40,7 @@ const entriesFor = (stage: ModelStage): ReadonlyArray<SelectView.SelectEntry> =>
 		item: { value: model.id, label: model.label, title: priceTitle(model) },
 	}))
 
-/** A picker row: the model and its provider, then its price as five pips. */
+/** A picker row: the model and its provider, then its price as pips. */
 const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): ReadonlyArray<Html> => {
 	const model = securityAuditModelOption(option.value)
 	if (model === undefined) return [typography(h, {}, [option.label])]
@@ -52,7 +53,11 @@ const modelRow = <M>(h: HtmlBuilder<M>, option: SelectView.SelectOption): Readon
 			]),
 			hstack(h, { gap: "1.5", align: "center" }, [
 				typography(h, { size: "xs", tone: "muted", attributes: [h.AriaHidden(true)] }, ["$"]),
-				levelMeter(h, { value: level, label: `Price ${level} of 5` }),
+				levelMeter(h, {
+					value: level,
+					max: SECURITY_AUDIT_PRICE_LEVELS,
+					label: `Price ${level} of ${SECURITY_AUDIT_PRICE_LEVELS}`,
+				}),
 			]),
 		]),
 	]

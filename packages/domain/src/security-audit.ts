@@ -147,6 +147,9 @@ const blendedUsdPerMillion = (model: ListPrice): number => (3 * model.inputUsd +
 /** Upper bounds, in blended dollars per million tokens, of price levels 1 to 4; above the last is 5. */
 const PRICE_LEVEL_BOUNDS = [0.5, 1.5, 5, 15] as const
 
+/** How many price levels there are: one per bound, plus the open-ended top level. */
+export const SECURITY_AUDIT_PRICE_LEVELS = PRICE_LEVEL_BOUNDS.length + 1
+
 /** A model's list price as a level from 1 (cheapest) to 5, on a roughly 3x-per-step scale. */
 export const securityAuditPriceLevel = (model: ListPrice): number => {
 	const blended = blendedUsdPerMillion(model)
