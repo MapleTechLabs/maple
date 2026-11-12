@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { Headers, HttpMiddleware } from "effect/http"
+import { Headers, HttpMiddleware, UrlParams } from "effect/http"
 import { VCS_SYNC_BATCH_PATH } from "../worker/vcs-sync-dispatch"
 
 // OAuth callbacks whose query string carries a provider-issued authorization
@@ -59,5 +59,12 @@ export const ApiObservabilityLive = Layer.mergeAll(
 		"svix-signature",
 		// RFC 9449 proofs: short-lived, but a captured one replays within its window.
 		"dpop",
+	]),
+	// Query values the tracer writes as `<redacted>` in `url.full` and `url.query`. A custom
+	// list replaces Effect's, so its defaults are kept. `actor` is an audit filter: an admin
+	// types a member's email into it, and a span is read by more people than the audit log is.
+	Layer.succeed(UrlParams.CurrentRedactedNames, [
+		...UrlParams.CurrentRedactedNames.defaultValue(),
+		"actor",
 	]),
 )
