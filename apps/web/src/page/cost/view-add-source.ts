@@ -15,11 +15,11 @@ import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
-import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
+import { CREDENTIAL_SOURCES, type CredentialIdentifier, type CredentialSource } from "./credential-sources"
 import { hasSourceOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider, providerNames } from "./providers"
 
 type H = HtmlBuilder<Message>
 
@@ -59,12 +59,8 @@ const credentialRow = (
 }
 
 /** The providers that bill nothing for the requests Maple makes, by name. */
-const FREE_REQUESTS = Arr.join(
-	Arr.map(
-		Arr.filter(CredentialProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
-		(provider) => COST_PROVIDERS[provider].name,
-	),
-	" and ",
+const FREE_REQUESTS = providerNames(
+	Arr.filter(CredentialProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
 )
 
 /** The providers to add: AWS goes to its connect flow, the others to their credential form. */
@@ -97,6 +93,39 @@ const CREDENTIAL_IDS: FieldIds = {
 	label: "cost-source-credential-label",
 	error: "cost-source-credential-error",
 	description: "cost-source-credential-description",
+}
+
+const identifierIds = (index: number): FieldIds => ({
+	control: `cost-source-identifier-${index}`,
+	label: `cost-source-identifier-${index}-label`,
+	error: `cost-source-identifier-${index}-error`,
+	description: `cost-source-identifier-${index}-description`,
+})
+
+/** A plain field before the credential, shown as typed. A refusal is about them all, and stands under the credential. */
+const identifierField = (h: H, model: Model, text: CredentialIdentifier, index: number): Html => {
+	const draft = model.credentialIdentifiers[index] ?? Field.init()
+	const state = Field.stateOf(draft, false)
+	const ids = identifierIds(index)
+	return field(h, { state }, [
+		fieldLabel(h, { ids, state }, text.label),
+		input(h, {
+			ids,
+			state,
+			attributes: [
+				h.Type("text"),
+				h.Attribute("autocomplete", "off"),
+				h.Attribute("autocapitalize", "none"),
+				h.Attribute("spellcheck", "false"),
+				h.Placeholder(text.placeholder),
+				...(model.sourceWrite === "Saving" ? [h.Disabled(true)] : []),
+				...Field.controlAttributes(h, draft, (message) =>
+					Message.GotCredentialIdentifierMessage({ index, message }),
+				),
+			],
+		}),
+		...(text.description === undefined ? [] : [fieldDescription(h, { ids, state }, [text.description])]),
+	])
 }
 
 const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
@@ -149,17 +178,27 @@ const credentialForm = (
 	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
 ): Html => {
 	const id = model.addDialog.id
-	const source = CREDENTIAL_SOURCES[provider]
+	const source: CredentialSource = CREDENTIAL_SOURCES[provider]
 	const isReplacing = hasSourceOf(sources, provider)
 	const isSaving = model.sourceWrite === "Saving"
-	const canSubmit = !isSaving && Str.trim(model.credentialDraft.value) !== ""
+	const canSubmit =
+		!isSaving &&
+		Str.trim(model.credentialDraft.value) !== "" &&
+		Arr.every(model.credentialIdentifiers, (draft) => Str.trim(draft.value) !== "")
 	const text = isReplacing ? source.replace : source.add
 	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
 		DialogView.dialogHeader(h, "dialog", [
 			DialogView.dialogTitle(h, "dialog", id, text.title),
 			DialogView.dialogDescription(h, "dialog", id, text.description),
 		]),
-		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
+		DialogView.dialogPanel(h, "dialog", id, [
+			vstack(h, { gap: "4" }, [
+				...Arr.map(source.identifiers ?? [], (identifier, index) =>
+					identifierField(h, model, identifier, index),
+				),
+				credentialField(h, model, source),
+			]),
+		]),
 		DialogView.dialogFooter(h, "dialog", [
 			// A replace has no providers to go back to.
 			isReplacing

@@ -1,7 +1,8 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter and Cloudflare followed on 2026-11-12.
+into `cost_daily` and shown on `/cost`. OpenRouter and Cloudflare followed on 2026-11-12,
+PlanetScale on 2026-11-13.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -120,7 +121,9 @@ The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROF
 reaches outside them, because a day the provider no longer serves comes back empty, and an empty
 day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
 never for today. Cloudflare serves a year of completed days: its history stops at the first day of
-the eleventh month back, and it never asks for today either.
+the eleventh month back, and it never asks for today either. PlanetScale bills by the month: it
+reads twelve months back, through today, and its daily pull takes the whole open month, since a
+day there is a share of the month's invoice.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -147,13 +150,14 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
   daily chart, a breakdown by service, provider, category, region, usage type or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
-  connection (which has a Cost switch), OpenRouter by pasting a management key and Cloudflare by
-  pasting an API token, which the page can also replace or remove. The pasted-credential step is
-  one form described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence chart) come with
+  connection (which has a Cost switch), OpenRouter by pasting a management key, Cloudflare by
+  pasting an API token and PlanetScale by pasting a service token with its ID and organization,
+  which the page can also replace or remove. The pasted-credential step is one form described by
+  data (`credential-sources.ts`): the credential, and any plain fields a provider asks before it. Recommendations (list and detail with the evidence chart) come with
   phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE` on `/internal/cost/openrouter` and
-  `/internal/cost/cloudflare` for the pasted credentials. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE` on `/internal/cost/openrouter`,
+  `/internal/cost/cloudflare` and `/internal/cost/planetscale` for the pasted credentials. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 

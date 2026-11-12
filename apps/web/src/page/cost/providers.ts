@@ -1,6 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -17,7 +17,7 @@ export type CostProviderEntry = Readonly<{
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
-// Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
+// Cloudflare and PlanetScale are, but their cost source is a token of its own, not the integration's connection.
 export const COST_PROVIDERS = {
 	aws: {
 		name: PROVIDERS.aws.name,
@@ -43,14 +43,21 @@ export const COST_PROVIDERS = {
 		name: PROVIDERS.planetscale.name,
 		icon: PROVIDERS.planetscale.icon,
 		requestUsd: null,
+		firstSync: "months",
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
+
+const NAME_LIST = new Intl.ListFormat("en-GB", { type: "conjunction" })
+
+/** The providers' names as one phrase: "A", "A and B", "A, B and C". */
+export const providerNames = (providers: ReadonlyArray<CostProvider>): string =>
+	NAME_LIST.format(Arr.map(providers, (provider) => COST_PROVIDERS[provider].name))
 
 /**
  * The providers added by pasting a credential on the Cost page, which can also replace it and
  * remove the source. Each one's form and wording are in `credential-sources.ts`.
  */
-export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
+export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare", "planetscale"])
 export type CredentialProvider = typeof CredentialProvider.Type
 
 const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)

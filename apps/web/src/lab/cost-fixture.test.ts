@@ -17,7 +17,7 @@ describe("cost lab fixture", () => {
 					.rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "cloudflare"])
+		).toEqual(["aws", "cloudflare", "planetscale"])
 
 		// Filtered to OpenRouter there is nothing left: AWS cost must not show under that filter.
 		expect(labTotals(openRouterOnly).cost).toBeGreaterThan(0)

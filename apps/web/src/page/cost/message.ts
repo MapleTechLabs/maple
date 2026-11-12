@@ -54,6 +54,8 @@ export const Message = defineMessageUnion({
 	ClickedReplaceCredential: { provider: CredentialProvider },
 	GotAddDialogMessage: { message: Dialog.Message },
 	GotCredentialDraftMessage: { message: Field.Message },
+	/** A plain field before the credential, by its place in the provider's list. */
+	GotCredentialIdentifierMessage: { index: Schema.Number, message: Field.Message },
 	SubmittedCredential: {},
 	CompletedSaveCredential: {
 		provider: CredentialProvider,

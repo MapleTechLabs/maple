@@ -39,7 +39,7 @@ import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./der
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { canManageSources, cannotManageSources, type Model } from "./model"
-import { COST_PROVIDERS } from "./providers"
+import { COST_PROVIDERS, providerNames } from "./providers"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -108,12 +108,6 @@ const onRamp = (
 
 const MONTHS_SCOPE = "this month and the last, and older months fill in after that"
 
-const namesOf = (providers: ReadonlyArray<CostProvider>): string =>
-	Arr.join(
-		Arr.map(providers, (provider) => COST_PROVIDERS[provider].name),
-		" and ",
-	)
-
 /**
  * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
  * alike): some keep a year or more, some four weeks.
@@ -130,9 +124,9 @@ const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
 	const months = Arr.filter(unsynced, (provider) => !keepsWeeks(provider))
 	if (weeks.length === 0) return `It brings in ${MONTHS_SCOPE}.`
 	if (months.length === 0) {
-		return `It brings in the last four weeks, which is all ${namesOf(weeks)} ${weeks.length === 1 ? "keeps" : "keep"}.`
+		return `It brings in the last four weeks, which is all ${providerNames(weeks)} ${weeks.length === 1 ? "keeps" : "keep"}.`
 	}
-	return `${namesOf(months)} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. ${namesOf(weeks)} ${weeks.length === 1 ? "brings in its" : "bring in their"} last four weeks.`
+	return `${providerNames(months)} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. ${providerNames(weeks)} ${weeks.length === 1 ? "brings in its" : "bring in their"} last four weeks.`
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */

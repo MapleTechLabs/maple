@@ -13,6 +13,7 @@ import {
 	expect as expectView,
 	expectOutMessage,
 	given,
+	label,
 	Mount,
 	role,
 	scene,
@@ -181,7 +182,7 @@ describe("cost page", () => {
 			expectView(text("Add a cost source")).toExist(),
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
-			expectView(text(/OpenRouter and Cloudflare requests are free/)).toExist(),
+			expectView(text(/OpenRouter, Cloudflare and PlanetScale requests are free/)).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
 			expectView(
 				role("link", { name: "Turn on Cost for an AWS account that is connected" }),
@@ -610,6 +611,231 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Replace token" })).not.toExist(),
 			// The other provider's source is still listed.
 			expectView(text("user_2openrouterAccount")).toExist(),
+		)
+	})
+
+	test("PlanetScale asks for the organization and the token's ID before the token, and saves the three", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
+			// Where the reader picks it, the page says its days are a month's invoice spread out.
+			expectView(
+				text("Monthly invoices per database and branch, spread over the days each branch ran"),
+			).toExist(),
+		)
+		const form = pageUpdate(opened, Message.PickedProvider({ provider: "planetscale" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(form),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add PlanetScale")).toExist(),
+			expectView(text(/spreads each invoice evenly over the days each branch ran/)).toExist(),
+			expectView(label("Organization")).toHaveAttr("type", "text"),
+			expectView(label("Service token ID")).toHaveAttr("type", "text"),
+			// Only the token is typed hidden.
+			expectView(label("Service token")).toHaveAttr("type", "password"),
+			expectView(text("The name in app.planetscale.com/<organization>.")).toExist(),
+			expectView(role("link", { name: "Create a service token" })).toHaveAttr(
+				"href",
+				"https://app.planetscale.com/",
+			),
+			expectView(text(/give it the read_invoices organization access/)).toExist(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+		)
+		const identified = (model: Model, index: number, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotCredentialIdentifierMessage({
+					index,
+					message: Field.Message.ChangedValue({ value }),
+				}),
+			).model
+		const secret = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value }) }),
+			).model
+
+		// The token alone is not enough: nothing is sent until every field is filled.
+		const tokenOnly = secret(form, "pscale_tkn_example")
+		expect(names(pageUpdate(tokenOnly, Message.SubmittedCredential()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(identified(tokenOnly, 0, "acme")),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+		)
+
+		const filled = identified(identified(tokenOnly, 0, "  acme "), 1, " abcdef123456 ")
+		scene(
+			{ update: pageUpdate, view },
+			given(filled),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+		)
+		const saving = pageUpdate(filled, Message.SubmittedCredential())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "SavePlanetScaleCostToken",
+				args: { organization: "acme", tokenId: "abcdef123456", token: "pscale_tkn_example" },
+			},
+		])
+		// A field longer than the request carries is refused here, naming which one.
+		const oversized = pageUpdate(
+			identified(filled, 1, Str.repeat(100)("a")),
+			Message.SubmittedCredential(),
+		)
+		expect(names(oversized.commands)).toEqual([])
+		expect(oversized.model.credentialError).toBe("That is too long to be a service token ID.")
+
+		const refusal =
+			"PlanetScale found no organization with this name for this service token. Check the organization, the token ID and the token."
+		const refused = pageUpdate(
+			saving.model,
+			Message.CompletedSaveCredential({
+				provider: "planetscale",
+				result: Result.fail({ ...toLoadFailure("refused"), message: refusal }),
+			}),
+		).model
+		expect(refused.addDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText(refusal),
+			// What was typed stays, so the wrong field can be corrected.
+			expectView(label("Organization")).toHaveValue("  acme "),
+		)
+		// Correcting the organization takes the refusal away: it was about what was typed then.
+		expect(identified(refused, 0, "acme-inc").credentialError).toBeNull()
+
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedSaveCredential({ provider: "planetscale", result: Result.succeed(undefined) }),
+		)
+		expect(saved.model.addDialog.isOpen).toBe(false)
+		expect(saved.model.credentialDraft.value).toBe("")
+		expect(Arr.map(saved.model.credentialIdentifiers, (draft) => draft.value)).toEqual(["", ""])
+		expect(names(saved.commands)).toContain("FetchCostSources")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "PlanetScale added",
+				description: "The first sync runs within a few minutes.",
+			}),
+		)
+		// A form with one field asks for nothing before its credential.
+		expect(
+			pageUpdate(opened, Message.PickedProvider({ provider: "cloudflare" })).model
+				.credentialIdentifiers,
+		).toEqual([])
+	})
+
+	test("a PlanetScale source has its token replaced for the same organization, or is removed", () => {
+		const cloudflare = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "cloudflare",
+			accountId: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+			requestsThisMonth: 0,
+		})
+		const planetScale = source({
+			id: "0190f2b3-0000-7000-8000-00000000c062",
+			provider: "planetscale",
+			accountId: "acme",
+			backfillDate: "2025-11-01",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [cloudflare, planetScale]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("PlanetScale")).toExist(),
+			expectView(text("acme")).toExist(),
+			expectView(text(/provider requests/)).not.toExist(),
+		)
+
+		const replacing = pageUpdate(
+			model,
+			Message.ClickedReplaceCredential({ provider: "planetscale" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(replacing),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Replace the PlanetScale token")).toExist(),
+			expectView(text(/Use a token for the same PlanetScale organization/)).toExist(),
+			// The organization is the source's: only the new token is typed.
+			expectView(label("Organization")).toHaveValue("acme"),
+			expectView(label("Service token ID")).toHaveValue(""),
+			expectView(role("button", { name: "Back" })).not.toExist(),
+		)
+		const typed = Arr.reduce(
+			[
+				Message.GotCredentialIdentifierMessage({
+					index: 1,
+					message: Field.Message.ChangedValue({ value: "fedcba654321" }),
+				}),
+				Message.GotCredentialDraftMessage({
+					message: Field.Message.ChangedValue({ value: "pscale_tkn_replacement" }),
+				}),
+			],
+			replacing,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		const saving = pageUpdate(typed, Message.SubmittedCredential())
+		expect(saving.commands).toMatchObject([
+			{
+				name: "SavePlanetScaleCostToken",
+				args: { organization: "acme", tokenId: "fedcba654321", token: "pscale_tkn_replacement" },
+			},
+		])
+		const replaced = pageUpdate(
+			saving.model,
+			Message.CompletedSaveCredential({ provider: "planetscale", result: Result.succeed(undefined) }),
+		)
+		expect(replaced.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "PlanetScale token replaced",
+				description: "The next sync runs within a few minutes.",
+			}),
+		)
+
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "planetscale" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the PlanetScale source?")).toExist(),
+		)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(names(removing.commands)).toEqual(["RemovePlanetScaleCostToken"])
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveCredential({ provider: "planetscale", result: Result.succeed(undefined) }),
+		)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "PlanetScale removed", description: "" }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("acme")).not.toExist(),
+			// The other provider's source is still listed.
+			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).toExist(),
 		)
 	})
 

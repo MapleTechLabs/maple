@@ -14,9 +14,11 @@ import {
 	FetchCostTotals,
 	ReadCostGrants,
 	RemoveCloudflareCostToken,
+	RemovePlanetScaleCostToken,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveCloudflareCostToken,
+	SavePlanetScaleCostToken,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
@@ -63,6 +65,10 @@ export const LabState = Schema.Literals([
 	"token-refused",
 	"replace-token",
 	"remove-cloudflare",
+	"add-planetscale",
+	"planetscale-refused",
+	"replace-planetscale",
+	"remove-planetscale",
 	"member",
 	"member-onramp",
 ])
@@ -84,6 +90,7 @@ export const Model = Schema.Struct({
 	changes: Schema.Struct({
 		openrouter: Schema.NullOr(Schema.Boolean),
 		cloudflare: Schema.NullOr(Schema.Boolean),
+		planetscale: Schema.NullOr(Schema.Boolean),
 	}),
 	cost: CostModel,
 })
@@ -96,7 +103,7 @@ type Return = Update.Return<Model, Message, Resources>
 /** What the lab answers from: the state it loaded in, and what the reader did to its sources since. */
 type World = Readonly<{ state: LabState; changes: LabSourceChanges }>
 
-const NO_CHANGES: LabSourceChanges = { openrouter: null, cloudflare: null }
+const NO_CHANGES: LabSourceChanges = { openrouter: null, cloudflare: null, planetscale: null }
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -114,7 +121,9 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-openrouter" ||
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
-	state === "token-refused"
+	state === "token-refused" ||
+	state === "add-planetscale" ||
+	state === "planetscale-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -151,6 +160,29 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
 		case "remove-cloudflare":
 			return [CostMessage.ClickedRemoveSource({ provider: "cloudflare" })]
+		case "add-planetscale":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "planetscale" })]
+		case "planetscale-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.PickedProvider({ provider: "planetscale" }),
+				CostMessage.GotCredentialIdentifierMessage({
+					index: 0,
+					message: Field.Message.ChangedValue({ value: "example-org" }),
+				}),
+				CostMessage.GotCredentialIdentifierMessage({
+					index: 1,
+					message: Field.Message.ChangedValue({ value: "abcdef123456" }),
+				}),
+				CostMessage.GotCredentialDraftMessage({
+					message: Field.Message.ChangedValue({ value: "pscale_tkn_example" }),
+				}),
+				CostMessage.SubmittedCredential(),
+			]
+		case "replace-planetscale":
+			return [CostMessage.ClickedReplaceCredential({ provider: "planetscale" })]
+		case "remove-planetscale":
+			return [CostMessage.ClickedRemoveSource({ provider: "planetscale" })]
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -199,6 +231,12 @@ const keyArgs = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String })
 const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
+
+const refusedServiceToken = {
+	...toLoadFailure("refused"),
+	message:
+		"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale.",
+}
 
 const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
@@ -298,6 +336,18 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			return Option.some(removedAnswer("openrouter"))
 		case RemoveCloudflareCostToken.name:
 			return Option.some(removedAnswer("cloudflare"))
+		case SavePlanetScaleCostToken.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "planetscale",
+					result:
+						state === "planetscale-refused"
+							? Result.fail(refusedServiceToken)
+							: Result.succeed(undefined),
+				}),
+			)
+		case RemovePlanetScaleCostToken.name:
+			return Option.some(removedAnswer("planetscale"))
 		default:
 			return Option.none()
 	}

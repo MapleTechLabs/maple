@@ -43,7 +43,7 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
-import { CREDENTIAL_SOURCES } from "./credential-sources"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { AddStep, Model, Search } from "./model"
 import type { CredentialProvider } from "./providers"
@@ -149,6 +149,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
 		credentialDraft: Field.init(),
+		credentialIdentifiers: [],
 		credentialError: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
 		removeProvider: null,
@@ -184,17 +185,36 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	),
 })
 
-/** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedCredential = (model: Model): Model => ({
+/** The plain fields of a step's provider: empty, or what its source says when one is being replaced. */
+const identifierDrafts = (model: Model, addStep: AddStep): ReadonlyArray<Field.Model> => {
+	if (addStep === "pick") return []
+	const existing = Option.flatMap(AsyncData.getData(model.sources.data), ({ sources }) =>
+		Arr.findFirst(sources, (source) => source.provider === addStep),
+	)
+	const source: CredentialSource = CREDENTIAL_SOURCES[addStep]
+	return Arr.map(source.identifiers ?? [], (identifier) =>
+		Field.init(
+			Option.match(existing, {
+				onNone: () => "",
+				onSome: (source) => identifier.fromSource?.(source) ?? "",
+			}),
+		),
+	)
+}
+
+/** The dialog on `addStep`, with nothing typed and no refusal on show: how it opens and what it leaves behind. */
+const clearedCredential = (model: Model, addStep: AddStep = model.addStep): Model => ({
 	...model,
+	addStep,
 	credentialDraft: Field.init(),
+	credentialIdentifiers: identifierDrafts(model, addStep),
 	credentialError: null,
 })
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedCredential(model), addStep }, Dialog.open(model.addDialog))
+		: liftAddDialog(clearedCredential(model, addStep), Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -347,11 +367,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		PickedProvider: ({ provider }) => ({ model: { ...clearedCredential(model), addStep: provider } }),
+		PickedProvider: ({ provider }) => ({ model: clearedCredential(model, provider) }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle"
-				? { model: { ...clearedCredential(model), addStep: "pick" } }
-				: { model },
+			model.sourceWrite === "Idle" ? { model: clearedCredential(model, "pick") } : { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
@@ -373,17 +391,49 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
 						},
 					},
+		GotCredentialIdentifierMessage: ({ index, message: inner }) =>
+			model.sourceWrite === "Saving"
+				? { model }
+				: {
+						model: {
+							...model,
+							credentialIdentifiers: Arr.map(model.credentialIdentifiers, (draft, at) =>
+								at === index ? Field.update(draft, inner).model : draft,
+							),
+							// The refusal was about what was typed then.
+							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
+						},
+					},
 		SubmittedCredential: () => {
 			const secret = Str.trim(model.credentialDraft.value)
-			if (secret === "" || model.sourceWrite !== "Idle" || model.addStep === "pick") return { model }
-			const source = CREDENTIAL_SOURCES[model.addStep]
-			// The request refuses a longer one before it is sent, which would leave the save unanswered.
-			if (secret.length > source.field.maxLength) {
-				return { model: { ...model, credentialError: source.field.tooLong } }
+			const identifiers = Arr.map(model.credentialIdentifiers, (draft) => Str.trim(draft.value))
+			if (
+				secret === "" ||
+				Arr.contains(identifiers, "") ||
+				model.sourceWrite !== "Idle" ||
+				model.addStep === "pick"
+			) {
+				return { model }
 			}
+			const source: CredentialSource = CREDENTIAL_SOURCES[model.addStep]
+			// The request refuses a longer one before it is sent, which would leave the save unanswered.
+			const tooLong = Option.orElse(
+				Option.map(
+					Arr.findFirst(
+						Arr.zip(source.identifiers ?? [], identifiers),
+						([text, value]) => value.length > text.maxLength,
+					),
+					([text]) => text.tooLong,
+				),
+				() =>
+					secret.length > source.field.maxLength
+						? Option.some(source.field.tooLong)
+						: Option.none(),
+			)
+			if (Option.isSome(tooLong)) return { model: { ...model, credentialError: tooLong.value } }
 			return {
 				model: { ...model, sourceWrite: "Saving", credentialError: null },
-				commands: [source.save(secret)],
+				commands: [source.save(secret, identifiers)],
 			}
 		},
 		// A refused credential keeps the dialog open with the reason under the field.

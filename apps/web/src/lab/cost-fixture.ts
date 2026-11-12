@@ -75,6 +75,21 @@ const productLine = (
 	drift,
 })
 
+/** The PlanetScale organization the lab's source reads. */
+const LAB_PLANETSCALE_ORGANIZATION = "example-org"
+
+/** A day's share of a branch's monthly invoice line: the database is the service, the SKU the usage type. */
+const branchLine = (database: string, sku: string, daily: number, drift: number): Line => ({
+	cloud_service: database,
+	provider: "planetscale",
+	service_category: "Databases",
+	region: "global",
+	usage_type: sku,
+	account: LAB_PLANETSCALE_ORGANIZATION,
+	daily,
+	drift,
+})
+
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
 	line("Example Compute", "Compute", "north-1", "north-1:instance-hours", 61.2, 0.18),
@@ -102,6 +117,9 @@ const LINES: ReadonlyArray<Line> = [
 	productLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
 	productLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
 	productLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
+	branchLine("example-orders", "PS_20_AWS_ARM", 9.7, 0.0),
+	branchLine("example-orders", "egress", 0.6, 0.2),
+	branchLine("example-search", "PS_10_AWS_ARM", 1.3, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -280,7 +298,21 @@ const cloudflareSource = source({
 	requestsThisMonth: 0,
 })
 
-const LAB_CREDENTIAL_SOURCES = { openrouter: openRouterSource, cloudflare: cloudflareSource } as const
+/** The PlanetScale source: invoices back to the twelfth month before this one, and no billed requests. */
+const planetScaleSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c062",
+	provider: "planetscale",
+	accountId: LAB_PLANETSCALE_ORGANIZATION,
+	backfillDate: "2025-11-01",
+	lastSyncedAt: LAB_NOW_MS - 90 * 60_000,
+	requestsThisMonth: 0,
+})
+
+const LAB_CREDENTIAL_SOURCES = {
+	openrouter: openRouterSource,
+	cloudflare: cloudflareSource,
+	planetscale: planetScaleSource,
+} as const
 
 /** What the lab's reader did to each pasted-credential source since the state loaded; null for nothing. */
 export type LabSourceChanges = Readonly<Record<CredentialProvider, boolean | null>>
@@ -315,7 +347,9 @@ export const labSourcesWith = (
 	})
 
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({}), openRouterSource, cloudflareSource] }),
+	synced: decodeSources({
+		sources: [source({}), openRouterSource, cloudflareSource, planetScaleSource],
+	}),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [

@@ -43,6 +43,8 @@ export const Model = Schema.Struct({
 	addStep: AddStep,
 	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
 	credentialDraft: Field.Model,
+	/** The plain fields the step's provider asks before the credential, in its order; none for most. */
+	credentialIdentifiers: Schema.Array(Field.Model),
 	/** Why the last save was refused, shown under the field until the credential changes. */
 	credentialError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
