@@ -104,7 +104,8 @@ const READ_FILE_SCRIPT = Arr.join(
 		`  while [ "$dir" != . ] && [ ! -d "./$dir" ]; do case "$dir" in */*) dir=\${dir%/*} ;; *) dir=. ;; esac; done`,
 		`  [ "$dir" = "$parent" ] || printf "${NEAREST_DIRECTORY_MARKER} %s\\n" "$dir"`,
 		// The name through the environment, not `-v`, which would read its backslashes as escapes.
-		`  git ${Arr.join(GIT_COMMON, " ")} ls-files | MAPLE_NAME="\${1##*/}" awk -F/ "$5"`,
+		// `-z` lists names as they are: without it git quotes one holding `"` or a backslash.
+		`  git ${Arr.join(GIT_COMMON, " ")} ls-files -z | tr '\\0' '\\n' | MAPLE_NAME="\${1##*/}" awk -F/ "$5"`,
 		`  exit 1`,
 		`fi`,
 		`case "\${entry%% *}" in`,

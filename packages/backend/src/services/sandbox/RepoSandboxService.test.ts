@@ -321,6 +321,14 @@ describe("the git commands the tools build, against a real repository", () => {
 				sameName: [],
 				sameNameTotal: 0,
 			})
+			// A name git would quote in its listing is still found as written.
+			assert.deepStrictEqual(yield* miss('docs/a"b.ts'), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ['src/a"b.ts'],
+				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
 			// A name with pattern characters is compared as text, not matched.
 			assert.deepStrictEqual(yield* miss("src/*.ts"), {
 				exitCode: 1,
