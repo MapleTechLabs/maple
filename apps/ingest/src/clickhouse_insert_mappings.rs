@@ -30,7 +30,7 @@ pub const DATASOURCES: &[InsertMapping] = &[
         datasource: "logs",
         table: "logs",
         columns: &["OrgId", "Timestamp", "TimestampTime", "TraceId", "SpanId", "TraceFlags", "SeverityText", "SeverityNumber", "ServiceName", "Body", "ResourceSchemaUrl", "ResourceAttributes", "ScopeSchemaUrl", "ScopeName", "ScopeVersion", "ScopeAttributes", "LogAttributes"],
-        selects: &["__ORG__", "timestamp", "timestamp", "trace_id", "span_id", "flags", "severity_text", "severity_number", "service_name", "body", "resource_schema_url", "resource_attributes", "scope_schema_url", "scope_name", "scope_version", "scope_attributes", "log_attributes"],
+        selects: &["__ORG__", "timestamp", "CAST(timestamp AS DateTime)", "trace_id", "span_id", "flags", "severity_text", "severity_number", "service_name", "body", "resource_schema_url", "resource_attributes", "scope_schema_url", "scope_name", "scope_version", "scope_attributes", "log_attributes"],
         input_schema: "timestamp DateTime64(9), trace_id String, span_id String, flags UInt8, severity_text LowCardinality(String), severity_number UInt8, service_name LowCardinality(String), body String, resource_schema_url String, resource_attributes Map(LowCardinality(String), String), scope_schema_url String, scope_name String, scope_version String, scope_attributes Map(LowCardinality(String), String), log_attributes Map(LowCardinality(String), String)",
     },
     InsertMapping {
