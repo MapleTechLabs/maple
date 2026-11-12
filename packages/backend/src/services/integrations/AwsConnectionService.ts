@@ -50,6 +50,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 } from "@maple/backend/services/integrations/integration-sources"
+import { reconcileAwsCostSources } from "../cost/aws-cost-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
@@ -523,11 +524,18 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					return connectionOf(current)
 				}
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.update(AwsConnections)
-							.set({ ...changes, updatedAt })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
-							.returning(),
+					db.transaction(
+						Effect.gen(function* () {
+							const rows = yield* db.run(
+								PG.update(AwsConnections)
+									.set({ ...changes, updatedAt })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
+									.returning(),
+							)
+							// Cost turned on or off shows on the Cost page at once, not at the next sync tick.
+							if (modules !== undefined) yield* reconcileAwsCostSources(db, updatedAt, orgId)
+							return rows
+						}),
 					),
 				)
 				if (row === undefined) return yield* notFound()
@@ -628,6 +636,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										.returning(),
 								)
 								if (outcome !== null) yield* reportPoll(db, row.sourceId, outcome, now)
+								// A check can grant or lose cost: its source follows now, not at the next sync tick.
+								yield* reconcileAwsCostSources(db, now, row.orgId)
 								return rows
 							}),
 						),
@@ -803,6 +813,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 									.returning(),
 							)
 							yield* deleteSourcesOf(db, orgId, deleted, "aws")
+							const now = yield* Clock.currentTimeMillis
+							yield* reconcileAwsCostSources(db, now, orgId)
 							return deleted
 						}),
 					),

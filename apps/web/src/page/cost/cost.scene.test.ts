@@ -185,7 +185,7 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("Waiting for the first sync")).toExist(),
-			expectView(text(/The first sync runs within the hour/)).toExist(),
+			expectView(text(/The first sync runs within a few minutes/)).toExist(),
 			expectView(text("123456789012")).toExist(),
 			expectView(text("Waiting for first sync")).toExist(),
 			expectView(text("Group by")).not.toExist(),

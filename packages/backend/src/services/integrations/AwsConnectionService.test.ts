@@ -304,6 +304,44 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
 	})
 
+	it.effect("the cost source follows the connection's writes, without waiting for the sync", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const costSource = (connectionId: string) =>
+			Effect.promise(() =>
+				queryFirstRow<{ enabled: boolean; org_id: string }>(
+					testDb,
+					"SELECT enabled, org_id FROM cost_sources WHERE provider = 'aws' AND connection_ref = $1",
+					[connectionId],
+				),
+			)
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			yield* later(service.check(orgId, created.id))
+
+			// Asked for, but the deployed role does not grant it yet: no source to wait on.
+			yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.isUndefined(yield* costSource(created.id))
+
+			// The setup run again grants it: the check that sees the grant makes the source.
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			const granted = yield* later(service.check(orgId, created.id))
+			assert.deepStrictEqual(granted.grantedModules, ["cost"])
+			assert.deepStrictEqual(yield* costSource(created.id), { enabled: true, org_id: orgId })
+
+			// Turned off it pauses, kept for its history; turned back on it resumes.
+			yield* service.update(orgId, created.id, { modules: [] })
+			assert.strictEqual((yield* costSource(created.id))?.enabled, false)
+			yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.strictEqual((yield* costSource(created.id))?.enabled, true)
+
+			yield* service.delete(orgId, created.id)
+			assert.isUndefined(yield* costSource(created.id))
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
+	})
+
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()

@@ -122,7 +122,7 @@ const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 					]),
 					emptyDescription(h, [
 						isWaiting
-							? "The first sync runs within the hour. It brings in this month and the last, and older months fill in after that."
+							? "The first sync runs within a few minutes. It brings in this month and the last, and older months fill in after that."
 							: isFailing
 								? "Maple tries again within the hour. The source below shows what went wrong."
 								: isHeld
