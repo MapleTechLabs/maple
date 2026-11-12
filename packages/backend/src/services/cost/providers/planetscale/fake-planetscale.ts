@@ -47,8 +47,12 @@ export interface FakePlanetScale {
 	maxPerPage: number
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
+	/** The fetch itself fails with this, as when the network does. */
+	networkError: string | null
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
+	/** How each request said to treat a redirect. */
+	readonly redirects: Array<string | undefined>
 }
 
 export const FAKE_PLANETSCALE_ORGANIZATION = "acme"
@@ -64,8 +68,10 @@ export const makeFakePlanetScale = (overrides: Partial<FakePlanetScale> = {}): F
 	lineItems: {},
 	maxPerPage: 100,
 	cloudCost: true,
+	networkError: null,
 	urls: [],
 	authorizations: [],
+	redirects: [],
 	...overrides,
 })
 
@@ -88,7 +94,9 @@ export const fakeLineItem = (overrides: Partial<FakeLineItem> = {}): FakeLineIte
 })
 
 const refused = (status: number) =>
-	Response.json({ code: status === 404 ? "not_found" : `status_${status}` }, { status })
+	status >= 300 && status < 400
+		? new Response(null, { status, headers: { location: "https://elsewhere.test/invoices" } })
+		: Response.json({ code: status === 404 ? "not_found" : `status_${status}` }, { status })
 
 const page = (items: ReadonlyArray<unknown>, url: URL, maxPerPage: number) => {
 	const perPage = Math.min(Number(url.searchParams.get("per_page") ?? "25"), maxPerPage)
@@ -115,6 +123,8 @@ export const fakePlanetScaleFetch =
 		const authorization = new Headers(init?.headers).get("authorization")
 		world.urls.push(`${url.pathname}${url.search}`)
 		world.authorizations.push(authorization)
+		world.redirects.push(init?.redirect)
+		if (world.networkError !== null) return Promise.reject(new TypeError(world.networkError))
 		const base = `/v1/organizations/${world.organization}/invoices`
 		if (authorization !== world.authorization || !Str.startsWith(base)(url.pathname)) return refused(404)
 		if (url.pathname === base) {

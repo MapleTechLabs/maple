@@ -3,17 +3,21 @@
  * invoice's line items, with a service token. Plain requests with the status read off the answer:
  * a 401, 403 or 404 is an expected answer when a token is checked, not a failed call.
  */
-import { Effect, Redacted, Schema, Array as Arr } from "effect"
+import { Effect, Redacted, Schema, SchemaTransformation, Array as Arr } from "effect"
 import { FetchHttpClient, type HttpClient, HttpClientRequest } from "effect/http"
 
-export const PLANETSCALE_API_URL = "https://api.planetscale.com/v1"
+const PLANETSCALE_API_URL = "https://api.planetscale.com/v1"
 
 const INVOICES_PER_PAGE = 50
 const LINE_ITEMS_PER_PAGE = 100
 /** 50 pages of invoices is four times what an organization of 50 years has. */
 const MAX_INVOICE_PAGES = 50
-/** 20,000 line items in one month: more is refused, never read in part. */
-const MAX_LINE_ITEM_PAGES = 200
+/** 5,000 line items in one month: more is refused, never read in part. */
+const MAX_LINE_ITEM_PAGES = 50
+
+/** What a token without the access is told, when it is saved and when a pull is refused. */
+export const NO_INVOICE_ACCESS =
+	"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale."
 
 export interface PlanetScaleInvoiceCredentials {
 	/** The organization's slug, as in `app.planetscale.com/<organization>`. */
@@ -63,8 +67,16 @@ const reasonOfStatus = (status: number): Reason =>
 					? "rate_limited"
 					: "upstream"
 
-/** Dollars. PlanetScale sends a decimal string; a bare number is read the same way. */
-const Dollars = Schema.Union([Schema.Finite, Schema.FiniteFromString])
+/**
+ * Dollars. PlanetScale sends a decimal string; a bare number is read the same way. A blank string
+ * is refused: read as a number it would be zero, and the line would vanish.
+ */
+const Dollars = Schema.Union([
+	Schema.Finite,
+	Schema.String.check(Schema.isPattern(/\d/, { description: "Expected a decimal amount" })).pipe(
+		Schema.decodeTo(Schema.Finite, SchemaTransformation.numberFromString),
+	),
+])
 
 /** One billing period: a calendar month, `billing_period_end` exclusive (the next month's first). */
 export const Invoice = Schema.Struct({
@@ -85,7 +97,6 @@ const LineItemResource = Schema.Struct({
 
 /** One charge of an invoice. `subtotal` is negative on a prorated discount line. */
 export const InvoiceLineItem = Schema.Struct({
-	id: Schema.String,
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	/** The SKU, e.g. `PS_10_AWS_ARM` or `egress`. */
 	metric_name: Schema.optionalKey(Schema.NullOr(Schema.String)),

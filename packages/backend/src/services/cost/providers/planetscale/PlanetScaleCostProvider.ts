@@ -2,10 +2,11 @@
  * PlanetScale as a cost provider: an organization's monthly invoices per database and branch,
  * spread over the days each branch existed, read with the service token the org saved.
  */
-import { Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import type { CostProviderAdapter, CostPull, CostPullSource, CostPullWindow } from "../../CostProvider"
 import { CostConnectionStore, type CostConnectionStoreError } from "../../CostConnectionStore"
+import { utcToday } from "../../sync-plan"
 import { planetScaleCostFailure, pullInvoiceCost } from "./pull"
 
 const toStoreFailure = (error: CostConnectionStoreError) =>
@@ -39,10 +40,12 @@ export class PlanetScaleCostProvider extends Context.Service<PlanetScaleCostProv
 					}
 					// The stored secret is the whole header, and the account is the organization.
 					const { secret, accountId } = credential.value
+					const now = yield* Clock.currentTimeMillis
 					const rows = yield* pullInvoiceCost(
 						httpClient,
 						{ organization: accountId, authorization: secret },
 						window,
+						utcToday(now),
 					)
 					yield* Effect.annotateCurrentSpan({ "maple.cost.rows": rows.length })
 					return { rows, requests: 0 } satisfies CostPull

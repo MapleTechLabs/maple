@@ -439,13 +439,29 @@ describe("planCostSync for a provider that bills by the month, a year back", () 
 		})
 	})
 
-	it("takes the four newest days of the open month as its head, today included", () => {
+	it("takes the whole open month as its head: a new line changes the share of every day of it", () => {
 		const now = at("2026-11-12T12:00:00Z")
 		const state = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
 		assert.deepStrictEqual(planCostSync(state, now), {
 			mode: "head",
-			startDay: "2026-11-09",
+			startDay: "2026-11-01",
 			endDay: "2026-11-12",
+		})
+	})
+
+	it("starts its head at the new month on the first, and leaves the closed month to the settle", () => {
+		const now = at("2026-12-01T12:00:00Z")
+		const state = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "head",
+			startDay: "2026-12-01",
+			endDay: "2026-12-01",
+		})
+		const settling = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 8 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(settling, now), {
+			mode: "settle",
+			startDay: "2026-11-01",
+			endDay: "2026-12-01",
 		})
 	})
 

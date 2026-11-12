@@ -282,11 +282,14 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Rows: the database is `CloudService` (the engine is not in the response), the SKU is
   `UsageType`, the branch is the resource, the category is "Databases", the region is `global`.
 - Sync: twelve months back, through today. A pull is one invoice list plus one line-item read per
-  month in its window. Requests are free, so the source counts none.
+  month in its window. Requests are free, so the source counts none. The daily pull takes the
+  whole open month, not the trailing days: a new line changes the share of every day of it. A
+  month with more than 5,000 line items is refused as too large.
 - Not used: `cluster-size-skus?rates=true`. A daily estimate from rates would only be replaced by
   the invoice.
-- Open: how soon after a month closes its invoice is paid. Its days stay marked as not final until
-  a pull sees it paid, and the previous month is pulled again until the eleventh.
+- A month's days are not final while its invoice is unpaid, until the month ended more than ten
+  days ago: the previous month is pulled for the last time after the tenth, and that pull writes
+  it final whether or not the payment went through.
 
 ### Supabase (estimated)
 

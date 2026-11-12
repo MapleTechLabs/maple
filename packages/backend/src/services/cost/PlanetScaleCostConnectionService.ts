@@ -20,6 +20,7 @@ import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnec
 import {
 	listInvoiceLineItems,
 	listInvoices,
+	NO_INVOICE_ACCESS,
 	type PlanetScaleInvoiceApiError,
 	type PlanetScaleInvoiceCredentials,
 	serviceTokenAuthorization,
@@ -28,9 +29,6 @@ import {
 const VALIDATE_TIMEOUT = Duration.seconds(20)
 
 const TOKEN_PREFIX = "pscale_tkn_"
-
-const NO_INVOICE_ACCESS =
-	"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale."
 
 // PlanetScale answers 404 for a token it does not know as well as for an organization the token cannot see.
 const NOT_FOUND =

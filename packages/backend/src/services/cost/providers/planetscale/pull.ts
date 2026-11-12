@@ -1,14 +1,23 @@
 // One PlanetScale cost pull, given the token: the window's invoices read and spread into rows,
 // with PlanetScale's refusals as what the sync does next and the Cost page shows.
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Array as Arr } from "effect"
 import type { HttpClient } from "effect/http"
 import { CostProviderError, type CostPullRow, type CostPullWindow } from "../../CostProvider"
-import type { PlanetScaleInvoiceApiError, PlanetScaleInvoiceCredentials } from "./invoices-api"
-import { toCostRows } from "./normalize"
-import { readInvoicesOfWindow } from "./read-window"
+import { addDays, PREVIOUS_MONTH_OPEN_DAYS } from "../../sync-plan"
+import {
+	listInvoiceLineItems,
+	listInvoices,
+	NO_INVOICE_ACCESS,
+	type PlanetScaleInvoiceApiError,
+	type PlanetScaleInvoiceCredentials,
+} from "./invoices-api"
+import { type InvoiceWithLineItems, invoicePeriod, periodInWindow, toCostRows } from "./normalize"
 
-/** A year of invoices is a list read and thirteen line-item reads. */
-const PULL_TIMEOUT = Duration.seconds(60)
+/**
+ * A year of invoices is a list read and thirteen line-item reads. Two months at the most pages a
+ * month may have is a hundred requests, which this still leaves time for.
+ */
+const PULL_TIMEOUT = Duration.seconds(120)
 
 type Reason = CostProviderError["reason"]
 
@@ -23,10 +32,7 @@ const FAILURES = {
 		"auth",
 		"PlanetScale rejected the saved service token. Replace the token to resume the sync.",
 	),
-	forbidden: failure(
-		"not_ready",
-		"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale.",
-	),
+	forbidden: failure("not_ready", NO_INVOICE_ACCESS),
 	// PlanetScale answers 404 for a deleted token as well as for an organization the token cannot see.
 	not_found: failure(
 		"not_ready",
@@ -36,7 +42,7 @@ const FAILURES = {
 	invalid_response: failure("invalid_response", "PlanetScale's invoice answer could not be read."),
 	too_large: failure(
 		"too_large",
-		"A month of this organization has more invoice line items than Maple reads.",
+		"This organization has more invoices or invoice line items than Maple reads.",
 	),
 	upstream: failure("upstream", "PlanetScale did not answer the invoice request."),
 } satisfies Record<
@@ -44,16 +50,40 @@ const FAILURES = {
 	{ readonly reason: Reason; readonly message: string }
 >
 
-export const toCostProviderError = (error: PlanetScaleInvoiceApiError): CostProviderError => {
+const toCostProviderError = (error: PlanetScaleInvoiceApiError): CostProviderError => {
 	const { reason, message } = FAILURES[error.reason]
 	return planetScaleCostFailure(reason, message)
 }
 
-/** The window's days as rows, from every invoice that bills one of them. */
+/**
+ * Every invoice that bills a day of `window`, with all its line items. Invoices come newest first,
+ * so listing stops at the first page that holds one from wholly before the window.
+ */
+export const readInvoicesOfWindow = (
+	httpClient: HttpClient.HttpClient,
+	credentials: PlanetScaleInvoiceCredentials,
+	window: CostPullWindow,
+) =>
+	listInvoices(httpClient, credentials, (page) =>
+		Arr.some(page, (invoice) => invoicePeriod(invoice).endDay < window.startDay),
+	).pipe(
+		Effect.flatMap((invoices) =>
+			Effect.forEach(
+				Arr.filter(invoices, (invoice) => periodInWindow(invoicePeriod(invoice), window)),
+				(invoice) =>
+					listInvoiceLineItems(httpClient, credentials, invoice.id).pipe(
+						Effect.map((lineItems): InvoiceWithLineItems => ({ invoice, lineItems })),
+					),
+			),
+		),
+	)
+
+/** The window's days as rows, from every invoice that bills one of them. `today` is the UTC day of the pull. */
 export const pullInvoiceCost = (
 	httpClient: HttpClient.HttpClient,
 	credentials: PlanetScaleInvoiceCredentials,
 	window: CostPullWindow,
+	today: string,
 ): Effect.Effect<ReadonlyArray<CostPullRow>, CostProviderError> =>
 	readInvoicesOfWindow(httpClient, credentials, window).pipe(
 		// The page shows the mapped message; which failure it was stays on the span.
@@ -67,7 +97,10 @@ export const pullInvoiceCost = (
 		Effect.tap((invoices) =>
 			Effect.annotateCurrentSpan("maple.cost.planetscale.invoices", invoices.length),
 		),
-		Effect.map((invoices) => toCostRows(invoices, credentials.organization, window)),
+		// The sync pulls the previous month once more after it closed: that pull writes it final.
+		Effect.map((invoices) =>
+			toCostRows(invoices, credentials.organization, window, addDays(today, -PREVIOUS_MONTH_OPEN_DAYS)),
+		),
 		Effect.timeoutOrElse({
 			duration: PULL_TIMEOUT,
 			orElse: () =>

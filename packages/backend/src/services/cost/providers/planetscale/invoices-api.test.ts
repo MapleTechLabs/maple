@@ -17,7 +17,7 @@ import {
 	type PlanetScaleInvoiceCredentials,
 	serviceTokenAuthorization,
 } from "./invoices-api"
-import { readInvoicesOfWindow } from "./read-window"
+import { readInvoicesOfWindow } from "./pull"
 
 const CREDENTIALS: PlanetScaleInvoiceCredentials = {
 	organization: FAKE_PLANETSCALE_ORGANIZATION,
@@ -77,14 +77,8 @@ describe("PlanetScale invoice API", () => {
 					listInvoiceLineItems(httpClient, CREDENTIALS, "inv_2026-10"),
 				)
 				assert.deepStrictEqual(
-					Arr.map(read, (line) => [line.id, line.subtotal]),
-					[
-						["line_0", 1.5],
-						["line_1", 2.5],
-						["line_2", 3.5],
-						["line_3", 4.5],
-						["line_4", 5.5],
-					],
+					Arr.map(read, (line) => line.subtotal),
+					[1.5, 2.5, 3.5, 4.5, 5.5],
 				)
 				assert.deepStrictEqual(world.urls, [
 					"/v1/organizations/acme/invoices/inv_2026-10/line-items?per_page=100&page=1",
@@ -113,7 +107,8 @@ describe("PlanetScale invoice API", () => {
 						["inv_2026-09", 1],
 					],
 				)
-				// Two list pages reach September; November bills no day of the window and is not read.
+				// Listing stops at the page that holds August, wholly before the window. November bills
+				// no day of the window and is not read.
 				assert.deepStrictEqual(world.urls, [
 					"/v1/organizations/acme/invoices?per_page=50&page=1",
 					"/v1/organizations/acme/invoices?per_page=50&page=2",
@@ -145,7 +140,7 @@ describe("PlanetScale invoice API", () => {
 		return run(
 			world,
 			Effect.gen(function* () {
-				const reasons = yield* Effect.forEach([401, 403, 404, 429, 502], (status) =>
+				const reasons = yield* Effect.forEach([401, 403, 404, 429, 502, 302], (status) =>
 					Effect.gen(function* () {
 						world.invoicesStatus = status
 						const error = yield* Effect.flip(
@@ -160,7 +155,10 @@ describe("PlanetScale invoice API", () => {
 					["not_found", 404],
 					["rate_limited", 429],
 					["upstream", 502],
+					// A redirect is not followed: the token goes to no other host.
+					["upstream", 302],
 				])
+				assert.deepStrictEqual(Arr.dedupe(world.redirects), ["manual"])
 			}),
 		)
 	})
@@ -185,6 +183,25 @@ describe("PlanetScale invoice API", () => {
 		)
 	})
 
+	it.effect("reports a request that never reached PlanetScale without repeating what it sent", () => {
+		const world = makeFakePlanetScale({
+			invoices: SIX_MONTHS,
+			networkError: `connect failed for ${FAKE_PLANETSCALE_TOKEN_ID}:${FAKE_PLANETSCALE_TOKEN}`,
+		})
+		return run(
+			world,
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(
+					withClient((httpClient) => listInvoices(httpClient, CREDENTIALS)),
+				)
+				assert.deepStrictEqual(
+					[error.reason, error.status, error.message],
+					["upstream", 0, "PlanetScale did not answer the invoices request."],
+				)
+			}),
+		)
+	})
+
 	it.effect("fails an answer it cannot read as invalid", () => {
 		const world = makeFakePlanetScale({ invoices: "<html>maintenance</html>" })
 		return run(
@@ -196,18 +213,24 @@ describe("PlanetScale invoice API", () => {
 				world.invoices = [{ ...fakeInvoice("2026-10", "2026-11"), billing_period_end: "soon" }]
 				assert.strictEqual((yield* Effect.flip(list)).reason, "invalid_response")
 				world.invoices = SIX_MONTHS
-				world.lineItems = { "inv_2026-10": [fakeLineItem({ subtotal: "a lot" })] }
 				const lines = withClient((httpClient) =>
 					listInvoiceLineItems(httpClient, CREDENTIALS, "inv_2026-10"),
 				)
-				assert.strictEqual((yield* Effect.flip(lines)).reason, "invalid_response")
+				// An amount that is no number, and a blank one, which read as a number would be zero.
+				const reasons = yield* Effect.forEach(["a lot", "1,234.50", "", " "], (subtotal) =>
+					Effect.gen(function* () {
+						world.lineItems = { "inv_2026-10": [fakeLineItem({ subtotal })] }
+						return (yield* Effect.flip(lines)).reason
+					}),
+				)
+				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 4))
 			}),
 		)
 	})
 
 	it.effect("refuses an invoice with more line items than a read takes, and returns no part of it", () => {
 		const world = makeFakePlanetScale({
-			lineItems: { "inv_2026-10": Arr.makeBy(201, (index) => fakeLineItem({ id: `line_${index}` })) },
+			lineItems: { "inv_2026-10": Arr.makeBy(51, (index) => fakeLineItem({ id: `line_${index}` })) },
 			maxPerPage: 1,
 		})
 		return run(
@@ -216,7 +239,7 @@ describe("PlanetScale invoice API", () => {
 				const error = yield* Effect.flip(
 					withClient((httpClient) => listInvoiceLineItems(httpClient, CREDENTIALS, "inv_2026-10")),
 				)
-				assert.deepStrictEqual([error.reason, world.urls.length], ["too_large", 200])
+				assert.deepStrictEqual([error.reason, world.urls.length], ["too_large", 50])
 			}),
 		)
 	})

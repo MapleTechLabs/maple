@@ -2,7 +2,7 @@
 // evenly over the days of the month its branch existed, then summed per day, database, branch and SKU.
 import { DateTime, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { CostPullRow, CostPullWindow } from "../../CostProvider"
-import { daysOfWindow } from "../../sync-plan"
+import { daysOfWindow, maxDay, minDay } from "../../sync-plan"
 import type { Invoice, InvoiceLineItem } from "./invoices-api"
 
 /** FOCUS `ServiceCategory` of every PlanetScale charge. */
@@ -19,9 +19,6 @@ const dayOf = (instant: DateTime.Utc): string => DateTime.formatIsoDateUtc(insta
 
 const dayOrElse = (instant: DateTime.Utc | null | undefined, orElse: string): string =>
 	instant === null || instant === undefined ? orElse : dayOf(instant)
-
-const minDay = (a: string, b: string) => (a < b ? a : b)
-const maxDay = (a: string, b: string) => (a > b ? a : b)
 
 /** The days an invoice bills, both inclusive. Its end is exclusive: the first instant of the next period. */
 export const invoicePeriod = (invoice: Invoice): CostPullWindow => {
@@ -96,20 +93,23 @@ const sharesOfLine = (
 /**
  * The window's days of the invoices that bill them. A discount line is negative and spread like
  * its charge, so a branch's days net out to what it cost. A line of zero is left out. Days of an
- * unpaid invoice can still change: the open month's lines already carry the whole month.
+ * unpaid invoice can still change, until its month ended before `finalBefore`: by then only the
+ * payment is open, and no later pull would come back to mark the days final.
  */
 export const toCostRows = (
 	invoices: ReadonlyArray<InvoiceWithLineItems>,
 	accountId: string,
 	window: CostPullWindow,
+	finalBefore: string,
 ): ReadonlyArray<CostPullRow> => {
 	const shares = Arr.flatMap(invoices, ({ invoice, lineItems }) => {
 		const period = invoicePeriod(invoice)
+		const estimated = !invoice.paid && period.endDay >= finalBefore
 		return Arr.flatMap(lineItems, (line) =>
-			line.subtotal === 0 ? [] : sharesOfLine(line, period, window, !invoice.paid),
+			line.subtotal === 0 ? [] : sharesOfLine(line, period, window, estimated),
 		)
 	})
-	// NUL cannot be in a day, a database, a branch or a SKU, so the key keeps the four apart.
+	// NUL separates the four parts of the key: PlanetScale's names hold none.
 	const groups = Arr.groupBy(shares, (share) =>
 		Arr.join([share.day, share.cloudService, share.resourceId, share.usageType], "\u0000"),
 	)

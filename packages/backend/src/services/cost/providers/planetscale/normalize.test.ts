@@ -2,9 +2,17 @@ import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Order, Schema } from "effect"
 import type { CostPullRow } from "../../CostProvider"
 import { Invoice, InvoiceLineItem } from "./invoices-api"
-import { chargedDays, invoicePeriod, spreadEvenly, toCostRows } from "./normalize"
+import { chargedDays, type InvoiceWithLineItems, invoicePeriod, spreadEvenly, toCostRows } from "./normalize"
 
 const ORGANIZATION = "acme"
+/** A pull on 2026-11-12: an unpaid invoice whose month ended before this day is final. */
+const FINAL_BEFORE = "2026-11-02"
+
+const toRows = (
+	invoices: ReadonlyArray<InvoiceWithLineItems>,
+	accountId: string,
+	window: { readonly startDay: string; readonly endDay: string },
+) => toCostRows(invoices, accountId, window, FINAL_BEFORE)
 
 const invoice = (month: string, nextMonth: string, paid = true) =>
 	Schema.decodeSync(Invoice)({
@@ -20,7 +28,6 @@ const OCTOBER_DAYS = { startDay: "2026-10-01", endDay: "2026-10-31" }
 
 const line = (overrides: Partial<typeof InvoiceLineItem.Encoded>) =>
 	Schema.decodeSync(InvoiceLineItem)({
-		id: "line_1",
 		description: "PS-10-AWS-ARM for branch 'main'",
 		metric_name: "PS_10_AWS_ARM",
 		subtotal: "31.00",
@@ -67,6 +74,26 @@ describe("invoicePeriod", () => {
 	})
 })
 
+describe("invoicePeriod of an organization's first invoice", () => {
+	it("starts on the day the organization began, mid-month", () => {
+		const first = Schema.decodeSync(Invoice)({
+			id: "inv_first",
+			billing_period_start: "2024-05-24T00:00:00.000Z",
+			billing_period_end: "2024-06-01T00:00:00.000Z",
+			paid: true,
+		})
+		assert.deepStrictEqual(invoicePeriod(first), { startDay: "2024-05-24", endDay: "2024-05-31" })
+		const rows = toRows([{ invoice: first, lineItems: [line({ subtotal: "8.00" })] }], ORGANIZATION, {
+			startDay: "2024-05-01",
+			endDay: "2024-05-31",
+		})
+		assert.deepStrictEqual(
+			[rows.length, Arr.every(rows, (row) => row.billedCost === 1 && row.day >= "2024-05-24")],
+			[8, true],
+		)
+	})
+})
+
 describe("spreadEvenly", () => {
 	it("adds up to the amount, with the last day taking the remainder", () => {
 		const shares = spreadEvenly(100, chargedDays(OCTOBER_DAYS, undefined))
@@ -110,7 +137,7 @@ describe("chargedDays", () => {
 
 describe("toCostRows", () => {
 	it("names the database as the service, the SKU as the usage type and the branch as the resource", () => {
-		const [row] = toCostRows([{ invoice: OCTOBER, lineItems: [line({})] }], ORGANIZATION, {
+		const [row] = toRows([{ invoice: OCTOBER, lineItems: [line({})] }], ORGANIZATION, {
 			startDay: "2026-10-01",
 			endDay: "2026-10-01",
 		})
@@ -141,19 +168,17 @@ describe("toCostRows", () => {
 		const lineItems = [
 			line({ subtotal: "39.00" }),
 			line({
-				id: "line_2",
 				metric_name: "egress",
 				description: "Egress for branch 'main'",
 				subtotal: "0.37",
 			}),
 			line({
-				id: "line_3",
 				database_name: "search",
 				metric_name: "M1_20_AWS_ARM_D_METAL_10",
 				subtotal: "529.13",
 			}),
 		]
-		const rows = toCostRows([{ invoice: OCTOBER, lineItems }], ORGANIZATION, OCTOBER_DAYS)
+		const rows = toRows([{ invoice: OCTOBER, lineItems }], ORGANIZATION, OCTOBER_DAYS)
 		// One row per day and line: 31 days of three lines.
 		assert.strictEqual(rows.length, 93)
 		assert.closeTo(total(rows), 39 + 0.37 + 529.13, 1e-9)
@@ -162,14 +187,13 @@ describe("toCostRows", () => {
 
 	it("nets a deleted branch's prorated discount into the days it existed", () => {
 		const resource = branch("preview", "2026-10-06T09:00:00Z", "2026-10-15T16:00:00Z")
-		const rows = toCostRows(
+		const rows = toRows(
 			[
 				{
 					invoice: OCTOBER,
 					lineItems: [
 						line({ subtotal: "31.00", resource }),
 						line({
-							id: "line_2",
 							description: "Prorated PS-10-AWS-ARM discount for branch 'preview'",
 							subtotal: "-21.00",
 							resource,
@@ -192,7 +216,7 @@ describe("toCostRows", () => {
 	})
 
 	it("starts a branch made mid-month on the day it was made", () => {
-		const rows = toCostRows(
+		const rows = toRows(
 			[
 				{
 					invoice: OCTOBER,
@@ -212,17 +236,35 @@ describe("toCostRows", () => {
 	})
 
 	it("shows the open month's days so far as not final, each a share of the whole month's line", () => {
-		const rows = toCostRows(
-			[{ invoice: NOVEMBER, lineItems: [line({ subtotal: "30.00" })] }],
-			ORGANIZATION,
-			{ startDay: "2026-11-01", endDay: "2026-11-12" },
-		)
+		const rows = toRows([{ invoice: NOVEMBER, lineItems: [line({ subtotal: "30.00" })] }], ORGANIZATION, {
+			startDay: "2026-11-01",
+			endDay: "2026-11-12",
+		})
 		assert.strictEqual(rows.length, 12)
 		assert.isTrue(Arr.every(rows, (row) => row.estimated && row.billedCost === 1))
 	})
 
+	it("stops calling an unpaid invoice's days not final once its month ended before the cutoff", () => {
+		const unpaidOctober = invoice("2026-10", "2026-11", false)
+		const estimatedOn = (finalBefore: string) =>
+			Arr.dedupe(
+				Arr.map(
+					toCostRows(
+						[{ invoice: unpaidOctober, lineItems: [line({})] }],
+						ORGANIZATION,
+						OCTOBER_DAYS,
+						finalBefore,
+					),
+					(row) => row.estimated,
+				),
+			)
+		// Pulled on November 10 the month can still change; on the 11th only the payment is open.
+		assert.deepStrictEqual(estimatedOn("2026-10-31"), [true])
+		assert.deepStrictEqual(estimatedOn("2026-11-01"), [false])
+	})
+
 	it("takes each day of a window that crosses two invoices from the invoice that bills it", () => {
-		const rows = toCostRows(
+		const rows = toRows(
 			[
 				{ invoice: NOVEMBER, lineItems: [line({ subtotal: "60.00" })] },
 				{ invoice: OCTOBER, lineItems: [line({ subtotal: "31.00" })] },
@@ -237,17 +279,16 @@ describe("toCostRows", () => {
 	})
 
 	it("keeps databases, branches and SKUs apart and sums lines that share all three", () => {
-		const rows = toCostRows(
+		const rows = toRows(
 			[
 				{
 					invoice: OCTOBER,
 					lineItems: [
 						line({ subtotal: "31.00" }),
-						line({ id: "line_2", subtotal: "62.00" }),
-						line({ id: "line_3", subtotal: "3.10", metric_name: "egress" }),
-						line({ id: "line_4", subtotal: "6.20", database_name: "search" }),
+						line({ subtotal: "62.00" }),
+						line({ subtotal: "3.10", metric_name: "egress" }),
+						line({ subtotal: "6.20", database_name: "search" }),
 						line({
-							id: "line_5",
 							subtotal: "9.30",
 							resource: branch("dev", "2026-01-01T00:00:00Z"),
 						}),
@@ -266,14 +307,13 @@ describe("toCostRows", () => {
 	})
 
 	it("leaves out a line of zero, and files a line with no database or branch under its description", () => {
-		const rows = toCostRows(
+		const rows = toRows(
 			[
 				{
 					invoice: OCTOBER,
 					lineItems: [
 						line({ subtotal: "0.00", metric_name: "egress" }),
 						line({
-							id: "line_2",
 							description: "Support plan",
 							metric_name: "support",
 							subtotal: "310",
