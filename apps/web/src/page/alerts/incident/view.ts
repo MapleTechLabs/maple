@@ -264,8 +264,11 @@ export type IncidentBodyInputs<M> = Readonly<{
 	escalation?: EscalationData
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
-	/** The viewer may open the audit log. An audit incident links it only then: anyone else is sent home. */
-	canReadAuditLog?: boolean
+	/**
+	 * Whether the viewer may open the audit log; null until the session answers. An audit
+	 * incident links it only for someone who may: anyone else is sent home.
+	 */
+	canReadAuditLog?: boolean | null
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
@@ -346,7 +349,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 													})
 												: incident.signalType === "audit"
 													? sourceNote(h, {
-															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === true ? "The audit log lists the events." : "The audit log lists the events; only org admins can open it."}`,
+															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === false ? "The audit log lists the events; only org admins can open it." : "The audit log lists the events."}`,
 															href:
 																inputs.canReadAuditLog === true
 																	? auditLogHref()
@@ -434,7 +437,8 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
-		canReadAuditLog: canReadAuditLog(model),
+		// No grants yet is no answer yet: an admin must not read that the log is not theirs.
+		canReadAuditLog: model.grants.length === 0 ? null : canReadAuditLog(model),
 		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
