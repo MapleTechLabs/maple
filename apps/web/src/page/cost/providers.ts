@@ -27,4 +27,9 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
+	cloudflare: {
+		name: PROVIDERS.cloudflare.name,
+		icon: PROVIDERS.cloudflare.icon,
+		requestUsd: null,
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>

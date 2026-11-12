@@ -1,12 +1,13 @@
 // A fake OpenRouter for tests: `GET /key` and `GET /activity` answered from a mutable world, with
 // every call recorded.
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { ConfigProvider, Effect, Layer, String as Str } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import type { ActivityItem } from "../../../org/openrouter-api"
+import { fakeCostEnvConfig } from "../fake-cost-env"
 
 export interface FakeOpenRouter {
 	/** Status of `GET /key`. */
@@ -74,31 +75,12 @@ const fetchStub =
 			: Response.json({ data: world.activity })
 	}
 
-const config = (encryptionKey: string) =>
-	ConfigProvider.layer(
-		ConfigProvider.fromUnknown({
-			PORT: "3472",
-			TINYBIRD_HOST: "https://api.tinybird.co",
-			TINYBIRD_TOKEN: "test-token",
-			MAPLE_AUTH_MODE: "self_hosted",
-			MAPLE_ROOT_PASSWORD: "test-root-password",
-			MAPLE_DEFAULT_ORG_ID: "default",
-			MAPLE_INGEST_KEY_ENCRYPTION_KEY: encryptionKey,
-			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-			MAPLE_INGEST_PUBLIC_URL: "https://ingest.test",
-			// The management host is the global one on every instance.
-			MAPLE_REGION: "eu",
-		}),
-	)
-
-const ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64")
-
 /** Everything the OpenRouter cost services need, over the fake and a test database. */
 export const fakeOpenRouterDeps = (
 	testDb: TestDb,
 	world: FakeOpenRouter,
 	/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, for a deployment whose secret key is unusable. */
-	encryptionKey = ENCRYPTION_KEY,
+	encryptionKey?: string,
 ) =>
 	Layer.mergeAll(
 		FetchHttpClient.layer,
@@ -110,5 +92,5 @@ export const fakeOpenRouterDeps = (
 		Env.layer,
 	).pipe(
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
-		Layer.provide(config(encryptionKey)),
+		Layer.provide(fakeCostEnvConfig(encryptionKey)),
 	)

@@ -13,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
-import { COST_PROVIDERS } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 
 type H = HtmlBuilder<Message>
@@ -113,7 +113,7 @@ const sourceRow = (
 	timeZone: string,
 	options: Readonly<{ isBusy: boolean; canManage: boolean }>,
 ): Html => {
-	const provider = COST_PROVIDERS[source.provider]
+	const provider: CostProviderEntry = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
 	return hstack(
 		h,

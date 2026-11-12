@@ -359,6 +359,70 @@ describe("planCostSync for a provider that serves 30 completed days", () => {
 	})
 })
 
+describe("planCostSync for a provider that serves a year of completed days", () => {
+	const CLOUDFLARE_NEW: CostSyncState = { ...NEW, provider: "cloudflare" }
+	const cloudflarePulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({
+		...pulled(now, backfillDate, ago),
+		provider: "cloudflare",
+		// The newest day it serves is the day before the pull.
+		watermarkDate: utcToday(now - ago.head - DAY_MS),
+	})
+
+	it("starts at the previous month and ends yesterday", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(CLOUDFLARE_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-19",
+		})
+	})
+
+	it("takes the four newest served days as its head", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const state = cloudflarePulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "head",
+			startDay: "2026-11-16",
+			endDay: "2026-11-19",
+		})
+	})
+
+	it("walks history a month per step down to the eleventh month back, and no further", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const current = { head: HOUR_MS, settle: HOUR_MS }
+		assert.strictEqual(historyFloor("cloudflare", "2026-11-20"), "2025-12-01")
+		assert.deepStrictEqual(planCostSync(cloudflarePulled(now, "2026-01-01", current), now), {
+			mode: "backfill",
+			startDay: "2025-12-01",
+			endDay: "2025-12-31",
+		})
+		assert.deepStrictEqual(planCostSync(cloudflarePulled(now, "2025-12-01", current), now), {
+			mode: "idle",
+		})
+	})
+
+	it("keeps its floor inside the year Cloudflare serves on every day of a month", () => {
+		// One year back from the pull is the oldest day served: the floor is never before it.
+		assert.isTrue(historyFloor("cloudflare", "2026-11-01") >= "2025-11-01")
+		assert.isTrue(historyFloor("cloudflare", "2026-11-30") >= "2025-11-30")
+		assert.strictEqual(historyFloor("cloudflare", "2027-01-31"), "2026-02-01")
+	})
+
+	it("resumes at the floor after a hold longer than what the provider serves", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const state = cloudflarePulled(now, "2025-01-01", { head: 500 * DAY_MS, settle: 500 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "settle",
+			startDay: "2025-12-01",
+			endDay: "2026-11-19",
+		})
+	})
+})
+
 describe("planCostSync request budgets", () => {
 	const now = at("2026-11-11T12:00:00Z")
 	const current = { head: HOUR_MS, settle: HOUR_MS }

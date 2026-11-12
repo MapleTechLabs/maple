@@ -18,6 +18,7 @@ import {
 	Schedule,
 	Schema,
 	Array as Arr,
+	Number as Num,
 	String as Str,
 } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -29,8 +30,10 @@ import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
+import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import {
 	advanceCostSync,
@@ -165,6 +168,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const adapters = {
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
+				cloudflare: yield* CloudflareCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -204,9 +208,26 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
-			/** One function per provider; each owns the sources of its own connection table. */
+			/** The sources of every provider read with a pasted credential, in step with `cost_connections`. */
+			const reconcileConnections = Effect.fn("CostSyncService.reconcileConnections")(function* (
+				now: number,
+			) {
+				const reconciled = yield* dbExecute((db) =>
+					Effect.forEach(COST_CONNECTION_PROVIDERS, (provider) =>
+						reconcileCostConnectionSources(db, now, provider),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.sources_created": Num.sumAll(Arr.map(reconciled, (entry) => entry.created)),
+					"maple.cost.sources_removed": Num.sumAll(Arr.map(reconciled, (entry) => entry.removed)),
+				})
+			})
+
+			/** One function per connection table; each owns the sources of its own. */
 			const reconcile = (now: number) =>
-				Effect.all([reconcileAws(now), reconcileOpenRouter(now)], { discard: true })
+				Effect.all([reconcileAws(now), reconcileOpenRouter(now), reconcileConnections(now)], {
+					discard: true,
+				})
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
@@ -668,6 +689,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			Layer.mergeAll(
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
+				CloudflareCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),
