@@ -2,7 +2,7 @@ import { Option } from "effect"
 import { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message as ShellMessage } from "../shell/message"
-import type { Model as ShellModel } from "../shell/model"
+import type { Model as ShellModel, ShellClerk } from "../shell/model"
 import { update as shellUpdate } from "../shell/update"
 import { type BreadcrumbEntry, frameView, menuLayerView, sheetLayerView } from "../shell/view"
 
@@ -30,6 +30,8 @@ export const labShellView = <Message>(
 		currentPath: string
 		breadcrumbs: ReadonlyArray<BreadcrumbEntry>
 		page: () => Html
+		/** Who the shell is drawn for; a lab has no Clerk session, so it hands in a fixture. */
+		clerk?: ShellClerk | null
 	}>,
 ): ReadonlyArray<Html> => [
 	h.submodel({

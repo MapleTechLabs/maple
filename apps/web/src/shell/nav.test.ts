@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { isNavItemActive, type NavFlags, navGroups, navPreview, partitionSubItems } from "./nav"
+import { isNavItemActive, type NavFlags, navGroups, navHrefs, navPreview, partitionSubItems } from "./nav"
 import { Array as Arr, Option } from "effect"
 
 const infrastructure = Option.getOrUndefined(
@@ -59,6 +59,39 @@ describe("isNavItemActive", () => {
 		expect(activeTitles("/releases", on)).toEqual(["Releases"])
 		expect(activeTitles("/status-pages/stp_abc", on)).toEqual(["Status pages"])
 		expect(activeTitles("/cost", on)).toEqual(["Cost"])
+	})
+})
+
+describe("navGroups for an observer", () => {
+	const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
+	const hrefs = (flags: NavFlags) => navHrefs(navGroups(flags, "observer"))
+
+	test("links to what is wrong and how the product is doing, and to no setup or explorer page", () => {
+		expect(hrefs(off)).toEqual([
+			"/",
+			"/alerts",
+			"/alerts/uptime",
+			"/alerts/slos",
+			"/errors",
+			"/analytics",
+			"/users",
+			"/replays",
+			"/dashboards",
+		])
+	})
+
+	test("adds Status pages, Releases and Cost only for an org in each rollout", () => {
+		expect(hrefs({ ...off, statusPages: true })).toContain("/status-pages")
+		expect(hrefs({ ...off, releases: true })).toContain("/releases")
+		expect(hrefs({ ...off, cloudCost: true })).toContain("/cost")
+		// Security is an engineer's page, whatever the flag says.
+		expect(hrefs({ ...off, securityAudit: true })).not.toContain("/security")
+	})
+
+	test("marks only Incidents on an uptime page, with its Uptime row", () => {
+		const items = Arr.flatMap(navGroups(off, "observer"), (group) => group.items)
+		const active = Arr.filter(items, (item) => isNavItemActive("/alerts/uptime", item))
+		expect(Arr.map(active, (item) => item.title)).toEqual(["Incidents"])
 	})
 })
 

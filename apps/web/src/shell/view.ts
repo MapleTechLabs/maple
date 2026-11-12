@@ -18,7 +18,7 @@ import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
 import { Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellAudience } from "./model"
 import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
@@ -68,8 +68,7 @@ const railTipTitles = (model: Model, clerk: ShellClerk | null): ReadonlyArray<st
 		"Search",
 		...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
 		...(isPillShown(onCall) ? [onCallDetail(onCall)] : []),
-		"Sources",
-		"Settings",
+		...(shellAudience(clerk) === "observer" ? [] : ["Sources", "Settings"]),
 	]
 }
 
@@ -196,7 +195,8 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 						inputs.breadcrumbs,
 						inputs.topbarActions(),
 						railTriggers,
-						!hidesTopbarConnect(inputs.currentPath),
+						!hidesTopbarConnect(inputs.currentPath) &&
+							shellAudience(inputs.clerk ?? null) !== "observer",
 						inputs.sourceLink ?? null,
 					),
 					...(inputs.clerk === undefined || inputs.clerk === null
@@ -301,6 +301,7 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 						model.palette,
 						{
 							context: paletteContextOf(model),
+							audience: shellAudience(inputs.clerk ?? null),
 							visibleFlagged: Arr.flatMap(shellNavGroups(inputs.clerk ?? null), (group) =>
 								Arr.flatMap(group.items, (item) =>
 									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
