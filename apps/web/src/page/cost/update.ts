@@ -369,7 +369,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: {
 							...model,
 							credentialDraft: Field.update(model.credentialDraft, inner).model,
-							// The refusal was about the key that was there.
+							// The refusal was about the credential that was there.
 							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
 						},
 					},

@@ -229,6 +229,10 @@ export const listSubscriptions = (
 		const first = yield* subscriptionsPage(httpClient, token, accountId, 1)
 		const pages = first.result_info?.total_pages ?? 1
 		if (pages > MAX_SUBSCRIPTION_PAGES) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.cost.cloudflare.error": "too_many_subscription_pages",
+				"maple.cost.cloudflare.subscription_pages": pages,
+			})
 			return yield* new CloudflareBillingError({
 				message: `Cloudflare lists ${pages} pages of subscriptions, more than Maple reads`,
 				kind: "invalid_response",
