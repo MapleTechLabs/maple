@@ -184,16 +184,15 @@ describe("CloudflareCostProvider", () => {
 		)
 	})
 
-	it.effect("reads the oldest month it keeps, though the range it asks reaches past what is served", () => {
+	it.effect("reads a window that reaches past the year Cloudflare serves, and gets the served days", () => {
 		const testDb = createTestDb(trackedDbs)
-		// Cloudflare serves a year: the lead before the floor month asks for older days and gets none.
+		// The oldest day served falls inside the window, in a billing period that started before it.
 		const world = makeFakeCloudflare({
 			oldestDay: "2025-11-11",
 			anchorDay: 5,
 			usage: [
 				usageRow("2025-11-10", "R2", "R2 Storage", 9),
-				// These days belong to the period that started on 5 November, before the oldest day.
-				usageRow("2025-12-01", "R2", "R2 Storage", 1),
+				usageRow("2025-11-11", "R2", "R2 Storage", 1),
 				usageRow("2025-12-04", "R2", "R2 Storage", 2),
 				usageRow("2025-12-31", "R2", "R2 Storage", 3),
 			],
@@ -204,17 +203,18 @@ describe("CloudflareCostProvider", () => {
 			Effect.gen(function* () {
 				const connectionRef = yield* saveToken(testDb, world)
 				const pulled = yield* pull(ORG, connectionRef, {
-					startDay: "2025-12-01",
+					startDay: "2025-11-01",
 					endDay: "2025-12-31",
 				})
-				assert.strictEqual(
-					world.urls[1],
-					`${ACCOUNT_PATH}/billable-usage?from=2025-10-31&to=2026-01-01`,
-				)
+				// The range starts before anything served: it is answered, not refused.
+				assert.deepStrictEqual(world.urls.slice(1, 3), [
+					`${ACCOUNT_PATH}/billable-usage?from=2025-10-01&to=2025-12-26`,
+					`${ACCOUNT_PATH}/billable-usage?from=2025-11-25&to=2026-01-01`,
+				])
 				assert.deepStrictEqual(
 					Arr.map(pulled.rows, (row) => [row.day, row.billedCost]),
 					[
-						["2025-12-01", 1],
+						["2025-11-11", 1],
 						["2025-12-04", 2],
 						["2025-12-31", 3],
 					],

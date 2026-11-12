@@ -179,7 +179,7 @@ export const sourcesSection = (
 	nowMs: number,
 	timeZone: string,
 	options: Readonly<{
-		/** A key write is in flight: the actions wait for it. */
+		/** A credential write is in flight: the actions wait for it. */
 		isBusy: boolean
 		/** The viewer may add, replace and remove sources; without it no such action is offered. */
 		canManage: boolean
