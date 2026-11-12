@@ -199,6 +199,10 @@ currency the figures are in and lists the others. Nothing is added across curren
   account (`organization_id` is then null). That id is the source's account. A replacement key
   must name the same one, since another account's spend would overwrite the source's days. A
   replaced key also makes a failing source due again at once.
+- Spec: a management key can be scoped to one workspace, and then reads only that workspace.
+  Live: a key for the whole account answers 404 for a workspace the account does not have, where
+  the spec says a scoped key answers 403. Maple asks that when the key is saved and refuses a
+  scoped key, since its pulls would miss the rest of the account's spend without saying so.
 - Requests are free, so the source counts none.
 - Rows: the model is `CloudService`, the serving provider is `UsageType`, the category is "AI and
   Machine Learning", the region is `global`. Rows OpenRouter billed nothing for are left out.
