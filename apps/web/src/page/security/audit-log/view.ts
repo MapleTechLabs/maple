@@ -42,6 +42,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageViewInputs } from "../../contract"
+import { auditEntryHref } from "../../kit/audit-entry-link"
 import { dayEyebrow, dayKey } from "../../kit/day-label"
 import { expandChevron } from "../../kit/expand-chevron"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
@@ -159,12 +160,7 @@ const eventIdValue = (h: H, event: AuditTrailEntry): Html | string =>
 	event.provider === "maple"
 		? textLink(
 				h,
-				{
-					className: "underline",
-					href: hrefOf(
-						AppRoute.Settings({ search: { tab: "audit-log", entry: event.providerEventId } }),
-					),
-				},
+				{ className: "underline", href: auditEntryHref(event.occurredAt, event.providerEventId) },
 				[event.providerEventId],
 			)
 		: event.providerEventId

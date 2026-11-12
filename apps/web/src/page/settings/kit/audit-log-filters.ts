@@ -139,8 +139,6 @@ export type AuditLookup =
 	| { readonly key: "resourceId"; readonly value: string }
 	| { readonly key: "requestId"; readonly value: string }
 	| { readonly key: "action"; readonly value: string }
-	/** Not a filter: an entry's own id (`alog_…`), which opens that entry. */
-	| { readonly key: "entry"; readonly value: string }
 
 /** Read a pasted id or action as the filter it stands for; none for anything else. */
 export function parseAuditLookup(raw: string): Option.Option<AuditLookup> {
@@ -148,8 +146,6 @@ export function parseAuditLookup(raw: string): Option.Option<AuditLookup> {
 	if (isActorId(value)) return Option.some({ key: "actorId", value })
 	if (isRequestId(value)) return Option.some({ key: "requestId", value })
 	if (isKnownAction(value)) return Option.some({ key: "action", value })
-	if (decodePublicId(PublicIdPrefixes.auditLogEntry, value) !== null)
-		return Option.some({ key: "entry", value })
 	if (isPublicId(value)) return Option.some({ key: "resourceId", value })
 	return Option.none()
 }

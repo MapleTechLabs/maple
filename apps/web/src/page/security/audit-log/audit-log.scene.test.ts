@@ -8,6 +8,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { auditEventsOf, noAuditEvents } from "../../../lab/security-audit-log-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
+import { auditEntryHref } from "../../kit/audit-entry-link"
 import { eventsOf, nextCursorOf } from "./derive"
 import { type EventsPage, Message, type Model, type Search } from "./model"
 import { enter, routeChanged, update } from "./update"
@@ -321,7 +322,7 @@ describe("security audit log", () => {
 			given(opened),
 			expectView(role("link", { name: first?.providerEventId ?? "" })).toHaveAttr(
 				"href",
-				hrefOf(AppRoute.Settings({ search: { tab: "audit-log", entry: first?.providerEventId } })),
+				auditEntryHref(first?.occurredAt ?? 0, first?.providerEventId ?? ""),
 			),
 		)
 	})

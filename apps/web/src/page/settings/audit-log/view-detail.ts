@@ -25,6 +25,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { textLink } from "@maple/views/ui/text-link"
 import { iconButton } from "@maple/views/ui/icon-button"
+import { auditEntryHref } from "../../kit/audit-entry-link"
 import { jsonBlock, prettyJson } from "../../kit/json-block"
 
 type H = HtmlBuilder<Message>
@@ -231,24 +232,13 @@ const isLabelledKey = (key: string): key is keyof typeof METADATA_LABELS =>
 const metadataLabel = (key: string): string =>
 	isLabelledKey(key) ? METADATA_LABELS[key] : Str.capitalize(Str.replaceAll("_", " ")(key))
 
-/**
- * The audit log ending at one entry, with that entry open. Newest first, so the entry heads the
- * first page however busy the minute was, and the minute before it follows as context.
- */
-export const entryHref = (entry: V2AuditLogEntry): string => {
-	const at = DateTime.toEpochMillis(DateTime.makeUnsafe(entry.occurred_at))
-	return hrefOf(
-		AppRoute.Settings({
-			search: {
-				tab: "audit-log",
-				kind: "all",
-				since: new Date(at - 60_000).toISOString(),
-				until: entry.occurred_at,
-				entry: encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id),
-			},
-		}),
+/** The audit log ending at one entry, with that entry open. */
+export const entryHref = (entry: V2AuditLogEntry): string =>
+	auditEntryHref(
+		DateTime.toEpochMillis(DateTime.makeUnsafe(entry.occurred_at)),
+		encodePublicId(PublicIdPrefixes.auditLogEntry, entry.id),
+		entry.occurred_at,
 	)
-}
 
 // Every entry has a surface, so the section shows even when Maple itself acted and nothing else is known.
 const originSection = (h: H, model: Model, entry: V2AuditLogEntry): ReadonlyArray<Html> => {

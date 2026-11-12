@@ -194,6 +194,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/alert-time.ts` `msIso`, `formatSpan`, `everyMinutes`: How alert pages write times: ISO stamps, spans in their two largest units, check cadences.
 - `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
+- `apps/web/src/page/kit/audit-entry-link.ts` `auditEntryHref`: The Settings audit log ending at one entry, with that entry open.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
 - `apps/web/src/page/kit/billing/checkout-return.ts` `buildCheckoutSuccessUrl`, `isCheckoutReturn`, `withoutCheckoutReturn`: The round trip through Stripe Checkout.
 - `apps/web/src/page/kit/billing/plan-gating.ts` `isLegacyPlan`, `isUsableCustomer`, `getActivePlan`, `hasSelectedPlan`, `getLapsedPlan`, `hasLapsedPlan`, `resolvePlanAccess`, `getTrialStatus`, `hasBringYourOwnCloudAddOn`, `getFeatureQuotas`, `getQuotaStatus`, `getPastDueSubscription`, `getLegacyPlanInfo`: A plan from the live `listPlans` catalog , the source of truth for which plans are currently offered and for per-feature overage rates.
