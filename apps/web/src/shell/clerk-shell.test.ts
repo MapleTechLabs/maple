@@ -3,7 +3,10 @@ import type { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, role, scene, text } from "foldkit/scene"
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
+
+// Clerk mode is read at import: without it the shell reads no checklist at all.
+vi.hoisted(() => vi.stubEnv("VITE_MAPLE_AUTH_MODE", "clerk"))
 import * as Popover from "@maple/views/ui/popover"
 import { billingBanners } from "./billing-banners"
 import { Message as ShellMessage, type Message } from "./message"
@@ -73,8 +76,12 @@ describe("onboarding reward pill", () => {
 	test("the org's first read is not repeated by a navigation that follows it", () => {
 		const first = Checklist.enter(Checklist.init())
 		expect(names(first)).toContain("LoadOnboardingChecklist")
-		// The shell enters an org once, so a later route in the same org asks for nothing.
-		expect(names(enter("org_1")(enter("org_1")(base).model))).toEqual([])
+		// The shell reads the pill and its viewer on entering an org, and enters an org once.
+		const entered = enter("org_1")(base)
+		expect(names(entered)).toEqual(
+			expect.arrayContaining(["LoadOnboardingChecklist", "LoadOnboardingChecklistViewer"]),
+		)
+		expect(names(enter("org_1")(entered.model))).toEqual([])
 
 		// Not while the first read is still out, and not once it has landed, whatever it said.
 		const reading = { ...base, checklist: first.model }
@@ -139,11 +146,10 @@ describe("onboarding reward pill", () => {
 		for (const settled of ["claimable", "claimed", "expired"] as const)
 			expect(names(Checklist.navigated(later(withStatus(settled), 600)))).toEqual([])
 		expect(names(Checklist.navigated(later(Checklist.init(), 600)))).toEqual([])
-		// The shell asks on a new page only, and only where the pill exists (Clerk).
+		// The shell asks on a new page only, not on a search change within one.
 		const stale = { ...base, checklist: later(inProgress, 30) }
-		expect(names(routeChanged(false, true)(stale))).toEqual(["LoadOnboardingChecklist"])
-		expect(names(routeChanged(true, true)(stale))).toEqual([])
-		expect(names(routeChanged(false, false)(stale))).toEqual([])
+		expect(names(routeChanged(false)(stale))).toEqual(["LoadOnboardingChecklist"])
+		expect(names(routeChanged(true)(stale))).toEqual([])
 	})
 
 	test("a refused claim shows why", () => {

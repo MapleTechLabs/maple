@@ -318,7 +318,7 @@ export const connectPollTicked = (): Message =>
  * A new page re-reads the reward pill only when its in-progress answer has gone stale.
  */
 export const routeChanged =
-	(isSamePage: boolean, isClerk = isClerkAuthEnabled) =>
+	(isSamePage: boolean) =>
 	(model: Model): UpdateReturn => {
 		const connect = ConnectPanel.close(model.connect)
 		const closed = modifyFields(closeMenu(model), {
@@ -328,7 +328,7 @@ export const routeChanged =
 			connect: () => connect.model,
 		})
 		const pill =
-			isSamePage || !isClerk
+			isSamePage || !isClerkAuthEnabled
 				? { model: closed }
 				: checklistStep(closed, Checklist.navigated(closed.checklist))
 		return {
