@@ -112,15 +112,6 @@ export const SECURITY_AUDIT_MODELS = [
 		outputUsd: 0.5,
 	},
 	{
-		id: "openai/gpt-6.1-sol",
-		label: "GPT-6.1 Sol",
-		provider: "OpenAI",
-		eu: true,
-		verifies: false,
-		inputUsd: 2,
-		outputUsd: 10,
-	},
-	{
 		id: "openai/gpt-6-luna",
 		label: "GPT-6 Luna",
 		provider: "OpenAI",

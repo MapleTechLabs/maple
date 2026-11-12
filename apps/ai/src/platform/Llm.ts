@@ -593,6 +593,27 @@ export const securityAuditModelIds = (
 }
 
 /**
+ * The model a discovery agent retries on when the run's hunting pick fails it, as OpenAI models do
+ * when their cybersecurity filter refuses hunter prompts: the deployment's own hunter, never the
+ * verifier. Undefined when the run already hunts on it, or on Workers AI.
+ */
+export const resolveSecurityAuditDiscoveryFallback = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+	tags?: LlmCallTags,
+): ResolvedModel | undefined => {
+	if (resolveLlmProvider(settings) === "workers-ai") return undefined
+	const hunting = securityAuditModelId(settings, "discovery", chosen.discovery)
+	const fallback = securityAuditModelIds(settings, {
+		discovery: null,
+		validation: chosen.validation,
+	}).discovery
+	return fallback === hunting
+		? undefined
+		: openRouterModel(fallback, tags, { effort: "high", unattended: true })
+}
+
+/**
  * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
  * On the Workers AI provider both stages fall back to the triage model.
  */
