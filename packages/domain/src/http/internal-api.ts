@@ -10,6 +10,7 @@ import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
 import { IntegrationsApiGroup } from "./integrations"
+import { OpenRouterCostApiGroup } from "./openrouter-cost"
 import { OpenRouterKeyApiGroup } from "./openrouter-key"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
 import {
@@ -59,6 +60,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(IntegrationsApiGroup)
 	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)
+	.add(OpenRouterCostApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)
 	.add(OrganizationCreationApiGroup)

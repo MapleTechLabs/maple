@@ -120,7 +120,8 @@ const estimatedFromOf = (rows: ReadonlyArray<TimeseriesRow>) =>
 	)
 
 const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary => {
-	const historyComplete = row.backfillDate !== null && row.backfillDate <= historyFloor(utcToday(nowMs))
+	const historyComplete =
+		row.backfillDate !== null && row.backfillDate <= historyFloor(row.provider, utcToday(nowMs))
 	return {
 		id: row.id,
 		provider: row.provider,
