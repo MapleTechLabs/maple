@@ -29,6 +29,8 @@ export const Model = Schema.Struct({
 	claimError: Schema.NullOr(Schema.String),
 	/** The countdown's clock, ticking each second while one is shown. */
 	nowMs: Schema.Number,
+	/** The clock the last read landed at: a navigation re-reads only an answer older than `STALE_AFTER`. */
+	readAtMs: Schema.Number,
 	/** A read is in flight: no second one starts beside it. */
 	isLoading: Schema.Boolean,
 	/** A read asked for mid-flight that must see newer state (a claim, another org) runs next. */
@@ -49,6 +51,7 @@ export const init = (): Model => ({
 	isClaimPending: false,
 	claimError: null,
 	nowMs: 0,
+	readAtMs: 0,
 	isLoading: false,
 	isReadQueued: false,
 })
@@ -70,7 +73,6 @@ export const Message = defineMessageUnion({
 	SucceededClaim: {},
 	FailedClaim: { message: Schema.String },
 	TickedClock: { nowMs: Schema.Number },
-	TickedRefresh: {},
 	CompletedSaveSeen: {},
 })
 export type Message = typeof Message.Type
@@ -159,7 +161,8 @@ const markSeen = (model: Model): UpdateReturn =>
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		SucceededLoadChecklist: ({ checklist, nowMs }) => settle({ ...model, checklist, nowMs }),
+		SucceededLoadChecklist: ({ checklist, nowMs }) =>
+			settle({ ...model, checklist, nowMs, readAtMs: nowMs }),
 		FailedLoadChecklist: () => settle(model),
 		LoadedViewer: ({ grants, seenKey, isSeen }) => ({
 			model: { ...model, grants, seenKey: seenKey === "" ? null : seenKey, isSeen },
@@ -180,18 +183,23 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model: { ...model, isClaimPending: false, claimError: failure },
 		}),
 		TickedClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		TickedRefresh: () => (isCounting(model) ? read(model) : { model }),
 		CompletedSaveSeen: () => ({ model }),
 	})
 
-/**
- * How often an in-progress checklist is re-read: its steps are finished on other pages, so the
- * pill's count moves without the popover opening. Settled checklists are never polled.
- */
-export const REFRESH_INTERVAL = Duration.minutes(1)
+/** How old an in-progress answer must be before a navigation reads it again. */
+const STALE_AFTER = Duration.seconds(30)
 
 /** The pill counts down each second while the checklist is in progress. */
 export const isCounting = (model: Model): boolean => model.checklist?.status === "in_progress"
+
+/**
+ * Moving to another page: an in-progress checklist's steps are finished on other pages, so a stale
+ * answer is read again. A burst of navigations costs one read, and an idle tab none.
+ */
+export const navigated = (model: Model): UpdateReturn =>
+	isCounting(model) && model.nowMs - model.readAtMs >= Duration.toMillis(STALE_AFTER)
+		? read(model)
+		: { model }
 
 /** `POST /v2/onboarding/checklist/claim`. */
 export const ClaimReward = Command.define("ClaimOnboardingReward", {

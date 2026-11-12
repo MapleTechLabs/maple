@@ -306,12 +306,6 @@ export const isChecklistCounting = (model: Model): boolean => Checklist.isCounti
 export const checklistTicked = (nowMs: number): Message =>
 	Message.GotChecklistMessage({ message: Checklist.Message.TickedClock({ nowMs }) })
 
-export const CHECKLIST_REFRESH_INTERVAL = Checklist.REFRESH_INTERVAL
-
-/** The in-progress checklist's re-read: the only read no click asked for after the org's first. */
-export const checklistRefreshTicked = (): Message =>
-	Message.GotChecklistMessage({ message: Checklist.Message.TickedRefresh() })
-
 /** The Connect panel's connection signal is polled while it is open. */
 export const isConnectPolling = (model: Model): boolean => ConnectPanel.isPolling(model.connect)
 
@@ -321,22 +315,30 @@ export const connectPollTicked = (): Message =>
 /**
  * Navigation closes every menu, the Connect panel and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
- * It reads nothing: the reward pill is the same on every page.
+ * A new page re-reads the reward pill only when its in-progress answer has gone stale.
  */
 export const routeChanged =
-	(isSamePage: boolean) =>
+	(isSamePage: boolean, isClerk = isClerkAuthEnabled) =>
 	(model: Model): UpdateReturn => {
 		const connect = ConnectPanel.close(model.connect)
+		const closed = modifyFields(closeMenu(model), {
+			isMobileNavOpen: () => false,
+			filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
+			rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
+			connect: () => connect.model,
+		})
+		const pill =
+			isSamePage || !isClerk
+				? { model: closed }
+				: checklistStep(closed, Checklist.navigated(closed.checklist))
 		return {
-			model: modifyFields(closeMenu(model), {
-				isMobileNavOpen: () => false,
-				filterSheet: (sheet) => (isSamePage ? sheet : initFilterSheet()),
-				rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
-				connect: () => connect.model,
-			}),
-			commands: Command.mapMessages(connect.commands ?? [], (message) =>
-				Message.GotConnectMessage({ message }),
-			),
+			model: pill.model,
+			commands: [
+				...(pill.commands ?? []),
+				...Command.mapMessages(connect.commands ?? [], (message) =>
+					Message.GotConnectMessage({ message }),
+				),
+			],
 		}
 	}
 

@@ -132,22 +132,6 @@ const root = Subscription.make<Model, Message, Resources>()((entry) => ({
 				),
 		},
 	),
-	/** The in-progress checklist's re-read under the shell, paused while hidden or offline. */
-	checklistRefresh: entry(
-		{ isRefreshing: Schema.Boolean },
-		{
-			modelToDependencies: (model) => ({
-				isRefreshing: Shell.isChecklistCounting(model.shell) && rendersShell(model.route),
-			}),
-			dependenciesToStream: ({ isRefreshing }) =>
-				Stream.when(
-					Stream.map(pollTicks(Shell.CHECKLIST_REFRESH_INTERVAL), () =>
-						Message.GotShellMessage({ message: Shell.checklistRefreshTicked() }),
-					),
-					Effect.sync(() => isRefreshing),
-				),
-		},
-	),
 	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })`: the Connect panel's poll, paused while hidden or offline. */
 	connectPoll: entry(
 		{ isPolling: Schema.Boolean },
