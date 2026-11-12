@@ -82,16 +82,11 @@ export const enter =
 			sources: () => SourcesData.Idle(),
 		})
 		const sidebar = model.isMobile ? { model: entered } : requestSidebarData(entered)
-		return {
-			model: sidebar.model,
-			commands: [
-				...(sidebar.commands ?? []),
-				// Clerk: the reward pill and who is looking at it.
-				...(isClerkAuthEnabled
-					? [toChecklist(Checklist.LoadChecklist()), toChecklist(Checklist.LoadViewer())]
-					: []),
-			],
-		}
+		// Clerk: the reward pill and who is looking at it.
+		const pill = isClerkAuthEnabled
+			? checklistStep(sidebar.model, Checklist.enter(sidebar.model.checklist))
+			: { model: sidebar.model }
+		return { model: pill.model, commands: [...(sidebar.commands ?? []), ...(pill.commands ?? [])] }
 	}
 
 /**
@@ -293,9 +288,10 @@ const surfacesAnswered = (model: Model, orgId: string, apply: (model: Model) => 
 		: step
 }
 
-const toChecklist = Command.mapMessage((message: Checklist.Message) =>
-	Message.GotChecklistMessage({ message }),
-)
+const checklistStep = (model: Model, step: ReturnType<typeof Checklist.update>): UpdateReturn => ({
+	model: modifyFields(model, { checklist: () => step.model }),
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotChecklistMessage({ message })),
+})
 
 const supportChannelStep = (model: Model, step: ReturnType<typeof SupportChannel.update>): UpdateReturn => ({
 	model: modifyFields(model, { supportChannel: () => step.model }),
@@ -310,6 +306,12 @@ export const isChecklistCounting = (model: Model): boolean => Checklist.isCounti
 export const checklistTicked = (nowMs: number): Message =>
 	Message.GotChecklistMessage({ message: Checklist.Message.TickedClock({ nowMs }) })
 
+export const CHECKLIST_REFRESH_INTERVAL = Checklist.REFRESH_INTERVAL
+
+/** The in-progress checklist's re-read: the only read no click asked for after the org's first. */
+export const checklistRefreshTicked = (): Message =>
+	Message.GotChecklistMessage({ message: Checklist.Message.TickedRefresh() })
+
 /** The Connect panel's connection signal is polled while it is open. */
 export const isConnectPolling = (model: Model): boolean => ConnectPanel.isPolling(model.connect)
 
@@ -319,9 +321,10 @@ export const connectPollTicked = (): Message =>
 /**
  * Navigation closes every menu, the Connect panel and the mobile sheet. The page
  * rails' sheets live in the page's `PageLayout.Root`: they survive a search change, not a new page.
+ * It reads nothing: the reward pill is the same on every page.
  */
 export const routeChanged =
-	(isSamePage: boolean, hasTopBar = true) =>
+	(isSamePage: boolean) =>
 	(model: Model): UpdateReturn => {
 		const connect = ConnectPanel.close(model.connect)
 		return {
@@ -331,24 +334,11 @@ export const routeChanged =
 				rightSheet: (sheet) => (isSamePage ? sheet : initRightSheet()),
 				connect: () => connect.model,
 			}),
-			commands: [
-				...(isSamePage ? [] : checklistRefreshOnNavigation(model, hasTopBar, isClerkAuthEnabled)),
-				...Command.mapMessages(connect.commands ?? [], (message) =>
-					Message.GotConnectMessage({ message }),
-				),
-			],
+			commands: Command.mapMessages(connect.commands ?? [], (message) =>
+				Message.GotConnectMessage({ message }),
+			),
 		}
 	}
-
-/**
- * Every checklist step is done on another page: moving to another page re-reads it, but only where
- * the top bar's pill is mounted and while steps remain. Claimable, claimed and expired checklists
- * change only through the claim, which re-reads on its own.
- */
-export const checklistRefreshOnNavigation = (model: Model, hasTopBar: boolean, isClerk: boolean) =>
-	isClerk && hasTopBar && model.checklist.checklist?.status === "in_progress"
-		? [toChecklist(Checklist.LoadChecklist())]
-		: []
 
 const toggleSidebar = (model: Model, isInstant: boolean): UpdateReturn =>
 	model.isMobile
@@ -610,13 +600,8 @@ const foldMessage = (model: Model, message: Message): UpdateReturn =>
 			supportChannelStep(model, SupportChannel.update(model.supportChannel, child)),
 		ClickedSupportChannel: () =>
 			supportChannelStep(closeMenu(model), SupportChannel.open(model.supportChannel)),
-		GotChecklistMessage: ({ message: child }) => {
-			const next = Checklist.update(model.checklist, child)
-			return {
-				model: modifyFields(model, { checklist: () => next.model }),
-				commands: Array.map(next.commands ?? [], toChecklist),
-			}
-		},
+		GotChecklistMessage: ({ message: child }) =>
+			checklistStep(model, Checklist.update(model.checklist, child)),
 		GotConnectMessage: ({ message: child }) => {
 			const orgId = Option.getOrNull(model.maybeOrgId)
 			const pinnedNamespace = orgId === null ? null : (model.pinnedNamespaces[orgId] ?? null)

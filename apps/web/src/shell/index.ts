@@ -22,6 +22,8 @@ export { pinnedDashboardRows } from "./dashboards-shape"
 export { alertsInboxCounts } from "./alerts-inbox"
 export { BUILT_COMMIT, versionChecks } from "./version"
 export {
+	CHECKLIST_REFRESH_INTERVAL,
+	checklistRefreshTicked,
 	checklistTicked,
 	connectPollTicked,
 	enter,
