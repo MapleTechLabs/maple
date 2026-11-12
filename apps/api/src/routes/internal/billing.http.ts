@@ -277,15 +277,36 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						const [bySource, byModel, codeReview] = yield* Effect.all(
 							[
 								grouped(AI_CREDIT_SOURCE_PROPERTY),
-								grouped(AI_CREDIT_MODEL_PROPERTY),
-								// The breakdown is extra detail: a failed or slow read drops it, never the spend.
-								// A billing org's bill carries its members' reviews, so the breakdown does too.
-								billingOrgs.members(tenant.orgId).pipe(
-									Effect.flatMap((members) =>
-										codeReviews.spend(
-											[tenant.orgId, ...Arr.map(members, (member) => member.orgId)],
-											customRange,
+								// The model split and the code review breakdown are extra detail: a failed or slow
+								// read drops that part, never the spend.
+								grouped(AI_CREDIT_MODEL_PROPERTY).pipe(
+									Effect.catch((error) =>
+										Effect.logWarning("Could not read AI credits by model").pipe(
+											Effect.annotateLogs({
+												orgId: tenant.orgId,
+												error: String(error),
+											}),
+											Effect.as(AutumnGroupedAggregate.make({ list: [] })),
 										),
+									),
+								),
+								// The bill is the paying org's and its members', so the breakdown covers them all,
+								// whichever of them is looking.
+								billingCustomers.billingOrgId(tenant.orgId).pipe(
+									Effect.flatMap((payer) =>
+										billingOrgs
+											.members(payer)
+											.pipe(
+												Effect.flatMap((members) =>
+													codeReviews.spend(
+														[
+															payer,
+															...Arr.map(members, (member) => member.orgId),
+														],
+														customRange,
+													),
+												),
+											),
 									),
 									Effect.map((spend) => (spend.reviews > 0 ? spend : null)),
 									Effect.timeoutOrElse({
