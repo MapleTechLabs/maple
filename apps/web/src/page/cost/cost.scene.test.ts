@@ -564,12 +564,70 @@ describe("cost page", () => {
 			given(refused.model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("alert")).toHaveText(reason),
+			expectView(role("alert")).toContainText(reason),
+			// The refusal is about the token, which is replaced on the connection.
+			expectView(role("link", { name: "Open the Vercel connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=vercel",
+			),
 			// The same click asks again, once the token's role is fixed.
 			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 		)
 		const back = pageUpdate(refused.model, Message.ClickedBackToProviders()).model
 		expect([back.addStep, back.vercelError]).toEqual(["pick", null])
+	})
+
+	test("the Vercel step reads the connection anew each time it opens, and an older read cannot answer", () => {
+		const notConnected = vercelStepWith(vercelStatus({ team: null }))
+		// Back to the providers and in again, after connecting a team in another tab.
+		const reopened = pageUpdate(
+			pageUpdate(notConnected, Message.ClickedBackToProviders()).model,
+			Message.ClickedAddVercel(),
+		)
+		expect(names(reopened.commands)).toEqual(["FetchVercelCostStatus"])
+		// The answer from before is not on show while the new read is in flight.
+		scene(
+			{ update: pageUpdate, view },
+			given(reopened.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Reading the Vercel connection")).toExist(),
+			expectView(text(/No Vercel team is connected yet/)).not.toExist(),
+			expectView(role("link", { name: "Connect Vercel" })).not.toExist(),
+		)
+		// A new read that fails says so: the old answer does not stand in for it.
+		const failed = pageUpdate(
+			reopened.model,
+			Message.CompletedLoadVercelStatus({
+				key: reopened.model.vercel.key ?? "",
+				result: Result.fail(toLoadFailure("unreachable")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toExist(),
+			expectView(text(/No Vercel team is connected yet/)).not.toExist(),
+		)
+
+		// The first read's answer, arriving after the step was opened again, is dropped.
+		const firstKey = notConnected.vercel.key ?? ""
+		expect(reopened.model.vercel.key).not.toBe(firstKey)
+		const stale = pageUpdate(
+			reopened.model,
+			Message.CompletedLoadVercelStatus({ key: firstKey, result: Result.succeed(vercelStatus()) }),
+		).model
+		expect(names(pageUpdate(stale, Message.ClickedConfirmAddVercel()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(stale),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Reading the Vercel connection")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
 	})
 
 	test("a failed read of the Vercel connection says so and asks again on Try again", () => {
@@ -611,14 +669,16 @@ describe("cost page", () => {
 			backfillDate: "2025-12-01",
 			requestsThisMonth: 0,
 		})
-		const model = answered(entered({}, [vercel]).model)
+		const model = answered(entered({}, [source(), vercel]).model)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
 			resolveTheme,
 			expectView(text("Vercel")).toExist(),
 			expectView(text("acme")).toExist(),
-			expectView(text(/provider requests/)).not.toExist(),
+			// Request billing is AWS's: one line for the AWS source, none for Vercel.
+			expectView(text("86 provider requests this month (USD 0.86)")).toExist(),
+			expectView(text(/0 provider requests/)).not.toExist(),
 			// The connection holds the token: there is no key to replace here.
 			expectView(role("button", { name: "Replace key" })).not.toExist(),
 			expectView(role("button", { name: "Remove" })).toExist(),
@@ -670,15 +730,23 @@ describe("cost page", () => {
 		expect(removed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({ type: "success", title: "Vercel removed", description: "" }),
 		)
-		// The row is gone at once, and the sources are read again for what is left.
-		expect(names(removed.commands)).toContain("FetchCostSources")
+		// The reads name the org's sources: without reading them again the removed team's cost stays.
+		expect(names(removed.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchCostSources",
+				"FetchCostTotals",
+				"FetchCostTimeseries",
+				"FetchCostBreakdown",
+			]),
+		)
+		// The row is gone at once, and the AWS account's stays.
 		scene(
 			{ update: pageUpdate, view },
 			given(removed.model),
 			resolveTheme,
 			dialogMounted,
 			expectView(text("acme")).not.toExist(),
-			expectView(text("No cost source yet")).toExist(),
+			expectView(text("123456789012")).toExist(),
 		)
 	})
 
@@ -790,6 +858,10 @@ describe("cost page", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")
 		expect(keyLabel("provider", "vercel")).toBe("Vercel")
+		// A Vercel project is the row's resource; a charge of no project says so.
+		expect(keyLabel("resource", "web")).toBe("web")
+		expect(keyLabel("resource", "")).toBe("No resource")
+		expect(requestFilters({ resource: ["web"] })).toEqual({ resource: ["web"] })
 		// A provider this build does not know still shows, as the rows name it.
 		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
 		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })

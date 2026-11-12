@@ -1412,6 +1412,20 @@ describe("VercelIntegrationService", () => {
 				 SELECT gen_random_uuid()::text, org_id, 'vercel', id, team_slug, now(), now() FROM vercel_connections`,
 				),
 			)
+			const held = Effect.promise(() =>
+				queryFirstRow<{
+					error: string | null
+					reason: string | null
+					held: boolean
+					failures: number
+					leased: boolean
+				}>(
+					testDb,
+					`SELECT last_error AS error, last_error_reason AS reason, next_attempt_at IS NOT NULL AS held,
+					        consecutive_failures AS failures, lease_until IS NOT NULL AS leased
+					   FROM cost_sources WHERE provider = 'vercel'`,
+				),
+			)
 			const costSources = Effect.promise(() =>
 				testDb.pglite.query<{ account: string }>(
 					"SELECT account_id AS account FROM cost_sources WHERE provider = 'vercel'",
@@ -1423,9 +1437,24 @@ describe("VercelIntegrationService", () => {
 				Effect.gen(function* () {
 					yield* connect()
 					yield* addCostSource
-					// A new token for the same team: the source and its history stay.
+					// The source is held for the old token's failure, with a pull on it still in flight.
+					yield* Effect.promise(() =>
+						testDb.pglite.query(
+							`UPDATE cost_sources SET last_error = 'Vercel rejected the saved token.',
+							        last_error_reason = 'auth', next_attempt_at = now() + interval '6 hours',
+							        consecutive_failures = 3, lease_until = now() + interval '20 minutes'`,
+						),
+					)
+					// A new token for the same team: the source and its history stay, and it is due again.
 					yield* connect({ token: "vc_token_456" })
 					assert.deepStrictEqual(yield* costSources, ["acme"])
+					assert.deepStrictEqual(yield* held, {
+						error: null,
+						reason: null,
+						held: false,
+						failures: 0,
+						leased: false,
+					})
 					// Another team: its spend would overwrite the days the source holds.
 					yield* connect({ token: "vc_token_789", teamId: "team_2" })
 					assert.deepStrictEqual(yield* costSources, [])

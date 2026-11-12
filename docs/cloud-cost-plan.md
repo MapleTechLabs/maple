@@ -143,8 +143,8 @@ currency the figures are in and lists the others. Nothing is added across curren
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, provider, category, region, usage type or account with
-  filters, and each source's sync state. Sources are added from the page: AWS through its
+  daily chart, a breakdown by service, provider, category, region, usage type, resource or account
+  with filters, and each source's sync state. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
   also replace or remove, Vercel by adding the team the org has connected, which the page can
   remove again. Recommendations (list and detail with the evidence chart) come with phase 2.
@@ -237,16 +237,18 @@ against a fake server that answers what the spec describes.
   slug.
 - Spec: readable by the team's Owner, Member, Developer, Security, Billing and Enterprise Viewer
   roles. A token of another role answers 403, which the source reports as not ready with the
-  roles that work. Adding the source reads yesterday once first, so that refusal shows in the
-  dialog and not as a first sync that fails.
+  roles that work. Adding the source reads yesterday and today once first (the days every daily
+  pull ends on), so that refusal shows in the dialog and not as a first sync that fails.
 - Spec: 401 is a rejected token (the source needs the team connected again), 404 and 410 a team
   or billing data that is gone, 429 a rate limit. A connection whose token the integration's
-  poller already found rejected is not asked at all.
+  poller already found rejected is not asked at all. A new token saved for the same team makes
+  a source held for the old one due again at once. A 400 is a request Vercel calls invalid:
+  the source keeps Vercel's own message, since the request shape is the part not run live.
 - Requests are free, so the source counts none.
 - Rows: the product (`ServiceName`) is `CloudService`, its `SkuId` the `UsageType` (left empty
   when it equals the product name), `ServiceCategory` the category (`Other` when absent),
   `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
-  `Tags.ProjectId`) the resource. `ChargeCategory` maps onto Maple's (`Usage`, `Purchase`,
+  `Tags.ProjectId`) the resource, which the page groups and filters by. `ChargeCategory` maps onto Maple's (`Usage`, `Purchase`,
   `Credit`, `Tax`, `Adjustment`), so plan fees and credits are their own rows. Lines of one day,
   product, SKU, project, region and kind of charge are summed. A sum with no billed and no
   effective cost is left out. Credits are negative and kept.

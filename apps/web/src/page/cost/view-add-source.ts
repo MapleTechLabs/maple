@@ -1,5 +1,4 @@
 import type { CostSourceSummary } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -18,7 +17,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { Message } from "./message"
 import type { Model, RemovableProvider } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
-import { vercelStep } from "./view-add-vercel"
+import { providerMark, vercelStep } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -35,8 +34,39 @@ const hasSourceOf = (
 	provider: CostSourceSummary["provider"],
 ): boolean => Arr.some(sources, (source) => source.provider === provider)
 
-const mark = (h: H, provider: CostProviderEntry): Html =>
-	icon(h, provider.icon, { size: 18, className: cn("shrink-0", provider.iconClassName) })
+/**
+ * A provider the org has one source of at most: a row to click while it has none, and one that
+ * says where the source is changed once it does.
+ */
+const addableRow = (
+	h: H,
+	provider: CostProviderEntry,
+	options: Readonly<{
+		isAdded: boolean
+		/** What the source brings in. */
+		meta: string
+		/** Where an added source is changed. */
+		addedMeta: string
+		onClick: Message
+		divided?: boolean
+	}>,
+): Html =>
+	options.isAdded
+		? listRow(h, {
+				divided: options.divided ?? false,
+				leading: providerMark(h, provider),
+				title: provider.name,
+				meta: options.addedMeta,
+				trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
+			})
+		: listRow(h, {
+				divided: options.divided ?? false,
+				onClick: options.onClick,
+				leading: providerMark(h, provider),
+				title: provider.name,
+				meta: options.meta,
+				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+			})
 
 /** The providers to add: AWS goes to its connect flow, OpenRouter to the key form, Vercel to its team. */
 const providers = (h: H, hasOpenRouter: boolean, hasVercel: boolean): Html =>
@@ -45,41 +75,24 @@ const providers = (h: H, hasOpenRouter: boolean, hasVercel: boolean): Html =>
 			listRow(h, {
 				divided: true,
 				href: CONNECT_AWS_HREF,
-				leading: mark(h, COST_PROVIDERS.aws),
+				leading: providerMark(h, COST_PROVIDERS.aws),
 				title: COST_PROVIDERS.aws.name,
 				meta: "Daily cost by service, region and usage type",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
-			hasOpenRouter
-				? listRow(h, {
-						divided: true,
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Replace its key in the Sources panel",
-						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
-					})
-				: listRow(h, {
-						divided: true,
-						onClick: Message.ClickedAddOpenRouter(),
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Daily spend by model and serving provider",
-						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-					}),
-			hasVercel
-				? listRow(h, {
-						leading: mark(h, COST_PROVIDERS.vercel),
-						title: COST_PROVIDERS.vercel.name,
-						meta: "Remove it in the Sources panel",
-						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
-					})
-				: listRow(h, {
-						onClick: Message.ClickedAddVercel(),
-						leading: mark(h, COST_PROVIDERS.vercel),
-						title: COST_PROVIDERS.vercel.name,
-						meta: "Daily charges by product, project and region",
-						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-					}),
+			addableRow(h, COST_PROVIDERS.openrouter, {
+				isAdded: hasOpenRouter,
+				meta: "Daily spend by model and serving provider",
+				addedMeta: "Replace its key in the Sources panel",
+				onClick: Message.ClickedAddOpenRouter(),
+				divided: true,
+			}),
+			addableRow(h, COST_PROVIDERS.vercel, {
+				isAdded: hasVercel,
+				meta: "Daily charges by product, project and region",
+				addedMeta: "Remove it in the Sources panel",
+				onClick: Message.ClickedAddVercel(),
+			}),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter and Vercel requests are free. ",

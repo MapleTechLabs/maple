@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Order } from "effect"
 import type { VercelCharge } from "../../../integrations/vercel/api"
-import { toCostRows } from "./normalize"
+import { addCharge, emptyChargeTotals, rowsOf as rowsOfTotals } from "./normalize"
 
 const WINDOW = { startDay: "2026-11-01", endDay: "2026-11-04" }
 const ACCOUNT = "acme"
@@ -24,7 +24,13 @@ const charge = (overrides: Partial<VercelCharge> = {}): VercelCharge => ({
 	...overrides,
 })
 
-const rowsOf = (charges: ReadonlyArray<VercelCharge>) => toCostRows(charges, ACCOUNT, WINDOW, OPEN_DAY)
+/** A whole answer's rows, folded charge by charge the way the adapter folds the stream. */
+const rowsOf = (charges: ReadonlyArray<VercelCharge>) =>
+	rowsOfTotals(
+		Arr.reduce(charges, emptyChargeTotals(), (totals, line) =>
+			addCharge(totals, line, ACCOUNT, WINDOW, OPEN_DAY),
+		),
+	)
 
 /** `day | service | SKU | project | region | kind | billed | quantity` of each row, in a stable order. */
 const summary = (charges: ReadonlyArray<VercelCharge>) =>
@@ -47,7 +53,7 @@ const summary = (charges: ReadonlyArray<VercelCharge>) =>
 		Order.String,
 	)
 
-describe("toCostRows", () => {
+describe("Vercel charges as cost rows", () => {
 	it("names the product as the service, its SKU as the usage type and the project as the resource", () => {
 		assert.deepStrictEqual(rowsOf([charge()]), [
 			{

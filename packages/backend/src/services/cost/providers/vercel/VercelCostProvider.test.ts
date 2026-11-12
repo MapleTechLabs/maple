@@ -145,6 +145,9 @@ describe("VercelCostProvider", () => {
 				assert.deepStrictEqual((yield* pull(ORG, connectionRef)).rows, [])
 				world.charges = "\n\n"
 				assert.deepStrictEqual((yield* pull(ORG, connectionRef)).rows, [])
+				world.charges = null
+				assert.deepStrictEqual((yield* pull(ORG, connectionRef)).rows, [])
+				assert.lengthOf(world.urls, 3)
 			}),
 		)
 	})
@@ -208,6 +211,13 @@ describe("VercelCostProvider", () => {
 				// A role without billing access is told which roles have it.
 				world.chargesStatus = 403
 				assert.include((yield* Effect.flip(pull(ORG, connectionRef))).message, "Billing role")
+				// A request Vercel calls invalid is Maple's to fix: its own words are kept.
+				world.chargesStatus = 400
+				const invalid = yield* Effect.flip(pull(ORG, connectionRef))
+				assert.deepStrictEqual(
+					[invalid.reason, invalid.message],
+					["upstream", "Vercel refused the billing request as invalid: status 400"],
+				)
 			}),
 		)
 	})
@@ -222,7 +232,7 @@ describe("VercelCostProvider", () => {
 				const connectionRef = yield* connectFakeVercel({ orgId: ORG, authFailedAt: NOW - 60_000 })
 				const error = yield* Effect.flip(pull(ORG, connectionRef))
 				assert.deepStrictEqual([error.reason, world.urls], ["auth", []])
-				assert.include(error.message, "Connect Vercel again")
+				assert.include(error.message, "Replace the token")
 			}),
 		)
 	})

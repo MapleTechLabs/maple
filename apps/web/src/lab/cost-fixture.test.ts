@@ -44,4 +44,10 @@ describe("cost lab fixture", () => {
 		).toEqual(["aws", "openrouter"])
 		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
 	})
+
+	test("grouped by resource, a Vercel team's cost splits by project and the rest has none", () => {
+		expect(
+			Arr.map(labBreakdown({ ...window, groupBy: "resource", sortBy: "cost" }).rows, (row) => row.key),
+		).toEqual(["", "example-web", "example-docs"])
+	})
 })

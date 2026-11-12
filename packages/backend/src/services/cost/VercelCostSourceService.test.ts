@@ -19,14 +19,15 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const ORG = Schema.decodeSync(OrgId)("org_cost")
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-12T09:00:00Z"))
-/** The check read: yesterday alone. */
+/** The check read: yesterday and today, as a head pull ends. */
 const CHECK_URL =
-	"https://api.vercel.com/v1/billing/charges?teamId=team_1&from=2026-11-11T00%3A00%3A00Z&to=2026-11-12T00%3A00%3A00Z"
+	"https://api.vercel.com/v1/billing/charges?teamId=team_1&from=2026-11-11T00%3A00%3A00Z&to=2026-11-13T00%3A00%3A00Z"
 
 const run = <A, E>(
 	testDb: TestDb,
 	world: FakeVercel,
 	effect: Effect.Effect<A, E, VercelCostSourceService | Database | Env>,
+	encryptionKey?: string,
 ) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
@@ -35,7 +36,7 @@ const run = <A, E>(
 		Effect.provide(
 			Layer.effect(VercelCostSourceService, VercelCostSourceService.make).pipe(
 				Layer.provide(Layer.effect(VercelCostProvider, VercelCostProvider.make)),
-				Layer.provideMerge(fakeVercelDeps(testDb, world)),
+				Layer.provideMerge(fakeVercelDeps(testDb, world, encryptionKey)),
 			),
 		),
 	)
@@ -85,7 +86,7 @@ describe("VercelCostSourceService", () => {
 		)
 	})
 
-	it.effect("adds the connected team once Vercel let its token read yesterday's charges", () => {
+	it.effect("adds the connected team once Vercel let its token read the newest charges", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeVercel()
 		return run(
@@ -94,7 +95,7 @@ describe("VercelCostSourceService", () => {
 			Effect.gen(function* () {
 				const connectionRef = yield* connectFakeVercel({ orgId: ORG, token: "vc_token_abc" })
 				const added = yield* add
-				assert.deepStrictEqual(added, { team: { name: "Acme", slug: "acme" } })
+				assert.deepStrictEqual(added, { team: { name: "Acme", slug: "acme" }, created: true })
 				assert.deepStrictEqual(world.urls, [CHECK_URL])
 				assert.deepStrictEqual(world.authorizations, ["Bearer vc_token_abc"])
 				// The source points at the connection and is named after the team's slug.
@@ -120,7 +121,7 @@ describe("VercelCostSourceService", () => {
 				const first = yield* source(testDb)
 				// Vercel would refuse now, but the source exists: there is nothing to check.
 				world.chargesStatus = 403
-				assert.deepStrictEqual(yield* add, { team: { name: "Acme", slug: "acme" } })
+				assert.deepStrictEqual(yield* add, { team: { name: "Acme", slug: "acme" }, created: false })
 				assert.lengthOf(world.urls, 1)
 				assert.deepStrictEqual(yield* source(testDb), first)
 			}),
@@ -149,7 +150,7 @@ describe("VercelCostSourceService", () => {
 					],
 					[
 						"@maple/http/errors/IntegrationsValidationError",
-						"Vercel rejected the saved token. Connect Vercel again with a new token.",
+						"Vercel rejected the saved token. Replace the token of the Vercel connection.",
 					],
 					[
 						"@maple/http/errors/IntegrationsValidationError",
@@ -171,7 +172,7 @@ describe("VercelCostSourceService", () => {
 				yield* connectFakeVercel({ orgId: ORG, authFailedAt: NOW - 60_000 })
 				const error = yield* Effect.flip(add)
 				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
-				assert.include(error.message, "Connect Vercel again")
+				assert.include(error.message, "Replace the token")
 				assert.deepStrictEqual(world.urls, [])
 				assert.isUndefined(yield* source(testDb))
 			}),
@@ -206,6 +207,19 @@ describe("VercelCostSourceService", () => {
 				assert.isUndefined(yield* source(testDb))
 			}),
 		)
+	})
+
+	it.effect("does not blame the token when Maple cannot open it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel()
+		return Effect.gen(function* () {
+			// Sealed with the usable key, read on a deployment that has lost it.
+			yield* run(testDb, world, connectFakeVercel({ orgId: ORG }))
+			const error = yield* Effect.flip(run(testDb, world, add, "not-a-32-byte-key"))
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
+			assert.deepStrictEqual(world.urls, [])
+			assert.isUndefined(yield* source(testDb))
+		})
 	})
 
 	it.effect(

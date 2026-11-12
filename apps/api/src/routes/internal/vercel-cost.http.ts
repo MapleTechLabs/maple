@@ -37,10 +37,13 @@ export const HttpVercelCostLive = HttpApiBuilder.group(MapleInternalApi, "vercel
 					const tenant = yield* CurrentTenant.Context
 					yield* requireIntegrationsManager(tenant.roles)
 					const added = yield* sources.add(tenant.orgId)
-					yield* recordHttpAudit("cost_source.added", {
-						metadata: { provider: "vercel", account: added.team.slug },
-					})
-					return new VercelCostSourceAdded(added)
+					// Adding what is a source already changed nothing, so it leaves no entry.
+					if (added.created) {
+						yield* recordHttpAudit("cost_source.added", {
+							metadata: { provider: "vercel", account: added.team.slug },
+						})
+					}
+					return new VercelCostSourceAdded({ team: added.team })
 				}).pipe(Effect.withSpan("HttpVercelCost.add")),
 			)
 			.handle("remove", () =>

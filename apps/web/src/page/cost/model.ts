@@ -4,6 +4,7 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 	VercelCostStatus,
+	type VercelCostTeam,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
@@ -26,6 +27,16 @@ export type AddStep = typeof AddStep.Type
 /** The providers whose source the page itself removes; an AWS source goes with its connection. */
 export const RemovableProvider = Schema.Literals(["openrouter", "vercel"])
 export type RemovableProvider = typeof RemovableProvider.Type
+
+/** What the Vercel step can do with the connection it read: only a `Ready` team can be added. */
+export type VercelStep =
+	| Readonly<{ _tag: "NotConnected" }>
+	| Readonly<{ _tag: "Added" | "TokenRejected" | "Ready"; team: VercelCostTeam }>
+
+export const vercelStepOf = (status: VercelCostStatus): VercelStep =>
+	status.team === null
+		? { _tag: "NotConnected" }
+		: { _tag: status.added ? "Added" : status.authFailed ? "TokenRejected" : "Ready", team: status.team }
 
 export const Model = Schema.Struct({
 	search: CostSearch,

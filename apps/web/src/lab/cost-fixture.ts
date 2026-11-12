@@ -35,6 +35,7 @@ const line = (
 	service_category,
 	region,
 	usage_type,
+	resource: "",
 	account: LAB_ACCOUNT,
 	daily,
 	drift,
@@ -51,6 +52,7 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 	service_category: "AI and Machine Learning",
 	region: "global",
 	usage_type: servedBy,
+	resource: "",
 	account: LAB_OPENROUTER_ACCOUNT,
 	daily,
 	drift,
@@ -64,6 +66,7 @@ const productLine = (
 	category: string,
 	region: string,
 	sku: string,
+	project: string,
 	daily: number,
 	drift: number,
 ): Line => ({
@@ -72,6 +75,7 @@ const productLine = (
 	service_category: category,
 	region,
 	usage_type: sku,
+	resource: project,
 	account: LAB_VERCEL_TEAM.slug,
 	daily,
 	drift,
@@ -100,12 +104,36 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
-	productLine("Example Function Duration", "Compute", "east-1", "function-duration", 9.4, 0.2),
-	productLine("Example Function Duration", "Compute", "central-1", "function-duration", 3.1, 0.05),
-	productLine("Example Data Transfer", "Networking", "global", "data-transfer", 6.7, 0.12),
-	productLine("Example Image Optimization", "Web", "global", "image-optimization", 2.2, -0.08),
-	// The plan's monthly fee, as Vercel spreads it over the days.
-	productLine("Example Pro Plan", "Other", "global", "", 0.67, 0.0),
+	productLine(
+		"Example Function Duration",
+		"Compute",
+		"east-1",
+		"function-duration",
+		"example-web",
+		9.4,
+		0.2,
+	),
+	productLine(
+		"Example Function Duration",
+		"Compute",
+		"central-1",
+		"function-duration",
+		"example-docs",
+		3.1,
+		0.05,
+	),
+	productLine("Example Data Transfer", "Networking", "global", "data-transfer", "example-web", 6.7, 0.12),
+	productLine(
+		"Example Image Optimization",
+		"Web",
+		"global",
+		"image-optimization",
+		"example-docs",
+		2.2,
+		-0.08,
+	),
+	// The plan's monthly fee, as Vercel spreads it over the days: it belongs to no project.
+	productLine("Example Pro Plan", "Other", "global", "", "", 0.67, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -121,7 +149,15 @@ const chargeAt = (entry: Line, index: number, offset: number): number => {
 
 const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 	Arr.every(
-		["cloud_service", "provider", "service_category", "region", "usage_type", "account"] as const,
+		[
+			"cloud_service",
+			"provider",
+			"service_category",
+			"region",
+			"usage_type",
+			"resource",
+			"account",
+		] as const,
 		(dimension) => {
 			const values = filters?.[dimension] ?? []
 			return values.length === 0 || Arr.contains(values, entry[dimension])
@@ -286,7 +322,7 @@ const vercelSource = source({
 
 /** The sources the lab's reader can add and remove on the page, as they are once synced. */
 const ADDABLE = { openrouter: openRouterSource, vercel: vercelSource } as const
-export type LabAddable = keyof typeof ADDABLE
+type LabAddable = keyof typeof ADDABLE
 
 /**
  * `sources` after the lab's reader added a provider's source (true: it waits for its first sync)

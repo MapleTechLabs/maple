@@ -1,4 +1,4 @@
-import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH, type VercelCostStatus } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -48,7 +48,7 @@ import {
 	withoutFilters,
 } from "./derive"
 import { Message } from "./message"
-import type { AddStep, Model, RemovableProvider, Search } from "./model"
+import { type AddStep, type Model, type RemovableProvider, type Search, vercelStepOf } from "./model"
 import { COST_PROVIDERS } from "./providers"
 
 type Return = PageReturn<Model, Message>
@@ -198,13 +198,14 @@ const clearedKey = (model: Model): Model => ({
 })
 
 /**
- * The org's Vercel connection, read again each time the dialog turns to Vercel. A failed read is
- * forgotten first, so Try again shows the read in flight and not the old error.
+ * The org's Vercel connection, read again each time the dialog turns to Vercel. The answer on
+ * show is dropped first: the step never offers an add on a connection read before it was left,
+ * and a read that fails says so. The key stays, so an older read in flight cannot answer.
  */
 const requestVercelStatus = (model: Model, context: PageContext): Return =>
 	applySteps<Model, Message>(model, [
 		keyed(
-			Keyed.forgetFailure(model.vercel),
+			{ ...Keyed.idle<VercelCostStatus, LoadFailure>(), key: model.vercel.key },
 			requestKey(context.orgId, "vercelCostStatus", {}),
 			"Supersede",
 			(vercel) => ({ vercel }),
@@ -214,10 +215,7 @@ const requestVercelStatus = (model: Model, context: PageContext): Return =>
 
 /** Whether the connection on show can be added: a team, a token Vercel takes, and no source yet. */
 const canAddVercel = (model: Model): boolean =>
-	Option.exists(
-		AsyncData.getData(model.vercel.data),
-		(status) => status.team !== null && !status.authFailed && !status.added,
-	)
+	Option.exists(AsyncData.getData(model.vercel.data), (status) => vercelStepOf(status)._tag === "Ready")
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
@@ -284,6 +282,19 @@ const removed = (
 			),
 	})
 }
+
+/** A source was added or its key replaced: the dialog closes, and the page reads what it now has. */
+const added = (model: Model, title: string, description: string, context: PageContext): Return =>
+	withReread(
+		{
+			...liftAddDialog(
+				clearedKey({ ...model, sourceWrite: "Settling" }),
+				Dialog.close(model.addDialog),
+			),
+			outMessage: toast("success", title, description),
+		},
+		context,
+	)
 
 export const routeChanged = (
 	model: Model,
@@ -424,23 +435,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: (failure): Return => ({
 					model: { ...model, sourceWrite: "Idle", vercelError: failureMessage(failure) },
 				}),
-				onSuccess: (): Return => {
-					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Settling" }),
-						Dialog.close(model.addDialog),
-					)
-					return withReread(
-						{
-							...closed,
-							outMessage: toast(
-								"success",
-								"Vercel added",
-								"The first sync runs within a few minutes.",
-							),
-						},
-						context,
-					)
-				},
+				onSuccess: (): Return =>
+					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
 			}),
 		ClickedBackToProviders: () =>
 			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
@@ -483,20 +479,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: (failure): Return => ({
 					model: { ...model, sourceWrite: "Idle", keyError: failureMessage(failure) },
 				}),
-				onSuccess: (): Return => {
-					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Settling" }),
-						Dialog.close(model.addDialog),
-					)
-					const outMessage = hasOpenRouterSource(model)
-						? toast(
-								"success",
+				onSuccess: (): Return =>
+					hasOpenRouterSource(model)
+						? added(
+								model,
 								"OpenRouter key replaced",
 								"The next sync runs within a few minutes.",
+								context,
 							)
-						: toast("success", "OpenRouter added", "The first sync runs within a few minutes.")
-					return withReread({ ...closed, outMessage }, context)
-				},
+						: added(
+								model,
+								"OpenRouter added",
+								"The first sync runs within a few minutes.",
+								context,
+							),
 			}),
 		ClickedRemoveSource: ({ provider }) =>
 			model.sourceWrite !== "Idle"

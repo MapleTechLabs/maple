@@ -28,6 +28,8 @@ export const DIMENSIONS = {
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
 	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
+	// What a charge is billed for, where the provider says: a Vercel project.
+	resource: { label: "Resource", noun: "resource", empty: "No resource" },
 	// The account the connection reads, which for a management account bills its members' cost too.
 	account: { label: "Connected account", noun: "connected account", empty: "No account" },
 } as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>

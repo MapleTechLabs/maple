@@ -18,8 +18,8 @@ import { CostProviderError } from "../../CostProvider"
 export interface FakeVercel {
 	/** Status of `GET /v1/billing/charges`. */
 	chargesStatus: number
-	/** The body: charges, served one JSON object per line, or raw text for anything else. */
-	charges: ReadonlyArray<Readonly<Record<string, unknown>>> | string
+	/** The body: charges, served one JSON object per line, raw text for anything else, or null for no body. */
+	charges: ReadonlyArray<Readonly<Record<string, unknown>>> | string | null
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
 	/** Runs when a request arrives, before it is answered: what changes while a read is in flight. */
@@ -60,7 +60,8 @@ const fetchStub =
 				{ status: world.chargesStatus },
 			)
 		}
-		return new Response(typeof world.charges === "string" ? world.charges : jsonl(world.charges), {
+		const { charges } = world
+		return new Response(charges === null || typeof charges === "string" ? charges : jsonl(charges), {
 			status: 200,
 			headers: { "content-type": "application/jsonl" },
 		})

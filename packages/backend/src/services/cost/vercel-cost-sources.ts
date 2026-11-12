@@ -1,7 +1,6 @@
-// An org's Vercel `cost_sources`. Unlike the other providers the connection does not make the
-// source: the org adds its Vercel team on the Cost page, and that row is the opt-in. So nothing
-// here creates one. A source goes when the org removes it, when the connection is deleted, and
-// when the connection moves to another team, whose spend would overwrite the source's days.
+// An org's Vercel `cost_sources`. The connection does not make the source: the org adds its team
+// on the Cost page, and that row is the opt-in. It goes when the org removes it, with the
+// connection, and when the connection moves to another team (whose spend would overwrite its days).
 import type { MapleDb } from "@maple/db/client"
 import { CostSources, VercelConnections } from "@maple/db/tables"
 import type { OrgId } from "@maple/primitives"
@@ -22,22 +21,37 @@ export const removeVercelCostSources = (db: MapleDb, orgId: OrgId) =>
 		.pipe(Effect.map((rows) => rows.length))
 
 /**
- * Removes the sources whose connection is gone, in every org or only in `orgId`. The sync lane
- * runs it each tick: a connection can also vanish with its integration source, which no service
- * of this provider sees. Joined by org, so a ref never crosses orgs.
+ * A new token was saved for the team the source reads: a source held for the old token's failure
+ * is due again, and a pull still in flight on the old token loses its claim, so its failure
+ * writes no hold.
  */
-export const reconcileVercelCostSources = Effect.fnUntraced(function* (db: MapleDb, orgId?: OrgId) {
+export const releaseVercelCostSources = (db: MapleDb, orgId: OrgId, now: number) =>
+	db.run(
+		PG.update(CostSources)
+			.set({
+				leaseUntil: null,
+				lastError: null,
+				lastErrorReason: null,
+				nextAttemptAt: null,
+				consecutiveFailures: 0,
+				updatedAt: now,
+			})
+			.where(($) => [$.orgId.eq(orgId), $.provider.eq("vercel")]),
+	)
+
+/**
+ * Removes the sources whose connection is gone, in every org. The sync lane runs it each tick: a
+ * connection can also vanish with its integration source, which no service of this provider
+ * sees. Joined by org, so a ref never crosses orgs.
+ */
+export const reconcileVercelCostSources = Effect.fnUntraced(function* (db: MapleDb) {
 	const orphaned = yield* db.run(
 		PG.from(CostSources, "s")
 			.leftJoin(VercelConnections, "c", (source, connection) =>
 				source.orgId.eq(connection.orgId).and(source.connectionRef.eq(connection.id)),
 			)
 			.select(($) => ({ id: $.id }))
-			.where(($) => [
-				$.provider.eq("vercel"),
-				$.c.id.isNull(),
-				...(orgId === undefined ? [] : [$.orgId.eq(orgId)]),
-			])
+			.where(($) => [$.provider.eq("vercel"), $.c.id.isNull()])
 			.orderBy(["id", "asc"])
 			.limit(RECONCILE_LIMIT),
 	)

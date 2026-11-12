@@ -1,7 +1,6 @@
 /**
- * The org's Vercel team as a cost source. The Vercel integration already holds the team and its
- * token, so adding the source stores nothing new: the `cost_sources` row is the opt-in, and
- * removing it is the opt-out. The connection itself is never changed here.
+ * The org's Vercel team as a cost source. The integration already holds the team and its token,
+ * so the `cost_sources` row is all there is to add or remove. The connection is never changed here.
  */
 import {
 	CloudCostDisabledError,
@@ -11,6 +10,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	type OrgId,
+	type VercelCostStatus,
 	type VercelCostTeam,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -22,7 +22,11 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { CostProviderError } from "./CostProvider"
-import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
+import {
+	VERCEL_NO_CONNECTION,
+	VERCEL_TOKEN_REJECTED,
+	VercelCostProvider,
+} from "./providers/vercel/VercelCostProvider"
 import { addDays, utcToday } from "./sync-plan"
 import { removeVercelCostSources } from "./vercel-cost-sources"
 
@@ -31,31 +35,40 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"Vercel cost source database error",
 )
 
+const CONNECTION_CHANGED = "The Vercel connection changed while the source was added. Try again."
+
 /**
  * Why the check read was refused, as what the Cost page shows. A token or a role Vercel refuses is
- * the org's to fix and keeps its reason; an outage answers the provider error's fixed sentence.
+ * the org's to fix and keeps its reason. Anything else (an outage, a secret key Maple cannot use)
+ * is not, and answers the upstream error's fixed sentence.
  */
-const toAddError = (error: CostProviderError): IntegrationsValidationError | IntegrationsUpstreamError =>
-	error.reason === "auth" || error.reason === "not_ready"
-		? new IntegrationsValidationError({ message: error.message })
+const toAddError = (
+	error: CostProviderError,
+): IntegrationsValidationError | IntegrationsConnectionChangedError | IntegrationsUpstreamError => {
+	if (error.reason === "not_ready" || error.message === VERCEL_TOKEN_REJECTED) {
+		return new IntegrationsValidationError({ message: error.message })
+	}
+	// Disconnected between the service's read of the connection and the adapter's.
+	return error.message === VERCEL_NO_CONNECTION
+		? new IntegrationsConnectionChangedError({ message: CONNECTION_CHANGED })
 		: new IntegrationsUpstreamError({ message: error.message })
-
-export interface VercelCostStatusInfo {
-	/** Null when the org has no Vercel connection. */
-	readonly team: VercelCostTeam | null
-	readonly authFailed: boolean
-	readonly added: boolean
 }
+
+/** `VercelCostStatus` as plain data. */
+export type VercelCostStatusInfo = typeof VercelCostStatus.Encoded
 
 export interface VercelCostSourceServiceApi {
 	readonly status: (
 		orgId: OrgId,
 	) => Effect.Effect<VercelCostStatusInfo, IntegrationsPersistenceError | CloudCostDisabledError>
-	/** Makes the connected team a cost source, once Vercel has let its token read the billing. */
+	/**
+	 * Makes the connected team a cost source, once Vercel has let its token read the billing.
+	 * `created` is false when it was one already.
+	 */
 	readonly add: (
 		orgId: OrgId,
 	) => Effect.Effect<
-		{ readonly team: VercelCostTeam },
+		{ readonly team: VercelCostTeam; readonly created: boolean },
 		| CloudCostDisabledError
 		| IntegrationsNotConnectedError
 		| IntegrationsConnectionChangedError
@@ -135,13 +148,16 @@ export class VercelCostSourceService extends Context.Service<
 				})
 			}
 			const team = { name: connection.teamName, slug: connection.teamSlug }
-			if (connection.sourceId !== null) return { team }
-			// One day's read with the stored token: a token or role Vercel refuses is said now, not
-			// by a source that fails its first sync.
+			if (connection.sourceId !== null) return { team, created: false }
+			// Yesterday and today, read with the stored token: a token or role Vercel refuses is said
+			// now, not by a source that fails its first sync. Through today, as every head pull asks.
 			const now = yield* Clock.currentTimeMillis
-			const yesterday = addDays(utcToday(now), -1)
+			const today = utcToday(now)
 			yield* provider
-				.pull({ orgId, connectionRef: connection.id }, { startDay: yesterday, endDay: yesterday })
+				.pull(
+					{ orgId, connectionRef: connection.id },
+					{ startDay: addDays(today, -1), endDay: today },
+				)
 				.pipe(Effect.mapError(toAddError))
 			const added = yield* dbExecute((db) =>
 				db.transaction(
@@ -158,8 +174,8 @@ export class VercelCostSourceService extends Context.Service<
 								.limit(1)
 								.forShare(),
 						)
-						if (current === undefined) return false
-						yield* db.run(
+						if (current === undefined) return null
+						const inserted = yield* db.run(
 							PG.insertInto(CostSources)
 								.values({
 									id: CostSourceId.make(randomUUID()),
@@ -171,18 +187,17 @@ export class VercelCostSourceService extends Context.Service<
 									updatedAt: now,
 								})
 								// Another request added it first.
-								.onConflictDoNothing(),
+								.onConflictDoNothing()
+								.returning(($) => ({ id: $.id })),
 						)
-						return true
+						return inserted.length > 0
 					}),
 				),
 			)
-			if (!added) {
-				return yield* new IntegrationsConnectionChangedError({
-					message: "The Vercel connection changed while the source was added. Try again.",
-				})
+			if (added === null) {
+				return yield* new IntegrationsConnectionChangedError({ message: CONNECTION_CHANGED })
 			}
-			return { team }
+			return { team, created: added }
 		})
 
 		const remove = Effect.fn("VercelCostSourceService.remove")(function* (orgId: OrgId) {

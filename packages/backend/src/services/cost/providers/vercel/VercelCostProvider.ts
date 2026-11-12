@@ -22,7 +22,8 @@ import {
 import { addDays, daysOfWindow, utcToday } from "../../sync-plan"
 import { addCharge, emptyChargeTotals, rowsOf } from "./normalize"
 
-const PULL_TIMEOUT = Duration.seconds(45)
+/** A window's answer streams in for longer the more days it holds: 45 seconds and a quarter more per day. */
+const pullTimeout = (days: number) => Duration.millis(45_000 + days * 250)
 /** Vercel serves a year at most in one request. The sync's windows are far shorter. */
 const MAX_REQUEST_DAYS = 366
 
@@ -32,13 +33,16 @@ type Reason = CostProviderError["reason"]
 const failed = (reason: Reason, message: string) =>
 	new CostProviderError({ message, provider: "vercel", reason, requests: 0 })
 
-const TOKEN_REJECTED = "Vercel rejected the saved token. Connect Vercel again with a new token."
+/** The two `auth` failures a caller can tell apart from an unusable secret key: the token, and no connection. */
+export const VERCEL_TOKEN_REJECTED =
+	"Vercel rejected the saved token. Replace the token of the Vercel connection."
+export const VERCEL_NO_CONNECTION = "No Vercel connection is saved for this source."
 
 /** Vercel's failures, as what the sync does next and the Cost page shows. */
 const toCostProviderError = (error: VercelApiError): CostProviderError => {
 	switch (error.kind) {
 		case "unauthorized":
-			return failed("auth", TOKEN_REJECTED)
+			return failed("auth", VERCEL_TOKEN_REJECTED)
 		case "forbidden":
 			return failed(
 				"not_ready",
@@ -51,7 +55,13 @@ const toCostProviderError = (error: VercelApiError): CostProviderError => {
 		case "invalid_response":
 			return failed("invalid_response", "Vercel's billing answer could not be read.")
 		case "upstream":
-			return failed("upstream", "Vercel did not answer the billing request.")
+			// A 400 is the request Maple built: Vercel's own words say what it did not take.
+			return error.status === 400
+				? failed(
+						"upstream",
+						`Vercel refused the billing request as invalid${error.detail === undefined ? "" : `: ${error.detail}`}`,
+					)
+				: failed("upstream", "Vercel did not answer the billing request.")
 	}
 }
 
@@ -78,7 +88,8 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 						"maple.cost.start_day": window.startDay,
 						"maple.cost.end_day": window.endDay,
 					})
-					if (daysOfWindow(window).length > MAX_REQUEST_DAYS) {
+					const days = daysOfWindow(window).length
+					if (days > MAX_REQUEST_DAYS) {
 						return yield* failed(
 							"too_large",
 							`Vercel serves ${MAX_REQUEST_DAYS} days in one request at most.`,
@@ -93,11 +104,9 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 								.limit(1),
 						),
 					)
-					if (row === undefined) {
-						return yield* failed("auth", "No Vercel connection is saved for this source.")
-					}
+					if (row === undefined) return yield* failed("auth", VERCEL_NO_CONNECTION)
 					// The integration's poller found the token rejected: asking again would only be refused.
-					if (row.authFailedAt !== null) return yield* failed("auth", TOKEN_REJECTED)
+					if (row.authFailedAt !== null) return yield* failed("auth", VERCEL_TOKEN_REJECTED)
 					const secrets = yield* keyring
 					const token = yield* openVercelToken(secrets, row, (message) => failed("auth", message))
 					// Today and yesterday: Vercel may still be counting a day that ended hours ago.
@@ -116,11 +125,12 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Cost
 							Effect.annotateCurrentSpan({
 								"maple.cost.vercel.error": error.kind,
 								"maple.cost.vercel.status": error.status ?? 0,
+								"maple.cost.vercel.detail": error.detail ?? "",
 							}),
 						),
 						Effect.mapError(toCostProviderError),
 						Effect.timeoutOrElse({
-							duration: PULL_TIMEOUT,
+							duration: pullTimeout(days),
 							orElse: () => Effect.fail(failed("upstream", "Vercel took too long to answer.")),
 						}),
 					)

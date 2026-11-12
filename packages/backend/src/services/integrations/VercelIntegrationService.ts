@@ -68,7 +68,7 @@ import {
 	reportPoll,
 	upsertWithSource,
 } from "@maple/backend/services/integrations/integration-sources"
-import { removeVercelCostSources } from "../cost/vercel-cost-sources"
+import { releaseVercelCostSources, removeVercelCostSources } from "../cost/vercel-cost-sources"
 import {
 	createDrain,
 	deleteDrain,
@@ -1252,7 +1252,12 @@ export class VercelIntegrationService extends Context.Service<
 								.pipe(Effect.map(([row]) => row)),
 					).pipe(
 						// A cost source reads one team: the new team's spend would overwrite its days.
-						Effect.tap(() => (sameTeam ? Effect.void : removeVercelCostSources(db, orgId))),
+						// The same team with a new token keeps it, and makes it due again at once.
+						Effect.tap(() =>
+							sameTeam
+								? Effect.asVoid(releaseVercelCostSources(db, orgId, now))
+								: Effect.asVoid(removeVercelCostSources(db, orgId)),
+						),
 					),
 				),
 			)

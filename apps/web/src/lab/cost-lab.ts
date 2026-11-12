@@ -62,6 +62,7 @@ export const LabState = Schema.Literals([
 	"empty-window",
 	"loading",
 	"by-provider",
+	"by-resource",
 	"add-source",
 	"add-openrouter",
 	"key-refused",
@@ -111,7 +112,9 @@ const searchFor = (state: LabState): Search =>
 		? { groupBy: "region", cloud_service: ["Example Compute"] }
 		: state === "by-provider"
 			? { groupBy: "provider" }
-			: {}
+			: state === "by-resource"
+				? { groupBy: "resource" }
+				: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
@@ -181,7 +184,9 @@ const vercelStatusOf = (world: World): VercelCostStatus =>
 	new VercelCostStatus({
 		team: world.state === "vercel-not-connected" ? null : LAB_VERCEL_TEAM,
 		authFailed: false,
-		added: world.vercel ?? !startsEmpty(world.state),
+		added:
+			world.vercel ??
+			Arr.some(sourcesFor(world.state).sources, (source) => source.provider === "vercel"),
 	})
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */

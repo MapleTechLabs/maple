@@ -94,16 +94,3 @@ export const addCharge = (
 /** The rows worth storing: a sum Vercel billed nothing for is left out, a credit (negative) is kept. */
 export const rowsOf = (totals: ChargeTotals): ReadonlyArray<CostPullRow> =>
 	Arr.filter(Arr.fromIterable(totals.values()), (row) => row.billedCost !== 0 || row.effectiveCost !== 0)
-
-/** A whole answer's charges as rows. The adapter folds the same way, line by line as they arrive. */
-export const toCostRows = (
-	charges: ReadonlyArray<VercelCharge>,
-	accountId: string,
-	window: CostPullWindow,
-	openDay: string,
-): ReadonlyArray<CostPullRow> =>
-	rowsOf(
-		Arr.reduce(charges, emptyChargeTotals(), (totals, charge) =>
-			addCharge(totals, charge, accountId, window, openDay),
-		),
-	)
