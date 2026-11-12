@@ -147,7 +147,7 @@
 		"apps/web/src/page/metrics/browse/view-grid.ts": 1,
 		"apps/web/src/page/onboarding/account-menu.ts": 1,
 		"apps/web/src/page/onboarding/create-org-view.ts": 4,
-		"apps/web/src/page/onboarding/pricing-cards-view.ts": 5,
+		"apps/web/src/page/onboarding/pricing-cards-view.ts": 3,
 		"apps/web/src/page/onboarding/quick-start-view.ts": 1,
 		"apps/web/src/page/onboarding/select-plan.ts": 7,
 		"apps/web/src/page/onboarding/view.ts": 1,
