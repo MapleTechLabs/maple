@@ -432,4 +432,20 @@ describe("meterTurn AI credits", () => {
 			[`${ORG}:default:msg-1:chat:credits:1`],
 		)
 	})
+
+	it("bills a charge the provider priced at its cost plus the markup, not from Autumn's rates", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [
+			{ ...charge(GLM, 1000, 200, 3000), providerCostMicrousd: 2_500_000 },
+			charge(SONNET, 1000, 300),
+		])
+
+		assert.deepEqual(
+			Arr.filter(tracked, (t) => t.featureId === "ai_credits"),
+			[{ featureId: "ai_credits", value: 3, key: `${ORG}:default:msg-1:chat:credits:0` }],
+		)
+		assert.deepEqual(
+			Arr.map(charged, (c) => [c.modelId, c.key]),
+			[[SONNET, `${ORG}:default:msg-1:chat:credits:1`]],
+		)
+	})
 })
