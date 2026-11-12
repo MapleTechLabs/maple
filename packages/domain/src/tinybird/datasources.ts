@@ -2127,6 +2127,8 @@ export const auditTrailEvents = defineDatasource("audit_trail_events", {
 		Action: t.string().lowCardinality(),
 		Category: t.string().lowCardinality(),
 		Outcome: t.string().lowCardinality(),
+		// Why it failed or was refused, in the platform's words.
+		OutcomeReason: t.string(),
 		TargetType: t.string().lowCardinality(),
 		TargetId: t.string(),
 		TargetName: t.string(),

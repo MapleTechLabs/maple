@@ -373,7 +373,7 @@ SELECT
         OFFSET 50
         FORMAT JSON
 
--- builder:audit-trail:auditTrailEventsQuery:default  [ac8596a7]
+-- builder:audit-trail:auditTrailEventsQuery:default  [9ab77231]
 SELECT
           audit_trail_events.Id AS id,
           audit_trail_events.OccurredAt AS occurredAt,
@@ -388,6 +388,7 @@ SELECT
           audit_trail_events.Action AS action,
           audit_trail_events.Category AS category,
           audit_trail_events.Outcome AS outcome,
+          audit_trail_events.OutcomeReason AS outcomeReason,
           audit_trail_events.TargetType AS targetType,
           audit_trail_events.TargetId AS targetId,
           audit_trail_events.TargetName AS targetName,
@@ -401,7 +402,7 @@ SELECT
         LIMIT 51
         FORMAT JSON
 
--- builder:audit-trail:auditTrailEventsQuery:filtered  [a97c670a]
+-- builder:audit-trail:auditTrailEventsQuery:filtered  [fb4fb694]
 SELECT
           audit_trail_events.Id AS id,
           audit_trail_events.OccurredAt AS occurredAt,
@@ -416,6 +417,7 @@ SELECT
           audit_trail_events.Action AS action,
           audit_trail_events.Category AS category,
           audit_trail_events.Outcome AS outcome,
+          audit_trail_events.OutcomeReason AS outcomeReason,
           audit_trail_events.TargetType AS targetType,
           audit_trail_events.TargetId AS targetId,
           audit_trail_events.TargetName AS targetName,

@@ -8,11 +8,12 @@ import { mapleAuditTrailEvents } from "./maple"
 const ORG = Schema.decodeSync(OrgId)("org_trail_maple")
 const USER = Schema.decodeSync(UserId)("user_trail_maple")
 const KEY_ID = "5b8f2c1e-7a55-4c0e-9a3b-0d2c7e5b9a11"
+const ENTRY_ID = "9d2c1e3a-6a1b-4f0e-9c1d-2b3a4c5d6e7f"
 
 const entry = (overrides: Partial<ConstructorParameters<typeof AuditLogEvent>[0]> = {}) =>
 	new AuditLogEvent({
 		orgId: ORG,
-		id: Schema.decodeSync(AuditLogEvent.fields.id)("9d2c1e3a-6a1b-4f0e-9c1d-2b3a4c5d6e7f"),
+		id: Schema.decodeSync(AuditLogEvent.fields.id)(ENTRY_ID),
 		actorType: "user",
 		userId: USER,
 		source: "dashboard",
@@ -35,6 +36,8 @@ describe("mapleAuditTrailEvents", () => {
 
 		expect(event).toMatchObject({
 			provider: "maple",
+			// The id the Settings audit log shows for the same entry.
+			providerEventId: encodePublicId(PublicIdPrefixes.auditLogEntry, ENTRY_ID),
 			actor: { type: "user", id: USER },
 			action: "alert_rule.updated",
 			category: "configuration",
@@ -53,7 +56,7 @@ describe("mapleAuditTrailEvents", () => {
 		expect(trailEventOf({ ...read, outcome: "denied", denialReason: "missing scope" })).toMatchObject({
 			category: "data_access",
 			outcome: "denied",
-			raw: { denialReason: "missing scope" },
+			outcomeReason: "missing scope",
 		})
 	})
 

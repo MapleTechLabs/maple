@@ -51,6 +51,8 @@ export interface AuditTrailEvent {
 	readonly action: string
 	readonly category: AuditTrailCategory
 	readonly outcome: AuditTrailOutcome
+	/** Why it failed or was refused, in the platform's words. */
+	readonly outcomeReason?: string
 	readonly target?: {
 		readonly type?: string
 		readonly id?: string
