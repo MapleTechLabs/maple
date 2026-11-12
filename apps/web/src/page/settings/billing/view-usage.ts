@@ -1,25 +1,27 @@
 import { AI_CREDITS_FEATURE_ID } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
-import type { AiCreditSourceUsage, BillingCustomer } from "@maple/domain/http"
+import type { BillingCustomer } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { capApplies, parseCapInput, spendLimitFor } from "./controls"
 import {
 	FEATURE_COLORS,
 	type FeatureSpend,
 	featureUnit,
-	formatCredits,
 	rateCaption,
 	SPEND_FEATURES,
 	type SpendModel,
 	usageMeter,
 } from "./spend"
-import { formatCount, formatUsage, formatUsageAgainst } from "../../kit/billing/usage"
+import { formatCount, formatCredits, formatUsage, formatUsageAgainst } from "../../kit/billing/usage"
+import { aiCreditsHref } from "../ai-credits/hrefs"
+import { textLink } from "@maple/views/ui/text-link"
 import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
 import { segmentedBar } from "@maple/views/ui/meter"
+import { swatch } from "@maple/views/ui/swatch"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
@@ -182,47 +184,15 @@ const droppedLine = (h: H, model: Model, featureId: string): ReadonlyArray<Html>
 			]
 }
 
-/** Names for the `source` each AI credit charge is tracked with. */
-const AI_SOURCE_LABELS = {
-	chat: "Chat",
-	triage: "Investigations",
-	review: "Code review",
-	bot: "Slack and Discord",
-	security_audit: "Security audits",
-	other: "Other",
-} satisfies Record<AiCreditSourceUsage["source"], string>
-
-/** Where this cycle's AI credits went: "Investigations $3.10 · Chat $1.05". */
-const aiSourcesLine = (h: H, model: Model, feature: FeatureSpend): ReadonlyArray<Html> => {
-	if (feature.featureId !== AI_CREDITS_FEATURE_ID) return []
-	if (AsyncData.isFailure(model.aiUsage))
-		return [
-			hstack(h, { gap: "1.5", shrink: true }, [
-				typography(h, { size: "2xs", tone: "muted", truncate: true }, [
-					"Couldn't load where it went",
-				]),
-				button(
-					h,
-					{ size: "xs", variant: "link", attributes: [h.OnClick(Message.ClickedRetryAiUsage())] },
-					["Try again"],
-				),
-			]),
-		]
-	const sources = AsyncData.getOrElse(model.aiUsage, () => null)?.bySource ?? []
-	return sources.length === 0
-		? []
-		: [
-				typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true, truncate: true }, [
-					Arr.join(
-						Arr.map(
-							sources,
-							(entry) => `${AI_SOURCE_LABELS[entry.source]} ${formatCredits(entry.credits)}`,
-						),
-						" · ",
-					),
+/** The AI credits row's link to the page that breaks the spend down. */
+const aiCreditsLink = (h: H, feature: FeatureSpend): ReadonlyArray<Html> =>
+	feature.featureId === AI_CREDITS_FEATURE_ID
+		? [
+				typography(h, { size: "2xs" }, [
+					textLink(h, { href: aiCreditsHref(), tone: "primary" }, ["Details"]),
 				]),
 			]
-}
+		: []
 
 const featureRow = (
 	h: H,
@@ -243,11 +213,7 @@ const featureRow = (
 		[
 			tableCell(h, [
 				hstack(h, { gap: "2", shrink: true }, [
-					h.span([
-						h.AriaHidden(true),
-						h.Class("size-2 shrink-0 rounded-full"),
-						h.Style({ background: color }),
-					]),
+					swatch(h, { color, round: true, ariaHidden: true }),
 					typography(h, { truncate: true }, [feature.label]),
 				]),
 			]),
@@ -265,7 +231,7 @@ const featureRow = (
 						usageLine(feature),
 					]),
 					...droppedLine(h, model, feature.featureId),
-					...aiSourcesLine(h, model, feature),
+					...aiCreditsLink(h, feature),
 				]),
 			]),
 			tableCell(

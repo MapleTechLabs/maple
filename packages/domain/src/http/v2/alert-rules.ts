@@ -1042,7 +1042,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				identifier: "testAlertRule",
 				summary: "Test an alert rule",
 				description:
-					"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role and the `alerts:write` scope.",
+					"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role, the `alerts:write` scope, and read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
 			}),
 		),
 	)
@@ -1062,7 +1062,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				identifier: "previewAlertRule",
 				summary: "Preview an alert rule",
 				description:
-					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope.",
+					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
 			}),
 		),
 	)

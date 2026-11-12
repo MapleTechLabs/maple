@@ -239,6 +239,7 @@ describe("re-render on change only", () => {
 			isRegionOpen: false,
 			flags: {
 				aiAutoTriage: false,
+				cloudCost: false,
 				dataSources: false,
 				releases: false,
 				securityAudit: false,

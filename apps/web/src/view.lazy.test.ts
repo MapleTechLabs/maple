@@ -26,6 +26,7 @@ const NOW = Date.parse("2026-10-01T12:00:00Z")
 /** One URL per page. A page added to the registry without one fails the coverage test below. */
 const SAMPLE_PATHS = [
 	"/settings/ingestion/rules/new",
+	"/settings/billing/ai-credits",
 	"/services",
 	"/",
 	"/metrics",
@@ -50,6 +51,7 @@ const SAMPLE_PATHS = [
 	"/alerts/escalation-chains/esc_gQtGH2s65G6a7sJmuayXL6",
 	"/alerts/uptime/upm_abc",
 	"/status-pages",
+	"/cost",
 	"/status-pages/new",
 	"/status-pages/stp_abc",
 	"/status-pages/stp_abc/view",

@@ -120,7 +120,6 @@ export const Message = defineMessageUnion({
 	CompletedFetchRuleStats: result(V2IngestRuleStats),
 	ClickedRetryCustomer: {},
 	ClickedRetryDaily: {},
-	ClickedRetryAiUsage: {},
 	ClickedRetryInvoices: {},
 	ClickedRetryProfile: {},
 	ClickedManageBilling: {},

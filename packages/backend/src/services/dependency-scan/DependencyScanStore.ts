@@ -545,13 +545,47 @@ export class DependencyScanStore extends Context.Service<DependencyScanStore, De
 									encodeJsonKey([m.lockfilePath, m.ecosystem, m.packageName, m.version]),
 								),
 							).size
-							yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>
-								db.run(
-									PG.insertInto(DependencyScanMatches)
-										.values(Arr.map(chunk, (match) => ({ ...match, scanId, orgId })))
-										.onConflictDoNothing(),
-								),
+							// Matches are read from the latest completed scan of a commit only, so a commit
+							// rescanned on a schedule keeps one copy of them, not one per scan.
+							const atCommit = yield* db.run(
+								PG.from(DependencyScans)
+									.select("id", "startedAt")
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.repositoryId.eq(scan.repositoryId),
+										$.commitSha.eq(scan.commitSha),
+										$.status.eq("completed"),
+										$.id.neq(scanId),
+									]),
 							)
+							const superseded = Arr.some(
+								atCommit,
+								(other) =>
+									other.startedAt > scan.startedAt ||
+									(other.startedAt === scan.startedAt && other.id < scanId),
+							)
+							if (!superseded) {
+								yield* Effect.forEach(Arr.chunksOf(matches, WRITE_CHUNK), (chunk) =>
+									db.run(
+										PG.insertInto(DependencyScanMatches)
+											.values(Arr.map(chunk, (match) => ({ ...match, scanId, orgId })))
+											.onConflictDoNothing(),
+									),
+								)
+								yield* Effect.forEach(
+									Arr.chunksOf(
+										Arr.map(atCommit, (other) => other.id),
+										WRITE_CHUNK,
+									),
+									(chunk) =>
+										db.run(
+											PG.deleteFrom(DependencyScanMatches).where(($) => [
+												$.orgId.eq(orgId),
+												$.scanId.in_(...chunk),
+											]),
+										),
+								)
+							}
 							// A slower scan of an older head must not undo what a newer one settled.
 							const newer = scan.defaultBranchHead
 								? yield* db.run(

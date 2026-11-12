@@ -14,6 +14,7 @@ import {
 	awsRoleArn,
 	type AwsMetricStream,
 	awsSetupPlan,
+	awsModuleRolloutFlag,
 	isAwsModuleAvailable,
 } from "@maple/domain/aws"
 import {
@@ -23,6 +24,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsValidationError,
 } from "@maple/domain/http"
+import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
 import {
 	AWS_MODULES,
 	type AwsAccountId,
@@ -40,6 +42,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { ingestBaseUrl } from "@maple/backend/services/ingest/ingest-sender"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	createIntegrationSource,
 	deleteSourcesOf,
@@ -47,6 +50,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 } from "@maple/backend/services/integrations/integration-sources"
+import { reconcileAwsCostSources } from "../cost/aws-cost-sources"
 import { AwsApiError, checkRole } from "./aws/api"
 import { type AwsOidcSigner, makeAwsOidcSigner } from "./aws/oidc"
 import { renderAwsCleanupScript, renderAwsSetup } from "./aws/setup"
@@ -225,24 +229,31 @@ const toConnection = (issuer: string, row: AwsConnectionRow): AwsConnection => {
 	}
 }
 
-const MODULE_INFO: ReadonlyArray<AwsModuleInfo> = Arr.map(AWS_MODULES, (module) => ({
-	module,
-	title: AWS_MODULE_SPECS[module].title,
-	summary: AWS_MODULE_SPECS[module].summary,
-	available: isAwsModuleAvailable(module),
-}))
+/** The modules as an org with these rollout flags is offered them. */
+const moduleInfo = (flags: OrganizationFeatureFlags): ReadonlyArray<AwsModuleInfo> =>
+	Arr.map(AWS_MODULES, (module) => ({
+		module,
+		title: AWS_MODULE_SPECS[module].title,
+		summary: AWS_MODULE_SPECS[module].summary,
+		available: isAwsModuleAvailable(module, flags),
+	}))
 
 const validateModules = (
 	modules: ReadonlyArray<AwsModule>,
+	flags: OrganizationFeatureFlags,
 ): Effect.Effect<ReadonlyArray<AwsModule>, ModulesError> => {
-	const planned = Arr.filter(modules, (module) => !isAwsModuleAvailable(module))
-	return planned.length === 0
-		? Effect.succeed(normalizeModules(modules))
-		: Effect.fail(
-				new IntegrationsValidationError({
-					message: `Maple does not read ${Arr.join(planned, ", ")} from AWS yet.`,
-				}),
-			)
+	const refused = Arr.filter(modules, (module) => !isAwsModuleAvailable(module, flags))
+	if (refused.length === 0) return Effect.succeed(normalizeModules(modules))
+	// A module behind a rollout flag is built: the org is outside its rollout, not early.
+	const planned = Arr.filter(refused, (module) => awsModuleRolloutFlag(module) === undefined)
+	return Effect.fail(
+		new IntegrationsValidationError({
+			message:
+				planned.length > 0
+					? `Maple does not read ${Arr.join(planned, ", ")} from AWS yet.`
+					: `Reading ${Arr.join(refused, ", ")} from AWS is not enabled for this organization yet.`,
+		}),
+	)
 }
 
 interface CheckResult {
@@ -344,6 +355,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			const database = yield* Database
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
+			const featureFlags = yield* OrganizationFeatureFlagsService
 			const dbExecute = makeDbExecute(database, "AwsConnectionService", toPersistenceError)
 			const persistence = (message: string) => new IntegrationsPersistenceError({ message })
 			const keyring = yield* secretKeyringFromEnv(env, persistence)
@@ -409,9 +421,10 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							.orderBy(["createdAt", "asc"], ["id", "asc"]),
 					),
 				)
+				const flags = yield* featureFlags.flags(orgId)
 				return {
 					available: signer !== undefined,
-					modules: MODULE_INFO,
+					modules: moduleInfo(flags),
 					connections: Arr.map(rows, connectionOf),
 				}
 			})
@@ -427,7 +440,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.account_id": input.accountId })
 				if (signer === undefined) return yield* unavailable()
-				const modules = yield* validateModules(input.modules)
+				const flags = yield* featureFlags.flags(orgId)
+				const modules = yield* validateModules(input.modules, flags)
 				const id = AwsConnectionId.make(randomUUID())
 				const streamSecret = yield* mintStreamSecret({ orgId, id })
 				const now = yield* Clock.currentTimeMillis
@@ -484,8 +498,9 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 				},
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.aws.connection_id": connectionId })
+				const flags = yield* featureFlags.flags(orgId)
 				const modules =
-					patch.modules === undefined ? undefined : yield* validateModules(patch.modules)
+					patch.modules === undefined ? undefined : yield* validateModules(patch.modules, flags)
 				const updatedAt = yield* Clock.currentTimeMillis
 				const changes = {
 					...(modules !== undefined && { modules }),
@@ -509,11 +524,18 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 					return connectionOf(current)
 				}
 				const [row] = yield* dbExecute((db) =>
-					db.run(
-						PG.update(AwsConnections)
-							.set({ ...changes, updatedAt })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
-							.returning(),
+					db.transaction(
+						Effect.gen(function* () {
+							const rows = yield* db.run(
+								PG.update(AwsConnections)
+									.set({ ...changes, updatedAt })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(connectionId)])
+									.returning(),
+							)
+							// Cost turned on or off shows on the Cost page at once, not at the next sync tick.
+							if (modules !== undefined) yield* reconcileAwsCostSources(db, updatedAt, orgId)
+							return rows
+						}),
 					),
 				)
 				if (row === undefined) return yield* notFound()
@@ -614,6 +636,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 										.returning(),
 								)
 								if (outcome !== null) yield* reportPoll(db, row.sourceId, outcome, now)
+								// A check can grant or lose cost: its source follows now, not at the next sync tick.
+								yield* reconcileAwsCostSources(db, now, row.orgId)
 								return rows
 							}),
 						),
@@ -789,6 +813,8 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 									.returning(),
 							)
 							yield* deleteSourcesOf(db, orgId, deleted, "aws")
+							const now = yield* Clock.currentTimeMillis
+							yield* reconcileAwsCostSources(db, now, orgId)
 							return deleted
 						}),
 					),
@@ -809,5 +835,7 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide([FetchHttpClient.layer, OrganizationFeatureFlagsService.layer]),
+	)
 }

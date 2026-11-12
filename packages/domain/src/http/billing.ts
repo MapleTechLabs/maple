@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Effect, Schema, Array as Arr } from "effect"
 import { AiCreditSource } from "../billing"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
+import { CodeReviewSpend } from "./code-review"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { OrgId } from "@maple/primitives"
@@ -258,12 +259,26 @@ export class AiCreditDay extends Schema.Class<AiCreditDay>("AiCreditDay")({
 	credits: Schema.Number,
 }) {}
 
-/** This cycle's AI credit spend, split by surface and by day. One credit is one dollar. */
+/** AI credits one model's calls spent this cycle. */
+export class AiCreditModelUsage extends Schema.Class<AiCreditModelUsage>("AiCreditModelUsage")({
+	/** As tracked, `<provider>/<model>`: `openrouter/deepseek/deepseek-v4.1-flash`. */
+	model: Schema.String,
+	credits: Schema.Number,
+}) {}
+
+/** This cycle's AI credit spend, split by surface, by day and by model. One credit is one dollar. */
 export class AiCreditUsageResponse extends Schema.Class<AiCreditUsageResponse>("AiCreditUsageResponse")({
+	/** The billing cycle the figures cover, epoch ms. */
+	cycleStartMs: Schema.Number,
+	cycleEndMs: Schema.Number,
 	/** Largest first with `other` last, surfaces that spent nothing left out. */
 	bySource: Schema.Array(AiCreditSourceUsage),
 	/** Ascending by date, days that spent nothing left out. */
 	days: Schema.Array(AiCreditDay),
+	/** Largest first, models that spent nothing left out. */
+	byModel: Schema.Array(AiCreditModelUsage),
+	/** This org's code reviews over the cycle; null when it ran none or they could not be read. */
+	codeReview: Schema.NullOr(CodeReviewSpend),
 }) {}
 
 const NonNegativeFiniteNumber = Schema.Number.pipe(

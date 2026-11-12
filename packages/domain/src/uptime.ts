@@ -360,8 +360,16 @@ const relativeAge = (ms: number): string => {
 }
 
 /** The error an overdue heartbeat records, e.g. `No ping since 2026-10-26 14:03 UTC (3 h ago)`. */
-export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string => {
-	if (lastPingAt === null) return "No ping received yet"
-	const at = Str.replace("T", " ")(Str.slice(0, 16)(new Date(lastPingAt).toISOString()))
-	return `No ping since ${at} UTC (${relativeAge(nowMs - lastPingAt)})`
-}
+export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string =>
+	lastPingAt === null ? "No ping received yet" : `No ping since ${sinceText(lastPingAt, nowMs)}`
+
+const sinceText = (at: number, nowMs: number): string =>
+	`${Str.replace("T", " ")(Str.slice(0, 16)(new Date(at).toISOString()))} UTC (${relativeAge(nowMs - at)})`
+
+/** How long a probe's last check vouches for it: 3 intervals, and never under 5 minutes. */
+export const probeStaleAfterMs = (intervalSeconds: number): number =>
+	Math.max(3 * intervalSeconds * 1000, 5 * 60_000)
+
+/** What a probe with no recent check reports, e.g. `No check result since 2026-10-26 14:03 UTC (12 min ago)`. */
+export const describeStaleProbe = (lastCheckAt: number | null, nowMs: number): string =>
+	lastCheckAt === null ? "No check result yet" : `No check result since ${sinceText(lastCheckAt, nowMs)}`

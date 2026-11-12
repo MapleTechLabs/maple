@@ -21,11 +21,29 @@ export interface IngestConfig {
 	 * follow it — the same source the session metadata row reads.
 	 */
 	readonly getIdentity?: (() => EventIdentity | undefined) | undefined
+	/**
+	 * Uncaught errors that are not the app's. One becomes no session event, so it
+	 * counts toward neither `error_count` nor the "has errors" filter.
+	 */
+	readonly isErrorNoise?: ErrorNoiseFilter | undefined
 	/** Record `<canvas>` content at this many frames per second. Off when unset or 0. */
 	readonly canvasFps?: number | undefined
 	/** Keep request and response bodies of these URLs on replay network events. */
 	readonly networkBodies?: NetworkBodyOptions | undefined
 }
+
+/**
+ * True for an uncaught error that is not the app's, such as the benign
+ * `ResizeObserver loop` notice. `error` is what was thrown, or the event's
+ * message when the browser gave no error; `filename` is `ErrorEvent.filename`.
+ * The SDK supplies it: its patterns live above this package.
+ * BOUNDARY: a thrown value is unparsed by definition.
+ */
+export type ErrorNoiseFilter = (
+	error: unknown,
+	source: "window.onerror" | "unhandledrejection",
+	filename?: string,
+) => boolean
 
 export interface NetworkBodyOptions {
 	/** Matched against the full request URL. Nothing is captured for other URLs. */

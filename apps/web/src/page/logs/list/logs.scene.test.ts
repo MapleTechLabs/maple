@@ -1,6 +1,7 @@
 import { OrgId, TraceId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
+	click,
 	Command,
 	expect as expectView,
 	expectOutMessage,
@@ -156,6 +157,31 @@ describe("logs list", () => {
 		)
 		expect(appended.model.stream.rows).toHaveLength(200)
 		expect(appended.model.pagination.isFetching).toBe(false)
+	})
+
+	test("a failed next page waits for Try again instead of ending the list", () => {
+		const nearEnd = pageUpdate(withFirstPage(), windowOf(60, 85)).model
+		const answer = (result: Result.Result<ReturnType<typeof page>, ReturnType<typeof toLoadFailure>>) =>
+			Message.CompletedFetchNextPage({
+				key: nearEnd.firstPage.key ?? "",
+				generation: nearEnd.pagination.generation,
+				result,
+			})
+		const failed = pageUpdate(nearEnd, answer(Result.fail(toLoadFailure("injected")))).model
+		// Scrolling does not ask again on its own.
+		expect(names(pageUpdate(failed, windowOf(61, 86)).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(VirtualizeLogStream, streamWindow(60, 85)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			expectView(text("Couldn't load more logs")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.resolve(FetchNextPage, answer(Result.succeed(page(100, 3, null)))),
+			expectView(text("Couldn't load more logs")).not.toExist(),
+			expectView(text("103 logs")).toExist(),
+		)
 	})
 
 	test("a later page started under an older first page is dropped", () => {

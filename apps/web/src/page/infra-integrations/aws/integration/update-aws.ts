@@ -1,5 +1,5 @@
 import type { V2AwsConnection, V2AwsIngest, V2AwsSetup } from "@maple/domain/http/v2"
-import type { AwsConnectionId, AwsMetricNamespace } from "@maple/primitives"
+import type { AwsConnectionId, AwsMetricNamespace, AwsModule } from "@maple/primitives"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -26,17 +26,19 @@ import {
 	METRIC_SELECTION_HINT,
 	metricStreamOf,
 	normalizeAccountId,
+	offeredModule,
 	pendingConnections,
 	ReadAwsRemoved,
 	selectionOf,
 	UpdateAwsMetricStream,
+	UpdateAwsModules,
 	WriteAwsRemoved,
 } from "./aws"
 import { integrationOfSearch } from "../../../integrations/catalog"
 import { ReadClock, TrackDisconnected } from "../../../integrations/command"
 import { disconnectSpec } from "../../../integrations/disconnect"
 import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { canManage, type Model } from "../../../integrations/model"
 import { chain, requestStatus } from "../../../integrations/update-status"
 
 type Return = PageReturn<Model, Message>
@@ -57,6 +59,11 @@ export const connectionsOf = (model: Model): ReadonlyArray<V2AwsConnection> =>
 		onSome: (status) => status.connections,
 	})
 
+const flip = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
+	values.includes(value) ? Arr.filter(values, (entry) => entry !== value) : [...values, value]
+
+const statusOf = (model: Model) => Option.getOrNull(AsyncData.getData(model.statuses.aws.data))
+
 export const gotAccountId = (model: Model, message: Field.Message): Return => {
 	const step = Field.update(model.awsCard.accountId, message)
 	return {
@@ -71,7 +78,15 @@ export const gotAccountId = (model: Model, message: Field.Message): Return => {
 export const submittedAccount = (model: Model): Return => {
 	const card = model.awsCard
 	if (card.isCreating) return { model }
-	return Option.match(decodeCreateRequest({ account_id: normalizeAccountId(card.accountId.value) }), {
+	// Only what the org is offered is asked for: the API refuses a module it is not.
+	const modules = Arr.filter(card.newModules, (module) =>
+		Option.isSome(offeredModule(statusOf(model), module)),
+	)
+	const request = {
+		account_id: normalizeAccountId(card.accountId.value),
+		...(modules.length > 0 && { modules }),
+	}
+	return Option.match(decodeCreateRequest(request), {
 		onNone: () => ({ model: withCard(model, { createError: "An AWS account ID is 12 digits." }) }),
 		onSome: (request) => ({
 			model: withCard(model, { isCreating: true, createError: null }),
@@ -100,8 +115,13 @@ export const failedCreate = (model: Model, error: string): Return => ({
 })
 
 export const setAdding = (model: Model, isAdding: boolean): Return => ({
-	model: withCard(model, { isAdding, createError: null }),
+	model: withCard(model, { isAdding, createError: null, newModules: [] }),
 })
+
+export const toggledNewModule = (model: Model, module: AwsModule): Return =>
+	model.awsCard.isCreating
+		? { model }
+		: { model: withCard(model, { newModules: flip(model.awsCard.newModules, module) }) }
 
 const setupKey = (context: PageContext, id: AwsConnectionId) =>
 	requestKey(context.orgId, "awsIntegration.setup", { id })
@@ -452,9 +472,6 @@ const toggled = (
 	}
 }
 
-const flip = <A>(values: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
-	values.includes(value) ? Arr.filter(values, (entry) => entry !== value) : [...values, value]
-
 export const toggledRegion = (model: Model, id: AwsConnectionId, region: string): Return =>
 	toggled(model, id, (selection) => ({ ...selection, regions: flip(selection.regions, region) }))
 
@@ -508,5 +525,81 @@ export const completedMetricStream = (
 		(next) => openSetup(next, context, connection.id, "Supersede"),
 		(next) => requestStatus(next, context, "aws", "Supersede"),
 		done,
+	])
+}
+
+/** One module in or out of what the connection asks for; its other modules are kept. */
+export const toggledModule = (model: Model, id: AwsConnectionId, module: AwsModule): Return => {
+	const found = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	if (Option.isNone(found) || !canManage(model) || model.awsCard.moduleSave._tag === "Saving")
+		return { model }
+	return {
+		model: withCard(model, { moduleSave: { _tag: "Saving", id } }),
+		commands: [UpdateAwsModules({ id, modules: flip(found.value.modules, module) })],
+	}
+}
+
+/** The answered connection takes its place in the status, so the switch does not wait for the re-read. */
+const withConnection = (model: Model, connection: V2AwsConnection): Model => ({
+	...model,
+	statuses: {
+		...model.statuses,
+		aws: {
+			...model.statuses.aws,
+			data: AsyncData.map(model.statuses.aws.data, (status) => ({
+				...status,
+				connections: Arr.map(status.connections, (entry) =>
+					entry.id === connection.id ? connection : entry,
+				),
+			})),
+		},
+	},
+})
+
+/**
+ * The role follows only once the stack is deployed again, so its setup opens with the new script,
+ * as after a metric stream change. A refusal stays on the row and leaves the switch as it was.
+ */
+export const completedModules = (
+	model: Model,
+	context: PageContext,
+	id: AwsConnectionId,
+	connection: V2AwsConnection | null,
+	error: string | null,
+): Return => {
+	if (connection === null)
+		return {
+			model: withCard(model, {
+				moduleSave: { _tag: "Refused", id, error: error ?? "Couldn't change what Maple reads." },
+			}),
+		}
+	const before = Arr.findFirst(connectionsOf(model), (entry) => entry.id === id)
+	const changed = Arr.findFirst(
+		statusOf(model)?.modules ?? [],
+		(info) =>
+			connection.modules.includes(info.module) !==
+			Option.exists(before, (entry) => entry.modules.includes(info.module)),
+	)
+	return chain(withCard(withConnection(model, connection), { moduleSave: { _tag: "Idle" } }), [
+		(next) => openSetup(next, context, connection.id, "Supersede"),
+		(next) => requestStatus(next, context, "aws", "Supersede"),
+		(next) =>
+			Option.match(changed, {
+				onNone: () => ({ model: next }),
+				onSome: (info) =>
+					connection.modules.includes(info.module)
+						? toast(
+								next,
+								"success",
+								`${info.title} turned on`,
+								"Run the setup again in AWS to grant it.",
+							)
+						: toast(
+								next,
+								"success",
+								`${info.title} turned off`,
+								"Run the setup again in AWS to remove its policy.",
+							),
+			}),
 	])
 }

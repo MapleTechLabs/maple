@@ -1,18 +1,21 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import {
+	click,
 	Command,
 	expect as expectView,
 	find,
 	given,
 	label,
 	Mount,
+	role,
 	scene,
 	tap,
 	text,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { SessionRow } from "../kit/session-row"
 import {
@@ -399,6 +402,35 @@ describe("replays list", () => {
 			{ update: pageUpdate, view },
 			given(withPresence(loaded(page([])), "absent")),
 			expectView(text("No sessions yet")).toExist(),
+		)
+	})
+
+	test("a failed next page shows Try again in place of the end sentinel", () => {
+		const model = pageUpdate(
+			loaded(page([session("a", "Maria Garcia")], "cursor-1")),
+			rowsWindow(1),
+		).model
+		const asked = pageUpdate(model, Message.ReachedListEnd()).model
+		const answer = (result: Result.Result<ReplaysPage, ReturnType<typeof toLoadFailure>>) =>
+			Message.CompletedFetchNextPage({
+				key: model.pagination.key ?? "",
+				generation: model.pagination.generation,
+				cursor: "cursor-1",
+				result,
+			})
+		const failed = pageUpdate(asked, answer(Result.fail(toLoadFailure("injected")))).model
+		// The sentinel coming back into view does not ask again on its own.
+		expect(names(pageUpdate(failed, Message.ReachedListEnd()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Couldn't load more sessions")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.resolve(FetchNextPage, answer(Result.succeed(page([session("b", "Li Wei")])))),
+			// The retry brought the sentinel back; the last page then took it away.
+			Mount.expectEnded(WatchListEnd),
+			expectView(text("Couldn't load more sessions")).not.toExist(),
 		)
 	})
 

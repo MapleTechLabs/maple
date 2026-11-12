@@ -26,6 +26,7 @@ import type {
 import {
 	fromV2Threshold,
 	MapleApiV2,
+	missingReadScopes,
 	paginateArray,
 	scopeAllows,
 	timestamp,
@@ -36,6 +37,7 @@ import { AlertForbiddenError } from "@maple/domain/http"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema, String as Str } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
+import { ruleReadFamilies } from "@/routes/v2/alert-rule-read-families"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -427,6 +429,24 @@ const mergeUpsertRequest = (
 		})
 	})
 
+/**
+ * Preview and test run the rule's query and hand back what it measured, grouped by whatever
+ * the caller chose: a telemetry read. A scoped key must be able to read that telemetry itself.
+ */
+const requireRuleReadScopes = (scopes: ReadonlyArray<string> | undefined, rule: AlertRuleUpsertRequest) => {
+	const missing = missingReadScopes(scopes, ruleReadFamilies(rule))
+	return missing.length === 0
+		? Effect.void
+		: Effect.fail(
+				new AlertForbiddenError({
+					message: `Running this rule's query requires ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}, because it returns the telemetry it reads.`,
+				}),
+			)
+}
+
 const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePreviewResult => ({
 	object: "alert_rule.preview",
 	bucket_seconds: preview.bucketSeconds,
@@ -562,6 +582,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const rule = yield* toUpsertRequest(payload.rule)
+					yield* requireRuleReadScopes(tenant.scopes, rule)
 					const result = yield* alerts.testRule(
 						tenant.orgId,
 						tenant.userId,
@@ -600,6 +621,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 								'Previewing a raw SQL alert requires the "alerts:write" scope, because it executes your query against the warehouse.',
 						})
 					}
+					yield* requireRuleReadScopes(tenant.scopes, rule)
 					const preview = yield* alerts.previewRule(
 						tenant.orgId,
 						tenant.roles,

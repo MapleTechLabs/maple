@@ -290,7 +290,7 @@ export const SelectPlanSearch = Schema.Struct({
 })
 
 export const ServiceMapSearch = Schema.Struct({
-	view: Schema.optional(Schema.Literals(["2d", "3d"])),
+	view: Schema.optional(Schema.Literals(["2d", "3d", "tiles"])),
 	environment: StringParam,
 	focusService: StringParam,
 	focusHops: Schema.optional(Schema.Literals([1, 2])),
@@ -564,6 +564,32 @@ export const AnomaliesSearch = Schema.Struct({
 })
 
 export const CodeReviewSearch = Schema.Struct(CodeReviewSearchFields)
+
+/** The dimensions `/cost` groups by and filters on (a subset of `CostDimension`). */
+export const COST_GROUP_BYS = [
+	"cloud_service",
+	"provider",
+	"service_category",
+	"region",
+	"usage_type",
+	"account",
+] as const
+
+/**
+ * `/cost`: the day range, the grouping (`cloud_service` when absent), the table's order (`cost`
+ * when absent), and one value list per dimension a row click narrowed to.
+ */
+export const CostSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+	groupBy: Schema.optional(Schema.Literals(COST_GROUP_BYS)),
+	sort: Schema.optional(Schema.Literals(["cost", "change"])),
+	cloud_service: OptionalStringArrayParam,
+	provider: OptionalStringArrayParam,
+	service_category: OptionalStringArrayParam,
+	region: OptionalStringArrayParam,
+	usage_type: OptionalStringArrayParam,
+	account: OptionalStringArrayParam,
+})
 
 export const DashboardsSearch = Schema.Struct({
 	q: StringParam,

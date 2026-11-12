@@ -5,7 +5,7 @@ import type {
 	QueryEngineExecuteRequest,
 	QueryEngineExecuteResponse,
 } from "@maple/domain/query-engine"
-import { Context, type Effect, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 import type { HttpApiClient } from "effect/http-api"
 
 /**
@@ -35,8 +35,22 @@ export class WarehouseExecutor extends Context.Service<
 		readonly enqueue: (
 			payload: QueryEngineExecuteRequest,
 		) => Effect.Effect<QueryEngineExecuteResponse, WarehouseExecuteFailure>
+		/** Skips the shared window: the query goes out at once in its own request. */
+		readonly executeAlone: (
+			payload: QueryEngineExecuteRequest,
+		) => Effect.Effect<QueryEngineExecuteResponse, WarehouseExecuteFailure>
 	}
 >()("@maple/web-data/WarehouseExecutor") {}
+
+/**
+ * Runs `effect` with its warehouse reads in their own request instead of the shared batch.
+ * A batch answers at the speed of its slowest member, so use it for a read that can be slow.
+ */
+export const outsideSharedBatch = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.updateService(effect, WarehouseExecutor, (executor) => ({
+		...executor,
+		enqueue: executor.executeAlone,
+	}))
 
 /** The plain typed client of the dashboard's private `/internal` API. */
 export class MapleInternalHttp extends Context.Service<

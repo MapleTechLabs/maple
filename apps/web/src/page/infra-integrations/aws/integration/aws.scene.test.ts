@@ -5,11 +5,11 @@ import { AwsMetricStream } from "@maple/domain/aws"
 import { AWS_METRIC_NAMESPACES } from "@maple/primitives"
 import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import { isMetricsPanelOpen, isSavingMetricsOf, metricsErrorOf } from "./aws"
+import { isMetricsPanelOpen, isSavingMetricsOf, LoadAwsSetup, metricsErrorOf, UpdateAwsModules } from "./aws"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
@@ -54,6 +54,27 @@ const entered = (): Model => init({ search: { integration: "aws" } }, context).m
 
 const withStatus = (model: Model, connections: ReadonlyArray<V2AwsConnection>): Model => {
 	const status: V2AwsIntegration = { object: "aws_integration", available: true, modules: [], connections }
+	return pageUpdate(
+		model,
+		Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
+	).model
+}
+
+const COST_MODULE = {
+	module: "cost",
+	title: "Cost",
+	summary: "Daily spend by service, read from Cost Explorer. AWS bills each request USD 0.01.",
+	available: true,
+} as const
+
+/** The status of an org the Cost module is offered to. */
+const withCost = (model: Model, connections: ReadonlyArray<V2AwsConnection>): Model => {
+	const status: V2AwsIntegration = {
+		object: "aws_integration",
+		available: true,
+		modules: [COST_MODULE],
+		connections,
+	}
 	return pageUpdate(
 		model,
 		Message.CompletedLoadAws({ key: statusKey(context, "aws"), result: Result.succeed(status) }),
@@ -418,6 +439,53 @@ describe("aws card", () => {
 		)
 	})
 
+	test("deliveries are one step: the first until something arrived, the latest after", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const at = (connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				withStatus(entered(), connections),
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-23T09:00:00.000Z") }),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(at([connection({ verified_at, metric_stream: stream })])),
+			expectView(text("First delivery", { exact: false })).toExist(),
+			expectView(text("Latest delivery", { exact: false })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				at([
+					connection({
+						verified_at,
+						metric_stream: stream,
+						metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+					}),
+				]),
+			),
+			expectView(text("Latest delivery", { exact: false })).toExist(),
+			expectView(text("First delivery", { exact: false })).not.toExist(),
+		)
+	})
+
+	test("a connection whose stack was never deployed leads with Finish setup; a verified one offers Reconnect", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection()])),
+			expectView(role("button", { name: "Finish setup" })).toExist(),
+			expectView(role("button", { name: "Reconnect" })).not.toExist(),
+			// Nothing to edit before Maple sees the account.
+			expectView(role("button", { name: "Edit data" })).not.toExist(),
+		)
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection({ verified_at })])),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+			expectView(role("button", { name: "Finish setup" })).not.toExist(),
+		)
+	})
+
 	test("a streaming connection's ingest is read with its status and shown by namespace and region", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
 		const delivering = connection({
@@ -573,5 +641,235 @@ describe("aws card", () => {
 		expect(names(init({ search: { integration: "aws" } }, context).commands)).toContain(
 			"ReadAwsRemovedStacks",
 		)
+	})
+	describe("the Cost module", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
+		const verified = (overrides: Partial<V2AwsConnection> = {}) =>
+			connection({ verified_at, template_version: 2, granted_modules: [], ...overrides })
+		const costSwitch = role("switch", { name: "Cost" })
+
+		test("an org the module is not offered to sees no Cost row", () => {
+			const unavailable: V2AwsIntegration = {
+				object: "aws_integration",
+				available: true,
+				modules: [{ ...COST_MODULE, available: false }],
+				connections: [verified()],
+			}
+			const model = pageUpdate(
+				entered(),
+				Message.CompletedLoadAws({
+					key: statusKey(context, "aws"),
+					result: Result.succeed(unavailable),
+				}),
+			).model
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(text("123456789012")).toExist(),
+				expectView(costSwitch).not.toExist(),
+				expectView(text(COST_MODULE.summary)).not.toExist(),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(withStatus(entered(), [verified()])),
+				expectView(costSwitch).not.toExist(),
+			)
+		})
+
+		test("off says so beside the module's summary, and turning it on keeps the other modules", () => {
+			const model = withCost(entered(), [
+				verified({ modules: ["inventory"], granted_modules: ["inventory"] }),
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(costSwitch).not.toBeChecked(),
+				expectView(text(COST_MODULE.summary)).toExist(),
+				// Off carries no status: the switch says it.
+				expectView(text("Reading")).not.toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
+			)
+			const sent = pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
+				{ name: UpdateAwsModules.name, args: { id: connectionId, modules: ["inventory", "cost"] } },
+			])
+			// A second toggle while saving sends nothing.
+			expect(
+				names(
+					pageUpdate(sent.model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+						.commands,
+				),
+			).toEqual([])
+		})
+
+		test("once saved the switch is on, the status is read again and the setup opens to update the stack", () => {
+			const model = withCost(entered(), [verified()])
+			const sent = pageUpdate(
+				model,
+				Message.ToggledAwsModule({ id: connectionId, module: "cost" }),
+			).model
+			const saved = pageUpdate(
+				sent,
+				Message.CompletedAwsModules({
+					id: connectionId,
+					connection: verified({ modules: ["cost"], setup_outdated: true }),
+					error: null,
+				}),
+			)
+			expect(names(saved.commands)).toContain("LoadIntegrationsAwsStatus")
+			expect(names(saved.commands)).toContain("LoadAwsSetup")
+			expect(saved.model.awsCard.setupId).toBe(connectionId)
+			expect(saved.outMessage).toEqual(
+				PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Cost turned on",
+					description: "Run the setup again in AWS to grant it.",
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(saved.model),
+				expectView(costSwitch).toBeChecked(),
+				expectView(costSwitch).toBeEnabled(),
+				expectView(text("Needs a stack update")).toExist(),
+				expectView(
+					text("Update the stack to add read-only billing access", { exact: false }),
+				).toExist(),
+				expectView(text("Deploy the stack again")).toExist(),
+			)
+		})
+
+		test("on but not granted offers the stack's script; granted links to the Cost page", () => {
+			const waiting = withCost(entered(), [verified({ modules: ["cost"], setup_outdated: true })])
+			scene(
+				{ update: pageUpdate, view },
+				given(waiting),
+				expectView(costSwitch).toBeChecked(),
+				expectView(text("Needs a stack update")).toExist(),
+				expectView(
+					text("Update the stack to add read-only billing access", { exact: false }),
+				).toExist(),
+				expectView(role("link", { name: "Open Cost" })).not.toExist(),
+				expectView(text("Deploy the stack again")).not.toExist(),
+				click(role("button", { name: "Update the stack" })),
+				Command.resolve(
+					LoadAwsSetup,
+					Message.CompletedLoadAwsSetup({
+						key:
+							pageUpdate(waiting, Message.ClickedAwsSetup({ id: connectionId })).model.awsCard
+								.setup.key ?? "",
+						result: Result.succeed({
+							object: "aws_connection.setup",
+							stack_name: "maple-integration-with-cost",
+							stack_region: "us-east-1",
+							setup_script: "aws cloudformation deploy",
+							cleanup_script: "",
+							cloudformation_template: "{}",
+							terraform: "",
+							metrics_stack_name: null,
+							metrics_cloudformation_template: null,
+						}),
+					}),
+				),
+				// The same setup Reconnect opens: the stack's script, to run again.
+				expectView(text("Deploy the stack again")).toExist(),
+				expectView(
+					text("It deploys the stack maple-integration-with-cost", { exact: false }),
+				).toExist(),
+			)
+			const granted = withCost(entered(), [verified({ modules: ["cost"], granted_modules: ["cost"] })])
+			scene(
+				{ update: pageUpdate, view },
+				given(granted),
+				expectView(costSwitch).toBeChecked(),
+				expectView(text("Reading")).toExist(),
+				expectView(text("Maple reads this account's daily spend", { exact: false })).toExist(),
+				expectView(role("link", { name: "Open Cost" })).toHaveAttr("href", "/cost"),
+				expectView(role("button", { name: "Update the stack" })).not.toExist(),
+			)
+		})
+
+		test("a connection whose stack was never deployed waits for it, without a second script button", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withCost(entered(), [connection({ modules: ["cost"] })])),
+				expectView(costSwitch).toBeChecked(),
+				expectView(text("Waiting for the stack")).toExist(),
+				expectView(text("once the stack is deployed", { exact: false })).toExist(),
+				expectView(role("button", { name: "Update the stack" })).not.toExist(),
+			)
+		})
+
+		test("turning it off sends the other modules without it", () => {
+			const model = withCost(entered(), [
+				verified({ modules: ["inventory", "cost"], granted_modules: ["inventory", "cost"] }),
+			])
+			const sent = pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
+				{ name: UpdateAwsModules.name, args: { id: connectionId, modules: ["inventory"] } },
+			])
+			const saved = pageUpdate(
+				sent.model,
+				Message.CompletedAwsModules({
+					id: connectionId,
+					connection: verified({
+						modules: ["inventory"],
+						granted_modules: ["inventory", "cost"],
+						setup_outdated: true,
+					}),
+					error: null,
+				}),
+			)
+			expect(saved.outMessage).toMatchObject({ _tag: "RequestedToast", title: "Cost turned off" })
+			scene(
+				{ update: pageUpdate, view },
+				given(saved.model),
+				expectView(costSwitch).not.toBeChecked(),
+				expectView(text("Reading")).not.toExist(),
+			)
+		})
+
+		test("a refused change says why on the row and leaves the switch as it was", () => {
+			const model = withCost(entered(), [verified()])
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				click(costSwitch),
+				Command.expectHas(UpdateAwsModules({ id: connectionId, modules: ["cost"] })),
+				// While the change is saved the switch holds where it was.
+				expectView(costSwitch).not.toBeChecked(),
+				expectView(costSwitch).toBeDisabled(),
+				Command.resolve(
+					UpdateAwsModules,
+					Message.CompletedAwsModules({
+						id: connectionId,
+						connection: null,
+						error: "Cost is not available for this organization.",
+					}),
+				),
+				expectView(costSwitch).not.toBeChecked(),
+				expectView(costSwitch).toBeEnabled(),
+				expectView(role("alert")).toHaveText("Cost is not available for this organization."),
+				expectView(text("Deploy the stack again")).not.toExist(),
+			)
+		})
+
+		test("a member reads the state and cannot change it", () => {
+			const member: Model = { ...withCost(entered(), [verified()]), grants: [] }
+			scene(
+				{ update: pageUpdate, view },
+				given(member),
+				expectView(costSwitch).toBeDisabled(),
+				expectView(
+					text("Only org admins and engineers can change what Maple reads from AWS."),
+				).toExist(),
+			)
+			expect(
+				names(
+					pageUpdate(member, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
+						.commands,
+				),
+			).toEqual([])
+		})
 	})
 })

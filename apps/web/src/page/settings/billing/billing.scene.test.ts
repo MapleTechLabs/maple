@@ -1,15 +1,9 @@
 import * as Policy from "@maple/domain/policy"
-import {
-	AiCreditUsageResponse,
-	AttachResult,
-	BillingAccount,
-	BillingCustomer,
-	BillingProfile,
-} from "@maple/domain/http"
+import { AttachResult, BillingAccount, BillingCustomer, BillingProfile } from "@maple/domain/http"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
-import { expect as expectView, given, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { Message, type Model } from "./model"
 import { Message as DetailsMessage } from "./details/model"
@@ -54,6 +48,7 @@ const usageView = Submodel.defineView<Model, Message, Readonly<{ readonly none?:
 	},
 )
 const view = withViewInputs(usageView, {})()
+
 const step = (model: Model, message: Message) => update(model, message, customer, NOW).step
 /** The tab once the account says this org pays for itself. */
 const entered = () =>
@@ -119,36 +114,16 @@ describe("billing tab", () => {
 		)
 	})
 
-	test("the AI credits row says which surfaces spent them, and offers a retry when that read fails", () => {
-		const aiUsage = Schema.decodeSync(AiCreditUsageResponse)({
-			bySource: [
-				{ source: "triage", credits: 3.1 },
-				{ source: "chat", credits: 1.05 },
-				{ source: "other", credits: 0.004 },
-			],
-			days: [{ date: "1970-01-02", credits: 4.3 }],
-		})
-		const loaded = step(
-			init(ADMIN, false, true).model,
-			Message.CompletedFetchAiUsage({ result: Result.succeed(aiUsage) }),
-		).model
-		scene(
-			{ update: step, view },
-			given(loaded),
-			expectView(text("AI credits")).toExist(),
-			expectView(text("Investigations $3.10 · Chat $1.05 · Other <$0.01")).toExist(),
-		)
+	test("the AI credits row links to its breakdown page, even when the AI usage read fails", () => {
 		const failed = step(
 			init(ADMIN, false, true).model,
 			Message.CompletedFetchAiUsage({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
-		)
+		).model
 		scene(
 			{ update: step, view },
-			given(failed.model),
-			expectView(text("Couldn't load where it went")).toExist(),
-		)
-		expect(names(step(failed.model, Message.ClickedRetryAiUsage()).commands)).toContain(
-			"FetchBillingAiCreditUsage",
+			given(failed),
+			expectView(text("AI credits")).toExist(),
+			expectView(role("link", { name: "Details" })).toExist(),
 		)
 	})
 

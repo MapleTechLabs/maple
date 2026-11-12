@@ -30,6 +30,7 @@ import {
 	ResolveCustomToday,
 	update,
 	view,
+	quickSelectOf,
 } from "./time-range-picker"
 
 // The footer's UTC offset is read for the current instant when the picker opens, never in view.
@@ -194,6 +195,17 @@ describe("time range picker custom range", () => {
 			expectView(customButton).toExist(),
 			expectView(role("button", { name: "Apply" })).toBeAbsent(),
 		)
+	})
+
+	test("a page of daily data offers no quick-select range under a day", () => {
+		const offered = quickSelectOf({ minRangeSeconds: 24 * 60 * 60 })
+		expect(offered).not.toContain("3h")
+		expect(offered).not.toContain("12h")
+		expect(offered).toContain("4d")
+		// A calendar day is a whole day.
+		expect(offered).toContain("today")
+		// Without a minimum the short ranges are offered as before.
+		expect(quickSelectOf({})).toContain("3h")
 	})
 
 	test("a long-range page refuses a custom window past a year", () => {

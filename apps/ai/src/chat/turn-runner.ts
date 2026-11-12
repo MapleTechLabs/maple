@@ -17,7 +17,9 @@
  *     its *own* runtime, so it just resolves `InvestigationService` without a cycle.
  */
 import { type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { BillingCustomerId, PrReviewFailureReason } from "@maple/domain/http"
+import type { BillingCustomerId, PrReviewFailureReason, PrReviewId } from "@maple/domain/http"
+import type { PrReviewServiceApi } from "@maple/backend/services/pr-review/PrReviewService"
+import type { OrgId } from "@maple/primitives"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import { Effect, Layer, ManagedRuntime, Match, Option, Redacted, Array as Arr, String as Str } from "effect"
@@ -45,7 +47,7 @@ import {
 	type ReviewTurnState,
 	withPartialReason,
 } from "./review/completion"
-import { makeRunUsage, type RunUsage } from "./usage"
+import { makeRunUsage, reportedCostMicrousd, type RunUsage } from "./usage"
 import type { MakeCompletion } from "./completion"
 
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
@@ -183,6 +185,29 @@ export const meterTurn = (
 		Effect.ignore,
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- metering is forked off the turn and runs on its own HTTP client
 		Effect.provide(FetchHttpClient.layer),
+	)
+}
+
+/**
+ * Adds the turn's reported cost to its review's row, which the billing page breaks code review spend
+ * down by. A turn on the org's own key adds 0: it ran, and Maple billed nothing for it.
+ */
+export const recordReviewCost = (
+	reviews: Pick<PrReviewServiceApi, "addCost">,
+	orgId: OrgId,
+	reviewId: PrReviewId | undefined,
+	usage: Pick<RunUsage, "charges">,
+	ownKey: boolean,
+): Effect.Effect<void> => {
+	const costMicrousd = ownKey ? 0 : reportedCostMicrousd(usage)
+	if (reviewId === undefined || costMicrousd === undefined) return Effect.void
+	return reviews.addCost(orgId, reviewId, costMicrousd).pipe(
+		Effect.timeout(METERING_TIMEOUT),
+		Effect.catchCause((cause) =>
+			Effect.logWarning("Could not record a review's cost").pipe(
+				Effect.annotateLogs({ orgId, reviewId, cause: String(cause) }),
+			),
+		),
 	)
 }
 
@@ -676,6 +701,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		})
 
 	const program = Effect.gen(function* () {
+		const reviews = yield* PrReviewService
 		const orgKey = yield* (yield* OrgOpenRouterKeyService).resolveForRun(tenant.orgId)
 		yield* Effect.annotateCurrentSpan("maple.llm.byok", Option.isSome(orgKey))
 		// Resolved before the turn so the finalizer has nothing left to look up. A failed lookup
@@ -700,11 +726,14 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			// still burned the tokens it burned, and the pre-`ensuring` shape billed none of them.
 			Effect.ensuring(
 				Effect.suspend(() =>
-					Option.match(customerId, {
-						onNone: () => Effect.void,
-						onSome: (payer) =>
-							meterTurn(input, payer, origin, usage, { ownKey: Option.isSome(orgKey) }),
-					}),
+					Effect.andThen(
+						Option.match(customerId, {
+							onNone: () => Effect.void,
+							onSome: (payer) =>
+								meterTurn(input, payer, origin, usage, { ownKey: Option.isSome(orgKey) }),
+						}),
+						recordReviewCost(reviews, tenant.orgId, prReviewId, usage, Option.isSome(orgKey)),
+					),
 				),
 			),
 		)

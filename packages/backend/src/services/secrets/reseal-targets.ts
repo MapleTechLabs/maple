@@ -16,6 +16,7 @@ import {
 	OAuthConnections,
 	OrgClickHouseSettings,
 	OrgIngestKeys,
+	OpenRouterCostConnections,
 	OrgOpenRouterKeys,
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
@@ -260,6 +261,14 @@ export const RESEAL_TARGETS = {
 	openRouterKeySlot: tripleTarget({
 		slot: slots.openRouterKeySlot,
 		table: OrgOpenRouterKeys,
+		columns: { ciphertext: "keyCiphertext", iv: "keyIv", tag: "keyTag" },
+		identity: ["orgId"],
+		keys: One,
+		ref: org,
+	}),
+	openRouterCostKeySlot: tripleTarget({
+		slot: slots.openRouterCostKeySlot,
+		table: OpenRouterCostConnections,
 		columns: { ciphertext: "keyCiphertext", iv: "keyIv", tag: "keyTag" },
 		identity: ["orgId"],
 		keys: One,

@@ -46,6 +46,7 @@ import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
 import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
 import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
+import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
@@ -70,6 +71,7 @@ import {
 	PlanetscaleEvents,
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
+import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
@@ -139,6 +141,7 @@ export * from "./escalations"
 export * from "./escalation-chains"
 export * from "./oncall-schedules"
 export * from "./aws-connections"
+export * from "./cost-sources"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
 export * from "./investigations"
@@ -156,6 +159,7 @@ export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
+export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
@@ -225,6 +229,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	GcpConnectors,
 	GcpResources,
 	AwsConnections,
+	CostSources,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
@@ -242,6 +247,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OrgIngestRuleStats,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
+	OpenRouterCostConnections,
 	OrgOpenRouterKeys,
 	OrgBillingLinks,
 	Sources,

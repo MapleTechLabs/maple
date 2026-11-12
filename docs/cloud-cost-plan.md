@@ -1,7 +1,9 @@
 # Cloud cost: plan
 
-Status: **phase 0 done, 2026-11-11.** Provider APIs checked against docs, public schemas and one
-real AWS account. Nothing is built except the AWS `cost` permission list.
+Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
+into `cost_daily` and shown on `/cost`. OpenRouter followed on 2026-11-12 as the second source.
+Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
+Recommendations (phase 2) and the other providers are not built.
 
 ## Goal
 
@@ -40,8 +42,10 @@ warehouse are not.
 
 ### Cost provider contract
 
-One adapter per integration, in `packages/backend/src/services/cost/providers/`, behind one port.
-The registry covers cost only. The integrations themselves are not refactored.
+One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
+The registry covers cost only. The integrations themselves are not refactored. A provider that is
+not an integration (OpenRouter) keeps its credential in a table of its own, and
+`cost_sources.connection_ref` points at that row.
 
 ```ts
 interface CostProvider {
@@ -59,41 +63,89 @@ interface CostProvider {
 
 ### Warehouse: `cost_daily`
 
-One row per connection, day, service, usage type, region and resource. Column names follow FOCUS
-(`BilledCost`, `EffectiveCost`, `ListCost`, `ConsumedQuantity`, `ChargeCategory`, `ServiceName`,
-`ResourceId`, `RegionId`, `Tags`), plus:
+One row per cost source, UTC day, cloud service, usage type, region, resource and charge category.
+Money and quantity columns follow FOCUS (`BilledCost`, `EffectiveCost`, `ListCost`,
+`ConsumedQuantity`, `ChargeCategory`). Where Maple's warehouse already has a meaning for a name,
+Maple's meaning wins:
 
+- `ServiceName` is the telemetry service a resource resolves to, as in every other table, and is
+  empty when none does. This is the join to requests and traces. The provider's own service is
+  `CloudService`.
 - `Basis`: `billed` (the provider reported the money) or `estimated` (usage times list price). The
   UI always shows which.
-- `MapleServiceName`: the telemetry `ServiceName` the resource resolves to, when one does. This is
-  the join to requests and traces.
-- `PullVersion`: every pull of a day writes a new version. Queries read the newest committed one
-  per `(connection, day)`. Providers restate recent days, so rows are never updated in place.
+- `Estimated`: 1 while the provider can still restate the day.
+- `IngestedAt` is the pull version. Each pull writes a source's whole day under one value, and
+  queries read the newest per `(SourceId, Date)`. Providers restate recent days and can drop keys,
+  so rows are never updated in place and never picked per key.
 
-Costs are decimals. It is a small table (hundreds of rows per connection per day), so it needs no
-rollup.
+Money is `Float64`, like every other measure in the warehouse, and is rounded to cents when shown.
+The table is written through the managed ingest route only, like `search_console_daily`: an org on
+its own ClickHouse still reads cost from Maple's warehouse. A disconnected source keeps its rows
+until the TTL (760 days), so reads name the org's active sources.
+
+It is a small table (hundreds of rows per source per day), so it needs no rollup.
 
 ### Postgres
 
-- `cost_sources`: one row per connection that supplies cost. Capabilities, watermark, lease, last
-  error, the committed `PullVersion` per day window.
-- `cost_recommendations`: followed across runs by `(source, fingerprint)`. Kind, resource, title,
-  estimated monthly saving and currency, effort, risk, evidence (jsonb), origin (`provider` or
-  `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one that comes back
-  reopens. A dismissed one stays dismissed.
+- `cost_sources`: one row per connection that supplies cost. Its lease, frontiers (newest and
+  oldest day pulled), last error and its reason, and the provider requests made this month. A
+  connection that stops supplying cost pauses its source and keeps its history. Only a deleted
+  connection deletes it.
+- `cost_recommendations` (phase 2): followed across runs by `(source, fingerprint)`. Kind,
+  resource, title, estimated monthly saving and currency, effort, risk, evidence (jsonb), origin
+  (`provider` or `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one
+  that comes back reopens. A dismissed one stays dismissed.
 
 ### Sync
 
-A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit). Each source is
-pulled at most a few times a day: the last 3 days on every run, the last 35 days once a day, and
-the previous month again until it stops reporting as estimated.
+A `cost_sync` lane on the `2-59/5` cron (the `*/5` one is at its lane limit), so a new source has
+cost within minutes. A connection that turns cost on, off or loses its grant updates its source in
+the same write, so the Cost page shows the wait before the first tick. Per source:
+
+- First pull: the previous month through today.
+- Then the last four days about daily, and the open months about weekly. The previous month stays
+  in the weekly pull until one has run after the tenth, so its last pull is after the provider
+  finalizes it.
+- History walks down one calendar month per step, to thirteen months back.
+- A source held for long resumes from its watermark, so no day in between is skipped.
+
+The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROFILES` in
+`sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
+reaches outside them, because a day the provider no longer serves comes back empty, and an empty
+day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
+never for today.
+
+Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
+marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
+
+What bounds the provider's bill for requests:
+
+- One request at a time, two retries, a page cap of two pages per day of the window (never under
+  20), and detail for the 12 largest regions at most.
+- Per source and month: past 500 requests history waits for the next month, past 1,500 the source
+  stops until then.
+- A pull too large to read or to store is held a day. A source whose org left the rollout is not
+  pulled, and is asked about again within the hour.
+- A source resuming after a gap starts at the month before its watermark's, so days pulled while
+  their month was still open get their final amounts.
+
+### Reads
+
+Every read names the org's cost sources, since a disconnected source keeps its rows, and is scoped
+to one currency: the largest in the window unless the request names one. The response says which
+currency the figures are in and lists the others. Nothing is added across currencies.
 
 ### Surfaces
 
-- Web: a "Cost" section behind the `cloudCost` flag. Overview (spend, change, top movers, open
-  savings), Explorer (group and filter), Recommendations (list and detail with the evidence chart),
-  Sources (what each connection supplies and what to enable).
-- API: `/v2/cost/*`.
+- Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
+  daily chart, a breakdown by service, provider, category, region, usage type or account with
+  filters, and each source's sync state. Sources are added from the page: AWS through its
+  connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
+  also replace or remove. Recommendations (list and detail with the evidence chart) come with
+  phase 2.
+- API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
+  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE /internal/cost/openrouter` for the
+  OpenRouter key. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -135,6 +187,33 @@ the previous month again until it stops reporting as estimated.
 - Permissions: the `cost` module now lists every read above (23 actions, all `Resource: "*"`). IAM
   Access Analyzer validates the rendered policy with no findings. No write action is included:
   enrolling in the hub or starting a recommendation run stays with the customer.
+
+### OpenRouter (billed)
+
+- Spec: `GET /api/v1/activity` returns one row per UTC day, model and serving endpoint for the
+  last 30 completed days, all in one answer. `usage` is USD billed by OpenRouter.
+- It needs a management key. A regular API key gets 403, so the key an org's AI turns run on
+  cannot be reused. The org pastes a management key on the Cost page, which Maple checks
+  (`GET /key`, then one activity read) and stores sealed.
+- Live: `GET /key` names the key's account: `organization_id`, or `creator_user_id` on a personal
+  account (`organization_id` is then null). That id is the source's account. A replacement key
+  must name the same one, since another account's spend would overwrite the source's days. A
+  replaced key also makes a failing source due again at once.
+- Spec: a management key can be scoped to one workspace, and then reads only that workspace.
+  Live: a key for the whole account answers 404 for a workspace the account does not have, where
+  the spec says a scoped key answers 403. Maple asks that when the key is saved and refuses a
+  scoped key, since its pulls would miss the rest of the account's spend without saying so.
+- Requests are free, so the source counts none.
+- Rows: the model is `CloudService`, the serving provider is `UsageType`, the category is "AI and
+  Machine Learning", the region is `global`. Rows OpenRouter billed nothing for are left out.
+- Not counted: spend on the account's own provider keys (`byok_usage_inference`). OpenRouter
+  estimates it at market rates, and the page does not yet tell billed from estimated.
+- Not split: workspaces and API keys. The activity API can filter by either.
+- Spec: the EU host documents inference only. Every instance reads activity from the global host.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily,
+  and yesterday is marked as not final, since it may have ended minutes before the pull.
+- A day OpenRouter answers nothing for is stored as empty, like any provider's. An empty answer
+  for an account that had spend would hide up to 28 days until the next weekly re-pull.
 
 ### GCP (billed, needs a customer export)
 
@@ -193,7 +272,9 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** Railway, GCP, PlanetScale, Supabase, Cloudflare, one PR each.
+3. **More providers.** OpenRouter is built. Railway, GCP, PlanetScale, Supabase, Cloudflare, one
+   PR each. Each provider adds a literal to `CostProvider`, an adapter, a reconcile function and a
+   sync profile.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -215,4 +296,12 @@ Each phase is one PR stack.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
+- AWS: a management account's rows include its member accounts and carry the connected account's
+  id. Cost Explorer takes two group-by keys, so splitting by linked account multiplies the
+  requests. The CUR 2.0 export carries the account on every row (phase 5).
+- AWS: Cost Explorer rows do not say what kind of charge they are (`ChargeCategory = 'unknown'`):
+  credits, refunds and commitment fees are netted into their service. Only tax stands apart.
+- AWS: an account is too large for the Cost Explorer pull past 10,000 cost rows on one day (a day
+  is always written whole), or past about 5,000 rows a day in one region. Its source reports
+  "too large" and syncs nothing. It needs the CUR 2.0 export (phase 5).
 - Packaging: part of every plan, or an add-on.

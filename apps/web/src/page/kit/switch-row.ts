@@ -9,6 +9,8 @@ export type SwitchRowOptions<M> = Readonly<{
 	id: string
 	label: string
 	description?: string
+	/** A status beside the label (a badge); not part of the switch's name. */
+	status?: Html
 	isChecked: boolean
 	isDisabled?: boolean
 	onToggle?: M
@@ -36,6 +38,7 @@ export const switchRow = <M>(
 			...(options.description !== undefined && { description: options.description }),
 			...(options.className !== undefined && { className: options.className }),
 			...(options.icon !== undefined && { icon: options.icon }),
+			...(options.status !== undefined && { status: options.status }),
 			framed: options.framed ?? false,
 			filled: options.isChecked,
 			disabled: options.isDisabled,
