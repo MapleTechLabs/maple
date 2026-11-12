@@ -1,4 +1,4 @@
-import { CostBreakdownSortBy, CostFilters } from "@maple/domain/http"
+import { CostBreakdownSortBy, CostFilters, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -7,8 +7,9 @@ import {
 	getCostTimeseries,
 	getCostTotals,
 } from "@maple/web-data/warehouse/cost"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { MapleInternalApiClient } from "../../platform/api-clients"
 import { COST_GROUP_BYS } from "../../route/search"
 import { resolveWindowCommand } from "../kit/time-frame"
 import { Message } from "./message"
@@ -82,4 +83,21 @@ export const FetchCostBreakdown = Command.define("FetchCostBreakdown", {
 		getCostBreakdown({
 			data: { ...windowOf(input), groupBy: input.groupBy, sortBy: input.sortBy, limit: input.limit },
 		}).pipe(settleTo((result) => Message.CompletedLoadBreakdown({ key, result }))),
+})
+
+/** Saves the org's OpenRouter management key, which makes (or keeps) its cost source. */
+export const SaveOpenRouterCostKey = Command.define("SaveOpenRouterCostKey", {
+	args: { apiKey: Schema.String },
+	messages: [Message.CompletedSaveKey],
+	execute: ({ apiKey }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.openRouterCost.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
+		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
+})
+
+export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey", {
+	messages: [Message.CompletedRemoveKey],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemoveKey({ result })),
+	),
 })

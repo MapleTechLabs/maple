@@ -7,8 +7,7 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { failureKey } from "@maple/views/data/load-failure"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { AppRoute, hrefOf } from "../../route"
-import { linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import {
 	empty,
@@ -28,7 +27,6 @@ import { grid } from "@maple/views/ui/grid"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
-import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { PageViewInputs } from "../contract"
@@ -41,6 +39,7 @@ import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
@@ -49,11 +48,6 @@ import { breakdownTable } from "./view-table"
 const DAY_SECONDS = 24 * 60 * 60
 
 type H = HtmlBuilder<Message>
-
-const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
-
-/** Where a connected account's Cost module is turned on. */
-const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
 
 /** No cost source: how to get one. Never a sample of what the page would show. */
 const onRamp = (h: H): Html =>
@@ -66,15 +60,8 @@ const onRamp = (h: H): Html =>
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Connect an AWS account and turn on its Cost module. Maple then reads what the account spends each day, by service, region and usage type.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model.",
 					]),
-					emptyDescription(
-						h,
-						[
-							"AWS bills Cost Explorer requests at USD\u00a00.01 each. Maple makes a few a day for each account, which comes to a few dollars a month.",
-						],
-						"mt-3",
-					),
 				],
 				"max-w-md",
 			),
@@ -82,12 +69,15 @@ const onRamp = (h: H): Html =>
 				h,
 				[
 					emptyActions(h, [
-						linkButton(h, { variant: "default", size: "sm", href: CONNECT_AWS_HREF }, [
-							"Connect AWS",
-						]),
-						textLink(h, { href: AWS_INTEGRATION_HREF, tone: "muted" }, [
-							"Turn on Cost for a connected account",
-						]),
+						button(
+							h,
+							{
+								variant: "default",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedAddSource())],
+							},
+							["Add a cost source"],
+						),
 					]),
 				],
 				"max-w-md",
@@ -95,6 +85,12 @@ const onRamp = (h: H): Html =>
 		],
 		emptyFrameClass("dashed"),
 	)
+
+/** What a first sync brings in: AWS keeps over a year, OpenRouter four weeks. */
+const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string =>
+	Arr.some(sources, (source) => source.status === "pending" && source.provider !== "openrouter")
+		? "It brings in this month and the last, and older months fill in after that."
+		: "It brings in the last four weeks, which is all OpenRouter keeps."
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */
 const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
@@ -122,12 +118,12 @@ const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 					]),
 					emptyDescription(h, [
 						isWaiting
-							? "The first sync runs within a few minutes. It brings in this month and the last, and older months fill in after that."
+							? `The first sync runs within a few minutes. ${firstSyncScope(sources)}`
 							: isFailing
 								? "Maple tries again within the hour. The source below shows what went wrong."
 								: isHeld
 									? "The sync is on hold. The source below says why."
-									: "Each source below is paused. Turn the Cost module back on for a connection to read its cost.",
+									: "Each source below is paused. Turn the Cost module back on for its connection to read its cost.",
 					]),
 				],
 				"max-w-md",
@@ -199,6 +195,9 @@ const content = (h: H, model: Model): ReadonlyArray<Html> => {
 			]
 }
 
+const sourcesOf = (model: Model): ReadonlyArray<CostSourceSummary> =>
+	Option.getOrUndefined(AsyncData.getData(model.sources.data))?.sources ?? []
+
 /** Whether the window's reads are on the page: only then does the header offer a day range. */
 const showsData = (model: Model): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), (response) => hasSynced(response.sources))
@@ -218,7 +217,7 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 		],
 		onData: ({ sources }) => {
 			if (sources.length === 0) return [onRamp(h)]
-			const section = sourcesSection(h, sources, model.nowMs, timeZone)
+			const section = sourcesSection(h, sources, model.nowMs, timeZone, model.sourceWrite !== "Idle")
 			return hasSynced(sources) ? [...content(h, model), section] : [firstSync(h, sources), section]
 		},
 	})
@@ -263,6 +262,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						{ cols: 1, gap: "6", className: "shrink-0" },
 						body(h, model, inputs.context.timeZone),
 					),
+					addSourceDialog(h, model, sourcesOf(model)),
+					removeSourceDialog(h, model),
 				],
 			),
 		],

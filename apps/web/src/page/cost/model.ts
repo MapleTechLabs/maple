@@ -9,11 +9,17 @@ import * as Chart from "@maple/views/charts/chart"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import * as TimeRangePicker from "../kit/time-range-picker"
 
 export type Search = typeof CostSearch.Type
+
+/** The add-source dialog's two faces: the providers, then the chosen one's form. */
+export const AddStep = Schema.Literals(["pick", "openrouter"])
+export type AddStep = typeof AddStep.Type
 
 export const Model = Schema.Struct({
 	search: CostSearch,
@@ -29,5 +35,13 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	addDialog: Dialog.Model,
+	addStep: AddStep,
+	/** The OpenRouter management key being typed; cleared whichever way the dialog closes. */
+	keyDraft: Field.Model,
+	/** Why the last save was refused, shown under the field until the key changes. */
+	keyError: Schema.NullOr(Schema.String),
+	removeDialog: Dialog.Model,
+	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing"]),
 })
 export type Model = typeof Model.Type

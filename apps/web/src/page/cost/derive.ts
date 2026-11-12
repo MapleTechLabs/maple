@@ -1,4 +1,4 @@
-import type { CostProvider } from "@maple/domain/cost"
+import { CostProvider } from "@maple/domain/cost"
 import {
 	COST_FILTER_MAX_VALUE_LENGTH,
 	COST_FILTER_MAX_VALUES,
@@ -10,7 +10,7 @@ import {
 import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engine/datetime"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
 import { COST_PROVIDERS } from "./providers"
@@ -24,6 +24,7 @@ export const DEFAULT_GROUP_BY: CostGroupBy = "cloud_service"
 /** Each dimension's name in the control, the chips and the table, and what an empty key reads as. */
 export const DIMENSIONS = {
 	cloud_service: { label: "Service", noun: "service", empty: "Unassigned" },
+	provider: { label: "Provider", noun: "provider", empty: "No provider" },
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
 	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
@@ -35,9 +36,20 @@ export const groupByOf = (search: Search): CostGroupBy => search.groupBy ?? DEFA
 
 export const sortOf = (search: Search): CostBreakdownSortBy => search.sort ?? "cost"
 
-/** A key as the page shows it: the provider's own text, or the dimension's placeholder for "". */
-export const keyLabel = (dimension: CostGroupBy, key: string): string =>
-	key === "" ? DIMENSIONS[dimension].empty : key
+const decodeProvider = Schema.decodeUnknownOption(CostProvider)
+
+/**
+ * A key as the page shows it: the provider's own text, the dimension's placeholder for "", and a
+ * provider by its name, not by the id rows carry.
+ */
+export const keyLabel = (dimension: CostGroupBy, key: string): string => {
+	if (key === "") return DIMENSIONS[dimension].empty
+	if (dimension !== "provider") return key
+	return Option.match(decodeProvider(key), {
+		onNone: () => key,
+		onSome: (provider) => COST_PROVIDERS[provider].name,
+	})
+}
 
 export type ActiveFilter = Readonly<{ dimension: CostGroupBy; value: string }>
 
@@ -200,7 +212,9 @@ export const seriesLabels = (
 	dimension: CostGroupBy,
 	series: ReadonlyArray<SeriesKey>,
 ): ReadonlyArray<string> => {
-	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [entry.key]))
+	// A provider's series reads by its name, as its table row does.
+	const nameOf = (key: string) => keyLabel(dimension, key)
+	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [nameOf(entry.key)]))
 	const taken = [...named, ...ROW_FIELDS]
 	const empty = freeName(DIMENSIONS[dimension].empty, "empty", taken)
 	const other = freeName(OTHER_LABEL, "the rest", [...taken, empty])
@@ -209,9 +223,9 @@ export const seriesLabels = (
 			? other
 			: entry.key === ""
 				? empty
-				: Arr.contains(ROW_FIELDS, entry.key)
-					? freeName(entry.key, "series", [...taken, empty, other])
-					: entry.key,
+				: Arr.contains(ROW_FIELDS, nameOf(entry.key))
+					? freeName(nameOf(entry.key), "series", [...taken, empty, other])
+					: nameOf(entry.key),
 	)
 }
 
@@ -250,18 +264,25 @@ export type PreviousPeriod = "synced" | "syncing" | "beyond"
  * Whether every source with cost has history back to the start of the period before the window.
  * Short of that the period reads as cheaper than it was, so no change is shown against it: while
  * a source backfills, and for good once its history is complete or it is paused, which cannot
- * fill the gap. A paused source that never synced has no cost and holds nothing back.
+ * fill the gap. A paused source that never synced has no cost and holds nothing back. A view
+ * filtered to some providers reads only their sources, so only those can hold it back.
  */
 export const previousPeriodOf = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	window: Readonly<{ startTime: string }> | null,
 	days: number,
+	search: Search,
 ): PreviousPeriod => {
 	if (window === null) return "synced"
+	const providers = search.provider ?? []
+	const read =
+		providers.length === 0
+			? sources
+			: Arr.filter(sources, (source) => Arr.contains(providers, source.provider))
 	const firstDay = new Date(`${Str.slice(0, 10)(window.startTime)}T00:00:00Z`).getTime()
 	if (!Number.isFinite(firstDay)) return "synced"
 	const previousStart = Str.slice(0, 10)(new Date(firstDay - days * DAY_MS).toISOString())
-	const short = Arr.filter(sources, (source) =>
+	const short = Arr.filter(read, (source) =>
 		source.backfillDate === null ? source.status !== "paused" : source.backfillDate > previousStart,
 	)
 	if (short.length === 0) return "synced"

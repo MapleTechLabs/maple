@@ -1,10 +1,13 @@
-import { Option } from "effect"
+import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
+import { failureMessage } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -20,7 +23,9 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	RemoveOpenRouterCostKey,
 	ResolveWindow,
+	SaveOpenRouterCostKey,
 	type TimeseriesInput,
 	type WindowInput,
 } from "./command"
@@ -36,7 +41,7 @@ import {
 	withoutFilters,
 } from "./derive"
 import { Message } from "./message"
-import type { Model, Search } from "./model"
+import type { AddStep, Model, Search } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -134,6 +139,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		chartRuntime: { _tag: "Loading" },
 		refreshVersion: 0,
 		isReloading: false,
+		addDialog: Dialog.init("cost-add-source", "dialog"),
+		addStep: "pick",
+		keyDraft: Field.init(),
+		keyError: null,
+		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
+		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
 		{ model, commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()] },
@@ -142,6 +153,45 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Cost({ search }))
+
+const toast = (type: "success" | "error", title: string, description = "") =>
+	PageOutMessage.RequestedToast({ type, title, description })
+
+const liftAddDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, addDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotAddDialogMessage({ message })),
+})
+
+const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: { ...model, removeDialog: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotRemoveDialogMessage({ message }),
+	),
+})
+
+/** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
+const clearedKey = (model: Model): Model => ({ ...model, keyDraft: Field.init(), keyError: null })
+
+const openAdd = (model: Model, addStep: AddStep): Return =>
+	model.sourceWrite !== "Idle"
+		? { model }
+		: liftAddDialog({ ...clearedKey(model), addStep }, Dialog.open(model.addDialog))
+
+/**
+ * The sources and the window's reads again, after a write's own step: the reads name the org's
+ * sources, so a removed one's cost would stay on the page until then.
+ */
+const withReread = (step: Return, context: PageContext): Return =>
+	chain<Model, Message>(
+		{ ...step, commands: [...(step.commands ?? []), resolveCommand(step.model, context, "Refresh")] },
+		(next) => requestSources(next, context, "Refresh"),
+	)
+
+/** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
+const hasOpenRouterSource = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
+		Arr.some(sources, (source) => source.provider === "openrouter"),
+	)
 
 export const routeChanged = (
 	model: Model,
@@ -244,6 +294,87 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					Message.GotChartMessage({ message: chart }),
 				),
 			}
+		},
+		ClickedAddSource: () => openAdd(model, "pick"),
+		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
+		ClickedBackToProviders: () =>
+			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
+		ClickedReplaceKey: () => openAdd(model, "openrouter"),
+		// A save in flight keeps the dialog: its answer decides whether it closes.
+		GotAddDialogMessage: ({ message: inner }) => {
+			if (model.sourceWrite === "Saving") return { model }
+			const step = Dialog.update(model.addDialog, inner)
+			const lifted = liftAddDialog(model, step)
+			return step.outMessage?._tag === "Closed"
+				? { ...lifted, model: clearedKey(lifted.model) }
+				: lifted
+		},
+		GotKeyDraftMessage: ({ message: inner }) =>
+			model.sourceWrite === "Saving"
+				? { model }
+				: {
+						model: {
+							...model,
+							keyDraft: Field.update(model.keyDraft, inner).model,
+							// The refusal was about the key that was there.
+							keyError: inner._tag === "ChangedValue" ? null : model.keyError,
+						},
+					},
+		SubmittedKey: () => {
+			const apiKey = Str.trim(model.keyDraft.value)
+			return apiKey === "" || model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: { ...model, sourceWrite: "Saving", keyError: null },
+						commands: [SaveOpenRouterCostKey({ apiKey })],
+					}
+		},
+		// A refused key keeps the dialog open with the reason under the field.
+		CompletedSaveKey: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: { ...model, sourceWrite: "Idle", keyError: failureMessage(failure) },
+				}),
+				onSuccess: (): Return => {
+					const closed = liftAddDialog(
+						clearedKey({ ...model, sourceWrite: "Idle" }),
+						Dialog.close(model.addDialog),
+					)
+					const outMessage = hasOpenRouterSource(model)
+						? toast(
+								"success",
+								"OpenRouter key replaced",
+								"The next sync runs within a few minutes.",
+							)
+						: toast("success", "OpenRouter added", "The first sync runs within a few minutes.")
+					return withReread({ ...closed, outMessage }, context)
+				},
+			}),
+		ClickedRemoveSource: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+		GotRemoveDialogMessage: ({ message: inner }) =>
+			model.sourceWrite === "Removing"
+				? { model }
+				: liftRemoveDialog(model, Dialog.update(model.removeDialog, inner)),
+		ClickedConfirmRemove: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
+		CompletedRemoveKey: ({ result }) => {
+			const closed = liftRemoveDialog(
+				{ ...model, sourceWrite: "Idle" },
+				Dialog.close(model.removeDialog),
+			)
+			return Result.match(result, {
+				onFailure: (failure): Return => ({
+					...closed,
+					outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
+				}),
+				onSuccess: (): Return =>
+					withReread({ ...closed, outMessage: toast("success", "OpenRouter removed") }, context),
+			})
 		},
 		...chartEnvHandlers(model),
 	})

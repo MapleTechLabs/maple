@@ -15,6 +15,7 @@ export type AuditResourceLink =
 	| { readonly to: "/investigations/$id"; readonly params: { readonly id: string } }
 	| { readonly to: "/anomalies/$incidentId"; readonly params: { readonly incidentId: string } }
 	| { readonly to: "/alerts/routing" }
+	| { readonly to: "/cost" }
 	| { readonly to: "/integrations"; readonly search: { readonly integration?: string } }
 	| { readonly to: "/settings"; readonly search: { readonly tab: string } }
 
@@ -99,6 +100,8 @@ function resourceLink(entry: AuditEntryResource): AuditResourceLink | null {
 			return { to: "/settings", search: { tab: "ingestion" } }
 		case "ai_provider_key":
 			return { to: "/settings", search: { tab: "ai" } }
+		case "cost_source_key":
+			return { to: "/cost" }
 		case "warehouse_settings":
 			return { to: "/settings", search: { tab: "data-platform" } }
 		case "data_source":

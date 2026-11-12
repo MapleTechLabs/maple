@@ -112,6 +112,7 @@ export const figuresRow = (h: H, model: Model): Html =>
 					}),
 					model.window,
 					totals.days,
+					model.search,
 				),
 			),
 	})

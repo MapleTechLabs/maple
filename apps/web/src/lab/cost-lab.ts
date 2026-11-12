@@ -1,4 +1,6 @@
+import { OpenRouterCostKeyRemoved, OpenRouterCostKeySaved } from "@maple/domain/http"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Field from "@maple/views/ui/field"
 import { Array as Arr, Effect, Option, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +12,9 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	RemoveOpenRouterCostKey,
 	ResolveWindow,
+	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
@@ -20,7 +24,15 @@ import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
-import { LAB_NOW_MS, LAB_SOURCES, LAB_TODAY, labBreakdown, labTimeseries, labTotals } from "./cost-fixture"
+import {
+	LAB_NOW_MS,
+	LAB_OPENROUTER_KEY,
+	LAB_SOURCES,
+	LAB_TODAY,
+	labBreakdown,
+	labTimeseries,
+	labTotals,
+} from "./cost-fixture"
 import { LAB_CONTEXT } from "./gcp-host"
 import { keepLocal } from "./local-commands"
 
@@ -36,6 +48,12 @@ export const LabState = Schema.Literals([
 	"error",
 	"empty-window",
 	"loading",
+	"by-provider",
+	"add-source",
+	"add-openrouter",
+	"key-refused",
+	"replace-key",
+	"remove-source",
 ])
 export type LabState = typeof LabState.Type
 
@@ -59,7 +77,46 @@ type Return = Update.Return<Model, Message, Resources>
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
-	state === "filtered" ? { groupBy: "region", cloud_service: ["Example Compute"] } : {}
+	state === "filtered"
+		? { groupBy: "region", cloud_service: ["Example Compute"] }
+		: state === "by-provider"
+			? { groupBy: "provider" }
+			: {}
+
+/** The states that start with nothing connected, so the dialog offers every provider. */
+const startsEmpty = (state: LabState): boolean =>
+	state === "onramp" || state === "add-source" || state === "add-openrouter" || state === "key-refused"
+
+/** What the reader did before the state's screenshot: the clicks that open its dialog. */
+const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
+	switch (state) {
+		case "add-source":
+			return [CostMessage.ClickedAddSource()]
+		case "add-openrouter":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddOpenRouter()]
+		case "key-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddOpenRouter(),
+				CostMessage.GotKeyDraftMessage({
+					message: Field.Message.ChangedValue({ value: "sk-or-v1-0123456789abcdef0123456789" }),
+				}),
+				CostMessage.SubmittedKey(),
+			]
+		case "replace-key":
+			return [CostMessage.ClickedReplaceKey()]
+		case "remove-source":
+			return [CostMessage.ClickedRemoveSource()]
+		default:
+			return []
+	}
+}
+
+const refusedKey = {
+	...toLoadFailure("refused"),
+	message:
+		"This is a regular API key. Reading spend needs a management key, which you create under Settings, Management keys in OpenRouter.",
+}
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
 const DAYS = new Map([
@@ -73,7 +130,7 @@ const DAYS = new Map([
 const daysOf = (search: Search): number => DAYS.get(search.timePreset ?? Cost.DEFAULT_PRESET) ?? 30
 
 const sourcesFor = (state: LabState) =>
-	state === "onramp"
+	startsEmpty(state)
 		? LAB_SOURCES.none
 		: state === "pending"
 			? LAB_SOURCES.pending
@@ -149,6 +206,21 @@ const answerOf = (state: LabState, search: Search, command: CostCommand): Option
 					),
 				}),
 			)
+		case SaveOpenRouterCostKey.name:
+			return Option.some(
+				CostMessage.CompletedSaveKey({
+					result:
+						state === "key-refused"
+							? Result.fail(refusedKey)
+							: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: LAB_OPENROUTER_KEY })),
+				}),
+			)
+		case RemoveOpenRouterCostKey.name:
+			return Option.some(
+				CostMessage.CompletedRemoveKey({
+					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+				}),
+			)
 		default:
 			return Option.none()
 	}
@@ -193,7 +265,12 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const ready = settle(flags.state, { model: entered.model, commands: entered.commands ?? [] })
+	const loaded = settle(flags.state, { model: entered.model, commands: entered.commands ?? [] })
+	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
+		const next = Cost.update(step.model, message, LAB_CONTEXT)
+		const settled = settle(flags.state, { model: next.model, commands: next.commands ?? [] })
+		return { model: settled.model, commands: [...step.commands, ...settled.commands] }
+	})
 	return { model: { state: flags.state, cost: ready.model }, commands: lift(ready.commands) }
 }
 
