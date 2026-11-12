@@ -34,6 +34,7 @@ import {
 	resolveReviewModel,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
+	resolveSecurityAuditDiscoveryFallback,
 	securityAuditModelIds,
 	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
@@ -384,15 +385,16 @@ describe("resolveSecurityAuditModel", () => {
 		).toBe("anthropic/claude-haiku-5.5")
 	})
 
-	it("ignores a pick the region does not serve, or that cannot verify", () => {
+	it("ignores a pick the region does not serve, or that is no longer listed", () => {
 		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
 		expect([
 			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
-			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			// Delisted 2026-11-12: its cybersecurity filter refused hunter and verifier prompts.
+			securityAuditModelId(openRouterEnv, "discovery", "openai/gpt-6.1-sol"),
 			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
 		]).toEqual([
 			DEFAULT_AUDIT_MODELS.eu.discovery,
-			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
 			DEFAULT_AUDIT_MODELS.us.discovery,
 		])
 	})
@@ -408,6 +410,35 @@ describe("securityAuditModelIds", () => {
 				validation: "anthropic/claude-haiku-5.5",
 			}),
 		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
+	})
+})
+
+describe("resolveSecurityAuditDiscoveryFallback", () => {
+	const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+
+	it("falls back to the region's hunter when the org hunts on another model", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.validation,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.discovery)
+	})
+
+	it("has none when the run already hunts on the default", () => {
+		expect(
+			resolveSecurityAuditDiscoveryFallback(eu, {
+				discovery: DEFAULT_AUDIT_MODELS.eu.discovery,
+				validation: DEFAULT_AUDIT_MODELS.eu.validation,
+			}),
+		).toBeUndefined()
+	})
+
+	it("never falls back onto the verifier", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.discovery,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.validation)
 	})
 })
 
