@@ -145,6 +145,10 @@ describe("GithubCostSourceService", () => {
 
 				// Adding it again keeps the one source, and says nothing was made.
 				assert.strictEqual((yield* add(ORGANIZATION)).created, false)
+				// Adding one that exists answers the same while GitHub is down.
+				world.usageStatus = 503
+				assert.strictEqual((yield* add(ORGANIZATION)).created, false)
+				world.usageStatus = 200
 				assert.lengthOf(yield* sources(testDb), 1)
 			}),
 		)

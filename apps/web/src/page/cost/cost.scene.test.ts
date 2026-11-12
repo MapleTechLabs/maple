@@ -690,7 +690,7 @@ describe("cost page", () => {
 			expectView(text("Remove the GitHub source?")).toExist(),
 			expectView(text(/stops reading the billed usage of example-org/)).toExist(),
 			expectView(text(/no key is deleted/)).toExist(),
-			expectView(text(/brings back the last three months/)).toExist(),
+			expectView(text(/brings back this month and the three before it/)).toExist(),
 		)
 		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
 		expect(removing.commands).toMatchObject([

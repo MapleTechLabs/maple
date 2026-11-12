@@ -73,7 +73,7 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 				onClick: Message.ClickedAddGithub(),
 				leading: mark(h, COST_PROVIDERS.github),
 				title: COST_PROVIDERS.github.name,
-				meta: "Daily billed usage by product, SKU and repository",
+				meta: "Daily billed usage by product and SKU",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
 		]),
@@ -381,7 +381,7 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 	target?.provider === "github"
 		? {
 				title: "Remove the GitHub source?",
-				description: `Maple stops reading the billed usage of ${target.accountId}, and its cost leaves this page. The GitHub connection stays and no key is deleted. Adding it again brings back the last three months.`,
+				description: `Maple stops reading the billed usage of ${target.accountId}, and its cost leaves this page. The GitHub connection stays and no key is deleted. Adding it again brings back this month and the three before it.`,
 			}
 		: {
 				title: "Remove the OpenRouter source?",

@@ -181,6 +181,20 @@ export class GithubCostSourceService extends Context.Service<
 					message: state === "user_account" ? USER_ACCOUNT : INACTIVE,
 				})
 			}
+			// It is a source already: adding again changes nothing, whatever GitHub answers right now.
+			const existing = yield* dbExecute((db) =>
+				db.run(
+					PG.from(CostSources)
+						.select(($) => ({ id: $.id }))
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.provider.eq("github"),
+							$.connectionRef.eq(installation.id),
+						])
+						.limit(1),
+				),
+			)
+			if (existing.length > 0) return { accountLogin: installation.accountLogin, created: false }
 			// One read of the current month: a missing permission is refused here, not at every sync.
 			const now = yield* Clock.currentTimeMillis
 			yield* readUsageMonth(github, installation, monthOf(utcToday(now))).pipe(
@@ -209,7 +223,7 @@ export class GithubCostSourceService extends Context.Service<
 							createdAt: now,
 							updatedAt: now,
 						})
-						// It is a source already: adding again changes nothing.
+						// Another add made it first.
 						.onConflictDoNothing()
 						.returning(($) => ({ id: $.id })),
 				),

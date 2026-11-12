@@ -231,6 +231,8 @@ describe("GithubCostProvider", () => {
 				])
 				world.usage = [{ ...line("soon", 1) }]
 				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")
+				world.usage = [{ ...line("2026-11-02invalid", 1) }]
+				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")
 				// A 2xx without the list is not an empty month: storing it would empty the window's days.
 				world.usage = "{}"
 				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")

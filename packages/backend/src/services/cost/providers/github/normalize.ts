@@ -9,7 +9,7 @@ import type { CostPullRow, CostPullWindow } from "../../CostProvider"
  */
 export const UsageItem = Schema.Struct({
 	date: Schema.String.check(
-		Schema.isPattern(/^\d{4}-\d{2}-\d{2}/, { description: "Expected to start with YYYY-MM-DD" }),
+		Schema.isPattern(/^\d{4}-\d{2}-\d{2}(T.*)?$/, { description: "Expected YYYY-MM-DD or a timestamp" }),
 	),
 	product: Schema.String,
 	sku: Schema.String,
