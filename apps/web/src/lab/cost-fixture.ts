@@ -29,7 +29,32 @@ const line = (
 	usage_type: string,
 	daily: number,
 	drift: number,
-): Line => ({ cloud_service, service_category, region, usage_type, account: LAB_ACCOUNT, daily, drift })
+): Line => ({
+	cloud_service,
+	provider: "aws",
+	service_category,
+	region,
+	usage_type,
+	account: LAB_ACCOUNT,
+	daily,
+	drift,
+})
+
+/** A saved OpenRouter key, as OpenRouter masks it. */
+export const LAB_OPENROUTER_KEY = "sk-or-v1-4f2...c81"
+/** The OpenRouter account the lab's source reads: a personal account's user id. */
+const LAB_OPENROUTER_ACCOUNT = "user_2labExampleAccount0000000000"
+
+const modelLine = (model: string, servedBy: string, daily: number, drift: number): Line => ({
+	cloud_service: model,
+	provider: "openrouter",
+	service_category: "AI and Machine Learning",
+	region: "global",
+	usage_type: servedBy,
+	account: LAB_OPENROUTER_ACCOUNT,
+	daily,
+	drift,
+})
 
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
@@ -50,6 +75,10 @@ const LINES: ReadonlyArray<Line> = [
 	line("Example Logs", "Management", "north-1", "north-1:ingested-gb", 8.8, -0.35),
 	// A charge with no region, the way a support plan is billed.
 	line("Example Support", "", "", "support-plan", 11.0, 0.0),
+	modelLine("example/large-model", "Example Labs", 38.5, 0.42),
+	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
+	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
+	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -65,19 +94,25 @@ const chargeAt = (entry: Line, index: number, offset: number): number => {
 
 const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 	Arr.every(
-		["cloud_service", "service_category", "region", "usage_type", "account"] as const,
+		["cloud_service", "provider", "service_category", "region", "usage_type", "account"] as const,
 		(dimension) => {
 			const values = filters?.[dimension] ?? []
 			return values.length === 0 || Arr.contains(values, entry[dimension])
 		},
 	)
 
-type Request = Readonly<{ days: number; filters: CostFilters | undefined }>
+type Request = Readonly<{
+	days: number
+	filters: CostFilters | undefined
+	/** The lab's reader removed OpenRouter: its lines are in no read, whatever the filters say. */
+	withoutOpenRouter?: boolean
+}>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
 const windowOf = (request: Request) =>
 	Arr.flatMap(LINES, (entry, index) =>
-		matches(entry, request.filters)
+		matches(entry, request.filters) &&
+		!(request.withoutOpenRouter === true && entry.provider === "openrouter")
 			? [
 					{
 						entry,
@@ -203,8 +238,46 @@ const source = (over: Partial<SourceWire>): SourceWire => ({
 	...over,
 })
 
+/** The OpenRouter source: four weeks of history, which is all the provider keeps, and no billed requests. */
+const openRouterSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c060",
+	provider: "openrouter",
+	accountId: LAB_OPENROUTER_ACCOUNT,
+	backfillDate: dayAt(29),
+	lastSyncedAt: LAB_NOW_MS - 3 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/**
+ * `sources` after the lab's reader added OpenRouter (true: it waits for its first sync) or removed
+ * it (false); null leaves them as the state has them.
+ */
+export const labSourcesWith = (
+	sources: CostSourcesResponse,
+	openRouter: boolean | null,
+): CostSourcesResponse => {
+	if (openRouter === null) return sources
+	const others = Arr.filter(sources.sources, (entry) => entry.provider !== "openrouter")
+	if (!openRouter) return new CostSourcesResponse({ sources: others })
+	return others.length === sources.sources.length
+		? decodeSources({
+				sources: [
+					...Schema.encodeSync(CostSourcesResponse)(sources).sources,
+					{
+						...openRouterSource,
+						status: "pending",
+						watermarkDate: null,
+						backfillDate: null,
+						historyComplete: false,
+						lastSyncedAt: null,
+					},
+				],
+			})
+		: sources
+}
+
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({})] }),
+	synced: decodeSources({ sources: [source({}), openRouterSource] }),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [
@@ -241,6 +314,7 @@ export const LAB_SOURCES = {
 				lastSyncedAt: Date.UTC(2026, 8, 30, 23, 10),
 				requestsThisMonth: 0,
 			}),
+			openRouterSource,
 		],
 	}),
 } as const

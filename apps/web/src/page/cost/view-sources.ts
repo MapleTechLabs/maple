@@ -3,18 +3,18 @@ import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
 import { formatDay, requestsCost } from "./derive"
-import type { Message } from "./message"
+import { Message } from "./message"
 import { COST_PROVIDERS } from "./providers"
+import { AWS_INTEGRATION_HREF } from "./view-add-source"
 
 type H = HtmlBuilder<Message>
 
@@ -30,8 +30,32 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
-/** Where the org's connections are listed and changed. */
-const SOURCES_HREF = hrefOf(AppRoute.Sources())
+/** What a row offers: an AWS source is its connection's, an OpenRouter one is its key. */
+const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> =>
+	source.provider === "openrouter"
+		? [
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "sm",
+						isDisabled: isBusy,
+						attributes: [h.OnClick(Message.ClickedReplaceKey())],
+					},
+					["Replace key"],
+				),
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "sm",
+						isDisabled: isBusy,
+						attributes: [h.OnClick(Message.ClickedRemoveSource())],
+					},
+					["Remove"],
+				),
+			]
+		: [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
 const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {
@@ -82,7 +106,13 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [source.lastError])]
 				: []
 
-const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: string): Html => {
+const sourceRow = (
+	h: H,
+	source: CostSourceSummary,
+	nowMs: number,
+	timeZone: string,
+	options: Readonly<{ isBusy: boolean; canManage: boolean }>,
+): Html => {
 	const provider = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
 	return hstack(
@@ -97,12 +127,24 @@ const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: str
 		[
 			icon(h, provider.icon, { size: 18, className: cn("mt-0.5 shrink-0", provider.iconClassName) }),
 			vstack(h, { gap: "1", grow: true, shrink: true }, [
-				hstack(h, { gap: "2", wrap: true }, [
-					typography(h, { size: "sm", weight: "medium" }, [provider.name]),
-					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-						source.accountId,
+				// The actions share the title's line, so the facts below keep the row's width on a phone.
+				hstack(h, { gap: "2", wrap: true, justify: "between", className: "gap-y-1" }, [
+					hstack(h, { gap: "2", wrap: true }, [
+						typography(h, { size: "sm", weight: "medium" }, [provider.name]),
+						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+							source.accountId,
+						]),
+						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),
-					badge(h, { variant: status.variant, size: "sm" }, [status.label]),
+					...(options.canManage
+						? [
+								hstack(
+									h,
+									{ gap: "1", className: "-my-1 shrink-0" },
+									actions(h, source, options.isBusy),
+								),
+							]
+						: []),
 				]),
 				hstack(
 					h,
@@ -123,17 +165,34 @@ export const sourcesSection = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	nowMs: number,
 	timeZone: string,
+	options: Readonly<{
+		/** A key write is in flight: the actions wait for it. */
+		isBusy: boolean
+		/** The viewer may add, replace and remove sources; without it no such action is offered. */
+		canManage: boolean
+	}>,
 ): Html =>
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Sources",
-			action: typography(h, { size: "xs" }, [
-				textLink(h, { href: SOURCES_HREF, tone: "muted" }, ["Manage sources"]),
-			]),
+			...(options.canManage
+				? {
+						action: button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: options.isBusy,
+								attributes: [h.OnClick(Message.ClickedAddSource())],
+							},
+							["Add source"],
+						),
+					}
+				: undefined),
 		}),
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
-			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone)),
+			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone, options)),
 		),
 	])

@@ -138,9 +138,11 @@ currency the figures are in and lists the others. Nothing is added across curren
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, category, region, usage type or account with filters, and
-  each source's sync state. The AWS connection has a Cost switch. Recommendations (list and detail
-  with the evidence chart) come with phase 2.
+  daily chart, a breakdown by service, provider, category, region, usage type or account with
+  filters, and each source's sync state. Sources are added from the page: AWS through its
+  connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
+  also replace or remove. Recommendations (list and detail with the evidence chart) come with
+  phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE /internal/cost/openrouter` for the
   OpenRouter key. A public `/v2/cost/*` is not built.

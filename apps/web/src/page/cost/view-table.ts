@@ -116,6 +116,7 @@ const row = (
 			}),
 			model.window,
 			totals.days,
+			model.search,
 		) === "synced"
 	const label = keyLabel(dimension, entry.key)
 	const filter = { dimension, value: entry.key }

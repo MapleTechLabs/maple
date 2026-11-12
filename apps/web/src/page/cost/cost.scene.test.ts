@@ -5,7 +5,10 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	OpenRouterCostKeyRemoved,
+	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
@@ -20,10 +23,20 @@ import {
 } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import * as Dialog from "@maple/views/ui/dialog"
+import * as Field from "@maple/views/ui/field"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { chartRows, isUnderADay, requestFilters, withFilter } from "./derive"
+import {
+	chartRows,
+	isUnderADay,
+	keyLabel,
+	previousPeriodOf,
+	requestFilters,
+	seriesLabels,
+	withFilter,
+} from "./derive"
 import { Message } from "./message"
 import type { Model, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
@@ -37,6 +50,7 @@ const NOW = Date.UTC(2026, 10, 10, 14, 30)
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const resolveTheme = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
+const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog())
 
 type Sent = ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined
 const names = (commands: Sent) => Arr.map(commands ?? [], ({ name }) => name)
@@ -153,19 +167,348 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
-			expectView(text(/AWS bills Cost Explorer requests at USD.0\.01 each/)).toExist(),
-			expectView(role("link", { name: "Connect AWS" })).toHaveAttr(
-				"href",
-				"/sources/new?integration=aws",
-			),
-			// An account already connected turns its Cost module on from the AWS integration.
-			expectView(role("link", { name: "Turn on Cost for a connected account" })).toHaveAttr(
-				"href",
-				"/integrations?integration=aws",
-			),
+			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
 			expectView(text("Sources")).not.toExist(),
 		)
+	})
+
+	test("adding a source offers AWS through its connect flow and OpenRouter through a key form", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add a cost source")).toExist(),
+			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
+			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
+			expectView(text(/OpenRouter requests are free/)).toExist(),
+			// An account already connected turns its Cost module on from the AWS integration.
+			expectView(
+				role("link", { name: "Turn on Cost for an AWS account that is connected" }),
+			).toHaveAttr("href", "/integrations?integration=aws"),
+			expectView(role("button", { name: /^OpenRouter/ })).toExist(),
+			expectView(text("Management key")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(opened, Message.ClickedAddOpenRouter()).model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add OpenRouter")).toExist(),
+			expectView(text("Management key")).toExist(),
+			expectView(role("link", { name: "Management keys" })).toHaveAttr(
+				"href",
+				"https://openrouter.ai/settings/management-keys",
+			),
+			// Nothing typed: there is nothing to save yet.
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+			expectView(role("button", { name: "Back" })).toExist(),
+		)
+	})
+
+	test("a saved key is sent trimmed; a refusal stays under the field until the key changes", () => {
+		const form = pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedAddOpenRouter(),
+		).model
+		const typed = (model: Model, value: string) =>
+			pageUpdate(model, Message.GotKeyDraftMessage({ message: Field.Message.ChangedValue({ value }) }))
+				.model
+		// Nothing typed sends nothing.
+		expect(names(pageUpdate(form, Message.SubmittedKey()).commands)).toEqual([])
+
+		const saving = pageUpdate(typed(form, "  sk-or-v1-regular-key-0123456789  "), Message.SubmittedKey())
+		expect(saving.commands).toMatchObject([
+			{ name: "SaveOpenRouterCostKey", args: { apiKey: "sk-or-v1-regular-key-0123456789" } },
+		])
+		// A key the request would refuse to carry is never sent, and the dialog says why.
+		const oversized = pageUpdate(typed(form, `sk-or-v1-${Str.repeat(300)("a")}`), Message.SubmittedKey())
+		expect(names(oversized.commands)).toEqual([])
+		expect([oversized.model.sourceWrite, oversized.model.keyError]).toEqual([
+			"Idle",
+			"That is too long to be an OpenRouter key.",
+		])
+		// A second submit while the first is in flight sends nothing more.
+		expect(names(pageUpdate(saving.model, Message.SubmittedKey()).commands)).toEqual([])
+
+		const refused = pageUpdate(
+			saving.model,
+			Message.CompletedSaveKey({
+				result: Result.fail({
+					...toLoadFailure("refused"),
+					message: "This is a regular API key. Reading spend needs a management key.",
+				}),
+			}),
+		).model
+		expect(refused.addDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText(
+				"This is a regular API key. Reading spend needs a management key.",
+			),
+		)
+		expect(typed(refused, "sk-or-v1-management-key-0123456789").keyError).toBeNull()
+	})
+
+	test("a saved key closes the dialog, says when the sync runs and reads the sources again", () => {
+		const form = pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedAddOpenRouter(),
+		).model
+		const saving = pageUpdate(
+			pageUpdate(
+				form,
+				Message.GotKeyDraftMessage({
+					message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
+				}),
+			).model,
+			Message.SubmittedKey(),
+		).model
+		const saved = pageUpdate(
+			saving,
+			Message.CompletedSaveKey({
+				result: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: "sk-or-v1-man...789" })),
+			}),
+		)
+		expect(saved.model.addDialog.isOpen).toBe(false)
+		// The key does not outlive the dialog.
+		expect(saved.model.keyDraft.value).toBe("")
+		expect(names(saved.commands)).toContain("FetchCostSources")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "OpenRouter added",
+				description: "The first sync runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("an OpenRouter source is named by its account, bills no requests and can be replaced or removed", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+			backfillDate: "2026-10-13",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [source(), openRouter]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("OpenRouter")).toExist(),
+			expectView(text("user_2openrouterAccount")).toExist(),
+			// Request billing is AWS's: one line for the AWS source, none for OpenRouter.
+			expectView(text("86 provider requests this month (USD 0.86)")).toExist(),
+			expectView(text(/0 provider requests/)).not.toExist(),
+			expectView(role("link", { name: "Manage connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=aws",
+			),
+			expectView(role("button", { name: "Replace key" })).toExist(),
+			expectView(role("button", { name: "Remove" })).toExist(),
+		)
+
+		// Replace opens the key form with no providers to go back to.
+		const replacing = pageUpdate(model, Message.ClickedReplaceKey()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(replacing),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Replace the OpenRouter key")).toExist(),
+			expectView(role("button", { name: "Back" })).not.toExist(),
+		)
+		// The providers list a source that exists as added, with nothing to click.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.ClickedAddSource()).model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Already added")).toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+		)
+
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource()).model
+		expect(confirming.removeDialog.isOpen).toBe(true)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveKey({
+				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+			}),
+		)
+		expect(removed.model.removeDialog.isOpen).toBe(false)
+		// The reads name the org's sources: without reading them again the removed source's cost stays.
+		expect(names(removed.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchCostSources",
+				"FetchCostTotals",
+				"FetchCostTimeseries",
+				"FetchCostBreakdown",
+			]),
+		)
+		// The removed source's row is gone at once, and adding waits for the list read after the write.
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("user_2openrouterAccount")).not.toExist(),
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+		)
+		// That read failing brings no action back on the removed source: the list keeps without it.
+		const refreshFailed = pageUpdate(
+			removed.model,
+			Message.CompletedLoadSources({
+				key: removed.model.sources.key ?? "",
+				result: Result.fail(toLoadFailure("unreachable")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refreshFailed),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("123456789012")).toExist(),
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+		)
+
+		// A reload that was still in flight when the removal answered cannot answer for the re-read.
+		const reloading = pageUpdate(removing.model, Message.ClickedReload()).model
+		const staleKey = reloading.sources.key ?? ""
+		const afterWrite = pageUpdate(
+			reloading,
+			Message.CompletedRemoveKey({
+				result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
+			}),
+		)
+		expect(names(afterWrite.commands)).toContain("FetchCostSources")
+		const stale = pageUpdate(
+			afterWrite.model,
+			Message.CompletedLoadSources({
+				key: staleKey,
+				result: Result.succeed(sources([source(), openRouter])),
+			}),
+		).model
+		// The reload's list, read before the removal, is dropped: the page still waits for the new one.
+		expect(stale.sourceWrite).toBe("Settling")
+
+		// A key saved while the source exists replaces its key, and the toast says so.
+		const replaced = pageUpdate(
+			pageUpdate(
+				pageUpdate(
+					replacing,
+					Message.GotKeyDraftMessage({
+						message: Field.Message.ChangedValue({ value: "sk-or-v1-management-key-0123456789" }),
+					}),
+				).model,
+				Message.SubmittedKey(),
+			).model,
+			Message.CompletedSaveKey({
+				result: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: "sk-or-v1-man...789" })),
+			}),
+		)
+		expect(replaced.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "OpenRouter key replaced",
+				description: "The next sync runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("a view filtered to a provider compares with the period before when that provider's history reaches it", () => {
+		const aws = Schema.decodeSync(CostSourcesResponse)({ sources: [source()] }).sources
+		const both = Schema.decodeSync(CostSourcesResponse)({
+			sources: [
+				source(),
+				source({
+					id: "0190f2b3-0000-7000-8000-00000000c060",
+					provider: "openrouter",
+					backfillDate: "2026-10-13",
+				}),
+			],
+		}).sources
+		// OpenRouter keeps four weeks: the 30 days before the window are beyond its history.
+		expect(previousPeriodOf(both, window, 30, {})).toBe("beyond")
+		expect(previousPeriodOf(both, window, 30, { provider: ["openrouter"] })).toBe("beyond")
+		expect(previousPeriodOf(both, window, 30, { provider: ["aws"] })).toBe("synced")
+		expect(previousPeriodOf(aws, window, 30, {})).toBe("synced")
+	})
+
+	test("a member who may not manage integrations is offered no source action the API would refuse", () => {
+		const openRouter = source({
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+		})
+		const asMember = (model: Model) =>
+			pageUpdate(model, Message.CompletedReadGrants({ grants: [] })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(answered(entered({}, [source(), openRouter]).model))),
+			resolveTheme,
+			// The sources still show how their sync is doing.
+			expectView(text("user_2openrouterAccount")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+			expectView(role("button", { name: "Replace key" })).not.toExist(),
+			expectView(role("button", { name: "Remove" })).not.toExist(),
+			expectView(role("link", { name: "Manage connection" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember(entered({}, []).model)),
+			resolveTheme,
+			expectView(text("No cost source yet")).toExist(),
+			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
+			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+		)
+		// Before the viewer's roles are known the page neither offers the button nor says who can add.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...entered({}, []).model, grants: null }),
+			resolveTheme,
+			expectView(text("No cost source yet")).toExist(),
+			expectView(text(/Only organization admins/)).not.toExist(),
+			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+		)
+		// An engineer is offered them.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					asMember(answered(entered({}, [openRouter]).model)),
+					Message.CompletedReadGrants({ grants: Policy.grantsOf(["org:engineer"]) }),
+				).model,
+			),
+			resolveTheme,
+			expectView(role("button", { name: "Add source" })).toExist(),
+			expectView(role("button", { name: "Replace key" })).toExist(),
+		)
+	})
+
+	test("grouped by provider, a row reads the provider's name and filters by its id", () => {
+		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
+		expect(keyLabel("provider", "aws")).toBe("AWS")
+		// A provider this build does not know still shows, as the rows name it.
+		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
+		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })
+		// The chart's legend names the series the same way.
+		expect(
+			seriesLabels("provider", [
+				{ key: "aws", other: false },
+				{ key: "openrouter", other: false },
+			]),
+		).toEqual(["AWS", "OpenRouter"])
 	})
 
 	test("sources that have not synced yet say when the first sync runs, and list themselves", () => {
@@ -193,6 +536,42 @@ describe("cost page", () => {
 			expectView(role("button", { name: "Reload" })).toExist(),
 		)
 		expect(names(pageUpdate(step.model, Message.ClickedReload()).commands)).toContain("FetchCostSources")
+	})
+
+	test("the wait says what each unsynced provider brings in, a failing AWS source included", () => {
+		const unsynced = {
+			watermarkDate: null,
+			backfillDate: null,
+			historyComplete: false,
+			lastSyncedAt: null,
+		}
+		const openRouter = source({
+			...unsynced,
+			id: "0190f2b3-0000-7000-8000-00000000c060",
+			provider: "openrouter",
+			status: "pending",
+		})
+		const failingAws = source({
+			...unsynced,
+			status: "error",
+			lastError: "AccessDeniedException",
+			lastErrorReason: "not_ready",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [openRouter]).model),
+			resolveTheme,
+			expectView(text(/It brings in the last four weeks, which is all OpenRouter keeps/)).toExist(),
+		)
+		// The AWS source failed its first pull and will bring in months when it retries.
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [failingAws, openRouter]).model),
+			resolveTheme,
+			expectView(text("Waiting for the first sync")).toExist(),
+			expectView(text(/AWS brings in this month and the last/)).toExist(),
+			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+		)
 	})
 
 	test("a synced source asks for the totals, the daily series and the breakdown of the window", () => {
