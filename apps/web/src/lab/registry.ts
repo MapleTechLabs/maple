@@ -439,7 +439,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/aws-connection",
 		title: "AWS connection",
 		description:
-			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|flow|flow-before).",
+			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, the card before its stack is deployed, with a failing role, a stopped stream and metrics off, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|pending|failing|stopped|metrics-off|flow|flow-before).",
 		kind: "lab",
 		session: "none",
 	},

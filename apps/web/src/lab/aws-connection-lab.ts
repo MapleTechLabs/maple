@@ -44,6 +44,10 @@ export const LabState = Schema.Literals([
 	"waiting",
 	"granted",
 	"member",
+	"pending",
+	"failing",
+	"stopped",
+	"metrics-off",
 	"flow",
 	"flow-before",
 ])
@@ -162,6 +166,48 @@ const fixtureFor = (state: LabState): Fixture => {
 		return {
 			isOffered,
 			connections: [{ ...CONNECTED, modules: ["cost"], granted_modules: ["cost"] }],
+		}
+	// The stack was never deployed: nothing is verified, granted or received yet.
+	if (state === "pending")
+		return {
+			isOffered,
+			connections: [
+				{
+					...CONNECTED,
+					granted_modules: null,
+					template_version: null,
+					verified_at: null,
+					last_checked_at: at(1),
+					metric_stream_changed_at: at(6),
+					metrics_last_received_at: null,
+					created_at: at(6),
+				},
+			],
+		}
+	if (state === "failing")
+		return {
+			isOffered,
+			connections: [
+				{
+					...CONNECTED,
+					last_check_error:
+						"AccessDenied: Maple could not assume the role. Its trust policy does not name this connection.",
+				},
+			],
+		}
+	if (state === "stopped")
+		return { isOffered, connections: [{ ...CONNECTED, metrics_last_received_at: at(60 * 9) }] }
+	if (state === "metrics-off")
+		return {
+			isOffered,
+			connections: [
+				{
+					...CONNECTED,
+					metric_stream: null,
+					metric_stream_changed_at: null,
+					metrics_last_received_at: null,
+				},
+			],
 		}
 	return { isOffered, connections: [CONNECTED] }
 }
