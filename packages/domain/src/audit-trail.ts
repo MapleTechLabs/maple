@@ -6,8 +6,8 @@ export type AuditTrailProvider = typeof AuditTrailProvider.Type
 
 /**
  * What an event is about, the same across platforms so one rule covers all of them.
- * `configuration` is how the platform behaves (settings, rules, monitors, integrations);
- * `resource` is something people make and own in it (a repository, a dashboard, a deployment).
+ * `configuration` is how the platform behaves; `resource` is something people make and own in it.
+ * `permission` is what someone may do: a grant changed, or a request refused for lacking one.
  */
 export const AuditTrailCategory = Schema.Literals([
 	"authentication",
