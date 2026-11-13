@@ -339,14 +339,20 @@ const errorsSection = (h: H, model: Model, nowMs: number | null): Html => {
 	)
 }
 
-/** The quiet last row: where the weekly digests are turned on. */
-const weeklySummary = (h: H): Html =>
+/** The quiet last row: what an analyst does next, build a dashboard or turn on the weekly digests. */
+const nextSteps = (h: H): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "div", className: "px-4" }, [
-		textLink(
-			h,
-			{ href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })), tone: "muted" },
-			[icon(h, "EnvelopeIcon", { size: 14 }), "Get a weekly summary by email"],
-		),
+		hstack(h, { gap: "5", wrap: true }, [
+			textLink(h, { href: hrefOf(AppRoute.Dashboards({ search: {} })), tone: "muted" }, [
+				icon(h, "GridSquareCirclePlusIcon", { size: 14 }),
+				"Build a dashboard",
+			]),
+			textLink(
+				h,
+				{ href: hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } })), tone: "muted" },
+				[icon(h, "EnvelopeIcon", { size: 14 }), "Get a weekly summary by email"],
+			),
+		]),
 	])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
@@ -373,7 +379,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						slosSection(h, model),
 					]),
 					errorsSection(h, model, model.nowMs),
-					weeklySummary(h),
+					nextSteps(h),
 				],
 			),
 		],

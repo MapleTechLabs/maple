@@ -89,6 +89,7 @@ describe("overview, analyst", () => {
 				"href",
 				"/account?tab=email-preferences",
 			),
+			expectView(role("link", { name: "Build a dashboard" })).toHaveAttr("href", "/dashboards"),
 		)
 	})
 
