@@ -736,7 +736,7 @@ describe("MCP HTTP authorization", () => {
 })
 
 describe("MCP tools/list per credential", () => {
-	it("hides write tools from a read-only key, in the same isolate that shows them to a full key", async () => {
+	it("hides write tools from a read-only key and all but the dashboard tools from an analyst, in the isolate that shows them to a full key", async () => {
 		const db = createTestDb(createdDbs)
 		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
 		const services = Layer.mergeAll(
@@ -748,7 +748,7 @@ describe("MCP tools/list per credential", () => {
 		).pipe(Layer.provideMerge(base))
 		const orgId = Schema.decodeSync(OrgId)("org_test")
 		const userId = Schema.decodeSync(UserId)("user_test")
-		const [full, readOnly] = await Effect.runPromise(
+		const [full, readOnly, analyst] = await Effect.runPromise(
 			Effect.gen(function* () {
 				const apiKeys = yield* ApiKeysService
 				return [
@@ -756,6 +756,11 @@ describe("MCP tools/list per credential", () => {
 					yield* apiKeys.create(orgId, userId, {
 						name: "Read-only key",
 						scopes: Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`),
+					}),
+					// A key minted for a person acts with that person's org roles.
+					yield* apiKeys.create(orgId, userId, {
+						name: "Analyst's key",
+						metadataJson: { source: "maple_cli", roles: ["org:analyst"], deviceName: "laptop" },
 					}),
 				] as const
 			}).pipe(Effect.provide(services)),
@@ -783,6 +788,7 @@ describe("MCP tools/list per credential", () => {
 			return {
 				status: response.status,
 				write: names.includes("create_alert_rule"),
+				dashboard: names.includes("create_dashboard"),
 				read: names.includes("inspect_trace"),
 				feedback: names.includes("send_maple_feedback"),
 			}
@@ -791,12 +797,22 @@ describe("MCP tools/list per credential", () => {
 			expect(await listFor(full.secret)).toEqual({
 				status: 200,
 				write: true,
+				dashboard: true,
 				read: true,
 				feedback: true,
 			})
 			expect(await listFor(readOnly.secret)).toEqual({
 				status: 200,
 				write: false,
+				dashboard: false,
+				read: true,
+				feedback: true,
+			})
+			// An analyst builds dashboards and operates nothing else.
+			expect(await listFor(analyst.secret)).toEqual({
+				status: 200,
+				write: false,
+				dashboard: true,
 				read: true,
 				feedback: true,
 			})
