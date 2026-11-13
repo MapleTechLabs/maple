@@ -505,8 +505,10 @@ const mobileList = (
 	ctx: TableContext,
 	services: ReadonlyArray<ServiceRow>,
 	mode: "namespace" | "environment",
-): Html =>
-	h.div(
+): Html => {
+	const focused =
+		ctx.model.focusedIndex === null ? undefined : orderedServices(services, mode)[ctx.model.focusedIndex]
+	return h.div(
 		[h.Class("overflow-hidden rounded-md border md:hidden")],
 		services.length === 0
 			? [emptyState(h, ctx)]
@@ -564,6 +566,7 @@ const mobileList = (
 												h,
 												{
 													isSelected: false,
+													isFocused: service === focused,
 													href: serviceHref(ctx.model, service),
 													className:
 														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
@@ -700,6 +703,7 @@ const mobileList = (
 					),
 				),
 	)
+}
 
 const SKELETON_COLUMNS = [
 	{ header: "Service", skeleton: "w-32" },

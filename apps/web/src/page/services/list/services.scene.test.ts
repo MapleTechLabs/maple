@@ -304,7 +304,9 @@ describe("services list", () => {
 describe("services list keys", () => {
 	const press = (key: string) => Subscription.emit(Message.PressedListKey({ key }))
 	const scrolled = () => Command.resolve(ScrollFocusedRow, Message.CompletedScrollFocusedRow())
-	const focusedRow = selector("[data-focused]")
+	const focusedRow = selector("tr[data-focused]")
+	// Below `md` the same rows draw as a list of links; it marks the same one.
+	const focusedListRow = selector("a[data-focused]")
 	// Grouped by environment, production first: checkout, then the staging cart.
 	const rows = [row("cart", "staging"), row("checkout")]
 
@@ -318,9 +320,11 @@ describe("services list keys", () => {
 			press("j"),
 			scrolled(),
 			expectView(focusedRow).toContainText("checkout"),
+			expectView(focusedListRow).toContainText("checkout"),
 			press("ArrowDown"),
 			scrolled(),
 			expectView(focusedRow).toContainText("cart"),
+			expectView(focusedListRow).toContainText("cart"),
 			press("j"),
 			scrolled(),
 			expectView(focusedRow).toContainText("cart"),
@@ -329,6 +333,7 @@ describe("services list keys", () => {
 			expectView(focusedRow).toContainText("checkout"),
 			press("Escape"),
 			expectView(focusedRow).toBeAbsent(),
+			expectView(focusedListRow).toBeAbsent(),
 		)
 	})
 

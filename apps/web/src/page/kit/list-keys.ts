@@ -1,6 +1,6 @@
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
 import { Array as Arr, Effect, Option, type Stream } from "effect"
-import { Command, Dom } from "foldkit"
+import { Command, Dom, Render } from "foldkit"
 import type { CallableTaggedStruct } from "foldkit/schema"
 
 // Keyboard row navigation for a list page: the document key stream (J, K, the arrows, Enter and Escape), the focus step and the scroll that keeps the focused row in view.
@@ -86,9 +86,15 @@ export const scrollFocusedRowCommand = <const Name extends string, const Tag ext
 ) =>
 	Command.define(name, {
 		messages: [completed],
-		// Resolved after the commit that marks the row; a row that left the list has nothing to scroll.
-		execute: Dom.scrollIntoView(FOCUSED_ROW, { block: "nearest" }).pipe(
-			Effect.ignore,
-			Effect.as(completed()),
-		),
+		// After the commit that marks the row. A page that draws its rows twice (a table, and a list
+		// below `md`) marks both, so the one with a box is the one to scroll; none has nothing to do.
+		execute: Effect.gen(function* () {
+			yield* Render.afterCommit
+			const visible = Arr.findFirst(
+				[...document.querySelectorAll<HTMLElement>(FOCUSED_ROW)],
+				(row) => row.getClientRects().length > 0,
+			)
+			if (Option.isSome(visible)) visible.value.scrollIntoView({ block: "nearest" })
+			return completed()
+		}),
 	})
