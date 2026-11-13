@@ -3,7 +3,7 @@ import { Schema, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
-import { readOnlyMessage } from "../policy"
+import { analystMessage } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -91,15 +91,15 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
-/** An analyst asked to change the organization. 403: the session is fine, the role only reads. */
-export class ReadOnlyRoleError extends HttpTaggedError<ReadOnlyRoleError>()(
-	"@maple/http/errors/ReadOnlyRoleError",
+/** An analyst asked to operate the organization. 403: the session is fine, the role does not reach it. */
+export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
+	"@maple/http/errors/LimitedRoleError",
 	{ message: Schema.String },
 	{
 		status: 403,
-		code: "read_only_role",
-		title: "Read-only access",
-		message: readOnlyMessage,
+		code: "limited_role",
+		title: "Limited role",
+		message: analystMessage,
 		retry: "never",
 		recovery: "request_access",
 		exposure: "public_message",
@@ -151,7 +151,7 @@ export class Authorization extends HttpApiMiddleware.Service<
 		UnauthorizedError,
 		AuthorizationUnavailableError,
 		OrganizationAccessDeniedError,
-		ReadOnlyRoleError,
+		LimitedRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -201,7 +201,7 @@ export class SessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
-		ReadOnlyRoleError,
+		LimitedRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -246,7 +246,7 @@ export class RegionlessSessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
-		ReadOnlyRoleError,
+		LimitedRoleError,
 	],
 	security: {
 		bearer: HttpApiSecurity.bearer,

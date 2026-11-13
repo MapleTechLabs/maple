@@ -31,11 +31,29 @@ describe("isOpenToAnalysts", () => {
 		).toBe(true)
 	})
 
-	it("refuses changes to shared work: issue triage and dashboards", () => {
+	it("refuses the work of running the product: issue triage, SLOs and alert rules", () => {
 		expect(open(internal.errors, "transitionIssue")).toBe(false)
 		expect(open(internal.errors, "commentOnIssue")).toBe(false)
-		expect(open(v2.dashboards, "create")).toBe(false)
-		expect(open(v2.dashboards, "upsertShare")).toBe(false)
+		expect(open(v2.slos, "create")).toBe(false)
+		expect(open(v2.alertRules, "create")).toBe(false)
+	})
+
+	it("lets an analyst change dashboards in every way a member can", () => {
+		const writes = [
+			"create",
+			"importPerses",
+			"instantiateTemplate",
+			"update",
+			"delete",
+			"restoreVersion",
+			"upsertShare",
+			"rotateShare",
+			"revokeShare",
+			"upsertWidgetShare",
+			"rotateWidgetShare",
+			"revokeWidgetShare",
+		]
+		expect(Arr.filter(writes, (name) => !open(v2.dashboards, name))).toEqual([])
 	})
 
 	it("keeps every GET of a group that also changes things", () => {
