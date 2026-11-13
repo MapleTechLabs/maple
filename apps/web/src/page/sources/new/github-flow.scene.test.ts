@@ -571,7 +571,7 @@ describe("github connect flow", () => {
 			expectView(text("Installed on acme with 2 repositories.")).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Installed on acme" })).toExist(),
+			expectView(role("listitem", { name: "Installed on acme (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Repositories syncing")).toExist(),
 			expectView(text("acme/api")).toExist(),
@@ -584,7 +584,7 @@ describe("github connect flow", () => {
 			given(withStatus(status({ repositories: [repo("1", "web", "ready")] }))),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("GitHub is live")).toExist(),
 		)
 		scene(

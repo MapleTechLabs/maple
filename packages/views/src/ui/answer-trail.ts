@@ -31,8 +31,9 @@ const doneStep = <M>(h: HtmlBuilder<M>, step: AnswerTrailStep<M>): Html => {
 	const answer = step.answer ?? step.label
 	const content = [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }), answer]
 	const onClick = step.onClick ?? null
+	// The check is decorative, so a static chip says its state in words; a button says it in its name.
 	return onClick === null
-		? h.span([h.Class(CHIP)], content)
+		? h.span([h.Class(CHIP)], [...content, h.span([h.Class("sr-only")], [" (done)"])])
 		: pressable(
 				h,
 				{

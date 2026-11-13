@@ -120,7 +120,7 @@ describe("PlanetScale connect flow", () => {
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
-			expectView(role("listitem", { name: "Authorized" })).toExist(),
+			expectView(role("listitem", { name: "Authorized (done)" })).toExist(),
 			expectView(role("radio", { name: "labs" })).toExist(),
 			expectView(role("button", { name: "Start collecting" })).toBeDisabled(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
@@ -149,7 +149,7 @@ describe("PlanetScale connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(choosing),
-			expectView(role("listitem", { name: "acme" })).toExist(),
+			expectView(role("listitem", { name: "acme (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 		)
@@ -241,7 +241,7 @@ describe("PlanetScale connect flow", () => {
 			given(
 				live(status({ api_metrics: { last_polled_at: "2026-10-24T11:57:00Z", last_error: null } })),
 			),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("PlanetScale is live")).toExist(),
 		)
 	})

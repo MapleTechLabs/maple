@@ -264,7 +264,7 @@ describe("aws connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(streaming("2026-10-23T08:59:30.000Z")),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("Receiving metrics")).toExist(),
 		)
 		scene(

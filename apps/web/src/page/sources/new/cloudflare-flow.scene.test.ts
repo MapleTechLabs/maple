@@ -80,7 +80,7 @@ describe("cloudflare connect flow", () => {
 			expectView(role("button", { name: "Authorize again" })).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Acme" })).toExist(),
+			expectView(role("listitem", { name: "Acme (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Access works")).toExist(),
 			expectView(text("Zones found: 2")).toExist(),
@@ -106,7 +106,7 @@ describe("cloudflare connect flow", () => {
 			given(withStatus(status({ zones: [zone("acme.com", NOW - 60_000)] }))),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("Cloudflare is live")).toExist(),
 			expectView(text("Backfilled the last 24 hours")).toExist(),
 		)
