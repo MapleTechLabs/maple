@@ -34,8 +34,10 @@ const toTokenError =
 	(
 		error: CloudflareBilling.CloudflareBillingError,
 	): CostConnectionValidationError | CostConnectionPersistenceError => {
-		// Listing accounts answers 403 for a token Cloudflare does not know, where billing answers 401.
-		if (error.kind === "unauthorized" || (error.kind === "forbidden" && step === "accounts")) {
+		// Listing accounts answers 403 for a token Cloudflare does not know, where billing answers 401,
+		// and 400 for text that is not shaped like a token at all.
+		const onAccounts = step === "accounts" && (error.kind === "forbidden" || error.kind === "bad_request")
+		if (error.kind === "unauthorized" || onAccounts) {
 			return refused("Cloudflare rejected this token.")
 		}
 		if (error.kind === "forbidden") return refused(NO_BILLING_ACCESS)

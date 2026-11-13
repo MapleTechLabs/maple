@@ -154,6 +154,13 @@ describe("CloudflareCostConnectionService", () => {
 					(yield* Effect.flip(set(TOKEN))).message,
 					"Cloudflare rejected this token.",
 				)
+				// Text that is not shaped like a token is a 400 to Cloudflare, and no outage.
+				world.accountsStatus = 400
+				const malformed = yield* Effect.flip(set(TOKEN))
+				assert.deepStrictEqual(
+					[malformed._tag, malformed.message],
+					[VALIDATION, "Cloudflare rejected this token."],
+				)
 
 				world.accountsStatus = 200
 				world.billingStatus = 403
