@@ -21,10 +21,12 @@ import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { commitRangesKey, releaseHealthFigure, withQueryOrder } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
+import * as ReleaseOverlays from "../overlays"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
 	baselineOf,
+	commitsOf,
 	derivedOf,
 	FINGERPRINT_LIMIT,
 	markersOf,
@@ -352,6 +354,15 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 				charts: model.charts,
 				rows: Arr.map(seriesPoints(model, derived), (point) => ({ ...point })),
 				markers: markersOf(model, derived),
+				markerCard: {
+					model: model.overlays.markerCard,
+					toParent: (message) =>
+						Message.GotOverlaysMessage({
+							message: ReleaseOverlays.Message.GotMarkerCardMessage({ message }),
+						}),
+					commits: commitsOf(model),
+					clock,
+				},
 				toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
 				linkedCursorMount: MountLinkedZoom({ timeZone: clock.timeZone }),
 			},

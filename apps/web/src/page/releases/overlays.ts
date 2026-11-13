@@ -2,7 +2,9 @@ import { Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import type { Resources } from "../../platform/resources"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
+import { initMarkerCard } from "../kit/service-metrics/marker-card"
 import {
 	commitCardCommands,
 	CommitCardMessages,
@@ -13,22 +15,26 @@ import {
 	stepCommitCard,
 } from "../kit/commit-card"
 
-// The releases pages' overlays: the health pill's description tooltip and the commit hover card
-// (one Model each, shared by every trigger on the page), and the commits the card looked up.
+// The releases pages' overlays: the health pill's description tooltip, the commit hover card and the
+// chart markers' card (one Model each, shared by every trigger on the page), and the commits the card looked up.
 
 export const Model = Schema.Struct({
 	healthTooltip: Tooltip.Model,
+	/** The commit markers' hover card on the release's charts. */
+	markerCard: HoverCard.Model,
 	...CommitCardState.fields,
 })
 export type Model = typeof Model.Type
 
 export const init = (prefix: string): Model => ({
 	healthTooltip: Tooltip.init(`${prefix}-health-tooltip`),
+	markerCard: initMarkerCard(`${prefix}-marker-card`),
 	...initCommitCard(`${prefix}-commit-card`),
 })
 
 export const Message = defineMessageUnion({
 	GotHealthTooltipMessage: { message: Tooltip.Message },
+	GotMarkerCardMessage: { message: HoverCard.Message },
 	...CommitCardMessages,
 })
 export type Message = typeof Message.Type
@@ -52,6 +58,15 @@ export const update = (model: Model, message: Message, orgId: string): Return =>
 				model: { ...model, healthTooltip: next.model },
 				commands: Command.mapMessages(next.commands ?? [], (tooltip) =>
 					Message.GotHealthTooltipMessage({ message: tooltip }),
+				),
+			}
+		},
+		GotMarkerCardMessage: ({ message: inner }) => {
+			const next = HoverCard.update(model.markerCard, inner)
+			return {
+				model: { ...model, markerCard: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (card) =>
+					Message.GotMarkerCardMessage({ message: card }),
 				),
 			}
 		},

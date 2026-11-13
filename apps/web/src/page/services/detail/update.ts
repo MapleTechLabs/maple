@@ -1,3 +1,5 @@
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { initMarkerCard } from "../../kit/service-metrics/marker-card"
 import { zoomSearchPatch } from "../../kit/chart-zoom"
 import { pickerStep } from "../../kit/page-time"
 import { keyed as keyedStep, runSteps, type Step as KitStep } from "../../kit/keyed-step"
@@ -560,6 +562,7 @@ export const init = (
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
+		markerCard: initMarkerCard("service-marker-card"),
 		isDeploysExpanded: false,
 		sorts: {
 			operations: initialSort("operations"),
@@ -857,4 +860,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
+		GotMarkerCardMessage: ({ message: inner }) => {
+			const next = HoverCard.update(model.markerCard, inner)
+			return {
+				model: { ...model, markerCard: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (card) =>
+					Message.GotMarkerCardMessage({ message: card }),
+				),
+			}
+		},
 	})
