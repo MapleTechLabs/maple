@@ -44,14 +44,19 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
 	return vstack(h, { gap: "3" }, [
-		metricsGrid(h, model, {
-			isLoading: isDetailLoading || !isChartReady,
-			isWaiting: AsyncData.isRefreshing(overview),
-			context:
-				model.themeColors === null
-					? null
-					: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
-		}),
+		metricsGrid(
+			h,
+			model,
+			{
+				isLoading: isDetailLoading || !isChartReady,
+				isWaiting: AsyncData.isRefreshing(overview),
+				context:
+					model.themeColors === null
+						? null
+						: { theme: model.themeColors, timeZone: context.timeZone, nowMs },
+			},
+			context.timeZone,
+		),
 		topOperationsPanel(h, model, model.themeColors),
 		grid(h, { lg: 2, gap: "3" }, [
 			issuesPanel(h, model, clock, isLimited),

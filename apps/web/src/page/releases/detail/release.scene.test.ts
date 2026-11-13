@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../contract"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -64,7 +64,7 @@ const withReleases = (commitSha = HEAD) => {
 
 const FAILURE = toLoadFailure("injected")
 const THEME = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const CURSOR = Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const CURSOR = Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor())
 const point = (bucket: string) => ({
 	bucket,
 	throughput: 10,

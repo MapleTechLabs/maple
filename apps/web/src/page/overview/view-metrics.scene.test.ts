@@ -18,7 +18,7 @@ import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
 import { MountChart, PortalTooltipBody } from "@maple/views/charts/chart-mounts"
 import { CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "@maple/views/charts/chart-spec"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import type { PageContext } from "../contract"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { Message } from "./message"
@@ -74,7 +74,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 const pageUpdate = (model: Model, message: Message) => ({ model: update(model, message, context).model })
 const mounted = () =>
 	Mount.resolveAll(
-		[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+		[MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()],
 		[MountChart, Chart.Message.CompletedMountChart()],
 		[MountChart, Chart.Message.CompletedMountChart()],
 		[MountChart, Chart.Message.CompletedMountChart()],

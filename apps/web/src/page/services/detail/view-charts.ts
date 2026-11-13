@@ -2,7 +2,7 @@ import { mergeExactThroughput } from "@maple/web-data/warehouse/custom-charts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { type GridState, metricsGridOf } from "../../kit/service-metrics/grid"
 import { commitMarkers } from "../../kit/service-metrics/markers"
 import type { DetailPoint } from "../../kit/service-metrics/points"
@@ -21,7 +21,12 @@ export const mergedPoints = (model: Model): ReadonlyArray<DetailPoint> => {
 	return mergeExactThroughput(base, new Map(Arr.map(exact, (point) => [point.bucket, point.throughput])))
 }
 
-export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridState): Html => {
+export const metricsGrid = (
+	h: HtmlBuilder<Message>,
+	model: Model,
+	state: GridState,
+	timeZone: string,
+): Html => {
 	const points = mergedPoints(model)
 	const overview = AsyncData.getData(model.overview.data)
 	const markers = Option.match(overview, {
@@ -40,7 +45,7 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, state: GridSt
 			rows: Arr.map(points, (point) => ({ ...point })),
 			markers,
 			toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
-			linkedCursorMount: MountLinkedCursor(),
+			linkedCursorMount: MountLinkedZoom({ timeZone }),
 		},
 		state,
 	)

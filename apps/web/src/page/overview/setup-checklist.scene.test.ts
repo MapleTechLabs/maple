@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { failureSentence } from "@maple/views/ui/error-state"
@@ -77,7 +77,7 @@ const realServices = (model: Model) => (model.setup === null ? [] : realServices
 const RECT = { left: 0, right: 225, top: 4, bottom: 5, width: 112, height: 32 }
 const pageMounts = [
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+	Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 ] as const
 /** The guided setup's two underline tab lists (snippets and package managers). */
 const tabMounts = [

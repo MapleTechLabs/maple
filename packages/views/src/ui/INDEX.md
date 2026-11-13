@@ -203,6 +203,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`, `formatCredits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
 - `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
+- `apps/web/src/page/kit/chart-zoom.ts` `zoomSearchPatch`: A span dragged across a chart as the URL's absolute window: whole seconds, at least a minute, no preset.
 - `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
 - `apps/web/src/page/kit/clipboard.ts` `copyToast`: The toast for a finished copy (no label: the generic titles).
 - `apps/web/src/page/kit/code-block.ts` `codeBlock`: A code block: language eyebrow, copy button, highlighted markup.

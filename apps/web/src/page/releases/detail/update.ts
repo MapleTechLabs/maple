@@ -1,3 +1,4 @@
+import { zoomSearchPatch } from "../../kit/chart-zoom"
 import { pickerStep } from "../../kit/page-time"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
@@ -247,6 +248,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {

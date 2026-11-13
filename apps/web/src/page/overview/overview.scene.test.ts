@@ -14,7 +14,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -90,7 +90,7 @@ const withPresence = (model: Model, traces: Presence, logs: Presence = traces): 
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const cursorMounted = () => Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const cursorMounted = () => Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor())
 
 describe("overview", () => {
 	test("entry reads the clock and hint; downstream queries wait for facets", () => {
@@ -253,7 +253,7 @@ describe("overview", () => {
 			given(failed),
 			Mount.resolveAll(
 				[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
-				[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+				[MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()],
 			),
 			expectView(text("Firing now:")).toBeAbsent(),
 		)
@@ -271,7 +271,7 @@ describe("overview", () => {
 		]
 		const mounts = Mount.resolveAll(
 			[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
-			[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+			[MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()],
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -502,5 +502,23 @@ describe("overview", () => {
 			Message.CompletedReloadSpin({ version: reloaded.model.refreshVersion }),
 		)
 		expect(settled.model.isReloading).toBe(false)
+	})
+})
+
+describe("chart zoom", () => {
+	test("a drag across an Overview chart opens that span as the window", () => {
+		const zoomed = pageUpdate(
+			loaded([snapshotRow("checkout")]),
+			Message.SelectedChartRange({
+				startMs: Date.parse("2026-10-01T09:00:00Z"),
+				endMs: Date.parse("2026-10-01T09:45:00Z"),
+			}),
+		)
+		expect(zoomed.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/?startTime=2026-10-01+09%3A00%3A00&endTime=2026-10-01+09%3A45%3A00",
+				isReplace: false,
+			}),
+		)
 	})
 })
