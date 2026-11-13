@@ -350,21 +350,26 @@ OAuth application redirects to production and a reconnect cannot run on a previe
   whose account is the connection's organization. Adding on the Cost page makes the row, removing
   deletes it, and the connection itself is never changed from there.
 - Invoices are read with the integration's OAuth grant, as `Authorization: Bearer <access token>`,
-  through the grant's own token handling: a 401 forces one refresh, and a fresh token refused too
-  stamps the grant revoked, after which no request is made until the org reconnects.
+  through the grant's own token handling: a 401 forces one refresh. A fresh token the invoice API
+  refuses too fails the cost read and leaves the grant as it is. The grant is shared with metrics
+  and webhooks, the OAuth path has not run against PlanetScale yet, and a 401 for a missing scope
+  would otherwise revoke a healthy grant. Only the integration's own reads stamp it revoked; a
+  grant so stamped is then asked nothing.
 - Scope: `organization:read_invoices`, ticked on Maple's OAuth application on 2026-11-13 and added
   to the default of `PLANETSCALE_OAUTH_SCOPES`. A grant made before that lacks it. The stored grant
   records its scopes, so the Cost page says "Reconnect PlanetScale to grant access to invoices"
   without a request, an add is refused under its own error code, and a pull is held as not ready.
   A 403 from the API reads the same. A grant PlanetScale reported no scopes for is not ruled out:
   the read itself then answers.
-- Reconnecting keeps the connection row and its id. Authorizing the same organization again keeps
-  the source and makes it due at the next tick, since the new grant may carry the scope. Binding
-  another organization removes the source (its invoices would overwrite the source's days), as
-  does a disconnect, both in the connection's own transaction. The sync also removes a source
-  whose connection is gone or reads another organization.
+- Reconnecting keeps the connection row and its id. A new grant makes the source due at the next
+  tick, in the grant's own transaction, since it may carry the scope: a grant that sees several
+  organizations is not bound again, so the bind cannot be what releases it. Binding another
+  organization removes the source (its invoices would overwrite the source's days), decided in the
+  bind's transaction by the source's own account, as does a disconnect. The sync also removes a
+  source whose connection is gone or reads another organization.
 - An add reads one page of the invoice list first, so a refusal shows before the source exists,
-  and names the organization the dialog showed: one bound since is refused.
+  and names the organization the dialog showed: one bound since is refused. The read is bounded
+  at twenty seconds. After a refusal the dialog reads the connection again.
 - Live, with a service token: an organization the token cannot see answers 404. Docs: a grant
   without `read_invoices` answers 403.
 - Rows: the database is `CloudService` (the engine is not in the response), the SKU is
