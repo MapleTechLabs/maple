@@ -2,7 +2,14 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import { DateTime, Effect, Layer, Schema, Array as Arr, Order } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 import type { CostProviderError } from "../../CostProvider"
 import {
 	authorizePlanetScale,
@@ -82,51 +89,54 @@ const grantRevoked = (testDb: TestDb) =>
 	).pipe(Effect.map((row) => row?.revoked))
 
 describe("PlanetScaleCostProvider", () => {
-	it.effect("reads each invoice of the window once with the org's grant, and spreads it over its days", () => {
-		const testDb = createTestDb(trackedDbs)
-		const world = twoMonths()
-		return run(
-			testDb,
-			world,
-			Effect.gen(function* () {
-				const connectionRef = yield* connect(testDb, world)
-				const pulled = yield* pull(ORG, connectionRef)
-				// One list, then the two months the window touches. September is not read.
-				assert.deepStrictEqual(world.urls, [
-					`${INVOICES_PATH}?per_page=50&page=1`,
-					`${INVOICES_PATH}/inv_2026-11/line-items?per_page=100&page=1`,
-					`${INVOICES_PATH}/inv_2026-10/line-items?per_page=100&page=1`,
-				])
-				// The stored access token, as a bearer: nothing is exchanged for a live token.
-				assert.deepStrictEqual(world.authorizations, Arr.replicate("Bearer ps-access-token", 3))
-				assert.deepStrictEqual(world.tokenRequests, [])
-				assert.strictEqual(pulled.requests, 0)
-				// Rows carry the connection's organization; today and yesterday are not final yet.
-				assert.deepStrictEqual(
-					Arr.map(
-						Arr.sort(
-							pulled.rows,
-							Order.mapInput(Order.String, (row: (typeof pulled.rows)[number]) => row.day),
+	it.effect(
+		"reads each invoice of the window once with the org's grant, and spreads it over its days",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = twoMonths()
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const connectionRef = yield* connect(testDb, world)
+					const pulled = yield* pull(ORG, connectionRef)
+					// One list, then the two months the window touches. September is not read.
+					assert.deepStrictEqual(world.urls, [
+						`${INVOICES_PATH}?per_page=50&page=1`,
+						`${INVOICES_PATH}/inv_2026-11/line-items?per_page=100&page=1`,
+						`${INVOICES_PATH}/inv_2026-10/line-items?per_page=100&page=1`,
+					])
+					// The stored access token, as a bearer: nothing is exchanged for a live token.
+					assert.deepStrictEqual(world.authorizations, Arr.replicate("Bearer ps-access-token", 3))
+					assert.deepStrictEqual(world.tokenRequests, [])
+					assert.strictEqual(pulled.requests, 0)
+					// Rows carry the connection's organization; today and yesterday are not final yet.
+					assert.deepStrictEqual(
+						Arr.map(
+							Arr.sort(
+								pulled.rows,
+								Order.mapInput(Order.String, (row: (typeof pulled.rows)[number]) => row.day),
+							),
+							(row) => [
+								row.day,
+								row.cloudService,
+								row.resourceId,
+								row.billedCost,
+								row.accountId,
+								row.estimated,
+							],
 						),
-						(row) => [
-							row.day,
-							row.cloudService,
-							row.resourceId,
-							row.billedCost,
-							row.accountId,
-							row.estimated,
+						[
+							["2026-10-30", "orders", "main", 1, "acme", false],
+							["2026-10-31", "orders", "main", 1, "acme", false],
+							["2026-11-01", "orders", "main", 2, "acme", true],
+							["2026-11-02", "orders", "main", 2, "acme", true],
 						],
-					),
-					[
-						["2026-10-30", "orders", "main", 1, "acme", false],
-						["2026-10-31", "orders", "main", 1, "acme", false],
-						["2026-11-01", "orders", "main", 2, "acme", true],
-						["2026-11-02", "orders", "main", 2, "acme", true],
-					],
-				)
-			}),
-		)
-	})
+					)
+				}),
+			)
+		},
+	)
 
 	it.effect("refreshes an access token PlanetScale no longer takes, and reads with the new one", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -151,7 +161,44 @@ describe("PlanetScaleCostProvider", () => {
 		)
 	})
 
-	it.effect("fails a grant PlanetScale has revoked as auth, stamps it, and asks nothing more of it", () => {
+	it.effect(
+		"fails the pull when the invoice API refuses a fresh token too, and leaves the shared grant alone",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = twoMonths()
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					const connectionRef = yield* connect(testDb, world)
+					// The invoice endpoint answers 401 where the rest of the API takes the token.
+					world.invoicesStatus = 401
+					const error = yield* Effect.flip(pull(ORG, connectionRef))
+					assert.deepStrictEqual(reasonOf(error), ["auth", 0, "planetscale"])
+					assert.include(error.message, "for invoices")
+					// One refresh and one retry, then it gives up.
+					assert.deepStrictEqual(world.tokenRequests, ["refresh_token"])
+					assert.strictEqual(world.urls.length, 2)
+
+					// The grant is the integration's too: it is not stamped on a cost read's evidence,
+					// so metrics and webhooks keep their token and the org's other reads go on.
+					assert.isFalse(yield* grantRevoked(testDb))
+					const oauth = yield* PlanetScaleOAuthService
+					assert.deepStrictEqual(
+						Arr.map(yield* oauth.listOrganizations(ORG), (organization) => organization.name),
+						["acme"],
+					)
+					assert.isString((yield* oauth.getValidAccessToken(ORG)).accessToken)
+
+					// Nor is the source locked out: once the endpoint answers, the next pull reads.
+					world.invoicesStatus = 200
+					assert.strictEqual((yield* pull(ORG, connectionRef)).rows.length, 4)
+				}),
+			)
+		},
+	)
+
+	it.effect("asks nothing of a grant the integration has stamped revoked", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = twoMonths()
 		return run(
@@ -159,21 +206,14 @@ describe("PlanetScaleCostProvider", () => {
 			world,
 			Effect.gen(function* () {
 				const connectionRef = yield* connect(testDb, world)
-				// Every token is refused, the refreshed one too.
-				world.authorization = "Bearer nothing-is-accepted"
-				const first = yield* Effect.flip(pull(ORG, connectionRef))
-				assert.deepStrictEqual(reasonOf(first), ["auth", 0, "planetscale"])
-				assert.include(first.message, "Reconnect PlanetScale")
-				assert.isTrue(yield* grantRevoked(testDb))
-
-				// The stamped grant is not tried again: no token is fetched and no invoice asked for.
-				world.urls.length = 0
-				world.tokenRequests.length = 0
-				assert.deepStrictEqual(reasonOf(yield* Effect.flip(pull(ORG, connectionRef))), [
-					"auth",
-					0,
-					"planetscale",
-				])
+				// What the integration's own poller writes when PlanetScale refuses it for good.
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE oauth_connections SET revoked_at = now()", []),
+				)
+				const error = yield* Effect.flip(pull(ORG, connectionRef))
+				assert.deepStrictEqual(reasonOf(error), ["auth", 0, "planetscale"])
+				assert.include(error.message, "Reconnect PlanetScale")
+				// No token is fetched and no invoice asked for.
 				assert.deepStrictEqual([world.urls, world.tokenRequests], [[], []])
 			}),
 		)

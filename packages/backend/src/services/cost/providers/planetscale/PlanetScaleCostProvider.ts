@@ -5,7 +5,17 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -29,6 +39,7 @@ import {
 	listInvoices,
 	type PlanetScaleInvoiceApiError,
 	type PlanetScaleInvoiceCredentials,
+	withinTime,
 } from "./invoices-api"
 import { readInvoiceCost } from "./pull"
 
@@ -69,23 +80,38 @@ const failed = (reason: Reason, message: string, kind: PlanetScaleCostReadError[
 
 const revoked = () => failed("auth", RECONNECT_REVOKED, "reconnect")
 
+/** How long an add waits for the invoice list before it says so. */
+const CHECK_TIMEOUT = Duration.seconds(20)
+
+/**
+ * The invoice API refused a fresh access token. That is said of invoices only: the grant is the
+ * integration's too, and whether it is dead is for a call the integration relies on to find.
+ */
+const refusedForInvoices = () =>
+	failed(
+		"auth",
+		"PlanetScale refused Maple's authorization for invoices. Reconnect PlanetScale to grant access to invoices.",
+		"reconnect",
+	)
+
 /** PlanetScale's answers and the grant's own failures, as what the sync does next and the Cost page shows. */
 const toReadError = (
 	error: PlanetScaleInvoiceApiError | PlanetScaleAccessTokenError,
 ): PlanetScaleCostReadError => {
 	switch (error._tag) {
 		case "@maple/http/errors/IntegrationsNotConnectedError":
-		case "@maple/http/errors/IntegrationsRevokedError":
 			return revoked()
+		// The grant was live when the read began: this is the invoice API refusing its fresh token.
+		case "@maple/http/errors/IntegrationsRevokedError":
+			return refusedForInvoices()
 		case "@maple/backend/cost/PlanetScaleInvoiceApiError":
 			break
 		default:
 			return failed("upstream", "Maple could not get a PlanetScale access token.")
 	}
 	switch (error.reason) {
-		// A 401 that outlived a refresh has stamped the grant revoked by now.
 		case "unauthorized":
-			return revoked()
+			return refusedForInvoices()
 		case "forbidden":
 			return failed("not_ready", RECONNECT_FOR_INVOICES, "reconnect")
 		case "not_found":
@@ -103,6 +129,8 @@ const toReadError = (
 				"too_large",
 				"This organization has more invoices or invoice line items than Maple reads.",
 			)
+		case "timed_out":
+			return failed("upstream", "PlanetScale took too long to answer.")
 		case "upstream":
 			return failed("upstream", "PlanetScale did not answer the invoice request.")
 	}
@@ -135,8 +163,9 @@ export class PlanetScaleCostProvider extends Context.Service<
 
 		/**
 		 * Runs `use` against the organization of the source's connection, with the org's grant. A
-		 * grant known to be revoked or to lack the invoice scope is refused without a request; a 401
-		 * goes through the grant's own refresh, which stamps it revoked when the fresh token fails too.
+		 * grant known to be revoked or to lack the invoice scope is refused without a request. A 401
+		 * goes through the grant's own refresh, once. A fresh token refused too fails the read and
+		 * leaves the grant as it is: a cost read never revokes what metrics and webhooks run on.
 		 */
 		const withGrant = <A>(
 			source: CostPullSource,
@@ -167,26 +196,29 @@ export class PlanetScaleCostProvider extends Context.Service<
 					return yield* failed("not_ready", RECONNECT_FOR_INVOICES, "reconnect")
 				}
 				return yield* psOAuth
-					.withAccessToken(source.orgId, (accessToken) =>
-						use({
-							apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL,
-							organization: connection.psOrganization,
-							authorization: Redacted.make(planetScaleBearerHeader(accessToken)),
-						}).pipe(
-							// The page shows the mapped message; which failure it was stays on the span.
-							Effect.tapError((error) =>
-								Effect.annotateCurrentSpan({
-									"maple.cost.planetscale.error": error.reason,
-									"maple.cost.planetscale.status": error.status,
-								}),
+					.withAccessToken(
+						source.orgId,
+						(accessToken) =>
+							use({
+								apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL,
+								organization: connection.psOrganization,
+								authorization: Redacted.make(planetScaleBearerHeader(accessToken)),
+							}).pipe(
+								// The page shows the mapped message; which failure it was stays on the span.
+								Effect.tapError((error) =>
+									Effect.annotateCurrentSpan({
+										"maple.cost.planetscale.error": error.reason,
+										"maple.cost.planetscale.status": error.status,
+									}),
+								),
+								// The grant's own refresh keys on this error.
+								Effect.mapError((error) =>
+									error.reason === "unauthorized"
+										? new PlanetScaleTokenRejectedError({ message: error.message })
+										: error,
+								),
 							),
-							// The grant's own refresh and revoke handling keys on this error.
-							Effect.mapError((error) =>
-								error.reason === "unauthorized"
-									? new PlanetScaleTokenRejectedError({ message: error.message })
-									: error,
-							),
-						),
+						{ stampRevoked: false },
 					)
 					.pipe(Effect.mapError(toReadError))
 			})
@@ -219,8 +251,9 @@ export class PlanetScaleCostProvider extends Context.Service<
 
 		const check = Effect.fn("PlanetScaleCostProvider.check")(function* (source: CostPullSource) {
 			yield* annotate(source)
+			// Bounded per request: an add must answer, and a token refresh is never cut short.
 			return yield* withGrant(source, (credentials) =>
-				listInvoices(httpClient, credentials, () => true),
+				listInvoices(httpClient, credentials, () => true).pipe(withinTime(CHECK_TIMEOUT)),
 			)
 		}, tagReason)
 

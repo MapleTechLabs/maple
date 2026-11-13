@@ -3,7 +3,15 @@
  * invoice's line items, with the authorization its caller holds. Plain requests with the status
  * read off the answer: a 401, 403 or 404 is an expected answer for a grant, not a failed call.
  */
-import { Effect, Redacted, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
+import {
+	type Duration,
+	Effect,
+	Redacted,
+	Schema,
+	SchemaTransformation,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, type HttpClient, HttpClientRequest } from "effect/http"
 
 const INVOICES_PER_PAGE = 50
@@ -25,7 +33,7 @@ export interface PlanetScaleInvoiceCredentials {
 /**
  * `unauthorized` (401): the access token is not live. `forbidden` (403): the grant lacks
  * `read_invoices`. `not_found` (404): the grant cannot see the organization. `too_large`: more
- * pages than a read takes.
+ * pages than a read takes. `timed_out`: the caller's bound on the read ran out.
  */
 export class PlanetScaleInvoiceApiError extends Schema.TaggedError<PlanetScaleInvoiceApiError>()(
 	"@maple/backend/cost/PlanetScaleInvoiceApiError",
@@ -38,6 +46,7 @@ export class PlanetScaleInvoiceApiError extends Schema.TaggedError<PlanetScaleIn
 			"rate_limited",
 			"invalid_response",
 			"too_large",
+			"timed_out",
 			"upstream",
 		]),
 		status: Schema.Number,
@@ -221,3 +230,12 @@ export const listInvoiceLineItems = (
 		"invoice line items",
 		enough,
 	)
+
+/** `read`, failed as `timed_out` when it has not answered within `duration`. */
+export const withinTime =
+	(duration: Duration.Input) =>
+	<A>(read: Effect.Effect<A, PlanetScaleInvoiceApiError>): Effect.Effect<A, PlanetScaleInvoiceApiError> =>
+		Effect.timeoutOrElse(read, {
+			duration,
+			orElse: () => Effect.fail(failed("timed_out", 0, "PlanetScale took too long to answer.")),
+		})

@@ -620,6 +620,66 @@ describe("PlanetScaleConnectionService", () => {
 		},
 	)
 
+	it.effect(
+		"a reconnect that sees several organizations makes the source due though nothing is bound again",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const stub = stubPlanetScaleApi({
+				organizations: [
+					{ id: "psorg_1", name: "acme" },
+					{ id: "psorg_2", name: "beta" },
+				],
+			})
+
+			return Effect.gen(function* () {
+				const service = yield* PlanetScaleConnectionService
+				const orgId = asOrgId("org_1")
+				yield* storeGrant(orgId)
+				yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+				yield* addHeldCostSource(testDb)
+				const before = yield* costSource(testDb)
+
+				// With two organizations the callback binds none, and the picker is not asked: the
+				// connection is bound already. The new grant alone has to release the source.
+				yield* storeGrant(orgId)
+				assert.deepStrictEqual(yield* costSource(testDb), {
+					...before,
+					held: false,
+					synced: false,
+					error: null,
+					failures: 0,
+					leased: false,
+				})
+			}).pipe(
+				Effect.provideService(FetchHttpClient.Fetch, stub),
+				Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+			)
+		},
+	)
+
+	it.effect("binding removes a source of another organization by the source's own account", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubPlanetScaleApi()
+
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const orgId = asOrgId("org_1")
+			yield* storeGrant(orgId)
+			yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			yield* addHeldCostSource(testDb)
+			// The source reads another organization than the connection says it is bound to, as when
+			// a bind raced the read the removal used to be decided from.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE cost_sources SET account_id = 'earlier-org'", []),
+			)
+			yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			assert.isUndefined(yield* costSource(testDb))
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
 	it.effect("binding another organization removes the Cost page's source of the old one", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubPlanetScaleApi({

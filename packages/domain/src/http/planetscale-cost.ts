@@ -7,7 +7,6 @@ import {
 	IntegrationsForbiddenError,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
-	IntegrationsUpstreamError,
 } from "./integrations"
 import { CloudCostDisabledError } from "./query-engine"
 
@@ -61,6 +60,23 @@ export class PlanetScaleCostReconnectRequiredError extends HttpTaggedError<Plane
 	},
 ) {}
 
+/**
+ * PlanetScale did not answer the check an add makes, or answered what Maple cannot read. The
+ * message is one of Maple's own sentences about that, so the Cost page shows it as it is.
+ */
+export class PlanetScaleCostUnavailableError extends HttpTaggedError<PlanetScaleCostUnavailableError>()(
+	"@maple/http/planetscale-cost/PlanetScaleCostUnavailableError",
+	{ message: Schema.String },
+	{
+		status: 502,
+		code: "planetscale_cost_unavailable",
+		title: "PlanetScale could not be read",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "public_message",
+	},
+) {}
+
 /** The org's PlanetScale organization as a cost source: adding makes the source, removing deletes it. */
 export class PlanetScaleCostApiGroup extends HttpApiGroup.make("planetScaleCost")
 	.add(
@@ -78,8 +94,8 @@ export class PlanetScaleCostApiGroup extends HttpApiGroup.make("planetScaleCost"
 				IntegrationsForbiddenError,
 				IntegrationsNotConnectedError,
 				IntegrationsConnectionChangedError,
-				IntegrationsUpstreamError,
 				PlanetScaleCostReconnectRequiredError,
+				PlanetScaleCostUnavailableError,
 				CloudCostDisabledError,
 			],
 		}),

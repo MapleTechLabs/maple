@@ -698,13 +698,16 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		/**
 		 * Run `use` with the org's access token (a stamped grant fails first). A rejected token forces
-		 * one refresh and a retry; a rejected fresh token stamps the grant revoked.
+		 * one refresh and a retry; a rejected fresh token stamps the grant revoked. `stampRevoked:
+		 * false` fails the same way without the stamp, for a caller whose endpoint may refuse a
+		 * healthy grant: the grant is shared, and its other readers must not stop on that evidence.
 		 */
 		const withRejectedTokenRetry = <A, E, Rejected extends E & { readonly message: string }>(
 			config: OAuthTokenEndpointConfig,
 			orgId: OrgId,
 			isRejected: (error: E) => error is Rejected,
 			use: (accessToken: string) => Effect.Effect<A, E>,
+			options: { readonly stampRevoked?: boolean } = {},
 		) =>
 			Effect.gen(function* () {
 				const { accessToken } = yield* getValidConnectionToken(config, orgId, { failIfRevoked: true })
@@ -714,7 +717,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							const refreshed = yield* refreshRejectedToken(config, orgId, accessToken)
 							return yield* use(refreshed.accessToken).pipe(
 								Effect.catchIf(isRejected, (rejected) =>
-									markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
+									(options.stampRevoked === false
+										? Effect.succeed(false)
+										: markRejectedTokenRevoked(orgId, refreshed.accessToken)
+									).pipe(
 										Effect.tap((stamped) =>
 											Effect.annotateCurrentSpan(
 												`maple.${provider}.grant_revoked`,

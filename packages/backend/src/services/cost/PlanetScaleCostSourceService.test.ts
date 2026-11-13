@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, PLANETSCALE_COST_RECONNECT_CODE } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr } from "effect"
+import { DateTime, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import {
 	cleanupTestDbs,
@@ -32,6 +32,7 @@ const ORG = Schema.decodeSync(OrgId)("org_cost")
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-12T06:00:00Z"))
 const RECONNECT = "@maple/http/planetscale-cost/PlanetScaleCostReconnectRequiredError"
 const CHANGED = "@maple/http/errors/IntegrationsConnectionChangedError"
+const UNAVAILABLE = "@maple/http/planetscale-cost/PlanetScaleCostUnavailableError"
 const INVOICES_PATH = "/v1/organizations/acme/invoices"
 
 /** The open month and the one before it, each with one line. */
@@ -85,6 +86,29 @@ const source = (testDb: TestDb) =>
 			"SELECT id, connection_ref, account_id, enabled FROM cost_sources WHERE org_id = 'org_cost' AND provider = 'planetscale'",
 		),
 	)
+
+const grantRevoked = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ revoked: boolean }>(
+			testDb,
+			"SELECT revoked_at IS NOT NULL AS revoked FROM oauth_connections WHERE org_id = 'org_cost'",
+		),
+	).pipe(Effect.map((row) => row?.revoked))
+
+/** Advance the test clock in small steps until the forked run settles, waiting on real I/O in between. */
+const settleWithClock = <A, E>(fiber: Fiber.Fiber<A, E>) =>
+	Effect.gen(function* () {
+		yield* Effect.repeat(
+			Effect.gen(function* () {
+				yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
+				if (fiber.pollUnsafe() !== undefined) return true
+				yield* TestClock.adjust(Duration.millis(250))
+				return false
+			}),
+			{ until: (done) => done, times: 400 },
+		)
+		return yield* Fiber.join(fiber)
+	})
 
 const costConnections = (testDb: TestDb) =>
 	Effect.promise(() =>
@@ -203,7 +227,7 @@ describe("PlanetScaleCostSourceService", () => {
 	)
 
 	it.effect(
-		"refuses under the reconnect code when PlanetScale answers 403, or no longer takes the grant",
+		"refuses under the reconnect code when PlanetScale answers 403 or 401 for invoices, and leaves the grant alone",
 		() => {
 			const testDb = createTestDb(trackedDbs)
 			// The grant reports no scopes, so only the read can tell.
@@ -219,24 +243,33 @@ describe("PlanetScaleCostSourceService", () => {
 						[RECONNECT, RECONNECT_FOR_INVOICES],
 					)
 
-					world.invoicesStatus = 200
-					world.authorization = "Bearer nothing-is-accepted"
-					const revoked = yield* Effect.flip(add())
-					assert.strictEqual(revoked._tag, RECONNECT)
-					assert.include(revoked.message, "Reconnect PlanetScale")
-					// The grant is stamped revoked by now: the status says so without asking again.
+					// A 401 that outlives a refresh reads the same to the person adding.
+					world.invoicesStatus = 401
+					const unauthorized = yield* Effect.flip(add())
+					assert.strictEqual(unauthorized._tag, RECONNECT)
+					assert.include(unauthorized.message, "Reconnect PlanetScale")
+					// An add never revokes the grant the org's metrics and webhooks run on.
+					assert.isFalse(yield* grantRevoked(testDb))
+					assert.isUndefined(yield* source(testDb))
+
+					// A grant the integration itself found dead is said so without a request.
+					yield* Effect.promise(() =>
+						executeSql(testDb, "UPDATE oauth_connections SET revoked_at = now()", []),
+					)
+					world.urls.length = 0
 					assert.deepStrictEqual(yield* status, {
 						organization: "acme",
 						invoiceAccess: false,
 						added: false,
 					})
-					assert.isUndefined(yield* source(testDb))
+					assert.strictEqual((yield* Effect.flip(add()))._tag, RECONNECT)
+					assert.deepStrictEqual(world.urls, [])
 				}),
 			)
 		},
 	)
 
-	it.effect("reports a PlanetScale outage as an upstream failure, not as a grant to reconnect", () => {
+	it.effect("reports a PlanetScale outage with its reason, not as a grant to reconnect", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = invoiced({ invoicesStatus: 503 })
 		return run(
@@ -245,12 +278,36 @@ describe("PlanetScaleCostSourceService", () => {
 			Effect.gen(function* () {
 				yield* connect(testDb, world)
 				const outage = yield* Effect.flip(add())
-				assert.strictEqual(outage._tag, "@maple/http/errors/IntegrationsUpstreamError")
+				// The page shows this error's message as it is: one of Maple's own sentences.
+				assert.deepStrictEqual(
+					[outage._tag, outage.message],
+					[UNAVAILABLE, "PlanetScale did not answer the invoice request."],
+				)
 				world.invoicesStatus = 200
 				world.invoices = "<html>maintenance</html>"
-				assert.strictEqual(
-					(yield* Effect.flip(add()))._tag,
-					"@maple/http/errors/IntegrationsUpstreamError",
+				assert.strictEqual((yield* Effect.flip(add()))._tag, UNAVAILABLE)
+				assert.isUndefined(yield* source(testDb))
+			}),
+		)
+	})
+
+	it.effect("gives up on a PlanetScale that does not answer the check within twenty seconds", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = invoiced()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect(testDb, world)
+				// The request is accepted and never answered.
+				world.beforeAnswer = () => new Promise<void>(() => {})
+				const fiber = yield* Effect.forkChild(Effect.flip(add()))
+				yield* TestClock.adjust("19 seconds")
+				assert.isUndefined(fiber.pollUnsafe())
+				const stalled = yield* settleWithClock(fiber)
+				assert.deepStrictEqual(
+					[stalled._tag, stalled.message],
+					[UNAVAILABLE, "PlanetScale took too long to answer."],
 				)
 				assert.isUndefined(yield* source(testDb))
 			}),

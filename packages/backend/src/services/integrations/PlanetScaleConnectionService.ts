@@ -46,7 +46,10 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
 import { planetScaleWebhookStatus, PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
-import { releasePlanetScaleCostSources, removePlanetScaleCostSources } from "../cost/planetscale-cost-sources"
+import {
+	removePlanetScaleCostSources,
+	removePlanetScaleCostSourcesOfOthers,
+} from "../cost/planetscale-cost-sources"
 import {
 	deleteSourcesOf,
 	createIntegrationSource,
@@ -622,12 +625,10 @@ export class PlanetScaleConnectionService extends Context.Service<
 									})
 								}
 
-								// The Cost page's source reads this connection. Another organization's
-								// invoices are not its history; the same one, authorized again, may now
-								// carry the invoice scope, so its source is read at the next tick.
-								yield* existing.psOrganization === organization
-									? releasePlanetScaleCostSources(db, orgId, now)
-									: removePlanetScaleCostSources(db, orgId)
+								// The Cost page's source reads this connection, and another organization's
+								// invoices are not its history. Decided by the source's own account, here in
+								// the transaction, not by the connection as it was read before it.
+								yield* removePlanetScaleCostSourcesOfOthers(db, orgId, organization)
 
 								const previousTargetId = existing.scrapeTargetId
 								if (previousTargetId === null || previousTargetId === scrapeTargetId) {

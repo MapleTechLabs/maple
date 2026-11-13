@@ -8,10 +8,10 @@ import {
 	IntegrationsConnectionChangedError,
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
-	IntegrationsUpstreamError,
 	type OrgId,
 	PlanetScaleCostReconnectRequiredError,
 	type PlanetScaleCostStatus,
+	PlanetScaleCostUnavailableError,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { CostSources, PlanetscaleConnections } from "@maple/db/tables"
@@ -39,12 +39,15 @@ const CONNECTION_CHANGED = "The PlanetScale connection changed while the source 
 
 /**
  * Why the check read was refused, as what the Cost page shows. A grant only a reconnect fixes
- * keeps its reason and its own code, so the page can link to the connection. An outage answers a
- * fixed sentence.
+ * keeps its reason and its own code, so the page can link to the connection. An outage or a slow
+ * answer keeps the adapter's sentence about it, which holds nothing of PlanetScale's own.
  */
 const toAddError = (
 	error: PlanetScaleCostReadError,
-): PlanetScaleCostReconnectRequiredError | IntegrationsConnectionChangedError | IntegrationsUpstreamError => {
+):
+	| PlanetScaleCostReconnectRequiredError
+	| IntegrationsConnectionChangedError
+	| PlanetScaleCostUnavailableError => {
 	switch (error.kind) {
 		case "reconnect":
 			return new PlanetScaleCostReconnectRequiredError({ message: error.message })
@@ -52,7 +55,7 @@ const toAddError = (
 		case "no_connection":
 			return new IntegrationsConnectionChangedError({ message: CONNECTION_CHANGED })
 		case "other":
-			return new IntegrationsUpstreamError({ message: error.message })
+			return new PlanetScaleCostUnavailableError({ message: error.message })
 	}
 }
 
@@ -77,7 +80,7 @@ export interface PlanetScaleCostSourceServiceApi {
 		| IntegrationsNotConnectedError
 		| IntegrationsConnectionChangedError
 		| PlanetScaleCostReconnectRequiredError
-		| IntegrationsUpstreamError
+		| PlanetScaleCostUnavailableError
 		| IntegrationsPersistenceError
 	>
 	readonly remove: (

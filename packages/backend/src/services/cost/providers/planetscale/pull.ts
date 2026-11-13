@@ -7,8 +7,9 @@ import { addDays } from "../../sync-plan"
 import {
 	listInvoiceLineItems,
 	listInvoices,
-	PlanetScaleInvoiceApiError,
+	type PlanetScaleInvoiceApiError,
 	type PlanetScaleInvoiceCredentials,
+	withinTime,
 } from "./invoices-api"
 import { type InvoiceWithLineItems, invoicePeriod, periodInWindow, toCostRows } from "./normalize"
 
@@ -54,15 +55,5 @@ export const readInvoiceCost = (
 		),
 		// Today and yesterday are still arriving, as with the other providers.
 		Effect.map((invoices) => toCostRows(invoices, credentials.organization, window, addDays(today, -1))),
-		Effect.timeoutOrElse({
-			duration: PULL_TIMEOUT,
-			orElse: () =>
-				Effect.fail(
-					new PlanetScaleInvoiceApiError({
-						reason: "upstream",
-						status: 0,
-						message: "PlanetScale took too long to answer.",
-					}),
-				),
-		}),
+		withinTime(PULL_TIMEOUT),
 	)

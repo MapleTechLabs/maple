@@ -21,10 +21,22 @@ export const removePlanetScaleCostSources = (db: MapleDb, orgId: OrgId) =>
 		)
 		.pipe(Effect.map((rows) => rows.length))
 
+/** Deletes the org's PlanetScale sources that read another organization than `organization`. */
+export const removePlanetScaleCostSourcesOfOthers = (db: MapleDb, orgId: OrgId, organization: string) =>
+	db.run(
+		PG.deleteFrom(CostSources).where(($) => [
+			$.orgId.eq(orgId),
+			$.provider.eq("planetscale"),
+			$.accountId.neq(organization),
+		]),
+	)
+
 /**
- * The org authorized PlanetScale again for the organization its source reads. The source is due at
+ * The org authorized PlanetScale again. Its source, if it has one, reads the same organization
+ * until the connection is bound to another, which removes it. The source is due at
  * the next tick (no hold, and no last sync to wait a day from), and a pull in flight on the old
- * grant loses its claim: a grant that now carries the invoice scope is read at once.
+ * grant loses its claim: a grant that now carries the invoice scope is read at once. Written with
+ * the grant, since a grant that sees several organizations is not bound again.
  */
 export const releasePlanetScaleCostSources = (db: MapleDb, orgId: OrgId, now: number) =>
 	db.run(
