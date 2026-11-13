@@ -7,8 +7,14 @@ import type { Attribute, HtmlBuilder } from "foldkit/html"
 export const ROW_FOCUSED_CLASS =
 	"data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset"
 
-/** The marker on the focused row, nothing on the others. */
+/** `data-list-row` on every row of a keyed list, so the keys can tell one that holds DOM focus. */
+export const LIST_ROW_SELECTOR = "[data-list-row]"
+
+/** A keyed list's row: `data-list-row`, and `data-focused` on the focused one. Nothing for a row no list keys. */
 export const rowFocusAttributes = <M>(
 	h: HtmlBuilder<M>,
 	isFocused: boolean | undefined,
-): ReadonlyArray<Attribute<M>> => (isFocused === true ? [h.DataAttribute("focused", "true")] : [])
+): ReadonlyArray<Attribute<M>> =>
+	isFocused === undefined
+		? []
+		: [h.DataAttribute("list-row", ""), ...(isFocused ? [h.DataAttribute("focused", "true")] : [])]

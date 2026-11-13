@@ -1,4 +1,5 @@
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
+import { LIST_ROW_SELECTOR } from "@maple/views/ui/row-focus"
 import { Array as Arr, Effect, Option, type Stream } from "effect"
 import { Command, Dom, Render } from "foldkit"
 import type { CallableTaggedStruct } from "foldkit/schema"
@@ -22,10 +23,22 @@ export type ListKeyOptions<M> = Readonly<{
 	isBlocked?: (key: string) => boolean
 }>
 
+/**
+ * A row that holds DOM focus (from a Tab or a click) keeps Enter for itself, so a step would leave
+ * two focused rows and Enter on the wrong one. Stepping hands the list the only focus.
+ */
+const releaseRowFocus = (): void => {
+	const active = document.activeElement
+	if (active instanceof HTMLElement && active.closest(LIST_ROW_SELECTOR) !== null) active.blur()
+}
+
 /** The list's keys from anywhere on the page, while no field has focus and no modifier is held. */
 export const listKeys = <M>(options: ListKeyOptions<M>): Stream.Stream<M> => {
 	const keys = new Set([...NAVIGATION_KEYS, ...(options.extraKeys ?? [])])
 	const isBlocked = options.isBlocked ?? isDialogOpen
+	// A page stops this stream while its own select is open and starts it again as the select closes:
+	// the Escape that closed it is still on its way up to the document, and is not the list's.
+	const startedAt = performance.now()
 	return Dom.streamFromEventFilterMapPreventDefault({
 		target: () => document,
 		type: "keydown",
@@ -33,9 +46,11 @@ export const listKeys = <M>(options: ListKeyOptions<M>): Stream.Stream<M> => {
 			const key = pressedKey(event)
 			if (!keys.has(key) || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
 				return Option.none()
-			if (isEditableTarget(event.target)) return Option.none()
+			if (event.timeStamp < startedAt || isEditableTarget(event.target)) return Option.none()
 			if (key === "Enter" && keepsEnter(event.target)) return Option.none()
-			return isBlocked(key) ? Option.none() : Option.some(options.toMessage(key))
+			if (isBlocked(key)) return Option.none()
+			if (listStepOf(key) !== null) releaseRowFocus()
+			return Option.some(options.toMessage(key))
 		},
 	})
 }
