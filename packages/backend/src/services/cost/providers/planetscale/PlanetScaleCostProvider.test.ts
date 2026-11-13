@@ -127,10 +127,10 @@ describe("PlanetScaleCostProvider", () => {
 							],
 						),
 						[
-							["2026-10-30", "orders", "main", 1, "acme", false],
-							["2026-10-31", "orders", "main", 1, "acme", false],
-							["2026-11-01", "orders", "main", 2, "acme", true],
-							["2026-11-02", "orders", "main", 2, "acme", true],
+							["2026-10-30", "orders", "orders/main", 1, "acme", false],
+							["2026-10-31", "orders", "orders/main", 1, "acme", false],
+							["2026-11-01", "orders", "orders/main", 2, "acme", true],
+							["2026-11-02", "orders", "orders/main", 2, "acme", true],
 						],
 					)
 				}),

@@ -1,5 +1,6 @@
 // PlanetScale invoices as `cost_daily` rows. An invoice is a month, so each line item is spread
 // evenly over the days of the month its branch existed, then summed per day, database, branch and SKU.
+// The resource is `database/branch`: a branch's name alone repeats across databases.
 import { DateTime, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { CostPullRow, CostPullWindow } from "../../CostProvider"
 import { daysOfWindow, maxDay, minDay } from "../../sync-plan"
@@ -72,10 +73,13 @@ const sharesOfLine = (
 	window: CostPullWindow,
 ): ReadonlyArray<LineShare> => {
 	const resource = line.resource ?? undefined
+	const branch = resource?.name ?? ""
+	const database = line.database_name ?? ""
 	const named = {
 		cloudService: line.database_name ?? line.description ?? UNNAMED_SERVICE,
 		usageType: line.metric_name ?? "",
-		resourceId: resource?.name ?? "",
+		// With its database: nearly every database has a `main`, and they are not one resource.
+		resourceId: branch === "" || database === "" ? branch : `${database}/${branch}`,
 		resourceType: resource === undefined ? "" : Str.toLowerCase(resource.type ?? "branch"),
 	}
 	return Arr.map(

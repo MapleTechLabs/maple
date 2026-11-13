@@ -51,7 +51,7 @@ const byDay = Order.mapInput(Order.String, (row: CostPullRow) => row.day)
 
 const total = (rows: ReadonlyArray<CostPullRow>) => Arr.reduce(rows, 0, (sum, row) => sum + row.billedCost)
 
-/** `day | database | branch | SKU | billed` of each row, in a stable order, to the cent. */
+/** `day | database | resource | SKU | billed` of each row, in a stable order, to the cent. */
 const summary = (rows: ReadonlyArray<CostPullRow>) =>
 	Arr.sort(
 		Arr.map(rows, (row) =>
@@ -134,7 +134,7 @@ describe("chargedDays", () => {
 })
 
 describe("toCostRows", () => {
-	it("names the database as the service, the SKU as the usage type and the branch as the resource", () => {
+	it("names the database as the service, the SKU as the usage type and the database's branch as the resource", () => {
 		const [row] = toRows([{ invoice: OCTOBER, lineItems: [line({})] }], ORGANIZATION, {
 			startDay: "2026-10-01",
 			endDay: "2026-10-01",
@@ -146,7 +146,7 @@ describe("toCostRows", () => {
 			serviceCategory: "Databases",
 			usageType: "PS_10_AWS_ARM",
 			region: "global",
-			resourceId: "main",
+			resourceId: "orders/main",
 			resourceType: "branch",
 			serviceName: "",
 			chargeCategory: "usage",
@@ -207,7 +207,7 @@ describe("toCostRows", () => {
 			summary(rows),
 			Arr.map(
 				["06", "07", "08", "09", "10", "11", "12", "13", "14", "15"],
-				(day) => `2026-10-${day} | orders | preview | PS_10_AWS_ARM | 1.00`,
+				(day) => `2026-10-${day} | orders | orders/preview | PS_10_AWS_ARM | 1.00`,
 			),
 		)
 		assert.closeTo(total(rows), 10, 1e-9)
@@ -228,7 +228,7 @@ describe("toCostRows", () => {
 		)
 		assert.strictEqual(rows.length, 11)
 		assert.deepStrictEqual(Arr.take(summary(rows), 1), [
-			"2026-10-21 | orders | staging | PS_10_AWS_ARM | 2.00",
+			"2026-10-21 | orders | orders/staging | PS_10_AWS_ARM | 2.00",
 		])
 		assert.closeTo(total(rows), 22, 1e-9)
 	})
@@ -288,10 +288,10 @@ describe("toCostRows", () => {
 			{ startDay: "2026-10-02", endDay: "2026-10-02" },
 		)
 		assert.deepStrictEqual(summary(rows), [
-			"2026-10-02 | orders | dev | PS_10_AWS_ARM | 0.30",
-			"2026-10-02 | orders | main | PS_10_AWS_ARM | 3.00",
-			"2026-10-02 | orders | main | egress | 0.10",
-			"2026-10-02 | search | main | PS_10_AWS_ARM | 0.20",
+			"2026-10-02 | orders | orders/dev | PS_10_AWS_ARM | 0.30",
+			"2026-10-02 | orders | orders/main | PS_10_AWS_ARM | 3.00",
+			"2026-10-02 | orders | orders/main | egress | 0.10",
+			"2026-10-02 | search | search/main | PS_10_AWS_ARM | 0.20",
 		])
 	})
 
