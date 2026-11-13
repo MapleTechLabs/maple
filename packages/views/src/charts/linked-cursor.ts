@@ -65,6 +65,8 @@ interface Drag {
 	readonly axis: PlotTimeAxis
 	readonly fromX: number
 	moved: boolean
+	/** Escape was pressed: no band and no zoom, but the release is still this drag's. */
+	cancelled: boolean
 }
 
 /** The hovered chart, the last tooltip-forwarding move, the overlays placed on their plots (null until aligned), whether they show, and the drag in flight. */
@@ -88,6 +90,12 @@ export const draggedRange = (
 	const from = timeAtPlotX(axis, fromX - plotLeft)
 	const to = timeAtPlotX(axis, toX - plotLeft)
 	return { startMs: Math.min(from, to), endMs: Math.max(from, to) }
+}
+
+/** Where the label's left edge goes to centre it on the band without leaving the plot (all px). */
+export const labelLeft = (bandCentre: number, labelWidth: number, plotWidth: number): number => {
+	const half = labelWidth / 2
+	return Math.min(Math.max(bandCentre, half), Math.max(half, plotWidth - half)) - half
 }
 
 /** The drag's label: both ends on the clock, then how long the span is. */
@@ -280,8 +288,10 @@ const listenForDrags = <A>(
 			overlay.style.setProperty("--linked-zoom-visible", "1")
 		})
 		const label = drag.chart.querySelector<HTMLElement>(LABEL_SELECTOR)
-		if (label !== null)
-			label.textContent = zoomLabel(draggedRange(drag.axis, drag.left, drag.fromX, toX), clock)
+		if (label === null) return
+		label.textContent = zoomLabel(draggedRange(drag.axis, drag.left, drag.fromX, toX), clock)
+		const centre = ((from + to) / 2) * drag.width
+		label.style.left = `${labelLeft(centre, label.offsetWidth, drag.width)}px`
 	}
 	const clearBand = (drag: Drag) => {
 		Arr.forEach(state.overlays ?? [], (overlay) =>
@@ -290,10 +300,22 @@ const listenForDrags = <A>(
 		const label = drag.chart.querySelector<HTMLElement>(LABEL_SELECTOR)
 		if (label !== null) label.textContent = ""
 	}
-	const cancel = () => {
+	/** The drag's release will never be seen (a missed pointerup, a pointercancel): forget it. */
+	const drop = () => {
 		const drag = state.drag
 		state.drag = null
-		if (drag?.moved === true) clearBand(drag)
+		if (drag?.moved === true && !drag.cancelled) clearBand(drag)
+	}
+	/** Escape: the band goes now; the drag stays until its release, so that click is still swallowed. */
+	const cancel = () => {
+		const drag = state.drag
+		if (drag === null || drag.cancelled) return
+		if (!drag.moved) {
+			state.drag = null
+			return
+		}
+		drag.cancelled = true
+		clearBand(drag)
 	}
 	// The click that follows a drag's release would land on whatever is under the pointer.
 	const swallowClick = (event: MouseEvent) => {
@@ -316,6 +338,7 @@ const listenForDrags = <A>(
 			axis: axis.value,
 			fromX: event.clientX,
 			moved: false,
+			cancelled: false,
 		}
 	}
 	const onDragMove = (event: PointerEvent) => {
@@ -323,9 +346,10 @@ const listenForDrags = <A>(
 		if (drag === null) return
 		// A release the page never saw (the window lost focus mid-drag): no button is down any more.
 		if ((event.buttons & 1) === 0) {
-			cancel()
+			drop()
 			return
 		}
+		if (drag.cancelled) return
 		if (!drag.moved) {
 			if (Math.abs(event.clientX - drag.fromX) < DRAG_THRESHOLD_PX) return
 			drag.moved = true
@@ -340,8 +364,9 @@ const listenForDrags = <A>(
 		const drag = state.drag
 		state.drag = null
 		if (drag === null || !drag.moved) return
-		clearBand(drag)
 		state.dragEndedAt = event.timeStamp
+		if (drag.cancelled) return
+		clearBand(drag)
 		if (Math.abs(event.clientX - drag.fromX) < DRAG_THRESHOLD_PX) return
 		const range = draggedRange(drag.axis, drag.left, drag.fromX, event.clientX)
 		if (range.endMs > range.startMs) selected(range)
@@ -363,7 +388,7 @@ const listenForDrags = <A>(
 	// Capture on the document: these run before `holdChart` stops the event.
 	document.addEventListener("pointermove", onDragMove, true)
 	document.addEventListener("pointerup", onDragEnd)
-	document.addEventListener("pointercancel", cancel)
+	document.addEventListener("pointercancel", drop)
 	document.addEventListener("keydown", onKeyDown)
 	return () => {
 		container.removeEventListener("pointerdown", onPointerDown)
@@ -372,7 +397,7 @@ const listenForDrags = <A>(
 		container.removeEventListener("pointermove", holdChart, true)
 		document.removeEventListener("pointermove", onDragMove, true)
 		document.removeEventListener("pointerup", onDragEnd)
-		document.removeEventListener("pointercancel", cancel)
+		document.removeEventListener("pointercancel", drop)
 		document.removeEventListener("keydown", onKeyDown)
 	}
 }
@@ -422,17 +447,16 @@ export const linkedCursorOverlay = <M>(h: HtmlBuilder<M>, chartId: string): Html
 						opacity: "var(--linked-zoom-visible, 0)",
 					}),
 				],
-				[
-					badge(
-						h,
-						{
-							// `max-w-none`: the label may be wider than a narrow band.
-							className: "absolute top-1 left-1/2 max-w-none -translate-x-1/2 empty:hidden",
-							attributes: [h.DataAttribute("linked-zoom-label", "")],
-						},
-						[],
-					),
-				],
+				[],
+			),
+			// Beside the band, not inside it: the Mount centres it on the band and keeps it in the plot.
+			badge(
+				h,
+				{
+					className: "absolute top-1 left-0 max-w-none empty:hidden",
+					attributes: [h.DataAttribute("linked-zoom-label", "")],
+				},
+				[],
 			),
 		],
 	)

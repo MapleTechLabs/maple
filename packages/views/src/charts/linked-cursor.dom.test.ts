@@ -26,7 +26,8 @@ const setUp = () => {
 			<div data-chart-overlay><button data-marker></button></div>
 			<div data-linked-cursor-overlay="latency">
 				<div data-linked-cursor-line></div>
-				<div data-linked-zoom-band><span data-linked-zoom-label></span></div>
+				<div data-linked-zoom-band></div>
+				<span data-linked-zoom-label></span>
 			</div>
 		</div>`
 	document.body.append(group)
@@ -125,6 +126,21 @@ describe("linked zoom gesture", () => {
 			plot.dispatchEvent(pointer("pointerup", 450, "touch"))
 		})
 		expect(ranges).toEqual([])
+	})
+
+	test("a drag cancelled with Escape still owns its release: that click never reaches the chart", async () => {
+		const clicks: Array<string> = []
+		const ranges = await rangesFor(({ plot }) => {
+			plot.addEventListener("click", () => clicks.push("after Escape"))
+			plot.dispatchEvent(pointer("pointerdown", 300))
+			plot.dispatchEvent(pointer("pointermove", 450))
+			document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
+			plot.dispatchEvent(pointer("pointermove", 470))
+			plot.dispatchEvent(pointer("pointerup", 470))
+			plot.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+		})
+		expect(ranges).toEqual([])
+		expect(clicks).toEqual([])
 	})
 
 	test("the click that ends a drag never reaches the chart; a plain click does", async () => {

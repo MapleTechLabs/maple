@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { draggedRange, zoomLabel } from "./linked-cursor"
+import { draggedRange, labelLeft, zoomLabel } from "./linked-cursor"
 
 const HOUR = 3_600_000
 const axis = { domainStartMs: 0, domainEndMs: 10 * HOUR, startPx: 0, endPx: 500 }
@@ -14,6 +14,15 @@ describe("linked zoom", () => {
 
 	test("a drag that leaves the plot ends at the axis, not past it", () => {
 		expect(draggedRange(axis, 200, 600, 2_000)).toEqual({ startMs: 8 * HOUR, endMs: 10 * HOUR })
+	})
+
+	test("the label sits centred on the band, and stops at the plot's edges", () => {
+		expect([
+			labelLeft(250, 100, 500),
+			labelLeft(10, 100, 500),
+			labelLeft(495, 100, 500),
+			labelLeft(40, 100, 60),
+		]).toEqual([200, 0, 400, 0])
 	})
 
 	test("the label gives both ends and the length, with the day once the span is half a day", () => {
