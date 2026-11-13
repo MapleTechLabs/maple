@@ -305,7 +305,7 @@ policies (`GET /user/tokens/{id}`) needs the "API Tokens Read" permission, and
   one account, optionally set an expiry, create, paste.
 - A token for several accounts is refused (above), so a billing token for every account the
   person can see does not get stored.
-- A token that visibly reads more than billing is refused. After the checks above pass, five
+- A token that visibly reads more than billing is refused. After the checks above pass, four
   requests are made side by side, on a save and a replace only, never in a sync pull. Live, with
   two tokens on one account:
 
@@ -315,12 +315,16 @@ policies (`GET /user/tokens/{id}`) needs the "API Tokens Read" permission, and
     | `GET /accounts/{id}/workers/subdomain`     | 403 (code 10000)   | 200                                                |
     | `GET /accounts/{id}/audit_logs?per_page=1` | 403 (code 10000)   | 200                                                |
     | `GET /zones?per_page=1`                    | 200, empty list    | 200, zones listed                                  |
-    | `GET /accounts/{id}/workers/scripts`       | 200, empty list    | 200, scripts listed                                |
 
-    The first three are read off the status: a 200 is access, whatever the account holds. The last
-    two answer a billing token with an empty list, so only a list with something in it is access.
+    The first three are read off the status: a 200 is access, whatever the account holds. Zones
+    answer a billing token with an empty list, so only a list with something in it is access.
     A 401 or 403 is no access. Any other answer (a 5xx, a 404, no answer) fails the save as a
     check that could not be made: it neither passes nor refuses the token.
+
+    The Workers scripts list (`GET /accounts/{id}/workers/scripts`) was a fifth probe and was
+    dropped. Live, on a preview: it took 1.8 s where the others took under 0.2 s, and the whole
+    save waited for it. The Workers subdomain already tells a Workers-reading token apart. The
+    change itself is covered by the fake only, since the test tokens no longer exist.
 
 - The refusal names what was found, so the person knows which permission to drop: "This token
   can do more than read billing: it can also read account members and Workers scripts. Create one

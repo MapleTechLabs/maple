@@ -15,7 +15,7 @@ export type FakeUsageRow = typeof UsageRow.Encoded
 export type FakeSubscription = typeof Subscription.Encoded
 
 /** The things a billing token must not see, by the request that asks for each. */
-export type FakeReach = "members" | "workers_subdomain" | "audit_logs" | "zones" | "workers_scripts"
+export type FakeReach = "members" | "workers_subdomain" | "audit_logs" | "zones"
 
 export interface FakeCloudflare {
 	/** Status of `GET /accounts`. */
@@ -158,18 +158,16 @@ const PROBE_PATHS: ReadonlyArray<readonly [suffix: string, reach: FakeReach]> = 
 	["/workers/subdomain", "workers_subdomain"],
 	["/audit_logs", "audit_logs"],
 	["/zones", "zones"],
-	["/workers/scripts", "workers_scripts"],
 ]
 
 /**
  * A probe's answer as the real API gave it: without the permission the three account reads are
- * refused, while zones and scripts answer an empty list.
+ * refused, while zones answers an empty list.
  */
 const probeAnswer = (world: FakeCloudflare, reach: FakeReach): Response => {
 	if (world.brokenProbe?.reach === reach) return refused(world.brokenProbe.status)
 	const allowed = Arr.contains(world.canRead, reach)
-	const isListing = reach === "zones" || reach === "workers_scripts"
-	return isListing
+	return reach === "zones"
 		? envelope(allowed ? [{ id: "example" }] : [], { total_count: allowed ? 1 : 0 })
 		: allowed
 			? envelope({ id: "example" })
