@@ -43,12 +43,12 @@ export const assignableRoles = [
 export type AssignableRole = (typeof assignableRoles)[number]
 export type ClerkRoleKey = AssignableRole["clerkKey"]
 
-/** Read-only, for people who follow the product without operating it. Not offered on the Members page yet. */
+/** For people who follow the product and build dashboards without operating it. Not offered on the Members page yet. */
 const analystRole = {
 	role: "analyst",
 	clerkKey: "org:analyst",
 	label: "Analyst",
-	summary: "Follows incidents, reliability, product analytics and cost. Changes nothing.",
+	summary: "Follows incidents, reliability, product analytics and cost, and builds dashboards and funnels.",
 } as const satisfies { role: Role; clerkKey: string; label: string; summary: string }
 
 const clerkRoles = [analystRole, ...assignableRoles] as const
