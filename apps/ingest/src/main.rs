@@ -5531,19 +5531,21 @@ async fn handle_replay_blob_inner(
     let compressed = body.clone();
     let mut reservation = state.decode_memory.reservation();
     let decoded = tokio::task::spawn_blocking(move || {
-        let ceiling = u64::try_from(max_decoded).unwrap_or(u64::MAX);
+        // The size the chunk declares is what gets reserved, so it is also where
+        // the inflate stops: a trailer that understates the stream buys nothing.
         let declared = decode_budget::gzip_declared_len(&compressed)
-            .map_or(0, |declared| declared.min(ceiling));
-        if !reservation.try_add(compressed.len() as u64 + declared) {
+            .map_or(0, |declared| usize::try_from(declared).unwrap_or(usize::MAX))
+            .min(max_decoded);
+        if !reservation.try_add((compressed.len() + declared) as u64) {
             return Err(None);
         }
         if stored_as_blob {
             // Nothing of a blob chunk outlives the count.
-            gunzip_len_bounded(&compressed, max_decoded)
+            gunzip_len_bounded(&compressed, declared)
                 .map(|byte_size| (None, byte_size, None))
                 .map_err(Some)
         } else {
-            gunzip_replay_text(&compressed, max_decoded)
+            gunzip_replay_text(&compressed, declared)
                 .map(|events_json| {
                     let byte_size = events_json.len() as u64;
                     reservation.shrink_to(byte_size);
@@ -13900,6 +13902,19 @@ mod tests {
         )
         .await
         .expect("a normal chunk is still accepted");
+
+        // A trailer that understates the stream does not get more inflated than it reserved.
+        let mut understated = gzip_bytes(&"a".repeat(64 * 1024)).to_vec();
+        let trailer = understated.len() - 4;
+        understated[trailer..].copy_from_slice(&8_u32.to_le_bytes());
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 3),
+            Bytes::from(understated),
+        )
+        .await
+        .expect_err("a chunk inflating past its declared size must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
 
         // A chunk the shared decode memory cannot hold right now is shed, not inflated.
         let mut others = state.decode_memory.reservation();
