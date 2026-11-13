@@ -553,19 +553,23 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 				},
 			),
-		// A refused add keeps the dialog open with the reason under the organization.
+		// A refused add keeps the dialog open with the reason under the organization, and reads the
+		// connection again: bound to another organization or gone by now, the one on show is stale,
+		// and a retry would send it again.
 		CompletedAddPlanetScale: ({ result }) =>
 			Result.match(result, {
-				onFailure: (failure): Return => ({
-					model: {
-						...model,
-						sourceWrite: "Idle",
-						planetscaleError: {
-							message: failureMessage(failure),
-							needsReconnect: failure.code === PLANETSCALE_COST_RECONNECT_CODE,
+				onFailure: (failure): Return =>
+					requestPlanetScaleStatus(
+						{
+							...model,
+							sourceWrite: "Idle",
+							planetscaleError: {
+								message: failureMessage(failure),
+								needsReconnect: failure.code === PLANETSCALE_COST_RECONNECT_CODE,
+							},
 						},
-					},
-				}),
+						context,
+					),
 				onSuccess: (): Return =>
 					withReread(
 						{

@@ -770,8 +770,17 @@ describe("cost page", () => {
 			{ organization: "acme", invoiceAccess: true, added: false },
 		)
 		const saving = pageUpdate(ready, Message.ClickedConfirmAddPlanetScale()).model
-		const refusedWith = (failure: ReturnType<typeof toLoadFailure>) =>
-			pageUpdate(saving, Message.CompletedAddPlanetScale({ result: Result.fail(failure) })).model
+		const refusal = (failure: ReturnType<typeof toLoadFailure>) =>
+			pageUpdate(saving, Message.CompletedAddPlanetScale({ result: Result.fail(failure) }))
+		/** The step after a refusal, once the connection it reads again has answered. */
+		const refusedWith = (
+			failure: ReturnType<typeof toLoadFailure>,
+			status: typeof PlanetScaleCostStatus.Encoded = {
+				organization: "acme",
+				invoiceAccess: true,
+				added: false,
+			},
+		) => planetScaleAnswered(refusal(failure).model, status)
 
 		// PlanetScale answered 403 to a grant whose stored scopes did not say: only a reconnect helps.
 		const reconnect = refusedWith({
@@ -809,6 +818,39 @@ describe("cost page", () => {
 		)
 		// Leaving the step leaves the refusal behind.
 		expect(pageUpdate(outage, Message.ClickedBackToProviders()).model.planetscaleError).toBeNull()
+
+		// A refusal reads the connection again: what the step showed may be what was refused.
+		const changed = {
+			...toLoadFailure("refused"),
+			message: "The PlanetScale connection now reads another organization (beta).",
+		}
+		expect(names(refusal(changed).commands)).toEqual(["FetchPlanetScaleCostStatus"])
+		expect(refusal(changed).model.sourceWrite).toBe("Idle")
+		// Bound to another organization meanwhile: the step shows that one, and a retry sends it.
+		const rebound = refusedWith(changed, { organization: "beta", invoiceAccess: true, added: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(rebound),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("beta")).toExist(),
+			expectView(text("acme")).not.toExist(),
+			expectView(text("The PlanetScale connection now reads another organization (beta).")).toExist(),
+		)
+		expect(pageUpdate(rebound, Message.ClickedConfirmAddPlanetScale()).commands).toMatchObject([
+			{ name: "AddPlanetScaleCostSource", args: { organization: "beta" } },
+		])
+		// Disconnected meanwhile: nothing is left to add, and the step says to connect.
+		const gone = refusedWith(changed, { organization: null, invoiceAccess: false, added: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(gone),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("link", { name: "Connect PlanetScale" })).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		expect(names(pageUpdate(gone, Message.ClickedConfirmAddPlanetScale()).commands)).toEqual([])
 	})
 
 	test("a PlanetScale source links to its connection and is removed here, with no token to replace", () => {
