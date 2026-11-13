@@ -164,6 +164,19 @@ describe("web analytics: Search tab", () => {
 			resolveTheme,
 			expectView(text("signup")).not.toExist(),
 		)
+		// Nor while a connected property is still on its first import.
+		const importing = answer(
+			withBreakdowns,
+			"searchStatus",
+			status({ sites: [site({ watermarkDate: null })] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(answer(importing, "events", [{ name: "signup", events: 9, sessions: 7 }]).model),
+			resolveTheme,
+			expectView(text("Importing from Search Console")).toExist(),
+			expectView(text("signup")).not.toExist(),
+		)
 		// Nor before the status says so: a rail that shows and then leaves moves the page.
 		const waiting = answer(answer(windowed().model, "breakdowns", breakdowns).model, "events", [
 			{ name: "signup", events: 9, sessions: 7 },
