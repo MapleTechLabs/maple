@@ -4,7 +4,16 @@ import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { McpToolOutputs } from "@maple/domain/mcp-outputs"
-import { Clock, Effect, Schema, type SchemaAST, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	Clock,
+	Effect,
+	Option,
+	Schema,
+	type SchemaAST,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -175,7 +184,7 @@ export interface MapleToolCatalogEntry {
 	readonly aliases: Readonly<Record<string, string>>
 	readonly valueAliases: Readonly<Record<string, Readonly<Record<string, string>>>>
 	readonly audience: McpToolAudience
-	readonly scopeFamily?: string
+	readonly scopeFamily?: string | ReadonlyArray<string>
 	readonly phrases: McpToolPhrases
 }
 
@@ -767,9 +776,13 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 	if (definition.scopeFamily !== undefined) {
 		const access = definition.hints.readOnly ? "read" : "write"
 		const tenant = yield* CurrentMcpTenant
-		if (!scopeAllows(tenant.scopes, { family: definition.scopeFamily, access })) {
+		const missing = Arr.findFirst(
+			Arr.ensure(definition.scopeFamily),
+			(family) => !scopeAllows(tenant.scopes, { family, access }),
+		)
+		if (Option.isSome(missing)) {
 			return yield* new McpAuthInvalidError({
-				message: `\`${definition.name}\` needs the \`${definition.scopeFamily}:${access}\` scope, which this API key lacks. Add it to the key, or use a full-access key.`,
+				message: `\`${definition.name}\` needs the \`${missing.value}:${access}\` scope, which this API key lacks. Add it to the key, or use a full-access key.`,
 				reason: "insufficient_scope",
 			})
 		}

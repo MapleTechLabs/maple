@@ -61,6 +61,7 @@ export function registerQueryDataSourceTool(server: McpToolRegistrar) {
 		}),
 		aliases: { source: "data_source", query: "sql" },
 		hints: { readOnly: true, openWorld: true },
+		scopeFamily: "data_sources",
 		phrases: ["Querying a data source", "Running a data source query"],
 		handler: Effect.fn("McpTool.queryDataSource")(function* (params) {
 			const sql = params.sql === undefined ? undefined : Str.trim(params.sql)

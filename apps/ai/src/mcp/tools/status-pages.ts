@@ -479,6 +479,8 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		// One page's detail lists its incidents, drafts included.
+		scopeFamily: ["status_pages", "status_page_incidents"],
 		phrases: ["Reading status pages"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
 			const tool = "get_status_page"
@@ -541,6 +543,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			publish: publishParameter,
 		}),
 		hints: MUTATION_HINTS,
+		scopeFamily: "status_page_incidents",
 		phrases: ["Posting a status page update"],
 		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
 			const tool = "post_status_page_update"
@@ -678,6 +681,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		}),
 		rejectUnknownKeys: true,
 		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
+		scopeFamily: "status_pages",
 		phrases: ["Applying a status page config"],
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
 			const tool = "apply_status_page_config"
