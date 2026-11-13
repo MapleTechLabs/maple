@@ -36,11 +36,19 @@ const BASELINE = Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:wri
 
 const REQUIRED = [
 	["list_slos", "slos:read"],
+	["inspect_slo", "slos:read"],
 	["create_slo", "slos:write"],
+	["update_slo", "slos:write"],
+	["delete_slo", "slos:write"],
 	["list_uptime_monitors", "uptime_monitors:read"],
+	["create_uptime_monitor", "uptime_monitors:write"],
+	["update_uptime_monitor", "uptime_monitors:write"],
 	["delete_uptime_monitor", "uptime_monitors:write"],
 	["list_ingest_rules", "ingest_rules:read"],
+	["preview_ingest_rule", "ingest_rules:read"],
 	["create_ingest_rule", "ingest_rules:write"],
+	["update_ingest_rule", "ingest_rules:write"],
+	["delete_ingest_rule", "ingest_rules:write"],
 	["list_data_sources", "data_sources:read"],
 	["search_data_sources", "data_sources:read"],
 	["describe_data_source", "data_sources:read"],
@@ -49,6 +57,8 @@ const REQUIRED = [
 	["apply_status_page_config", "status_pages:write"],
 	["post_status_page_update", "status_page_incidents:write"],
 	["create_scrape_target", "scrape_targets:write"],
+	["update_scrape_target", "scrape_targets:write"],
+	["delete_scrape_target", "scrape_targets:write"],
 ] as const
 
 describe("MCP tools outside the baseline scope families", () => {
