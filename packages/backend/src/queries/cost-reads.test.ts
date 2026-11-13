@@ -98,6 +98,33 @@ const queryEngine: QueryEngineServiceApi = {
 	cachedDirect: (_tenant, _route, _payload, effect) => effect,
 }
 
+const encodeKey = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/**
+ * A query engine that keeps every answer by its key, as the cache does inside its time to live,
+ * and the routes it had to compute.
+ */
+const makeCachingQueryEngine = () => {
+	const answers = new Map<string, unknown>()
+	const computed: string[] = []
+	const engine: QueryEngineServiceApi = {
+		...queryEngine,
+		cachedDirect: (_tenant, route, payload, effect) => {
+			const key = `${route} ${encodeKey(payload)}`
+			return answers.has(key)
+				? // SAFETY: the answer under a key is the one this effect produced for it.
+					Effect.succeed(answers.get(key) as never)
+				: Effect.tap(effect, (answer) =>
+						Effect.sync(() => {
+							computed.push(route)
+							answers.set(key, answer)
+						}),
+					)
+		},
+	}
+	return { engine, computed }
+}
+
 interface SourceFixture {
 	readonly id: string
 	readonly orgId?: string
@@ -639,6 +666,40 @@ describe("makeCostReads", () => {
 		},
 	)
 
+	it.effect("names a Vercel source by its team's slug, beside the team id its rows carry", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`WITH source AS (
+					   INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+					   VALUES (gen_random_uuid(), $1, 'Acme', 'vercel', 'integration', now(), now()) RETURNING id
+					 ), connection AS (
+					   INSERT INTO vercel_connections
+					     (id, org_id, source_id, team_id, team_slug, team_name, token_ciphertext, token_iv, token_tag,
+					      connected_by_user_id, project_scope, created_at, updated_at)
+					   SELECT 'conn_vercel', $1, id, 'team_1', 'acme-labs', 'Acme', 'sealed', 'iv', 'tag', 'user_a', 'all', now(), now()
+					   FROM source RETURNING id
+					 )
+					 INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+					 SELECT $2, $1, 'vercel', id, 'team_1', now(), now() FROM connection`,
+					[ORG, SOURCE_B],
+				),
+			)
+			const { reads } = yield* makeHarness(testDb)
+			const { sources } = yield* reads.sources(tenant)
+			expect(
+				Arr.map(sources, (source) => [source.provider, source.accountId, source.accountName]),
+			).toEqual([
+				// An AWS account is known by its id: it carries no other name.
+				["aws", "000000000000", undefined],
+				["vercel", "team_1", "acme-labs"],
+			])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("refuses a window wider than a cost read takes, before asking the warehouse", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -734,6 +795,40 @@ describe("makeCostReads", () => {
 			expect(moneyReads(statements)).toHaveLength(3)
 		}).pipe(Effect.provide(testDb.layer))
 	})
+
+	it.effect(
+		"reads the warehouse again once a sync has written, where the same window alone is cached",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* insertSources(testDb, [{ id: SOURCE_A }])
+				yield* TestClock.setTime(Date.parse(NOW))
+				const { warehouse } = makeWarehouse({})
+				const { engine, computed } = makeCachingQueryEngine()
+				const reads = makeCostReads({
+					warehouse,
+					queryEngine: engine,
+					database: yield* Database,
+					featureFlags: withFlags({ cloudCost: true }),
+				})
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals"])
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals"])
+
+				// A sync step stamps the source it wrote.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE cost_sources SET updated_at = updated_at + interval '5 minutes' WHERE id = $1",
+						[SOURCE_A],
+					),
+				)
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals", "costCurrencies", "costTotals"])
+			}).pipe(Effect.provide(testDb.layer))
+		},
+	)
 
 	it.effect("refuses every read for an org outside the cloudCost rollout", () => {
 		const testDb = createTestDb(trackedDbs)

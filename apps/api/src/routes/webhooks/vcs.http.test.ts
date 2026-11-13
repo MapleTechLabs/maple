@@ -53,6 +53,8 @@ const makeHandler = () => {
 		fetchWorkflowJobAnnotations: unused,
 		streamWorkflowJobLog: unused,
 		canReadWorkflowLogs: unused,
+		fetchBillingUsage: unused,
+		installationSettingsUrl: () => "",
 	}
 	const web = HttpRouter.toWebHandler(
 		VcsWebhookRouter.pipe(

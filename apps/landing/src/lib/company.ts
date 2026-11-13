@@ -38,7 +38,7 @@ export const LEGAL_ENTITY = "Makisuo, Inc."
 export const aboutPage: CompanyPage = {
 	title: "About Maple",
 	description:
-		"Maple is an open-source observability platform for traces, logs, and metrics, built on OpenTelemetry and operated by Makisuo, Inc.",
+		"Maple is a source-available observability platform for traces, logs, and metrics, built on OpenTelemetry and operated by Makisuo, Inc.",
 	sections: [
 		{
 			heading: "What Maple is",
@@ -54,9 +54,9 @@ export const aboutPage: CompanyPage = {
 			],
 		},
 		{
-			heading: "Open source",
+			heading: "Source available",
 			paragraphs: [
-				`The source code is public at [github.com/MapleTechLabs/maple](${GITHUB_URL}) under the Functional Source License (FSL-1.1); each release converts to Apache 2.0 two years after publication. You can read every line, self-host the whole platform, or use the hosted service at maple.dev. Maple Local packages the same platform (ingest, query engine, and UI) as a single binary with an embedded database for laptops and CI.`,
+				`The source code is public at [github.com/MapleTechLabs/maple](${GITHUB_URL}) under the Functional Source License (FSL-1.1); each release converts to Apache 2.0 two years after publication. You can read every line, self-host it for one team, or use the hosted service at maple.dev. Maple Local packages the same platform (ingest, query engine, and UI) as a single binary with an embedded database for laptops and CI.`,
 			],
 		},
 		{

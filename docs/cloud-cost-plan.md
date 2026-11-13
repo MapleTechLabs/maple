@@ -1,8 +1,9 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. Phase 0 checked the provider APIs against docs, public
-schemas and one real AWS account. Recommendations (phase 2) and the other providers are not built.
+into `cost_daily` and shown on `/cost`. OpenRouter, GitHub and Vercel followed on 2026-11-12.
+Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
+Recommendations (phase 2) and the other providers are not built.
 
 ## Goal
 
@@ -10,8 +11,8 @@ An org sees what its cloud and platform accounts cost, per day, service and reso
 telemetry Maple already has for the same resources. Maple then lists what to cut, with the usage
 chart that backs each suggestion and an estimated monthly saving.
 
-It reads from the connections an org already has (AWS, GCP, Cloudflare, Railway, PlanetScale,
-Supabase). No second onboarding.
+It reads from the connections an org already has (AWS, Vercel, GCP, Cloudflare, Railway,
+PlanetScale, Supabase). No second onboarding.
 
 Non-goals for v1:
 
@@ -41,8 +42,14 @@ warehouse are not.
 
 ### Cost provider contract
 
-One adapter per integration, in `packages/backend/src/services/cost/providers/`, behind one port.
-The registry covers cost only. The integrations themselves are not refactored.
+One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
+The registry covers cost only. The integrations themselves are not refactored. A provider that is
+not an integration (OpenRouter) keeps its credential in a table of its own, and
+`cost_sources.connection_ref` points at that row. GitHub keeps no credential: its source points at
+the GitHub App installation (`vcs_installations.id`), and the adapter reaches GitHub through the
+VCS provider port, like every other reader of that installation. A connection that exists for
+more than cost (a GitHub installation, a Vercel team) supplies cost only once the org adds it on
+the Cost page: its `cost_sources` row is the opt-in, and no column on the connection says so.
 
 ```ts
 interface CostProvider {
@@ -87,7 +94,8 @@ It is a small table (hundreds of rows per source per day), so it needs no rollup
 - `cost_sources`: one row per connection that supplies cost. Its lease, frontiers (newest and
   oldest day pulled), last error and its reason, and the provider requests made this month. A
   connection that stops supplying cost pauses its source and keeps its history. Only a deleted
-  connection deletes it.
+  connection deletes it. A Vercel source is also deleted when the org removes it on the Cost page
+  and when its connection moves to another team, whose spend would overwrite the source's days.
 - `cost_recommendations` (phase 2): followed across runs by `(source, fingerprint)`. Kind,
   resource, title, estimated monthly saving and currency, effort, risk, evidence (jsonb), origin
   (`provider` or `maple`), status (`open`, `dismissed`, `accepted`, `resolved`). A resolved one
@@ -95,7 +103,9 @@ It is a small table (hundreds of rows per source per day), so it needs no rollup
 
 ### Sync
 
-A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit). Per source:
+A `cost_sync` lane on the `2-59/5` cron (the `*/5` one is at its lane limit), so a new source has
+cost within minutes. A connection that turns cost on, off or loses its grant updates its source in
+the same write, so the Cost page shows the wait before the first tick. Per source:
 
 - First pull: the previous month through today.
 - Then the last four days about daily, and the open months about weekly. The previous month stays
@@ -103,6 +113,15 @@ A `cost_sync` lane on the hourly cron (the five-minute cron is at its lane limit
   finalizes it.
 - History walks down one calendar month per step, to thirteen months back.
 - A source held for long resumes from its watermark, so no day in between is skipped.
+
+The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROFILES` in
+`sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
+reaches outside them, because a day the provider no longer serves comes back empty, and an empty
+day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
+never for today. GitHub's report is asked for one calendar month at a time, back to the first day
+of the month three months before the current one. Vercel serves a year in one request, today
+included: its history starts at the first day of the month eleven months back, so no window is
+longer than a year.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -114,7 +133,7 @@ What bounds the provider's bill for requests:
 - Per source and month: past 500 requests history waits for the next month, past 1,500 the source
   stops until then.
 - A pull too large to read or to store is held a day. A source whose org left the rollout is not
-  pulled, and is asked about again on the next hourly run.
+  pulled, and is asked about again within the hour.
 - A source resuming after a gap starts at the month before its watermark's, so days pulled while
   their month was still open get their final amounts.
 
@@ -124,20 +143,34 @@ Every read names the org's cost sources, since a disconnected source keeps its r
 to one currency: the largest in the window unless the request names one. The response says which
 currency the figures are in and lists the others. Nothing is added across currencies.
 
+Answers are cached by their window, and a past window is held for 15 minutes. A sync writes past
+days, so the key also carries when the org's sources were last written: a sync step shows on the
+next read.
+
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, category, region, usage type or account with filters, and
-  each source's sync state. The AWS connection has a Cost switch. Recommendations (list and detail
-  with the evidence chart) come with phase 2.
+  daily chart, a breakdown by service, provider, category, region, resource or account, a filter
+  rail with a section per dimension, and each source's sync state. A row click narrows to the
+  row and regroups by the next dimension (a service under a region goes on to its resources).
+  The resource section and that step show only where some cost names a resource: a GitHub
+  repository, a Vercel project. Sources are added from the page: AWS through its connection
+  (which has a Cost switch), OpenRouter by pasting a management key, which the page can also
+  replace or remove, GitHub by picking one of the organizations the GitHub App is installed on,
+  and Vercel by adding the team the org has connected, both of which the page can remove again.
+  Recommendations (list and detail with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`). A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE /internal/cost/openrouter` for the
+  OpenRouter key, `GET /internal/cost/github` with `PUT` / `DELETE
+  /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` / `DELETE
+  /internal/cost/vercel` for the Vercel source. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
 ## Providers: what phase 0 found
 
-"Live" means checked against a real account on 2026-11-11. "Docs" and "schema" mean read, not run.
+"Live" means checked against a real account on 2026-11-11. "Docs", "spec" and "schema" mean read,
+not run.
 
 ### AWS (billed)
 
@@ -173,6 +206,127 @@ currency the figures are in and lists the others. Nothing is added across curren
 - Permissions: the `cost` module now lists every read above (23 actions, all `Resource: "*"`). IAM
   Access Analyzer validates the rendered policy with no findings. No write action is included:
   enrolling in the hub or starting a recommendation run stays with the customer.
+
+### OpenRouter (billed)
+
+- Spec: `GET /api/v1/activity` returns one row per UTC day, model and serving endpoint for the
+  last 30 completed days, all in one answer. `usage` is USD billed by OpenRouter.
+- It needs a management key. A regular API key gets 403, so the key an org's AI turns run on
+  cannot be reused. The org pastes a management key on the Cost page, which Maple checks
+  (`GET /key`, then one activity read) and stores sealed.
+- Live: `GET /key` names the key's account: `organization_id`, or `creator_user_id` on a personal
+  account (`organization_id` is then null). That id is the source's account. A replacement key
+  must name the same one, since another account's spend would overwrite the source's days. A
+  replaced key also makes a failing source due again at once.
+- Spec: a management key can be scoped to one workspace, and then reads only that workspace.
+  Live: a key for the whole account answers 404 for a workspace the account does not have, where
+  the spec says a scoped key answers 403. Maple asks that when the key is saved and refuses a
+  scoped key, since its pulls would miss the rest of the account's spend without saying so.
+- Requests are free, so the source counts none.
+- Rows: the model is `CloudService`, the serving provider is `UsageType`, the category is "AI and
+  Machine Learning", the region is `global`. Rows OpenRouter billed nothing for are left out.
+- Not counted: spend on the account's own provider keys (`byok_usage_inference`). OpenRouter
+  estimates it at market rates, and the page does not yet tell billed from estimated.
+- Not split: workspaces and API keys. The activity API can filter by either.
+- Spec: the EU host documents inference only. Every instance reads activity from the global host.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily,
+  and yesterday is marked as not final, since it may have ended minutes before the pull.
+- A day OpenRouter answers nothing for is stored as empty, like any provider's. An empty answer
+  for an account that had spend would hide up to 28 days until the next weekly re-pull.
+
+### GitHub (billed)
+
+"Live" here means checked on 2026-11-12 with an organization owner's token.
+
+- Spec: `GET /organizations/{org}/settings/billing/usage?year=&month=` returns one line per usage
+  record: date, product, SKU, quantity, unit, gross, discount and net amount, and the repository.
+  It takes no paging parameters and is marked as usable by GitHub Apps.
+- The source is opt-in: the org picks an organization the GitHub App is installed on. Nothing is
+  stored but the `cost_sources` row. A user account has no billing report and is not offered.
+- Spec: an installation token needs the organization permission "Administration: read", which
+  the token lists as `organization_administration`. The App does not ask for it yet, so until it
+  does and an organization accepts it, adding is refused with what to accept and where. Maple
+  reads the current month once before it makes the source, so a missing permission never becomes
+  a failing source. Docs: the usage reporting guide says the billing endpoints do not take
+  fine-grained personal access tokens. Open: no installation has been read live yet.
+- Docs: only organizations on the enhanced billing platform have the report. What another
+  organization is answered is not documented: a refusal whose body names the billing platform is
+  stored as "not ready", any other unexpected status as a failed request.
+- Live: `date` is a timestamp and not always at midnight; the day is its first ten characters.
+  Several lines can share a day, product, SKU and repository, and are summed.
+- Live: `quantity` is a float, where the spec says integer. Every Actions line named its
+  repository. Seat products may not, so the repository is optional.
+- Live: usage covered by a plan allowance, or free for a public repository, has a gross amount, a
+  discount of the same size and a net amount of zero. Rows keep both: `BilledCost` and
+  `EffectiveCost` are the net amount, `ListCost` the gross one. A line with neither is left out.
+- Live: a month with no usage answers an empty list.
+- Live: usage from five months back was still served. Docs: no retention is stated for this
+  endpoint (its sibling summary endpoints state 24 months). The sync stops at the first day of
+  the month three months back.
+- Rows: the product is `CloudService` (`actions` reads "Actions"), the SKU is `UsageType`, the
+  repository is `ResourceId`, the category is "Developer Tools", the region is `global`, the
+  currency is USD. Today and yesterday are stored as not final.
+- Requests are free, so the source counts none. A window is one request per calendar month.
+- A source is removed by the sync when its installation is gone, suspended, or no longer an
+  organization's. A suspended installation that comes back has to be added again.
+- Not built: user accounts, enterprise-level billing, Copilot seat endpoints, budgets.
+
+### Vercel (billed)
+
+Nothing here was run against a real team: there was none to test with. The request and the
+response shape are Vercel's OpenAPI spec. The adapter, the normalizer and the page are tested
+against a fake server that answers what the spec describes.
+
+- Spec: `GET /v1/billing/charges?teamId=&from=&to=` returns the team's billed charges as FOCUS
+  v1.3 JSONL, one charge per line, at one-day granularity. `from` is inclusive and `to` exclusive,
+  both ISO 8601 in UTC, a year apart at most. The answer is streamed, so Maple reads it line by
+  line and sums as it goes.
+- It takes the access token of the Vercel connection the org already has. No second credential
+  and no new table: the source points at `vercel_connections.id`. Its account, and the account
+  on every row, is the team's id, not its slug: a team can rename its slug, and rows already
+  stored keep the account they were pulled with, so a slug would split one team into two
+  accounts. The slug is read with the sources and is what the page shows ("Vercel <slug>").
+- Adding names the team the dialog showed. A connection that reads another team by then, or
+  whose token was replaced while the check read was in flight, is refused as changed.
+- Spec: readable by the team's Owner, Member, Developer, Security, Billing and Enterprise Viewer
+  roles. A token of another role answers 403, which the source reports as not ready with the
+  roles that work. Adding the source reads yesterday and today once first (the days every daily
+  pull ends on), so that refusal shows in the dialog and not as a first sync that fails.
+- Spec: 401 is a rejected token (the source needs the team connected again), 404 and 410 a team
+  or billing data that is gone, 429 a rate limit. A connection whose token the integration's
+  poller already found rejected is not asked at all. A new token saved for the same team makes
+  a source due at the next tick, whenever it last synced. A 400 is a request Vercel calls
+  invalid: the source keeps Vercel's own message, and an add shows it in the dialog, since the
+  request shape is the part not run live.
+- Requests are free, so the source counts none.
+- Rows: the product (`ServiceName`) is `CloudService`, its `SkuId` the `UsageType` (left empty
+  when it equals the product name), `ServiceCategory` the category (`Other` when absent),
+  `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
+  `Tags.ProjectId`) the resource, which the page groups and filters by. On the page the team
+  reads as "Vercel <slug>" (the slug comes with the sources read, the key is the team id), and
+  its services and regions wear the Vercel mark where no other
+  platform of the org could have billed them. `ChargeCategory` maps
+  onto Maple's (`Usage`, `Purchase`, `Credit`, `Tax`, `Adjustment`), so plan fees and credits
+  are their own rows. Lines of one day,
+  product, SKU, project, region and kind of charge are summed. A sum with no billed and no
+  effective cost is left out. Credits are negative and kept.
+- Spec: no list price is reported, so `ListCost` is the billed cost.
+- Every field but `BilledCost`, `ChargePeriodStart` and `ServiceName` is read as optional, since
+  the spec is the only source. A line that is not such a charge fails the whole pull as an
+  invalid response: storing part of a day would hide the older pull of it. So does a
+  `ChargePeriodStart` that is not a UTC date-time on a real calendar day (no February 31st, a
+  February 29th in leap years only), an amount or quantity that is not finite (`1e309` is valid
+  JSON), lines that sum past what a number holds, and any answer but a 200 (a 204 or a 206
+  would store days empty or by halves).
+- Open risk: a 200 with an empty body reads as a team with no charges, and the window's days
+  are stored empty. Nothing in the answer tells an empty month from a broken one, so a broken
+  empty answer would hide up to two months until the next re-pull of them. The JSONL has no
+  count or end marker to check against.
+- Open: when a day stops changing. Today and yesterday are stored as not final, and the four
+  newest days are pulled again daily.
+- Open: how large a busy team's answer is. A day above 10,000 rows is refused like any
+  provider's.
+- Not split: the team's telemetry service per project. `ServiceName` (Maple's) stays empty.
 
 ### GCP (billed, needs a customer export)
 
@@ -231,7 +385,9 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** Railway, GCP, PlanetScale, Supabase, Cloudflare, one PR each.
+3. **More providers.** OpenRouter, GitHub and Vercel are built. Railway, GCP, PlanetScale,
+   Supabase, Cloudflare, one PR each. Each provider adds a literal to `CostProvider`, an adapter,
+   a reconcile function and a sync profile.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -249,6 +405,8 @@ Each phase is one PR stack.
 ## Open questions
 
 - Cloudflare: is there an OAuth billing scope.
+- GitHub: does an installation token with "Administration: read" read the billing report (the
+  spec says so, no installation has been read yet), and how long the report keeps usage.
 - Railway: can a workspace token read `customer`.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on

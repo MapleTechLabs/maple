@@ -17,11 +17,14 @@ import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import {
 	clampQueueDelaySeconds,
 	VcsSyncQueue,
 	type VcsSyncQueueApi,
 } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
+import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
 
 // Shared test harness for the GitHub / VCS integration. The id-resolver
 // helpers, config/env layers, scripted-HTTP seam, recording queue, and
@@ -111,6 +114,18 @@ export const fakeGithubHttp = (respond: (request: FakeGithubRequest) => Response
 			).pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response))),
 		),
 	)
+
+// The provider registry with the real GitHub provider and App client over an HttpClient seam,
+// for tests outside the VCS layer that reach GitHub through the port.
+export const registryOverHttp = (http: Layer.Layer<HttpClient.HttpClient>) => {
+	const env = testEnv(GITHUB_APP_CONFIG)
+	return Layer.effect(VcsProviderRegistry, VcsProviderRegistry.make).pipe(
+		Layer.provide(Layer.effect(GithubProvider, GithubProvider.make)),
+		Layer.provide(Layer.effect(GithubAppClient, GithubAppClient.make)),
+		Layer.provide(http),
+		Layer.provide(env),
+	)
+}
 
 // A GitHub HttpClient seam replaying canned responses in call order; once the script is
 // exhausted the last responder repeats (so rate-limit loops can keep replying).

@@ -19,7 +19,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
-import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
+import { Decision, DecisionModel, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
@@ -34,6 +34,7 @@ import {
 	resolveReviewModel,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
+	resolveSecurityAuditDiscoveryFallback,
 	securityAuditModelIds,
 	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
@@ -59,6 +60,10 @@ const captureRequest = (
 	tags?: LlmCallTags,
 	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
 	declareTool = false,
+	prompt: Prompt.RawInput = [
+		{ role: "system" as const, content: "You are concise." },
+		{ role: "user" as const, content: "hi" },
+	],
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -80,10 +85,6 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		const prompt = [
-			{ role: "system" as const, content: "You are concise." },
-			{ role: "user" as const, content: "hi" },
-		]
 		const call = declareTool
 			? Effect.asVoid(
 					LanguageModel.generateText({
@@ -211,6 +212,125 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 	)
 })
 
+const WireBlock = Schema.Struct({ text: Schema.String, cache_control: Schema.optionalKey(Schema.Unknown) })
+const WireMessages = Schema.Array(
+	Schema.Struct({
+		role: Schema.String,
+		content: Schema.Union([Schema.String, Schema.Null, Schema.Array(WireBlock)]),
+	}),
+)
+
+/** Each message as the model reads it, and whether it carries the cache breakpoint. */
+const wireMessages = (body: Record<string, unknown>) =>
+	Arr.map(Schema.decodeUnknownSync(WireMessages)(body.messages), (message) => {
+		const blocks =
+			typeof message.content === "string" ? [{ text: message.content }] : (message.content ?? [])
+		return {
+			role: message.role,
+			text: Arr.join(
+				Arr.map(blocks, (block) => block.text),
+				"",
+			),
+			breakpoint: Arr.some(blocks, (block) => "cache_control" in block),
+		}
+	})
+
+const readable = (messages: ReturnType<typeof wireMessages>) =>
+	Arr.map(messages, ({ role, text }) => ({ role, text }))
+
+/** What a marked-block cache stores for a request: its messages up to the breakpoint. */
+const storedPrefix = (body: Record<string, unknown>) => {
+	const messages = wireMessages(body)
+	if ("cache_control" in body) return readable(messages)
+	return Option.match(
+		Arr.findLastIndex(messages, (message) => message.breakpoint),
+		{ onNone: () => [], onSome: (index) => readable(Arr.take(messages, index + 1)) },
+	)
+}
+
+const runStatus = (turn: number) => ({
+	role: "user" as const,
+	content: `<run-status>turn ${turn}/500 · tool-calls ${turn - 1}/500 · elapsed ${turn * 3}s/600s</run-status>`,
+})
+
+const REVIEW_TASK = [
+	{ role: "system" as const, content: "You review one pull request." },
+	{ role: "user" as const, content: "Review pull request #7." },
+]
+
+/** Two consecutive model calls of an unattended run, as the engine sends them. */
+const FIRST_CALL: Prompt.RawInput = [...REVIEW_TASK, runStatus(1)]
+const SECOND_CALL: Prompt.RawInput = [
+	...REVIEW_TASK,
+	{
+		role: "assistant",
+		content: [
+			{
+				type: "tool-call",
+				id: "call_0",
+				name: "pr_changed_files",
+				params: {},
+				providerExecuted: false,
+			},
+		],
+	},
+	{
+		role: "tool",
+		content: [
+			{
+				type: "tool-result",
+				id: "call_0",
+				name: "pr_changed_files",
+				isFailure: false,
+				result: "2 changed files",
+				providerExecuted: false,
+			},
+		],
+	},
+	runStatus(2),
+]
+
+const consecutiveCalls = (model: string) => {
+	const send = (prompt: Prompt.RawInput) =>
+		captureRequest(
+			{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: model },
+			tags,
+			resolveReviewModel,
+			false,
+			prompt,
+		)
+	return Effect.all([send(FIRST_CALL), send(SECOND_CALL)])
+}
+
+describe("prompt cache prefix under the run-status line", () => {
+	it.live.each(["openai/gpt-6.1-sol", "anthropic/claude-sonnet-5.5"])(
+		"%s: what one call stores in the cache is the start of the next call",
+		(model) =>
+			Effect.gen(function* () {
+				const [first, second] = yield* consecutiveCalls(model)
+				const stored = storedPrefix(first.body)
+
+				// Everything but the status line, which no later call repeats.
+				expect(stored).toEqual(Arr.dropRight(readable(wireMessages(first.body)), 1))
+				expect(Arr.take(readable(wireMessages(second.body)), stored.length)).toEqual(stored)
+				// And the second call stores its own history for the third.
+				expect(storedPrefix(second.body)).toEqual(
+					Arr.dropRight(readable(wireMessages(second.body)), 1),
+				)
+			}),
+	)
+
+	it.live("leaves a model that caches any repeated prefix with the messages it was given", () =>
+		Effect.gen(function* () {
+			const [first, second] = yield* consecutiveCalls(DEFAULT_REVIEW_MODEL)
+
+			expect(first.body.cache_control).toEqual({ type: "ephemeral" })
+			expect(Arr.some(wireMessages(second.body), (message) => message.breakpoint)).toBe(false)
+			expect(Arr.take(wireMessages(second.body), 2)).toEqual(Arr.dropRight(wireMessages(first.body), 1))
+		}),
+	)
+})
+
 describe("reasoning effort", () => {
 	it.live("sends no reasoning field for triage", () =>
 		Effect.gen(function* () {
@@ -265,15 +385,16 @@ describe("resolveSecurityAuditModel", () => {
 		).toBe("anthropic/claude-haiku-5.5")
 	})
 
-	it("ignores a pick the region does not serve, or that cannot verify", () => {
+	it("ignores a pick the region does not serve, or that is no longer listed", () => {
 		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
 		expect([
 			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
-			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			// Delisted 2026-11-12: its cybersecurity filter refused hunter and verifier prompts.
+			securityAuditModelId(openRouterEnv, "discovery", "openai/gpt-6.1-sol"),
 			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
 		]).toEqual([
 			DEFAULT_AUDIT_MODELS.eu.discovery,
-			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
 			DEFAULT_AUDIT_MODELS.us.discovery,
 		])
 	})
@@ -289,6 +410,35 @@ describe("securityAuditModelIds", () => {
 				validation: "anthropic/claude-haiku-5.5",
 			}),
 		).toEqual({ discovery: DEFAULT_AUDIT_MODELS.eu.validation, validation: "anthropic/claude-haiku-5.5" })
+	})
+})
+
+describe("resolveSecurityAuditDiscoveryFallback", () => {
+	const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+
+	it("falls back to the region's hunter when the org hunts on another model", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.validation,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.discovery)
+	})
+
+	it("has none when the run already hunts on the default", () => {
+		expect(
+			resolveSecurityAuditDiscoveryFallback(eu, {
+				discovery: DEFAULT_AUDIT_MODELS.eu.discovery,
+				validation: DEFAULT_AUDIT_MODELS.eu.validation,
+			}),
+		).toBeUndefined()
+	})
+
+	it("never falls back onto the verifier", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.discovery,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.validation)
 	})
 })
 

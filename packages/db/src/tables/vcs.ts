@@ -249,6 +249,8 @@ export const PrReviews = PG.table("pr_reviews", {
 		model: PG.nullable(PG.text),
 		inputTokens: PG.column(PG.nullable(PG.int4), { name: "input_tokens" }),
 		outputTokens: PG.column(PG.nullable(PG.int4), { name: "output_tokens" }),
+		/** What the model provider billed for the review, in microdollars; null before it was kept. */
+		costMicrousd: PG.column(PG.nullable(PG.int4), { name: "cost_microusd" }),
 		startedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "started_at" }),
 		finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
 		/** When the pull request merged, stamped on every review of it by the `closed` event. */

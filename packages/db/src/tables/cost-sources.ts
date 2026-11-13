@@ -3,8 +3,8 @@ import { CostProvider } from "@maple/domain/cost"
 import { CostSourceId, OrgId } from "@maple/primitives"
 
 // One row per provider connection an org's cloud cost is pulled from. The cost sync creates it
-// when the connection supplies cost, turns it off while it does not, and removes it with the
-// connection; its rows in `cost_daily` stay. The poll-state columns belong to the sync.
+// when the connection supplies cost (a GitHub one is added by the org), turns it off while it does
+// not, and removes it with the connection; its rows in `cost_daily` stay. The poll-state columns belong to the sync.
 export const CostSources = PG.table("cost_sources", {
 	columns: {
 		id: PG.brand(PG.text, CostSourceId),

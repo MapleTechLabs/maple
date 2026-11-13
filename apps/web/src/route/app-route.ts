@@ -41,6 +41,7 @@ export const AppRoute = defineRouteUnion({
 	AlertsEscalationChain: { chainId: Schema.String, search: Search.AlertsEscalationChainSearch },
 	IngestRuleNew: { search: Search.IngestRuleNewSearch },
 	IngestRule: { ruleId: Schema.String },
+	BillingAiCredits: {},
 	AlertsStatusPage: { pageId: Schema.String, search: Search.AlertsStatusPageSearch },
 	StatusPages: {},
 	StatusPageNew: {},

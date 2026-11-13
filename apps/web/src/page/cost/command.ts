@@ -1,4 +1,10 @@
-import { CostBreakdownSortBy, CostFilters } from "@maple/domain/http"
+import {
+	CostBreakdownSortBy,
+	CostFilters,
+	OpenRouterKeyUpdateRequest,
+	VercelCostAddRequest,
+} from "@maple/domain/http"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -7,10 +13,13 @@ import {
 	getCostTimeseries,
 	getCostTotals,
 } from "@maple/web-data/warehouse/cost"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
+import { readGrants } from "../../data/session-tenant"
+import { MapleInternalApiClient } from "../../platform/api-clients"
 import { COST_GROUP_BYS } from "../../route/search"
 import { resolveWindowCommand } from "../kit/time-frame"
+import { perDimension } from "./derive"
 import { Message } from "./message"
 
 // Each read answers with the key it was sent under; its input is what the key was built from.
@@ -82,4 +91,119 @@ export const FetchCostBreakdown = Command.define("FetchCostBreakdown", {
 		getCostBreakdown({
 			data: { ...windowOf(input), groupBy: input.groupBy, sortBy: input.sortBy, limit: input.limit },
 		}).pipe(settleTo((result) => Message.CompletedLoadBreakdown({ key, result }))),
+})
+
+/** Per dimension, the filters its own facet reads under: every other dimension's, never its own. */
+export const FacetsInput = Schema.Struct({
+	startTime: Schema.String,
+	endTime: Schema.String,
+	filters: Schema.Struct(perDimension(() => Schema.optional(CostFilters))),
+	limit: Schema.Number,
+})
+export type FacetsInput = typeof FacetsInput.Type
+
+/** The filter rail's values: one breakdown per dimension, read side by side. */
+export const FetchCostFacets = Command.define("FetchCostFacets", {
+	args: { key: Schema.String, input: FacetsInput },
+	messages: [Message.CompletedLoadFacets],
+	execute: ({ key, input }) =>
+		Effect.all(
+			perDimension((groupBy) =>
+				Effect.map(
+					getCostBreakdown({
+						data: {
+							...windowOf({
+								startTime: input.startTime,
+								endTime: input.endTime,
+								filters: input.filters[groupBy],
+							}),
+							groupBy,
+							sortBy: "cost",
+							limit: input.limit,
+						},
+					}),
+					(response) => response.rows,
+				),
+			),
+			{ concurrency: "unbounded" },
+		).pipe(settleTo((result) => Message.CompletedLoadFacets({ key, result }))),
+})
+
+export const ReadCostGrants = Command.define("ReadCostGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
+})
+
+/** Saves the org's OpenRouter management key, which makes (or keeps) its cost source. */
+export const SaveOpenRouterCostKey = Command.define("SaveOpenRouterCostKey", {
+	args: { apiKey: Schema.String },
+	messages: [Message.CompletedSaveKey],
+	execute: ({ apiKey }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.openRouterCost.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
+		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
+})
+
+export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey", {
+	messages: [Message.CompletedRemoveKey],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemoveKey({ result })),
+	),
+})
+
+/** The org's GitHub installations, with which can supply cost. */
+export const FetchGithubCostInstallations = Command.define("FetchGithubCostInstallations", {
+	args: { request: Schema.Number },
+	messages: [Message.CompletedLoadGithubInstallations],
+	execute: ({ request }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.githubCost.list()).pipe(
+			settleTo((result) => Message.CompletedLoadGithubInstallations({ request, result })),
+		),
+})
+
+/** Makes the installation's cost source, once GitHub lets Maple read its billing report. */
+export const AddGithubCostSource = Command.define("AddGithubCostSource", {
+	args: { installationId: VcsInstallationId },
+	messages: [Message.CompletedAddGithubSource],
+	execute: ({ installationId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.githubCost.add({ params: { installationId } }),
+		).pipe(settleTo((result) => Message.CompletedAddGithubSource({ installationId, result }))),
+})
+
+export const RemoveGithubCostSource = Command.define("RemoveGithubCostSource", {
+	args: { installationId: VcsInstallationId },
+	messages: [Message.CompletedRemoveGithubSource],
+	execute: ({ installationId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.githubCost.remove({ params: { installationId } }),
+		).pipe(settleTo((result) => Message.CompletedRemoveGithubSource({ result }))),
+})
+
+/** Whether the org has a Vercel team connected, and whether it is a cost source already. */
+export const FetchVercelCostStatus = Command.define("FetchVercelCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadVercelStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadVercelStatus({ key, result })),
+		),
+})
+
+/** Makes the connected Vercel team a cost source, once Vercel let its token read the billing. */
+export const AddVercelCostSource = Command.define("AddVercelCostSource", {
+	// The team the dialog showed: the API refuses the add when another one is connected by now.
+	args: { teamId: Schema.String },
+	messages: [Message.CompletedAddVercel],
+	execute: ({ teamId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.vercelCost.add({ payload: new VercelCostAddRequest({ teamId }) }),
+		).pipe(settleTo((result) => Message.CompletedAddVercel({ result }))),
+})
+
+export const RemoveVercelCostSource = Command.define("RemoveVercelCostSource", {
+	messages: [Message.CompletedRemoveVercel],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemoveVercel({ result })),
+	),
 })

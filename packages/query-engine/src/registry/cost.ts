@@ -19,6 +19,11 @@ interface CostWindowPayload {
 	readonly metric?: CostMetric | undefined
 	readonly filters?: Partial<Record<CostDimension, ReadonlyArray<string>>> | undefined
 	readonly sourceIds: ReadonlyArray<string>
+	/**
+	 * When a sync last wrote one of the sources. No query reads it: it is part of the cached
+	 * answer's key, so a sync shows at once where the window alone would hold the old answer.
+	 */
+	readonly written: number
 }
 
 /** A read of money: `currency` is the one it sums. Without it the sum adds every currency together. */

@@ -122,8 +122,8 @@ export const keyedTarget = (derived: Derived, current: Cell | null, direction: P
 	)
 }
 
-/** The smallest circle round the tiles (and the cells a held tile may go to), so the view grows
- * as tiles go down. */
+/** The smallest circle round the tiles and a ring of country, so the view grows as tiles go
+ * down. Only the tiles count: lifting one, or the country shifting, never moves the camera. */
 const extentOf = (cells: ReadonlyArray<Cell>): { readonly centre: Point; readonly radius: number } => {
 	const points = Arr.map(cells, cellToPoint)
 	const first = points[0]
@@ -144,7 +144,7 @@ const extentOf = (cells: ReadonlyArray<Cell>): { readonly centre: Point; readonl
 	const reach = Math.hypot(furthest[0] - centre[0], furthest[1] - centre[1])
 	// Quarter-tile steps, so the camera refits when the board grows, not on every tile.
 	const step = NEIGHBOUR_DISTANCE / 4
-	return { centre, radius: Math.ceil((reach + HEX_SIZE * 1.1) / step) * step }
+	return { centre, radius: Math.ceil((reach + HEX_SIZE * 1.1 + NEIGHBOUR_DISTANCE * 1.6) / step) * step }
 }
 
 export const derive = (input: SceneInput, previous: Derived | null): Derived => {
@@ -169,9 +169,12 @@ export const derive = (input: SceneInput, previous: Derived | null): Derived => 
 		? previous.cells
 		: new Map(Arr.filter(Rec.toEntries(input.cells), ([id]) => nodes.has(id)))
 	const targets = input.heldId === null ? null : targetsFor(cells, input.heldId)
-	const sameBoard = sameTopology && sameCells && previous.input.heldId === input.heldId
-	const lakes = sameBoard ? previous.lakes : lakesOf(cells, input.heldId ?? undefined)
-	const wilds = sameBoard ? previous.wilds : wildsOf(cells, lakes, input.heldId ?? undefined)
+	// The country round the board is worked out with a lifted tile still at home: picking a tile
+	// up leaves a gap to put it back in, and the lakes and woods only move once it lands.
+	const sameCountry = sameTopology && sameCells
+	const lakes = sameCountry ? previous.lakes : lakesOf(cells)
+	const wilds = sameCountry ? previous.wilds : wildsOf(cells, lakes)
+	const sameBoard = sameCountry && previous.input.heldId === input.heldId
 	const country = [...lakes, ...Arr.map(wilds, (wild) => wild.cell)]
 	return {
 		input,
@@ -188,6 +191,6 @@ export const derive = (input: SceneInput, previous: Derived | null): Derived => 
 		lakes,
 		wilds,
 		network: sameBoard ? previous.network : networkOf(links, cells, input.heldId, country),
-		...extentOf([...cells.values(), ...country]),
+		...extentOf([...cells.values()]),
 	}
 }

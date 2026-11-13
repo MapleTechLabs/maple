@@ -316,6 +316,7 @@ export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
  *
  * `cache_control` puts the cache breakpoint on the request's last block, so an agent loop reuses its
  * whole history. Models with explicit caching otherwise cached only the system prompt and tools.
+ * {@link withStableCacheBreakpoint} moves it when that last block is the engine's run-status line.
  */
 const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags | undefined) => ({
 	cache_control: { type: "ephemeral" as const },
@@ -592,6 +593,27 @@ export const securityAuditModelIds = (
 }
 
 /**
+ * The model a discovery agent retries on when the run's hunting pick fails it, as OpenAI models do
+ * when their cybersecurity filter refuses hunter prompts: the deployment's own hunter, never the
+ * verifier. Undefined when the run already hunts on it, or on Workers AI.
+ */
+export const resolveSecurityAuditDiscoveryFallback = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+	tags?: LlmCallTags,
+): ResolvedModel | undefined => {
+	if (resolveLlmProvider(settings) === "workers-ai") return undefined
+	const hunting = securityAuditModelId(settings, "discovery", chosen.discovery)
+	const fallback = securityAuditModelIds(settings, {
+		discovery: null,
+		validation: chosen.validation,
+	}).discovery
+	return fallback === hunting
+		? undefined
+		: openRouterModel(fallback, tags, { effort: "high", unattended: true })
+}
+
+/**
  * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
  * On the Workers AI provider both stages fall back to the triage model.
  */
@@ -647,19 +669,22 @@ const splicePerCallFields = (
 				? { trace_id: span.value.traceId, parent_span_id: span.value.spanId }
 				: undefined),
 		}
-		return yield* HttpClientRequest.bodyJson(request, {
-			...decoded,
-			...("tools" in decoded && Arr.isArray(decoded.tools)
-				? {
-						tools: Arr.map(decoded.tools, (tool) =>
-							Predicate.isObject(tool) ? dropNullStrict(tool) : tool,
-						),
-					}
-				: undefined),
-			usage: { include: true },
-			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
-			...(Object.keys(trace).length === 0 ? undefined : { trace }),
-		})
+		return yield* HttpClientRequest.bodyJson(
+			request,
+			withStableCacheBreakpoint({
+				...decoded,
+				...("tools" in decoded && Arr.isArray(decoded.tools)
+					? {
+							tools: Arr.map(decoded.tools, (tool) =>
+								Predicate.isObject(tool) ? dropNullStrict(tool) : tool,
+							),
+						}
+					: undefined),
+				usage: { include: true },
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
+				...(Object.keys(trace).length === 0 ? undefined : { trace }),
+			}),
+		)
 	})
 
 const dropNullStrict = (tool: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
@@ -667,6 +692,50 @@ const dropNullStrict = (tool: Record<PropertyKey, unknown>): Record<PropertyKey,
 	if (!Predicate.isObject(fn) || fn.strict !== null) return tool
 	const { strict: _strict, ...rest } = fn
 	return { ...tool, function: rest }
+}
+
+/** Model families that cache at marked blocks only; the others cache any repeated prefix. */
+const CACHES_AT_BREAKPOINTS = /^(anthropic|openai)\//
+
+const messageText = (content: unknown): string | undefined => {
+	if (typeof content === "string") return content
+	const first = Arr.isArray(content) ? content[0] : undefined
+	return Predicate.isObject(first) && typeof first.text === "string" ? first.text : undefined
+}
+
+/** The engine's `<run-status>` line: derived per call, so no two requests carry the same one. */
+const isRunStatus = (message: unknown): boolean =>
+	Predicate.isObject(message) && Str.startsWith("<run-status>")(messageText(message.content) ?? "")
+
+/** A user or tool message with the cache breakpoint on its text; none when it has no plain text. */
+const markCacheBreakpoint = (
+	message: unknown,
+	cacheControl: unknown,
+): Option.Option<Record<PropertyKey, unknown>> => {
+	if (!Predicate.isObject(message) || (message.role !== "user" && message.role !== "tool")) {
+		return Option.none()
+	}
+	const text = message.content
+	return typeof text === "string" && text !== ""
+		? Option.some({ ...message, content: [{ type: "text", text, cache_control: cacheControl }] })
+		: Option.none()
+}
+
+/**
+ * Keeps the cache breakpoint off the engine's `<run-status>` line. The root `cache_control` marks
+ * the request's last block, and that line differs on every call, so a model that caches at marked
+ * blocks wrote its whole history again each call and read back only the system prompt and tools.
+ */
+const withStableCacheBreakpoint = (body: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
+	const { cache_control: cacheControl, ...rest } = body
+	const { messages, model } = body
+	if (cacheControl === undefined || !Arr.isArray(messages) || typeof model !== "string") return body
+	if (!CACHES_AT_BREAKPOINTS.test(model) || !isRunStatus(messages.at(-1))) return body
+	const index = messages.length - 2
+	return markCacheBreakpoint(messages[index], cacheControl).pipe(
+		Option.flatMap((marked) => Arr.replace(messages, index, marked)),
+		Option.match({ onNone: () => body, onSome: (moved) => ({ ...rest, messages: moved }) }),
+	)
 }
 
 /** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */

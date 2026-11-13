@@ -15,7 +15,6 @@ import { AgentPolicy } from "@yielded/agent/agent-policy"
 import * as AgentRuntime from "@yielded/agent/agent-runtime"
 import * as InMemory from "@yielded/agent/in-memory"
 import * as Output from "@yielded/agent/output"
-import type { RunCostEstimator } from "@yielded/agent/run-options"
 import { Cause, type Duration, Effect, Layer, Ref, Schema, String as Str } from "effect"
 import {
 	AUDIT_MAX_LIVE_CONTEXT_TOKENS,
@@ -24,7 +23,7 @@ import {
 	REPEATED_TOOL_CALLS,
 	TOOL_CONCURRENCY,
 } from "../chat/budgets"
-import { reportedCostOf } from "../platform/genai-spans"
+import { reportedCost } from "../platform/reported-cost"
 import type { LlmClients, ResolvedModel } from "../platform/Llm"
 import {
 	type AuditExecutionApi,
@@ -38,6 +37,8 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 export interface AuditModels {
 	readonly discovery: ResolvedModel
 	readonly validation: ResolvedModel
+	/** Where a discovery agent retries once when `discovery` fails it; absent when that is the default. */
+	readonly discoveryFallback?: ResolvedModel
 }
 
 const VALIDATION_ROLES: ReadonlySet<AuditRole> = new Set(["candidate-verifier", "record-verifier"])
@@ -102,16 +103,6 @@ const executingAgent = (role: AuditRole, model: ResolvedModel) =>
 		model.layer,
 	)
 
-/** OpenRouter's own price for each call; Maple never prices tokens itself. */
-const reportedCost: RunCostEstimator = (request) => {
-	const cost = reportedCostOf(request.finishMetadata)
-	return Effect.succeed(
-		cost === undefined
-			? { costMicrousd: 0, pricingStatus: "unknown" as const }
-			: { costMicrousd: Math.round(cost * 1_000_000), pricingStatus: "estimated" as const },
-	)
-}
-
 const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 /**
@@ -125,8 +116,7 @@ export const makeAuditAgents = (
 ) =>
 	Effect.gen(function* () {
 		const clients = yield* Effect.context<LlmClients>()
-		const run = (invocation: AgentInvocation) => {
-			const model = modelFor(invocation.role, models)
+		const runOn = (invocation: AgentInvocation, model: ResolvedModel) => {
 			const fail = (message: string) =>
 				new AuditAgentError({ message, role: invocation.role, agentId: invocation.agentId })
 			return Effect.gen(function* () {
@@ -202,6 +192,27 @@ export const makeAuditAgents = (
 					},
 				}),
 			)
+		}
+		const run = (invocation: AgentInvocation) => {
+			const model = modelFor(invocation.role, models)
+			const fallback = VALIDATION_ROLES.has(invocation.role) ? undefined : models.discoveryFallback
+			// An org's hunting pick can refuse audit prompts outright (a provider content filter) or never
+			// finish a call; one retry on the deployment's own hunter keeps that agent's work in the run.
+			return fallback === undefined
+				? runOn(invocation, model)
+				: runOn(invocation, model).pipe(
+						Effect.catchTag("@maple/security-audit/AgentError", (error) =>
+							Effect.logWarning("security audit agent retrying on the fallback model").pipe(
+								Effect.annotateLogs({
+									"maple.security_audit.agent_id": invocation.agentId,
+									"maple.security_audit.fallback_model": fallback.name,
+									"maple.security_audit.failed_model": model.name,
+									"maple.security_audit.error": error.message,
+								}),
+								Effect.andThen(runOn(invocation, fallback)),
+							),
+						),
+					)
 		}
 		return { run } satisfies AuditAgentsApi
 	})

@@ -58,6 +58,7 @@ import {
 	isGoneStatus,
 	type RepositoryListingError,
 } from "./GithubAppClient"
+import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
 import { secretsEqual } from "@maple/backend/services/auth/secret-equal"
 
@@ -373,6 +374,18 @@ const toVcsCommitError = (
 ): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRepositoryBlockedError => {
 	const mapped = toVcsError(error)
 	return mapped._tag === "@maple/http/errors/VcsRateLimitedError"
+		? new VcsProviderError({ message: mapped.message })
+		: mapped
+}
+
+// The billing report has no repository scope: what is left is the rate limit, the installation
+// being gone, and everything else.
+const toBillingError = (
+	error: GithubAppError,
+): VcsProviderError | VcsInstallationGoneError | VcsRateLimitedError => {
+	const mapped = toVcsError(error)
+	return mapped._tag === "@maple/http/errors/VcsRepoUnavailableError" ||
+		mapped._tag === "@maple/http/errors/VcsRepositoryBlockedError"
 		? new VcsProviderError({ message: mapped.message })
 		: mapped
 }
@@ -1918,6 +1931,23 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}),
 					)
 
+			const fetchBillingUsage: VcsProviderClient["fetchBillingUsage"] = (installation, month) =>
+				client
+					.getOrganizationBillingUsage(
+						installation.externalInstallationId,
+						installation.accountLogin,
+						month,
+					)
+					.pipe(Effect.mapError(toBillingError))
+
+			const webBaseUrl = githubWebBaseUrl(env.GITHUB_API_BASE_URL)
+			const installationSettingsUrl: VcsProviderClient["installationSettingsUrl"] = (installation) => {
+				const id = encodeURIComponent(installation.externalInstallationId)
+				return installation.accountType === "organization"
+					? `${webBaseUrl}/organizations/${encodeURIComponent(installation.accountLogin)}/settings/installations/${id}`
+					: `${webBaseUrl}/settings/installations/${id}`
+			}
+
 			return {
 				id: PROVIDER,
 				reviewerMention,
@@ -1953,6 +1983,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchWorkflowJobAnnotations,
 				streamWorkflowJobLog,
 				canReadWorkflowLogs,
+				fetchBillingUsage,
+				installationSettingsUrl,
 			} satisfies VcsProviderClient
 		}),
 	},
