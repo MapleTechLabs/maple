@@ -99,6 +99,8 @@ export const LabState = Schema.Literals([
 	"add-github",
 	"github-refused",
 	"github-none",
+	"github-reading",
+	"github-unread",
 	"remove-github",
 	"add-vercel",
 	"vercel-not-connected",
@@ -170,6 +172,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "token-refused" ||
 	state === "token-too-broad" ||
 	state === "github-none" ||
+	state === "github-reading" ||
+	state === "github-unread" ||
 	state === "add-vercel" ||
 	state === "vercel-not-connected" ||
 	state === "vercel-refused" ||
@@ -202,6 +206,8 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return removalOf("cloudflare")
 		case "add-github":
 		case "github-none":
+		case "github-reading":
+		case "github-unread":
 			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGithub()]
 		case "github-refused":
 			return [
@@ -277,6 +283,12 @@ const refusedVercel = {
 	...toLoadFailure("refused"),
 	message:
 		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
+}
+
+/** The read of the org's GitHub installations did not come back. */
+const unreadInstallations = {
+	...toLoadFailure("unread"),
+	message: "Maple could not read your GitHub organizations.",
 }
 
 const refusedKey = {
@@ -478,14 +490,19 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 		case RemoveCloudflareCostToken.name:
 			return Option.some(removedAnswer("cloudflare"))
 		case FetchGithubCostInstallations.name:
+			// The read that never answers leaves the step on its loading line.
+			if (state === "github-reading") return Option.none()
 			return Option.map(readArgs(command.args), ({ request }) =>
 				CostMessage.CompletedLoadGithubInstallations({
 					request,
-					result: Result.succeed(
-						state === "github-none"
-							? new GithubCostInstallations({ installations: [] })
-							: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
-					),
+					result:
+						state === "github-unread"
+							? Result.fail(unreadInstallations)
+							: Result.succeed(
+									state === "github-none"
+										? new GithubCostInstallations({ installations: [] })
+										: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
+								),
 				}),
 			)
 		case AddGithubCostSource.name:
