@@ -134,10 +134,10 @@ export type ShellClerk = Readonly<{
 	maybeRole: Option.Option<string>
 }>
 
-/** Who the shell is drawn for; self-hosted has no Clerk role, so it is never an observer. */
+/** Who the shell is drawn for; self-hosted has no Clerk role, so it is never an analyst. */
 export const shellAudience = (clerk: ShellClerk | null): NavAudience =>
 	clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.isReadOnly([role]))
-		? "observer"
+		? "analyst"
 		: "operator"
 
 /** A rail item's tooltip: right of the item, centred. */

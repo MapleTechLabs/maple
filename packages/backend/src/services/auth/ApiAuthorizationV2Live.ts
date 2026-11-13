@@ -33,7 +33,7 @@ import {
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
 import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
-import { refuseObserverWritesV2 } from "./observer-gate"
+import { refuseAnalystWritesV2 } from "./analyst-gate"
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
@@ -181,7 +181,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							authMode: "self_hosted",
 							scopes: resolved.scopes,
 						})
-						yield* refuseObserverWritesV2(tenant.roles, options, route.path)
+						yield* refuseAnalystWritesV2(tenant.roles, options, route.path)
 						const label = "Device credential"
 						return yield* httpEffect.pipe(
 							Effect.provideService(CurrentTenant.Context, tenant),
@@ -302,7 +302,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							authMode: "self_hosted",
 							...(resolved.scopes !== null ? { scopes: resolved.scopes } : undefined),
 						})
-						yield* refuseObserverWritesV2(tenant.roles, options, route.path).pipe(
+						yield* refuseAnalystWritesV2(tenant.roles, options, route.path).pipe(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
@@ -347,7 +347,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							.pipe(Effect.mapError((error) => V2OrganizationAccessDenied.make(error.message)))
 					}
 					const { route } = yield* HttpRouter.RouteContext
-					yield* refuseObserverWritesV2(tenant.roles, options, route.path)
+					yield* refuseAnalystWritesV2(tenant.roles, options, route.path)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),

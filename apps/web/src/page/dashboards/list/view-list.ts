@@ -158,8 +158,8 @@ const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
 
 const EXPORT_ENTRY: MenuView.MenuEntry = { _tag: "Item", value: "export", label: "Export JSON" }
 
-/** All an observer's row menu holds: the entries that write are not offered. */
-const OBSERVER_ROW_ENTRIES: ReadonlyArray<MenuView.MenuEntry> = [{ _tag: "Group", entries: [EXPORT_ENTRY] }]
+/** All an analyst's row menu holds: the entries that write are not offered. */
+const ANALYST_ROW_ENTRIES: ReadonlyArray<MenuView.MenuEntry> = [{ _tag: "Group", entries: [EXPORT_ENTRY] }]
 
 /** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
 const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> => [
@@ -188,7 +188,7 @@ const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	return rowActionsMenu(h, {
 		slotId: `row-menu-${dashboard.id}`,
 		model: menu,
-		entries: canEditDashboards(model) ? rowMenuEntries(isReadOnly(model)) : OBSERVER_ROW_ENTRIES,
+		entries: canEditDashboards(model) ? rowMenuEntries(isReadOnly(model)) : ANALYST_ROW_ENTRIES,
 		label: `More actions for ${displayName(dashboard.name)}`,
 		className: "text-muted-foreground",
 		toParentMessage: (message) => Message.GotRowMenuMessage({ rowId: dashboard.id, message }),
@@ -403,8 +403,8 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 		"py-16",
 	)
 
-/** An observer's empty list: nothing to start from, so it says where dashboards come from. */
-const observerEmpty = (h: H): Html =>
+/** An analyst's empty list: nothing to start from, so it says where dashboards come from. */
+const analystEmpty = (h: H): Html =>
 	empty(
 		h,
 		[
@@ -513,7 +513,7 @@ export const listBody = (
 	const canEdit = canEditDashboards(model)
 	const context: RowContext = { model, nowMs, timeZone }
 	const body: ReadonlyArray<Html> = isNothingAtAll
-		? [canEdit ? firstRunEmpty(h, isWriteDisabled) : observerEmpty(h)]
+		? [canEdit ? firstRunEmpty(h, isWriteDisabled) : analystEmpty(h)]
 		: sections.matched === 0
 			? [nothingMatched(h, model)]
 			: sections.scoped === 0

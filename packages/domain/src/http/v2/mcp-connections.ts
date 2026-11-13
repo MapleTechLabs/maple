@@ -7,7 +7,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { McpConnectionPublicId } from "./resource-ids"
-import { ObserverAccess } from "../observer-access"
+import { AnalystAccess } from "../analyst-access"
 
 const mcpConnectionExample = {
 	id: "mcpc_p12S8T8agEHUkYc825nMz6",
@@ -82,7 +82,7 @@ export class V2McpConnectionsApiGroup extends HttpApiGroup.make("mcpConnections"
 			success: V2McpConnection,
 			error: [notFound, persistence],
 		})
-			.annotate(ObserverAccess, "personal")
+			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeMcpConnection",

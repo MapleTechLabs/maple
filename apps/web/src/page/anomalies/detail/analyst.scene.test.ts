@@ -13,7 +13,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the anomaly; resolving it and linking an issue need `incidents:respond`, and
+// An analyst reads the anomaly; resolving it and linking an issue need `incidents:respond`, and
 // opening an investigation on it needs `investigations:run`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -25,7 +25,7 @@ const ID = Schema.decodeSync(AnomalyIncidentId)("0199a060-0000-7000-8000-0000000
 const NOW = Date.UTC(2026, 9, 1, 12)
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 const incidentOf = (overrides: Readonly<Record<string, unknown>>) =>
 	Schema.decodeSync(V2AnomalyIncident)({
@@ -88,11 +88,11 @@ const linked = (grants: ReadonlyArray<Policy.Permission>): Model => {
 	).model
 }
 
-describe("anomaly detail, observer", () => {
-	test("an observer reads the anomaly and is not offered Resolve, Link issue or an investigation", () => {
+describe("anomaly detail, analyst", () => {
+	test("an analyst reads the anomaly and is not offered Resolve, Link issue or an investigation", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER)),
+			given(loaded(ANALYST)),
 			themed(),
 			expectView(text("Not linked to an issue")).toExist(),
 			expectView(text("Details")).toExist(),
@@ -116,10 +116,10 @@ describe("anomaly detail, observer", () => {
 		)
 	})
 
-	test("an observer can open the linked issue and cannot relink or unlink it; a member can", () => {
+	test("an analyst can open the linked issue and cannot relink or unlink it; a member can", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(linked(OBSERVER)),
+			given(linked(ANALYST)),
 			themed(),
 			expectView(role("link", { name: "Open issue" })).toExist(),
 			expectView(role("button", { name: "Link a different issue" })).toBeAbsent(),
@@ -135,8 +135,8 @@ describe("anomaly detail, observer", () => {
 	})
 
 	test("an answer for another org leaves the page's grants as they were", () => {
-		const model = loaded(OBSERVER)
+		const model = loaded(ANALYST)
 		const other = pageUpdate(model, Message.CompletedFetchSession({ orgId: "org_other", grants: MEMBER }))
-		expect(other.model.grants).toEqual(OBSERVER)
+		expect(other.model.grants).toEqual(ANALYST)
 	})
 })

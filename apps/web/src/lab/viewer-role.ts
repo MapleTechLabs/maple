@@ -1,10 +1,10 @@
 import * as Policy from "@maple/domain/policy"
 import { Effect, Option, Schema } from "effect"
 
-// `?role=admin|member|observer` for a lab that renders a page as the viewer would see it. Without
+// `?role=admin|member|analyst` for a lab that renders a page as the viewer would see it. Without
 // the flag a lab keeps the full rights it always had.
 
-const ROLES = ["admin", "member", "observer"] as const
+const ROLES = ["admin", "member", "analyst"] as const
 
 export const LabRole = Schema.Literals(ROLES)
 export type LabRole = typeof LabRole.Type

@@ -19,11 +19,11 @@ import { view as boardView } from "../../page/dashboards/view/view"
 import type { Resources } from "../../platform/resources"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/dashboards`: the dashboards list and one board as a member or an observer, who reads
-// dashboards but cannot change or share them (`?page=list|detail&role=member|observer&mode=edit`).
+// `/lab/dashboards`: the dashboards list and one board as a member or an analyst, who reads
+// dashboards but cannot change or share them (`?page=list|detail&role=member|analyst&mode=edit`).
 
 const PAGES = ["list", "detail"] as const
-const ROLES = ["member", "observer"] as const
+const ROLES = ["member", "analyst"] as const
 type LabPage = (typeof PAGES)[number]
 type LabRole = (typeof ROLES)[number]
 
@@ -172,7 +172,7 @@ const boardModel = (role: LabRole, isEdit: boolean): BoardModel =>
 const Model = Schema.Struct({
 	page: Schema.Literals(PAGES),
 	role: Schema.Literals(ROLES),
-	/** The board was opened at `?mode=edit`: an observer still gets the read view. */
+	/** The board was opened at `?mode=edit`: an analyst still gets the read view. */
 	isEdit: Schema.Boolean,
 	list: ListModel,
 	board: BoardModel,

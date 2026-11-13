@@ -12,7 +12,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the incident; acknowledging it needs `incidents:respond` and starting an
+// An analyst reads the incident; acknowledging it needs `incidents:respond` and starting an
 // investigation from it needs `investigations:run`.
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
@@ -21,7 +21,7 @@ const view = withViewInputs(pageView, { context })()
 const themed = () => Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 type Fixture = Readonly<{
 	grants: ReadonlyArray<Policy.Permission>
@@ -58,11 +58,11 @@ const ACKNOWLEDGED = {
 	acknowledged_via: "slack",
 }
 
-describe("alert incident, observer", () => {
-	test("an observer is not offered Acknowledge or Investigate, and a member is", () => {
+describe("alert incident, analyst", () => {
+	test("an analyst is not offered Acknowledge or Investigate, and a member is", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER })),
+			given(loaded({ grants: ANALYST })),
 			themed(),
 			expectView(role("button", { name: "Acknowledge" })).toBeAbsent(),
 			expectView(role("button", { name: "Investigate" })).toBeAbsent(),
@@ -76,10 +76,10 @@ describe("alert incident, observer", () => {
 		)
 	})
 
-	test("an observer reads who acknowledged it and is not offered Unacknowledge", () => {
+	test("an analyst reads who acknowledged it and is not offered Unacknowledge", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, row: ACKNOWLEDGED })),
+			given(loaded({ grants: ANALYST, row: ACKNOWLEDGED })),
 			themed(),
 			expectView(text(/Acknowledged by Dana Kim at/)).toExist(),
 			expectView(role("button", { name: "Unacknowledge" })).toBeAbsent(),
@@ -92,10 +92,10 @@ describe("alert incident, observer", () => {
 		)
 	})
 
-	test("an observer can still open an investigation that already ran", () => {
+	test("an analyst can still open an investigation that already ran", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, hasInvestigation: true })),
+			given(loaded({ grants: ANALYST, hasInvestigation: true })),
 			themed(),
 			expectView(role("link", { name: "Open investigation" })).toExist(),
 		)

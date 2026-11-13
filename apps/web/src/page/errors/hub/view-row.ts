@@ -171,7 +171,7 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 				h.span(
 					[
 						h.Class(cn(LANE.select, "flex items-center justify-center")),
-						// Selection only feeds the bulk bar: an observer's lane is empty and selects nothing.
+						// Selection only feeds the bulk bar: an analyst's lane is empty and selects nothing.
 						...(state.canTriage ? [h.DataAttribute("row-select", signal.id)] : []),
 						h.Role("presentation"),
 					],

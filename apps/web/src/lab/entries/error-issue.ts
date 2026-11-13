@@ -21,8 +21,8 @@ import { view as pageView } from "../../page/errors/issue/view"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/error-issue`: the error issue page over one fixture issue, a surging high-severity error
-// with a regression, as a member or an observer, who reads it and gets no triage control
-// (`?role=member|observer&tab=overview|occurrences|activity`). API Commands are dropped; the page
+// with a regression, as a member or an analyst, who reads it and gets no triage control
+// (`?role=member|analyst&tab=overview|occurrences|activity`). API Commands are dropped; the page
 // is sent the answers its reads would get.
 
 const context: PageContext = {
@@ -121,7 +121,7 @@ const send = (step: Step, message: Message): Step => {
 	}
 }
 
-const ROLES = ["member", "observer"] as const
+const ROLES = ["member", "analyst"] as const
 const TABS = ["overview", "occurrences", "activity"] as const
 const Flags = Schema.Struct({ role: Schema.Literals(ROLES), tab: Schema.Literals(TABS) })
 type Flags = typeof Flags.Type

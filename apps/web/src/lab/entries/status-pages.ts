@@ -22,7 +22,7 @@ import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
 // `/lab/status-pages`: the status pages list, the look picker and the form fields over fixture
 // pages, or a page's editor open on an incident (`?page=list|editor`), as the viewer `?role=` names:
-// an observer reads the incident and gets no control that posts, edits or deletes one.
+// an analyst reads the incident and gets no control that posts, edits or deletes one.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(LAB_ORG),

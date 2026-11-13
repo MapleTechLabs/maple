@@ -47,7 +47,7 @@ export type Scope = typeof Scope.Type
 
 export const Model = Schema.Struct({
 	search: DashboardsSearch,
-	/** What the viewer may do; an observer reads the list and gets no write control. */
+	/** What the viewer may do; an analyst reads the list and gets no write control. */
 	grants: Schema.Array(Policy.PermissionName),
 	/** `null` until the collection is ready. */
 	dashboards: Schema.NullOr(Schema.Array(ListDashboard)),

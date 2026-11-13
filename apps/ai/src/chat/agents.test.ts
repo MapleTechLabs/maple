@@ -137,14 +137,14 @@ describe("profileForTurn", () => {
 		}
 	})
 
-	it("offers an observer's turn the read tools and none that change data", () => {
+	it("offers an analyst's turn the read tools and none that change data", () => {
 		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
-			"org:observer",
+			"org:analyst",
 		])
 		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit
 		assert.property(tools, "search_traces")
 		for (const name of MUTATING_TOOL_NAMES) {
-			assert.notProperty(tools, name, `${name} was offered to an observer`)
+			assert.notProperty(tools, name, `${name} was offered to an analyst`)
 		}
 		// A member's turn on the same session still proposes them.
 		const member = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [

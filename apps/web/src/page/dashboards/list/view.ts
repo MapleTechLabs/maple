@@ -160,7 +160,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			titleContent: title,
-			// An observer browses the templates but neither imports nor creates.
+			// An analyst browses the templates but neither imports nor creates.
 			actions: canEditDashboards(model) ? actions(h, reason) : browseTemplates(h),
 			sticky: persistenceBanner(h, model.persistenceError, isLoadFailed(model)),
 		},

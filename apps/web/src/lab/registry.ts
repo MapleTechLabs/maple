@@ -129,7 +129,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/anomaly-alerts",
 		title: "Anomaly alerts",
 		description:
-			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`). The hub and the incident as an admin, a member or an observer, who gets no Acknowledge (`?role=member|observer`).",
+			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`). The hub and the incident as an admin, a member or an analyst, who gets no Acknowledge (`?role=member|analyst`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -376,7 +376,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/dashboards",
 		title: "Dashboards",
 		description:
-			"The `/dashboards` list and one board as a member or an observer, who reads dashboards but cannot change or share them (?page=list|detail&role=member|observer&mode=edit).",
+			"The `/dashboards` list and one board as a member or an analyst, who reads dashboards but cannot change or share them (?page=list|detail&role=member|analyst&mode=edit).",
 		kind: "lab",
 		session: "none",
 	},
@@ -479,7 +479,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
-			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity. As a member or an observer, who gets no checkbox, picker or bulk bar (?role=member|observer).",
+			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity. As a member or an analyst, who gets no checkbox, picker or bulk bar (?role=member|analyst).",
 		kind: "lab",
 		session: "none",
 	},
@@ -487,7 +487,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an observer, who reads it and gets no triage control (?role=member|observer&tab=overview|occurrences|activity).",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity).",
 		kind: "lab",
 		session: "none",
 	},
@@ -495,7 +495,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts",
 		title: "Alerts",
 		description:
-			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation. As an admin, a member or an observer, who gets no Acknowledge (`?role=member|observer`).",
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation. As an admin, a member or an analyst, who gets no Acknowledge (`?role=member|analyst`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -511,7 +511,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an observer, who gets no control that posts, edits or deletes an incident (`?role=member|observer`).",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`).",
 		kind: "lab",
 		session: "none",
 	},

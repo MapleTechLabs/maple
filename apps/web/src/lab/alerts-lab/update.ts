@@ -17,7 +17,7 @@ export type Return = Update.Return<Model, Message, Resources>
 export const AlertsLabFlags = Schema.Struct({
 	nowMs: Schema.Number,
 	timeZone: Schema.String,
-	/** `?role=member|observer`: an observer gets no acknowledge, rule or routing control. */
+	/** `?role=member|analyst`: an analyst gets no acknowledge, rule or routing control. */
 	role: LabRole,
 })
 export type AlertsLabFlags = typeof AlertsLabFlags.Type

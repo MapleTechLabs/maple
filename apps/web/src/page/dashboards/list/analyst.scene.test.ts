@@ -10,7 +10,7 @@ import type { ListDashboard, Model } from "./model"
 import { init, rowMenuIdOf, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the list; creating, importing and the row's writes need `dashboards:edit`.
+// An analyst reads the list; creating, importing and the row's writes need `dashboards:edit`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -31,7 +31,7 @@ const board: ListDashboard = {
 }
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 /** Entered with its clock, preferences, the session's grants and rows. */
 const loaded = (grants: ReadonlyArray<Policy.Permission>, dashboards: ReadonlyArray<ListDashboard>): Model =>
@@ -52,11 +52,11 @@ const withRowMenuOpen = (model: Model): Model => ({
 	rowMenu: Menu.init(rowMenuIdOf(board.id), { isOpen: true }),
 })
 
-describe("dashboards list for an observer", () => {
+describe("dashboards list for an analyst", () => {
 	test("the header keeps Browse templates and drops Import and Create", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, [board])),
+			given(loaded(ANALYST, [board])),
 			expectView(text("Platform overview")).toExist(),
 			expectView(role("button", { name: "Browse templates" })).toExist(),
 			expectView(role("button", { name: "Import" })).toBeAbsent(),
@@ -78,7 +78,7 @@ describe("dashboards list for an observer", () => {
 	test("the row menu exports and offers no write", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withRowMenuOpen(loaded(OBSERVER, [board]))),
+			given(withRowMenuOpen(loaded(ANALYST, [board]))),
 			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
 			expectView(role("menuitem", { name: "Export JSON" })).toExist(),
 			expectView(role("menuitem", { name: "Duplicate" })).toBeAbsent(),
@@ -101,7 +101,7 @@ describe("dashboards list for an observer", () => {
 	test("an empty org offers nothing to create", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, [])),
+			given(loaded(ANALYST, [])),
 			expectView(text("No dashboards yet")).toExist(),
 			expectView(role("button", { name: "Create blank dashboard" })).toBeAbsent(),
 		)
@@ -111,7 +111,7 @@ describe("dashboards list for an observer", () => {
 		const other = Schema.decodeSync(OrgId)("org_other")
 		const model = pageUpdate(
 			loaded(MEMBER, [board]),
-			Message.CompletedFetchSession({ orgId: other, grants: OBSERVER }),
+			Message.CompletedFetchSession({ orgId: other, grants: ANALYST }),
 		).model
 		scene(
 			{ update: pageUpdate, view },

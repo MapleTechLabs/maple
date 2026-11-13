@@ -15,7 +15,7 @@ export type Busy = typeof Busy.Type
 export const Model = Schema.Struct({
 	incidentId: AnomalyIncidentId,
 	nowMs: Schema.Number,
-	/** What the viewer may do; an observer reads the anomaly and gets no resolve or link control. */
+	/** What the viewer may do; an analyst reads the anomaly and gets no resolve or link control. */
 	grants: Schema.Array(Policy.PermissionName),
 	incident: KeyedSchema(V2AnomalyIncident, LoadFailure),
 	timeseries: KeyedSchema(V2AnomalyIncidentTimeseries, LoadFailure),

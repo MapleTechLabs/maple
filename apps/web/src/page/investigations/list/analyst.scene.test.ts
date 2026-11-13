@@ -12,7 +12,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the investigations; starting one needs `investigations:run`.
+// An analyst reads the investigations; starting one needs `investigations:run`.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -33,7 +33,7 @@ const measured = () =>
 const rowsMounted = () => Mount.resolve(MountInvestigationRows, Message.ClickedRow({ id: investigation.id }))
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 const NOW = Date.UTC(2026, 9, 1, 12)
 const investigation = buildAlertsLabFixture(NOW).incident.investigation
 const bar = role("textbox", { name: "What should Maple investigate?" })
@@ -54,11 +54,11 @@ const loaded = (
 	).model
 }
 
-describe("investigations list, observer", () => {
-	test("an observer reads the list without the investigate bar; a member has it", () => {
+describe("investigations list, analyst", () => {
+	test("an analyst reads the list without the investigate bar; a member has it", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, [investigation])),
+			given(loaded(ANALYST, [investigation])),
 			measured(),
 			rowsMounted(),
 			expectView(role("tab", { name: /Active/ })).toExist(),
@@ -73,10 +73,10 @@ describe("investigations list, observer", () => {
 		)
 	})
 
-	test("an empty workspace shows an observer the plain empty list, and a member the first-run hero", () => {
+	test("an empty workspace shows an analyst the plain empty list, and a member the first-run hero", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, [])),
+			given(loaded(ANALYST, [])),
 			measured(),
 			expectView(text("Nothing under investigation")).toExist(),
 			expectView(text("When an alert rule fires, Maple opens one on its own.")).toExist(),

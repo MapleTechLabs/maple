@@ -11,14 +11,14 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the Inbox; acknowledging an incident from its row needs `incidents:respond`.
+// An analyst reads the Inbox; acknowledging an incident from its row needs `incidents:respond`.
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 const ACKNOWLEDGED = incidentRow({
 	id: "0199a003-0000-7000-8000-000000000002",
@@ -62,11 +62,11 @@ const loaded = (grants: ReadonlyArray<Policy.Permission>, at: HubAt = {}): Model
 		(model, message) => pageUpdate(model, message).model,
 	)
 
-describe("alerts inbox, observer", () => {
-	test("an observer reads the open incidents and gets no acknowledge button on a row", () => {
+describe("alerts inbox, analyst", () => {
+	test("an analyst reads the open incidents and gets no acknowledge button on a row", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER)),
+			given(loaded(ANALYST)),
 			expectView(text(/1 acknowledged/)).toExist(),
 			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
 			expectView(role("button", { name: /^Acknowledge / })).toBeAbsent(),
@@ -82,10 +82,10 @@ describe("alerts inbox, observer", () => {
 		)
 	})
 
-	test("the Anomalies view offers Acknowledge to a member and not to an observer", () => {
+	test("the Anomalies view offers Acknowledge to a member and not to an analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, { signal: "anomaly" })),
+			given(loaded(ANALYST, { signal: "anomaly" })),
 			expectView(text(/^1 firing/)).toExist(),
 			expectView(role("button", { name: /^Acknowledge / })).toBeAbsent(),
 		)
