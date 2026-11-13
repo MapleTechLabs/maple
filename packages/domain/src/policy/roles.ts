@@ -24,7 +24,8 @@ export const assignableRoles = [
 		role: "analyst",
 		clerkKey: "org:analyst",
 		label: "Analyst",
-		summary: "Follows incidents, reliability, product analytics and cost, without changing anything.",
+		summary:
+			"Follows incidents, reliability, product analytics and cost, and builds dashboards and funnels.",
 	},
 	{
 		role: "member",
