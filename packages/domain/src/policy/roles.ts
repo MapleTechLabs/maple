@@ -5,11 +5,11 @@ import { Array as Arr, Option, Order, Schema } from "effect"
  * permission names only its lowest role. `root` is Maple's own operator access and self-hosted
  * mode; it is never assigned in Clerk.
  */
-export const Role = Schema.Literals(["observer", "member", "engineer", "admin", "root"])
+export const Role = Schema.Literals(["analyst", "member", "engineer", "admin", "root"])
 export type Role = typeof Role.Type
 
 const RANK = {
-	observer: 0,
+	analyst: 0,
 	member: 1,
 	engineer: 2,
 	admin: 3,
@@ -43,19 +43,19 @@ export const assignableRoles = [
 export type AssignableRole = (typeof assignableRoles)[number]
 export type ClerkRoleKey = AssignableRole["clerkKey"]
 
-/** Read-only, for people who follow the product without operating it. Not offered on the Members page yet. */
-const observerRole = {
-	role: "observer",
-	clerkKey: "org:observer",
-	label: "Observer",
-	summary: "Follows incidents, reliability, product analytics and cost. Changes nothing.",
+/** For people who follow the product and build dashboards without operating it. Not offered on the Members page yet. */
+const analystRole = {
+	role: "analyst",
+	clerkKey: "org:analyst",
+	label: "Analyst",
+	summary: "Follows incidents, reliability, product analytics and cost, and builds dashboards and funnels.",
 } as const satisfies { role: Role; clerkKey: string; label: string; summary: string }
 
-const clerkRoles = [observerRole, ...assignableRoles] as const
+const clerkRoles = [analystRole, ...assignableRoles] as const
 
 /**
  * A Clerk or session role string as a {@link Role}. A role this code does not know reads as
- * observer, the least it can hold.
+ * analyst, the least it can hold.
  */
 export const roleOf = (name: string): Role => {
 	if (name === "root") return "root"
@@ -64,7 +64,7 @@ export const roleOf = (name: string): Role => {
 			Arr.findFirst(clerkRoles, (entry) => entry.clerkKey === name),
 			(entry): Role => entry.role,
 		),
-		(): Role => "observer",
+		(): Role => "analyst",
 	)
 }
 
@@ -86,7 +86,7 @@ export const outranks = (role: Role, other: Role): boolean => RANK[role] > RANK[
 /** "org admins and engineers": who holds a permission whose lowest role is `min`, for messages. */
 export const holdersPhrase = (min: Role): string => {
 	switch (min) {
-		case "observer":
+		case "analyst":
 			return "people in the organization"
 		case "member":
 			return "org admins, engineers and members"
