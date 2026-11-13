@@ -91,7 +91,8 @@ const resultsOf = (world: FakeOpenAi, costs: ReadonlyArray<FakeCost>, groupBy: R
 const costsAnswer = (world: FakeOpenAi, costs: ReadonlyArray<FakeCost>, params: URLSearchParams) => {
 	const start = Number(params.get("start_time") ?? "0")
 	const end = Number(params.get("end_time") ?? `${start + DAY_SECONDS}`)
-	const groupBy = params.getAll("group_by")
+	// Only the bracketed name groups, so a request that sends another gets ungrouped results.
+	const groupBy = params.getAll("group_by[]")
 	const size = Math.min(world.pageSize, Number(params.get("limit") ?? "7"))
 	const offset = Number(Str.replace("page_", "")(params.get("page") ?? "page_0"))
 	const days = Math.max(0, Math.ceil((end - start) / DAY_SECONDS))

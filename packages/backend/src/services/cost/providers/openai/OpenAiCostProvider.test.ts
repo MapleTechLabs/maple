@@ -68,7 +68,7 @@ describe("OpenAiCostProvider", () => {
 				const connectionRef = yield* saveKey(testDb, world)
 				world.pageSize = 10
 				const pulled = yield* pull(ORG, connectionRef)
-				const query = `start_time=${unix("2026-10-20")}&end_time=${unix("2026-11-11")}&bucket_width=1d&group_by=project_id&group_by=line_item&limit=180`
+				const query = `start_time=${unix("2026-10-20")}&end_time=${unix("2026-11-11")}&bucket_width=1d&group_by%5B%5D=project_id&group_by%5B%5D=line_item&limit=180`
 				// 22 days at 10 a page, each next page by the cursor the one before gave.
 				assert.deepStrictEqual(world.urls, [
 					`/v1/organization/costs?${query}`,

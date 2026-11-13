@@ -90,7 +90,8 @@ const costsPage = (
 		start_time: query.startTime,
 		end_time: query.endTime,
 		bucket_width: "1d",
-		group_by: query.groupBy,
+		// Bracketed, as OpenAI's own SDKs encode an array parameter.
+		"group_by[]": query.groupBy,
 		limit: MAX_BUCKETS_PER_PAGE,
 		page,
 	})
