@@ -36,7 +36,7 @@ export type CredentialSource = Readonly<{
 		label: string
 		toast: string
 	}>
-	remove: Readonly<{ title: string; description: string; toast: string }>
+	remove: Readonly<{ title: string; description: string }>
 	save: (secret: string) => Cmd
 	delete: () => Cmd
 }>
@@ -74,7 +74,6 @@ export const CREDENTIAL_SOURCES = {
 			title: "Remove the OpenRouter source?",
 			description:
 				"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
-			toast: "OpenRouter removed",
 		},
 		save: (apiKey) => SaveOpenRouterCostKey({ apiKey }),
 		delete: () => RemoveOpenRouterCostKey(),
@@ -112,7 +111,6 @@ export const CREDENTIAL_SOURCES = {
 			title: "Remove the Cloudflare source?",
 			description:
 				"Maple deletes the token and stops reading the account's charges, and its cost leaves this page. Adding Cloudflare again reads the last year again.",
-			toast: "Cloudflare removed",
 		},
 		save: (apiToken) => SaveCloudflareCostToken({ apiToken }),
 		delete: () => RemoveCloudflareCostToken(),

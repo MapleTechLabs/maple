@@ -31,9 +31,11 @@ import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
+import { reconcileGithubCostSources } from "./github-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
+import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import {
 	advanceCostSync,
@@ -168,6 +170,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const adapters = {
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
+				github: yield* GithubCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
@@ -208,6 +211,15 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** GitHub sources whose installation can no longer be read (see `reconcileGithubCostSources`). */
+			const reconcileGithub = Effect.fn("CostSyncService.reconcileGithub")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileGithubCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "github",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** The sources of every provider read with a pasted credential, in step with `cost_connections`. */
 			const reconcileConnections = Effect.fn("CostSyncService.reconcileConnections")(function* (
 				now: number,
@@ -225,9 +237,17 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 
 			/** One function per connection table; each owns the sources of its own. */
 			const reconcile = (now: number) =>
-				Effect.all([reconcileAws(now), reconcileOpenRouter(now), reconcileConnections(now)], {
-					discard: true,
-				})
+				Effect.all(
+					[
+						reconcileAws(now),
+						reconcileOpenRouter(now),
+						reconcileGithub(),
+						reconcileConnections(now),
+					],
+					{
+						discard: true,
+					},
+				)
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
@@ -689,6 +709,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			Layer.mergeAll(
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
+				GithubCostProvider.layer,
 				CloudflareCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,

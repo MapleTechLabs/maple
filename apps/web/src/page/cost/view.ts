@@ -1,4 +1,4 @@
-import type { CostProvider } from "@maple/domain/cost"
+import { CostProvider } from "@maple/domain/cost"
 import type { CostSourceSummary } from "@maple/domain/http"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -40,7 +40,6 @@ import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { keyMark } from "./marks"
 import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
-import { COST_PROVIDERS } from "./providers"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -67,7 +66,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a Cloudflare account by product.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product, a Cloudflare account by product.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -108,33 +107,40 @@ const onRamp = (
 		emptyFrameClass("dashed"),
 	)
 
-const MONTHS_SCOPE = "this month and the last, and older months fill in after that"
+/** What a provider's first sync brings in: said on its own, and named beside other providers. */
+const FIRST_SYNC = {
+	aws: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "AWS brings in this month and the last, and older months fill in after that.",
+	},
+	openrouter: {
+		alone: "It brings in the last four weeks, which is all OpenRouter keeps.",
+		named: "OpenRouter brings in its last four weeks.",
+	},
+	github: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "GitHub brings in this month and the last, then the two months before.",
+	},
+	cloudflare: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "Cloudflare brings in this month and the last, and older months fill in after that.",
+	},
+} as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
 
-const namesOf = (providers: ReadonlyArray<CostProvider>): string =>
-	Arr.join(
-		Arr.map(providers, (provider) => COST_PROVIDERS[provider].name),
-		" and ",
-	)
-
-/**
- * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
- * alike): some keep a year or more, some four weeks.
- */
+/** What the first syncs bring in, by the providers that have no cost yet (waiting or failing alike). */
 const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
-	const unsynced = Arr.dedupe(
-		Arr.map(
-			Arr.filter(sources, (source) => source.watermarkDate === null),
-			(source) => source.provider,
-		),
+	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
+	const providers = Arr.filter(CostProvider.literals, (provider) =>
+		Arr.some(unsynced, (source) => source.provider === provider),
 	)
-	const keepsWeeks = (provider: CostProvider) => COST_PROVIDERS[provider].firstSync === "four_weeks"
-	const weeks = Arr.filter(unsynced, keepsWeeks)
-	const months = Arr.filter(unsynced, (provider) => !keepsWeeks(provider))
-	if (weeks.length === 0) return `It brings in ${MONTHS_SCOPE}.`
-	if (months.length === 0) {
-		return `It brings in the last four weeks, which is all ${namesOf(weeks)} ${weeks.length === 1 ? "keeps" : "keep"}.`
-	}
-	return `${namesOf(months)} ${months.length === 1 ? "brings" : "bring"} in ${MONTHS_SCOPE}. ${namesOf(weeks)} ${weeks.length === 1 ? "brings in its" : "bring in their"} last four weeks.`
+	const [only, ...others] = providers
+	if (only === undefined) return FIRST_SYNC.aws.alone
+	return others.length === 0
+		? FIRST_SYNC[only].alone
+		: Arr.join(
+				Arr.map(providers, (provider) => FIRST_SYNC[provider].named),
+				" ",
+			)
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */

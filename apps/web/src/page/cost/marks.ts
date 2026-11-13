@@ -23,30 +23,6 @@ const providerMark = (provider: CostProvider): KeyMark => {
 /** OpenRouter names a model `vendor/model`; an AWS service name never has a slash. */
 const isModelSlug = (key: string): boolean => Str.includes("/")(key)
 
-/**
- * What Cloudflare bills by: its product families, and the plan fees Maple files under one name. A
- * family it adds later reads as Cloudflare's once the org has no AWS source to mistake it for.
- */
-const CLOUDFLARE_SERVICES = new Set([
-	"Workers",
-	"Durable Objects",
-	"Containers",
-	"Queues",
-	"R2",
-	"D1",
-	"Workers KV",
-	"Workers AI",
-	"Email",
-	"Subscriptions",
-])
-
-/** The provider a service that is not a model belongs to: AWS, unless it is Cloudflare's. */
-const serviceProvider = (key: string, sources: ReadonlyArray<CostSourceSummary>): CostProvider => {
-	if (CLOUDFLARE_SERVICES.has(key)) return "cloudflare"
-	const reads = (provider: CostProvider) => Arr.some(sources, (source) => source.provider === provider)
-	return reads("cloudflare") && !reads("aws") ? "cloudflare" : "aws"
-}
-
 /** An AWS account id is twelve digits; an OpenRouter one is its user or org id, a Cloudflare one 32 hex digits. */
 const isAwsAccountId = (key: string): boolean => /^\d{12}$/u.test(key)
 
@@ -65,6 +41,60 @@ export const accountProvider = (
 		),
 	)
 
+/** What Cloudflare bills by: its product families, and the plan fees Maple files under one name. */
+const CLOUDFLARE_SERVICES: ReadonlySet<string> = new Set([
+	"Workers",
+	"Durable Objects",
+	"Containers",
+	"Queues",
+	"R2",
+	"D1",
+	"Workers KV",
+	"Workers AI",
+	"Email",
+	"Subscriptions",
+])
+
+/** GitHub's products as the cost rows name them. */
+const GITHUB_PRODUCTS: ReadonlySet<string> = new Set([
+	"Actions",
+	"Copilot",
+	"Packages",
+	"Codespaces",
+	"Git LFS",
+])
+
+/** AWS names nearly every service "Amazon ..." or "AWS ..."; these are the common ones it does not. */
+const AWS_SERVICES: ReadonlySet<string> = new Set(["EC2 - Other", "Elastic Load Balancing", "Tax"])
+
+const isAwsService = (key: string): boolean => /^(Amazon|AWS)\b/u.test(key) || AWS_SERVICES.has(key)
+
+/** The platforms the org reads whose services are products, not models. */
+const platformsOf = (sources: ReadonlyArray<CostSourceSummary>): ReadonlyArray<CostProvider> =>
+	Arr.dedupe(Arr.flatMap(sources, (source) => (source.provider === "openrouter" ? [] : [source.provider])))
+
+/**
+ * The provider that bills a service which is not a model: by its name where the name says it, else
+ * the org's only platform. Undefined when several could bill it: no logo is better than a wrong one.
+ */
+const serviceProvider = (
+	key: string,
+	sources: ReadonlyArray<CostSourceSummary>,
+): CostProvider | undefined => {
+	if (GITHUB_PRODUCTS.has(key)) return "github"
+	if (CLOUDFLARE_SERVICES.has(key)) return "cloudflare"
+	if (isAwsService(key)) return "aws"
+	const [only, ...others] = platformsOf(sources)
+	return others.length === 0 ? only : undefined
+}
+
+/** An AWS region code: `eu-west-1`, `us-gov-east-1`. Every other provider bills as `global`. */
+const isAwsRegionCode = (key: string): boolean => /^[a-z]{2}(-gov)?-[a-z]+-\d+$/u.test(key)
+
+/** Whether a region key is AWS's: by its code, or because AWS is the org's one platform with regions. */
+const isAwsRegionKey = (key: string, sources: ReadonlyArray<CostSourceSummary>): boolean =>
+	isAwsRegionCode(key) || Arr.some(sources, (source) => source.provider === "aws")
+
 const CATEGORY_ICONS = {
 	"AI and Machine Learning": "SparkleIcon",
 	Analytics: "ChartBarIcon",
@@ -82,6 +112,10 @@ const isCategory = (key: string): key is keyof typeof CATEGORY_ICONS =>
 
 const glyph = (name: IconName): KeyMark => ({ icon: name, className: "text-muted-foreground" })
 
+/** The provider's logo, or the kind's glyph when no one provider is known to own the key. */
+const markOf = (provider: CostProvider | undefined, fallback: IconName): KeyMark =>
+	provider === undefined ? glyph(fallback) : providerMark(provider)
+
 /** The mark beside a key in the table, the legend and the filter chips; null for an empty key. */
 export const keyMark = (
 	dimension: CostGroupBy,
@@ -94,29 +128,31 @@ export const keyMark = (
 			return Option.match(decodeProvider(key), { onNone: () => null, onSome: providerMark })
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
-			return key === "AWS Lambda"
-				? { icon: "AwsLambdaIcon" }
-				: providerMark(serviceProvider(key, sources))
+			if (key === "AWS Lambda") return { icon: "AwsLambdaIcon" }
+			return markOf(serviceProvider(key, sources), "CubeIcon")
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
 		case "region":
-			return key === "global" ? glyph("GlobeIcon") : providerMark("aws")
+			return key !== "global" && isAwsRegionKey(key, sources) ? providerMark("aws") : glyph("GlobeIcon")
 		case "account": {
-			const provider = accountProvider(key, sources)
-			return provider === undefined ? glyph("IdBadgeIcon") : providerMark(provider)
+			return markOf(accountProvider(key, sources), "IdBadgeIcon")
 		}
 	}
 }
 
+/** Whether a provider's account id tells a reader which account it is: an AWS number, a GitHub organization. */
+const isNamedByAccount = (provider: CostProvider): boolean => provider === "aws" || provider === "github"
+
 /**
- * An account by what reads it: an AWS one by its id, an OpenRouter or Cloudflare one by name alone
- * while it is the org's only one (its id means nothing to a reader). Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a GitHub one by its organization, an
+ * OpenRouter or Cloudflare one by name alone while it is the org's only one (its id means nothing
+ * to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
 	if (provider === undefined) return key
 	const name = COST_PROVIDERS[provider].name
-	if (provider === "aws") return `${name} ${key}`
+	if (isNamedByAccount(provider)) return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }
@@ -171,7 +207,7 @@ export const keyDetail = (
 	if (dimension === "region") return isAwsRegion(key) ? AWS_REGIONS[key] : null
 	if (dimension === "account") {
 		const provider = accountProvider(key, sources)
-		return provider === undefined || provider === "aws" ? null : key
+		return provider === undefined || isNamedByAccount(provider) ? null : key
 	}
 	return null
 }

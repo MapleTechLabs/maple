@@ -44,35 +44,46 @@ const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: 
 		[label],
 	)
 
-/** What a row offers: a connection's source is managed there, a pasted credential's here. */
+/**
+ * What a row offers: a connection's source is managed there, a pasted credential's is replaced or
+ * removed here, and a GitHub one only leaves, since it reads through the GitHub connection.
+ */
 const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
 	const { name } = COST_PROVIDERS[source.provider]
+	const remove = rowButton(
+		h,
+		"Remove",
+		`Remove ${name} source`,
+		Message.ClickedRemoveSource({ sourceId: source.id }),
+		isBusy,
+	)
 	const provider = credentialProviderOf(source.provider)
-	if (provider === null) {
+	if (provider !== null) {
+		const { label } = CREDENTIAL_SOURCES[provider].replace
 		return [
-			linkButton(
+			rowButton(
 				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					href: AWS_INTEGRATION_HREF,
-					attributes: [h.AriaLabel(`Manage ${name} connection`)],
-				},
-				["Manage connection"],
+				label,
+				// "Replace key" as "Replace OpenRouter key".
+				Str.replace("Replace", `Replace ${name}`)(label),
+				Message.ClickedReplaceCredential({ provider }),
+				isBusy,
 			),
+			remove,
 		]
 	}
-	const { label } = CREDENTIAL_SOURCES[provider].replace
+	if (source.provider === "github") return [remove]
 	return [
-		rowButton(
+		linkButton(
 			h,
-			label,
-			// "Replace key" as "Replace OpenRouter key".
-			Str.replace("Replace", `Replace ${name}`)(label),
-			Message.ClickedReplaceCredential({ provider }),
-			isBusy,
+			{
+				variant: "ghost",
+				size: "sm",
+				href: AWS_INTEGRATION_HREF,
+				attributes: [h.AriaLabel(`Manage ${name} connection`)],
+			},
+			["Manage connection"],
 		),
-		rowButton(h, "Remove", `Remove ${name} source`, Message.ClickedRemoveSource({ provider }), isBusy),
 	]
 }
 

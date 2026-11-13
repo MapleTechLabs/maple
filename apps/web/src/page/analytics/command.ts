@@ -17,7 +17,6 @@ import {
 	getSearchConsoleLandingPages,
 	getSearchConsoleOverview,
 	getSearchConsoleTimeseries,
-	getSearchConsoleTopPages,
 	getSearchConsoleTopQueries,
 } from "@maple/web-data/warehouse/search-console"
 import { Effect, Schema } from "effect"
@@ -123,9 +122,6 @@ export const FetchSearchTimeseries = define("FetchSearchConsoleTimeseries", Sear
 )
 export const FetchSearchQueries = define("FetchSearchConsoleTopQueries", SearchList, (data) =>
 	getSearchConsoleTopQueries({ data }),
-)
-export const FetchSearchPages = define("FetchSearchConsoleTopPages", SearchList, (data) =>
-	getSearchConsoleTopPages({ data }),
 )
 export const FetchSearchLanding = define(
 	"FetchSearchConsoleLandingPages",

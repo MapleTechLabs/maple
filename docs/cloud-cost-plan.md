@@ -1,7 +1,7 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter and Cloudflare followed on 2026-11-12.
+into `cost_daily` and shown on `/cost`. OpenRouter, GitHub and Cloudflare followed on 2026-11-12.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -51,7 +51,9 @@ and provider, with the sealed credential, the vendor's account id and a label. `
 seals, upserts (refusing a credential of another account), removes and loads it, and
 `reconcileCostConnectionSources` keeps `cost_sources` in step for each provider named in
 `COST_CONNECTION_PROVIDERS`. A new provider of this kind needs no migration, slot or reconcile: it
-adds its literal there, and brings its own vendor check, adapter and endpoints.
+adds its literal there, and brings its own vendor check, adapter and endpoints. GitHub keeps no
+credential: its source points at the GitHub App installation (`vcs_installations.id`), and the
+adapter reaches GitHub through the VCS provider port, like every other reader of that installation.
 
 ```ts
 interface CostProvider {
@@ -119,8 +121,9 @@ The windows above are the AWS ones. Each provider has a profile (`COST_SYNC_PROF
 `sync-plan.ts`): the oldest day it serves and how far its newest day trails today. No window
 reaches outside them, because a day the provider no longer serves comes back empty, and an empty
 day replaces the stored one. OpenRouter serves 30 completed days: its sync asks for 28 at most and
-never for today. Cloudflare serves a year of completed days: its history stops at the first day of
-the eleventh month back, and it never asks for today either.
+never for today. GitHub's report is asked for one calendar month at a time, back to the first day
+of the month three months before the current one. Cloudflare serves a year of completed days: its
+history stops at the first day of the eleventh month back, and it never asks for today either.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -142,18 +145,25 @@ Every read names the org's cost sources, since a disconnected source keeps its r
 to one currency: the largest in the window unless the request names one. The response says which
 currency the figures are in and lists the others. Nothing is added across currencies.
 
+Answers are cached by their window, and a past window is held for 15 minutes. A sync writes past
+days, so the key also carries when the org's sources were last written: a sync step shows on the
+next read.
+
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, provider, category, region, usage type or account with
+  daily chart, a breakdown by service, provider, category, region or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key and Cloudflare by
-  pasting an API token, which the page can also replace or remove. The pasted-credential step is
-  one form described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence chart) come with
-  phase 2.
+  pasting an API token, which the page can also replace or remove, and GitHub by picking one of
+  the organizations the GitHub App is installed on, which the page can remove again. The
+  pasted-credential step is one form described by data (`credential-sources.ts`). Recommendations
+  (list and detail with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE` on `/internal/cost/openrouter` and
-  `/internal/cost/cloudflare` for the pasted credentials. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
+  `/internal/cost/cloudflare` for the pasted credentials, and `GET /internal/cost/github` with
+  `PUT` / `DELETE /internal/cost/github/{installationId}` for GitHub sources. A public
+  `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -222,6 +232,43 @@ currency the figures are in and lists the others. Nothing is added across curren
   and yesterday is marked as not final, since it may have ended minutes before the pull.
 - A day OpenRouter answers nothing for is stored as empty, like any provider's. An empty answer
   for an account that had spend would hide up to 28 days until the next weekly re-pull.
+
+### GitHub (billed)
+
+"Live" here means checked on 2026-11-12 with an organization owner's token.
+
+- Spec: `GET /organizations/{org}/settings/billing/usage?year=&month=` returns one line per usage
+  record: date, product, SKU, quantity, unit, gross, discount and net amount, and the repository.
+  It takes no paging parameters and is marked as usable by GitHub Apps.
+- The source is opt-in: the org picks an organization the GitHub App is installed on. Nothing is
+  stored but the `cost_sources` row. A user account has no billing report and is not offered.
+- Spec: an installation token needs the organization permission "Administration: read", which
+  the token lists as `organization_administration`. The App does not ask for it yet, so until it
+  does and an organization accepts it, adding is refused with what to accept and where. Maple
+  reads the current month once before it makes the source, so a missing permission never becomes
+  a failing source. Docs: the usage reporting guide says the billing endpoints do not take
+  fine-grained personal access tokens. Open: no installation has been read live yet.
+- Docs: only organizations on the enhanced billing platform have the report. What another
+  organization is answered is not documented: a refusal whose body names the billing platform is
+  stored as "not ready", any other unexpected status as a failed request.
+- Live: `date` is a timestamp and not always at midnight; the day is its first ten characters.
+  Several lines can share a day, product, SKU and repository, and are summed.
+- Live: `quantity` is a float, where the spec says integer. Every Actions line named its
+  repository. Seat products may not, so the repository is optional.
+- Live: usage covered by a plan allowance, or free for a public repository, has a gross amount, a
+  discount of the same size and a net amount of zero. Rows keep both: `BilledCost` and
+  `EffectiveCost` are the net amount, `ListCost` the gross one. A line with neither is left out.
+- Live: a month with no usage answers an empty list.
+- Live: usage from five months back was still served. Docs: no retention is stated for this
+  endpoint (its sibling summary endpoints state 24 months). The sync stops at the first day of
+  the month three months back.
+- Rows: the product is `CloudService` (`actions` reads "Actions"), the SKU is `UsageType`, the
+  repository is `ResourceId`, the category is "Developer Tools", the region is `global`, the
+  currency is USD. Today and yesterday are stored as not final.
+- Requests are free, so the source counts none. A window is one request per calendar month.
+- A source is removed by the sync when its installation is gone, suspended, or no longer an
+  organization's. A suspended installation that comes back has to be added again.
+- Not built: user accounts, enterprise-level billing, Copilot seat endpoints, budgets.
 
 ### GCP (billed, needs a customer export)
 
@@ -339,12 +386,12 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter and Cloudflare are built. Railway, GCP, PlanetScale, Supabase,
-   one PR each. Each provider adds a literal to `CostProvider`, an adapter and a sync profile. One
-   read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS`, a connection
-   service that checks the credential with the vendor, its `PUT` / `DELETE` endpoints, and on the
-   Cost page two commands and an entry in `CREDENTIAL_SOURCES`. One read through a connection adds
-   a reconcile function instead.
+3. **More providers.** OpenRouter, GitHub and Cloudflare are built. Railway, GCP, PlanetScale,
+   Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter and a sync
+   profile. One read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS`, a
+   connection service that checks the credential with the vendor, its `PUT` / `DELETE` endpoints,
+   and on the Cost page two commands and an entry in `CREDENTIAL_SOURCES`. One read through a
+   connection adds a reconcile function instead.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -363,6 +410,8 @@ Each phase is one PR stack.
 
 - Cloudflare: is there an OAuth billing scope. With one, the integration's connection could
   supply cost and no token would be pasted.
+- GitHub: does an installation token with "Administration: read" read the billing report (the
+  spec says so, no installation has been read yet), and how long the report keeps usage.
 - Railway: can a workspace token read `customer`.
 - PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on

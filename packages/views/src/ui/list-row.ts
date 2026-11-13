@@ -3,6 +3,7 @@ import {
 	listRowBodyStyles,
 	listRowLeadingStyles,
 	listRowMetaStyles,
+	listRowMetaWrapStyles,
 	listRowTitleStyles,
 	listRowTrailingStyles,
 	listRowVariants,
@@ -23,6 +24,8 @@ export interface ListRowOptions {
 	readonly title: Child
 	/** Secondary line under the title. */
 	readonly meta?: Child
+	/** The secondary line wraps instead of being cut off with an ellipsis. */
+	readonly wrapMeta?: boolean
 	/** One child, or several (a fragment) laid out by the trailing slot. */
 	readonly trailing?: Child | ReadonlyArray<Child>
 	readonly className?: string
@@ -79,7 +82,10 @@ export const listRow = <M>(
 					: [
 							h.span(
 								[
-									h.Attribute("class", listRowMetaStyles),
+									h.Attribute(
+										"class",
+										options.wrapMeta === true ? listRowMetaWrapStyles : listRowMetaStyles,
+									),
 									h.DataAttribute("slot", "list-row-meta"),
 								],
 								[options.meta],

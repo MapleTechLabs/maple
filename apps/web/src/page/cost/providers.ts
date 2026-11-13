@@ -1,6 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -12,8 +12,6 @@ export type CostProviderEntry = Readonly<{
 	icon: IconName
 	iconClassName?: string
 	requestUsd: number | null
-	/** What its first sync brings in: this month and the last with older months after, or all it keeps. */
-	firstSync: "months" | "four_weeks"
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
@@ -24,20 +22,23 @@ export const COST_PROVIDERS = {
 		icon: PROVIDERS.aws.icon,
 		iconClassName: PROVIDERS.aws.iconClassName,
 		requestUsd: 0.01,
-		firstSync: "months",
 	},
 	openrouter: {
 		name: "OpenRouter",
 		icon: "OpenRouterIcon",
 		iconClassName: "text-foreground",
 		requestUsd: null,
-		firstSync: "four_weeks",
 	},
 	cloudflare: {
 		name: PROVIDERS.cloudflare.name,
 		icon: PROVIDERS.cloudflare.icon,
 		requestUsd: null,
-		firstSync: "months",
+	},
+	github: {
+		name: PROVIDERS.github.name,
+		icon: PROVIDERS.github.icon,
+		iconClassName: PROVIDERS.github.iconClassName,
+		requestUsd: null,
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
@@ -53,3 +54,9 @@ const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)
 /** `provider` as one whose source is its pasted credential, or null for a connection's source. */
 export const credentialProviderOf = (provider: CostProvider): CredentialProvider | null =>
 	Option.getOrNull(decodeCredentialProvider(provider))
+
+const names = new Intl.ListFormat("en", { type: "conjunction" })
+
+/** Providers by name as one list in a sentence: "OpenRouter, Cloudflare, and GitHub". */
+export const providerNames = (providers: ReadonlyArray<CostProvider>): string =>
+	names.format(Arr.map(providers, (provider) => COST_PROVIDERS[provider].name))
