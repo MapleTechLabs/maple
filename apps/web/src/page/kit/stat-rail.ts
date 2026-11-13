@@ -97,8 +97,6 @@ export type StatRailItemOptions<M> = Readonly<{
 	ariaLabel?: string
 	size?: "md" | "sm"
 	hint?: Html | string
-	/** Title the tile like a chart card (the uppercase label eyebrow), for rails above chart grids. */
-	isCardTitle?: boolean
 }>
 
 export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<M>): Html => {
@@ -121,7 +119,6 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 						h.Class(
 							cn(
 								"truncate text-2xs font-medium",
-								options.isCardTitle === true && "uppercase tracking-caption",
 								isSelected ? "text-primary" : "text-muted-foreground",
 							),
 						),

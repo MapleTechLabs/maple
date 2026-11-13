@@ -11,7 +11,7 @@ export const textareaControlLayoutStyles = "relative inline-flex w-full"
 
 /** Border, background, shadow and focus ring — the part `unstyled` removes. */
 export const textareaControlChromeStyles =
-	"rounded-lg border border-input bg-background not-dark:bg-clip-padding text-base text-foreground shadow-raised ring-ring/24 transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-lg-inset has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive-a2 has-aria-invalid:border-destructive-a4 has-focus-visible:border-ring has-disabled:opacity-64 has-[:disabled,:focus-visible,[aria-invalid]]:shadow-none has-focus-visible:ring-[3px] not-has-disabled:has-not-focus-visible:not-has-aria-invalid:before:shadow-control sm:text-sm dark:bg-input/32 dark:has-aria-invalid:ring-destructive-a3"
+	"rounded-lg border border-input bg-background not-dark:bg-clip-padding text-base text-foreground shadow-raised ring-ring/24 transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-lg-inset has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive-a2 has-aria-invalid:border-destructive-a4 has-focus-visible:border-ring has-disabled:opacity-64 has-[:disabled,:focus-visible,[aria-invalid]]:shadow-none has-focus-visible:ring-[3px] not-has-disabled:has-not-focus-visible:not-has-aria-invalid:before:shadow-control sm:text-ui dark:bg-input/32 dark:has-aria-invalid:ring-destructive-a3"
 
 export const textareaStyles =
 	"field-sizing-content min-h-17.5 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none max-sm:min-h-20.5"

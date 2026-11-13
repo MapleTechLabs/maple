@@ -138,7 +138,7 @@ export const highlightOverlay = <M>(
 						h.AriaHidden(true),
 						h.Class(
 							cn(
-								"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+								"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-ui",
 								textareaClassName,
 							),
 						),

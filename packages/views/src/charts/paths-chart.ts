@@ -76,7 +76,7 @@ const columnHeaders = (h: H, graph: PathsLayout, reverse: boolean): ReadonlyArra
 					y: 10,
 					"text-anchor": atRightEdge ? "end" : "start",
 				}),
-				h.Class("fill-muted-foreground text-3xs font-medium uppercase tracking-caption"),
+				h.Class("fill-muted-foreground text-2xs font-medium"),
 			],
 			[label],
 		)

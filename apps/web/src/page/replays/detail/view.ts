@@ -153,7 +153,7 @@ const identityBar = (h: H, model: IdentityView, session: ReplayDetail, timeZone:
 				typography(h, { size: "sm", weight: "semibold", mono: true, numeric: true }, [
 					formatSessionDuration(durationOf(session)),
 				]),
-				eyebrow(h, {}, ["duration"]),
+				eyebrow(h, {}, ["Duration"]),
 			]),
 			...(session.errorCount > 0 ? [errorCountPill(h, { count: session.errorCount })] : []),
 		]),

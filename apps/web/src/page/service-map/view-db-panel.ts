@@ -182,7 +182,7 @@ const header = (h: H, inputs: DatabasePanelInputs): Html => {
 			typography(h, { size: "sm", tone: "foreground", weight: "semibold", truncate: true }, [
 				style.title,
 			]),
-			eyebrow(h, { className: "shrink-0" }, [style.badge]),
+			eyebrow(h, { variant: "mono", className: "shrink-0" }, [style.badge]),
 		],
 		[
 			iconButton(

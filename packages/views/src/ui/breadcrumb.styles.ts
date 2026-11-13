@@ -1,5 +1,5 @@
 export const breadcrumbListStyles =
-	"wrap-break-word flex flex-wrap items-center gap-1.5 text-muted-foreground text-sm sm:gap-2.5"
+	"wrap-break-word flex flex-wrap items-center gap-1.5 text-muted-foreground text-ui sm:gap-2.5"
 
 export const breadcrumbItemStyles = "inline-flex items-center gap-1.5"
 

@@ -1,7 +1,7 @@
 import { cva } from "class-variance-authority"
 
 export const sidebarMenuButtonVariants = cva(
-	"peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg p-2 text-left text-xs outline-hidden ring-sidebar-ring transition-[width,height,padding] duration-200 ease-move group-data-instant:transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent/50 active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-64 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-64 data-[active=child]:font-medium data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:active:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground data-[state=open]:active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0",
+	"peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg p-2 text-left text-ui outline-hidden ring-sidebar-ring transition-[width,height,padding] duration-200 ease-move group-data-instant:transition-none hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent/50 active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-64 group-has-data-[sidebar=menu-action]/menu-item:pe-8 aria-disabled:pointer-events-none aria-disabled:opacity-64 data-[active=child]:font-medium data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:active:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground data-[state=open]:active:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg:not([class*='size-'])]:size-4 [&>svg]:shrink-0",
 	{
 		defaultVariants: {
 			size: "default",
@@ -9,9 +9,9 @@ export const sidebarMenuButtonVariants = cva(
 		},
 		variants: {
 			size: {
-				default: "h-8 text-xs",
-				lg: "h-12 text-xs group-data-[collapsible=icon]:p-0!",
-				sm: "h-7 text-xs",
+				default: "h-8 text-ui",
+				lg: "h-12 text-ui group-data-[collapsible=icon]:p-0!",
+				sm: "h-7 text-ui",
 			},
 			variant: {
 				// Hover is the selected tint at half strength, so the full tint stays the selected row's.
@@ -89,7 +89,7 @@ export const sidebarContentStyles =
 export const sidebarGroupStyles = "relative flex w-full min-w-0 flex-col p-2"
 
 export const sidebarGroupLabelStyles = [
-	"flex h-8 shrink-0 items-center rounded-lg px-2 font-semibold text-2xs text-sidebar-foreground uppercase tracking-overline outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-move group-data-instant:transition-none focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+	"flex h-8 shrink-0 items-center rounded-lg px-2 font-medium text-xs text-sidebar-foreground outline-hidden ring-sidebar-ring transition-[margin,opacity] duration-200 ease-move group-data-instant:transition-none focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
 	"group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0",
 ] as const
 
@@ -100,7 +100,7 @@ export const sidebarGroupActionStyles = [
 	"group-data-[collapsible=icon]:hidden",
 ] as const
 
-export const sidebarGroupContentStyles = "w-full text-xs"
+export const sidebarGroupContentStyles = "w-full text-ui"
 
 export const sidebarMenuStyles = "flex w-full min-w-0 flex-col gap-1"
 
@@ -128,6 +128,6 @@ export const sidebarMenuSubButtonStyles = [
 	"data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground",
 ] as const
 
-export const sidebarMenuSubButtonMdStyles = "text-xs"
+export const sidebarMenuSubButtonMdStyles = "text-ui"
 
 export const sidebarMenuSubButtonIconCollapsibleStyles = "group-data-[collapsible=icon]:hidden"

@@ -24,12 +24,12 @@ export const autocompletePopupStyles =
 	"flex max-h-[min(var(--available-height),23rem)] flex-1 flex-col text-foreground"
 
 export const autocompleteItemStyles =
-	"flex min-h-8 cursor-default select-none items-center rounded-sm px-2 py-1 text-base outline-none data-disabled:pointer-events-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm"
+	"flex min-h-8 cursor-default select-none items-center rounded-sm px-2 py-1 text-base outline-none data-disabled:pointer-events-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-ui"
 
 export const autocompleteGroupStyles = "[[role=group]+&]:mt-1.5"
 
 export const autocompleteGroupLabelStyles = "px-2 py-1.5 font-medium text-muted-foreground text-xs"
 
-export const autocompleteEmptyStyles = "not-empty:p-2 text-center text-base text-muted-foreground sm:text-sm"
+export const autocompleteEmptyStyles = "not-empty:p-2 text-center text-base text-muted-foreground sm:text-ui"
 
 export const autocompleteListStyles = "not-empty:scroll-py-1 not-empty:p-1 in-data-has-overflow-y:pe-3"

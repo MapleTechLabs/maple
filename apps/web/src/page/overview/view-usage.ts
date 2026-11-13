@@ -40,7 +40,6 @@ export const usageCards = <M>(
 							? h.span([h.Class("sr-only")], ["Couldn't load"])
 							: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
-						isCardTitle: true,
 						className: OVERVIEW_TILE_CLASS,
 					}),
 				),
@@ -54,7 +53,6 @@ export const usageCards = <M>(
 						eyebrow: card.title,
 						value: card.format(totals[card.key]),
 						compact: true,
-						isCardTitle: true,
 						className: OVERVIEW_TILE_CLASS,
 						delta:
 							previous === null

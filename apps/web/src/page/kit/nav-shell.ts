@@ -34,7 +34,6 @@ const rowChildren = <M>(h: HtmlBuilder<M>, row: RowBase) => [
 					h,
 					{
 						size: "xs",
-						mono: true,
 						numeric: true,
 						tone: row.count.tone ?? "muted",
 						className: "shrink-0",

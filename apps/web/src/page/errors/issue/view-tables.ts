@@ -74,7 +74,7 @@ const incidentRow = <M>(h: HtmlBuilder<M>, incident: ErrorIncidentDocument, cloc
 				[
 					statusDot(h, { tone: isOpen ? "crit" : "neutral" }),
 					eyebrow(h, { variant: "label", className: isOpen ? "text-severity-error" : undefined }, [
-						incident.status,
+						Str.capitalize(incident.status),
 					]),
 				],
 			),

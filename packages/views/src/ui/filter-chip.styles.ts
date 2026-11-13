@@ -28,4 +28,4 @@ export const filterChipPressedBorderStyles = {
 
 export const filterChipDotOffStyles = "opacity-50"
 
-export const filterChipCountStyles = "font-mono text-2xs text-muted-foreground tabular-nums"
+export const filterChipCountStyles = "text-2xs text-muted-foreground tabular-nums"
