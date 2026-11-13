@@ -120,9 +120,24 @@ mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's
 the Workers bind them from their props. No dashboard config and no hand-minted role exist there
 (its `resolveMapleProfile` database mode is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
-The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
-`PLANETSCALE_ORGANIZATION` from the instance's Infisical environment. `bun dev` leaves the
-PlanetScale provider out.
+The deploy stores no PlanetScale credential. `deploy-prd-instance.yml` trades the job's GitHub
+OIDC token for a service token through `planetscale/auth-action` and hands it to alchemy as
+`PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN`. The token lives 45 minutes, the job
+timeout, since alchemy resolves it once and migrations run late in the deploy.
+`PLANETSCALE_ORGANIZATION` still comes from the instance's Infisical environment, masked in the
+public run logs. Each instance has its own trust, conditioned on its GitHub environment
+(`production`, `production-eu`), whose ID is that environment's `PLANETSCALE_OIDC_TRUST_ID`
+variable. Give a trust the accesses the stored token had, which `pscale service-token show-access
+<id> --org <org>` lists:
+
+```bash
+pscale oidc-trust create --org <org> --name "github: prd deploy" \
+  --provider github_actions --max-ttl 2700 \
+  --condition repository_id=<repo id> --condition environment=production \
+  --database-access <database>:<access> ...
+```
+
+`bun dev` leaves the PlanetScale provider out.
 
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the
