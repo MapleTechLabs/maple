@@ -11,7 +11,8 @@ import type { Model as HubModel } from "../../page/errors/hub/model"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import { labSignals } from "./hub-step"
-import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
+import { LAB_ROLES, LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
+import { canTriageIssues } from "../../page/errors/kit/grants"
 import { Array as Arr } from "effect"
 
 // The lab controls, stat strip and errors hub view over the fixture.
@@ -106,6 +107,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 						isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
 							? hub.rowMenu
 							: null,
+					canTriage: canTriageIssues(hub),
 				}),
 			}),
 		],
@@ -146,6 +148,13 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 						Arr.map(LAB_STATES, (value) => ({ value, label: value })),
 						model.state,
 						(state) => Message.ClickedState({ state }),
+					),
+					toggleGroup(
+						h,
+						"Role",
+						Arr.map(LAB_ROLES, (value) => ({ value, label: value })),
+						model.role,
+						(role) => Message.ClickedRole({ role }),
 					),
 					toggleGroup(h, "Width", LAB_WIDTHS, model.width, (width) =>
 						Message.ClickedWidth({ width }),

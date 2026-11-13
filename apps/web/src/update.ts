@@ -251,6 +251,7 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 								integrations: model.shell.integrations,
 								remembered: model.shell.rememberedSurfaces[orgId],
 							},
+							audience: Shell.shellAudience(shellClerkOf(model)),
 						})),
 					),
 	}),

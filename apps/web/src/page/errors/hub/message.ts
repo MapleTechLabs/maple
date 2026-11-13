@@ -13,6 +13,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
+import { SessionGrants } from "../../kit/session-grants"
 
 /** The sidebar's single-select params. */
 export const FilterParam = Schema.Literals(["service", "env", "kind", "regressed"])
@@ -25,6 +26,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedFetchSession: SessionGrants,
 	CompletedFetchSummary: result(Schema.NullOr(ErrorsSummary)),
 	CompletedFetchServiceCounts: result(Schema.Array(V2ErrorIssueServiceCount)),
 	CompletedFetchEnvironments: result(Schema.Array(Schema.String)),

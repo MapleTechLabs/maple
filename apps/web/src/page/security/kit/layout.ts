@@ -10,7 +10,7 @@ import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
-export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure"
+export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure" | "auditLog"
 export type CodeTab = "overview" | "findings" | "runs"
 
 const SOURCE_LABEL = {
@@ -18,6 +18,7 @@ const SOURCE_LABEL = {
 	dependencies: "Dependencies",
 	runtimes: "Runtimes",
 	exposure: "Exposure",
+	auditLog: "Audit log",
 } satisfies Record<SecuritySource, string>
 
 const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
@@ -52,6 +53,19 @@ const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
 				label: SOURCE_LABEL.exposure,
 				icon: "GlobeIcon",
 				href: hrefOf(AppRoute.SecurityExposure()),
+			},
+		],
+	},
+	{
+		id: "activity",
+		title: "Activity",
+		items: [
+			{
+				kind: "link",
+				id: "auditLog",
+				label: SOURCE_LABEL.auditLog,
+				icon: "HistoryIcon",
+				href: hrefOf(AppRoute.SecurityAuditLog({ search: {} })),
 			},
 		],
 	},
@@ -132,6 +146,7 @@ const DESCRIPTION = {
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 	dependencies:
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
+	auditLog: "Who changed what in Maple, and what it refused. Visible to org admins.",
 } satisfies Record<SecuritySource, string>
 
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */

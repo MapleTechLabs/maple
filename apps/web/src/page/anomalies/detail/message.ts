@@ -7,9 +7,11 @@ import * as Chart from "@maple/views/charts/chart"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
+import { SessionGrants } from "../../kit/session-grants"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	CompletedFetchSession: SessionGrants,
 	CompletedFetchIncident: { key: Schema.String, result: Schema.Result(V2AnomalyIncident, LoadFailure) },
 	CompletedFetchTimeseries: {
 		key: Schema.String,

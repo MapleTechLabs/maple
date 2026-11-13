@@ -53,6 +53,9 @@ import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
 import { Message as SetupMessage } from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
+import type { Message as AnalystMessage } from "./analyst/message"
+import type * as AnalystModel from "./analyst/model"
+import * as Analyst from "./analyst/update"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof HomeSearch.Type
@@ -267,6 +270,17 @@ const withSetup = (
 	return next.outMessage === undefined ? lifted : { ...lifted, outMessage: next.outMessage }
 }
 
+const toAnalyst = (message: AnalystMessage) => Message.GotAnalystMessage({ message })
+
+/** Runs an analyst step; the Submodel starts empty when the role arrived after `init`. */
+const withAnalyst = (model: Model, step: (analyst: AnalystModel.Model) => Analyst.Return): Return => {
+	const next = step(model.analyst ?? Analyst.EMPTY)
+	return {
+		model: { ...model, analyst: next.model },
+		commands: Command.mapMessages(next.commands ?? [], toAnalyst),
+	}
+}
+
 /** The setup card's last-hour window. */
 const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	const nowMs = result.model.nowMs
@@ -292,7 +306,10 @@ const loadChartRuntime = () => LoadChartRuntime()
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
-		const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
+		// An analyst gets their own page: the engineers' reads and setup card never start.
+		const analyst = context.audience === "analyst" ? Analyst.init(context) : null
+		const setup =
+			isClerk && analyst === null ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
 		const model: Model = {
 			search: route.search,
 			nowMs: null,
@@ -320,7 +337,10 @@ export const initWith =
 			refreshVersion: 0,
 			isReloading: false,
 			setup: setup?.model ?? null,
+			analyst: analyst?.model ?? null,
 		}
+		if (analyst !== null)
+			return { model, commands: Command.mapMessages(analyst.commands ?? [], toAnalyst) }
 		return {
 			model,
 			commands: [
@@ -350,6 +370,10 @@ export const init = initWith(isClerkAuthEnabled)
 
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	if (context.audience === "analyst")
+		return withAnalyst({ ...model, search: route.search }, (analyst) =>
+			Analyst.revive(analyst, context),
+		)
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
 	const anomalies = Keyed.request(
 		Keyed.forgetFailure(model.anomalies),
@@ -574,4 +598,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
 		GotSetupMessage: ({ message: inner }) =>
 			withSetup({ model }, (setup) => Setup.update(setup, inner, context)),
+		GotAnalystMessage: ({ message: inner }) =>
+			withAnalyst(model, (analyst) => Analyst.update(analyst, inner, context)),
 	})

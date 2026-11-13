@@ -6,7 +6,10 @@
  * surface and be billed, traced or prompted as another.
  */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import type { PermissionRuleset } from "@maple/domain/permission"
+import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr } from "effect"
+import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import type { AgentDefinition } from "./agents"
 import { READ_ONLY_RULESET } from "./permissions"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
@@ -20,6 +23,18 @@ export interface TurnProfile {
 	readonly ruleset: PermissionRuleset
 	readonly prompt: string
 }
+
+/** The ruleset an analyst's turn runs under: only dashboard changes are still proposed to them. */
+const forAnalyst = (ruleset: PermissionRuleset): PermissionRuleset =>
+	Arr.map(ruleset, (rule) =>
+		rule.action === "ask" && !DASHBOARD_AUTHORING_TOOLS.has(rule.tool)
+			? new PermissionRule({ tool: rule.tool, action: "deny" })
+			: rule,
+	)
+
+/** The profile for whoever the turn's tools run as: an analyst is offered no change outside dashboards. */
+export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<string>): TurnProfile =>
+	Policy.isAnalyst(roles) ? { ...profile, ruleset: forAnalyst(profile.ruleset) } : profile
 
 export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): TurnProfile => {
 	switch (origin.kind) {

@@ -11,6 +11,7 @@ import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import {
 	AUDIT_ACCESS_ACTION_SUFFIXES,
 	AUDIT_LOG_DATASOURCE,
@@ -38,15 +39,21 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 		bestEffort: boolean
 		retryTransient: boolean
 	}> = []
+	/** Rows written to the unified audit trail, the only other table the service writes. */
+	const trail: Array<unknown> = []
 	const sql: Array<string> = []
-	const layer = Layer.succeed(
+	const stub = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
 			ingest: (_tenant, datasource, batch, options) =>
 				Effect.sync(() => {
+					if (datasource !== AUDIT_LOG_DATASOURCE) {
+						trail.push(...batch)
+						return
+					}
 					ingested.push({
 						datasource,
-						// SAFETY: this stub only ever receives the audit datasource's rows.
+						// SAFETY: only `audit_log` writes reach this branch.
 						rows: batch as ReadonlyArray<AuditLogRow>,
 						bestEffort: options?.bestEffort === true,
 						retryTransient: options?.retryTransient === true,
@@ -63,7 +70,9 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 				})) as never,
 		}),
 	)
-	return { ingested, sql, layer }
+	// The audit log writes its copy through the real trail service, over the same stub.
+	const layer = Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provideMerge(stub))
+	return { ingested, trail, sql, layer }
 }
 
 const storedRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
@@ -128,6 +137,48 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(row.Changes).toBe("")
 			expect(JSON.parse(row.Metadata)).toEqual({ name: "First" })
 			expect(row.OccurredAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/)
+		}),
+	)
+
+	it.effect("copies a change to the audit trail under the same time, and keeps reads out of it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+					resourceId: DASHBOARD_ID,
+				})
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "telemetry.read",
+				})
+			}).pipe(
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+
+			expect(warehouse.ingested).toHaveLength(2)
+			expect(warehouse.trail).toEqual([
+				expect.objectContaining({
+					OrgId: ORG,
+					Provider: "maple",
+					Action: "dashboard.created",
+					Category: "resource",
+					Outcome: "success",
+					ActorType: "user",
+					ActorId: USER,
+					TargetType: "dashboard",
+					TargetId: encodePublicId(PublicIdPrefixes.dashboard, DASHBOARD_ID),
+					OccurredAt: warehouse.ingested[0].rows[0].OccurredAt,
+				}),
+			])
 		}),
 	)
 

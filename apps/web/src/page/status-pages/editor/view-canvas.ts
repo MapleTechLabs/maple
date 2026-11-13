@@ -30,7 +30,7 @@ import {
 } from "../shared/preview"
 import { Message } from "./message"
 import { pageUrlOf } from "./update-domain"
-import { canManage, type Model } from "./model"
+import { canManage, canPostIncidents, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { addPanel, componentPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
@@ -317,7 +317,11 @@ const onThisPage = (h: H, model: Model): Html => {
 				open.length + recent.length === 0
 					? h.p(
 							[h.Class("px-2 text-xs text-muted-foreground")],
-							["Nothing posted. Post incident when something breaks."],
+							[
+								canPostIncidents(model)
+									? "Nothing posted. Post incident when something breaks."
+									: "Nothing posted.",
+							],
 						)
 					: vstack(
 							h,

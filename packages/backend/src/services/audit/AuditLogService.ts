@@ -12,6 +12,8 @@ import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/a
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AUDIT_ACCESS_ACTION_SUFFIXES, isAuditAccessAction } from "@maple/domain/audit-actions"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { mapleAuditTrailEvents } from "@maple/backend/services/audit-trail/providers/maple"
 import { type AuditAction, auditResourceFields, type AuditResourceIdOption } from "./audit-actions"
 import {
 	AuditLogEvent,
@@ -239,6 +241,7 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
+			const trail = yield* AuditTrailService
 			// Optional so tests and hosts without the queue (the alerting Worker,
 			// the CLI) fall back to direct writes.
 			const queue = yield* Effect.serviceOption(AuditEventsQueueProducer)
@@ -258,6 +261,15 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 						[auditEventToRow(event, now)],
 						{ bestEffort: true, retryTransient: true },
 					)
+					// A change or a refusal also goes to the unified audit trail, dropped the same way.
+					// Logged under its own name: here the entry is stored and only its copy is missing.
+					yield* trail
+						.write(event.orgId, mapleAuditTrailEvents([event]), { bestEffort: true })
+						.pipe(
+							Effect.catch((cause) =>
+								Effect.logWarning("Audit trail copy failed", { action: event.action, cause }),
+							),
+						)
 				})
 
 			/**
@@ -349,7 +361,9 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, AuditTrailService.layer)),
+	)
 
 	/**
 	 * Entries kept in process memory, with the same filter and ordering

@@ -23,8 +23,9 @@ import { dashboardPage } from "../page/kit/dashboard-page"
 import { dismissSheetUrl, pushSheetUrl, sheetParamOf } from "../page/kit/sheet-param"
 import { Message as ShellMessage, Theme } from "../shell/message"
 import { init as initShell, Model as ShellModel, OnCallData } from "../shell/model"
+import { NavAudience } from "../shell/nav"
 import type { OnCallSnapshot } from "../shell/oncall"
-import { foldLabShell, labShellView } from "./shell-frame"
+import { foldLabShell, labShellView, ANALYST_CLERK } from "./shell-frame"
 
 // `/lab/shell`: the real sidebar with fixture on-call states and a page to stand on, and the side
 // panel held in `?sheet=` (Back closes it, the link reopens it) in both of its sizes.
@@ -106,6 +107,7 @@ export const Model = Schema.Struct({
 	href: Schema.String,
 	onCall: OnCallFixture,
 	standOn: StandOn,
+	viewer: NavAudience,
 })
 export type Model = typeof Model.Type
 
@@ -119,6 +121,7 @@ export const Message = defineMessageUnion({
 	ClickedSubmitPanel: {},
 	ClickedOnCallFixture: { fixture: OnCallFixture },
 	ClickedStandOn: { standOn: StandOn },
+	ClickedViewer: { viewer: NavAudience },
 	CompletedNavigate: {},
 })
 export type Message = typeof Message.Type
@@ -184,6 +187,7 @@ export const init = (flags: Flags): Return => {
 			href: flags.href,
 			onCall: "onCall",
 			standOn: "lab",
+			viewer: "operator",
 		},
 		commands: mapSheetCommands(sheet, toSheet),
 	}
@@ -222,6 +226,7 @@ export const update = (model: Model, message: Message): Return =>
 			model: { ...model, onCall: fixture, shell: withOnCall(model.shell, fixture) },
 		}),
 		ClickedStandOn: ({ standOn }) => ({ model: { ...model, standOn } }),
+		ClickedViewer: ({ viewer }) => ({ model: { ...model, viewer } }),
 		CompletedNavigate: () => ({ model }),
 	})
 
@@ -343,6 +348,19 @@ const page = (h: HtmlBuilder<Message>, model: Model): Html =>
 				),
 				control(
 					h,
+					"Viewer",
+					segmentedSelect(h, {
+						ariaLabel: "Viewer",
+						value: model.viewer,
+						onChange: (viewer) => Message.ClickedViewer({ viewer }),
+						options: [
+							{ value: "operator", label: "Member and above" },
+							{ value: "analyst", label: "Analyst" },
+						],
+					}),
+				),
+				control(
+					h,
 					"Current page",
 					segmentedSelect(h, {
 						ariaLabel: "Current page",
@@ -368,6 +386,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			TooltipHost.view(h, model.tooltip, toTooltip),
 			...labShellView(h, model.shell, toShell, {
 				currentPath: STAND_ON_PATH[model.standOn],
+				clerk: model.viewer === "analyst" ? ANALYST_CLERK : null,
 				breadcrumbs: [{ label: "Lab" }, { label: "Shell states" }],
 				page: () => page(h, model),
 			}),

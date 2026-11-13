@@ -18,6 +18,7 @@ import { V2RateLimited } from "./errors"
 import { publicError } from "./public-error"
 import { DeviceCredentialPublicId } from "./resource-ids"
 import { InstallationId } from "./widget-credentials"
+import { AnalystAccess } from "../analyst-access"
 
 /**
  * Device-bound credentials (DPoP, RFC 9449) for the mobile Home Screen widgets.
@@ -188,28 +189,32 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 				sessionRequired,
 				persistence,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "registerDeviceCredential",
-				summary: "Register this installation's device key",
-				description:
-					"Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "registerDeviceCredential",
+					summary: "Register this installation's device key",
+					description:
+						"Registers the public half of a device-held P-256 key for this installation and organization, revoking the caller's previous key for it in the same transaction. Registering the same key again refreshes it: the rolling 30-day expiry moves out (never past 90 days from creation) and the roles are re-pinned to the caller's. Signed-in sessions only (API keys and device tokens get `session_required`). The request must also carry a `DPoP` proof signed by the submitted key (`htm` `PUT`, `htu` this URL, no `ath`), proving the caller holds it. An installation another member holds a live credential for answers `device_installation_in_use`.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("revoke", "/:installation_id", {
 			params: { installation_id: InstallationId },
 			success: V2DeviceCredentialDeleteResponse,
 			error: [sessionRequired, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "revokeDeviceCredential",
-				summary: "Revoke this installation's device key",
-				description:
-					"Revokes the caller's own device credential for this installation and organization. Tokens already issued for it stop working on their next request. Idempotent. Signed-in sessions only; there is no path to revoke another member's device (removing the member does that).",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "revokeDeviceCredential",
+					summary: "Revoke this installation's device key",
+					description:
+						"Revokes the caller's own device credential for this installation and organization. Tokens already issued for it stop working on their next request. Idempotent. Signed-in sessions only; there is no path to revoke another member's device (removing the member does that).",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("attestationChallenge", "/:installation_id/attestation_challenge", {
@@ -247,14 +252,16 @@ export class V2DeviceTokensApiGroup extends HttpApiGroup.make("deviceTokens")
 				V2RateLimited.schema,
 				publicError(DeviceCredentialPersistenceError),
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "issueDeviceToken",
-				summary: "Issue a DPoP-bound access token",
-				description:
-					"Exchanges a `DPoP` proof (RFC 9449: `typ` `dpop+jwt`, `alg` `ES256`, the registered key as `jwk`, `htm` `POST`, `htu` this URL, a unique `jti` and an `iat` within 60 seconds) for a one-hour access token bound to that key. Takes no bearer credential: the proof is the credential. Fails with `invalid_device_credential` when the key is unknown, revoked or expired.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "issueDeviceToken",
+					summary: "Issue a DPoP-bound access token",
+					description:
+						"Exchanges a `DPoP` proof (RFC 9449: `typ` `dpop+jwt`, `alg` `ES256`, the registered key as `jwk`, `htm` `POST`, `htu` this URL, a unique `jti` and an `iat` within 60 seconds) for a one-hour access token bound to that key. Takes no bearer credential: the proof is the credential. Fails with `invalid_device_credential` when the key is unknown, revoked or expired.",
+				}),
+			),
 	)
 	.prefix("/v2/device_tokens")
 	.annotateMerge(

@@ -1939,6 +1939,27 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Purely additive: a new empty table, created by the bootstrap. Audit events come from the
+		// hosted provider adapters, so a local store has nothing to backfill.
+		slug: "audit-trail-events",
+		description: "Create audit_trail_events for audit events from connected platforms",
+		clonedBefore: "additive DDL runs",
+		plan: [
+			[
+				"install-audit-trail-events",
+				"Install the empty audit_trail_events table via the v56 bootstrap",
+			],
+		],
+		dispositions: [
+			{
+				name: "audit_trail_events",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

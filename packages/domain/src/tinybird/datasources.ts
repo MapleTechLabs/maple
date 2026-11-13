@@ -2103,6 +2103,56 @@ export const auditLog = defineDatasource("audit_log", {
 export type AuditLogRow = InferRow<typeof auditLog>
 
 /**
+ * Audit events from every connected platform, and Maple's own changes and refusals, in one shape.
+ * Written only by provider adapters, never from OTLP. `''` is absent; `Raw` is the payload as JSON.
+ */
+export const auditTrailEvents = defineDatasource("audit_trail_events", {
+	tenantColumn: "OrgId",
+	description:
+		"Audit events from connected platforms and Maple itself, normalized to one shape: who did what to which target, with what outcome. Admin-only; read through the Security hub.",
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		// A hash of Provider, Account and ProviderEventId: a redelivery writes the same key.
+		Id: t.string(),
+		OccurredAt: utcDateTime64(3),
+		// When Maple stored the row. Detections window on it: a polled event arrives late.
+		IngestedAt: utcDateTime64(3),
+		Provider: t.string().lowCardinality(),
+		Account: t.string(),
+		ProviderEventId: t.string(),
+		ActorType: t.string().lowCardinality(),
+		ActorId: t.string(),
+		ActorName: t.string(),
+		ActorEmail: t.string(),
+		Action: t.string().lowCardinality(),
+		Category: t.string().lowCardinality(),
+		Outcome: t.string().lowCardinality(),
+		// Why it failed or was refused, in the platform's words.
+		OutcomeReason: t.string(),
+		TargetType: t.string().lowCardinality(),
+		TargetId: t.string(),
+		TargetName: t.string(),
+		OriginIp: t.string(),
+		OriginCountry: t.string().lowCardinality(),
+		UserAgent: t.string(),
+		Raw: t.string(),
+		// Falls as IngestedAt rises, so a merge keeps the first write: a redelivered event keeps
+		// its first IngestedAt and never moves into a later detection window.
+		Version: t.uint64(),
+	},
+	indexes: [{ name: "idx_ingested_at", expr: "IngestedAt", type: "minmax", granularity: 1 }],
+	engine: engine.replacingMergeTree({
+		partitionKey: "toYYYYMM(OccurredAt)",
+		sortingKey: ["OrgId", "OccurredAt", "Id"],
+		ver: "Version",
+		// Thirteen months: a year of history plus a month to compare against.
+		ttl: "toDate(OccurredAt) + INTERVAL 400 DAY",
+	}),
+})
+
+export type AuditTrailEventsRow = InferRow<typeof auditTrailEvents>
+
+/**
  * Minute-grain operation metrics used by the service-detail Operations panel.
  * The operation name is normalized once by the write-side MV, while exact and
  * sampling-weighted counts are retained side-by-side. Duration aggregates are

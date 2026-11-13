@@ -5,12 +5,13 @@ import {
 	type DependencyFindingsResponse,
 	type DependencyScanRepositoriesResponse,
 	SecurityAuditDisabledError,
+	AuditTrailPersistenceError,
 	SecurityAuditForbiddenError,
 	SecurityAuditTargetExistsError,
 } from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import type { Command } from "foldkit"
+import { AsyncData, type Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../page/contract"
 import * as AddTarget from "../../page/security/kit/add-target"
@@ -22,6 +23,8 @@ import * as RunPage from "../../page/security/run/model"
 import * as RunUpdate from "../../page/security/run/update"
 import * as TabsPage from "../../page/security/tabs/model"
 import * as TabsUpdate from "../../page/security/tabs/update"
+import * as AuditLogPage from "../../page/security/audit-log/model"
+import * as AuditLogUpdate from "../../page/security/audit-log/update"
 import * as TelemetryPage from "../../page/security/telemetry/model"
 import * as TelemetryUpdate from "../../page/security/telemetry/update"
 import type { Resources } from "../../platform/resources"
@@ -59,6 +62,7 @@ import {
 	repositoriesOf,
 } from "../security-dependencies-fixture"
 import { emptyExposureOf, exposureOf, runtimesOf } from "../security-telemetry-fixture"
+import { auditEventsOf, noAuditEvents } from "../security-audit-log-fixture"
 
 // Every Security Center state the lab renders, built by sending each page the fixture answers its
 // own requests would get. API Commands are dropped; dialog and select Commands still run.
@@ -87,6 +91,12 @@ export const SCENARIOS = [
 	"finding-lead",
 	"exposure",
 	"exposure-empty",
+	"audit-log",
+	"audit-log-detail",
+	"audit-log-empty",
+	"audit-log-filtered-empty",
+	"audit-log-member",
+	"audit-log-error",
 	"runtimes",
 	"dependencies",
 	"dependencies-finding",
@@ -329,6 +339,38 @@ const finding = (
 	)
 }
 
+type AuditLogStep = Step<AuditLogPage.Model, AuditLogPage.Message>
+const A = AuditLogPage.Message
+
+/** The audit log entered under `search`, as an admin or a member, then sent `answers`. */
+const auditLog = (
+	nowMs: number,
+	options: Readonly<{
+		search?: AuditLogPage.Search
+		isMember?: boolean
+		answers?: ReadonlyArray<(model: AuditLogPage.Model) => AuditLogPage.Message>
+	}> = {},
+): AuditLogStep => {
+	const entered = AuditLogUpdate.init(AppRoute.SecurityAuditLog({ search: options.search ?? {} }), context)
+	return fold<AuditLogPage.Model, AuditLogPage.Message>(
+		{ model: entered.model, commands: entered.commands ?? [] },
+		(model, message) => AuditLogUpdate.update(model, message, context),
+		[
+			() => A.ReadClock({ nowMs }),
+			() =>
+				A.CompletedReadGrants({
+					orgId: context.orgId,
+					grants:
+						options.isMember === true ? Policy.grantsOf(["org:engineer"]) : Policy.allPermissions,
+				}),
+			...(options.answers ?? []),
+		],
+	)
+}
+
+const auditLogPage = (page: AuditLogPage.EventsPage) => (model: AuditLogPage.Model) =>
+	A.CompletedFetchFirstPage({ key: model.firstPage.key ?? "", result: Result.succeed(page) })
+
 type TelemetryStep = Step<TelemetryPage.Model, TelemetryPage.Message>
 const T = TelemetryPage.Message
 
@@ -404,6 +446,7 @@ export type Built =
 	| Readonly<{ _tag: "Run"; step: RunStep }>
 	| Readonly<{ _tag: "Finding"; step: FindingStep }>
 	| Readonly<{ _tag: "Telemetry"; step: TelemetryStep }>
+	| Readonly<{ _tag: "AuditLog"; step: AuditLogStep }>
 	| Readonly<{ _tag: "Dependencies"; step: DependenciesStep }>
 
 const overviewRoute = AppRoute.SecurityCode()
@@ -524,6 +567,59 @@ export const build = (scenario: Scenario, nowMs: number): Built => {
 			return { _tag: "Telemetry", step: exposure(nowMs, exposureOf(nowMs)) }
 		case "exposure-empty":
 			return { _tag: "Telemetry", step: exposure(nowMs, emptyExposureOf()) }
+		case "audit-log":
+			return {
+				_tag: "AuditLog",
+				step: auditLog(nowMs, { answers: [auditLogPage(auditEventsOf(nowMs))] }),
+			}
+		case "audit-log-detail":
+			return {
+				_tag: "AuditLog",
+				step: auditLog(nowMs, {
+					answers: [
+						auditLogPage(auditEventsOf(nowMs, false)),
+						(model) =>
+							A.ToggledEvent({
+								id: AsyncData.matchData(model.firstPage.data, {
+									onEmpty: () => "",
+									onFailure: () => "",
+									onData: (page) => page.events[0]?.id ?? "",
+								}),
+							}),
+					],
+				}),
+			}
+		case "audit-log-empty":
+			return { _tag: "AuditLog", step: auditLog(nowMs, { answers: [auditLogPage(noAuditEvents)] }) }
+		case "audit-log-filtered-empty":
+			return {
+				_tag: "AuditLog",
+				step: auditLog(nowMs, {
+					search: { category: "billing", outcome: "denied" },
+					answers: [auditLogPage(noAuditEvents)],
+				}),
+			}
+		case "audit-log-member":
+			return { _tag: "AuditLog", step: auditLog(nowMs, { isMember: true }) }
+		case "audit-log-error":
+			return {
+				_tag: "AuditLog",
+				step: auditLog(nowMs, {
+					answers: [
+						(model) =>
+							A.CompletedFetchFirstPage({
+								key: model.firstPage.key ?? "",
+								result: Result.fail(
+									toLoadFailure(
+										new AuditTrailPersistenceError({
+											message: "The audit trail could not be read",
+										}),
+									),
+								),
+							}),
+					],
+				}),
+			}
 		case "runtimes":
 			return {
 				_tag: "Telemetry",

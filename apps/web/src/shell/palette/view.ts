@@ -16,6 +16,7 @@ import { kbd } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { serviceDot } from "@maple/views/ui/values"
+import type { NavAudience } from "../nav"
 import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
@@ -32,7 +33,11 @@ const PALETTE_LIST_CLASS =
 
 // The command palette's popup: the input, the grouped entries (or "No results"), the footer hints.
 
-export type ViewInputs = Readonly<{ context: Context; visibleFlagged: ReadonlyArray<string> }>
+export type ViewInputs = Readonly<{
+	context: Context
+	visibleFlagged: ReadonlyArray<string>
+	audience: NavAudience
+}>
 
 const GLYPH_CLASS = "shrink-0 text-muted-foreground"
 
@@ -81,10 +86,10 @@ export const paletteView = <M>(
 	const toList = (message: Combobox.Message) =>
 		toMessage(
 			message._tag === "PressedInputKey" && message.key === "Enter"
-				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged })
+				? Message.PressedEnter({ visibleFlagged: inputs.visibleFlagged, audience: inputs.audience })
 				: Message.GotListMessage({ message }),
 		)
-	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged)
+	const shown = shownEntries(model, inputs.context, inputs.visibleFlagged, inputs.audience)
 	const groups = groupsOf(h, shown.entries)
 	return h.submodel({
 		slotId: "command-palette",

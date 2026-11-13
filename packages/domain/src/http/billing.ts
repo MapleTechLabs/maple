@@ -15,6 +15,7 @@ import {
 	LinkBillingOrgRequest,
 } from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
+import { AnalystAccess } from "./analyst-access"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
 // and tolerate additive upstream fields.
@@ -725,7 +726,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 			payload: PreviewAttachRequest,
 			success: PreviewAttachResult,
 			error: [BillingManagedByBillingOrgError, ...billingRequestErrors],
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.post("openCustomerPortal", "/portal", {
