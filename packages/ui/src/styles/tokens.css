@@ -812,9 +812,11 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
-	/* Selected text takes the primary's strong wash instead of the system blue; the text keeps its colour. */
+	/* Selected text takes the primary's strong wash instead of the system blue, and reads in
+	   `foreground`: a muted or toned run would fall under 4.5:1 on the wash. */
 	::selection {
 		background-color: var(--color-primary-a4);
+		color: var(--color-foreground);
 	}
 	body {
 		@apply font-sans bg-background text-foreground;
