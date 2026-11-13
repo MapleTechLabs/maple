@@ -17,6 +17,10 @@ export type DbIconKey =
 	| "clickhouse"
 	| "mongodb"
 	| "redis"
+	| "sqlserver"
+	| "kafka"
+	| "nats"
+	| "rabbitmq"
 	| "database"
 	| "fire"
 	| "paper-plane"
@@ -118,6 +122,40 @@ export function getDbStyle(system: string | undefined): DbStyle {
 				icon: "redis",
 				label: "Redis",
 				color: "var(--color-brand-redis)",
+				branded: true,
+			}
+		case "mssql":
+		case "microsoft.sql_server":
+		case "sqlserver":
+			return {
+				category: "database",
+				icon: "sqlserver",
+				label: "SQL Server",
+				color: "var(--color-brand-mssql)",
+				branded: true,
+			}
+		case "kafka":
+			return {
+				category: "queue",
+				icon: "kafka",
+				label: "Kafka",
+				color: CATEGORY_COLOR.queue,
+				branded: false,
+			}
+		case "nats":
+			return {
+				category: "queue",
+				icon: "nats",
+				label: "NATS",
+				color: CATEGORY_COLOR.queue,
+				branded: true,
+			}
+		case "rabbitmq":
+			return {
+				category: "queue",
+				icon: "rabbitmq",
+				label: "RabbitMQ",
+				color: CATEGORY_COLOR.queue,
 				branded: true,
 			}
 		case "tinybird":
