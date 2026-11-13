@@ -32,7 +32,6 @@ export {
 	vercelProjectFunctionsSQL,
 } from "./vercel-functions"
 export {
-	vercelAuditLogSQL,
 	vercelSpeedInsightsSQL,
 	vercelWebAnalyticsSummarySQL,
 	vercelWebAnalyticsTopSQL,

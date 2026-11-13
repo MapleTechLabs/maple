@@ -16,7 +16,6 @@ import { DEFAULT_PRESET, DEPLOYMENTS_LIMIT, seriesInput } from "../data"
 import {
 	CompleteReloadSpin,
 	FetchAiGateway,
-	FetchAuditLog,
 	FetchBuckets,
 	FetchDeployments,
 	FetchLatency,
@@ -62,7 +61,6 @@ type Slot =
 	| "deployments"
 	| "speedInsights"
 	| "webAnalytics"
-	| "auditLog"
 
 /** The reads the overview shows, once the status says connected: each only while its drain is on. */
 const sync = (
@@ -96,7 +94,6 @@ const sync = (
 	const deploymentsKey = requestKey(org, "integrations.vercelDeployments", { limit: DEPLOYMENTS_LIMIT })
 	const speedKey = requestKey(org, "getVercelSpeedInsights", { data: window })
 	const webKey = requestKey(org, "getVercelWebAnalytics", { data: window })
-	const auditKey = requestKey(org, "getVercelAuditLog", { data: window })
 	return {
 		model: {
 			...model,
@@ -125,9 +122,6 @@ const sync = (
 			webAnalytics: take("webAnalytics", status.webAnalyticsEnabled, model.webAnalytics, webKey, () =>
 				FetchWebAnalytics({ key: webKey, input: window }),
 			),
-			auditLog: take("auditLog", status.auditLogEnabled, model.auditLog, auditKey, () =>
-				FetchAuditLog({ key: auditKey, window }),
-			),
 		},
 		commands,
 	}
@@ -154,7 +148,6 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		deployments: Keyed.idle(),
 		speedInsights: Keyed.idle(),
 		webAnalytics: Keyed.idle(),
-		auditLog: Keyed.idle(),
 		charts: {},
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -221,9 +214,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchWebAnalytics: ({ key, result }) => ({
 			model: { ...model, webAnalytics: Keyed.accept(model.webAnalytics, key, result) },
 		}),
-		CompletedFetchAuditLog: ({ key, result }) => ({
-			model: { ...model, auditLog: Keyed.accept(model.auditLog, key, result) },
-		}),
 		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
@@ -239,7 +229,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryDeployments: () => sync(model, context, "Refresh", ["deployments"]),
 		ClickedRetrySpeedInsights: () => sync(model, context, "Refresh", ["speedInsights"]),
 		ClickedRetryWebAnalytics: () => sync(model, context, "Refresh", ["webAnalytics"]),
-		ClickedRetryAuditLog: () => sync(model, context, "Refresh", ["auditLog"]),
 		ChangedSearch: ({ value }) =>
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined }),

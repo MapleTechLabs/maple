@@ -1,6 +1,6 @@
 // Fixture rows for the /infra/vercel lab frames: four projects (one erroring, one with no traces,
 // one forwarded but silent), AI Gateway usage across three models, team builds, one project's
-// detail, functions and dependencies, and Speed Insights, Web Analytics and audit log readings.
+// detail, functions and dependencies, and Speed Insights and Web Analytics readings.
 
 import {
 	VercelAiGatewayResponse,
@@ -14,7 +14,6 @@ import {
 	VercelProjectStatus,
 	VercelTeam,
 	type VercelAiGatewayBucket,
-	type VercelAuditEvent,
 	type VercelInfraDependency,
 	type VercelInfraFunction,
 	type VercelInfraFunctionBucket,
@@ -418,7 +417,7 @@ export const VERCEL_API_DEPLOYMENTS: ReadonlyArray<VercelDeploymentSummary> = [
 	deployment("api-v1", "READY", "main", "Products: cache the price table for 60s", 3 * 24 * HOUR),
 ]
 
-/** Every drain on: the overview's Speed Insights, Web Analytics and audit log sections read. */
+/** Every drain on: the Speed Insights and Web Analytics sections read, the rail points at the audit log. */
 export const VERCEL_ALL_DRAINS_STATUS = new VercelIntegrationStatus({
 	...VERCEL_STATUS,
 	speedInsightsEnabled: true,
@@ -556,27 +555,3 @@ export const VERCEL_EMPTY_WEB_ANALYTICS = new VercelWebAnalyticsResponse({
 	countries: [],
 	events: [],
 })
-
-export const VERCEL_AUDIT_LOG: ReadonlyArray<VercelAuditEvent> = [
-	{
-		timestamp: new Date(NOW - 12 * MINUTE).toISOString(),
-		action: "project.env-variable.updated",
-		actor: "Rosa Moreau",
-		actorType: "user",
-		projectId: "prj_api",
-	},
-	{
-		timestamp: new Date(NOW - 3 * HOUR).toISOString(),
-		action: "drain-created",
-		actor: "Maple",
-		actorType: "app",
-		projectId: "",
-	},
-	{
-		timestamp: new Date(NOW - 26 * HOUR).toISOString(),
-		action: "team.member.added",
-		actor: "Sam Okafor",
-		actorType: "user",
-		projectId: "",
-	},
-]

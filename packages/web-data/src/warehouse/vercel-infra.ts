@@ -287,24 +287,6 @@ export const getVercelWebAnalytics = Effect.fn("QueryEngine.getVercelWebAnalytic
 	)
 })
 
-export const getVercelAuditLog = Effect.fn("QueryEngine.getVercelAuditLog")(function* ({
-	data,
-}: {
-	data: VercelTimeRangeInput
-}) {
-	const input = yield* decodeInput(TimeRangeInputSchema, data, "getVercelAuditLog")
-	const nowMillis = yield* Clock.currentTimeMillis
-	const range = resolveRange(input, nowMillis)
-	return yield* runWarehouseQuery("vercelAuditLog", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.vercelAuditLog({
-				payload: new VercelInfraProjectsRequest(range),
-			})
-		}),
-	)
-})
-
 /** One project's functions per bucket, for every route or one. */
 export const getVercelFunctionTimeseries = Effect.fn("QueryEngine.getVercelFunctionTimeseries")(function* ({
 	data,

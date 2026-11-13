@@ -146,7 +146,8 @@ const DESCRIPTION = {
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 	dependencies:
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
-	auditLog: "Who changed what in Maple, and what it refused. Visible to org admins.",
+	auditLog:
+		"Who changed what, and what was refused, in Maple and your connected platforms. Visible to org admins.",
 } satisfies Record<SecuritySource, string>
 
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */

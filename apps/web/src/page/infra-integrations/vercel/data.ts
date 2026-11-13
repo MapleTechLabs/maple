@@ -6,7 +6,6 @@ import type {
 } from "@maple/domain/http"
 import {
 	getVercelAiGateway,
-	getVercelAuditLog,
 	getVercelBreakdown,
 	getVercelLatencyTimeseries,
 	getVercelDependencies,
@@ -198,13 +197,6 @@ export const loadVercelSpeedInsights = (input: WindowInput) =>
 /** `vercelWebAnalyticsResultAtom({ data })`. */
 export const loadVercelWebAnalytics = (input: WindowInput) =>
 	getVercelWebAnalytics({ data: { ...input } }).pipe(Effect.mapError(toLoadFailure), Effect.result)
-
-/** `vercelAuditLogResultAtom({ data: window })`. */
-export const loadVercelAuditLog = (window: TimeWindow) =>
-	getVercelAuditLog({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.events, onFailure: toLoadFailure }),
-		Effect.result,
-	)
 
 export const DEPLOYMENTS_LIMIT = 20
 

@@ -522,6 +522,9 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				...(yield* blockedIngestKeysEnv),
 				// The org Maple's own telemetry is filed under. Required, no fallback.
 				MAPLE_INTERNAL_ORG_ID: yield* requiredPlain("MAPLE_INTERNAL_ORG_ID"),
+				// On wherever a stage is deployed whole and never rolled back to an older gateway; prd
+				// turns it on in its environment once `audit_trail_events` is there.
+				...(stage.kind !== "prd" && { INGEST_AUDIT_TRAIL_ENABLED: "true" }),
 				...(yield* gatewayTuningEnv),
 				// `INGEST_COMMIT_SHA` (prd) is the image's own revision, so a deploy that leaves
 				// `apps/ingest` alone does not change the task definition and roll the hosts.

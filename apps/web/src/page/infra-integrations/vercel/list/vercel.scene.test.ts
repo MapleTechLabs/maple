@@ -22,7 +22,6 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import {
 	VERCEL_AI_GATEWAY,
 	VERCEL_ALL_DRAINS_STATUS,
-	VERCEL_AUDIT_LOG,
 	VERCEL_BUCKETS,
 	VERCEL_LATENCY_BUCKETS,
 	VERCEL_PROJECTS,
@@ -108,11 +107,6 @@ const loaded = (
 				key: model.webAnalytics.key ?? "",
 				result: Result.succeed(VERCEL_WEB_ANALYTICS),
 			}),
-		(model) =>
-			Message.CompletedFetchAuditLog({
-				key: model.auditLog.key ?? "",
-				result: Result.succeed(VERCEL_AUDIT_LOG),
-			}),
 	])
 
 /** The commands the status answer starts, the window already resolved. */
@@ -169,17 +163,12 @@ describe("vercel overview", () => {
 		const defaults = readsFor(VERCEL_STATUS)
 		expect(defaults).not.toContain("FetchVercelSpeedInsights")
 		expect(defaults).not.toContain("FetchVercelWebAnalytics")
-		expect(defaults).not.toContain("FetchVercelAuditLog")
 		expect(readsFor(VERCEL_TRACES_ONLY_STATUS)).not.toContain("FetchVercelRequestSeries")
 		expect(
 			readsFor(new VercelIntegrationStatus({ ...VERCEL_STATUS, tracesEnabled: false })),
 		).not.toContain("FetchVercelLatencySeries")
 		expect(readsFor(VERCEL_ALL_DRAINS_STATUS)).toEqual(
-			expect.arrayContaining([
-				"FetchVercelSpeedInsights",
-				"FetchVercelWebAnalytics",
-				"FetchVercelAuditLog",
-			]),
+			expect.arrayContaining(["FetchVercelSpeedInsights", "FetchVercelWebAnalytics"]),
 		)
 	})
 
@@ -298,19 +287,38 @@ describe("vercel overview", () => {
 			expectView(text(VERCEL_AI_GATEWAY.models[0]?.model ?? "")).toExist(),
 			expectView(text(/Speed Insights is off/)).toExist(),
 			expectView(text(/Web Analytics is off/)).toExist(),
-			expectView(text("Team activity")).toBeAbsent(),
 		)
 	})
 
-	test("with every drain on, the overview shows Web Vitals, page views and team activity", () => {
+	test("with every drain on, the overview shows Web Vitals and page views", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(VERCEL_ALL_DRAINS_STATUS, VERCEL_PROJECTS)),
 			themeResolved(),
 			expectView(text("needs work")).toExist(),
 			expectView(text("184.2K")).toExist(),
-			expectView(text("project.env-variable.updated")).toExist(),
 			expectView(text(/Speed Insights is off/)).toBeAbsent(),
+		)
+	})
+
+	test("the audit log drain puts a link to the Security audit log in the rail, and nothing when it is off", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_ALL_DRAINS_STATUS, VERCEL_PROJECTS)),
+			themeResolved(),
+			expectView(text("Team activity")).toExist(),
+			expectView(text("Audit events from this team are in the Security audit log.")).toExist(),
+			expectView(role("link", { name: "Open the audit log" })).toHaveAttr(
+				"href",
+				"/security/audit-log?provider=vercel",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(VERCEL_STATUS, VERCEL_PROJECTS)),
+			themeResolved(),
+			expectView(text("Team activity")).toBeAbsent(),
+			expectView(role("link", { name: "Open the audit log" })).toBeAbsent(),
 		)
 	})
 

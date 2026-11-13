@@ -21,7 +21,6 @@ import {
 	PlanetScaleInfraTimeseriesResponse,
 	RailwayInfraRowsResponse,
 	VercelAiGatewayResponse,
-	VercelAuditLogResponse,
 	VercelInfraDependenciesResponse,
 	VercelInfraFunctionsResponse,
 	VercelInfraFunctionTimeseriesResponse,
@@ -997,18 +996,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							referrers,
 							countries,
 							events,
-						})
-					}),
-				)
-				.handle("vercelAuditLog", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const rows = yield* runQuery(Queries.vercelAuditLog, tenant, payload)
-						return new VercelAuditLogResponse({
-							events: Arr.map(rows, (row) => ({
-								...row,
-								timestamp: DateTime.formatIso(row.timestamp),
-							})),
 						})
 					}),
 				)

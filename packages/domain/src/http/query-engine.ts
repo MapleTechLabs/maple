@@ -1107,21 +1107,6 @@ export class VercelWebAnalyticsResponse extends Schema.Class<VercelWebAnalyticsR
 	events: Schema.Array(VercelWebAnalyticsTop),
 }) {}
 
-export const VercelAuditEvent = Schema.Struct({
-	/** ISO-8601. */
-	timestamp: Schema.String,
-	action: Schema.String,
-	actor: Schema.String,
-	actorType: Schema.String,
-	/** Empty for team-level events. */
-	projectId: Schema.String,
-})
-export type VercelAuditEvent = typeof VercelAuditEvent.Type
-
-export class VercelAuditLogResponse extends Schema.Class<VercelAuditLogResponse>("VercelAuditLogResponse")({
-	events: Schema.Array(VercelAuditEvent),
-}) {}
-
 // Google Cloud infrastructure page (/infra/gcp): `gcp.*` metrics from the Google Cloud poller.
 const GcpInfraService = Schema.Literals(GCP_INFRA_SERVICE_IDS)
 
@@ -4423,13 +4408,6 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("vercelWebAnalytics", "/vercel-web-analytics", {
 			payload: VercelInfraWindowRequest,
 			success: VercelWebAnalyticsResponse,
-			error: queryEngineEndpointErrors,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("vercelAuditLog", "/vercel-audit-log", {
-			payload: VercelInfraProjectsRequest,
-			success: VercelAuditLogResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

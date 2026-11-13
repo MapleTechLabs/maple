@@ -5495,24 +5495,6 @@ SELECT
         LIMIT 2000
         FORMAT JSON
 
--- builder:vercel-event-drains:vercelAuditLogSQL:default
-SELECT
-          logs.Timestamp AS timestamp,
-          logs.LogAttributes['vercel.audit.action'] AS action,
-          if(logs.LogAttributes['vercel.audit.actor.name'] != '', logs.LogAttributes['vercel.audit.actor.name'], logs.LogAttributes['vercel.audit.actor.id']) AS actor,
-          logs.LogAttributes['vercel.audit.actor.type'] AS actorType,
-          logs.ResourceAttributes['vercel.project.id'] AS projectId
-        FROM logs
-        WHERE logs.OrgId = 'org_sql_catalog'
-          AND logs.ServiceName = 'vercel-audit-log'
-          AND logs.TimestampTime >= '2026-01-01 10:30:00'
-          AND logs.TimestampTime <= '2026-01-03 14:15:00'
-          AND logs.Timestamp >= '2026-01-01 10:30:00'
-          AND logs.Timestamp <= '2026-01-03 14:15:00'
-        ORDER BY timestamp DESC
-        LIMIT 25
-        FORMAT JSON
-
 -- builder:vercel-event-drains:vercelSpeedInsightsSQL:device
 SELECT
           logs.LogAttributes['vercel.device.type'] AS key,

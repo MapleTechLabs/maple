@@ -1,9 +1,10 @@
-// Vercel Speed Insights, Web Analytics and audit log (/infra/vercel)
+// Vercel Speed Insights and Web Analytics (/infra/vercel)
 //
 // Each drain lands in `logs` under its own service (ingest maps them in
 // `apps/ingest/src/vercel_event_drains.rs`), one record per event, the project on
-// resource `vercel.project.id` (empty for team events). Filtering on the service
-// prunes on the logs sort key.
+// resource `vercel.project.id`. Filtering on the service prunes on the logs sort key.
+// Audit log events go to the admin-only `audit_trail_events` where the gateway stores the audit
+// trail; a gateway that does not keeps them in `logs` under `vercel-audit-log`.
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -16,7 +17,6 @@ type LogColumns = ColumnAccessor<typeof Datasources.logs.columns>
 
 const SPEED_INSIGHTS_SERVICE = "vercel-speed-insights"
 const WEB_ANALYTICS_SERVICE = "vercel-web-analytics"
-const AUDIT_LOG_SERVICE = "vercel-audit-log"
 
 const drainWhere = ($: LogColumns, service: string, scope: VercelProjectScope) => [
 	$.OrgId.eq(orgIdParam),
@@ -150,25 +150,5 @@ export function vercelWebAnalyticsTopSQL(
 		.groupBy("value")
 		.orderBy(["count", "desc"])
 		.limit(10)
-		.format("JSON")
-}
-
-/** The team's newest audit events. */
-export function vercelAuditLogSQL() {
-	return from(Datasources.logs)
-		.select(($) => ({
-			timestamp: $.Timestamp,
-			action: $.LogAttributes.get("vercel.audit.action"),
-			actor: CH.if_(
-				$.LogAttributes.get("vercel.audit.actor.name").neq(""),
-				$.LogAttributes.get("vercel.audit.actor.name"),
-				$.LogAttributes.get("vercel.audit.actor.id"),
-			),
-			actorType: $.LogAttributes.get("vercel.audit.actor.type"),
-			projectId: $.ResourceAttributes.get("vercel.project.id"),
-		}))
-		.where(($) => drainWhere($, AUDIT_LOG_SERVICE, {}))
-		.orderBy(["timestamp", "desc"])
-		.limit(25)
 		.format("JSON")
 }

@@ -337,6 +337,9 @@ describe("vercel card: connected", () => {
 			expectView(text("Connected")).toExist(),
 			expectView(within(role("row", { name: /Logs/ }), text("live"))).toExist(),
 			expectView(within(role("row", { name: /Speed Insights/ }), text("off"))).toExist(),
+			expectView(
+				within(role("row", { name: /Audit log/ }), text(/Security audit log, org admins only/)),
+			).toExist(),
 			expectView(role("link", { name: "storefront" })).toHaveAttr("href", "/infra/vercel/prj_web"),
 			expectView(role("link", { name: /Open Vercel dashboard/ })).toHaveAttr("href", "/infra/vercel"),
 		)
@@ -527,16 +530,14 @@ describe("vercel card: configure", () => {
 		).toEqual(expect.objectContaining({ request: { aiGatewayEnabled: false } }))
 	})
 
-	test("turning on the audit log names its plan and saves only that switch at once", () => {
+	test("turning on the audit log names where its events show and its plan, and saves only that switch at once", () => {
 		const opened = configured(connected())
 		scene(
 			{ update: step, view },
 			given(opened),
 			mounted(),
 			expectView(
-				text(
-					"Who changed what on the team, for the whole team whatever projects you pick. Enterprise plan only.",
-				),
+				text(/Shown in the Security audit log to org admins\. Enterprise plan only\./),
 			).toExist(),
 		)
 		const sent = step(

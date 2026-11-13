@@ -270,7 +270,7 @@ const SIGNALS = {
 	auditLog: {
 		title: "Audit log",
 		carries: "Team actions: env vars, domains, members",
-		powers: "Team activity",
+		powers: "Security audit log, org admins only",
 	},
 } as const satisfies Record<(typeof VERCEL_DRAINS)[number]["key"], unknown>
 

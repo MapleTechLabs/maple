@@ -25,7 +25,7 @@ export const LaterPages = Schema.Struct({
 export type LaterPages = typeof LaterPages.Type
 
 /** The filters a select sets; the actor is typed and applied on Enter. */
-export const SelectFilter = Schema.Literals(["category", "outcome"])
+export const SelectFilter = Schema.Literals(["provider", "category", "outcome"])
 export type SelectFilter = typeof SelectFilter.Type
 
 export const Model = Schema.Struct({

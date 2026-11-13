@@ -22,7 +22,6 @@ import {
 	vercelProjectFunctionsSQL,
 } from "./vercel-functions"
 import {
-	vercelAuditLogSQL,
 	vercelSpeedInsightsSQL,
 	vercelWebAnalyticsSummarySQL,
 	vercelWebAnalyticsTopSQL,
@@ -278,18 +277,6 @@ describe("Web Analytics", () => {
 		expect(events).toContain("logs.LogAttributes['vercel.web_analytics.event.type'] = 'event'")
 		expect(events).toContain("logs.LogAttributes['vercel.web_analytics.event.name'] AS value")
 		expect(events).toContain("ResourceAttributes['vercel.project.id'] = 'prj_1'")
-	})
-})
-
-describe("vercelAuditLogSQL", () => {
-	it("lists the newest audit events, the actor by name or else id", () => {
-		const { sql } = compileUnsafe(vercelAuditLogSQL(), window)
-		expect(sql).toContain("logs.ServiceName = 'vercel-audit-log'")
-		expect(sql).toContain(
-			"if(logs.LogAttributes['vercel.audit.actor.name'] != '', logs.LogAttributes['vercel.audit.actor.name'], logs.LogAttributes['vercel.audit.actor.id']) AS actor",
-		)
-		expect(sql).toContain("ORDER BY timestamp DESC")
-		expect(sql).toContain("LIMIT 25")
 	})
 })
 

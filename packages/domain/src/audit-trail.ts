@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 /** Platforms whose audit events the trail holds. One literal per built adapter; `maple` is Maple's own audit log. */
-export const AuditTrailProvider = Schema.Literals(["maple"])
+export const AuditTrailProvider = Schema.Literals(["maple", "vercel", "gcp"])
 export type AuditTrailProvider = typeof AuditTrailProvider.Type
 
 /**
