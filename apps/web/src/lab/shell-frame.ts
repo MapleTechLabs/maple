@@ -21,6 +21,15 @@ export const foldLabShell = <Model extends { readonly shell: ShellModel }, Messa
 		foldOutMessage: () => (model: Model) => ({ model }),
 	})
 
+/** A signed-in analyst with nothing else read yet: all the shell needs to pick their sidebar. */
+export const ANALYST_CLERK: ShellClerk = {
+	maybeUser: Option.none(),
+	maybeOrganization: Option.none(),
+	memberships: [],
+	customer: undefined,
+	maybeRole: Option.some("org:analyst"),
+}
+
 /** The frame around the page, then the mobile sheet and menu layers (the root's `shellRoute`). */
 export const labShellView = <Message>(
 	h: HtmlBuilder<Message>,

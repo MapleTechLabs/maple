@@ -134,6 +134,15 @@ export const openIncident = (
 ): Option.Option<AlertIncidentRow> =>
 	Arr.findFirst(sloIncidents(slo, incidents), (row) => row.status === "open")
 
+/** Burning: a tier fires, or a tier holds (no events) while the SLO's incident stays open. */
+export const isBurning = (
+	row: Readonly<{ slo: Pick<Slo, "alert_rule_id">; status: SloStatus | null }>,
+	incidents: ReadonlyArray<AlertIncidentRow>,
+): boolean =>
+	row.status !== null &&
+	(Option.isSome(firingTier(row.status)) ||
+		(Option.isSome(holdingTier(row.status)) && Option.isSome(openIncident(row.slo, incidents))))
+
 /** "checkout · production, staging", or the service alone when every environment counts. */
 export const scopeLine = (slo: Pick<Slo, "service_name" | "environments">): string =>
 	slo.environments.length === 0

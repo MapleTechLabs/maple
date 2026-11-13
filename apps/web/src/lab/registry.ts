@@ -588,6 +588,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/analyst-home",
+		title: "Analyst overview",
+		description:
+			"The Overview an analyst gets, in the analyst's shell: nothing wrong, incidents open and checks failing, nothing set up, loading and one read failing (`?state=clear|attention|empty|loading|failed`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/shell",
 		title: "Shell states",
 		description:

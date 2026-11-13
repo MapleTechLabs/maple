@@ -22,10 +22,10 @@ import type { Resources } from "../platform/resources"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import { dismissSheetUrl, pushSheetUrl, sheetParamOf } from "../page/kit/sheet-param"
 import { Message as ShellMessage, Theme } from "../shell/message"
-import { init as initShell, Model as ShellModel, OnCallData, type ShellClerk } from "../shell/model"
+import { init as initShell, Model as ShellModel, OnCallData } from "../shell/model"
 import { NavAudience } from "../shell/nav"
 import type { OnCallSnapshot } from "../shell/oncall"
-import { foldLabShell, labShellView } from "./shell-frame"
+import { foldLabShell, labShellView, ANALYST_CLERK } from "./shell-frame"
 
 // `/lab/shell`: the real sidebar with fixture on-call states and a page to stand on, and the side
 // panel held in `?sheet=` (Back closes it, the link reopens it) in both of its sizes.
@@ -166,15 +166,6 @@ const sheetStep = (model: Model, step: SheetStep): Return => ({
 		...(isDismissed(step) ? [DismissSheetUrl({ href: model.href, id: PANEL_ID[model.panel] })] : []),
 	],
 })
-
-/** A signed-in analyst with nothing else read yet: all the shell needs to pick their sidebar. */
-const ANALYST_CLERK: ShellClerk = {
-	maybeUser: Option.none(),
-	maybeOrganization: Option.none(),
-	memberships: [],
-	customer: undefined,
-	maybeRole: Option.some("org:analyst"),
-}
 
 /** The fixture's shifts, read on the lab's fixed clock. */
 const withOnCall = (shell: ShellModel, fixture: OnCallFixture): ShellModel => ({
