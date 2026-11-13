@@ -153,14 +153,14 @@ export const keyMark = (
 	}
 }
 
-/** Whether a provider's account id tells a reader which account it is: an AWS number, a GitHub or PlanetScale organization. */
+/** Whether a provider's account id tells a reader which account it is: an AWS number, an organization's name. */
 const isNamedByAccount = (provider: CostProvider): boolean =>
 	provider === "aws" || provider === "github" || provider === "planetscale"
 
 /**
  * An account by what reads it: an AWS one by its id, a GitHub or PlanetScale one by its
- * organization, an OpenRouter or Cloudflare one by name alone while it is the org's only one (its id means nothing
- * to a reader). Unknown ids read as they are.
+ * organization, an OpenRouter or Cloudflare one by name alone while it is the org's only one (its
+ * id means nothing to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
