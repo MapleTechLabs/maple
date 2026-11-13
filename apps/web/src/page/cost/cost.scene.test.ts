@@ -166,6 +166,7 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
+			expectView(text(/a PlanetScale organization by database/)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
 			expectView(text("Sources")).not.toExist(),
