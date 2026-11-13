@@ -76,7 +76,7 @@ Turning something off takes effect in Maple at once. Google Cloud keeps the sink
 
 ### Log filter
 
-Platform, request and audit logs are forwarded. Admin Activity and Policy Denied audit entries do not land in logs: they go to the audit log in the Security section, which only organization admins can read. System Event audit entries stay in logs, and so do Kubernetes API writes (`k8s.io`), which are mostly a cluster's own controllers. On a self-hosted gateway that forwards telemetry to a collector, every audit entry stays a log. The default filter leaves out what costs a lot and says little:
+Platform, request and audit logs are forwarded. Admin Activity and Policy Denied audit entries do not land in logs: they go to the audit log in the Security section, which only organization admins can read. System Event audit entries stay in logs, and so do Kubernetes API writes (`k8s.io`), which are mostly a cluster's own controllers. A self-hosted gateway does the same only when it writes to the warehouse itself and `INGEST_AUDIT_TRAIL_ENABLED` is `true`; without the setting, or when it forwards telemetry to a collector, every audit entry stays a log. The default filter leaves out what costs a lot and says little:
 
 | Left out                    | Reason                                                                                                                                                                                     |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

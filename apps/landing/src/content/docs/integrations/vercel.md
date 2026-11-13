@@ -82,7 +82,7 @@ Audit events do not arrive as logs. They go to the audit log in the Security sec
 
 Each event shows who acted (name, email and id), the action as Vercel names it, such as `drain-created`, what it was done to, the time, the IP address and user agent, and the event's payload as Vercel sent it. A payload over 32 KB is not kept. Maple accepts audit events only from the drain it creates on your team; a drain you add by hand on Vercel is refused.
 
-A self-hosted gateway that forwards telemetry to a collector has no audit log table. There, audit events arrive as logs under the `vercel-audit-log` service.
+A self-hosted gateway stores audit events in the audit log only when it writes to the warehouse itself and `INGEST_AUDIT_TRAIL_ENABLED` is `true`. Without the setting, or when the gateway forwards telemetry to a collector, audit events arrive as logs under the `vercel-audit-log` service, where every member can read them.
 
 ## AI Gateway
 
@@ -109,7 +109,7 @@ The trace drain forwards these spans to Maple. You do not need to configure an e
 
 ## Where the data shows
 
-- **Infrastructure → Vercel → Overview**: requests, error rate, cache hit rate and cold-start rate across the team, AI Gateway spend by project, recent builds and failed builds, and, when those drains are on, Web Vitals, page views and audit log events.
+- **Infrastructure → Vercel → Overview**: requests, error rate, cache hit rate and cold-start rate across the team, AI Gateway spend by project, recent builds and failed builds, and, when those drains are on, Web Vitals and page views. Audit events are in **Security → Audit log**.
 - **Infrastructure → Vercel → Projects**: each project with its last build, requests, 5xx rate, cache hit rate, cold-start rate and latency. Click a project for its own page.
 - **A project's page** has a tab for each part:
     - **Traffic**: requests by status class, top paths with their cache hit rate, and top errors.
@@ -121,7 +121,7 @@ The trace drain forwards these spans to Maple. You do not need to configure an e
     A section whose drain is off says so and links to the setting that turns it on.
 
 - **Service map**: each project with its outbound calls, from its function spans, and an edge from `vercel.edge-network` to every project it invokes. A project's Infrastructure tab links to its Vercel project page.
-- [Logs](/docs/explore/logs): filter by `service.name` (the project name) or `vercel.project.id`. Speed Insights, Web Analytics and audit log events are under their own `service.name`.
+- [Logs](/docs/explore/logs): filter by `service.name` (the project name) or `vercel.project.id`. Speed Insights and Web Analytics are under their own `service.name`.
 - [Traces](/docs/explore/traces): your `@vercel/otel` service, the deployment traces, and `ai-gateway`.
 - **Dashboards**: the **Vercel** template charts requests, cache, errors and AI Gateway usage.
 
