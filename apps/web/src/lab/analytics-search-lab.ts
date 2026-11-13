@@ -178,10 +178,17 @@ const answerOf = (
 						? []
 						: Arr.map(
 								ordered(model, "pages", ofSite(SEARCH_LANDING), (row) => row.page),
-								(row) =>
-									model.search.eventName === undefined
-										? row
-										: { ...row, conversions: Math.round(row.sessions * 0.06) },
+								(row) => ({
+									...row,
+									// The second property is the blog: its pages live on its own host.
+									...(isSecond
+										? { host: SECOND_HOST, page: `https://${SECOND_HOST}${row.path}` }
+										: null),
+									conversions:
+										model.search.eventName === undefined
+											? null
+											: Math.round(row.sessions * 0.06),
+								}),
 							),
 				),
 			)
@@ -189,6 +196,8 @@ const answerOf = (
 			return Option.none()
 	}
 }
+
+const SECOND_HOST = "blog.acme.dev"
 
 const isWaiting = (model: AnalyticsModel, slot: SlotName): boolean => {
 	const data: AsyncData.AsyncData<unknown, unknown> = model[slot].data
