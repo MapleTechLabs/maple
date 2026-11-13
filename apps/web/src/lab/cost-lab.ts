@@ -57,6 +57,7 @@ export const LabState = Schema.Literals([
 	"empty-window",
 	"loading",
 	"by-provider",
+	"cloudflare",
 	"add-source",
 	"add-openrouter",
 	"key-refused",
@@ -107,7 +108,9 @@ const searchFor = (state: LabState): Search =>
 		? { groupBy: "region", cloud_service: ["Example Compute"] }
 		: state === "by-provider"
 			? { groupBy: "provider" }
-			: {}
+			: state === "cloudflare"
+				? { provider: ["cloudflare"] }
+				: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>

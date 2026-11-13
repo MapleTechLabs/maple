@@ -888,6 +888,59 @@ describe("cost page", () => {
 		)
 	})
 
+	test("Cloudflare rows read by name and drill down like the others: an account and a provider to their services", () => {
+		const account = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+		const cloudflare = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "cloudflare",
+			accountId: account,
+			requestsThisMonth: 0,
+		})
+		const rowsOf = (search: Search, keys: ReadonlyArray<string>): Model => {
+			const model = answered(entered(search, [source(), cloudflare]).model)
+			return pageUpdate(
+				model,
+				Message.CompletedLoadBreakdown({
+					key: model.breakdown.key ?? "",
+					result: Result.succeed(
+						Schema.decodeSync(CostBreakdownResponse)({
+							currency: "USD",
+							rows: Arr.map(keys, (key) => ({ key, cost: 100, previousCost: 80 })),
+						}),
+					),
+				}),
+			).model
+		}
+		const accountHref = `/cost?groupBy=cloud_service&account=%5B%22${account}%22%5D`
+		scene(
+			{ update: pageUpdate, view },
+			given(rowsOf({ groupBy: "account" }, [account, "123456789012"])),
+			resolveTheme,
+			// The account reads as what it is, and filters by its id.
+			expectView(role("link", { name: /^Cloudflare/ })).toHaveAttr("href", accountHref),
+			expectView(role("link", { name: /^AWS 123456789012/ })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(rowsOf({ groupBy: "provider" }, ["cloudflare", "aws"])),
+			resolveTheme,
+			expectView(role("link", { name: "Cloudflare" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=cloud_service&provider=%5B%22cloudflare%22%5D",
+			),
+		)
+		// A product under that filter moves on to regions, where Cloudflare has the one.
+		scene(
+			{ update: pageUpdate, view },
+			given(rowsOf({ provider: ["cloudflare"] }, ["Workers", "R2"])),
+			resolveTheme,
+			expectView(role("link", { name: "Workers" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=region&cloud_service=%5B%22Workers%22%5D&provider=%5B%22cloudflare%22%5D",
+			),
+		)
+	})
+
 	test("picking another grouping moves the URL, then re-reads the chart and the table, not the totals", () => {
 		const model = populated({})
 		scene(
