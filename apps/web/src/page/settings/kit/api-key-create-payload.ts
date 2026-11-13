@@ -1,4 +1,3 @@
-import type { ApiKeyKind } from "@maple/domain/http"
 import type { V2ApiKeyCreateParams, V2Scope } from "@maple/domain/http/v2"
 import { String as Str } from "effect"
 
@@ -10,7 +9,7 @@ export interface ApiKeyCreateOptions {
 export const buildApiKeyCreatePayload = (
 	name: string,
 	description: string,
-	kind: ApiKeyKind | undefined,
+	kind: V2ApiKeyCreateParams["kind"],
 	options: ApiKeyCreateOptions = {},
 ): V2ApiKeyCreateParams => {
 	const trimmedDescription = Str.trim(description)

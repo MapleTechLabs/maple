@@ -109,6 +109,28 @@ describe("scoped API keys on the MCP server", () => {
 	)
 })
 
+describe("device credentials on the MCP server", () => {
+	it.effect("refuses one even when it carries no scopes", () =>
+		Effect.gen(function* () {
+			const apiKeys = yield* ApiKeysService
+			const key = yield* apiKeys.create(orgId, userId, { name: "widgets", kind: "device" })
+			const result = yield* resolveMcpTenantContext(
+				new Request("https://api.example.com/mcp", {
+					method: "POST",
+					headers: { authorization: `Bearer ${key.secret}` },
+				}),
+			).pipe(Effect.result)
+			expect(result._tag).toBe("Failure")
+			if (result._tag === "Failure") {
+				expect(result.failure).toMatchObject({
+					_tag: "@maple/mcp/errors/McpAuthInvalidError",
+					reason: "invalid_target",
+				})
+			}
+		}).pipe(Effect.provide(makeLayer())),
+	)
+})
+
 describe("Maple's internal service token on the MCP server", () => {
 	it.effect("refuses the configured token, whatever org it names", () =>
 		Effect.gen(function* () {

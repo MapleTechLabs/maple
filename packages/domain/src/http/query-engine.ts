@@ -33,6 +33,7 @@ import {
 } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
+import { DependencyScanForbiddenError } from "./dependency-scan"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseHttpErrors } from "./warehouse"
 import {
@@ -4119,6 +4120,9 @@ const queryEngineEndpointErrors = [
 	...warehouseHttpErrors,
 ] as const
 
+// The Security Center's telemetry tabs are for engineers and admins, like its findings.
+const securityEndpointErrors = [...queryEngineEndpointErrors, DependencyScanForbiddenError] as const
+
 const costEndpointErrors = [
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
@@ -4969,14 +4973,14 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("securityExposure", "/security-exposure", {
 			payload: SecurityExposureRequest,
 			success: SecurityExposureResponse,
-			error: queryEngineEndpointErrors,
+			error: securityEndpointErrors,
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("securityRuntimes", "/security-runtimes", {
 			payload: SecurityRuntimesRequest,
 			success: SecurityRuntimesResponse,
-			error: queryEngineEndpointErrors,
+			error: securityEndpointErrors,
 		}),
 	)
 	.add(

@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyId, PostgresTransactionId, UserId } from "@maple/primitives"
-import { ApiKeyKind, ApiKeyNotFoundError, ApiKeyPersistenceError } from "../api-keys"
+import { ApiKeyKind, ApiKeyNotFoundError, ApiKeyPersistenceError, CreatableApiKeyKind } from "../api-keys"
 import { AuthorizationV2, V2Scope } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
@@ -161,7 +161,7 @@ export const V2ApiKeyCreateParams = Schema.Struct({
 		}),
 	),
 	kind: Schema.optionalKey(
-		ApiKeyKind.annotate({
+		CreatableApiKeyKind.annotate({
 			description: "Key type. Defaults to `standard`.",
 			examples: ["standard"],
 		}),

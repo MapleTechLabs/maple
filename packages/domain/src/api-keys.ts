@@ -11,3 +11,7 @@ import { Schema } from "effect"
  */
 export const ApiKeyKind = Schema.Literals(["standard", "mcp", "device"])
 export type ApiKeyKind = Schema.Schema.Type<typeof ApiKeyKind>
+
+/** The kinds a caller may create by name. A `device` credential is issued to an installation by its own endpoints. */
+export const CreatableApiKeyKind = Schema.Literals(["standard", "mcp"])
+export type CreatableApiKeyKind = Schema.Schema.Type<typeof CreatableApiKeyKind>

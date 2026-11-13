@@ -379,7 +379,7 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 				identifier: "getAwsConnectionSetup",
 				summary: "Render a connection's setup",
 				description:
-					"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. Requires an org-admin role and the `integrations:read` scope.",
+					"Returns the CloudShell script, the CloudFormation template and the Terraform file that set up one connection. They contain the metric stream's access key, so this requires an org-admin role and, for a scoped API key, the `integrations:write` scope.",
 			}),
 		),
 	)

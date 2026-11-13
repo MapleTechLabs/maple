@@ -5,6 +5,7 @@ import {
 	isoTimestampOrNull,
 	MapleApiV2,
 	paginateArray,
+	scopeAllows,
 	uptimeConfigFromWire,
 	uptimeConfigToWire,
 	V2InsufficientPermissions,
@@ -62,6 +63,11 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 	updated_at: isoTimestamp(monitor.updatedAt),
 })
 
+/** Whether the caller may write monitors: the role, and for a scoped API key the write scope too. */
+const canWriteMonitors = (tenant: CurrentTenant.TenantContext) =>
+	Policy.can(tenant.roles, "uptime_monitors:manage") &&
+	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
+
 /** Header values and the heartbeat URL are credentials: callers who cannot write see neither. */
 const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor => {
 	if (canWrite) return monitor
@@ -96,7 +102,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const monitors = yield* service.list(tenant.orgId)
-					const canWrite = Policy.can(tenant.roles, "uptime_monitors:manage")
+					const canWrite = canWriteMonitors(tenant)
 					const page = yield* paginateArray(
 						Arr.map(monitors, (monitor) => forReader(toV2UptimeMonitor(monitor), canWrite)),
 						query,
@@ -108,10 +114,7 @@ export const HttpV2UptimeMonitorsLive = HttpApiBuilder.group(MapleApiV2, "uptime
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const monitor = yield* service.get(tenant.orgId, params.id)
-					return forReader(
-						toV2UptimeMonitor(monitor),
-						Policy.can(tenant.roles, "uptime_monitors:manage"),
-					)
+					return forReader(toV2UptimeMonitor(monitor), canWriteMonitors(tenant))
 				}),
 			)
 			.handle("create", ({ payload }) =>

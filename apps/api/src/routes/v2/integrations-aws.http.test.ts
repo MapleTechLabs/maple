@@ -239,6 +239,12 @@ describe("v2 aws integration over HTTP", () => {
 		])
 		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, member.secret)).status).toBe(403)
 		expect((await harness.request("DELETE", `${CONNECTIONS}/${id}`, member.secret)).status).toBe(403)
+		// A setup holds the stream's access key, so a key that only reads integrations cannot render one.
+		const reader = await harness.adminKey(["integrations:read"])
+		const refused = await harness.request("GET", `${CONNECTIONS}/${id}/setup`, reader.secret)
+		expect([refused.status, refused.body.error.code]).toEqual([403, "insufficient_scope"])
+		const writer = await harness.adminKey(["integrations:write"])
+		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, writer.secret)).status).toBe(200)
 
 		const deleted = await harness.request("DELETE", `${CONNECTIONS}/${id}`, admin.secret)
 		expect(deleted.status).toBe(200)

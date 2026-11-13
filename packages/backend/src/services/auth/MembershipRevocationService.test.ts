@@ -483,6 +483,26 @@ describe("MembershipRevocationService", () => {
 			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
 			expect(toMember.apiKeysRevoked).toBe(1)
 			expect(yield* stillWorks(engineerToken)).toBe(false)
+
+			// An approval made as an engineer and not yet redeemed mints nothing after the demotion.
+			const pending = yield* cli.start("Laptop", "127.0.0.1")
+			yield* cli.approve(pending.userCode, {
+				orgId,
+				userId: stayerId,
+				roles: [engineerRole],
+				userEmail: null,
+			})
+			// One approved at the role the member keeps survives.
+			const kept = yield* cli.start("Laptop", "127.0.0.1")
+			yield* cli.approve(kept.userCode, {
+				orgId,
+				userId: stayerId,
+				roles: [memberRole],
+				userEmail: null,
+			})
+			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			expect((yield* cli.poll(pending.deviceCode)).status).toBe("expired")
+			expect((yield* cli.poll(kept.deviceCode)).status).toBe("complete")
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 

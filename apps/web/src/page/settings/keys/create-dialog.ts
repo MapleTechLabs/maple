@@ -1,4 +1,4 @@
-import { ApiKeyKind } from "@maple/domain/http"
+import { CreatableApiKeyKind } from "@maple/domain/http"
 import { V2ApiKeyCreateParams, V2ApiKeyWithSecret, type V2Scope } from "@maple/domain/http/v2"
 import { type ApiKeyCreateOptions, buildApiKeyCreatePayload } from "../kit/api-key-create-payload"
 import { Effect, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -54,7 +54,7 @@ export type AccessMode = typeof AccessMode.Type
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
-	kind: ApiKeyKind,
+	kind: CreatableApiKeyKind,
 	name: Field.Model,
 	description: Field.Model,
 	expiration: Select.Model,
@@ -97,7 +97,7 @@ export const Message = defineMessageUnion({
 	ClickedClearScopeFilter: {},
 	ClickedCancel: {},
 	ClickedCreate: {},
-	CompletedCreate: { kind: ApiKeyKind, result: Schema.Result(V2ApiKeyWithSecret, LoadFailure) },
+	CompletedCreate: { kind: CreatableApiKeyKind, result: Schema.Result(V2ApiKeyWithSecret, LoadFailure) },
 	GotSecretCopyMessage: { message: CopyButton.Message },
 	ToggledSecretVisible: {},
 	/** `trackProduct("api_key_created")` was handed to the session SDK. */
@@ -118,7 +118,7 @@ export type OutMessage = typeof OutMessage.Type
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 export const CreateApiKey = Command.define("CreateApiKey", {
-	args: { kind: ApiKeyKind, payload: V2ApiKeyCreateParams },
+	args: { kind: CreatableApiKeyKind, payload: V2ApiKeyCreateParams },
 	messages: [Message.CompletedCreate],
 	execute: ({ kind, payload }) =>
 		Effect.gen(function* () {
@@ -129,7 +129,7 @@ export const CreateApiKey = Command.define("CreateApiKey", {
 
 /** `api_key_created`: the key's kind and access (an MCP key is always full access). */
 export const TrackKeyCreated = Command.define("TrackApiKeyCreated", {
-	args: { kind: ApiKeyKind, access: Schema.String },
+	args: { kind: CreatableApiKeyKind, access: Schema.String },
 	messages: [Message.CompletedTrackKeyCreated],
 	execute: ({ kind, access }) =>
 		trackProduct("api_key_created", { kind, access }).pipe(Effect.as(Message.CompletedTrackKeyCreated())),
@@ -181,7 +181,7 @@ const reset = (model: Model): Model => ({
 const close = (model: Model): Return => liftDialog(reset(model), Dialog.close(model.dialog))
 
 /** Opens empty for `kind`; a key created while it was closed is shown. */
-export const open = (model: Model, kind: ApiKeyKind): Return => {
+export const open = (model: Model, kind: CreatableApiKeyKind): Return => {
 	const fresh = init(model.dialog.id)
 	const kept = { isCreating: model.isCreating, created: model.created }
 	return liftDialog({ ...fresh, ...kept, kind, dialog: model.dialog }, Dialog.open(model.dialog))
