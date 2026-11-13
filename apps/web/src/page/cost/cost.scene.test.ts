@@ -508,11 +508,14 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(text("Add Cloudflare")).toExist(),
 			expectView(text("API token")).toExist(),
-			expectView(role("link", { name: "Create a custom token" })).toHaveAttr(
+			// The link opens Cloudflare's form with Billing: Read as its one permission.
+			expectView(role("link", { name: "Create a token with only Billing: Read" })).toHaveAttr(
 				"href",
-				"https://dash.cloudflare.com/profile/api-tokens",
+				"https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22billing%22%2C%22type%22%3A%22read%22%7D%5D&name=Maple%20cost%20source%20%28billing%20read%29&accountId=*&zoneId=all",
 			),
-			expectView(text(/with the Billing: Read permission on one account/)).toExist(),
+			// What is left to do there: the template starts on all accounts.
+			expectView(text(/Under Account Resources pick the one account/)).toExist(),
+			expectView(text(/reads billing and nothing more/)).toExist(),
 			// The other provider's form is not this one.
 			expectView(text("Management key")).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeDisabled(),
