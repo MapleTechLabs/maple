@@ -32,6 +32,7 @@ import {
 	FetchEvents,
 	FetchGithubStatus,
 	FetchInvestigations,
+	FetchIssueSession,
 	FetchPullRequests,
 	FetchVcsPullRequests,
 	FetchVerifications,
@@ -68,6 +69,8 @@ import {
 	startWrite,
 } from "./writes"
 import { isIssueSeverity } from "../../kit/issue-severity"
+import { acceptGrants } from "../../kit/session-grants"
+import { initialGrants, readsSessionGrants } from "../kit/grants"
 
 const decodePullRequestId = Schema.decodeUnknownOption(ErrorIssuePullRequestId)
 
@@ -224,6 +227,7 @@ export const init = (
 	const model: Model = {
 		issueId: route.issueId,
 		search: route.search,
+		grants: initialGrants,
 		window: null,
 		nowMs: 0,
 		leaseNowMs: 0,
@@ -272,6 +276,7 @@ export const init = (
 		model: reads.model,
 		commands: [
 			resolveCommand(model.search, context, "Load"),
+			...(readsSessionGrants ? [FetchIssueSession({ orgId: context.orgId })] : []),
 			...(reads.commands ?? []),
 			LoadChartRuntime(),
 		],
@@ -390,6 +395,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				detailStep(context, window, mode),
 				affectedUsersStep(context, window, mode),
 			]),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchDetail: ({ key, result }) =>
 			runSteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
 				loadedReads(context),

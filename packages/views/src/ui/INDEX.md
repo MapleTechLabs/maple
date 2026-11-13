@@ -295,7 +295,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/service-metrics/markers-view.ts` `markersOverlay`: Commit markers over a chart, idle.
 - `apps/web/src/page/kit/service-metrics/markers.ts` `commitMarkers`, `markerShas`, `markerLayout`: Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
-- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canReadAuditLog`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
+- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
 - `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: A settings tab's titled sections, the stack they sit in, and the admin-only note.
 - `apps/web/src/page/kit/severity-tokens.ts` `statusLabel`: Canonical severity/status → Tailwind class maps for the infrastructure UI.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: A detail sheet's eyebrow kind, title, screen-reader description and meta row.

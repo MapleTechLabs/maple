@@ -21,7 +21,7 @@ import {
 } from "@maple/views/ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
-import { type Model, type ShellClerk, shellProbe, shellSurfaces } from "./model"
+import { type Model, type ShellClerk, shellAudience, shellProbe, shellSurfaces } from "./model"
 import {
 	isNavItemActive,
 	matchSubItem,
@@ -43,18 +43,22 @@ import { typography } from "@maple/views/ui/typography"
  * Security also needs a role with `security:manage`: members never see it.
  */
 export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<NavGroup> => {
+	const audience = shellAudience(clerk)
 	const flag = (name: keyof NavFlags) =>
 		!isClerkAuthEnabled ||
 		(clerk !== null && Option.exists(clerk.maybeOrganization, (organization) => organization.flags[name]))
 	const canReadSecurity =
 		!isClerkAuthEnabled ||
 		(clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.can([role], "security:manage")))
-	return navGroups({
-		cloudCost: flag("cloudCost"),
-		releases: flag("releases"),
-		securityAudit: flag("securityAudit") && canReadSecurity,
-		statusPages: flag("statusPages"),
-	})
+	return navGroups(
+		{
+			cloudCost: flag("cloudCost"),
+			releases: flag("releases"),
+			securityAudit: flag("securityAudit") && canReadSecurity,
+			statusPages: flag("statusPages"),
+		},
+		audience,
+	)
 }
 
 /** The last-hour probe's answer; `null` while it is first in flight or after it failed. */

@@ -182,6 +182,33 @@ const alertsItem: NavItem = {
 	],
 }
 
+/** The analyst's Alerts: what is wrong now and how reliable things are, without the setup pages. */
+const analystIncidentsItem: NavItem = {
+	title: "Incidents",
+	href: "/alerts",
+	icon: "BellIcon",
+	alsoActive: ["/anomalies"],
+	subItems: [
+		{
+			title: "Inbox",
+			href: "/alerts",
+			icon: "BellIcon",
+			paletteTitle: "Incidents",
+			alsoActive: ["/anomalies"],
+			count: "alertsInbox",
+		},
+		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
+		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
+	],
+}
+
+/**
+ * Who the sidebar is drawn for. An analyst follows the product without operating it, so they get
+ * the pages that answer "is it working and how is it doing", not the ones for digging or setup.
+ */
+export const NavAudience = Schema.Literals(["operator", "analyst"])
+export type NavAudience = typeof NavAudience.Type
+
 /** The org rollout flags that gate a nav row each. */
 export type NavFlags = Readonly<{
 	cloudCost: boolean
@@ -190,8 +217,38 @@ export type NavFlags = Readonly<{
 	statusPages: boolean
 }>
 
-/** `navGroups(flags)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a row each. */
-export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
+	{
+		id: "reliability",
+		label: "Reliability",
+		items: [
+			analystIncidentsItem,
+			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				: []),
+		],
+	},
+	{
+		id: "product",
+		label: "Product",
+		items: [
+			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			{ title: "Users", href: "/users", icon: "UsersIcon" },
+			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
+			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
+			...(flags.releases
+				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
+				: []),
+			...(flags.cloudCost
+				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
+				: []),
+		],
+	},
+]
+
+const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "monitor",
@@ -244,6 +301,13 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		],
 	},
 ]
+
+/**
+ * `navGroups(flags, audience)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a
+ * row each, and an analyst gets {@link analystNavGroups}.
+ */
+export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
+	audience === "analyst" ? analystNavGroups(flags) : operatorNavGroups(flags)
 
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>

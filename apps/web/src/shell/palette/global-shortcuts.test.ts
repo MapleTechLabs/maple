@@ -59,7 +59,12 @@ describe("global shortcuts", () => {
 		const opened = step(signedIn(), Message.ClickedSearch()).model
 		const entered = step(
 			opened,
-			toPalette(Palette.Message.PressedEnter({ visibleFlagged: ["/releases", "/security"] })),
+			toPalette(
+				Palette.Message.PressedEnter({
+					visibleFlagged: ["/releases", "/security"],
+					audience: "operator",
+				}),
+			),
 		)
 		expect(entered.outMessage).toEqual({ _tag: "RequestedNavigation", url: "/" })
 	})

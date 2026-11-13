@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { AuthorizationUnavailableError, OrgId, UserId } from "@maple/domain/http"
+import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
@@ -311,6 +311,48 @@ describe("ChatSessionsRouter", () => {
 				assert.strictEqual(turns.length, 0)
 			}),
 			authProviderAway,
+		)
+	})
+
+	it.effect("lets an analyst read an investigation's thread but not drive or stop it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		const asAnalyst = Layer.effect(
+			AuthService,
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return {
+					...auth,
+					resolveTenant: () =>
+						Effect.succeed({
+							orgId: ORG,
+							userId: USER,
+							roles: [Schema.decodeSync(RoleName)("org:analyst")],
+							authMode: "clerk" as const,
+						}),
+				}
+			}),
+		).pipe(Layer.provide(AuthService.layer))
+		const call = (handler: (request: Request) => Promise<Response>, method: string, path: string) =>
+			Effect.promise(() =>
+				handler(
+					new Request(`http://api.localhost${SESSION_PATH}${path}`, {
+						method,
+						headers: { authorization: "Bearer aaa.bbb.ccc" },
+					}),
+				),
+			)
+		return withHandler(
+			testDb,
+			turns,
+			Effect.fnUntraced(function* (handler) {
+				const sent = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+				assert.strictEqual(sent.status, 403)
+				assert.strictEqual(turns.length, 0)
+				assert.strictEqual((yield* call(handler, "POST", "/abort")).status, 403)
+				assert.strictEqual((yield* call(handler, "GET", "/history")).status, 200)
+			}),
+			asAnalyst,
 		)
 	})
 

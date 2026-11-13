@@ -174,6 +174,10 @@ export type Model = typeof Model.Type
 export const canManage = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "status_pages:edit")
 
+/** The viewer may post, update, edit and delete incidents and maintenance (`status_page_incidents:post`). */
+export const canPostIncidents = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_page_incidents:post")
+
 /** The viewer may change who can read the page, its password included (`status_pages:access`). */
 export const canChangeAccess = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "status_pages:access")

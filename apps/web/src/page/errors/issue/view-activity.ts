@@ -339,9 +339,17 @@ const participantStrip = (h: H, participants: ReadonlyArray<ActorDocument>): Rea
 /** The composer; self-hosted has no directory, so no "me" avatar. */
 export const commentComposer = (
 	h: H,
-	options: Readonly<{ draft: string; isPosting: boolean; participants: ReadonlyArray<ActorDocument> }>,
+	options: Readonly<{
+		draft: string
+		isPosting: boolean
+		participants: ReadonlyArray<ActorDocument>
+		/** Commenting is triage: a viewer without it keeps the participants and gets no box. */
+		canComment: boolean
+	}>,
 ): Html => {
 	const canSubmit = !options.isPosting && Str.trim(options.draft).length > 0
+	if (!options.canComment)
+		return h.div([h.Class(cn("space-y-2", "mt-6"))], participantStrip(h, options.participants))
 	return h.div(
 		[h.Class(cn("space-y-2", "mt-6"))],
 		[

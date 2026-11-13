@@ -51,10 +51,12 @@ import {
 } from "../page/kit/alert-test-rows"
 import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
+import { labGrants, LabRole, readLabRole } from "./viewer-role"
 
 // `/lab/anomaly-alerts`: anomalies paging through alert rules, over fixtures. `?state=` picks one:
 // editor-new, editor-blank, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
 // hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules, rule-anomaly, overview-banner.
+// `?role=member|analyst` reads the hub and the incident as that viewer: an analyst gets no acknowledge.
 
 export const LabState = Schema.Literals([
 	"editor-new",
@@ -74,14 +76,15 @@ export const LabState = Schema.Literals([
 ])
 export type LabState = typeof LabState.Type
 
-export const Flags = Schema.Struct({ state: LabState })
+export const Flags = Schema.Struct({ state: LabState, role: LabRole })
 export type Flags = typeof Flags.Type
 
-export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
+export const flags: Effect.Effect<Flags> = Effect.map(readLabRole, (role) => ({
 	state: Option.getOrElse(
 		Schema.decodeUnknownOption(LabState)(new URLSearchParams(window.location.search).get("state")),
 		(): LabState => "hub-anomalies",
 	),
+	role,
 }))
 
 export const Model = Schema.Struct({
@@ -157,7 +160,7 @@ const RESOLVED = [
 	}),
 ]
 
-const hubFor = (state: LabState) => {
+const hubFor = (state: LabState, role: LabRole) => {
 	const search: HubAt =
 		state === "hub-rules"
 			? { tab: "rules" }
@@ -183,7 +186,7 @@ const hubFor = (state: LabState) => {
 			}),
 			HubMessage.Message.UpdatedIncidents({ orgId: ORG, rows: incidents }),
 			HubMessage.Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
-			HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: Policy.allPermissions }),
+			HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: labGrants(role) }),
 		],
 		(model, message) => HubUpdate.update(model, message, CONTEXT),
 	)
@@ -256,7 +259,7 @@ const INCIDENTS = {
 	"incident-spike": { n: 3, signal: "error_spike", severity: "critical", service: "payments-worker" },
 } as const
 
-const incidentFor = (state: LabState) => {
+const incidentFor = (state: LabState, role: LabRole) => {
 	const scenario =
 		state === "incident-warning" || state === "incident-critical" || state === "incident-spike"
 			? INCIDENTS[state]
@@ -302,7 +305,7 @@ const incidentFor = (state: LabState) => {
 				key: synced.activity.key ?? "",
 				result: Result.succeed([]),
 			}),
-			IncidentMessage.Message.CompletedFetchSession({ grants: Policy.allPermissions }),
+			IncidentMessage.Message.CompletedFetchSession({ grants: labGrants(role) }),
 			IncidentMessage.Message.CompletedFetchSilences({
 				key: synced.silences.key ?? "",
 				result: Result.succeed([]),
@@ -355,9 +358,9 @@ const isIncident = Str.startsWith("incident")
 export const init = (flags: Flags): Return => ({
 	model: {
 		state: flags.state,
-		hub: hubFor(flags.state),
+		hub: hubFor(flags.state, flags.role),
 		editor: editorFor(flags.state),
-		incident: incidentFor(flags.state),
+		incident: incidentFor(flags.state, flags.role),
 		rule: ruleFor(),
 	},
 	// The incident page's chart runtime still loads, so its anomaly chart draws.

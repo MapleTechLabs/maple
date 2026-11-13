@@ -1,4 +1,5 @@
 import { V2ErrorIssue, V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -56,6 +57,8 @@ export type PageSlot = typeof PageSlot.Type
 
 export const Model = Schema.Struct({
 	search: ErrorsSearch,
+	/** What the viewer may do; an analyst reads the list and gets no triage control. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** The trend window (`ERRORS_WINDOW`) and the clock it was resolved at. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,

@@ -5,6 +5,7 @@ import { TinybirdDateTime } from "../query-engine"
 import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
+import { AnalystAccess } from "./analyst-access"
 
 // MCP hub endpoint schemas (`/mcp-servers`, a server's overview, its tool page and its sessions).
 //
@@ -339,4 +340,6 @@ export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
 		}),
 	)
 	.prefix("/internal/mcp-servers")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an analyst may call it.
+	.annotate(AnalystAccess, "read") {}

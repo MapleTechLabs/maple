@@ -7639,7 +7639,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -7808,7 +7808,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -7932,7 +7932,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8079,7 +8079,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8204,7 +8204,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/AlertForbiddenError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/errors/AlertForbiddenError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8338,7 +8338,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8529,7 +8529,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -8744,7 +8744,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -8868,7 +8868,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9018,7 +9018,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9175,7 +9175,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -9299,7 +9299,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9443,7 +9443,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -9585,7 +9585,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -9734,7 +9734,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "409": {
             "content": {
@@ -9876,7 +9876,7 @@
                 }
               }
             },
-            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/errors/DeviceCredentialSessionRequiredError failure. HTTP 403. | The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10119,7 +10119,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10400,7 +10400,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10525,7 +10525,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -10681,7 +10681,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10835,7 +10835,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -10989,7 +10989,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11143,7 +11143,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11287,7 +11287,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11432,7 +11432,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11567,7 +11567,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11692,7 +11692,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -11823,7 +11823,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -11972,7 +11972,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -12111,7 +12111,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -12268,7 +12268,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -12447,7 +12447,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -12582,7 +12582,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -12732,7 +12732,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -12909,7 +12909,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -13054,7 +13054,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -13189,7 +13189,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -13324,7 +13324,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -13458,7 +13458,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "404": {
             "content": {
@@ -13610,7 +13610,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -13740,7 +13740,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {
@@ -13864,7 +13864,7 @@
                 }
               }
             },
-            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/InsufficientPermissionsError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403. | The @maple/http/v2/NoActiveOrganizationError failure. HTTP 403."
           },
           "429": {
             "content": {

@@ -51,6 +51,13 @@ export const check = <E>(
 ): Effect.Effect<void, E> =>
 	can(roles, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
 
+/** Whether the roles are an analyst's, with no higher role beside it: they read, and build dashboards. */
+export const isAnalyst = (roles: ReadonlyArray<string>): boolean => highestRole(roles) === "analyst"
+
+/** What an analyst is told when a change is refused, on every surface. */
+export const analystMessage =
+	"Analysts can read Maple and build dashboards, but not change anything else. Ask an org admin for the Member role to do more."
+
 /** Every permission the roles hold, for a page model to keep instead of role flags. */
 export const grantsOf = (roles: ReadonlyArray<string>): ReadonlyArray<Permission> =>
 	Arr.filter(allPermissions, (permission) => can(roles, permission))

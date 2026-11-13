@@ -19,7 +19,7 @@ import {
 } from "@maple/views/ui/sidebar"
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellAudience } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "@maple/views/ui/typography"
@@ -405,14 +405,29 @@ export const shellSidebarFooter = (
 		sidebarMenu(h, undefined, [
 			// A row of the footer's list, so it keeps the list's 4px rhythm.
 			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
-			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
-			// `/integrations` renders inside the settings rail, so Settings owns it.
-			footerNavRow(
-				h,
-				currentPath,
-				{ href: "/settings", title: "Settings", icon: "GearIcon", alsoActive: "/integrations" },
-				tip,
-			),
+			// An analyst sets nothing up: their account is in the user menu below.
+			...(shellAudience(clerk) === "analyst"
+				? []
+				: [
+						footerNavRow(
+							h,
+							currentPath,
+							{ href: "/sources", title: "Sources", icon: "ConnectionIcon" },
+							tip,
+						),
+						// `/integrations` renders inside the settings rail, so Settings owns it.
+						footerNavRow(
+							h,
+							currentPath,
+							{
+								href: "/settings",
+								title: "Settings",
+								icon: "GearIcon",
+								alsoActive: "/integrations",
+							},
+							tip,
+						),
+					]),
 		]),
 		h.div(
 			[h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")],
