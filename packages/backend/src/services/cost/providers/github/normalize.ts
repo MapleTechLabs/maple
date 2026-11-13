@@ -1,6 +1,22 @@
 // A GitHub billing usage report as `cost_daily` rows: one per day, product, SKU and repository.
-import { Array as Arr, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, DateTime, Option, Record as Rec, Schema, String as Str } from "effect"
 import type { CostPullRow, CostPullWindow } from "../../CostProvider"
+
+/** A day alone, or a UTC timestamp to the second, with or without a fraction. */
+const USAGE_DATE = /^\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?Z)?$/
+
+/**
+ * Whether the text is a day that exists, alone or as a UTC timestamp. A day that does not exist
+ * (`2026-11-31`) parses as nothing or as a later day, so it does not come back as itself.
+ */
+const isUsageDate = (value: string): boolean => {
+	if (!USAGE_DATE.test(value)) return false
+	const day = Str.slice(0, 10)(value)
+	return Option.exists(
+		DateTime.make(`${day}T00:00:00Z`),
+		(parsed) => DateTime.formatIsoDateUtc(parsed) === day,
+	)
+}
 
 /**
  * One usage line of the report. `date` is a timestamp, not always at midnight: the day is its
@@ -9,7 +25,9 @@ import type { CostPullRow, CostPullWindow } from "../../CostProvider"
  */
 export const UsageItem = Schema.Struct({
 	date: Schema.String.check(
-		Schema.isPattern(/^\d{4}-\d{2}-\d{2}(T.*)?$/, { description: "Expected YYYY-MM-DD or a timestamp" }),
+		Schema.makeFilter((value: string) => isUsageDate(value), {
+			description: "Expected a calendar day (YYYY-MM-DD) or a UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
+		}),
 	),
 	product: Schema.String,
 	sku: Schema.String,

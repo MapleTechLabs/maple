@@ -231,8 +231,30 @@ describe("GithubCostProvider", () => {
 				])
 				world.usage = [{ ...line("soon", 1) }]
 				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")
-				world.usage = [{ ...line("2026-11-02invalid", 1) }]
-				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")
+				// A day followed by anything but a UTC time, a day that does not exist, a time that does not.
+				const refused = yield* Effect.forEach(
+					[
+						"2026-11-02invalid",
+						"2026-11-02Tgarbage",
+						"2026-11-31",
+						"2026-11-31T00:00:00Z",
+						"2026-02-30",
+						"2026-11-02T24:00:00Z",
+						"2026-11-02T11:12:05+01:00",
+					],
+					(date) =>
+						Effect.gen(function* () {
+							world.usage = [{ ...line(date, 1) }]
+							return (yield* Effect.flip(pull(ORG, INSTALLATION))).reason
+						}),
+				)
+				assert.deepStrictEqual(refused, Arr.replicate("invalid_response", 7))
+				// A day alone and a UTC timestamp with a fraction are both read.
+				world.usage = [line("2026-11-02", 1), line("2026-11-03T11:12:05.250Z", 2)]
+				assert.deepStrictEqual(
+					Arr.map((yield* pull(ORG, INSTALLATION)).rows, (row) => row.day),
+					["2026-11-02", "2026-11-03"],
+				)
 				// A 2xx without the list is not an empty month: storing it would empty the window's days.
 				world.usage = "{}"
 				assert.strictEqual((yield* Effect.flip(pull(ORG, INSTALLATION))).reason, "invalid_response")
