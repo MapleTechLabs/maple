@@ -317,6 +317,6 @@ describe("dashboards list keys", () => {
 		const focused = pressed(loaded({}, boards), "j")
 		expect(focused.focusedId).toBe("dash_payment")
 		expect(routeChanged(focused, { search: { q: "health" } }).model.focusedId).toBeNull()
-		expect(routeChanged(focused, { search: { sort: "name" } }).model.focusedId).toBeNull()
+		expect(routeChanged(focused, { search: { sort: "name-asc" } }).model.focusedId).toBeNull()
 	})
 })

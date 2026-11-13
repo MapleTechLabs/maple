@@ -62,6 +62,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/list-keys",
+		title: "List keys",
+		description:
+			"The services, metrics table, investigations, dashboards and alerts Inbox lists over fixture rows, each taking the row keys: J / K / arrows move the focus, Enter opens, Escape clears (`?page=services|metrics|investigations|dashboards|alerts`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/alerts-hub",
 		title: "Alerts hub",
 		description:
