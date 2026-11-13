@@ -213,7 +213,7 @@ describe("connect a source", () => {
 			given(receiving.model),
 			indicatorMeasured(),
 			expectView(role("link", { name: "Open source" })).toExist(),
-			expectView(role("listitem", { name: "Receiving data" })).toExist(),
+			expectView(role("listitem", { name: "Receiving data (done)" })).toExist(),
 		)
 	})
 
@@ -315,7 +315,7 @@ describe("connect a source", () => {
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Acme" })).toExist(),
+			expectView(role("listitem", { name: "Acme (done)" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 			click(role("button", { name: "Back" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
@@ -393,7 +393,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(live(status("2026-10-23T08:59:30.000Z"))),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 		)
 	})
 
@@ -463,7 +463,7 @@ describe("connect a source", () => {
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "api.warpstream.com" })).toExist(),
+			expectView(role("listitem", { name: "api.warpstream.com (done)" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})

@@ -110,6 +110,9 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 - Layers come from the z scale, never `z-[…]` (`maple/no-arbitrary-z`): `z-1`..`z-10` inside a
   surface, `z-50` dialogs and sheets, `z-55` popovers and tooltips, `z-60` toasts and nested lists.
   A popup takes a popup radius (`maple/popup-radius`).
+- Every step flow (connect page, setup dialog, onboarding) shows its progress with `answerTrail`:
+  done steps as answer chips, the current one underlined in primary, sans, no numbers. Marking
+  `aria-current="step"` anywhere else is a second trail (`maple/one-step-trail`).
 - Neutral washes never take a `/NN`: `bg-muted/50` is `bg-surface-sunken` (`maple/surface-washes`).
 - Hover fills: a row, list item or chip hovers `bg-surface-sunken`, and a chip already on
   `surface-sunken` hovers `surface-strong`. A control (ghost button, toggle, tab, menu trigger)

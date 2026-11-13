@@ -121,6 +121,7 @@
 				"maple/kit-class-layout-only": "error",
 				"maple/no-arbitrary-z": "error",
 				"maple/no-handrolled-kit-look": "error",
+				"maple/one-step-trail": "error",
 				"maple/popup-radius": "error",
 				"maple/sheet-size": "error",
 				"maple/surface-translucency": "error",

@@ -58,7 +58,8 @@ const classChunks = (node) => {
 	if (node === null || node === undefined) return []
 	if (node.type === "Literal" && typeof node.value === "string") return [node.value]
 	if (node.type === "TemplateLiteral") return node.quasis.map((quasi) => quasi.value.raw)
-	if (node.type === "ConditionalExpression") return [...classChunks(node.consequent), ...classChunks(node.alternate)]
+	if (node.type === "ConditionalExpression")
+		return [...classChunks(node.consequent), ...classChunks(node.alternate)]
 	if (node.type === "LogicalExpression") return classChunks(node.right)
 	if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "cn")
 		return node.arguments.flatMap(classChunks)
@@ -76,7 +77,10 @@ const kitClassLayoutOnly = ratcheted("kit-class-layout-only", {
 				const source = node.source.value
 				if (typeof source !== "string" || !KIT_SOURCE.test(source)) return
 				for (const specifier of node.specifiers)
-					if (specifier.type === "ImportSpecifier" && LOOK_OWNERS.has(specifier.imported.name ?? specifier.local.name))
+					if (
+						specifier.type === "ImportSpecifier" &&
+						LOOK_OWNERS.has(specifier.imported.name ?? specifier.local.name)
+					)
 						kitNames.add(specifier.local.name)
 			},
 			CallExpression(node) {
@@ -125,12 +129,16 @@ const classTokensOf = (node) => {
 
 /** `vstack(h, { as, className }, …)`: a stack is a raw element with a className, so it counts too. */
 const stackElement = (node) => {
-	if (node.callee.type !== "Identifier" || (node.callee.name !== "vstack" && node.callee.name !== "hstack")) return
+	if (node.callee.type !== "Identifier" || (node.callee.name !== "vstack" && node.callee.name !== "hstack"))
+		return
 	const options = node.arguments[1]
 	if (options?.type !== "ObjectExpression") return
 	const value = (key) =>
 		options.properties.find(
-			(property) => property.type === "Property" && property.key.type === "Identifier" && property.key.name === key,
+			(property) =>
+				property.type === "Property" &&
+				property.key.type === "Identifier" &&
+				property.key.name === key,
 		)?.value
 	const as = value("as")
 	return {
@@ -175,7 +183,8 @@ const KIT_LOOKS = [
 	{
 		kit: "`dividedList` (ui/rule)",
 		element: /./,
-		match: (t) => t.includes("divide-y") && t.includes("border") && t.some((x) => x.startsWith("rounded")),
+		match: (t) =>
+			t.includes("divide-y") && t.includes("border") && t.some((x) => x.startsWith("rounded")),
 	},
 ]
 
@@ -190,7 +199,9 @@ const noHandrolledKitLook = ratcheted("no-handrolled-kit-look", {
 			if (element === undefined) return
 			const tokens = stack?.tokens ?? classTokensOf(node)
 			if (tokens.length === 0) return
-			const look = KIT_LOOKS.find((candidate) => candidate.element.test(element) && candidate.match(tokens))
+			const look = KIT_LOOKS.find(
+				(candidate) => candidate.element.test(element) && candidate.match(tokens),
+			)
 			if (look !== undefined) push(node, { element, kit: look.kit })
 		},
 	}),
@@ -200,12 +211,16 @@ const noHandrolledKitLook = ratcheted("no-handrolled-kit-look", {
 const COPY = [
 	{ pattern: /’/, fix: "a straight apostrophe `'`" },
 	{
-		pattern: /\b(?:in the window|in window|in this (?:time )?range|(?:in|over) the selected (?:time )?(?:range|window))\b/i,
+		pattern:
+			/\b(?:in the window|in window|in this (?:time )?range|(?:in|over) the selected (?:time )?(?:range|window))\b/i,
 		fix: '"in this window"',
 	},
 	{ pattern: /^Retry$/, fix: '"Try again", the kit error-state\'s label' },
 	{ pattern: /\bLoading\.\.\.$/, fix: '"Loading…"' },
-	{ pattern: /\bNo matching \w|\bNo matches found\b/, fix: '"No {noun} match" ("No matches" without a noun)' },
+	{
+		pattern: /\bNo matching \w|\bNo matches found\b/,
+		fix: '"No {noun} match" ("No matches" without a noun)',
+	},
 ]
 
 const uiCopy = ratcheted("ui-copy", {
@@ -219,7 +234,11 @@ const uiCopy = ratcheted("ui-copy", {
 		return {
 			Literal(node) {
 				if (typeof node.value !== "string") return
-				if (node.parent?.type === "ImportDeclaration" || node.parent?.type === "ExportNamedDeclaration") return
+				if (
+					node.parent?.type === "ImportDeclaration" ||
+					node.parent?.type === "ExportNamedDeclaration"
+				)
+					return
 				check(node, node.value)
 			},
 			TemplateElement(node) {
@@ -249,28 +268,35 @@ const emptyCopy = ratcheted("empty-copy", {
 		/** Whole texts: a template reads as one string, its holes as a word. */
 		const strings = (node) => {
 			if (node?.type === "ArrayExpression") return node.elements.flatMap(strings)
-			if (node?.type === "TemplateLiteral") return [node.quasis.map((quasi) => quasi.value.cooked ?? "").join("x")]
-			if (node?.type === "ConditionalExpression") return [...strings(node.consequent), ...strings(node.alternate)]
+			if (node?.type === "TemplateLiteral")
+				return [node.quasis.map((quasi) => quasi.value.cooked ?? "").join("x")]
+			if (node?.type === "ConditionalExpression")
+				return [...strings(node.consequent), ...strings(node.alternate)]
 			if (node?.type === "LogicalExpression") return strings(node.right)
 			return node?.type === "Literal" && typeof node.value === "string" ? [node.value] : []
 		}
 		// A slot whose branches include a multi-sentence text is a description: periods stay.
 		const report = (node, values) => {
 			if (values.some((text) => /[.?!]\s/.test(text.trim()))) return
-			for (const text of values) if (isOneLineSentence(text)) push(node, { text: text.trim().slice(-50) })
+			for (const text of values)
+				if (isOneLineSentence(text)) push(node, { text: text.trim().slice(-50) })
 		}
 		return {
 			CallExpression(node) {
 				if (node.callee.type !== "Identifier" || !EMPTY_CALLS.has(node.callee.name)) return
 				for (const argument of node.arguments) {
 					// Text that runs into an inline control ("Couldn't load. [Try again]") is a sentence, not a one-liner.
-					if (argument?.type === "ArrayExpression" && argument.elements.some((element) => element?.type === "CallExpression"))
+					if (
+						argument?.type === "ArrayExpression" &&
+						argument.elements.some((element) => element?.type === "CallExpression")
+					)
 						continue
 					report(node, strings(argument))
 				}
 			},
 			Property(node) {
-				if (node.key.type === "Identifier" && EMPTY_KEYS.has(node.key.name)) report(node, strings(node.value))
+				if (node.key.type === "Identifier" && EMPTY_KEYS.has(node.key.name))
+					report(node, strings(node.value))
 			},
 		}
 	},
@@ -328,7 +354,10 @@ const sheetSize = ratcheted("sheet-size", {
 		ObjectExpression(node) {
 			const property = (key) =>
 				node.properties.find(
-					(entry) => entry.type === "Property" && entry.key.type === "Identifier" && entry.key.name === key,
+					(entry) =>
+						entry.type === "Property" &&
+						entry.key.type === "Identifier" &&
+						entry.key.name === key,
 				)?.value
 			const side = property("side")
 			if (side?.type !== "Literal" || (side.value !== "left" && side.value !== "right")) return
@@ -337,17 +366,64 @@ const sheetSize = ratcheted("sheet-size", {
 			for (const chunk of classChunks(property("className")))
 				for (const token of chunk.split(/\s+/).filter(Boolean))
 					// A variant aimed at a descendant (`[&_[data-slot=…]]:max-w-xl`) sizes that part, not the sheet.
-					if (SHEET_WIDTH.test(splitToken(token).utility) && !splitToken(token).variants.some((v) => v.startsWith("[")))
+					if (
+						SHEET_WIDTH.test(splitToken(token).utility) &&
+						!splitToken(token).variants.some((v) => v.startsWith("["))
+					)
 						push(node, { token })
 		},
 	}),
 })
+
+/**
+ * Every step flow shows its progress with the kit's `answerTrail`: one look for connect pages,
+ * setup dialogs and onboarding. A flow that marks its own `aria-current="step"` is a second trail.
+ */
+const oneStepTrail = {
+	meta: {
+		type: "problem",
+		docs: { description: "Step progress is drawn by the kit's answerTrail, never hand-rolled." },
+		messages: {
+			oneStepTrail:
+				"A hand-rolled step trail. Use `answerTrail` from `@maple/views/ui/answer-trail` so every wizard shows progress the same way: done steps as answer chips, the current one underlined.",
+		},
+	},
+	create(context) {
+		if ((context.filename ?? context.getFilename()).endsWith("packages/views/src/ui/answer-trail.ts"))
+			return {}
+		const isStep = (node) => node?.type === "Literal" && node.value === "step"
+		return {
+			CallExpression(node) {
+				const callee = node.callee
+				const name =
+					callee.type === "MemberExpression" && !callee.computed
+						? callee.property.name
+						: callee.type === "Identifier"
+							? callee.name
+							: null
+				if (name === "AriaCurrent" && isStep(node.arguments[0]))
+					context.report({ node, messageId: "oneStepTrail" })
+			},
+			Property(node) {
+				const key =
+					node.key.type === "Literal"
+						? node.key.value
+						: node.key.type === "Identifier"
+							? node.key.name
+							: null
+				if ((key === "aria-current" || key === "ariaCurrent") && isStep(node.value))
+					context.report({ node, messageId: "oneStepTrail" })
+			},
+		}
+	},
+}
 
 export const consistencyRules = {
 	"empty-copy": emptyCopy,
 	"kit-class-layout-only": kitClassLayoutOnly,
 	"no-arbitrary-z": noArbitraryZ,
 	"no-handrolled-kit-look": noHandrolledKitLook,
+	"one-step-trail": oneStepTrail,
 	"popup-radius": popupRadius,
 	"sheet-size": sheetSize,
 	"surface-translucency": surfaceTranslucency,

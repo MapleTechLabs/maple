@@ -146,7 +146,7 @@ describe("prometheus connect flow", () => {
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
-			expectView(role("listitem", { name: "redis.internal:9121" })).toExist(),
+			expectView(role("listitem", { name: "redis.internal:9121 (done)" })).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeEnabled(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
@@ -194,7 +194,7 @@ describe("prometheus connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withCheck(live, true)),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("Last scrape read 1.3K samples in 200ms")).toExist(),
 		)
 		scene(

@@ -135,7 +135,7 @@ describe("supabase connect flow", () => {
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
-			expectView(role("listitem", { name: "Acme" })).toExist(),
+			expectView(role("listitem", { name: "Acme (done)" })).toExist(),
 			expectView(role("switch", { name: "Collect metrics for storefront" })).toBeEnabled(),
 			expectView(text("Turn on at least one project to continue.")).toExist(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
@@ -173,7 +173,7 @@ describe("supabase connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(live(withRows(collecting, [row("2026-10-01 11:59:37")]))),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("1 of 1 projects reporting CPU, memory, disk and Postgres")).toExist(),
 		)
 	})

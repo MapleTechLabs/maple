@@ -20,6 +20,7 @@ import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { searchInput } from "@maple/views/ui/search-input"
 import { textLink } from "@maple/views/ui/text-link"
+import { answerTrail } from "@maple/views/ui/answer-trail"
 import { type PixelGlyphName, pixelGlyph } from "./option-card"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as GuidedSetup from "../kit/guided-setup"
@@ -80,66 +81,20 @@ type TrailItem = Readonly<{
 	to: StepId | null
 }>
 
-const trailAnswer = (h: H, item: TrailItem, answer: string): Html => {
-	const content = [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }), answer]
-	return item.to === null
-		? hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, content)
-		: textLink(
-				h,
-				{
-					tone: "muted",
-					onClick: Message.ClickedBack({ to: item.to }),
-					className: "gap-1.5 underline-offset-4",
-					// Starts with the visible text, so voice control can say what it sees.
-					attributes: [
-						h.AriaLabel(
-							answer === item.label ? `Go to ${item.label}` : `${answer}, go to ${item.label}`,
-						),
-					],
-				},
-				content,
-			)
-}
-
 /** The quiet progress line: done steps show their answer and reopen it, the current one is underlined. */
 const trail = (h: H, items: ReadonlyArray<TrailItem>): Html =>
 	h.nav(
-		[h.AriaLabel("Onboarding progress"), h.Class("hidden items-center gap-2 text-xs md:flex")],
+		[h.AriaLabel("Onboarding progress"), h.Class("hidden md:flex")],
 		[
-			h.ol(
-				[h.Class(hstackClass({ gap: "2" }))],
-				Arr.map(items, (item, index) =>
-					hstack(
-						h,
-						{
-							gap: "2",
-							align: "center",
-							as: "li",
-							className: "whitespace-nowrap",
-							attributes: [...(item.isCurrent ? [h.AriaCurrent("step")] : [])],
-						},
-						[
-							...(index === 0
-								? []
-								: [h.span([h.AriaHidden(true), h.Class("text-input")], ["/"])]),
-							item.answer === null
-								? h.span(
-										[
-											h.Class(
-												cn(
-													item.isCurrent
-														? "text-foreground underline underline-offset-4"
-														: "text-muted-foreground",
-												),
-											),
-										],
-										[item.label],
-									)
-								: trailAnswer(h, item, item.answer),
-						],
-					),
-				),
-			),
+			answerTrail(h, {
+				label: "Onboarding steps",
+				steps: Arr.map(items, (item) => ({
+					label: item.label,
+					state: item.isCurrent ? "current" : item.answer === null ? "next" : "done",
+					answer: item.answer,
+					onClick: item.to === null ? null : Message.ClickedBack({ to: item.to }),
+				})),
+			}),
 		],
 	)
 

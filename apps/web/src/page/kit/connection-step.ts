@@ -43,6 +43,8 @@ export const connectionStep = <M, A>(
 		dialogId: string
 		title: string
 		description: string
+		/** The flow's answer trail, under the title. */
+		trail?: Html
 		read: AsyncData.AsyncData<A, LoadFailure>
 		/** What the step says while the read is out: "Reading the Vercel connection". */
 		readingLabel: string
@@ -64,6 +66,7 @@ export const connectionStep = <M, A>(
 	return [
 		DialogView.dialogHeader(h, "dialog", [
 			DialogView.dialogTitle(h, "dialog", options.dialogId, options.title),
+			...(options.trail === undefined ? [] : [options.trail]),
 			DialogView.dialogDescription(h, "dialog", options.dialogId, options.description),
 		]),
 		DialogView.dialogPanel(h, "dialog", options.dialogId, [

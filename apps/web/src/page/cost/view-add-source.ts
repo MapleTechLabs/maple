@@ -16,6 +16,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
 import { connectionStep } from "../kit/connection-step"
+import { addTrail } from "./view-add-trail"
 import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -204,6 +205,8 @@ const credentialForm = (
 	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
 		DialogView.dialogHeader(h, "dialog", [
 			DialogView.dialogTitle(h, "dialog", id, text.title),
+			// A replace is one step: no trail.
+			...(isReplacing ? [] : [addTrail(h, COST_PROVIDERS[provider].name)]),
 			DialogView.dialogDescription(h, "dialog", id, text.description),
 		]),
 		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
@@ -350,6 +353,7 @@ const githubStep = (h: H, model: Model, id: string): ReadonlyArray<Html> =>
 	connectionStep(h, {
 		dialogId: id,
 		title: "Add GitHub",
+		trail: addTrail(h, "GitHub"),
 		description:
 			"Maple reads an organization's billed usage through the GitHub App it already has. No key is needed.",
 		read: model.githubInstallations,
@@ -392,6 +396,7 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 								? [
 										DialogView.dialogHeader(h, "dialog", [
 											DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
+											addTrail(h, null),
 											DialogView.dialogDescription(
 												h,
 												"dialog",
