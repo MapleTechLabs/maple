@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d095c14570c658f8dc55e640481d9ed4479be1dffa59ec4022c5d1ab1c944ecf",
+	"id": "40fb0af3a14abb9406279f8005c4fd9abdb47349652f3f3e18369df9450ed873",
 	"prevIds": [
-		"48bfea234767f5f4288d14c81fa83ff976829eb6a70140d1f826f752fb6088c5"
+		"67bf09ed830b16a5d08ab4b0bc5eb1cf7cdb14d990a5a5d8817a133b73c9b593"
 	],
 	"entities": [
 		{
@@ -678,6 +678,16 @@
 			"name": "oncall_schedules",
 			"primaryKey": {
 				"name": "oncall_schedules_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "openrouter_cost_connections",
+			"primaryKey": {
+				"name": "openrouter_cost_connections_pkey",
 				"columns": [
 					"id"
 				]
@@ -3356,8 +3366,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "tags_json",
+			"name": "audit_count_from",
 			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "tags_json",
+			"position": 13,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3367,16 +3387,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "signal_type",
-			"position": 13,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "comparator",
 			"position": 14,
 			"type": "text",
 			"notNull": true,
@@ -3386,8 +3396,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "threshold",
+			"name": "comparator",
 			"position": 15,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "threshold",
+			"position": 16,
 			"type": "double precision",
 			"notNull": true,
 			"default": null,
@@ -3397,7 +3417,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "threshold_upper",
-			"position": 16,
+			"position": 17,
 			"type": "double precision",
 			"notNull": false,
 			"default": null,
@@ -3407,7 +3427,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "thresholds_json",
-			"position": 17,
+			"position": 18,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3417,7 +3437,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "window_minutes",
-			"position": 18,
+			"position": 19,
 			"type": "integer",
 			"notNull": true,
 			"default": null,
@@ -3427,16 +3447,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "evaluation_interval_minutes",
-			"position": 19,
-			"type": "integer",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "slowed_interval_minutes",
 			"position": 20,
 			"type": "integer",
 			"notNull": false,
@@ -3446,8 +3456,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "slowed_at",
+			"name": "slowed_interval_minutes",
 			"position": 21,
+			"type": "integer",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "slowed_at",
+			"position": 22,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3457,7 +3477,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "minimum_sample_count",
-			"position": 22,
+			"position": 23,
 			"type": "integer",
 			"notNull": true,
 			"default": "0",
@@ -3467,7 +3487,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "consecutive_breaches_required",
-			"position": 23,
+			"position": 24,
 			"type": "integer",
 			"notNull": true,
 			"default": "2",
@@ -3477,7 +3497,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "breaches_out_of",
-			"position": 24,
+			"position": 25,
 			"type": "integer",
 			"notNull": false,
 			"default": null,
@@ -3487,7 +3507,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "consecutive_healthy_required",
-			"position": 25,
+			"position": 26,
 			"type": "integer",
 			"notNull": true,
 			"default": "2",
@@ -3497,7 +3517,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "renotify_interval_minutes",
-			"position": 26,
+			"position": 27,
 			"type": "integer",
 			"notNull": true,
 			"default": "30",
@@ -3507,7 +3527,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "apdex_threshold_ms",
-			"position": 27,
+			"position": 28,
 			"type": "double precision",
 			"notNull": false,
 			"default": null,
@@ -3517,7 +3537,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "query_builder_draft_json",
-			"position": 28,
+			"position": 29,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3527,16 +3547,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "raw_query_sql",
-			"position": 29,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "group_by",
 			"position": 30,
 			"type": "text",
 			"notNull": false,
@@ -3546,8 +3556,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "destination_ids_json",
+			"name": "group_by",
 			"position": 31,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "destination_ids_json",
+			"position": 32,
 			"type": "jsonb",
 			"notNull": true,
 			"default": null,
@@ -3557,7 +3577,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "query_spec_json",
-			"position": 32,
+			"position": 33,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -3567,7 +3587,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "reducer",
-			"position": 33,
+			"position": 34,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3577,7 +3597,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "sample_count_strategy",
-			"position": 34,
+			"position": 35,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -3587,7 +3607,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "no_data_behavior",
-			"position": 35,
+			"position": 36,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3597,7 +3617,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "last_scheduled_at",
-			"position": 36,
+			"position": 37,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -3607,16 +3627,6 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "created_at",
-			"position": 37,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_rules",
-			"name": "updated_at",
 			"position": 38,
 			"type": "timestamp with time zone",
 			"notNull": true,
@@ -3626,8 +3636,18 @@
 		{
 			"kind": "column",
 			"table": "alert_rules",
-			"name": "created_by",
+			"name": "updated_at",
 			"position": 39,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_rules",
+			"name": "created_by",
+			"position": 40,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -3637,7 +3657,7 @@
 			"kind": "column",
 			"table": "alert_rules",
 			"name": "updated_by",
-			"position": 40,
+			"position": 41,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -11045,6 +11065,106 @@
 		},
 		{
 			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "key_ciphertext",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "key_iv",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "key_tag",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "key_label",
+			"position": 5,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "account_id",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "created_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "updated_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "openrouter_cost_connections",
+			"name": "updated_by",
+			"position": 9,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "org_billing_links",
 			"name": "org_id",
 			"position": 0,
@@ -13856,9 +13976,9 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "started_at",
+			"name": "cost_microusd",
 			"position": 23,
-			"type": "timestamp with time zone",
+			"type": "integer",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -13866,7 +13986,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "finished_at",
+			"name": "started_at",
 			"position": 24,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -13876,7 +13996,7 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "merged_at",
+			"name": "finished_at",
 			"position": 25,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -13886,8 +14006,18 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "telemetry_json",
+			"name": "merged_at",
 			"position": 26,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "pr_reviews",
+			"name": "telemetry_json",
+			"position": 27,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -13897,16 +14027,6 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "merge_commit_sha",
-			"position": 27,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "pr_reviews",
-			"name": "post_merge_status",
 			"position": 28,
 			"type": "text",
 			"notNull": false,
@@ -13916,8 +14036,18 @@
 		{
 			"kind": "column",
 			"table": "pr_reviews",
-			"name": "post_merge_after",
+			"name": "post_merge_status",
 			"position": 29,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "pr_reviews",
+			"name": "post_merge_after",
+			"position": 30,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -13927,7 +14057,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "post_merge_json",
-			"position": 30,
+			"position": 31,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -13937,7 +14067,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "created_at",
-			"position": 31,
+			"position": 32,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -13947,7 +14077,7 @@
 			"kind": "column",
 			"table": "pr_reviews",
 			"name": "updated_at",
-			"position": 32,
+			"position": 33,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20898,6 +21028,17 @@
 			"table": "oncall_schedules",
 			"name": "oncall_schedules_org_idx",
 			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "openrouter_cost_connections",
+			"name": "openrouter_cost_connections_org_idx",
+			"unique": true,
 			"method": "btree",
 			"columns": [
 				"\"org_id\""
