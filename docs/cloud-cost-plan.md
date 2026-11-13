@@ -151,13 +151,14 @@ currency the figures are in and lists the others. Nothing is added across curren
   daily chart, a breakdown by service, provider, category, region, usage type or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key, Cloudflare by
-  pasting an API token and PlanetScale by pasting a service token with its ID and organization,
-  which the page can also replace or remove. The pasted-credential step is one form described by
-  data (`credential-sources.ts`): the credential, and any plain fields a provider asks before it. Recommendations (list and detail with the evidence chart) come with
+  pasting an API token, which the page can also replace or remove, and PlanetScale from the
+  connection the org already has, added with one click and removed there. The pasted-credential
+  step is one form described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence chart) come with
   phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), and `PUT` / `DELETE` on `/internal/cost/openrouter`,
-  `/internal/cost/cloudflare` and `/internal/cost/planetscale` for the pasted credentials. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
+  `/internal/cost/cloudflare` for the pasted credentials, and `GET` / `PUT` / `DELETE` on
+  `/internal/cost/planetscale` for the source that reads through a connection. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -321,7 +322,10 @@ currency the figures are in and lists the others. Nothing is added across curren
 
 ### PlanetScale (billed, monthly invoices spread over days)
 
-"Live" here means checked on 2026-11-12 with a service token that has only `read_invoices`.
+"Live" here means checked on 2026-11-12 against a real organization's invoices, with a service
+token that has only `read_invoices`. The endpoints and shapes are the same for the OAuth grant the
+source reads with; that path is covered by tests against a fake only, since Maple's one PlanetScale
+OAuth application redirects to production and a reconnect cannot run on a preview.
 
 - Live: `GET /organizations/{org}/invoices` lists one invoice per calendar month, newest first,
   the open month included (`paid: false`). `billing_period_end` is exclusive: the first instant of
@@ -341,15 +345,28 @@ currency the figures are in and lists the others. Nothing is added across curren
   same way, so a branch's days net out to what it cost. The shares of a line add up to its
   subtotal. The open month shows its days so far. The source's row on the page says that its
   days are an even share of a monthly invoice and can change until the invoice closes.
-- It needs a service token with the `read_invoices` organization access, sent as
-  `Authorization: <token id>:<token>`. Maple's PlanetScale OAuth app has no invoice scope, so the
-  existing connection is not used: the org pastes the organization name, the token ID and the
-  token on the Cost page. Maple checks them (the invoice list, then the newest invoice's line
-  items) and stores the pair sealed.
-- Live: a token PlanetScale does not know and an organization the token cannot see both answer
-  404, so that refusal names both. Docs: a token without `read_invoices` answers 403.
-- A replacement token must be for the same organization: another one's invoices would overwrite
-  the source's days.
+- It connects through the PlanetScale integration the org already has, with nothing pasted. The
+  source is a `cost_sources` row whose `connection_ref` is the `planetscale_connections` row and
+  whose account is the connection's organization. Adding on the Cost page makes the row, removing
+  deletes it, and the connection itself is never changed from there.
+- Invoices are read with the integration's OAuth grant, as `Authorization: Bearer <access token>`,
+  through the grant's own token handling: a 401 forces one refresh, and a fresh token refused too
+  stamps the grant revoked, after which no request is made until the org reconnects.
+- Scope: `organization:read_invoices`, ticked on Maple's OAuth application on 2026-11-13 and added
+  to the default of `PLANETSCALE_OAUTH_SCOPES`. A grant made before that lacks it. The stored grant
+  records its scopes, so the Cost page says "Reconnect PlanetScale to grant access to invoices"
+  without a request, an add is refused under its own error code, and a pull is held as not ready.
+  A 403 from the API reads the same. A grant PlanetScale reported no scopes for is not ruled out:
+  the read itself then answers.
+- Reconnecting keeps the connection row and its id. Authorizing the same organization again keeps
+  the source and makes it due at the next tick, since the new grant may carry the scope. Binding
+  another organization removes the source (its invoices would overwrite the source's days), as
+  does a disconnect, both in the connection's own transaction. The sync also removes a source
+  whose connection is gone or reads another organization.
+- An add reads one page of the invoice list first, so a refusal shows before the source exists,
+  and names the organization the dialog showed: one bound since is refused.
+- Live, with a service token: an organization the token cannot see answers 404. Docs: a grant
+  without `read_invoices` answers 403.
 - Rows: the database is `CloudService` (the engine is not in the response), the SKU is
   `UsageType`, the branch is the resource, the category is "Databases", the region is `global`.
 - Sync: twelve months back, through today. A pull is one invoice list plus one line-item read per
@@ -389,7 +406,8 @@ Each phase is one PR stack.
    read with a pasted credential also adds itself to `COST_CONNECTION_PROVIDERS`, a connection
    service that checks the credential with the vendor, its `PUT` / `DELETE` endpoints, and on the
    Cost page two commands and an entry in `CREDENTIAL_SOURCES`. One read through a connection adds
-   a reconcile function instead.
+   a reconcile function instead, and when the org opts in on the Cost page (PlanetScale) a source
+   service with `GET` / `PUT` / `DELETE` endpoints and a step in the Add source dialog.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
