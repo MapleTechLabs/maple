@@ -45,6 +45,7 @@ import { errorState } from "@maple/views/ui/error-state"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { canEditDashboards } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -72,23 +73,31 @@ const title = (h: H, model: Model, name: string): Html => {
 		)
 	const isBlank = Str.trim(name) === ""
 	const shown = isBlank ? "Untitled dashboard" : name
+	// Without `dashboards:edit` the name is a plain heading, not a rename control.
+	const canRename = canEditDashboards(model)
 	return pageTitle(
 		h,
 		{
 			title: shown,
 			className: cn(
-				!isReadOnly && "cursor-pointer hover:text-foreground-soft active:text-foreground-soft",
+				canRename &&
+					!isReadOnly &&
+					"cursor-pointer hover:text-foreground-soft active:text-foreground-soft",
 				isBlank && "text-muted-foreground",
 			),
-			attributes: [
-				h.Role("button"),
-				h.Tabindex(0),
-				h.OnClick(Message.ClickedTitle()),
-				h.OnKeyDownPreventDefault((key) =>
-					key === "Enter" || key === " " ? Option.some(Message.ClickedTitle()) : Option.none(),
-				),
-				h.AriaDisabled(isReadOnly),
-			],
+			attributes: canRename
+				? [
+						h.Role("button"),
+						h.Tabindex(0),
+						h.OnClick(Message.ClickedTitle()),
+						h.OnKeyDownPreventDefault((key) =>
+							key === "Enter" || key === " "
+								? Option.some(Message.ClickedTitle())
+								: Option.none(),
+						),
+						h.AriaDisabled(isReadOnly),
+					]
+				: [],
 		},
 		[shown],
 	)
@@ -141,6 +150,22 @@ const GRID_PREVIEW = [
 	{ glyph: "ChartBarIcon", className: "h-16 w-16" },
 	{ glyph: "TextWrapIcon", className: "h-16 w-10" },
 ] as const
+
+/** A board with no widgets for a viewer who cannot add one. */
+const blankReadOnlyDashboard = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyTitle(h, ["Nothing on this board yet"]),
+				emptyDescription(h, [
+					"Widgets added to this dashboard show up here. Your role can read it but not add one.",
+				]),
+			]),
+			emptyContent(h, [docsLink(h, "dashboards")], "max-w-none"),
+		],
+		"py-16",
+	)
 
 const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 	empty(
@@ -271,7 +296,9 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	return [
 		...banner,
 		isBlank
-			? blankDashboard(h, isWriteBlocked(model))
+			? canEditDashboards(model)
+				? blankDashboard(h, isWriteBlocked(model))
+				: blankReadOnlyDashboard(h)
 			: dashboardSections(
 					h,
 					{ model, timeZone, variables: variablesOf(model, context).values },

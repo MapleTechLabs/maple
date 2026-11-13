@@ -29,6 +29,7 @@ import * as TagEditor from "../kit/tag-editor"
 import { Message } from "./message"
 import type { ListDashboard, Model, Scope } from "./model"
 import { isReadOnly, rowMenuIdOf } from "./update"
+import { canEditDashboards } from "../kit/grants"
 import { deleteDialog } from "./view-dialogs"
 import { tagFilterView } from "./view-tag-filter"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -155,12 +156,17 @@ const READ_ONLY_NOTE: ReadonlyArray<MenuView.MenuEntry> = [
 	},
 ]
 
+const EXPORT_ENTRY: MenuView.MenuEntry = { _tag: "Item", value: "export", label: "Export JSON" }
+
+/** All an observer's row menu holds: the entries that write are not offered. */
+const OBSERVER_ROW_ENTRIES: ReadonlyArray<MenuView.MenuEntry> = [{ _tag: "Group", entries: [EXPORT_ENTRY] }]
+
 /** Export reads what the list holds, so it survives a write failure; the rest write, so they don't. */
 const rowMenuEntries = (isReadOnly: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	{
 		_tag: "Group",
 		entries: [
-			{ _tag: "Item", value: "export", label: "Export JSON" },
+			EXPORT_ENTRY,
 			{ _tag: "Item", value: "duplicate", label: "Duplicate", isDisabled: isReadOnly },
 			{ _tag: "Item", value: "tags", label: "Edit tags…", isDisabled: isReadOnly },
 			{ _tag: "Separator" },
@@ -182,7 +188,7 @@ const rowMenu = (h: H, model: Model, dashboard: ListDashboard): Html => {
 	return rowActionsMenu(h, {
 		slotId: `row-menu-${dashboard.id}`,
 		model: menu,
-		entries: rowMenuEntries(isReadOnly(model)),
+		entries: canEditDashboards(model) ? rowMenuEntries(isReadOnly(model)) : OBSERVER_ROW_ENTRIES,
 		label: `More actions for ${displayName(dashboard.name)}`,
 		className: "text-muted-foreground",
 		toParentMessage: (message) => Message.GotRowMenuMessage({ rowId: dashboard.id, message }),
@@ -397,6 +403,23 @@ const firstRunEmpty = (h: H, isReadOnly: boolean): Html =>
 		"py-16",
 	)
 
+/** An observer's empty list: nothing to start from, so it says where dashboards come from. */
+const observerEmpty = (h: H): Html =>
+	empty(
+		h,
+		[
+			emptyHeader(h, [
+				emptyMedia(h, { variant: "icon" }, [icon(h, "GridIcon", { size: 18 })]),
+				emptyTitle(h, ["No dashboards yet"]),
+				emptyDescription(h, [
+					"Dashboards your team creates show up here. Your role can read them but not create one.",
+				]),
+			]),
+			docsLink(h, "dashboards"),
+		],
+		"py-16",
+	)
+
 /** A search or tag filter hid every dashboard. */
 const nothingMatched = (h: H, model: Model): Html => {
 	const query = Str.trim(queryOf(model.search))
@@ -487,9 +510,10 @@ export const listBody = (
 	const isFiltering = Str.trim(queryOf(model.search)).length > 0 || tagsOf(model.search).length > 0
 	const isNothingAtAll = dashboards.length === 0
 	const isWriteDisabled = isReadOnly(model)
+	const canEdit = canEditDashboards(model)
 	const context: RowContext = { model, nowMs, timeZone }
 	const body: ReadonlyArray<Html> = isNothingAtAll
-		? [firstRunEmpty(h, isWriteDisabled)]
+		? [canEdit ? firstRunEmpty(h, isWriteDisabled) : observerEmpty(h)]
 		: sections.matched === 0
 			? [nothingMatched(h, model)]
 			: sections.scoped === 0
@@ -519,7 +543,7 @@ export const listBody = (
 										dashboardRow(h, context, dashboard, false),
 									),
 								]),
-						createRow(h, isWriteDisabled),
+						...(canEdit ? [createRow(h, isWriteDisabled)] : []),
 					]
 	return vstack(h, { className: "shrink-0 pb-6" }, [
 		toolbar(h, model, dashboards, sections.scoped),

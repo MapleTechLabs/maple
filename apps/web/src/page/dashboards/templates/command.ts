@@ -9,8 +9,14 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadClock = readClock("ReadTemplatesClock", Message.CompletedReadClock)
+
+export const FetchTemplatesSession = fetchSessionGrants(
+	"FetchDashboardTemplatesSession",
+	Message.CompletedFetchSession,
+)
 
 export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 	args: { key: Schema.String },

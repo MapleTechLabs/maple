@@ -1,4 +1,5 @@
 import { DashboardDocument } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -151,6 +152,8 @@ export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	search: DashboardSearch,
 	status: Status,
+	/** What the viewer may do; an observer reads the board and gets no edit or share control. */
+	grants: Schema.Array(Policy.PermissionName),
 	document: Schema.NullOr(DashboardDocument),
 	/** The live board never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
 	snapshot: Snapshot,

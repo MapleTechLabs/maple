@@ -25,6 +25,7 @@ import { filteredEmpty as filteredEmptyState } from "@maple/views/ui/signal-empt
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { canEditDashboards } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -212,6 +213,34 @@ const groups = (
 	]
 }
 
+/** The footer row that starts a blank dashboard. */
+const blankRow = (h: H): Html =>
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
+			className:
+				"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+		},
+		[
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-5.5 shrink-0 rounded-sm border border-input border-dashed",
+				},
+				[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
+			),
+			hstack(h, { align: "baseline", shrink: true, as: "span", className: "grow gap-2" }, [
+				typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
+				typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
+			]),
+			icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
+		],
+	)
+
 export const templateList = (
 	h: H,
 	model: Model,
@@ -308,30 +337,7 @@ export const templateList = (
 								),
 							],
 		),
-		pressable(
-			h,
-			{
-				onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
-				className:
-					"flex shrink-0 items-center gap-2.5 border-t border-border bg-sidebar py-3 pr-4 pl-4 text-left hover:bg-surface-sunken active:bg-surface-sunken",
-			},
-			[
-				hstack(
-					h,
-					{
-						align: "center",
-						justify: "center",
-						as: "span",
-						className: "size-5.5 shrink-0 rounded-sm border border-input border-dashed",
-					},
-					[icon(h, "PlusIcon", { size: 12, className: "text-muted-foreground" })],
-				),
-				hstack(h, { align: "baseline", shrink: true, as: "span", className: "grow gap-2" }, [
-					typography(h, { size: "sm", tone: "foreground" }, ["Blank dashboard"]),
-					typography(h, { size: "2xs", tone: "muted" }, ["start from nothing"]),
-				]),
-				icon(h, "ArrowRightIcon", { size: 14, className: "text-muted-foreground shrink-0" }),
-			],
-		),
+		// Starting blank creates a dashboard, so it needs `dashboards:edit`.
+		...(canEditDashboards(model) ? [blankRow(h)] : []),
 	])
 }

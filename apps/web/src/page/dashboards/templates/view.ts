@@ -17,6 +17,7 @@ import { templateList } from "./view-list"
 import { detailPanel, panelRestState } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { canEditDashboards } from "../kit/grants"
 
 // Below `lg` the detail panel is a right sheet over the list, else the side pane.
 
@@ -29,7 +30,7 @@ const summary = (h: H, readyCount: number, catalogueCount: number): Html =>
 		typography(h, { tone: "muted", mono: true }, [String(catalogueCount), " templates"]),
 	])
 
-const failed = (h: H, failure: LoadFailure): Html =>
+const failed = (h: H, failure: LoadFailure, canCreate: boolean): Html =>
 	h.div(
 		[h.Class("p-4")],
 		[
@@ -38,10 +39,13 @@ const failed = (h: H, failure: LoadFailure): Html =>
 				title: "Couldn't load the templates",
 				note: "Nothing you've built is affected.",
 				onRetry: Message.ClickedRetry(),
-				secondaryAction: {
-					label: "Start blank instead",
-					onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
-				},
+				// Starting blank creates a dashboard, so it needs `dashboards:edit`.
+				secondaryAction: canCreate
+					? {
+							label: "Start blank instead",
+							onClick: Message.ClickedCreate({ templateId: BLANK_TEMPLATE_ID }),
+						}
+					: undefined,
 			}),
 		],
 	)
@@ -78,7 +82,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[
 					failure !== null
-						? failed(h, failure)
+						? failed(h, failure, canEditDashboards(model))
 						: hstack(h, { align: "stretch", className: "h-full min-h-0" }, [
 								vstack(
 									h,

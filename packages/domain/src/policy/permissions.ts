@@ -11,6 +11,16 @@ export const permissions = {
 	// The public ingest key ships in browser bundles, so every member may read it to set up an app.
 	"ingest_keys:view_public": { min: "member", action: "view the public ingest key" },
 
+	// Shared work on what the telemetry shows: members and above. Observers read it. The API refuses
+	// an observer every change in one place (`ObserverAccess`); these name them for the dashboard.
+	"dashboards:edit": { min: "member", action: "create and edit dashboards" },
+	"dashboards:share": { min: "member", action: "share dashboards outside the organization" },
+	"error_issues:triage": { min: "member", action: "triage error issues" },
+	"incidents:respond": { min: "member", action: "acknowledge and resolve incidents" },
+	"investigations:run": { min: "member", action: "start investigations" },
+	"status_page_incidents:post": { min: "member", action: "post status page incidents and updates" },
+	"recommendations:triage": { min: "member", action: "dismiss and reopen recommendations" },
+
 	// Technical setup: engineers and above.
 	"integrations:manage": { min: "engineer", action: "manage integrations" },
 	"code_review:configure": { min: "engineer", action: "change code review settings" },

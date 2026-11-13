@@ -20,6 +20,7 @@ import {
 	FetchMetrics,
 	FetchPreview,
 	FetchTemplates,
+	FetchTemplatesSession,
 	FetchWidget,
 	ReadClock,
 	WaitParameterDebounce,
@@ -29,6 +30,8 @@ import {
 import { filledParametersOf, missingRequiredOf, previewVariableValues } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
+import { canEditDashboards, initialGrants, readsSessionGrants } from "../kit/grants"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardsTemplatesSearch.Type
@@ -51,6 +54,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	return {
 		model: {
 			search: route.search,
+			grants: initialGrants,
 			nowMs: null,
 			templates: { key: templates, data: AsyncData.Loading() },
 			metrics: { key: metrics, data: AsyncData.Loading() },
@@ -78,6 +82,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			FetchTemplates({ key: templates }),
 			FetchMetrics({ key: metrics }),
 			loadChartRuntime,
+			...(readsSessionGrants ? [FetchTemplatesSession({ orgId: context.orgId })] : []),
 		],
 	}
 }
@@ -199,7 +204,7 @@ const selectionHref = (templateId: string | undefined) =>
 
 /** Only filled parameters are sent. */
 const create = (model: Model, templateId: string): Return => {
-	if (model.isCreating) return { model }
+	if (model.isCreating || !canEditDashboards(model)) return { model }
 	const parameters = filledParametersOf(model.parameters)
 	return {
 		model: { ...model, isCreating: true },
@@ -221,6 +226,7 @@ const sortStep = (model: Model, widgetId: string, field: string, isText: boolean
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) => planPreview({ ...model, nowMs }, context),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchTemplates: ({ key, result }) => {
 			const next = { ...model, templates: Keyed.accept(model.templates, key, result) }
 			// The panel mounts once the list resolves the selection; its arming delay starts then.

@@ -27,6 +27,7 @@ import {
 	EditSections,
 	CompleteReloadSpin,
 	ExportDashboard,
+	FetchBoardSession,
 	FetchShares,
 	ReadClock,
 	ReloadPage,
@@ -69,16 +70,19 @@ import { SectionEdit } from "./section-edit"
 import { moveTargetOf } from "./move-target"
 import * as TagEditor from "../kit/tag-editor"
 import { createAlertSearch } from "./widget-actions"
+import { acceptGrants } from "../../kit/session-grants"
+import { canEditDashboards, canShareDashboards, initialGrants, readsSessionGrants } from "../kit/grants"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardSearch.Type
 type Route = Readonly<{ dashboardId: string; search: Search }>
 
-export const init = (route: Route, _context: PageContext): Return => ({
+export const init = (route: Route, context: PageContext): Return => ({
 	model: {
 		dashboardId: route.dashboardId,
 		search: route.search,
 		status: "Loading",
+		grants: initialGrants,
 		document: null,
 		snapshot: { _tag: "Idle" },
 		nowMs: null,
@@ -130,7 +134,11 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		variableComboName: null,
 		variableDrafts: {},
 	},
-	commands: [ReadClock(), LoadChartRuntime()],
+	commands: [
+		ReadClock(),
+		LoadChartRuntime(),
+		...(readsSessionGrants ? [FetchBoardSession({ orgId: context.orgId })] : []),
+	],
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
@@ -448,7 +456,7 @@ const moreAction = (model: Model, context: PageContext, value: string): Return =
 				? { model, commands: [AutoLayout({ orgId: context.orgId, dashboardId: model.dashboardId })] }
 				: { model }
 		case "share":
-			return openShare(model)
+			return canShareDashboards(model) ? openShare(model) : { model }
 		case "export":
 			// A preview still loading has no snapshot yet; exporting now would export the live board.
 			if (model.history.previewed !== null && shownDocumentOf(model) === null) return { model }
@@ -547,7 +555,9 @@ const widgetAction = (model: Model, context: PageContext, widgetId: string, valu
 			)
 		}
 		case "embed":
-			return model.history.previewed === null ? openEmbed(model, widgetId) : { model }
+			return model.history.previewed === null && canShareDashboards(model)
+				? openEmbed(model, widgetId)
+				: { model }
 		default:
 			return { model }
 	}
@@ -603,6 +613,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.status === "Failed"
 				? readSnapshot(model, "retry")
 				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
+		// Grants decide whether `?mode=edit` edits, which moves the range the tiles are planned on.
+		CompletedFetchSession: (answer) => {
+			const next = acceptGrants(model, context.orgId, answer)
+			return isEditing(next) === isEditing(model) ? { model: next } : withReplan(next, context, "Load")
+		},
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, model.refreshVersion > 0 ? "Refresh" : "Load"),
 		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
@@ -737,7 +752,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			isWriteBlocked(model) || model.document === null || model.history.previewed !== null
+			!canEditDashboards(model) ||
+			isWriteBlocked(model) ||
+			model.document === null ||
+			model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),

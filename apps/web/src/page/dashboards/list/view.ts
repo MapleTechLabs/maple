@@ -16,6 +16,7 @@ import type { Model } from "./model"
 import { isDegraded, isLoadFailed, listedOf } from "./update"
 import { listBody, listSkeleton } from "./view-list"
 import { snapshotBanner } from "../kit/live-sync"
+import { canEditDashboards } from "../kit/grants"
 import { String as Str } from "effect"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -59,17 +60,16 @@ const readOnlyReason = (model: Model): string | null =>
 					? "Couldn't reach Maple. Editing is off until it reconnects."
 					: `${writeFailureCause(model.persistenceError)}. Editing is off until it recovers.`
 
+const browseTemplates = (h: H): Html =>
+	button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedBrowseTemplates())] }, [
+		icon(h, "GridIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+		"Browse templates",
+	])
+
 /** Browse templates, Import (the hidden file input) and Create dashboard. */
 const actions = (h: H, reason: string | null): Html =>
 	hstack(h, { gap: "1", align: "center", wrap: true }, [
-		button(
-			h,
-			{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedBrowseTemplates())] },
-			[
-				icon(h, "GridIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-				"Browse templates",
-			],
-		),
+		browseTemplates(h),
 		withReason(
 			h,
 			reason,
@@ -160,7 +160,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			titleContent: title,
-			actions: actions(h, reason),
+			// An observer browses the templates but neither imports nor creates.
+			actions: canEditDashboards(model) ? actions(h, reason) : browseTemplates(h),
 			sticky: persistenceBanner(h, model.persistenceError, isLoadFailed(model)),
 		},
 		isLoadFailed(model)

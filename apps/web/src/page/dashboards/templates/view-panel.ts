@@ -37,6 +37,7 @@ import { MAX_PREVIEW_WIDGETS, selectedOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { canEditDashboards } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -473,7 +474,8 @@ export const detailPanel = (
 			]),
 			...requirementBlock(h, template, readiness, model.nowMs ?? 0, timeZone),
 			...parameterFields(h, model, template),
-			createRow(h, model, template, isReady),
+			// Without `dashboards:edit` the panel previews the template and offers no create row.
+			...(canEditDashboards(model) ? [createRow(h, model, template, isReady)] : []),
 		],
 	)
 }

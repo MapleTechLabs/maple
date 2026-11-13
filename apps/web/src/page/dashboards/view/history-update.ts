@@ -6,6 +6,7 @@ import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
 import type { HistoryState } from "./history"
 import { Message } from "./message"
 import { isWriteBlocked } from "./mode"
+import { canEditDashboards } from "../kit/grants"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -116,7 +117,9 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "ClickedCancelPreview":
 			return { model: closePreview(model) }
 		case "ClickedRestoreVersion":
-			return isWriteBlocked(model) ? { model } : dialogStep(model, Dialog.open(history.restoreDialog))
+			return isWriteBlocked(model) || !canEditDashboards(model)
+				? { model }
+				: dialogStep(model, Dialog.open(history.restoreDialog))
 		case "GotRestoreDialogMessage":
 			return dialogStep(model, Dialog.update(history.restoreDialog, message.message))
 		case "ConfirmedRestore":

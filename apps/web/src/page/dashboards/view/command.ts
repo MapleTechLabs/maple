@@ -32,8 +32,11 @@ import { ShareMessage } from "./share"
 import { settleTo } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadClock = readClock("ReadDashboardClock", Message.CompletedReadClock)
+
+export const FetchBoardSession = fetchSessionGrants("FetchDashboardSession", Message.CompletedFetchSession)
 
 /** The chart code failed to load: a fresh page load is the only way to fetch it again. */
 export const ReloadPage = Command.define("ReloadDashboardPage", {
