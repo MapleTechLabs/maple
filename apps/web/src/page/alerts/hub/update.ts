@@ -27,7 +27,7 @@ import * as WindowDialog from "../maintenance-dialog/dialog"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { alertsHref, createHref, ruleHref } from "../../kit/alert-links"
+import { alertsHref, createHref, incidentHref, ruleHref } from "../../kit/alert-links"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT, chainHref } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
@@ -69,7 +69,8 @@ import {
 } from "./command"
 import { withAcknowledgement } from "../shared/commands"
 import { testSendFailureMessage } from "../shared/delivery-failure"
-import { resolveStatus } from "./derive"
+import { inboxIncidentsOf, resolveStatus } from "./derive"
+import { focusedIndexOf, listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import { Message, type RuleBucket } from "./message"
 import type { Model } from "./model"
 import { acceptGrants, canManageAlerts } from "../../kit/session-grants"
@@ -314,6 +315,7 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 		togglingRuleId: null,
 		hasToggleFailed: false,
 		isLoadFailed: false,
+		focusedIncidentId: null,
 		testingDestinationIds: [],
 		acknowledgingIncidentIds: [],
 		deletingDestinationIds: [],
@@ -385,7 +387,11 @@ export const init = (route: HubRoute, context: PageContext): Return => {
 }
 
 export const routeChanged = (model: Model, route: HubRoute, context: PageContext): Return => {
-	const sheet = followSilenceSheet({ ...model, ...fromRoute(route) }, context)
+	const next = fromRoute(route)
+	// Another tab or signal view is another row set: the Inbox focus starts over.
+	const focusedIncidentId =
+		next.tab === model.tab && next.search.signal === model.search.signal ? model.focusedIncidentId : null
+	const sheet = followSilenceSheet({ ...model, ...next, focusedIncidentId }, context)
 	const routing = requestRoutingDeliveries(sheet.model, context, "Load")
 	const monitors = requestMonitors(routing.model, context, "Load")
 	const silences = requestSilences(monitors.model, context, "Load")
@@ -409,6 +415,31 @@ export const routeChanged = (model: Model, route: HubRoute, context: PageContext
 			ReadHubClock(),
 		],
 	}
+}
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollAlertsHubFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** The Inbox's list keys: Enter follows the focused incident's link. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const ids = Array.map(inboxIncidentsOf(model), (incident) => incident.id)
+	const action = listKeyAction(key, focusedIndexOf(ids, model.focusedIncidentId), ids.length)
+	if (action._tag === "Focus") {
+		const focusedIncidentId = action.index === null ? null : (ids[action.index] ?? null)
+		return {
+			model: { ...model, focusedIncidentId },
+			commands: focusedIncidentId === null ? [] : [ScrollFocusedRow()],
+		}
+	}
+	const id = action._tag === "Open" ? ids[action.index] : undefined
+	return id === undefined
+		? { model }
+		: {
+				model,
+				outMessage: PageOutMessage.RequestedNavigation({ url: incidentHref(id), isReplace: false }),
+			}
 }
 
 const navigate = (search: Model["search"], tab: Model["tab"]): PageOutMessage =>
@@ -1092,6 +1123,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: { ...model, isLoadFailed: true } }
 				: { model },
 		// A stopped shape syncs again only on fresh collections.
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ClickedRetryLoad: () => ({
 			model: { ...model, isLoadFailed: false },
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),

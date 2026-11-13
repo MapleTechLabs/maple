@@ -62,6 +62,9 @@ export const Message = defineMessageUnion({
 	ClickedClearNamespacePin: {},
 	RemovedFilterChip: { param: FilterParam },
 	ClickedServiceRow: { serviceName: Schema.String, environment: Schema.String },
+	/** A list key from the page: J / K / arrows, Enter, Escape. */
+	PressedListKey: { key: Schema.String },
+	CompletedScrollFocusedRow: {},
 	ClickedServiceLink: { url: Schema.String },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotSparklineMessage: { message: Chart.Message },

@@ -1,6 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	selector,
+	Subscription,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, DeleteDashboard, SavePreferences, SaveTags } from "./command"
@@ -8,7 +19,7 @@ import * as TagEditor from "../kit/tag-editor"
 import * as Combobox from "@maple/views/ui/combobox"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { init, routeChanged, ScrollFocusedRow, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -226,5 +237,86 @@ describe("dashboards list", () => {
 		expect(cleared.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/dashboards", isReplace: true }),
 		)
+	})
+})
+
+describe("dashboards list keys", () => {
+	const press = (key: string) => Subscription.emit(Message.PressedListKey({ key }))
+	const scrolled = () => Command.resolve(ScrollFocusedRow, Message.CompletedScrollFocusedRow())
+	const focusedRow = selector("[data-focused]")
+	// Newest edit first: Payment, Platform, Checkout.
+	const boards = [
+		dashboard({ updatedAt: "2026-09-29T12:00:00.000Z" }),
+		dashboard({
+			id: "dash_payment",
+			name: "Payment service health",
+			updatedAt: "2026-10-01T11:00:00.000Z",
+		}),
+		dashboard({ id: "dash_checkout", name: "Checkout health", updatedAt: "2026-09-20T12:00:00.000Z" }),
+	]
+	const pressed = (model: Model, ...keys: ReadonlyArray<string>): Model =>
+		Arr.reduce(keys, model, (next, key) => pageUpdate(next, Message.PressedListKey({ key })).model)
+
+	test("J and K move the focus through the rows in their sorted order, and Escape clears it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({}, boards)),
+			expectView(focusedRow).toBeAbsent(),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("Payment service health"),
+			press("ArrowDown"),
+			scrolled(),
+			expectView(focusedRow).toContainText("Platform overview"),
+			press("j"),
+			scrolled(),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("Checkout health"),
+			press("k"),
+			scrolled(),
+			expectView(focusedRow).toContainText("Platform overview"),
+			press("Escape"),
+			expectView(focusedRow).toBeAbsent(),
+		)
+	})
+
+	test("Enter follows the focused row's link", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pressed(loaded({}, boards), "j", "j")),
+			expectView(role("link", { name: /Platform overview/ })).toHaveAttr(
+				"href",
+				"/dashboards/dash_platform",
+			),
+			press("Enter"),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_platform", isReplace: false }),
+			),
+		)
+	})
+
+	test("starred rows come first, and the focus stays on its dashboard when a star moves it", () => {
+		const focused = pressed(loaded({}, boards), "j", "j", "j")
+		const starred = pageUpdate(focused, Message.ToggledFavorite({ id: "dash_checkout" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(starred),
+			expectView(focusedRow).toContainText("Checkout health"),
+			press("k"),
+			scrolled(),
+			// Already the first row: the starred section leads the list.
+			expectView(focusedRow).toContainText("Checkout health"),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("Payment service health"),
+		)
+	})
+
+	test("a new search or sort starts the focus over", () => {
+		const focused = pressed(loaded({}, boards), "j")
+		expect(focused.focusedId).toBe("dash_payment")
+		expect(routeChanged(focused, { search: { q: "health" } }).model.focusedId).toBeNull()
+		expect(routeChanged(focused, { search: { sort: "name-asc" } }).model.focusedId).toBeNull()
 	})
 })

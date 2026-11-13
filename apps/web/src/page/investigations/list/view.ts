@@ -245,7 +245,13 @@ const rowFinding = (h: H, investigation: V2Investigation): Html => {
 	)
 }
 
-const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: string): Html => {
+const row = (
+	h: H,
+	investigation: V2Investigation,
+	nowMs: number,
+	timeZone: string,
+	isFocused: boolean,
+): Html => {
 	const headline = investigationHeadline(investigation)
 	const scope = investigationScope(investigation)
 	return listRow(
@@ -253,6 +259,7 @@ const row = (h: H, investigation: V2Investigation, nowMs: number, timeZone: stri
 		{
 			as: "li",
 			divided: true,
+			isFocused,
 			className: "cursor-pointer gap-3.5 py-3.5",
 			leading: hstack(h, { align: "center", justify: "center", as: "span", className: "w-5" }, [
 				kindMarker(h, investigation.subject, investigation.seeded_by),
@@ -565,7 +572,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				vstack(
 					h,
 					{ as: "ul", attributes: [h.OnMount(MountInvestigationRows())] },
-					Arr.map(visible, (investigation) => row(h, investigation, model.nowMs, timeZone)),
+					Arr.map(visible, (investigation, index) =>
+						row(h, investigation, model.nowMs, timeZone, model.focusedIndex === index),
+					),
 				),
 				...(hasMore
 					? [

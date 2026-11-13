@@ -138,6 +138,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/resizable.ts` `panelId`, `handleId`, `resize`, `view` (stateful: Model, init, update): `react-resizable-panels` 4 (`@maple/ui/resizable`): one panel group, sizes in percent.
 - `packages/views/src/ui/reveal-icon.ts` `revealIcon`: `revealIcon`: a muted trailing icon (an external-link or "go" arrow) hidden until its `group` row is hovered or keyboard-focused.
 - `packages/views/src/ui/row-actions-menu.ts` `rowActionsMenu`: A row's overflow menu of actions.
+- `packages/views/src/ui/row-focus.ts` `rowFocusAttributes`: The keyboard-focused row: the `data-focused` marker a row kit sets and the look it draws for it.
 - `packages/views/src/ui/rule.ts` `stripClass`, `strip`, `dividedList`, `fillRule`: Hairline rules: a `strip` (a band inside a panel or list, ruled off from its neighbours), a `dividedList` (a bordered box with a rule between its items) and a `fillRule`.
 - `packages/views/src/ui/scroll-area.ts` `applyScrollOverflow`, `trackScrollbar`, `scrollArea`: Base UI hides the viewport's native scrollbar with this class and an injected rule (styles.css).
 - `packages/views/src/ui/scroll-region.ts` `scrollRegion`, `fillRegion`: `ScrollRegion`: the rest of a flex column's height as a plain native-scrollbar overflow region (`min-h-0 flex-1 overflow-y-auto`); `scrollArea` is the one with the custom scroll...
@@ -246,6 +247,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/k8s-chart.ts` `k8sChart`: The Kubernetes metric chart and the detail-chart wrappers around it: one metric at a time, 280 tall, series legend, in a chart card.
 - `apps/web/src/page/kit/keyed-step.ts` `keyed`, `keyedSlot`, `applySteps`, `runSteps`, `seriesSteps`, `slotStep`, `chain`, `chainAll`: One request slot's step and the way steps compose: the Model threaded through, the Commands concatenated, the last OutMessage kept.
 - `apps/web/src/page/kit/last-by.ts` `lastBy`: A derivation that views call on every message, recomputed only when one of its inputs changes.
+- `apps/web/src/page/kit/list-keys.ts` `listKeys`, `listStepOf`, `steppedFocus`, `listKeyAction`, `focusedIndexOf`, `scrollFocusedRowCommand`: Keyboard row navigation for a list page: the document key stream (J, K, the arrows, Enter and Escape), the focus step and the scroll that keeps the focused row in view.
 - `apps/web/src/page/kit/list-toolbar.ts` `listToolbar`, `toolbarCount`, `toolbarStat`: A list page's row of view tabs, then search, filters and the count readout.
 - `apps/web/src/page/kit/markdown.ts` `escapeDirectives`, `parseMarkdownTexts`: The one markdown parse every page uses (chat, agent sessions).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.

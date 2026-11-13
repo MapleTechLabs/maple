@@ -28,6 +28,9 @@ export const Message = defineMessageUnion({
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ClickedClearFilters: {},
 	ClickedRow: { id: Schema.String },
+	/** A list key from the page: J / K / arrows, Enter, Escape. */
+	PressedListKey: { key: Schema.String },
+	CompletedScrollFocusedRow: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	GotTabsMessage: { message: Tabs.Message },
 	GotKindSelectMessage: { message: Select.Message },

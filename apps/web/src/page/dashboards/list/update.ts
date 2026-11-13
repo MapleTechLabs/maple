@@ -24,7 +24,8 @@ import {
 } from "./command"
 import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
-import { displayName, queryOf, tagsOf } from "./derive"
+import { displayName, queryOf, sectionsOf, tagsOf } from "./derive"
+import { focusedIndexOf, listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import * as Combobox from "@maple/views/ui/combobox"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
 import { Message, type WriteFailure } from "./message"
@@ -61,6 +62,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		persistenceError: null,
 		isCreating: false,
 		fallback: { _tag: "Idle" },
+		focusedId: null,
 	},
 	commands: [ReadClock(), LoadPreferences()],
 })
@@ -72,6 +74,8 @@ export const routeChanged = (model: Model, route: Route): Return => {
 		model: {
 			...model,
 			search: route.search,
+			// A new search, tag, scope or sort is a new row set: the focus starts over.
+			focusedId: null,
 			searchDraft: query === Str.trim(model.searchDraft) ? model.searchDraft : query,
 			tagFilter: { ...model.tagFilter, selected: tagsOf(route.search) },
 		},
@@ -112,6 +116,31 @@ export const isLoadFailed = (model: Model): boolean =>
 	model.dashboards === null && model.fallback._tag === "Failed"
 
 export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
+
+/** The rows on screen, starred first: what the list keys step over. */
+export const focusableOf = (model: Model): ReadonlyArray<ListDashboard> => {
+	const listed = listedOf(model)
+	if (listed === null || model.nowMs === null || !model.isPrefsLoaded) return []
+	const sections = sectionsOf(model, listed)
+	return [...sections.favorited, ...sections.others]
+}
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollDashboardsFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter follows the focused row's link. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const ids = Arr.map(focusableOf(model), (dashboard) => dashboard.id)
+	const action = listKeyAction(key, focusedIndexOf(ids, model.focusedId), ids.length)
+	if (action._tag === "Focus") {
+		const focusedId = action.index === null ? null : (ids[action.index] ?? null)
+		return { model: { ...model, focusedId }, commands: focusedId === null ? [] : [ScrollFocusedRow()] }
+	}
+	const id = action._tag === "Open" ? ids[action.index] : undefined
+	return id === undefined ? { model } : navigateTo(model, dashboardHref(id))
+}
 
 const navigateWithToast = (model: Model, url: string, title: string): Return => ({
 	model,
@@ -313,6 +342,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: navigateSearch(model, { q: trimmed === "" ? undefined : trimmed })
 		},
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ChangedScope: ({ scope }) => navigateSearch(model, { scope: scope === "all" ? undefined : scope }),
 		ClickedClearSearch: () => navigateSearch({ ...model, searchDraft: "" }, { q: undefined }),
 		ClickedShowAllTags: () => navigateSearch(model, { tags: undefined }),

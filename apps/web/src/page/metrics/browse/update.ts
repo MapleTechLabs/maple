@@ -17,7 +17,8 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { PresetValue } from "../../kit/time-controls"
-import { SPARKLINE_METRIC_TYPES } from "../shared"
+import { type MetricRow, SPARKLINE_METRIC_TYPES } from "../shared"
+import { listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import {
 	CompleteReloadSpin,
 	DebounceSearch,
@@ -130,7 +131,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 /** A new search, type or window remounts the grid or table. */
 const remounted = (model: Model, isNewQuery: boolean): Model => {
-	const reset = { ...model, visiblePages: 1, tableLimit: TABLE_PAGE_SIZE }
+	const reset = { ...model, visiblePages: 1, tableLimit: TABLE_PAGE_SIZE, focusedIndex: null }
 	// A new window keeps the previous rows on screen while it loads.
 	return isNewQuery ? { ...reset, catalog: Keyed.idle(), table: Keyed.idle() } : reset
 }
@@ -160,6 +161,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		sparklines: {},
 		table: Keyed.idle(),
 		tableLimit: TABLE_PAGE_SIZE,
+		focusedIndex: null,
 		summary: Keyed.idle(),
 		searchInput: route.search.q ?? "",
 		searchGeneration: 0,
@@ -230,6 +232,38 @@ const metricHref = (model: Model, metricName: string, metricType: string) =>
 
 /** The table's row link: the page's own time params plus the metric's type. */
 export const metricLink = metricHref
+
+const openedMetric = (model: Model, metricName: string, metricType: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: metricHref(model, metricName, metricType),
+		isReplace: false,
+	}),
+})
+
+/** The table's rows on screen (none in the grid view): what the list keys step over. */
+export const tableRows = (model: Model): ReadonlyArray<MetricRow> =>
+	(model.search.view ?? "grid") === "table"
+		? Option.getOrElse(AsyncData.getData(model.table.data), () => []).slice(0, model.tableLimit)
+		: []
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollMetricsFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter follows the focused row's link. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const rows = tableRows(model)
+	const action = listKeyAction(key, model.focusedIndex, rows.length)
+	if (action._tag === "Focus")
+		return {
+			model: { ...model, focusedIndex: action.index },
+			commands: action.index === null ? [] : [ScrollFocusedRow()],
+		}
+	const row = action._tag === "Open" ? rows[action.index] : undefined
+	return row === undefined ? { model } : openedMetric(model, row.metricName, row.metricType)
+}
 
 const liftTypeSelect = (model: Model, message: Select.Message): Return => {
 	const next = Select.update(model.typeSelect, message)
@@ -320,13 +354,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = { ...model, tableLimit: model.tableLimit + TABLE_PAGE_SIZE }
 			return next.window === null ? { model: next } : requestAll(next, context, next.window, "Load")
 		},
-		ClickedMetricCard: ({ metricName, metricType }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: metricHref(model, metricName, metricType),
-				isReplace: false,
-			}),
-		}),
+		ClickedMetricCard: ({ metricName, metricType }) => openedMetric(model, metricName, metricType),
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ClickedClearFilters: () => patchSearch(model, { ...model.search, q: undefined, type: undefined }),
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },

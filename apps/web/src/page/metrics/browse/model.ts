@@ -59,5 +59,7 @@ export const Model = Schema.Struct({
 	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** The table's keyboard-focused row; none until J or K is pressed. */
+	focusedIndex: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type

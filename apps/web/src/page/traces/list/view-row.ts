@@ -16,6 +16,7 @@ import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { button } from "@maple/views/ui/button"
 import { laneTableCell, rowLink, tableCell, tableRow } from "@maple/views/ui/table"
 import { latencyValue } from "@maple/views/ui/values"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
@@ -143,12 +144,12 @@ export const traceRow = (
 		],
 		cn(
 			state.isActive && "bg-surface-strong",
-			"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		),
 		[
 			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
 			h.Key(`row-${index}`),
-			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
+			...rowFocusAttributes(h, state.isFocused),
 			h.DataAttribute("index", String(index)),
 			h.Tabindex(0),
 			h.OnKeyDownPreventDefault((key) =>

@@ -21,7 +21,9 @@ import {
 	ReadInvestigationsGrants,
 	WaitInvestigationsSearch,
 } from "./command"
+import { listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import {
+	focusableOf,
 	isLoadingMoreOf,
 	KIND_FILTER_VALUES,
 	nextCursorOf,
@@ -64,6 +66,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		searchDraft: search.q ?? "",
 		searchGeneration: 0,
+		focusedIndex: null,
 		tabs: Tabs.init({ idBase: 0, values: VIEWS, selected: viewOf(search) }),
 		kindSelect: Select.init("investigations-kind", {
 			value: search.kind ?? "all",
@@ -103,6 +106,8 @@ export const routeChanged = (
 		model: {
 			...model,
 			search,
+			// A new view, filter, search or sort is a new row set: the focus starts over.
+			focusedIndex: null,
 			searchDraft:
 				(Str.trim(model.searchDraft) || undefined) === search.q
 					? model.searchDraft
@@ -122,6 +127,32 @@ const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace: false }),
 })
+
+const openedRow = (model: Model, id: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: hrefOf(AppRoute.Investigation({ id, search: {} })),
+		isReplace: false,
+	}),
+})
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollInvestigationsFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter opens the focused row exactly as a click on it does. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const rows = focusableOf(model)
+	const action = listKeyAction(key, model.focusedIndex, rows.length)
+	if (action._tag === "Focus")
+		return {
+			model: { ...model, focusedIndex: action.index },
+			commands: action.index === null ? [] : [ScrollFocusedRow()],
+		}
+	const row = action._tag === "Open" ? rows[action.index] : undefined
+	return row === undefined ? { model } : openedRow(model, row.id)
+}
 
 const isKind = (value: string): value is NonNullable<Search["kind"]> =>
 	Arr.some(KIND_FILTER_VALUES, (kind) => kind !== "all" && kind === value)
@@ -222,13 +253,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				: { model }
 		},
 		ClickedClearFilters: () => navigate(model, { ...model.search, kind: undefined, q: undefined }),
-		ClickedRow: ({ id }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: hrefOf(AppRoute.Investigation({ id, search: {} })),
-				isReplace: false,
-			}),
-		}),
+		ClickedRow: ({ id }) => openedRow(model, id),
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollFocusedRow: () => ({ model }),
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),

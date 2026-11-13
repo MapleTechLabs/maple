@@ -45,6 +45,12 @@ export const isLoadingMoreOf = (model: Model): boolean => {
 	return last !== undefined && (AsyncData.isLoading(last.page.data) || AsyncData.isIdle(last.page.data))
 }
 
+/** The rows on screen once the first page has answered: what the list keys step over. */
+export const focusableOf = (model: Model): ReadonlyArray<V2Investigation> =>
+	AsyncData.isSuccess(model.firstPage.data) || AsyncData.isRefreshing(model.firstPage.data)
+		? visibleOf(model, allOf(model))
+		: []
+
 export const visibleOf = (model: Model, all: ReadonlyArray<V2Investigation>) => {
 	const { search } = model
 	const view = viewOf(search)

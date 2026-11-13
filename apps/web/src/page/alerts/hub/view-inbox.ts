@@ -33,7 +33,7 @@ import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { severityBadge } from "../shared/badges"
 import { HEADROOM_FILL, HEADROOM_TEXT } from "../shared/headroom-tone"
 import { incidentHref, ruleHref } from "../../kit/alert-links"
-import { sortIncidents } from "../shared/sort"
+import { inboxOrder } from "./derive"
 import { msIso } from "../../kit/alert-time"
 import { gridListRow } from "../../kit/grid-list-row"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -70,16 +70,12 @@ export const inboxTab = <M>(
 	h: HtmlBuilder<M>,
 	data: AlertsOverviewReady,
 	acknowledge: InboxAcknowledge<M>,
+	/** The keyboard-focused open incident, when the page has one. */
+	focusedId: string | null = null,
 ): Html => {
 	const { rules, incidents, openIncidents, derivedByRuleId, statesByRule, timelineRange } = data
 	const now = timelineRange.max
-	const all = sortIncidents(openIncidents)
-	// What still needs someone first, then what someone is on, then what waits on data.
-	const sorted = [
-		...Arr.filter(all, (i) => i.holdReason === null && !isAcknowledged(i)),
-		...Arr.filter(all, (i) => i.holdReason === null && isAcknowledged(i)),
-		...Arr.filter(all, (i) => i.holdReason !== null),
-	]
+	const sorted = inboxOrder(openIncidents)
 	const spots = deriveBlindSpots(rules, derivedByRuleId)
 	const lanes = fireLanes(incidents, timelineRange)
 	const held = Arr.filter(sorted, (i) => i.holdReason !== null).length
@@ -148,7 +144,7 @@ export const inboxTab = <M>(
 								])
 							: sections,
 					]
-				: [openIncidentsList(h, sorted, now, acknowledge), sections]),
+				: [openIncidentsList(h, sorted, now, acknowledge, focusedId), sections]),
 		],
 	)
 }
@@ -170,6 +166,7 @@ const openIncidentsList = <M>(
 	incidents: ReadonlyArray<AlertIncidentDocument>,
 	now: number,
 	acknowledge: InboxAcknowledge<M>,
+	focusedId: string | null,
 ) =>
 	borderedBox(h, { overflow: "x-auto" }, [
 		h.div(
@@ -194,7 +191,9 @@ const openIncidentsList = <M>(
 				dividedList(
 					h,
 					{ as: "ul", bordered: false },
-					Arr.map(incidents, (incident) => openIncidentRow(h, incident, now, acknowledge)),
+					Arr.map(incidents, (incident) =>
+						openIncidentRow(h, incident, now, acknowledge, incident.id === focusedId),
+					),
 				),
 			],
 		),
@@ -205,11 +204,12 @@ const openIncidentRow = <M>(
 	incident: AlertIncidentDocument,
 	now: number,
 	acknowledge: InboxAcknowledge<M>,
+	isFocused: boolean,
 ): Html => {
 	const isHeld = incident.holdReason !== null
 	const acked = acknowledgedLine(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
-	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID }, [
+	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID, isFocused }, [
 		h.span([
 			h.AriaHidden(true),
 			h.Class(

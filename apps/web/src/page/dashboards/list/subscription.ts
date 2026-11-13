@@ -7,6 +7,8 @@ import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import { orgLive } from "../../../data/collections/org-collections"
 import { loadTimeout } from "../kit/live-sync"
+import { listKeys } from "../../kit/list-keys"
+import { focusableOf } from "./update"
 import { Message } from "./message"
 import { toListDashboard } from "./derive"
 import type { ListDashboard, Model } from "./model"
@@ -35,6 +37,19 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 			{
 				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 				dependenciesToStream: ({ orgId }) => dashboards(orgId),
+			},
+		),
+		/** The list's keys while it shows rows; an open menu keeps its arrows. */
+		listKeys: entry(
+			{ hasRows: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					hasRows: focusableOf(model).length > 0 && !model.sortMenu.isOpen && !model.rowMenu.isOpen,
+				}),
+				dependenciesToStream: ({ hasRows }) =>
+					hasRows
+						? listKeys({ toMessage: (key) => Message.PressedListKey({ key }) })
+						: Stream.empty,
 			},
 		),
 		/** A live list still loading after the bounded wait has failed. */

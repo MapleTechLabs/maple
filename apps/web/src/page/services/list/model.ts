@@ -94,5 +94,7 @@ export const Model = Schema.Struct({
 	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
+	/** The keyboard-focused row, by its place in the table's order; none until J or K is pressed. */
+	focusedIndex: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type

@@ -8,6 +8,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as QuickPick from "../kit/quick-pick"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SEVERITY_ORDER } from "../../kit/issue-severity"
+import { listStepOf, steppedFocus } from "../../kit/list-keys"
 import { FetchPage, FetchServiceCounts, RunHubWrite } from "./command"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
@@ -73,15 +74,8 @@ export const pressedListKey = (
 		case "K":
 		case "ArrowUp": {
 			if (ids.length === 0) return { model }
-			const isDown = key === "j" || key === "J" || key === "ArrowDown"
-			const next = isDown
-				? current < 0
-					? 0
-					: Math.min(current + 1, ids.length - 1)
-				: current <= 0
-					? 0
-					: current - 1
-			return { model: { ...model, focusedId: ids[next] ?? model.focusedId } }
+			const next = steppedFocus(current, listStepOf(key) ?? 1, ids.length)
+			return { model: { ...model, focusedId: ids[next ?? -1] ?? model.focusedId } }
 		}
 		case "Enter": {
 			const focused = ids[current]

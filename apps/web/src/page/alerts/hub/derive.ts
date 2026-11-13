@@ -1,4 +1,8 @@
-import type { AlertDestinationDocument, AlertIncidentDocument } from "@maple/domain/http"
+import {
+	type AlertDestinationDocument,
+	type AlertIncidentDocument,
+	isManagedSignalType,
+} from "@maple/domain/http"
 import { type AlertsOverviewReady, deriveOverview } from "@maple/web-data/alerts/overview"
 import {
 	buildRuleStatesByRuleId,
@@ -9,6 +13,7 @@ import {
 import { Option, Order, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { lastBy } from "../../kit/last-by"
+import { sortIncidents } from "../shared/sort"
 import type { InboxSignal, IncidentStatusFilter, RuleBucket } from "./message"
 import type { Model } from "./model"
 import type { ScopeSuggestions } from "../silence-dialog/dialog"
@@ -99,6 +104,41 @@ export const anomalyOverviewOf = (model: Model): Option.Option<AlertsOverviewRea
 /** The Inbox's signal view; old anomaly links say "anomalies". */
 export const resolveSignal = (signal: string | undefined): InboxSignal =>
 	signal === "anomaly" || signal === "anomalies" ? "anomaly" : null
+
+/**
+ * The first-run empty state fills the section: no rules yet, and on the Inbox nothing else to list
+ * (an org with only monitors or SLOs has no visible rules but may have incidents to show).
+ */
+export const isFirstRun = (model: Model, data: AlertsOverviewReady, tab: "inbox" | "rules"): boolean => {
+	if (data.rules.length > 0) return false
+	if (tab === "rules") return true
+	return (
+		resolveSignal(model.search.signal) === null &&
+		!Arr.some(data.openIncidents, (incident) => isManagedSignalType(incident.signalType)) &&
+		!Arr.some(data.incidents, (incident) => incident.signalType === "anomaly")
+	)
+}
+
+/** What still needs someone first, then what someone is on, then what waits on data. */
+export const inboxOrder = (
+	openIncidents: ReadonlyArray<AlertIncidentDocument>,
+): ReadonlyArray<AlertIncidentDocument> => {
+	const all = sortIncidents(openIncidents)
+	return [
+		...Arr.filter(all, (i) => i.holdReason === null && i.acknowledgedAt === null),
+		...Arr.filter(all, (i) => i.holdReason === null && i.acknowledgedAt !== null),
+		...Arr.filter(all, (i) => i.holdReason !== null),
+	]
+}
+
+/** The open incidents the Inbox lists, in its order: what the list keys step over. */
+export const inboxIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocument> =>
+	model.tab !== "inbox" || resolveSignal(model.search.signal) !== null
+		? []
+		: Option.match(overviewOf(model), {
+				onNone: () => [],
+				onSome: (data) => (isFirstRun(model, data, "inbox") ? [] : inboxOrder(data.openIncidents)),
+			})
 
 /** A signal view lists open incidents unless the link asks for resolved or all of them. */
 export const resolveIncidentStatus = (status: string | undefined): IncidentStatusFilter =>
