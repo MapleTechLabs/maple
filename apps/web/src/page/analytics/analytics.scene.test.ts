@@ -268,6 +268,15 @@ describe("web analytics", () => {
 		)
 	})
 
+	test("a card with one row counts it in the singular", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(overviewWith([{ name: "news.ycombinator.com", count: 9 }], false)),
+			resolveTheme,
+			expectView(text("1 referrer")).toExist(),
+		)
+	})
+
 	test("an org that never sent sessions gets the setup state", () => {
 		const model = pageUpdate(
 			windowed(),

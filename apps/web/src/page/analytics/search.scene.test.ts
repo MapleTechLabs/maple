@@ -164,6 +164,16 @@ describe("web analytics: Search tab", () => {
 			resolveTheme,
 			expectView(text("signup")).not.toExist(),
 		)
+		// Nor before the status says so: a rail that shows and then leaves moves the page.
+		const waiting = answer(answer(windowed().model, "breakdowns", breakdowns).model, "events", [
+			{ name: "signup", events: 9, sessions: 7 },
+		]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(waiting),
+			resolveTheme,
+			expectView(text("signup")).not.toExist(),
+		)
 	})
 
 	test("a window Google reported nothing for explains the delay and offers the last month", () => {

@@ -1,4 +1,4 @@
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { stripClass } from "@maple/views/ui/rule"
@@ -368,7 +368,7 @@ export const breakdownPanel = (
 					...(dimension.note === undefined ? [] : [dimension.note(h)]),
 					expandTableFooter(h, {
 						onClick: Message.ClickedExpandPanel({ panel: card.id }),
-						count: `${formatNumber(dimension.rows.length)} ${dimension.nounPlural}`,
+						count: `${formatNumber(dimension.rows.length)} ${pluralize(dimension.rows.length, dimension.noun, dimension.nounPlural)}`,
 					}),
 				]),
 	])

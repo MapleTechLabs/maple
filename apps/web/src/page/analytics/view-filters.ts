@@ -181,12 +181,13 @@ export const filtersRail = (h: H, model: Model): Html =>
 
 /**
  * The Search tab's rail: only the event filter applies there, as the Pages table's conversion.
- * None once the status says there is no imported property: nothing there to filter.
+ * It arrives with the tables, once the status names an imported property: until then there is
+ * nothing to filter, and a rail that flashes in and out moves the whole page.
  */
 export const searchEventRail = (h: H, model: Model): Html | undefined => {
 	const status = Option.getOrUndefined(AsyncData.getData(model.searchStatus.data))
 	const site = searchSiteOf(model.search, status)
-	if (status !== undefined && (site === undefined || site.watermarkDate === null)) return undefined
+	if (site === undefined || site.watermarkDate === null) return undefined
 	const eventName = filtersOf(model.search).eventName
 	// No Search panel shows this read, so the rail carries its failure and the retry.
 	if (AsyncData.isFailure(model.events.data))
