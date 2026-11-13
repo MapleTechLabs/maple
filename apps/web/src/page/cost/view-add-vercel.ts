@@ -76,7 +76,7 @@ const connection = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> =
 			return [
 				teamRow(h, step.team, false),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-					"Maple reads this month and the last at once, then every day from here on. Older months fill in after that, back to eleven months. The connection's token needs an Owner, Member, Developer or Billing role on the team.",
+					"Maple reads this month and the last at once, then every day from here on. Older months fill in after that, back to eleven months. The connection's token needs an Owner, Member, Developer, Security, Billing or Enterprise Viewer role on the team.",
 				]),
 				// A refusal is about the token: the way on is the connection, where it is replaced.
 				...(model.vercelError === null

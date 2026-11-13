@@ -118,20 +118,22 @@ export const keyMark = (
 	}
 }
 
-/** Providers whose account id a reader knows the account by: an AWS account id, a Vercel team's slug. */
-const NAMED_BY_ID: ReadonlyArray<CostProvider> = ["aws", "vercel"]
-
 /**
- * An account by what reads it: an AWS one by its id, a Vercel one by its team's slug, an
- * OpenRouter one by name alone while it is the org's only one (its id means nothing to a reader).
- * Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a Vercel one by its team's slug (its id is a
+ * team id, kept stable through a rename), an OpenRouter one by name alone while it is the org's
+ * only one (its id means nothing to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
 	if (provider === undefined) return key
 	const name = COST_PROVIDERS[provider].name
-	if (Arr.contains(NAMED_BY_ID, provider)) return `${name} ${key}`
+	if (provider === "aws") return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
+	const accountName = Arr.findFirst(sameProvider, (source) => source.accountId === key).pipe(
+		Option.flatMapNullishOr((source) => source.accountName),
+		Option.getOrUndefined,
+	)
+	if (accountName !== undefined) return `${name} ${accountName}`
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }
 

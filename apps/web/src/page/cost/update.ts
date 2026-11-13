@@ -1,9 +1,4 @@
-import {
-	CostSourcesResponse,
-	OPENROUTER_KEY_MAX_LENGTH,
-	type VercelCostStatus,
-	type VercelCostTeam,
-} from "@maple/domain/http"
+import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH, type VercelCostTeam } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -67,6 +62,9 @@ type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET: PresetValue = "30d"
+
+/** The API's code for a write refused because the org's connection changed under it. */
+const CONNECTION_CHANGED_CODE = "integration_connection_changed"
 
 /** The keys that get their own series in the chart; the rest fold into "Other". */
 export const SERIES_LIMIT = 8
@@ -243,14 +241,23 @@ const clearedKey = (model: Model): Model => ({
 })
 
 /**
+ * A slot with nothing on show that keeps its key: the read after it is the key's next generation,
+ * so an older read in flight cannot answer, and a failure has no earlier answer to stand beside.
+ */
+const emptied = <A>(slot: Keyed.Keyed<A, LoadFailure>): Keyed.Keyed<A, LoadFailure> => ({
+	...Keyed.idle<A, LoadFailure>(),
+	key: slot.key,
+})
+
+/**
  * The org's Vercel connection, read again each time the dialog turns to Vercel. The answer on
  * show is dropped first: the step never offers an add on a connection read before it was left,
- * and a read that fails says so. The key stays, so an older read in flight cannot answer.
+ * and a read that fails says so.
  */
 const requestVercelStatus = (model: Model, context: PageContext): Return =>
 	applySteps<Model, Message>(model, [
 		keyed(
-			{ ...Keyed.idle<VercelCostStatus, LoadFailure>(), key: model.vercel.key },
+			emptied(model.vercel),
 			requestKey(context.orgId, "vercelCostStatus", {}),
 			"Supersede",
 			(vercel) => ({ vercel }),
@@ -312,9 +319,21 @@ const removed = (
 	failure: Option.Option<LoadFailure>,
 	context: PageContext,
 ): Return => {
+	// The cost on show includes the removed source's: it goes with the row, so the reads that
+	// follow start empty and one that fails leaves no removed cost beside its error.
 	const closed = liftRemoveDialog(
 		Option.isNone(failure)
-			? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
+			? withoutSourceOf(
+					{
+						...model,
+						sourceWrite: "Settling",
+						totals: emptied(model.totals),
+						timeseries: emptied(model.timeseries),
+						breakdown: emptied(model.breakdown),
+						facets: emptied(model.facets),
+					},
+					provider,
+				)
 			: { ...model, sourceWrite: "Idle" },
 		Dialog.close(model.removeDialog),
 	)
@@ -493,12 +512,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					commands: [AddVercelCostSource({ teamId: team.id })],
 				}),
 			}),
-		// A refused add keeps the dialog open with Vercel's reason under the team.
+		// A refused add keeps the dialog open with Vercel's reason under the team. When the reason
+		// is that the connection changed, it is read again: the team on show is the one to add now.
 		CompletedAddVercel: ({ result }) =>
 			Result.match(result, {
-				onFailure: (failure): Return => ({
-					model: { ...model, sourceWrite: "Idle", vercelError: failureMessage(failure) },
-				}),
+				onFailure: (failure): Return => {
+					const refused: Model = {
+						...model,
+						sourceWrite: "Idle",
+						vercelError: failureMessage(failure),
+					}
+					return failure.code === CONNECTION_CHANGED_CODE
+						? requestVercelStatus(refused, context)
+						: { model: refused }
+				},
 				onSuccess: (): Return =>
 					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
 			}),

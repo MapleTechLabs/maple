@@ -477,7 +477,9 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(text("Acme Inc")).toExist(),
 			expectView(text("acme")).toExist(),
-			expectView(text(/Owner, Member, Developer or Billing role/)).toExist(),
+			expectView(
+				text(/Owner, Member, Developer, Security, Billing or Enterprise Viewer role/),
+			).toExist(),
 			expectView(role("button", { name: "Add source" })).toBeEnabled(),
 			expectView(role("button", { name: "Back" })).toBeEnabled(),
 		)
@@ -567,7 +569,7 @@ describe("cost page", () => {
 	test("an add Vercel refuses stays in the dialog with the reason, until the step is left", () => {
 		const adding = pageUpdate(vercelStepWith(vercelStatus()), Message.ClickedConfirmAddVercel()).model
 		const reason =
-			"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role."
+			"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role."
 		const refused = pageUpdate(
 			adding,
 			Message.CompletedAddVercel({
@@ -592,6 +594,49 @@ describe("cost page", () => {
 		)
 		const back = pageUpdate(refused.model, Message.ClickedBackToProviders()).model
 		expect([back.addStep, back.vercelError]).toEqual(["pick", null])
+	})
+
+	test("an add refused because the connection changed shows the team connected now, and adds that one", () => {
+		const adding = pageUpdate(vercelStepWith(vercelStatus()), Message.ClickedConfirmAddVercel()).model
+		const reason =
+			"The Vercel connection now reads another team (beta). Check the team shown, then add it again."
+		const refused = pageUpdate(
+			adding,
+			Message.CompletedAddVercel({
+				result: Result.fail({
+					...toLoadFailure("refused"),
+					code: "integration_connection_changed",
+					message: reason,
+				}),
+			}),
+		)
+		// The team on show is no longer the one connected: the connection is read again.
+		expect(names(refused.commands)).toContain("FetchVercelCostStatus")
+		expect(names(pageUpdate(refused.model, Message.ClickedConfirmAddVercel()).commands)).not.toContain(
+			"AddVercelCostSource",
+		)
+		const reread = pageUpdate(
+			refused.model,
+			Message.CompletedLoadVercelStatus({
+				key: refused.model.vercel.key ?? "",
+				result: Result.succeed(
+					vercelStatus({ team: { id: "team_2", name: "Beta Inc", slug: "beta" } }),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(reread),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Beta Inc")).toExist(),
+			expectView(text("Acme Inc")).not.toExist(),
+			expectView(role("alert")).toContainText(reason),
+		)
+		// The next click adds the team that is shown now.
+		expect(pageUpdate(reread, Message.ClickedConfirmAddVercel()).commands).toMatchObject([
+			{ name: "AddVercelCostSource", args: { teamId: "team_2" } },
+		])
 	})
 
 	test("the Vercel step reads the connection anew each time it opens, and an older read cannot answer", () => {
@@ -682,7 +727,8 @@ describe("cost page", () => {
 		const vercel = source({
 			id: "0190f2b3-0000-7000-8000-00000000c061",
 			provider: "vercel",
-			accountId: "acme",
+			accountId: "team_1",
+			accountName: "acme",
 			backfillDate: "2025-12-01",
 			requestsThisMonth: 0,
 		})
@@ -760,6 +806,55 @@ describe("cost page", () => {
 				"FetchCostBreakdown",
 			]),
 		)
+		// The cost on show included the removed team's: it leaves with the row, while the reads run.
+		expect(model.totals.key).not.toBe(removed.model.totals.key)
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("$1,200.00")).not.toExist(),
+		)
+		// A reread that fails leaves no removed cost beside its error.
+		const unreachable = Result.fail(toLoadFailure("unreachable"))
+		const rereadFailed = Arr.reduce(
+			[
+				Message.CompletedLoadTotals({ key: removed.model.totals.key ?? "", result: unreachable }),
+				Message.CompletedLoadTimeseries({
+					key: removed.model.timeseries.key ?? "",
+					result: unreachable,
+				}),
+				Message.CompletedLoadBreakdown({
+					key: removed.model.breakdown.key ?? "",
+					result: unreachable,
+				}),
+				Message.CompletedLoadFacets({ key: removed.model.facets.key ?? "", result: unreachable }),
+			],
+			removed.model,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(rereadFailed),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Couldn't load cost")).toExist(),
+			expectView(text("$1,200.00")).not.toExist(),
+			expectView(text("north-1")).not.toExist(),
+		)
+		// The read from before the removal, answering late, is not the reread's answer.
+		const late = pageUpdate(
+			removed.model,
+			Message.CompletedLoadTotals({ key: model.totals.key ?? "", result: Result.succeed(totals()) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(late),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("$1,200.00")).not.toExist(),
+		)
+
 		// The row is gone at once, and the AWS account's stays.
 		scene(
 			{ update: pageUpdate, view },
@@ -780,7 +875,8 @@ describe("cost page", () => {
 		const vercel = source({
 			id: "0190f2b3-0000-7000-8000-00000000c061",
 			provider: "vercel",
-			accountId: "acme",
+			accountId: "team_1",
+			accountName: "acme",
 		})
 		const removals: ReadonlyArray<
 			Readonly<{ only: SourceWire; provider: RemovableProvider; removed: Message }>
@@ -847,7 +943,7 @@ describe("cost page", () => {
 						dimension === "resource"
 							? Arr.map(resources, (key) => ({ key, cost: 40, previousCost: 30 }))
 							: dimension === "account"
-								? [{ key: "acme", cost: 40, previousCost: 30 }]
+								? [{ key: "team_1", cost: 40, previousCost: 30 }]
 								: breakdown.rows,
 					),
 				),
@@ -858,7 +954,8 @@ describe("cost page", () => {
 		const vercel = source({
 			id: "0190f2b3-0000-7000-8000-00000000c061",
 			provider: "vercel",
-			accountId: "acme",
+			accountId: "team_1",
+			accountName: "acme",
 		})
 		const underRegion = answered(entered({ region: ["north-1"] }, [source(), vercel]).model)
 		// A Vercel team's projects are its resources: the rail lists them, the plan fee has none.
@@ -905,7 +1002,8 @@ describe("cost page", () => {
 		const vercel = source({
 			id: "0190f2b3-0000-7000-8000-00000000c061",
 			provider: "vercel",
-			accountId: "acme",
+			accountId: "team_1",
+			accountName: "acme",
 		})
 		const model = answered(entered({}, [openRouter, vercel]).model)
 		const removing = pageUpdate(
@@ -1086,7 +1184,8 @@ describe("cost page", () => {
 			...unsynced,
 			id: "0190f2b3-0000-7000-8000-00000000c061",
 			provider: "vercel",
-			accountId: "acme",
+			accountId: "team_1",
+			accountName: "acme",
 			status: "pending",
 		})
 		scene(

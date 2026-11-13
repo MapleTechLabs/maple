@@ -61,12 +61,15 @@ describe("cost key marks", () => {
 	})
 
 	test("a Vercel account reads as the team it is, with the Vercel mark and nothing aside", () => {
-		const vercel = [...sources, source("vercel", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")]
-		// The slug is how the team is known, so it stays in the label also while it is the only team.
-		expect(keyLabel("account", "acme", vercel)).toBe("Vercel acme")
-		expect(keyDetail("account", "acme", vercel)).toBeNull()
-		expect(keyMark("account", "acme", vercel)?.icon).toBe(keyMark("provider", "vercel", [])?.icon)
+		// The account is the team's id, which a rename leaves alone; the slug is how it is known.
+		const team = source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")
+		const vercel = [...sources, { ...team, accountName: "acme" }]
+		expect(keyLabel("account", "team_1", vercel)).toBe("Vercel acme")
+		expect(keyDetail("account", "team_1", vercel)).toBeNull()
+		expect(keyMark("account", "team_1", vercel)?.icon).toBe(keyMark("provider", "vercel", [])?.icon)
 		expect(keyLabel("provider", "vercel")).toBe("Vercel")
+		// A team whose name was not read is still Vercel's, never a bare team id.
+		expect(keyLabel("account", "team_1", [...sources, team])).toBe("Vercel")
 	})
 
 	test("a service and a region wear the mark of the only platform that could have billed them", () => {

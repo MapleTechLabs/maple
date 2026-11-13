@@ -182,7 +182,7 @@ const refusedKey = {
 const refusedVercel = {
 	...toLoadFailure("refused"),
 	message:
-		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
+		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
 }
 
 /** Whether the state starts with a source of the provider. */

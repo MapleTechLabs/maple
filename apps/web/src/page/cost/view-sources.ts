@@ -166,7 +166,7 @@ const sourceRow = (
 					hstack(h, { gap: "2", wrap: true }, [
 						typography(h, { size: "sm", weight: "medium" }, [provider.name]),
 						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-							source.accountId,
+							source.accountName ?? source.accountId,
 						]),
 						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),

@@ -80,7 +80,7 @@ const productLine = (
 	region,
 	usage_type: sku,
 	resource: project,
-	account: LAB_VERCEL_TEAM.slug,
+	account: LAB_VERCEL_TEAM.id,
 	daily,
 	drift,
 })
@@ -310,7 +310,8 @@ const openRouterSource = source({
 const vercelSource = source({
 	id: "0190f2b3-0000-7000-8000-00000000c061",
 	provider: "vercel",
-	accountId: LAB_VERCEL_TEAM.slug,
+	accountId: LAB_VERCEL_TEAM.id,
+	accountName: LAB_VERCEL_TEAM.slug,
 	backfillDate: "2025-12-01",
 	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
 	requestsThisMonth: 0,
