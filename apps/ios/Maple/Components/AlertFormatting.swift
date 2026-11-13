@@ -56,6 +56,8 @@ struct SignalDisplay: Codable {
 		case .sloBurnRate: self.init(label: "SLO burn rate", unit: .burnRate)
 		// An anomaly rule: the value is a severity code, shown as Warning or Critical.
 		case .anomaly: self.init(label: "Anomaly", unit: .anomalySeverity)
+		// An audit log detection's hidden rule: the value is how many matching events arrived.
+		case .audit: self.init(label: "Audit log", unit: .count)
 		}
 	}
 

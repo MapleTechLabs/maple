@@ -193,6 +193,8 @@ import { AlertReadModelsService } from "./AlertReadModelsService"
 import { makeAlertRulePersistence } from "./AlertRulesService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
@@ -631,6 +633,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const runtime = yield* AlertRuntime
 			const uptimeAlerts = yield* UptimeAlertSource
 			const sloAlerts = yield* SloAlertSource
+			const auditTrail = yield* AuditTrailService
 			const anomalyAlerts = yield* AnomalyAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
@@ -1178,6 +1181,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					})
 				}
 				const startMs = endMs - rule.windowMinutes * 60_000
+				// An audit detection counts the events that arrived in its window. The count is a
+				// fact even at zero, so an empty window reads healthy and not as missing data.
+				if (rule.signalType === "audit") {
+					// Not before the detection's floor: a new one, or one that now counts more than it
+					// did, must not fire on what was already there.
+					const count = yield* auditTrail
+						.count(orgId, rule.auditFilters, {
+							startMs: Math.max(startMs, rule.auditCountFrom ?? 0),
+							endMs,
+						})
+						.pipe(Effect.mapError(makePersistenceError))
+					return [
+						{
+							evaluation: applyEvaluationLogic(
+								rule,
+								{ value: count, sampleCount: count, hasData: true },
+								auditCountReason(count, rule.windowMinutes),
+							),
+							groupKey: UNGROUPED_GROUP_KEY,
+						},
+					]
+				}
 				const plan = rule.compiledPlan
 				const source = yield* planEvaluateSource(plan, rule)
 				const observations: ReadonlyArray<GroupedAlertObservation> = yield* queryEngine.evaluate(
@@ -4130,7 +4155,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
 				}
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
-				const ownsIssue = normalized.signalType !== "anomaly"
+				// An audit detection is no fault in a service: it has no place in the triage queue,
+				// and a root-cause run over telemetry has nothing to find.
+				const ownsIssue = normalized.signalType !== "anomaly" && normalized.signalType !== "audit"
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
@@ -6295,6 +6322,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				UptimeAlertSource.layer,
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,
+				AuditTrailService.layer,
 			),
 		),
 	)

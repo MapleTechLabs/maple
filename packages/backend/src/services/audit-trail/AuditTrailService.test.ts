@@ -206,6 +206,82 @@ describe("AuditTrailService.list", () => {
 	)
 })
 
+describe("AuditTrailService.count", () => {
+	const window = {
+		startMs: Date.UTC(2026, 7, 29, 9, 0, 0),
+		endMs: Date.UTC(2026, 7, 29, 9, 10, 0),
+	}
+
+	it.effect("returns the number the warehouse counted, whichever way it spells it", () =>
+		Effect.gen(function* () {
+			const asNumber = yield* withTrail(fakeWarehouse([{ events: 3 }]), (trail) =>
+				trail.count(ORG, {}, window),
+			)
+			// UInt64 arrives as a string from a warehouse that quotes 64-bit integers.
+			const asString = yield* withTrail(fakeWarehouse([{ events: "12" }]), (trail) =>
+				trail.count(ORG, {}, window),
+			)
+
+			expect([asNumber, asString]).toEqual([3, 12])
+		}),
+	)
+
+	// A redelivery is a second row until the table merges it: counting rows would fire a
+	// detection on one event delivered twice.
+	it.effect("counts distinct events that arrived after the window's start, up to its end", () =>
+		Effect.gen(function* () {
+			const warehouse = fakeWarehouse([{ events: 0 }])
+			yield* withTrail(warehouse, (trail) => trail.count(ORG, {}, window))
+
+			expect(warehouse.sql[0]).toContain("uniqExact(audit_trail_events.Id)")
+			expect(warehouse.sql[0]).toContain(`OrgId = '${ORG}'`)
+			expect(warehouse.sql[0]).toContain("IngestedAt > '2026-08-29 09:00:00'")
+			expect(warehouse.sql[0]).toContain("IngestedAt <= '2026-08-29 09:10:00'")
+		}),
+	)
+
+	// The table is partitioned and sorted by when an event happened, not when it arrived.
+	it.effect("bounds when the events happened to a week before the window, so partitions prune", () =>
+		Effect.gen(function* () {
+			const warehouse = fakeWarehouse([{ events: 0 }])
+			yield* withTrail(warehouse, (trail) => trail.count(ORG, {}, window))
+
+			expect(warehouse.sql[0]).toContain("OccurredAt >= '2026-08-29 09:00:00' - INTERVAL 604800 SECOND")
+		}),
+	)
+
+	it.effect("applies only the filters the detection sets", () =>
+		Effect.gen(function* () {
+			const warehouse = fakeWarehouse([{ events: 0 }])
+			yield* withTrail(warehouse, (trail) =>
+				Effect.gen(function* () {
+					yield* trail.count(ORG, { provider: "vercel", action: "team.member.added" }, window)
+					yield* trail.count(ORG, { category: "membership", outcome: "denied" }, window)
+				}),
+			)
+			const [byAction, byCategory] = warehouse.sql
+
+			expect(byAction).toContain("Provider = 'vercel'")
+			expect(byAction).toContain("Action = 'team.member.added'")
+			expect(byAction).not.toContain("Category =")
+			expect(byAction).not.toContain("Outcome =")
+			expect(byCategory).toContain("Category = 'membership'")
+			expect(byCategory).toContain("Outcome = 'denied'")
+			expect(byCategory).not.toContain("Provider =")
+		}),
+	)
+
+	it.effect("fails with a persistence error when the warehouse is down", () =>
+		Effect.gen(function* () {
+			const error = yield* withTrail(fakeWarehouse([], true), (trail) =>
+				trail.count(ORG, {}, window),
+			).pipe(Effect.flip)
+
+			expect(error._tag).toBe("@maple/http/errors/AuditTrailPersistenceError")
+		}),
+	)
+})
+
 describe("AuditTrailService.write", () => {
 	const event: AuditTrailEvent = {
 		provider: "maple",

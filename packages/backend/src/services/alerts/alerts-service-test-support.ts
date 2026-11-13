@@ -37,6 +37,7 @@ import { AlertSilencesService } from "./AlertSilencesService"
 import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService"
 import { AlertRulesService, type AlertRulesServiceApi } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -360,6 +361,9 @@ export const makeLayer = (
 				Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
 				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
 			),
+		),
+		Layer.provide(
+			Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provide(warehouseLive)),
 		),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)

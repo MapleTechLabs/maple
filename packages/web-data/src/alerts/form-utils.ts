@@ -143,6 +143,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	uptime: "Uptime check",
 	slo_burn_rate: "SLO burn rate",
 	anomaly: "Anomaly",
+	audit: "Audit log",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -204,6 +205,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		// An anomaly rule observes the open anomaly's severity: 0 none, 1 warning, 2 critical.
 		case "anomaly":
 			return value >= 2 ? "Critical" : value >= 1 ? "Warning" : "Normal"
+		// An audit detection observes how many matching events arrived in its window.
+		case "audit":
+			return formatNumber(value)
 	}
 }
 

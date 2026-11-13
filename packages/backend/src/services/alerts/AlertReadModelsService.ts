@@ -117,6 +117,8 @@ export interface AlertReadModelsServiceApi {
 			readonly limit?: number
 			readonly beforeTimestamp?: string
 			readonly beforeGroupKey?: string
+			/** The public API: an audit detection's rule is not there, and neither are its checks. */
+			readonly publicApi?: boolean
 		},
 	) => Effect.Effect<
 		AlertChecksListResponse,
@@ -128,6 +130,7 @@ export interface AlertReadModelsServiceApi {
 		options: {
 			readonly since: string
 			readonly until: string
+			readonly publicApi?: boolean
 		},
 	) => Effect.Effect<
 		AlertChecksSummary,
@@ -138,6 +141,15 @@ export interface AlertReadModelsServiceApi {
 		options?: ListAlertDeliveryEventsOptions,
 	) => Effect.Effect<AlertDeliveryEventsListResponse, AlertPersistenceError>
 }
+
+/**
+ * An audit detection's rule is absent from the public rule API, so its checks are too: they are
+ * a minute-by-minute count of audit activity. Uptime and SLO checks have always been served.
+ */
+const hiddenFromPublicApi = (
+	rule: { readonly signalType: string },
+	options: { readonly publicApi?: boolean },
+): boolean => options.publicApi === true && rule.signalType === "audit"
 
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
@@ -366,6 +378,7 @@ export class AlertReadModelsService extends Context.Service<
 				readonly limit?: number
 				readonly beforeTimestamp?: string
 				readonly beforeGroupKey?: string
+				readonly publicApi?: boolean
 			},
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
@@ -373,13 +386,13 @@ export class AlertReadModelsService extends Context.Service<
 			const ruleRow = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertRules)
-						.select("id", "createdAt")
+						.select("id", "createdAt", "signalType")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 						.limit(1),
 				),
 			)
 			const [rule] = ruleRow
-			if (rule === undefined) {
+			if (rule === undefined || hiddenFromPublicApi(rule, options)) {
 				return yield* new AlertRuleNotFoundError({
 					message: "Alert rule not found",
 					ruleId,
@@ -500,18 +513,19 @@ export class AlertReadModelsService extends Context.Service<
 		const summarizeRuleChecks = Effect.fn("AlertReadModelsService.summarizeRuleChecks")(function* (
 			orgId: OrgId,
 			ruleId: AlertRuleId,
-			options: { readonly since: string; readonly until: string },
+			options: { readonly since: string; readonly until: string; readonly publicApi?: boolean },
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			const ruleRow = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertRules)
-						.select("id")
+						.select("id", "signalType")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 						.limit(1),
 				),
 			)
-			if (ruleRow.length === 0) {
+			const [summarized] = ruleRow
+			if (summarized === undefined || hiddenFromPublicApi(summarized, options)) {
 				return yield* new AlertRuleNotFoundError({
 					message: "Alert rule not found",
 					ruleId,

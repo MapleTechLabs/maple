@@ -40,3 +40,6 @@ export const canRespondToIncidents = (model: Grants): boolean => Policy.has(mode
 
 /** The viewer may start, restart and resolve investigations (`investigations:run`). */
 export const canRunInvestigations = (model: Grants): boolean => Policy.has(model.grants, "investigations:run")
+
+/** The viewer may open the audit log (`audit_log:read`); false until the session answers. */
+export const canReadAuditLog = (model: Grants): boolean => Policy.has(model.grants, "audit_log:read")

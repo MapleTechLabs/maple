@@ -41,6 +41,7 @@ import {
 	isManagedSignalType,
 	type ManagedSignalType,
 } from "@maple/domain/http"
+import { AuditDetectionFilters } from "@maple/domain/audit-trail"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
@@ -57,6 +58,7 @@ type StoredJsonColumn =
 	| "tagsJson"
 	| "destinationIdsJson"
 	| "thresholdsJson"
+	| "auditFiltersJson"
 
 /**
  * An `alert_rules` row with its schema-typed jsonb columns read as `unknown`. The model
@@ -76,6 +78,8 @@ export const selectStoredAlertRules = () =>
 		tagsJson: PG.undecoded($.tagsJson),
 		destinationIdsJson: PG.undecoded($.destinationIdsJson),
 		thresholdsJson: PG.undecoded($.thresholdsJson),
+		// Undecoded so one detection with filters this build cannot read fails alone.
+		auditFiltersJson: PG.undecoded($.auditFiltersJson),
 	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
@@ -105,6 +109,10 @@ export interface NormalizedRule {
 	readonly environments: ReadonlyArray<string>
 	/** Anomaly rules only: detector signals in scope; empty is every signal. */
 	readonly anomalySignals: ReadonlyArray<AnomalySignalType>
+	/** Audit detections only: which events the rule counts; empty is every event. */
+	readonly auditFilters: AuditDetectionFilters
+	/** Audit detections only: events that arrived before this do not count; null counts the whole window. */
+	readonly auditCountFrom: number | null
 	readonly tags: ReadonlyArray<string>
 	readonly groupBy: AlertGroupBy | null
 	readonly signalType: AlertSignalType
@@ -235,13 +243,26 @@ const planGroupingTokens = (
 
 /** Why the generic rule APIs refuse a rule another resource owns. */
 export const managedRuleMessage = (signalType: ManagedSignalType): string =>
-	signalType === "uptime"
-		? "uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
-		: "slo_burn_rate rules belong to an SLO; create, edit or delete the SLO instead"
+	Match.value(signalType).pipe(
+		Match.when(
+			"uptime",
+			() => "uptime rules belong to an uptime monitor; create, edit or delete the monitor instead",
+		),
+		Match.when(
+			"slo_burn_rate",
+			() => "slo_burn_rate rules belong to an SLO; create, edit or delete the SLO instead",
+		),
+		Match.when(
+			"audit",
+			() =>
+				"audit rules belong to an audit log detection; create, edit or delete the detection in the Security hub instead",
+		),
+		Match.exhaustive,
+	)
 
 /**
- * The stored plan of every queryless rule (`uptime`, `slo_burn_rate`, `anomaly`): the evaluator
- * reads the owning resource or the anomaly detector's incidents instead.
+ * The stored plan of every queryless rule (`uptime`, `slo_burn_rate`, `audit`, `anomaly`): the
+ * evaluator reads the owning resource or the anomaly detector's incidents instead.
  */
 export const MANAGED_RULE_PLAN = new CompiledAlertQueryPlan({
 	kind: "spec",
@@ -646,6 +667,12 @@ export const decodeStoredAlertRuleMetadata = (row: StoredAlertRuleRow) =>
 		),
 	})
 
+/** An audit detection's filters. A detection stored without any counts every event. */
+const decodeStoredAuditFilters = (row: StoredAlertRuleRow) =>
+	row.signalType !== "audit" || row.auditFiltersJson == null
+		? Effect.succeed<AuditDetectionFilters>({})
+		: decodeStoredRuleComponent(row.id, "audit_filters", AuditDetectionFilters, row.auditFiltersJson)
+
 export const decodeStoredAlertRuleDestinationIds = (
 	ruleId: AlertRuleId,
 	value: unknown,
@@ -804,6 +831,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const destinationIds = yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson)
 		const thresholds = yield* decodeStoredAlertRuleThresholds(row, destinationIds)
 		const legacy = alertThresholdLegacyFields(thresholds)
+		const auditFilters = yield* decodeStoredAuditFilters(row)
 		return {
 			id: decoded.id,
 			name: row.name,
@@ -816,6 +844,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			excludeServiceNames: stored.excludeServiceNames,
 			environments: stored.environments,
 			anomalySignals: row.anomalySignalsJson ?? [],
+			auditFilters,
+			auditCountFrom: row.auditCountFrom,
 			tags: stored.tags,
 			groupBy: decoded.groupBy,
 			signalType: decoded.signalType,
@@ -1040,6 +1070,8 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			excludeServiceNames,
 			environments,
 			anomalySignals,
+			auditFilters: {},
+			auditCountFrom: null,
 			tags,
 			groupBy,
 			signalType: request.signalType,

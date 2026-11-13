@@ -253,4 +253,30 @@ describe("AlertReadModelsService", () => {
 			})
 		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
 	})
+
+	// The public rule API does not list a detection's rule. Its checks are a minute-by-minute
+	// count of audit activity, so the same API must not hand those out by id either.
+	it.effect("hides an audit detection's checks from the public API and serves them inside Maple", () => {
+		const testDb = createTestDb(createdDbs)
+		const contexts: Array<string> = []
+		const range = { since: "2026-08-01T00:00:00.000Z", until: "2026-08-02T00:00:00.000Z" }
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedReadModels(testDb))
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE alert_rules SET signal_type = 'audit' WHERE id = $1", [RULE]),
+			)
+			const readModels = yield* AlertReadModelsService
+
+			const list = yield* Effect.flip(readModels.listRuleChecks(ORG, RULE, { publicApi: true }))
+			const summary = yield* Effect.flip(
+				readModels.summarizeRuleChecks(ORG, RULE, { ...range, publicApi: true }),
+			)
+			assert.strictEqual(list._tag, "@maple/http/errors/AlertRuleNotFoundError")
+			assert.strictEqual(summary._tag, "@maple/http/errors/AlertRuleNotFoundError")
+			assert.deepStrictEqual(contexts, [])
+
+			assert.deepStrictEqual((yield* readModels.listRuleChecks(ORG, RULE, {})).checks, [])
+			assert.deepStrictEqual((yield* readModels.summarizeRuleChecks(ORG, RULE, range)).points, [])
+		}).pipe(Effect.provide(makeLayer(testDb, contexts)))
+	})
 })

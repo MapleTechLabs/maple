@@ -33,6 +33,8 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/AlertSilenceNotFoundError",
 	"@maple/http/errors/AlertValidationError",
 	"@maple/http/errors/ApiKeyNotFoundError",
+	"@maple/http/errors/AuditDetectionInvalidError",
+	"@maple/http/errors/AuditDetectionNotFoundError",
 	"@maple/http/errors/AuditTrailForbiddenError",
 	"@maple/http/errors/AwsAccountAlreadyConnectedError",
 	"@maple/http/errors/AwsIntegrationUnavailableError",

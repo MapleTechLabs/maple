@@ -60,7 +60,12 @@ import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
-import { canManageAlerts, canRespondToIncidents, canRunInvestigations } from "../../kit/session-grants"
+import {
+	canManageAlerts,
+	canReadAuditLog,
+	canRespondToIncidents,
+	canRunInvestigations,
+} from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -275,6 +280,11 @@ export type IncidentBodyInputs<M> = Readonly<{
 	escalation?: EscalationData
 	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
 	sourceHref?: string | null
+	/**
+	 * Whether the viewer may open the audit log; null until the session answers. An audit
+	 * incident links it only for someone who may: anyone else is sent home.
+	 */
+	canReadAuditLog?: boolean | null
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
@@ -283,23 +293,33 @@ export type IncidentBodyInputs<M> = Readonly<{
 	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
-/** A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until known). */
+/** Where an audit detection's events are listed; only org admins can open it. */
+const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
+
+/**
+ * A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until
+ * known). With neither a link nor a fallback it is the note alone.
+ */
 const sourceNote = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
 		text: string
 		href: string | null
 		label: string
-		fallback: Readonly<{ href: string; label: string }>
+		fallback?: Readonly<{ href: string; label: string }>
 	}>,
-): Html =>
-	vstack(h, { gap: "3", align: "start" }, [
+): Html => {
+	const href = options.href ?? options.fallback?.href
+	return vstack(h, { gap: "3", align: "start" }, [
 		typography(h, { size: "sm", tone: "muted", as: "p" }, [options.text]),
-		linkButton(h, { size: "sm", variant: "outline", href: options.href ?? options.fallback.href }, [
-			options.href === null ? options.fallback.label : options.label,
-			icon(h, "ArrowRightIcon"),
-		]),
+		href === undefined
+			? h.empty
+			: linkButton(h, { size: "sm", variant: "outline", href }, [
+					options.href === null ? (options.fallback?.label ?? options.label) : options.label,
+					icon(h, "ArrowRightIcon"),
+				]),
 	])
+}
 
 /** Signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
@@ -343,31 +363,44 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 														label: "Open SLO",
 														fallback: { href: slosTabHref(), label: "Open SLOs" },
 													})
-												: rule === null
-													? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-															"The rule behind this incident was deleted, so its signal cannot be replayed.",
-														])
-													: ruleChart(h, {
-															chartId: inputs.chartId,
-															chart: inputs.chart,
-															toChartMessage: inputs.toChartMessage,
-															colors: inputs.colors,
-															timeZone: inputs.timeZone,
-															preview: inputs.preview,
-															checks: inputs.checks,
-															incidents: [incident],
-															threshold: incident.threshold,
-															thresholdUpper: incident.thresholdUpper,
-															comparator: incident.comparator,
-															signalType: incident.signalType,
-															window: {
-																min: inputs.range.start,
-																max: inputs.range.end,
-															},
-															source: "preview",
-															isLoading: inputs.isPreviewLoading,
-															error: inputs.previewError,
-														}),
+												: incident.signalType === "audit"
+													? sourceNote(h, {
+															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === false ? "The audit log lists the events; only org admins can open it." : "The audit log lists the events."}`,
+															href:
+																inputs.canReadAuditLog === true
+																	? auditLogHref()
+																	: null,
+															label: "Open audit log",
+														})
+													: rule === null
+														? typography(
+																h,
+																{ size: "sm", tone: "muted", as: "p" },
+																[
+																	"The rule behind this incident was deleted, so its signal cannot be replayed.",
+																],
+															)
+														: ruleChart(h, {
+																chartId: inputs.chartId,
+																chart: inputs.chart,
+																toChartMessage: inputs.toChartMessage,
+																colors: inputs.colors,
+																timeZone: inputs.timeZone,
+																preview: inputs.preview,
+																checks: inputs.checks,
+																incidents: [incident],
+																threshold: incident.threshold,
+																thresholdUpper: incident.thresholdUpper,
+																comparator: incident.comparator,
+																signalType: incident.signalType,
+																window: {
+																	min: inputs.range.start,
+																	max: inputs.range.end,
+																},
+																source: "preview",
+																isLoading: inputs.isPreviewLoading,
+																error: inputs.previewError,
+															}),
 								],
 							),
 					incidentTimeline(h, {
@@ -420,6 +453,8 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		incident,
 		rule,
 		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
+		// No grants yet is no answer yet: an admin must not read that the log is not theirs.
+		canReadAuditLog: model.grants.length === 0 ? null : canReadAuditLog(model),
 		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),

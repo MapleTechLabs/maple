@@ -14,6 +14,7 @@ const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
 const RULE_A = "00000000-0000-4000-8000-00000000000a"
 const RULE_B = "00000000-0000-4000-8000-00000000000b"
 const RULE_C = "00000000-0000-4000-8000-00000000000c"
+const RULE_D = "00000000-0000-4000-8000-00000000000d"
 
 function makeRule(overrides: Record<string, unknown> = {}): AlertRuleDocument {
 	return decodeRuleDoc({
@@ -211,16 +212,18 @@ describe("deriveOverview", () => {
 		expect(overview.timelineRange).toEqual({ min: NOW - DAY_MS, max: NOW })
 	})
 
-	it("hides monitors' and SLOs' backing rules but keeps their incidents in the inbox", () => {
+	it("hides monitors', SLOs' and audit detections' backing rules but keeps their incidents in the inbox", () => {
 		const overview = deriveOverview({
 			rules: [
 				makeRule({ id: RULE_A }),
 				makeRule({ id: RULE_B, signalType: "uptime", name: "API health" }),
 				makeRule({ id: RULE_C, signalType: "slo_burn_rate", name: "SLO burn: Checkout" }),
+				makeRule({ id: RULE_D, signalType: "audit", name: "Members added" }),
 			],
 			incidents: [
 				makeIncident({ ruleId: RULE_B, ruleName: "API health", signalType: "uptime" }),
 				makeIncident({ ruleId: RULE_C, ruleName: "SLO burn: Checkout", signalType: "slo_burn_rate" }),
+				makeIncident({ ruleId: RULE_D, ruleName: "Members added", signalType: "audit" }),
 			],
 			states: [],
 			deliveryEvents: [],
@@ -232,6 +235,6 @@ describe("deriveOverview", () => {
 				Arr.map(overview.openIncidents, (incident) => incident.ruleName),
 				Order.String,
 			),
-		).toEqual(["API health", "SLO burn: Checkout"])
+		).toEqual(["API health", "Members added", "SLO burn: Checkout"])
 	})
 })
