@@ -75,10 +75,15 @@ const AUDIT_TRAIL = "audit_trail_events"
  * `trailCopy` makes the write to the audit trail die or be interrupted instead.
  */
 const warehouse = (failing: ReadonlyArray<string> = [], trailCopy?: "dies" | "interrupted") => {
-	const written: Array<{ orgId: string; datasource: string; rows: ReadonlyArray<unknown> }> = []
+	const written: Array<{
+		orgId: string
+		datasource: string
+		rows: ReadonlyArray<unknown>
+		bestEffort: boolean
+	}> = []
 	const layer = withTrail(
 		makeWarehouseServiceStub({
-			ingest: (tenant, datasource, rows) =>
+			ingest: (tenant, datasource, rows, options) =>
 				datasource === AUDIT_TRAIL && trailCopy === "dies"
 					? Effect.die(new Error("trail exploded"))
 					: datasource === AUDIT_TRAIL && trailCopy === "interrupted"
@@ -92,7 +97,12 @@ const warehouse = (failing: ReadonlyArray<string> = [], trailCopy?: "dies" | "in
 									}),
 								)
 							: Effect.sync(() => {
-									written.push({ orgId: tenant.orgId, datasource, rows })
+									written.push({
+										orgId: tenant.orgId,
+										datasource,
+										rows,
+										bestEffort: options?.bestEffort === true,
+									})
 								}),
 		}),
 	)
@@ -206,6 +216,20 @@ describe("processAuditEventsBatch", () => {
 
 			expect(change.calls).toEqual(["ack"])
 			expect(store.writesTo(AUDIT_LOG)).toEqual([[ORG, 1]])
+		}),
+	)
+
+	// The copy is dropped on failure, so its failed insert must not read as a lost write.
+	it.effect("writes the audit trail copy as best effort and the entry itself as not", () =>
+		Effect.gen(function* () {
+			const store = warehouse()
+			const change = message(event("11111111-1111-4111-8111-111111111111"), 1)
+			yield* processAuditEventsBatch(batchOf(change), MAX_RETRIES).pipe(Effect.provide(store.layer))
+
+			expect(Arr.map(store.written, (write) => [write.datasource, write.bestEffort])).toEqual([
+				[AUDIT_LOG, false],
+				[AUDIT_TRAIL, true],
+			])
 		}),
 	)
 
