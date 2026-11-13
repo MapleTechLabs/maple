@@ -463,6 +463,7 @@ describe("security detection editor", () => {
 			{ update: pageUpdate, view },
 			given(pageUpdate(mistyped.model, grantsRead(ADMIN)).model),
 			expectView(text("Detection not found")).toExist(),
+			expectView(role("heading", { name: "New detection" })).toBeAbsent(),
 		)
 	})
 })

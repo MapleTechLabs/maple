@@ -297,7 +297,8 @@ const isRefused = (model: Model): boolean =>
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const isEdit = model.editingId !== null
 	const header = {
-		title: isEdit ? "Edit detection" : "New detection",
+		// An id that is not one is still a link to a detection, not the start of a new one.
+		title: isEdit || model.isMissing ? "Edit detection" : "New detection",
 		description: "Opens an alert incident when enough matching audit events arrive within a window.",
 	}
 	const loading = dashboardPage(h, header, [skeleton(h, "h-24 w-full"), skeleton(h, "h-80 w-full")])
