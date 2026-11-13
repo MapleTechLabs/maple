@@ -120,11 +120,17 @@ const alertControl = (h: H, model: Model): Html | undefined => {
 		? undefined
 		: linkButton(h, { variant: "outline", size: "sm", href }, [
 				icon(h, "BellIcon"),
-				"Alert on these events",
-				// A phone has no room to show the rest, so there it is read out but not drawn.
-				...(model.search.actor === undefined
-					? []
-					: [h.span([h.Class("sr-only sm:not-sr-only")], [", from any actor"])]),
+				// One text run, so the button's gap does not fall before the comma. A phone has no
+				// room to show the rest, so there it is read out but not drawn.
+				h.span(
+					[],
+					[
+						"Alert on these events",
+						...(model.search.actor === undefined
+							? []
+							: [h.span([h.Class("sr-only sm:not-sr-only")], [", from any actor"])]),
+					],
+				),
 			])
 }
 
