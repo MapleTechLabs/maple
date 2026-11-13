@@ -4,7 +4,7 @@ import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
-import { timeseriesLegend } from "./timeseries-legend"
+import { type SeriesMark, timeseriesLegend } from "./timeseries-legend"
 import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
@@ -39,6 +39,8 @@ export interface BarChartInputs {
 	readonly axis?: TimeseriesAxisSpec | undefined
 	readonly legend?: "hidden" | "visible" | "right" | undefined
 	readonly seriesStats?: boolean
+	/** A mark beside each series' name in the compact legend, by the series' label. */
+	readonly seriesMarks?: Readonly<Record<string, SeriesMark>> | undefined
 }
 
 type Row = Readonly<Record<string, string | number | boolean>>
@@ -83,6 +85,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
+		mark: inputs.seriesMarks?.[definition.rawKey],
 	}))
 	const tooltipBody = (portal: Attribute<Message>): Option.Option<Html> =>
 		Option.flatMap(model.tooltip, (tooltip) =>

@@ -207,8 +207,14 @@
 	min-height: 44px;
 	border-radius: 0;
 }
+/* The control has only a min-height, so `height: 100%` resolved to one text line; stretch the
+ * input to the control instead. The control draws the focus ring, so the input draws none. */
 .account-form [data-slot="input-control"] > input {
-	height: 100%;
+	align-self: stretch;
+	height: auto;
+}
+.account-form [data-slot="input-control"] > input:focus-visible {
+	outline: none;
 }
 
 @media (max-width: 959px) {
