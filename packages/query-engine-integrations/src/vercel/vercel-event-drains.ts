@@ -3,7 +3,8 @@
 // Each drain lands in `logs` under its own service (ingest maps them in
 // `apps/ingest/src/vercel_event_drains.rs`), one record per event, the project on
 // resource `vercel.project.id`. Filtering on the service prunes on the logs sort key.
-// Audit log events are not in `logs`: they go to the admin-only `audit_trail_events`.
+// Audit log events go to the admin-only `audit_trail_events` where the gateway stores the audit
+// trail; a gateway that does not keeps them in `logs` under `vercel-audit-log`.
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"

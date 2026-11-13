@@ -289,6 +289,19 @@ const eventRows = (h: H, model: Model, event: AuditTrailEntry, clock: Clock): Re
 								className: typographyClass({ size: "xs" }),
 							}),
 							hstack(h, { gap: "1.5", align: "center", wrap: true }, [
+								// A phone has no Platform column: another platform's name leads the line.
+								...(event.provider === "maple"
+									? []
+									: [
+											h.span(
+												[h.Class("sm:hidden")],
+												[
+													typography(h, { size: "2xs", tone: "muted" }, [
+														providerLabel(event.provider),
+													]),
+												],
+											),
+										]),
 								typography(h, { size: "2xs", tone: "muted" }, [
 									categoryLabel(event.category),
 								]),
@@ -433,7 +446,7 @@ const listBody = (h: H, model: Model, clock: Clock): Html =>
 			if (events.length === 0 && isFiltered(model.search))
 				return filteredEmpty(h, {
 					noun: "events",
-					description: "Try a wider category or outcome, or another actor.",
+					description: "Try another platform, category or outcome, or another actor.",
 					onClear: Message.ClickedClearFilters(),
 					className: "py-8",
 				})
