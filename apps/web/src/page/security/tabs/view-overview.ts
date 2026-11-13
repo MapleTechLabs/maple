@@ -394,7 +394,7 @@ const coverageCell = (h: H, model: Model, run: SecurityAuditRun | undefined): Ht
 const metaLine = (h: H, parts: ReadonlyArray<string>, title: string): Html =>
 	h.span(
 		[
-			h.Class(cn("flex max-w-60 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)),
+			h.Class(cn("flex max-w-72 min-w-0 overflow-hidden text-xs text-muted-foreground", ROW_LINK_LIFT)),
 			h.Title(title),
 		],
 		Arr.map(parts, (part, index) =>

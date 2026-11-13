@@ -1,5 +1,5 @@
 /** `--page-gutter` is the one page edge: the top bar, header, filter rail and body all sit on it. */
-export const pageLayoutStyles = "flex min-h-0 flex-1 flex-col [--page-gutter:--spacing(4)] lg:[--page-gutter:--spacing(6)]"
+export const pageLayoutStyles = "flex min-h-0 flex-1 flex-col [--page-gutter:--spacing(4)]"
 
 export const pageTitleStyles = "font-display text-2xl font-semibold tracking-tight truncate leading-6.5"
 
