@@ -812,11 +812,25 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
-	/* Selected text takes the primary's strong wash instead of the system blue, and reads in
-	   `foreground`: a muted or toned run would fall under 4.5:1 on the wash. */
+	/* Selected text takes the primary instead of the system blue. Both halves are opaque, so the
+	   pair reads the same over a muted run, a tone, or a filled badge. */
 	::selection {
-		background-color: var(--color-primary-a4);
-		color: var(--color-foreground);
+		background-color: var(--color-primary);
+		color: var(--color-primary-foreground);
+	}
+	/* A chip keeps its own look when selected: a band inside a fill or a tint only fights it. A
+	   thin underline in its own ink marks the selected letters instead. */
+	[data-slot="badge"]::selection,
+	[data-slot="badge"] ::selection,
+	.text-on-fill::selection,
+	.text-on-fill ::selection,
+	.text-primary-foreground::selection,
+	.text-primary-foreground ::selection {
+		background-color: transparent;
+		color: currentColor;
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 2px;
 	}
 	body {
 		@apply font-sans bg-background text-foreground;
