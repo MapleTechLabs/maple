@@ -2,7 +2,6 @@ import { customerHasFlag, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billi
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import {
 	IsoDateTimeString,
-	OPENROUTER_KEY_MAX_LENGTH,
 	OpenRouterKeyAddOnRequiredError,
 	OpenRouterKeyDocument,
 	OpenRouterKeyPersistenceError,
@@ -180,10 +179,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				if (env.MAPLE_REGION === "eu") yield* OpenRouterApi.createChatCompletion(EU_PLAN_PROBE)
 			}).pipe(
 				Effect.mapError(toKeyError(env.MAPLE_REGION)),
-				OpenRouterApi.withCredentials({ apiKey: Redacted.make(apiKey), apiBaseUrl }),
-				Effect.provideService(HttpClient.HttpClient, httpClient),
-				// A redirect is not OpenRouter vouching for the key, so it is not followed.
-				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+				OpenRouterApi.withKey(httpClient, { apiKey: Redacted.make(apiKey), apiBaseUrl }),
 				Effect.timeoutOrElse({
 					duration: VALIDATE_TIMEOUT,
 					orElse: () =>
@@ -211,11 +207,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const apiKey = Str.trim(rawKey)
-			if (
-				!Str.startsWith("sk-or-")(apiKey) ||
-				apiKey.length < 20 ||
-				apiKey.length > OPENROUTER_KEY_MAX_LENGTH
-			) {
+			if (!OpenRouterApi.isOpenRouterKey(apiKey)) {
 				return yield* new OpenRouterKeyValidationError({
 					message: "That is not an OpenRouter API key. They start with sk-or-.",
 				})

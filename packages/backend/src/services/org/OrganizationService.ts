@@ -172,6 +172,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"SupabaseConnections",
 	// The org's own OpenRouter key: a recreated org with the same id must not inherit it.
 	"OrgOpenRouterKeys",
+	// A surviving key would keep Maple reading the deleted org's OpenRouter spend.
+	"OpenRouterCostConnections",
 	// A deleted member org stops being billed to anyone. A billing org with members is refused.
 	"OrgBillingLinks",
 	// Drop rules and the hash salt: a recreated org must not silently lose data to old rules.

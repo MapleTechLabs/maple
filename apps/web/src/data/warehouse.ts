@@ -31,7 +31,7 @@ const WarehouseExecutorLive = Layer.effect(
 					}),
 				),
 		)
-		return { enqueue: batcher.enqueue }
+		return { enqueue: batcher.enqueue, executeAlone: batcher.executeAlone }
 	}),
 )
 

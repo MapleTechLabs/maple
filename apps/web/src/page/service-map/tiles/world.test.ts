@@ -1,7 +1,9 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
+import { SERVICE_MAP_3D_TOPOLOGY } from "../../../lab/service-map-3d/fixture"
 import type { Node3D } from "../three/types"
 import { type Cell, cellKey, hexDistance } from "./hex"
+import { init, sync } from "./update"
 import { derive, keyedTarget, type SceneInput } from "./world"
 
 const node = (id: string): Node3D => ({
@@ -52,7 +54,48 @@ describe("moving the held tile with the keyboard", () => {
 		expect(beyond === null ? 0 : hexDistance(beyond, HOME)).toBe(2)
 	})
 
+	it("starts a lifted tile over its own cell when no way is pressed", () => {
+		expect(keyedTarget(holding("a"), null, [0, 0])).toEqual(HOME)
+	})
+
 	it("has nowhere to go with no tile in hand", () => {
 		expect(keyedTarget(holding(null), null, [1, 0])).toBeNull()
+	})
+})
+
+describe("lifting a tile off the full map", () => {
+	const topology = SERVICE_MAP_3D_TOPOLOGY
+	const cells = sync(init(), topology).cells
+	const lifted = topology.nodes[0]?.id ?? ""
+	const scene = (heldId: string | null, previous: ReturnType<typeof derive> | null) =>
+		derive(
+			{
+				topology,
+				cells,
+				selectedId: null,
+				heldId,
+				building: true,
+				flowing: false,
+				dark: false,
+				clock: { hour: 12, day: 80, isSouthern: false },
+				muted: true,
+				command: { action: "reset", serial: 0 },
+			},
+			previous,
+		)
+
+	it("leaves the lakes, the country and the camera's framing where they were", () => {
+		const down = scene(null, null)
+		const held = scene(lifted, down)
+		expect(held.lakes).toEqual(down.lakes)
+		expect(held.wilds).toEqual(down.wilds)
+		expect(held.centre).toEqual(down.centre)
+		expect(held.radius).toBe(down.radius)
+	})
+
+	it("offers the tile its own cell back", () => {
+		const home = cells[lifted]
+		expect(home).toBeDefined()
+		expect(Arr.map(scene(lifted, null).targets?.free ?? [], cellKey)).toContain(cellKey(home ?? HOME))
 	})
 })

@@ -19,6 +19,7 @@ import {
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
 import {
+	Context,
 	Duration,
 	Effect,
 	Exit,
@@ -664,6 +665,8 @@ export const withToolCallContent = <A, E, R>(
 		readonly description?: string | undefined
 		readonly params: unknown
 		readonly sessionAttributes?: Readonly<Record<string, string>>
+		/** How a failure reads on the span; a tool whose failure carries more than a message sets it. */
+		readonly failureText?: (error: E) => string
 	},
 ): Effect.Effect<A, E, R> =>
 	annotateExecuteToolSpan({
@@ -676,9 +679,46 @@ export const withToolCallContent = <A, E, R>(
 		Effect.andThen(handler),
 		Effect.tap((result) => annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(result) })),
 		Effect.tapError((error) =>
-			annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(failureText(error)) }),
+			annotateExecuteToolSpan({
+				"gen_ai.tool.call.result": toolCallJson((call.failureText ?? failureText)(error)),
+			}),
 		),
 	)
+
+/** What `Toolkit.toLayer` registers per tool: the handler and the services it captured. */
+const isToolHandler = (entry: unknown): entry is Tool.Handler<string> =>
+	Predicate.hasProperty(entry, "handler") &&
+	Predicate.isFunction(entry.handler) &&
+	Predicate.hasProperty(entry, "context")
+
+/**
+ * A handler layer the engine built for `tool` (`run_code`), with that handler recording its own
+ * call content: the engine's `toLayer` call is out of `toolHandlersWithContent`'s reach, so the
+ * span would carry neither arguments nor result. `failure` renders the tool's own failure type.
+ */
+export const toolLayerWithContent = <S extends Schema.Top, A, E, R>(
+	tool: { readonly id: string; readonly failureSchema: S },
+	layer: Layer.Layer<A, E, R>,
+	failure: (failure: S["Type"]) => string,
+): Layer.Layer<A, E, R> =>
+	Layer.flatMap(layer, (context) => {
+		const entry: unknown = context.mapUnsafe.get(tool.id)
+		if (!isToolHandler(entry)) return Layer.succeedContext(context)
+		const isOwnFailure = Schema.is(tool.failureSchema)
+		const handler = (params: unknown, handlerContext: unknown) => {
+			const run: Effect.Effect<unknown, unknown> = Effect.suspend(() =>
+				entry.handler(params, handlerContext),
+			)
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- a registered handler is type-erased
+			return withToolCallContent(run, {
+				params,
+				failureText: (error) => (isOwnFailure(error) ? failure(error) : failureText(error)),
+			})
+		}
+		return Layer.succeedContext(
+			Context.makeUnsafe<A>(new Map([...context.mapUnsafe, [tool.id, { ...entry, handler }]])),
+		)
+	})
 
 /**
  * A toolkit's handler map and its layer, with every handler recording its own call content.

@@ -110,7 +110,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/menu.ts` `itemId`, `subItemId`, `subPopupId`, `subPortalId`, `itemTooltipId`, `itemTooltipTriggerId` (stateful: Model, init, update): Base UI `Menu` (`@maple/ui/dropdown-menu`): the trigger toggles it; arrows move the highlight, Enter or a click picks an item, a checkbox or radio item stays open, a submenu ope...
 - `packages/views/src/ui/message-scroller.ts` `messageScroller`, `messageScrollerViewport`, `messageScrollerContent`, `messageScrollerItem`, `messageScrollerButton`: `MessageScroller`: a chat thread's scroll frame (root, viewport, content, keyed items) and its "Scroll to end" button; the host's Mount owns the autoscroll and shows the button.
 - `packages/views/src/ui/message.ts` `messageGroup`, `message`, `messageAvatar`, `messageContent`, `messageFooter`, `messageHeader`: One chat message (avatar, header, bubbles).
-- `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`: Meter, SegmentedBar and BackdropBar.
+- `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`, `levelMeter`: Meter, SegmentedBar, BackdropBar and LevelMeter.
 - `packages/views/src/ui/metric-type.ts` `metricTypeLabel`, `metricTypeBadge`: A metric type's label, badge and colour, wherever a metric is listed.
 - `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Keeps the last `tail` characters visible and ellipsizes the middle.
 - `packages/views/src/ui/mini-bars.ts` `miniBars`: A static bar sparkline in one <svg>.
@@ -161,7 +161,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
 - `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
 - `packages/views/src/ui/step-trail.ts` `stepTrail`: A step flow's place, over a dialog's title: `1 WRITE / 2 REVIEW`.
-- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill.
+- `packages/views/src/ui/swatch.ts` `swatch`: A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color` instead of a fill, `round` a dot for a series that is a share, not a line.
 - `packages/views/src/ui/switch.ts` `switchControl`, `labelId`, `view` (stateful: Model, init, update): Base UI `Switch`: on or off, with a thumb and a visually hidden checkbox.
 - `packages/views/src/ui/table-skeleton.ts` `tableSkeleton`: The loading placeholder for row tables.
 - `packages/views/src/ui/table.ts` `table`, `tableHeader`, `tableBody`, `tableRow`, `tableGroupRow`, `clickableRowClass`, `tableHead`, `tableCell`, `divTableHead`, `truncatedTableCell`, `numericTableCell`, `laneTableCell`, `rowLink`, `ariaSort`, `sortButton`: The Table and its parts.
@@ -196,10 +196,11 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/audit-entry-link.ts` `auditEntryHref`: The Settings audit log ending at one entry, with that entry open.
 - `apps/web/src/page/kit/autocomplete-lookups.ts` `names`, `lookupField`, `autocompleteLookup`: The autocomplete lookups a query builder fetches once it is first focused, each reduced to the names it suggests.
+- `apps/web/src/page/kit/billing/ai-credits.ts` `modelLabel`, `aiCreditsBreakdownLoading`, `aiCreditsBreakdown`: Where a billing cycle's AI credits went: totals, each surface and model, and code review by repository and pull request, for the AI credits page.
 - `apps/web/src/page/kit/billing/checkout-return.ts` `buildCheckoutSuccessUrl`, `isCheckoutReturn`, `withoutCheckoutReturn`: The round trip through Stripe Checkout.
 - `apps/web/src/page/kit/billing/plan-gating.ts` `isLegacyPlan`, `isUsableCustomer`, `getActivePlan`, `hasSelectedPlan`, `getLapsedPlan`, `hasLapsedPlan`, `resolvePlanAccess`, `getTrialStatus`, `hasBringYourOwnCloudAddOn`, `getFeatureQuotas`, `getQuotaStatus`, `getPastDueSubscription`, `getLegacyPlanInfo`: A plan from the live `listPlans` catalog , the source of truth for which plans are currently offered and for per-feature overage rates.
 - `apps/web/src/page/kit/billing/plans.ts` `getPlanFeatures`, `getPlanDescription`, `sentenceCasePlanName`, `planDisplayName`: A catalog plan name in the UI's sentence case: "Bring Your Own Cloud" reads "Bring your own cloud".
-- `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
+- `apps/web/src/page/kit/billing/usage.ts` `formatUsage`, `formatUsageAgainst`, `formatCount`, `quoteUnits`, `formatQuoteUnits`, `formatCredits`: "0.00 GB of 100.00 GB": both sides in one unit and precision, chosen by the larger amount, so a quiet feature never reads in a different unit than its neighbours.
 - `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
 - `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
@@ -221,6 +222,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
 - `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.
 - `apps/web/src/page/kit/expand-chevron.ts` `expandChevron`: The chevron at the start of a row that opens in place: right when closed, down when open.
+- `apps/web/src/page/kit/expand-table-footer.ts` `expandTableFooter`: The foot of a capped table card: "Expand table" on the left and the row count on the right, one click target that opens the whole table in a dialog.
 - `apps/web/src/page/kit/facets.ts` `toggledValue`, `onlyValue`, `excludedValue`, `editFacet`, `facetChipsOf`, `facetChips`: The include/exclude arithmetic of a tri-state facet filter, as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and excluded.
 - `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: One row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form besid...
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
@@ -301,7 +303,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/signal-empty-state.ts` `docsLink`, `signalEmptyState`: The dashboard's copy for a signal's empty state: where each signal comes from, and the setup page and guides it links.
 - `apps/web/src/page/kit/signal-presence.ts` `loadSignalPresences`: Signal presence: which telemetry signals the org has sent.
 - `apps/web/src/page/kit/stable-slice.ts` `stableSlice`: A view's inputs as one object, kept by reference while every field is: a `createLazy` slot keyed on it skips the renders that change nothing the view reads.
-- `apps/web/src/page/kit/stat-rail.ts` `statRail`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
+- `apps/web/src/page/kit/stat-rail.ts` `statRail`, `metricGrid`, `statRailItem`, `statRailItemSkeleton`, `statRailLoading`: A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 - `apps/web/src/page/kit/switch-row.ts` `switchRow`: A settings row whose control is a switch: the row is the switch's field, so a checked switch marks the row, label and description filled.
 - `apps/web/src/page/kit/table-sort.ts` `sortStateOf`, `nextSort`, `isNumericString`, `compareValues`, `urlSortPatch`, `sortRows`, `sortRowsByField`, `sortRowsBy`: The click-to-sort state as Model data, and the comparator.
 - `apps/web/src/page/kit/threshold-scale.ts` `thresholdScale`: `ThresholdScale`: a good / needs-work / poor track split at two thresholds, with a marker at the reading (a Web Vital's p75 against web.dev's thresholds).

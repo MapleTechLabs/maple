@@ -7,6 +7,7 @@ import {
 } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceHealthSnapshot } from "@maple/web-data/warehouse/services"
+import { outsideSharedBatch } from "@maple/web-data/warehouse/warehouse-services"
 import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
@@ -153,7 +154,10 @@ export const FetchOverviewSeries = Command.define("FetchOverviewTimeSeries", {
 		),
 })
 
-/** The log volume card: one `count` series over logs, summed per bucket. */
+/**
+ * The log volume card: one `count` series over logs, summed per bucket. It scans raw logs at
+ * sub-hour buckets (seconds on a large org), so it goes alone and never holds the other cards.
+ */
 export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 	args: { key: Schema.String, input: LogInput },
 	messages: [Message.CompletedFetchLogSeries],
@@ -172,6 +176,7 @@ export const FetchLogSeries = Command.define("FetchOverviewLogVolume", {
 				},
 			},
 		}).pipe(
+			outsideSharedBatch,
 			Effect.map((response) =>
 				Arr.map(response.data, (point) => ({
 					bucket: point.bucket,

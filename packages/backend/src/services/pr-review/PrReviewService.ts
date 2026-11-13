@@ -261,6 +261,15 @@ export interface PrReviewServiceApi {
 	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
 	 */
 	readonly onMergeStepsTicked: (orgId: OrgId, job: PullRequestChecklistJob) => Effect.Effect<void>
+	/**
+	 * Adds what a turn of this review cost the provider, in microdollars, whatever the review's
+	 * status: a superseded or failed turn was billed too.
+	 */
+	readonly addCost: (
+		orgId: OrgId,
+		reviewId: PrReviewId,
+		costMicrousd: number,
+	) => Effect.Effect<void, PrReviewPersistenceError>
 	/** The turn ended without a report. */
 	readonly failReview: (
 		orgId: OrgId,
@@ -2972,6 +2981,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 			})
 
+			const addCost: PrReviewServiceApi["addCost"] = Effect.fn("PrReviewService.addCost")(
+				function* (orgId, reviewId, costMicrousd) {
+					yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(PrReviews)
+								.set(($) => ({
+									costMicrousd: PG.sql(
+										PG.int4,
+									)`(coalesce(${$.costMicrousd}, 0) + ${costMicrousd})::int`,
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)]),
+						),
+					)
+				},
+			)
+
 			const failReview: PrReviewServiceApi["failReview"] = Effect.fn("PrReviewService.failReview")(
 				function* (orgId, reviewId, error) {
 					const nowMs = yield* Clock.currentTimeMillis
@@ -3170,6 +3196,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				onMergeStepsTicked,
 				getReview,
 				submitReview,
+				addCost,
 				failReview,
 			} satisfies PrReviewServiceApi
 		}),

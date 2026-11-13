@@ -42,6 +42,8 @@ Choose **Terraform** in the setup and copy the file into your repository. It nee
 | Inline policy `maple-self-read`                 | Lets the role read its own tags and attached policies, and nothing else. This is how Maple checks it.               |
 | Managed policy `MapleIntegration-<id>-<module>` | One per module you turn on. None until modules are available.                                                       |
 
+Every permission Maple asks for reads: none of them lets Maple create, change or delete anything in the account, and the base role reads only itself. The managed policies some modules attach are AWS's own read-only ones (`ViewOnlyAccess` for the inventory, `SecurityAudit` for the security scan). They cover how your resources are configured, not the data in them: Maple cannot read the objects in your S3 buckets, your log events or your database rows.
+
 The role is tagged with the setup version. When a later version of the setup changes the role, the connection shows **Update the stack**. Click **Deploy the stack again** and run the script to apply the change.
 
 ## CloudWatch metrics
@@ -62,6 +64,12 @@ Once metrics arrive, **AWS** shows under **Infrastructure** in the sidebar. It h
 AWS bills the metric stream at $0.003 per 1,000 metric updates, and each metric updates once a minute, so 100 metrics cost about $13 a month. Firehose adds a few cents per gigabyte. Stream only the namespaces you need.
 
 To stop streaming, turn the metric stream off in Maple and run the setup script again: it removes the stack from every region. The cleanup script removes it too.
+
+## Audit what Maple does
+
+Every time Maple assumes the role, CloudTrail records an `AssumeRoleWithWebIdentity` event in your account, with the role `MapleIntegration-<id>` and the session name `maple-<id>`. The calls Maple then makes carry the same session name, so a CloudTrail Lake or Athena query on it lists everything Maple read. Maple assumes the role for the hourly check, for each cost sync when that module is on, and when you check or sync the connection. An assume outside that rhythm, or another session name on the role, is worth a look.
+
+To cut Maple off at once, delete the role, or remove its trust in Maple's identity provider: Maple holds no other way into the account.
 
 ## Troubleshooting
 

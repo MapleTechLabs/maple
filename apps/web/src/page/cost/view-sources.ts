@@ -3,18 +3,19 @@ import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { AppRoute, hrefOf } from "../../route"
+import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
-import { PROVIDERS, providerBrand } from "../kit/providers"
 import { relativeTime } from "../kit/relative-time"
 import { formatDay, requestsCost } from "./derive"
-import type { Message } from "./message"
+import { Message } from "./message"
+import { COST_PROVIDERS } from "./providers"
+import { AWS_INTEGRATION_HREF } from "./view-add-source"
+import { VERCEL_INTEGRATION_HREF } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -30,8 +31,86 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
-/** Where the org's connections are listed and changed. */
-const SOURCES_HREF = hrefOf(AppRoute.Sources())
+/** The account as its row names it: a Vercel team's slug, else the id the provider knows it by. */
+const accountOf = (source: CostSourceSummary): string => source.accountName ?? source.accountId
+
+/**
+ * What a row's action is called to assistive technology: the action on the provider's source,
+ * and the account too when the org has several sources of that provider, which would else all
+ * read the same ("Remove GitHub source acme-labs").
+ */
+const actionName = (action: string, source: CostSourceSummary, isRepeated: boolean): string =>
+	isRepeated ? `${action} ${accountOf(source)}` : action
+
+/** A row's action. Its accessible name says whose source it acts on: two rows can offer the same one. */
+const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: boolean): Html =>
+	button(
+		h,
+		{
+			variant: "ghost",
+			size: "sm",
+			isDisabled: isBusy,
+			attributes: [h.AriaLabel(name), h.OnClick(onClick)],
+		},
+		[label],
+	)
+
+/** Where the source's connection is changed: an account's Cost module, a team's token. */
+const connectionLink = (h: H, name: string, href: string): Html =>
+	linkButton(h, { variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(name)] }, [
+		"Manage connection",
+	])
+
+/**
+ * What a row offers: an AWS source is its connection's, an OpenRouter one is its key, and a
+ * GitHub one only leaves, since it reads through the GitHub connection. A Vercel one leaves here
+ * too, and links to its connection, where the token it reads with is replaced.
+ */
+const actions = (
+	h: H,
+	source: CostSourceSummary,
+	options: Readonly<{ isBusy: boolean; isRepeated: boolean }>,
+): ReadonlyArray<Html> => {
+	const { name } = COST_PROVIDERS[source.provider]
+	const named = (action: string) => actionName(action, source, options.isRepeated)
+	const remove = rowButton(
+		h,
+		"Remove",
+		named(`Remove ${name} source`),
+		Message.ClickedRemoveSource({ sourceId: source.id }),
+		options.isBusy,
+	)
+	const manage = (href: string) => connectionLink(h, named(`Manage ${name} connection`), href)
+	switch (source.provider) {
+		case "openrouter":
+			return [
+				rowButton(
+					h,
+					"Replace key",
+					named(`Replace ${name} key`),
+					Message.ClickedReplaceKey(),
+					options.isBusy,
+				),
+				remove,
+			]
+		case "github":
+			return [remove]
+		case "vercel":
+			return [manage(VERCEL_INTEGRATION_HREF), remove]
+		case "aws":
+			return [manage(AWS_INTEGRATION_HREF)]
+	}
+}
+
+/** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
+const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {
+	const cost = requestsCost(source.provider, source.requestsThisMonth)
+	return cost === null
+		? []
+		: [
+				`${formatNumber(source.requestsThisMonth)} provider ${pluralize(source.requestsThisMonth, "request")} this month (${cost})`,
+			]
+}
 
 /** How far the sync is: the newest day, how far back history goes, and when it last ran. */
 const facts = (
@@ -54,7 +133,7 @@ const facts = (
 					relativeTime(h, { value: source.lastSyncedAt, nowMs, timeZone }),
 				]),
 			]),
-	`${formatNumber(source.requestsThisMonth)} provider ${pluralize(source.requestsThisMonth, "request")} this month (${requestsCost(source.requestsThisMonth)})`,
+	...requestsFact(source),
 ]
 
 /** What the status alone does not say: why a sync fails or waits, and what pausing keeps. */
@@ -72,8 +151,14 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [source.lastError])]
 				: []
 
-const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: string): Html => {
-	const brand = providerBrand(source.provider)
+const sourceRow = (
+	h: H,
+	source: CostSourceSummary,
+	nowMs: number,
+	timeZone: string,
+	options: Readonly<{ isBusy: boolean; canManage: boolean; isRepeated: boolean }>,
+): Html => {
+	const provider = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
 	return hstack(
 		h,
@@ -85,14 +170,20 @@ const sourceRow = (h: H, source: CostSourceSummary, nowMs: number, timeZone: str
 			attributes: [h.Key(source.id)],
 		},
 		[
-			icon(h, brand.icon, { size: 18, className: cn("mt-0.5 shrink-0", brand.iconClassName) }),
+			icon(h, provider.icon, { size: 18, className: cn("mt-0.5 shrink-0", provider.iconClassName) }),
 			vstack(h, { gap: "1", grow: true, shrink: true }, [
-				hstack(h, { gap: "2", wrap: true }, [
-					typography(h, { size: "sm", weight: "medium" }, [PROVIDERS[source.provider].name]),
-					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-						source.accountId,
+				// The actions share the title's line, so the facts below keep the row's width on a phone.
+				hstack(h, { gap: "2", wrap: true, justify: "between", className: "gap-y-1" }, [
+					hstack(h, { gap: "2", wrap: true }, [
+						typography(h, { size: "sm", weight: "medium" }, [provider.name]),
+						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+							accountOf(source),
+						]),
+						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),
-					badge(h, { variant: status.variant, size: "sm" }, [status.label]),
+					...(options.canManage
+						? [hstack(h, { gap: "1", className: "-my-1 shrink-0" }, actions(h, source, options))]
+						: []),
 				]),
 				hstack(
 					h,
@@ -113,17 +204,40 @@ export const sourcesSection = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	nowMs: number,
 	timeZone: string,
+	options: Readonly<{
+		/** A key write is in flight: the actions wait for it. */
+		isBusy: boolean
+		/** The viewer may add, replace and remove sources; without it no such action is offered. */
+		canManage: boolean
+	}>,
 ): Html =>
 	panel(h, {}, [
 		panelHeader(h, {
 			title: "Sources",
-			action: typography(h, { size: "xs" }, [
-				textLink(h, { href: SOURCES_HREF, tone: "muted" }, ["Manage sources"]),
-			]),
+			...(options.canManage
+				? {
+						action: button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isDisabled: options.isBusy,
+								attributes: [h.OnClick(Message.ClickedAddSource())],
+							},
+							["Add source"],
+						),
+					}
+				: undefined),
 		}),
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
-			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone)),
+			Arr.map(sources, (source) =>
+				sourceRow(h, source, nowMs, timeZone, {
+					...options,
+					// Several sources of one provider: their actions name the account too.
+					isRepeated: Arr.filter(sources, (other) => other.provider === source.provider).length > 1,
+				}),
+			),
 		),
 	])

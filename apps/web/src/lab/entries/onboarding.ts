@@ -16,7 +16,7 @@ import { defineLabWithFlags } from "../define"
 import { defineMessageUnion } from "foldkit/message"
 import * as PricingCards from "../../page/onboarding/pricing-cards"
 import * as QuickStart from "../../page/onboarding/quick-start"
-import { ConnectMessage } from "../../page/onboarding/quick-start-connect"
+import { ConnectMessage, SETUP_LINK_COPY } from "../../page/onboarding/quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick-start-state"
 import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
@@ -169,6 +169,13 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 		case "GotTeamMessage":
 			return teamStep(model, message.message)
 		case "GotConnectMessage":
+			// The phone note's "Copy link" copies a sample address: the preview has no page to resume.
+			if (message.message._tag === "ClickedCopySetupLink")
+				return copyStep(
+					model,
+					SETUP_LINK_COPY,
+					CopyButton.Message.ClickedCopy({ text: "https://app.maple.dev/quick-start" }),
+				)
 			return message.message._tag === "GotSnippetCopyMessage"
 				? copyStep(model, message.message.snippet, message.message.message)
 				: { model: screenStep(model, message) }

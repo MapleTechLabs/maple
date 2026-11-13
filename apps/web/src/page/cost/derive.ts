@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import {
 	COST_FILTER_MAX_VALUE_LENGTH,
 	COST_FILTER_MAX_VALUES,
@@ -9,22 +10,36 @@ import {
 import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engine/datetime"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
+import { accountLabel } from "./marks"
+import { COST_PROVIDERS } from "./providers"
 
 // What the cost page reads off its URL and its answers: the grouping, the filters, money and days.
 
 export type CostGroupBy = (typeof COST_GROUP_BYS)[number]
+
+/** One value per dimension, keyed by it: the facets' reads, filters and answers. */
+export const perDimension = <A>(of: (dimension: CostGroupBy) => A): Readonly<Record<CostGroupBy, A>> => ({
+	cloud_service: of("cloud_service"),
+	provider: of("provider"),
+	service_category: of("service_category"),
+	region: of("region"),
+	resource: of("resource"),
+	account: of("account"),
+})
 
 export const DEFAULT_GROUP_BY: CostGroupBy = "cloud_service"
 
 /** Each dimension's name in the control, the chips and the table, and what an empty key reads as. */
 export const DIMENSIONS = {
 	cloud_service: { label: "Service", noun: "service", empty: "Unassigned" },
+	provider: { label: "Provider", noun: "provider", empty: "No provider" },
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
-	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
+	// What a charge is billed for, where the provider says: a Vercel project.
+	resource: { label: "Resource", noun: "resource", empty: "No resource" },
 	// The account the connection reads, which for a management account bills its members' cost too.
 	account: { label: "Connected account", noun: "connected account", empty: "No account" },
 } as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>
@@ -33,9 +48,25 @@ export const groupByOf = (search: Search): CostGroupBy => search.groupBy ?? DEFA
 
 export const sortOf = (search: Search): CostBreakdownSortBy => search.sort ?? "cost"
 
-/** A key as the page shows it: the provider's own text, or the dimension's placeholder for "". */
-export const keyLabel = (dimension: CostGroupBy, key: string): string =>
-	key === "" ? DIMENSIONS[dimension].empty : key
+const decodeProvider = Schema.decodeUnknownOption(CostProvider)
+
+/**
+ * A key as the page shows it: the provider's own text, the dimension's placeholder for "", a
+ * provider by its name, not by the id rows carry, and an account by the provider that reads it.
+ */
+export const keyLabel = (
+	dimension: CostGroupBy,
+	key: string,
+	sources: ReadonlyArray<CostSourceSummary> = [],
+): string => {
+	if (key === "") return DIMENSIONS[dimension].empty
+	if (dimension === "account") return accountLabel(key, sources)
+	if (dimension !== "provider") return key
+	return Option.match(decodeProvider(key), {
+		onNone: () => key,
+		onSome: (provider) => COST_PROVIDERS[provider].name,
+	})
+}
 
 export type ActiveFilter = Readonly<{ dimension: CostGroupBy; value: string }>
 
@@ -71,6 +102,69 @@ export const withFilter = (search: Search, filter: ActiveFilter): Search => {
 		? search
 		: withValues(search, filter.dimension, Arr.append(values, filter.value))
 }
+
+/**
+ * Where a row's click goes next: the grouping that splits it further, skipping one already
+ * narrowed. Grouped by service it moves to region, by anything else to service.
+ */
+const DRILL_ORDER = {
+	cloud_service: ["region", "resource", "account"],
+	provider: ["cloud_service", "account", "region", "resource"],
+	service_category: ["cloud_service", "region", "resource"],
+	region: ["cloud_service", "resource", "account"],
+	resource: ["cloud_service", "region", "account"],
+	account: ["cloud_service", "region", "resource"],
+} as const satisfies Record<CostGroupBy, ReadonlyArray<CostGroupBy>>
+
+/**
+ * The dimensions the cost on the page does not split by, which the rail and a drill-down leave
+ * out. Only resources can be missing: no provider names one for every charge, and some for none.
+ */
+export const unsplitDimensions = (
+	facets: Readonly<Record<CostGroupBy, ReadonlyArray<Readonly<{ key: string }>>>> | undefined,
+): ReadonlyArray<CostGroupBy> =>
+	facets !== undefined && Arr.some(facets.resource, (row) => row.key !== "") ? [] : ["resource"]
+
+/**
+ * The grouping a row's click switches to, or the current one when every next step is narrowed.
+ * `unsplit` are the dimensions with nothing to split by, which it passes over: resources, until
+ * the rail's read says some cost names one.
+ */
+export const drillTarget = (
+	search: Search,
+	dimension: CostGroupBy,
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
+): CostGroupBy =>
+	Arr.findFirst(
+		DRILL_ORDER[dimension],
+		(next) => (search[next] ?? []).length === 0 && !Arr.contains(unsplit, next),
+	).pipe(Option.getOrElse(() => dimension))
+
+/** A row's click: the page narrowed to the row's key, then split by the next dimension. */
+export const drilledInto = (
+	search: Search,
+	filter: ActiveFilter,
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
+): Search => {
+	const narrowed = withFilter(search, filter)
+	return narrowed === search
+		? search
+		: { ...narrowed, groupBy: drillTarget(narrowed, filter.dimension, unsplit) }
+}
+
+/** A rail checkbox: the value leaves the dimension's filter when it is in it, else joins it. */
+export const toggledFilter = (search: Search, filter: ActiveFilter): Search =>
+	hasFilter(search, filter) ? withoutFilter(search, filter) : withFilter(search, filter)
+
+/** A rail row's Only: the dimension narrowed to the one value. */
+export const onlyFilter = (search: Search, filter: ActiveFilter): Search =>
+	filter.value.length > COST_FILTER_MAX_VALUE_LENGTH
+		? search
+		: withValues(search, filter.dimension, [filter.value])
+
+/** What a dimension's facet reads under: every filter but its own, so its other values stay on offer. */
+export const facetFilters = (search: Search, dimension: CostGroupBy): CostFilters | undefined =>
+	requestFilters(withValues(search, dimension, []))
 
 export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
 	withValues(
@@ -197,8 +291,11 @@ const ROW_FIELDS: ReadonlyArray<string> = ["bucket", "partial"]
 export const seriesLabels = (
 	dimension: CostGroupBy,
 	series: ReadonlyArray<SeriesKey>,
+	sources: ReadonlyArray<CostSourceSummary> = [],
 ): ReadonlyArray<string> => {
-	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [entry.key]))
+	// A series reads by the name its table row shows.
+	const nameOf = (key: string) => keyLabel(dimension, key, sources)
+	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [nameOf(entry.key)]))
 	const taken = [...named, ...ROW_FIELDS]
 	const empty = freeName(DIMENSIONS[dimension].empty, "empty", taken)
 	const other = freeName(OTHER_LABEL, "the rest", [...taken, empty])
@@ -207,9 +304,9 @@ export const seriesLabels = (
 			? other
 			: entry.key === ""
 				? empty
-				: Arr.contains(ROW_FIELDS, entry.key)
-					? freeName(entry.key, "series", [...taken, empty, other])
-					: entry.key,
+				: Arr.contains(ROW_FIELDS, nameOf(entry.key))
+					? freeName(nameOf(entry.key), "series", [...taken, empty, other])
+					: nameOf(entry.key),
 	)
 }
 
@@ -220,8 +317,9 @@ export const seriesLabels = (
 export const chartRows = (
 	response: CostTimeseriesResponse,
 	dimension: CostGroupBy,
+	sources: ReadonlyArray<CostSourceSummary> = [],
 ): ReadonlyArray<ChartRow> => {
-	const labels = seriesLabels(dimension, response.series)
+	const labels = seriesLabels(dimension, response.series, sources)
 	return Arr.map(response.days, (day, index) => ({
 		bucket: `${day}T00:00:00Z`,
 		...Rec.fromEntries(
@@ -248,18 +346,25 @@ export type PreviousPeriod = "synced" | "syncing" | "beyond"
  * Whether every source with cost has history back to the start of the period before the window.
  * Short of that the period reads as cheaper than it was, so no change is shown against it: while
  * a source backfills, and for good once its history is complete or it is paused, which cannot
- * fill the gap. A paused source that never synced has no cost and holds nothing back.
+ * fill the gap. A paused source that never synced has no cost and holds nothing back. A view
+ * filtered to some providers reads only their sources, so only those can hold it back.
  */
 export const previousPeriodOf = (
 	sources: ReadonlyArray<CostSourceSummary>,
 	window: Readonly<{ startTime: string }> | null,
 	days: number,
+	search: Search,
 ): PreviousPeriod => {
 	if (window === null) return "synced"
+	const providers = search.provider ?? []
+	const read =
+		providers.length === 0
+			? sources
+			: Arr.filter(sources, (source) => Arr.contains(providers, source.provider))
 	const firstDay = new Date(`${Str.slice(0, 10)(window.startTime)}T00:00:00Z`).getTime()
 	if (!Number.isFinite(firstDay)) return "synced"
 	const previousStart = Str.slice(0, 10)(new Date(firstDay - days * DAY_MS).toISOString())
-	const short = Arr.filter(sources, (source) =>
+	const short = Arr.filter(read, (source) =>
 		source.backfillDate === null ? source.status !== "paused" : source.backfillDate > previousStart,
 	)
 	if (short.length === 0) return "synced"
@@ -268,8 +373,8 @@ export const previousPeriodOf = (
 		: "beyond"
 }
 
-/** AWS bills each Cost Explorer request USD 0.01. */
-const REQUEST_COST_USD = 0.01
-
-/** What a source's provider requests cost its account this month. */
-export const requestsCost = (requests: number): string => `USD ${(requests * REQUEST_COST_USD).toFixed(2)}`
+/** What a source's provider requests cost its account this month, or null when the provider bills none. */
+export const requestsCost = (provider: CostProvider, requests: number): string | null => {
+	const { requestUsd } = COST_PROVIDERS[provider]
+	return requestUsd === null ? null : `USD ${(requests * requestUsd).toFixed(2)}`
+}
