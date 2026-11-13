@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { isNavItemActive, type NavFlags, navGroups, navHrefs, navPreview, partitionSubItems } from "./nav"
+import { isNavItemActive, type NavFlags, navGroups, navPreview, partitionSubItems } from "./nav"
 import { Array as Arr, Option } from "effect"
 
 const infrastructure = Option.getOrUndefined(
@@ -64,7 +64,16 @@ describe("isNavItemActive", () => {
 
 describe("navGroups for an observer", () => {
 	const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
-	const hrefs = (flags: NavFlags) => navHrefs(navGroups(flags, "observer"))
+	/** Every page the observer's sidebar links to: rows, then their sub-rows. */
+	const hrefs = (flags: NavFlags) =>
+		Arr.dedupe(
+			Arr.flatMap(navGroups(flags, "observer"), (group) =>
+				Arr.flatMap(group.items, (item) => [
+					item.href,
+					...Arr.map(item.subItems ?? [], (sub) => sub.href),
+				]),
+			),
+		)
 
 	test("links to what is wrong and how the product is doing, and to no setup or explorer page", () => {
 		expect(hrefs(off)).toEqual([

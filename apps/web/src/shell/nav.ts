@@ -309,20 +309,6 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
 	audience === "observer" ? observerNavGroups(flags) : operatorNavGroups(flags)
 
-/** Every page the groups link to: rows, their sub-rows and those rows' views. */
-export const navHrefs = (groups: ReadonlyArray<NavGroup>): ReadonlyArray<string> =>
-	Arr.dedupe(
-		Arr.flatMap(groups, (group) =>
-			Arr.flatMap(group.items, (item) => [
-				item.href,
-				...Arr.flatMap(item.subItems ?? [], (sub) => [
-					sub.href,
-					...Arr.map(sub.views ?? [], (view) => view.href),
-				]),
-			]),
-		),
-	)
-
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>
 	href === "/"

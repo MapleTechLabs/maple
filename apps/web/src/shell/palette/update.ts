@@ -7,13 +7,13 @@ import type { Resources } from "../../platform/resources"
 import type { NavAudience } from "../nav"
 import {
 	browseEntries,
+	entriesFor,
 	type EntryInputs,
 	groupEntries,
 	MAX_RESULTS,
 	type PaletteEntry,
 	paletteEntries,
 	searchEntriesOf,
-	isForAudience,
 } from "./entries"
 import { LoadPaletteServices, ScrollHighlighted } from "./command"
 import { init, Message, type Model, OutMessage } from "./model"
@@ -65,13 +65,12 @@ const computeShownEntries = (
 	visibleFlagged: ReadonlyArray<string>,
 	audience: NavAudience,
 ): Shown => {
-	const all = entriesOf(model, context)
+	const all = entriesFor(entriesOf(model, context), audience)
 	const entries = Arr.filter(
 		all,
 		(entry) =>
-			isForAudience(entry, audience) &&
-			(entry.isFlagged !== true ||
-				(entry.target._tag === "Href" && visibleFlagged.includes(entry.target.href))),
+			entry.isFlagged !== true ||
+			(entry.target._tag === "Href" && visibleFlagged.includes(entry.target.href)),
 	)
 	const query = Str.trim(model.list.inputValue)
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }

@@ -159,6 +159,9 @@ describe("command palette", () => {
 				(entry) => entry.title,
 			)
 		expect(shown("analytics")).toContain("Web analytics")
+		// Their sidebar calls the alerts inbox Incidents, so that is what they search for and see.
+		expect(shown("incidents")).toContain("Incidents")
+		expect(shown("alerts")).not.toContain("Alerts")
 		expect(shown("checkout")).toContain("Checkout health")
 		expect(shown("traces")).not.toContain("Traces")
 		expect(shown("connect")).toEqual([])
