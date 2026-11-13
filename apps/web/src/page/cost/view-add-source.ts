@@ -18,9 +18,10 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
 import { providerMark, vercelStep } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
@@ -29,8 +30,6 @@ const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aw
 
 /** Where an AWS connection and its Cost module are changed. */
 export const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
-
-const OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/management-keys"
 
 /** Where a GitHub organization is connected to Maple. */
 const CONNECT_GITHUB_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))
@@ -86,8 +85,8 @@ const FREE_REQUESTS = nameList.format(
 )
 
 /**
- * The providers to add: AWS goes to its connect flow, OpenRouter to the key form, GitHub to its
- * organizations, Vercel to its team.
+ * The providers to add: AWS goes to its connect flow, a pasted credential's to its form, GitHub to
+ * its organizations, Vercel to its team.
  */
 const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
@@ -100,13 +99,14 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 				meta: "Daily cost by service, region and usage type",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
-			addableRow(h, COST_PROVIDERS.openrouter, {
-				isAdded: hasSourceOf(sources, "openrouter"),
-				meta: "Daily spend by model and serving provider",
-				addedMeta: "Replace its key in the Sources panel",
-				onClick: Message.ClickedAddOpenRouter(),
-				divided: true,
-			}),
+			...Arr.map(CredentialProvider.literals, (provider) =>
+				addableRow(h, COST_PROVIDERS[provider], {
+					isAdded: hasSourceOf(sources, provider),
+					...CREDENTIAL_SOURCES[provider].pick,
+					onClick: Message.PickedProvider({ provider }),
+					divided: true,
+				}),
+			),
 			// An org can add several organizations, so the row stays open with sources on the page.
 			listRow(h, {
 				divided: true,
@@ -132,46 +132,94 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 		]),
 	])
 
-const KEY_IDS: FieldIds = {
-	control: "cost-openrouter-key",
-	label: "cost-openrouter-key-label",
-	error: "cost-openrouter-key-error",
-	description: "cost-openrouter-key-description",
+const CREDENTIAL_IDS: FieldIds = {
+	control: "cost-source-credential",
+	label: "cost-source-credential-label",
+	error: "cost-source-credential-error",
+	description: "cost-source-credential-description",
 }
 
-const keyField = (h: H, model: Model): Html => {
-	const state = Field.stateOf(model.keyDraft, model.keyError !== null)
+const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
+	const state = Field.stateOf(model.credentialDraft, model.credentialError !== null)
 	return field(h, { state }, [
-		fieldLabel(h, { ids: KEY_IDS, state }, "Management key"),
+		fieldLabel(h, { ids: CREDENTIAL_IDS, state }, text.label),
 		input(h, {
-			ids: KEY_IDS,
+			ids: CREDENTIAL_IDS,
 			state,
 			attributes: [
 				h.Type("password"),
 				h.Attribute("autocomplete", "off"),
-				h.Placeholder("sk-or-v1-..."),
+				h.Placeholder(text.placeholder),
 				...(model.sourceWrite === "Saving" ? [h.Disabled(true)] : []),
-				...Field.controlAttributes(h, model.keyDraft, (message) =>
-					Message.GotKeyDraftMessage({ message }),
+				...Field.controlAttributes(h, model.credentialDraft, (message) =>
+					Message.GotCredentialDraftMessage({ message }),
 				),
 			],
 		}),
-		...(model.keyError === null
+		...(model.credentialError === null
 			? []
-			: [fieldError(h, { ids: KEY_IDS, state, attributes: [h.Role("alert")] }, [model.keyError])]),
-		fieldDescription(h, { ids: KEY_IDS, state }, [
-			"Create one under ",
+			: [
+					fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [
+						model.credentialError,
+					]),
+				]),
+		fieldDescription(h, { ids: CREDENTIAL_IDS, state }, [
+			text.help.before,
 			textLink(
 				h,
 				{
-					href: OPENROUTER_KEYS_URL,
+					href: text.help.href,
 					tone: "inherit",
 					className: "underline",
 					attributes: [h.Target("_blank"), h.Rel("noreferrer")],
 				},
-				["Management keys"],
+				[text.help.link],
 			),
-			" in OpenRouter. A regular API key cannot read spend. Maple checks the key with OpenRouter, then stores it encrypted.",
+			text.help.after,
+		]),
+	])
+}
+
+/** The chosen provider's credential form: adding its source, or replacing the credential of the one that exists. */
+const credentialForm = (
+	h: H,
+	model: Model,
+	provider: CredentialProvider,
+	sources: ReadonlyArray<CostSourceSummary>,
+	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
+): Html => {
+	const id = model.addDialog.id
+	const source = CREDENTIAL_SOURCES[provider]
+	const isReplacing = hasSourceOf(sources, provider)
+	const isSaving = model.sourceWrite === "Saving"
+	const canSubmit = !isSaving && Str.trim(model.credentialDraft.value) !== ""
+	const text = isReplacing ? source.replace : source.add
+	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
+		DialogView.dialogHeader(h, "dialog", [
+			DialogView.dialogTitle(h, "dialog", id, text.title),
+			DialogView.dialogDescription(h, "dialog", id, text.description),
+		]),
+		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
+		DialogView.dialogFooter(h, "dialog", [
+			// A replace has no providers to go back to.
+			isReplacing
+				? button(
+						h,
+						{ variant: "outline", isDisabled: isSaving, attributes: isSaving ? [] : [...close] },
+						["Cancel"],
+					)
+				: button(
+						h,
+						{
+							variant: "outline",
+							isDisabled: isSaving,
+							attributes: [h.OnClick(Message.ClickedBackToProviders())],
+						},
+						["Back"],
+					),
+			button(h, { type: "submit", isLoading: isSaving, isDisabled: !canSubmit }, [
+				isReplacing ? source.replace.label : "Add source",
+			]),
 		]),
 	])
 }
@@ -313,16 +361,13 @@ const githubPrimary = (h: H, model: Model): ReadonlyArray<Html> =>
 	})
 
 /**
- * Add a source, or replace the OpenRouter key: the providers first, then OpenRouter's key form,
- * GitHub's organizations or Vercel's team. Opened on the form for a replace, which has no
- * providers to go back to.
+ * Add a source, or replace a source's credential: the providers first, then the chosen one's
+ * credential form, GitHub's organizations or Vercel's team. Opened on the form for a replace.
  */
 export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const id = model.addDialog.id
-	const isReplacing = hasSourceOf(sources, "openrouter")
+	const step = model.addStep
 	const isSaving = model.sourceWrite === "Saving"
-	const canSubmit = !isSaving && Str.trim(model.keyDraft.value) !== ""
-	const onPick = model.addStep === "pick"
 	return h.submodel({
 		slotId: "cost-add-source",
 		model: model.addDialog,
@@ -333,9 +378,9 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			hasDescription: true,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				model.addStep === "vercel"
+				step === "vercel"
 					? vercelStep(h, model, id)
-					: model.addStep === "github"
+					: step === "github"
 						? [
 								DialogView.dialogHeader(h, "dialog", [
 									DialogView.dialogTitle(h, "dialog", id, "Add GitHub"),
@@ -360,7 +405,7 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 									...githubPrimary(h, model),
 								]),
 							]
-						: onPick
+						: step === "pick"
 							? [
 									DialogView.dialogHeader(h, "dialog", [
 										DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
@@ -376,59 +421,7 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 										button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 									]),
 								]
-							: [
-									formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
-										DialogView.dialogHeader(h, "dialog", [
-											DialogView.dialogTitle(
-												h,
-												"dialog",
-												id,
-												isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
-											),
-											DialogView.dialogDescription(
-												h,
-												"dialog",
-												id,
-												isReplacing
-													? "The source and its history stay. Use a key from the same OpenRouter account."
-													: "Maple reads the last four weeks at once, then every day from here on.",
-											),
-										]),
-										DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
-										DialogView.dialogFooter(h, "dialog", [
-											isReplacing
-												? button(
-														h,
-														{
-															variant: "outline",
-															isDisabled: isSaving,
-															attributes: isSaving ? [] : [...close],
-														},
-														["Cancel"],
-													)
-												: button(
-														h,
-														{
-															variant: "outline",
-															isDisabled: isSaving,
-															attributes: [
-																h.OnClick(Message.ClickedBackToProviders()),
-															],
-														},
-														["Back"],
-													),
-											button(
-												h,
-												{
-													type: "submit",
-													isLoading: isSaving,
-													isDisabled: !canSubmit,
-												},
-												[isReplacing ? "Replace key" : "Add source"],
-											),
-										]),
-									]),
-								],
+							: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
@@ -447,13 +440,12 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 				description:
 					"Maple stops reading the team's charges, and its cost leaves this page. The Vercel connection stays as it is. Adding Vercel again reads the last eleven months again.",
 			}
-		// An AWS source has no Remove: it leaves with its connection's Cost module.
+		case "openrouter":
+		case "cloudflare":
+			return CREDENTIAL_SOURCES[target.provider].remove
+		// An AWS source has no Remove: it leaves with its connection's Cost module. The confirm is closed then.
 		default:
-			return {
-				title: "Remove the OpenRouter source?",
-				description:
-					"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
-			}
+			return { title: "Remove the source?", description: "Its cost leaves this page." }
 	}
 }
 

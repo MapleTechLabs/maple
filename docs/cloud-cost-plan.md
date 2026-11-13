@@ -1,7 +1,7 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter, GitHub and Vercel followed on 2026-11-12.
+into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on 2026-11-12.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -44,12 +44,19 @@ warehouse are not.
 
 One adapter per provider, in `packages/backend/src/services/cost/providers/`, behind one port.
 The registry covers cost only. The integrations themselves are not refactored. A provider that is
-not an integration (OpenRouter) keeps its credential in a table of its own, and
-`cost_sources.connection_ref` points at that row. GitHub keeps no credential: its source points at
-the GitHub App installation (`vcs_installations.id`), and the adapter reaches GitHub through the
-VCS provider port, like every other reader of that installation. A connection that exists for
-more than cost (a GitHub installation, a Vercel team) supplies cost only once the org adds it on
-the Cost page: its `cost_sources` row is the opt-in, and no column on the connection says so.
+not read through an integration's connection keeps a pasted credential, and
+`cost_sources.connection_ref` points at its row. OpenRouter has a table of its own
+(`openrouter_cost_connections`). Every later provider shares `cost_connections`: one row per org
+and provider, with the sealed credential, the vendor's account id and a label. `CostConnectionStore`
+seals, upserts (refusing a credential of another account), removes and loads it, and
+`reconcileCostConnectionSources` keeps `cost_sources` in step for each provider named in
+`COST_CONNECTION_PROVIDERS`. A new provider of this kind needs no migration, slot or reconcile: it
+adds its literal there, and brings its own vendor check, adapter and endpoints. GitHub keeps no
+credential: its source points at the GitHub App installation (`vcs_installations.id`), and the
+adapter reaches GitHub through the VCS provider port, like every other reader of that installation.
+A connection that exists for more than cost (a GitHub installation, a Vercel team) supplies cost
+only once the org adds it on the Cost page: its `cost_sources` row is the opt-in, and no column on
+the connection says so.
 
 ```ts
 interface CostProvider {
@@ -121,7 +128,8 @@ day replaces the stored one. OpenRouter serves 30 completed days: its sync asks 
 never for today. GitHub's report is asked for one calendar month at a time, back to the first day
 of the month three months before the current one. Vercel serves a year in one request, today
 included: its history starts at the first day of the month eleven months back, so no window is
-longer than a year.
+longer than a year. Cloudflare serves a year of completed days: its history stops at the first day
+of the eleventh month back, and it never asks for today.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -155,15 +163,17 @@ next read.
   row and regroups by the next dimension (a service under a region goes on to its resources).
   The resource section and that step show only where some cost names a resource: a GitHub
   repository, a Vercel project. Sources are added from the page: AWS through its connection
-  (which has a Cost switch), OpenRouter by pasting a management key, which the page can also
-  replace or remove, GitHub by picking one of the organizations the GitHub App is installed on,
-  and Vercel by adding the team the org has connected, both of which the page can remove again.
-  Recommendations (list and detail with the evidence chart) come with phase 2.
+  (which has a Cost switch), OpenRouter by pasting a management key and Cloudflare by pasting an
+  API token, which the page can also replace or remove, GitHub by picking one of the
+  organizations the GitHub App is installed on, and Vercel by adding the team the org has
+  connected, both of which the page can remove again. The pasted-credential step is one form
+  described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence
+  chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
-  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE /internal/cost/openrouter` for the
-  OpenRouter key, `GET /internal/cost/github` with `PUT` / `DELETE
-  /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` / `DELETE
-  /internal/cost/vercel` for the Vercel source. A public `/v2/cost/*` is not built.
+  `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
+  `/internal/cost/cloudflare` for the pasted credentials, `GET /internal/cost/github` with `PUT` /
+  `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
+  `DELETE /internal/cost/vercel` for the Vercel source. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -342,14 +352,131 @@ against a fake server that answers what the spec describes.
   overprovisioned, Cloud Run cost, commitments. Negative cost is the saving.
 - Until the export exists, Maple can still show the recommender's savings and its own rules.
 
-### Cloudflare (billed for pay-as-you-go, else estimated)
+### Cloudflare (billed, pay-as-you-go accounts)
 
-- Schema: `GET /accounts/{id}/billable-usage` returns FOCUS-style daily rows with `BilledCost`. It
-  is marked alpha, covers usage overages (not plan fees), and is not available to enterprise
-  accounts. Plan fees come from the subscription endpoints.
-- All of it needs the "Billing Read" permission. Open: whether the OAuth app can be granted a
-  billing scope. If not, this source needs an API token.
-- Fallback: usage from the GraphQL analytics datasets (already authorized) times list price.
+"Live" here means checked against a real pay-as-you-go account on 2026-11-12, and on 2026-11-13
+for the token's reach and the OAuth scopes.
+
+- It needs an API token with the "Billing: Read" permission on one account. OAuth clients are
+  offered no billing scope, so the integration's connection is not used (see "OAuth is the intended
+  home" below): the org pastes a token on the Cost page, which Maple checks and stores sealed in
+  `cost_connections`.
+
+**The token is kept least privileged.** A token cannot be asked what it may do: listing its own
+policies (`GET /user/tokens/{id}`) needs the "API Tokens Read" permission, and
+`GET /user/tokens/verify` answers `id`, `status` and `expires_on` only. So there are two halves.
+
+- The right token is the easy one to make. Live: Cloudflare's dashboard takes a template in the
+  URL. The dialog's link (`permissionGroupKeys=[{"key":"billing","type":"read"}]`, with a name,
+  `accountId=*` and `zoneId=all`) opens "Create Token" with the name filled in and one permission
+  ticked, Account > Billing > Read, over all accounts. The help text says what is left: pick the
+  one account, optionally set an expiry, create, paste.
+- A token for several accounts is refused (above), so a billing token for every account the
+  person can see does not get stored.
+- A token that visibly reads more than billing is refused. After the checks above pass, four
+  requests are made side by side, on a save and a replace only, never in a sync pull. Live, with
+  two tokens on one account:
+
+    | Request                                    | Billing: Read only | Billing, Workers Scripts and Account Settings Read |
+    | ------------------------------------------ | ------------------ | -------------------------------------------------- |
+    | `GET /accounts/{id}/members?per_page=1`    | 403 (code 10000)   | 200                                                |
+    | `GET /accounts/{id}/workers/subdomain`     | 403 (code 10000)   | 200                                                |
+    | `GET /accounts/{id}/audit_logs?per_page=1` | 403 (code 10000)   | 200                                                |
+    | `GET /zones?per_page=1`                    | 200, empty list    | 200, zones listed                                  |
+
+    The first three are read off the status: a 200 is access, whatever the account holds. Zones
+    answer a billing token with an empty list, so only a list with something in it is access.
+    A 401 or 403 is no access. Any other answer (a 5xx, a 404, no answer) fails the save as a
+    check that could not be made: it neither passes nor refuses the token.
+
+    The Workers scripts list (`GET /accounts/{id}/workers/scripts`) was a fifth probe and was
+    dropped. Live, on a preview: it took 1.8 s where the others took under 0.2 s, and the whole
+    save waited for it. The Workers subdomain already tells a Workers-reading token apart. The
+    change itself is covered by the fake only, since the test tokens no longer exist.
+
+- The refusal names what was found, so the person knows which permission to drop: "This token
+  can do more than read billing: it can also read account members and Workers scripts. Create one
+  with only the Billing: Read permission."
+- What this does not prove: the probes ask for a few things a billing token must not see. A token
+  with some other extra permission none of them touches passes (Live: R2 and KV answer 403 and 401
+  to both tokens, so they tell nothing). It catches the common over-broad tokens, an edit-Workers
+  or a read-all token, not every one.
+
+**OAuth is the intended home.** The cost source should read through the org's existing Cloudflare
+connection, not a pasted token. It cannot today. Live, 2026-11-13: `GET /client/v4/oauth/scopes`
+lists 404 scopes, and none is for billing, invoices, subscriptions or usage. The category named
+`account_and_billing` holds account settings, memberships and token scopes only. When Cloudflare
+adds one:
+
+- add it to `CLOUDFLARE_OAUTH_SCOPES`, and read billing through the connection as the PlanetScale
+  source does with its grant;
+- offer "Reconnect to grant billing access" for connections made before the scope;
+- retire the pasted token: re-point each existing source's `connectionRef` at the connection, then
+  delete the stored tokens.
+
+The billing API facts, which hold for either credential:
+
+- Live: `GET /accounts` lists the accounts the token reads. A token for one account lists one,
+  and its id is the source's account. Its name is stored beside the token and is the source's
+  `accountName`, so the page reads "Cloudflare <account name>" and not the 32 character id. A token that lists none or several is refused. A
+  replacement token must read the same account, since another account's charges would overwrite
+  the source's days. Live: a token Cloudflare does not know answers 403 on this call, and 401 on
+  the billing calls.
+- Live: `GET /accounts/{id}/billable-usage/info` answers `covered`. Schema: usage-based billing
+  data is not available to enterprise accounts. A save is refused and a pull reports "not ready"
+  while it is false.
+- Live: `GET /accounts/{id}/billable-usage?from=&to=` (marked "Version 1, Alpha") answers
+  FOCUS-style rows, one per UTC day and priced metric, in one answer without paging (about 1,100
+  rows for six weeks). Most rows bill nothing, being inside the included allowance.
+- Live: `to` is exclusive. `from=2026-10-01&to=2026-10-02` answers 1 October only, and equal
+  dates are refused.
+- Live: a billing period's rows come back only when the period starts inside `[from, to)`. A
+  range that starts a day after the period did answers nothing for it. So every request asks from
+  31 days before its first day to the day after its last, and keeps only its own days.
+- Live: a range over 90 days is refused (`max_date_range_days`), so a window is read in pieces of
+  55 days. Requests are free, so the source counts none.
+- Live: yesterday is served, today is not, and the oldest day served is one year before today.
+  The profile asks from the first day of the eleventh month back through yesterday. The two newest
+  days are stored as not final.
+- Live: a range that reaches past the year is answered, not refused, with the older days left out,
+  and a period that started before the year still returns its days inside it. So the 31 days asked
+  before the oldest month cost nothing.
+- Live: a wrong or revoked token answers 401 (sync reason `auth`), a token without billing access
+  403 (`not_ready`). A 400 is a request Maple wrote wrong (`upstream`).
+- Rows: the product family (`Workers`, `R2`, `D1` ...) is `CloudService`, the priced metric is
+  `UsageType`, the region is `global`, and the category comes from a small map of the families.
+  Rows with no billed and no list cost are left out.
+- Live: usage rows do not include plan fees. `GET /accounts/{id}/subscriptions` (paged) lists them
+  with `price`, `frequency` and `current_period_start`. Each paid subscription becomes a purchase
+  row (`CloudService` "Subscriptions", the rate plan as `UsageType`, the zone as the resource) on
+  the day each billing period started, stepped back from the current period by its frequency
+  (a week, a month or three months) and never before the subscription was created. A yearly one
+  gets one row on its current period's start.
+- A subscription made on the 29th to 31st has later starts clamped to shorter months, so stepping
+  back lands days before it was made: that first period's fee goes on the day it was made.
+- Live: `created_date` was on every subscription. Schema: the published response does not list
+  it. Without it only the current period's fee is stored, since earlier periods cannot be told
+  from months before the subscription existed.
+- A priced subscription Maple cannot place on a day (another frequency, or no period start) has
+  no row. The pull's span counts them as `maple.cost.cloudflare.fees_skipped`.
+- Assumed: Cloudflare reports the current period only, so earlier months use today's price. A plan
+  whose price changed shows the new price for its past months too.
+- Schema: a subscription's `state` is one of `Trial`, `Provisioned`, `Paid`, `AwaitingPayment`,
+  `Cancelled`, `Failed`, `Expired`. Live: every listed one was `Paid`, free items included.
+  Assumed: `Trial`, `Failed` and `Expired` were not charged, so they get no fee row.
+- Known limit: a fee is known only while its subscription is listed. If Cloudflare drops a
+  cancelled subscription from the list, the next re-pull of the open months stores those days
+  without its fee. Months already walked as history keep theirs.
+- Live: the listing's `result_info` has `per_page`, `total_pages` and `total_count`. Schema: only
+  the count is documented, so the page count falls back to the count over the page size. A list
+  read short of its count, over 10 pages, or a full page that says nothing of its paging, fails
+  the pull as an answer Maple cannot read: part of the list would under-count.
+- Every answer must say `success: true`. Read as an answer, a 200 with an empty result would
+  store every day of the window as empty. Live: the usage answer has no `result_info`. One that
+  appears and lists more rows than it returned fails the pull too.
+- Open: whether a completed day is ever restated. The four newest days are pulled again daily.
+- Not built: enterprise contracts, zone-level analytics, the restricted "Version 2" endpoints,
+  invoices and credits.
 
 ### Railway (estimated per service, billed per workspace)
 
@@ -385,9 +512,12 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter, GitHub and Vercel are built. Railway, GCP, PlanetScale,
-   Supabase, Cloudflare, one PR each. Each provider adds a literal to `CostProvider`, an adapter,
-   a reconcile function and a sync profile.
+3. **More providers.** OpenRouter, GitHub, Vercel and Cloudflare are built. Railway, GCP,
+   PlanetScale, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter
+   and a sync profile. One read with a pasted credential also adds itself to
+   `COST_CONNECTION_PROVIDERS`, a connection service that checks the credential with the vendor,
+   its `PUT` / `DELETE` endpoints, and on the Cost page two commands and an entry in
+   `CREDENTIAL_SOURCES`. One read through a connection adds a reconcile function instead.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -404,7 +534,8 @@ Each phase is one PR stack.
 
 ## Open questions
 
-- Cloudflare: is there an OAuth billing scope.
+- Cloudflare: move the cost source to OAuth once a billing scope exists. Checked on 2026-11-13,
+  OAuth clients are offered none, so the source is a pasted token for now (see its section).
 - GitHub: does an installation token with "Administration: read" read the billing report (the
   spec says so, no installation has been read yet), and how long the report keeps usage.
 - Railway: can a workspace token read `customer`.

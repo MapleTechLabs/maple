@@ -96,6 +96,16 @@ export const openRouterCostKeySlot: SecretSlot<OrgRef> = {
 	binding: orgBinding,
 }
 
+export interface CostConnectionRef extends OrgRef {
+	readonly provider: string
+}
+
+/** A pasted credential one provider's spend is read with; the table is one row per org and provider. */
+export const costConnectionSecretSlot: SecretSlot<CostConnectionRef> = {
+	name: "cost_connections.secret",
+	binding: (ref) => [ref.orgId, ref.provider],
+}
+
 export const planetScaleWebhookSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "planetscale_connections.webhook_secret",
 	binding: orgRowBinding,

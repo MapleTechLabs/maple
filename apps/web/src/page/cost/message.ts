@@ -8,8 +8,6 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
-	OpenRouterCostKeyRemoved,
-	OpenRouterCostKeySaved,
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
@@ -30,6 +28,7 @@ import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import { perDimension } from "./derive"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { CredentialProvider } from "./providers"
 
 /** A read's answer; `key` is what it was requested under, so a stale one is dropped. */
 const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
@@ -70,19 +69,23 @@ export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
-	ClickedAddOpenRouter: {},
+	/** Picks a provider added by pasting a credential: the dialog moves to its form. */
+	PickedProvider: { provider: CredentialProvider },
 	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */
 	ClickedAddVercel: {},
 	CompletedLoadVercelStatus: result(VercelCostStatus),
 	ClickedConfirmAddVercel: {},
 	CompletedAddVercel: { result: Schema.Result(VercelCostSourceAdded, LoadFailure) },
 	ClickedBackToProviders: {},
-	/** Opens the dialog on the key form, for the source that exists. */
-	ClickedReplaceKey: {},
+	/** Opens the dialog on the provider's form, for the source that exists. */
+	ClickedReplaceCredential: { provider: CredentialProvider },
 	GotAddDialogMessage: { message: Dialog.Message },
-	GotKeyDraftMessage: { message: Field.Message },
-	SubmittedKey: {},
-	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
+	GotCredentialDraftMessage: { message: Field.Message },
+	SubmittedCredential: {},
+	CompletedSaveCredential: {
+		provider: CredentialProvider,
+		result: Schema.Result(Schema.Void, LoadFailure),
+	},
 	/** Opens the dialog on the org's GitHub installations, and reads them. */
 	ClickedAddGithub: {},
 	CompletedLoadGithubInstallations: {
@@ -97,7 +100,10 @@ export const Message = defineMessageUnion({
 	ClickedRemoveSource: { sourceId: CostSourceId },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
-	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
+	CompletedRemoveCredential: {
+		provider: CredentialProvider,
+		result: Schema.Result(Schema.Void, LoadFailure),
+	},
 	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,

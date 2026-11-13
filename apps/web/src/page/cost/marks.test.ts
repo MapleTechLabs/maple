@@ -61,6 +61,40 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "", [])).toBeNull()
 	})
 
+	test("a Cloudflare product wears the Cloudflare mark, also beside an AWS source", () => {
+		const cloudflare = keyMark("provider", "cloudflare", [])?.icon
+		const both = [...sources, source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]
+		expect(keyMark("cloud_service", "Workers", both)?.icon).toBe(cloudflare)
+		expect(keyMark("cloud_service", "Durable Objects", [])?.icon).toBe(cloudflare)
+		// Plan fees are filed under one service name.
+		expect(keyMark("cloud_service", "Subscriptions", both)?.icon).toBe(cloudflare)
+		// An AWS service beside it keeps the AWS mark.
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", both)?.icon).toBe(
+			keyMark("provider", "aws", [])?.icon,
+		)
+		// A product Maple has no name for is Cloudflare's when no AWS source could bill it.
+		const alone = [source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]
+		expect(keyMark("cloud_service", "Something New", alone)?.icon).toBe(cloudflare)
+	})
+
+	test("a Cloudflare account reads by its account's name, and by the provider alone without one", () => {
+		const account = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+		const named = [
+			...sources,
+			Schema.decodeSync(CostSourceSummary)({
+				...Schema.encodeSync(CostSourceSummary)(source("cloudflare", account)),
+				accountName: "Example Account",
+			}),
+		]
+		expect(keyLabel("account", account, named)).toBe("Cloudflare Example Account")
+		expect(keyMark("account", account, named)?.icon).toBe(keyMark("provider", "cloudflare", [])?.icon)
+		// A source read before its name was known reads by the provider: the id says nothing.
+		const unnamed = [...sources, source("cloudflare", account)]
+		expect(keyLabel("account", account, unnamed)).toBe("Cloudflare")
+		// Cloudflare bills in no region of its own: its rows are `global`, the globe and not a logo.
+		expect(keyMark("region", "global", named)?.icon).toBe("GlobeIcon")
+	})
+
 	test("a GitHub account reads by its organization, with nothing beside it, and wears GitHub's mark", () => {
 		const github = keyMark("provider", "github", [])?.icon
 		const withGithub = [
@@ -91,6 +125,30 @@ describe("cost key marks", () => {
 		expect(keyMark("service_category", "Developer Tools", [])?.icon).toBe("CodeIcon")
 		// GitHub bills no region: its rows are `global`, which is the globe and not a logo.
 		expect(keyMark("region", "global", both)?.icon).toBe("GlobeIcon")
+	})
+
+	test("with AWS, GitHub and Cloudflare in one org, each key wears the mark of the one that bills it", () => {
+		const all = [
+			...sources,
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+			source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e23"),
+		]
+		const markOf = (provider: string) => keyMark("provider", provider, [])?.icon
+		expect(keyMark("cloud_service", "Workers", all)?.icon).toBe(markOf("cloudflare"))
+		expect(keyMark("cloud_service", "Actions", all)?.icon).toBe(markOf("github"))
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", all)?.icon).toBe(markOf("aws"))
+		expect(keyMark("cloud_service", "AWS Key Management Service", all)?.icon).toBe(markOf("aws"))
+		expect(keyMark("cloud_service", "Elastic Load Balancing", all)?.icon).toBe(markOf("aws"))
+		// A name none of the three is known by gets the service glyph, never a guessed logo.
+		expect(keyMark("cloud_service", "Something New", all)?.icon).toBe("CubeIcon")
+		// A region AWS lists is AWS's. One nobody is known by is the globe, with several platforms.
+		expect(keyMark("region", "eu-west-1", all)?.icon).toBe(markOf("aws"))
+		expect(keyMark("region", "somewhere", all)?.icon).toBe("GlobeIcon")
+		expect(keyMark("region", "global", all)?.icon).toBe("GlobeIcon")
+		// Each account wears its own provider's mark.
+		expect(keyMark("account", "example-org", all)?.icon).toBe(markOf("github"))
+		expect(keyMark("account", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", all)?.icon).toBe(markOf("cloudflare"))
+		expect(keyMark("account", "465760687006", all)?.icon).toBe(markOf("aws"))
 	})
 
 	test("a GitHub row drills like any other: a provider to its services, a service to its accounts", () => {

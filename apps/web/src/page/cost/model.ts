@@ -23,11 +23,12 @@ import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import { CostFacets } from "./message"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's form, list or step. */
-export const AddStep = Schema.Literals(["pick", "openrouter", "github", "vercel"])
+/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+export const AddStep = Schema.Union([Schema.Literals(["pick", "github", "vercel"]), CredentialProvider])
 export type AddStep = typeof AddStep.Type
 
 /**
@@ -67,10 +68,10 @@ export const Model = Schema.Struct({
 	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
-	/** The OpenRouter management key being typed; cleared whichever way the dialog closes. */
-	keyDraft: Field.Model,
-	/** Why the last save was refused, shown under the field until the key changes. */
-	keyError: Schema.NullOr(Schema.String),
+	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
+	credentialDraft: Field.Model,
+	/** Why the last save was refused, shown under the field until the credential changes. */
+	credentialError: Schema.NullOr(Schema.String),
 	/** The org's GitHub installations, read when the dialog's GitHub step opens. */
 	githubInstallations: AsyncData.Schema(GithubCostInstallations, LoadFailure).schema,
 	/** The number of the installations read on show: an answer to an older read is dropped. */

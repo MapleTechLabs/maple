@@ -666,6 +666,43 @@ describe("makeCostReads", () => {
 		},
 	)
 
+	it.effect("names a Cloudflare source by the account name its token was saved with", () => {
+		const testDb = createTestDb(trackedDbs)
+		const connection = (id: string, orgId: string, label: string) =>
+			Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cost_connections
+					   (id, org_id, provider, secret_ciphertext, secret_iv, secret_tag, account_id, account_label, created_at, updated_at, updated_by)
+					 VALUES ($1, $2, 'cloudflare', 'sealed', 'iv', 'tag', '1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d', $3, now(), now(), 'user_a')`,
+					[id, orgId, label],
+				),
+			)
+		return Effect.gen(function* () {
+			yield* connection("conn_cloudflare", ORG, "Example Account")
+			// Another org's connection with the same id suffix is never read for this org.
+			yield* connection("conn_other", "org_other", "Other Account")
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+					 VALUES ($2, $1, 'cloudflare', 'conn_cloudflare', '1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d', now(), now())`,
+					[ORG, SOURCE_B],
+				),
+			)
+			const { reads } = yield* makeHarness(testDb)
+			const named = yield* reads.sources(tenant)
+			expect(
+				Arr.map(named.sources, (source) => [source.provider, source.accountId, source.accountName]),
+			).toEqual([["cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", "Example Account"]])
+
+			// A label Cloudflare answered empty names nothing: the id stands alone.
+			yield* Effect.promise(() => executeSql(testDb, "UPDATE cost_connections SET account_label = ''"))
+			const unnamed = yield* reads.sources(tenant)
+			expect(Arr.map(unnamed.sources, (source) => source.accountName)).toEqual([undefined])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("names a Vercel source by its team's slug, beside the team id its rows carry", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

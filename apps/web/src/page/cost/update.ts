@@ -1,9 +1,4 @@
-import {
-	type CostSourceSummary,
-	CostSourcesResponse,
-	OPENROUTER_KEY_MAX_LENGTH,
-	type VercelCostTeam,
-} from "@maple/domain/http"
+import { type CostSourceSummary, CostSourcesResponse, type VercelCostTeam } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import type { CostSourceId } from "@maple/primitives"
@@ -42,10 +37,8 @@ import {
 	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
-	RemoveOpenRouterCostKey,
 	RemoveVercelCostSource,
 	ResolveWindow,
-	SaveOpenRouterCostKey,
 	type TimeseriesInput,
 	type WindowInput,
 } from "./command"
@@ -64,9 +57,10 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { Message } from "./message"
 import { type AddStep, type Model, type Search, vercelStepOf } from "./model"
-import { COST_PROVIDERS } from "./providers"
+import { COST_PROVIDERS, type CredentialProvider, isCredentialProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -201,8 +195,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
-		keyDraft: Field.init(),
-		keyError: null,
+		credentialDraft: Field.init(),
+		credentialError: null,
 		vercel: Keyed.idle(),
 		vercelError: null,
 		githubInstallations: AsyncData.Idle(),
@@ -249,8 +243,8 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
 const clearedDialog = (model: Model): Model => ({
 	...model,
-	keyDraft: Field.init(),
-	keyError: null,
+	credentialDraft: Field.init(),
+	credentialError: null,
 	githubRefusal: null,
 	vercelError: null,
 })
@@ -332,11 +326,12 @@ const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
 /** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
 export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
 
-/** The call that removes `source`: OpenRouter's key, the GitHub source of its installation, the org's Vercel source. */
+/** The call that removes `source`: its pasted credential, the GitHub source of its installation, the org's Vercel source. */
 const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 	switch (source.provider) {
 		case "openrouter":
-			return [RemoveOpenRouterCostKey()]
+		case "cloudflare":
+			return [CREDENTIAL_SOURCES[source.provider].delete()]
 		case "github":
 			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>
 				RemoveGithubCostSource({ installationId }),
@@ -402,10 +397,10 @@ const added = (model: Model, title: string, description: string, context: PageCo
 		context,
 	)
 
-/** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
-const hasOpenRouterSource = (model: Model): boolean =>
+/** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
+const hasSource = (model: Model, provider: CredentialProvider): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
-		Arr.some(sources, (source) => source.provider === "openrouter"),
+		Arr.some(sources, (source) => source.provider === provider),
 	)
 
 export const routeChanged = (
@@ -540,12 +535,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		ClickedAddOpenRouter: () => ({ model: { ...clearedDialog(model), addStep: "openrouter" } }),
+		PickedProvider: ({ provider }) => ({ model: { ...clearedDialog(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
 			model.sourceWrite === "Idle"
 				? { model: { ...clearedDialog(model), addStep: "pick" } }
 				: { model },
-		ClickedReplaceKey: () => openAdd(model, "openrouter"),
+		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
 			if (model.sourceWrite === "Saving") return { model }
@@ -555,49 +550,50 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { ...lifted, model: clearedDialog(lifted.model) }
 				: lifted
 		},
-		GotKeyDraftMessage: ({ message: inner }) =>
+		GotCredentialDraftMessage: ({ message: inner }) =>
 			model.sourceWrite === "Saving"
 				? { model }
 				: {
 						model: {
 							...model,
-							keyDraft: Field.update(model.keyDraft, inner).model,
-							// The refusal was about the key that was there.
-							keyError: inner._tag === "ChangedValue" ? null : model.keyError,
+							credentialDraft: Field.update(model.credentialDraft, inner).model,
+							// The refusal was about the credential that was there.
+							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
 						},
 					},
-		SubmittedKey: () => {
-			const apiKey = Str.trim(model.keyDraft.value)
-			if (apiKey === "" || model.sourceWrite !== "Idle") return { model }
-			// The request refuses a longer key before it is sent, which would leave the save unanswered.
-			if (apiKey.length > OPENROUTER_KEY_MAX_LENGTH) {
-				return { model: { ...model, keyError: "That is too long to be an OpenRouter key." } }
+		SubmittedCredential: () => {
+			const secret = Str.trim(model.credentialDraft.value)
+			const step = model.addStep
+			if (secret === "" || model.sourceWrite !== "Idle" || !isCredentialProvider(step)) {
+				return { model }
+			}
+			const source = CREDENTIAL_SOURCES[step]
+			// The request refuses a longer one before it is sent, which would leave the save unanswered.
+			if (secret.length > source.field.maxLength) {
+				return { model: { ...model, credentialError: source.field.tooLong } }
 			}
 			return {
-				model: { ...model, sourceWrite: "Saving", keyError: null },
-				commands: [SaveOpenRouterCostKey({ apiKey })],
+				model: { ...model, sourceWrite: "Saving", credentialError: null },
+				commands: [source.save(secret)],
 			}
 		},
-		// A refused key keeps the dialog open with the reason under the field.
-		CompletedSaveKey: ({ result }) =>
+		// A refused credential keeps the dialog open with the reason under the field.
+		CompletedSaveCredential: ({ provider, result }) =>
 			Result.match(result, {
 				onFailure: (failure): Return => ({
-					model: { ...model, sourceWrite: "Idle", keyError: failureMessage(failure) },
+					model: { ...model, sourceWrite: "Idle", credentialError: failureMessage(failure) },
 				}),
-				onSuccess: (): Return =>
-					hasOpenRouterSource(model)
+				onSuccess: (): Return => {
+					const source = CREDENTIAL_SOURCES[provider]
+					return hasSource(model, provider)
 						? added(
 								model,
-								"OpenRouter key replaced",
+								source.replace.toast,
 								"The next sync runs within a few minutes.",
 								context,
 							)
-						: added(
-								model,
-								"OpenRouter added",
-								"The first sync runs within a few minutes.",
-								context,
-							),
+						: added(model, source.add.toast, "The first sync runs within a few minutes.", context)
+				},
 			}),
 		ClickedAddGithub: () =>
 			model.sourceWrite !== "Idle"
@@ -708,7 +704,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: { model: { ...model, sourceWrite: "Removing" }, commands }
 		},
-		CompletedRemoveKey: ({ result }) => removed(model, result, context),
+		CompletedRemoveCredential: ({ result }) => removed(model, result, context),
 		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
 		CompletedRemoveVercel: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),

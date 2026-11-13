@@ -1,7 +1,7 @@
 import type { CostSourceStatus, CostSourceSummary } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -11,9 +11,10 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
-import { COST_PROVIDERS } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 import { VERCEL_INTEGRATION_HREF } from "./view-add-vercel"
 
@@ -62,9 +63,9 @@ const connectionLink = (h: H, name: string, href: string): Html =>
 	])
 
 /**
- * What a row offers: an AWS source is its connection's, an OpenRouter one is its key, and a
- * GitHub one only leaves, since it reads through the GitHub connection. A Vercel one leaves here
- * too, and links to its connection, where the token it reads with is replaced.
+ * What a row offers: an AWS source is its connection's, a pasted credential's is replaced or
+ * removed here, and a GitHub one only leaves, since it reads through the GitHub connection. A
+ * Vercel one leaves here too, and links to its connection, where the token it reads with is replaced.
  */
 const actions = (
 	h: H,
@@ -83,16 +84,20 @@ const actions = (
 	const manage = (href: string) => connectionLink(h, named(`Manage ${name} connection`), href)
 	switch (source.provider) {
 		case "openrouter":
+		case "cloudflare": {
+			const { label } = CREDENTIAL_SOURCES[source.provider].replace
 			return [
 				rowButton(
 					h,
-					"Replace key",
-					named(`Replace ${name} key`),
-					Message.ClickedReplaceKey(),
+					label,
+					// "Replace key" as "Replace OpenRouter key".
+					named(Str.replace("Replace", `Replace ${name}`)(label)),
+					Message.ClickedReplaceCredential({ provider: source.provider }),
 					options.isBusy,
 				),
 				remove,
 			]
+		}
 		case "github":
 			return [remove]
 		case "vercel":
@@ -158,7 +163,7 @@ const sourceRow = (
 	timeZone: string,
 	options: Readonly<{ isBusy: boolean; canManage: boolean; isRepeated: boolean }>,
 ): Html => {
-	const provider = COST_PROVIDERS[source.provider]
+	const provider: CostProviderEntry = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
 	return hstack(
 		h,
@@ -205,7 +210,7 @@ export const sourcesSection = (
 	nowMs: number,
 	timeZone: string,
 	options: Readonly<{
-		/** A key write is in flight: the actions wait for it. */
+		/** A credential write is in flight: the actions wait for it. */
 		isBusy: boolean
 		/** The viewer may add, replace and remove sources; without it no such action is offered. */
 		canManage: boolean

@@ -28,6 +28,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { insertInstallation } from "./providers/github/fake-github"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
@@ -50,6 +51,7 @@ const CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000a1"
 const CONNECTION_B = "0190f2b3-0000-7000-8000-0000000000b1"
 const CONNECTION_C = "0190f2b3-0000-7000-8000-0000000000c1"
 const OPENROUTER_KEY_A = "0190f2b3-0000-7000-8000-0000000000d1"
+const CLOUDFLARE_TOKEN_A = "0190f2b3-0000-7000-8000-0000000000e1"
 const INSTALLATION_A = "0190f2b3-0000-4000-8000-0000000000e1"
 const INSTALLATION_B = "0190f2b3-0000-4000-8000-0000000000e2"
 const INSTALLATION_C = "0190f2b3-0000-4000-8000-0000000000e3"
@@ -265,6 +267,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 			Layer.mergeAll(
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
+				Layer.succeed(CloudflareCostProvider, adapterOf("cloudflare")),
 				Layer.succeed(GithubCostProvider, adapterOf("github")),
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				warehouse,
@@ -308,6 +311,18 @@ const harness = (options: FakeProviderOptions = {}) => {
 			   (id, org_id, key_ciphertext, key_iv, key_tag, key_label, account_id, created_at, updated_at, updated_by)
 			 VALUES ($1, $2, 'sealed', 'iv', 'tag', 'sk-or-v1-abc...123', 'user_account_a', now(), now(), 'user_a')`,
 			[key.id, key.orgId ?? "org_a"],
+		)
+	/** An org's pasted credential for a provider that keeps it in `cost_connections`. */
+	const saveCostConnection = (connection: {
+		readonly id: string
+		readonly provider: string
+		readonly orgId?: string
+	}) =>
+		sql(
+			`INSERT INTO cost_connections
+			   (id, org_id, provider, secret_ciphertext, secret_iv, secret_tag, account_id, account_label, created_at, updated_at, updated_by)
+			 VALUES ($1, $2, $3, 'sealed', 'iv', 'tag', 'account_a', 'Example Account', now(), now(), 'user_a')`,
+			[connection.id, connection.orgId ?? "org_a", connection.provider],
 		)
 	/** A GitHub App installation of an organization, and (unless `source` is false) its cost source. */
 	const installGithub = (installation: {
@@ -391,6 +406,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 		sql,
 		connect,
 		saveOpenRouterKey,
+		saveCostConnection,
 		connectVercel,
 		installGithub,
 		sourceRefs,
@@ -499,6 +515,84 @@ describe("CostSyncService OpenRouter sources", () => {
 			assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
 		}).pipe(Effect.provide(h.layer))
 	})
+})
+
+describe("CostSyncService sources of a pasted credential", () => {
+	it.effect(
+		"makes a Cloudflare source for a saved token and pulls up to yesterday, then walks a year back",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.saveCostConnection({ id: CLOUDFLARE_TOKEN_A, provider: "cloudflare" })
+				const summary = yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CLOUDFLARE_TOKEN_A, "account_a"]])
+				assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+				// Last month and this one through yesterday: Cloudflare has no rows for today.
+				assert.deepStrictEqual(h.windows()[0], ["2026-10-01", "2026-11-10"])
+				assert.isTrue(Arr.every(h.writtenRows(), (row) => row.Provider === "cloudflare"))
+
+				// History then walks down a month per step and stops at the eleventh month back.
+				yield* Effect.forEach(Arr.range(1, 12), () =>
+					Effect.andThen(TestClock.adjust("5 minutes"), poll),
+				)
+				const state = yield* h.sourceStateOf("org_a", CLOUDFLARE_TOKEN_A)
+				assert.deepStrictEqual(
+					[state?.watermark, state?.backfill, state?.error],
+					["2026-11-10", "2025-12-01", null],
+				)
+				assert.deepStrictEqual(Arr.last(h.windows()), Option.some(["2025-12-01", "2025-12-31"]))
+				assert.isTrue(Arr.every(h.windows(), ([startDay]) => startDay >= "2025-12-01"))
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect("removes the source with its token, and leaves the org's other sources alone", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.saveCostConnection({ id: CLOUDFLARE_TOKEN_A, provider: "cloudflare" })
+			yield* h.saveOpenRouterKey({ id: OPENROUTER_KEY_A })
+			yield* h.connect({ id: CONNECTION_A })
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [
+				["org_a", CONNECTION_A, "123456789012"],
+				["org_a", OPENROUTER_KEY_A, "user_account_a"],
+				["org_a", CLOUDFLARE_TOKEN_A, "account_a"],
+			])
+
+			yield* h.sql("DELETE FROM cost_connections")
+			yield* TestClock.adjust("1 hour")
+			yield* poll
+			assert.deepStrictEqual(yield* h.sourceRefs, [
+				["org_a", CONNECTION_A, "123456789012"],
+				["org_a", OPENROUTER_KEY_A, "user_account_a"],
+			])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect(
+		"makes one source per org, and none for a credential of a provider it does not reconcile",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.saveCostConnection({ id: CLOUDFLARE_TOKEN_A, provider: "cloudflare" })
+				yield* h.saveCostConnection({
+					id: "0190f2b3-0000-7000-8000-0000000000e2",
+					provider: "cloudflare",
+					orgId: "org_b",
+				})
+				// A row for a provider that keeps its credential elsewhere is not this table's to reconcile.
+				yield* h.saveCostConnection({ id: "0190f2b3-0000-7000-8000-0000000000e3", provider: "aws" })
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [
+					["org_a", CLOUDFLARE_TOKEN_A, "account_a"],
+					["org_b", "0190f2b3-0000-7000-8000-0000000000e2", "account_a"],
+				])
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
 })
 
 describe("CostSyncService GitHub sources", () => {

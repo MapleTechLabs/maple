@@ -25,7 +25,7 @@ describe("cost lab fixture", () => {
 					.rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "vercel", "github"])
+		).toEqual(["aws", "vercel", "cloudflare", "github"])
 
 		// Filtered to OpenRouter there is nothing left: AWS cost must not show under that filter.
 		expect(labTotals(openRouterOnly).cost).toBeGreaterThan(0)
@@ -44,10 +44,30 @@ describe("cost lab fixture", () => {
 		).toEqual([])
 	})
 
+	test("Cloudflare is added waiting for its first sync, and a removed one takes its cost with it", () => {
+		const cloudflare = (added: boolean | null, from = LAB_SOURCES.synced) => {
+			const changes = { openRouter: null, cloudflare: added, github: {}, vercel: null }
+			return {
+				sources: Arr.map(
+					Arr.filter(
+						labSourcesWith(from, changes).sources,
+						(source) => source.provider === "cloudflare",
+					),
+					(source) => source.status,
+				),
+				costRemoved: Arr.contains(labRemovedProviders(changes), "cloudflare"),
+			}
+		}
+		expect(cloudflare(null)).toEqual({ sources: ["ok"], costRemoved: false })
+		expect(cloudflare(false)).toEqual({ sources: [], costRemoved: true })
+		expect(cloudflare(true, LAB_SOURCES.none)).toEqual({ sources: ["pending"], costRemoved: false })
+	})
+
 	test("a GitHub organization is added and removed on its own, and the other keeps its source and cost", () => {
 		const github = (changes: Readonly<Record<string, boolean>>) => {
 			const sources = labSourcesWith(LAB_SOURCES.synced, {
 				openRouter: null,
+				cloudflare: null,
 				github: changes,
 				vercel: null,
 			})
@@ -61,7 +81,12 @@ describe("cost lab fixture", () => {
 					(installation) => `${installation.accountLogin} ${installation.state}`,
 				),
 				costRemoved: Arr.contains(
-					labRemovedProviders({ openRouter: null, github: changes, vercel: null }),
+					labRemovedProviders({
+						openRouter: null,
+						cloudflare: null,
+						github: changes,
+						vercel: null,
+					}),
 					"github",
 				),
 			}
@@ -100,13 +125,13 @@ describe("cost lab fixture", () => {
 				labBreakdown({ ...window, without: ["vercel"], groupBy: "provider", sortBy: "cost" }).rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "openrouter", "github"])
+		).toEqual(["aws", "openrouter", "cloudflare", "github"])
 		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
 	})
 
 	test("a Vercel source added again after its removal is a new one that waits for its first sync", () => {
 		const after = (vercel: boolean | null) => {
-			const changes = { openRouter: null, github: {}, vercel }
+			const changes = { openRouter: null, cloudflare: null, github: {}, vercel }
 			const sources = labSourcesWith(LAB_SOURCES.synced, changes)
 			return {
 				vercel: Arr.map(

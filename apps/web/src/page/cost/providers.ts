@@ -1,5 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
+import { Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -14,6 +15,7 @@ export type CostProviderEntry = Readonly<{
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
+// Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
 // Vercel's requests are free, like OpenRouter's.
 export const COST_PROVIDERS = {
 	aws: {
@@ -26,6 +28,11 @@ export const COST_PROVIDERS = {
 		name: "OpenRouter",
 		icon: "OpenRouterIcon",
 		iconClassName: "text-foreground",
+		requestUsd: null,
+	},
+	cloudflare: {
+		name: PROVIDERS.cloudflare.name,
+		icon: PROVIDERS.cloudflare.icon,
 		requestUsd: null,
 	},
 	github: {
@@ -41,3 +48,13 @@ export const COST_PROVIDERS = {
 		requestUsd: null,
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
+
+/**
+ * The providers added by pasting a credential on the Cost page, which can also replace it and
+ * remove the source. Each one's form and wording are in `credential-sources.ts`.
+ */
+export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
+export type CredentialProvider = typeof CredentialProvider.Type
+
+/** Whether a dialog step or a provider is one added by pasting a credential. */
+export const isCredentialProvider = Schema.is(CredentialProvider)

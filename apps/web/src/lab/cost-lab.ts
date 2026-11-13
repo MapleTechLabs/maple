@@ -2,8 +2,6 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
-	OpenRouterCostKeyRemoved,
-	OpenRouterCostKeySaved,
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
@@ -31,15 +29,18 @@ import {
 	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
+	RemoveCloudflareCostToken,
 	RemoveOpenRouterCostKey,
 	RemoveVercelCostSource,
 	ResolveWindow,
+	SaveCloudflareCostToken,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
+import type { CredentialProvider } from "../page/cost/providers"
 import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
@@ -47,7 +48,6 @@ import { urlToAppRoute } from "../route"
 import { perDimension } from "../page/cost/derive"
 import {
 	LAB_NOW_MS,
-	LAB_OPENROUTER_KEY,
 	LAB_SOURCES,
 	LAB_TODAY,
 	LAB_VERCEL_TEAM,
@@ -76,12 +76,18 @@ export const LabState = Schema.Literals([
 	"empty-window",
 	"loading",
 	"by-provider",
+	"cloudflare",
 	"by-resource",
 	"add-source",
 	"add-openrouter",
 	"key-refused",
 	"replace-key",
 	"remove-source",
+	"add-cloudflare",
+	"token-refused",
+	"token-too-broad",
+	"replace-token",
+	"remove-cloudflare",
 	"add-github",
 	"github-refused",
 	"github-none",
@@ -109,6 +115,8 @@ export const Model = Schema.Struct({
 	state: LabState,
 	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
 	openRouter: Schema.NullOr(Schema.Boolean),
+	/** The same for Cloudflare. */
+	cloudflare: Schema.NullOr(Schema.Boolean),
 	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
 	github: Schema.Record(Schema.String, Schema.Boolean),
 	/** Vercel added (true) or removed (false) since the state loaded; null before either. */
@@ -132,7 +140,9 @@ const searchFor = (state: LabState): Search =>
 			? { groupBy: "provider" }
 			: state === "by-resource"
 				? { groupBy: "resource" }
-				: {}
+				: state === "cloudflare"
+					? { provider: ["cloudflare"] }
+					: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
@@ -141,6 +151,9 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-source" ||
 	state === "add-openrouter" ||
 	state === "key-refused" ||
+	state === "add-cloudflare" ||
+	state === "token-refused" ||
+	state === "token-too-broad" ||
 	state === "github-none" ||
 	state === "add-vercel" ||
 	state === "vercel-not-connected" ||
@@ -152,20 +165,22 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "add-source":
 			return [CostMessage.ClickedAddSource()]
 		case "add-openrouter":
-			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddOpenRouter()]
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
 		case "key-refused":
-			return [
-				CostMessage.ClickedAddSource(),
-				CostMessage.ClickedAddOpenRouter(),
-				CostMessage.GotKeyDraftMessage({
-					message: Field.Message.ChangedValue({ value: "sk-or-v1-0123456789abcdef0123456789" }),
-				}),
-				CostMessage.SubmittedKey(),
-			]
+			return submissionOf("openrouter", "sk-or-v1-0123456789abcdef0123456789")
 		case "replace-key":
-			return [CostMessage.ClickedReplaceKey()]
+			return [CostMessage.ClickedReplaceCredential({ provider: "openrouter" })]
 		case "remove-source":
 			return removalOf("openrouter")
+		case "add-cloudflare":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "cloudflare" })]
+		case "token-refused":
+		case "token-too-broad":
+			return submissionOf("cloudflare", "cfut_0123456789abcdefghij0123456789")
+		case "replace-token":
+			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
+		case "remove-cloudflare":
+			return removalOf("cloudflare")
 		case "add-github":
 		case "github-none":
 			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGithub()]
@@ -203,8 +218,16 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 	}
 }
 
+/** The clicks and typing that submit `secret` in `provider`'s credential form. */
+const submissionOf = (provider: CredentialProvider, secret: string): ReadonlyArray<CostMessage> => [
+	CostMessage.ClickedAddSource(),
+	CostMessage.PickedProvider({ provider }),
+	CostMessage.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value: secret }) }),
+	CostMessage.SubmittedCredential(),
+]
+
 /** The click on Remove in the row of the lab's source of `provider`. */
-const removalOf = (provider: "openrouter" | "github" | "vercel"): ReadonlyArray<CostMessage> =>
+const removalOf = (provider: CredentialProvider | "github" | "vercel"): ReadonlyArray<CostMessage> =>
 	Arr.map(
 		Arr.filter(LAB_SOURCES.synced.sources, (source) => source.provider === provider),
 		(source) => CostMessage.ClickedRemoveSource({ sourceId: source.id }),
@@ -227,6 +250,17 @@ const refusedKey = {
 	...toLoadFailure("refused"),
 	message:
 		"This is a regular API key. Reading spend needs a management key, which you create under Settings, Management keys in OpenRouter.",
+}
+
+const refusedToken = {
+	...toLoadFailure("refused"),
+	message: "This token can read 3 accounts. Create one limited to a single account.",
+}
+
+const tooBroadToken = {
+	...toLoadFailure("refused"),
+	message:
+		"This token can do more than read billing: it can also read account members and Workers scripts. Create one with only the Billing: Read permission.",
 }
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -367,19 +401,27 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			)
 		case SaveOpenRouterCostKey.name:
 			return Option.some(
-				CostMessage.CompletedSaveKey({
+				CostMessage.CompletedSaveCredential({
+					provider: "openrouter",
+					result: state === "key-refused" ? Result.fail(refusedKey) : Result.succeed(undefined),
+				}),
+			)
+		case SaveCloudflareCostToken.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "cloudflare",
 					result:
-						state === "key-refused"
-							? Result.fail(refusedKey)
-							: Result.succeed(new OpenRouterCostKeySaved({ keyLabel: LAB_OPENROUTER_KEY })),
+						state === "token-refused"
+							? Result.fail(refusedToken)
+							: state === "token-too-broad"
+								? Result.fail(tooBroadToken)
+								: Result.succeed(undefined),
 				}),
 			)
 		case RemoveOpenRouterCostKey.name:
-			return Option.some(
-				CostMessage.CompletedRemoveKey({
-					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
-				}),
-			)
+			return Option.some(removedAnswer("openrouter"))
+		case RemoveCloudflareCostToken.name:
+			return Option.some(removedAnswer("cloudflare"))
 		case FetchGithubCostInstallations.name:
 			return Option.map(readArgs(command.args), ({ request }) =>
 				CostMessage.CompletedLoadGithubInstallations({
@@ -435,6 +477,17 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	}
 }
 
+const removedAnswer = (provider: CredentialProvider) =>
+	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
+
+/** `changes` alone, without whatever else the value carries. */
+const changesOf = ({ openRouter, cloudflare, github, vercel }: LabSourceChanges): LabSourceChanges => ({
+	openRouter,
+	cloudflare,
+	github,
+	vercel,
+})
+
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
 type Settled = Step & LabSourceChanges
 
@@ -447,11 +500,15 @@ const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answere
 			...current,
 			github: { ...current.github, [installationId]: isSource },
 		})
+		const withCredential = (provider: CredentialProvider, isSource: boolean): LabSourceChanges =>
+			provider === "openrouter"
+				? { ...current, openRouter: isSource }
+				: { ...current, cloudflare: isSource }
 		switch (answer._tag) {
-			case "CompletedSaveKey":
-				return Result.isSuccess(answer.result) ? { ...current, openRouter: true } : current
-			case "CompletedRemoveKey":
-				return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
+			case "CompletedSaveCredential":
+				return Result.isSuccess(answer.result) ? withCredential(answer.provider, true) : current
+			case "CompletedRemoveCredential":
+				return Result.isSuccess(answer.result) ? withCredential(answer.provider, false) : current
 			case "CompletedAddGithubSource":
 				return Result.isSuccess(answer.result) ? withGithub(answer.installationId, true) : current
 			// The answer does not name the installation: the removal that was asked for does.
@@ -483,13 +540,7 @@ const settle = (world: World, step: Step): Settled => {
 	const answers = Arr.map(answered, ({ answer }) => answer)
 	const kept = keepLocal(step.commands)
 	if (answers.length === 0) {
-		return {
-			model: step.model,
-			commands: kept,
-			openRouter: world.openRouter,
-			github: world.github,
-			vercel: world.vercel,
-		}
+		return { model: step.model, commands: kept, ...changesOf(world) }
 	}
 	const next = Arr.reduce(
 		answers,
@@ -518,24 +569,18 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null, github: {}, vercel: null }
+	const world: World = { state: flags.state, openRouter: null, cloudflare: null, github: {}, vercel: null }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
 		const settled = settle(
-			{ ...world, openRouter: step.openRouter, github: step.github, vercel: step.vercel },
+			{ ...world, ...changesOf(step) },
 			{ model: next.model, commands: next.commands ?? [] },
 		)
 		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
 	return {
-		model: {
-			state: flags.state,
-			openRouter: ready.openRouter,
-			github: ready.github,
-			vercel: ready.vercel,
-			cost: ready.model,
-		},
+		model: { state: flags.state, ...changesOf(ready), cost: ready.model },
 		commands: lift(ready.commands),
 	}
 }
@@ -550,22 +595,11 @@ export const update = (model: Model, message: Message): Return =>
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
 			const ready = settle(
-				{
-					state: model.state,
-					openRouter: model.openRouter,
-					github: model.github,
-					vercel: model.vercel,
-				},
+				{ state: model.state, ...changesOf(model) },
 				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
 			)
 			return {
-				model: {
-					...model,
-					openRouter: ready.openRouter,
-					github: ready.github,
-					vercel: ready.vercel,
-					cost: ready.model,
-				},
+				model: { ...model, ...changesOf(ready), cost: ready.model },
 				commands: lift(ready.commands),
 			}
 		},

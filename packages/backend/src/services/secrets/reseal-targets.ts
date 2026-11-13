@@ -10,6 +10,7 @@ import {
 	AwsConnections,
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
+	CostConnections,
 	DashboardShares,
 	ExternalDataSources,
 	GcpConnectors,
@@ -273,6 +274,14 @@ export const RESEAL_TARGETS = {
 		identity: ["orgId"],
 		keys: One,
 		ref: org,
+	}),
+	costConnectionSecretSlot: tripleTarget({
+		slot: slots.costConnectionSecretSlot,
+		table: CostConnections,
+		columns: { ciphertext: "secretCiphertext", iv: "secretIv", tag: "secretTag" },
+		identity: ["orgId", "provider"],
+		keys: Two,
+		ref: ([orgId, provider]) => ({ orgId, provider }),
 	}),
 	planetScaleWebhookSecretSlot: tripleTarget({
 		slot: slots.planetScaleWebhookSecretSlot,

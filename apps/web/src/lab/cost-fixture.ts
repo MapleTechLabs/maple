@@ -43,8 +43,6 @@ const line = (
 	drift,
 })
 
-/** A saved OpenRouter key, as OpenRouter masks it. */
-export const LAB_OPENROUTER_KEY = "sk-or-v1-4f2...c81"
 /** The OpenRouter account the lab's source reads: a personal account's user id. */
 const LAB_OPENROUTER_ACCOUNT = "user_2labExampleAccount0000000000"
 
@@ -113,6 +111,27 @@ const productLine = (
 	drift,
 })
 
+/** The Cloudflare account the lab's source reads: rows carry its id, the page shows its name. */
+const LAB_CLOUDFLARE_ACCOUNT = { id: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", name: "Example Account" }
+
+const cloudflareLine = (
+	product: string,
+	category: string,
+	metric: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "cloudflare",
+	service_category: category,
+	region: "global",
+	usage_type: metric,
+	resource: "",
+	account: LAB_CLOUDFLARE_ACCOUNT.id,
+	daily,
+	drift,
+})
+
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
 	line("Example Compute", "Compute", "north-1", "north-1:instance-hours", 61.2, 0.18),
@@ -140,6 +159,10 @@ const LINES: ReadonlyArray<Line> = [
 	githubLine("Actions", "Actions storage", "example-site", 0.7, 0.05),
 	githubLine("Copilot", "Copilot Business", "", 6.3, 0.0),
 	githubLine("Packages", "Packages storage", "example-api", 0.4, -0.1),
+	cloudflareLine("Workers", "Compute", "Workers Requests", 9.4, 0.25),
+	cloudflareLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
+	cloudflareLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
+	cloudflareLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
 	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
@@ -363,6 +386,18 @@ const vercelSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Cloudflare source: history back to the eleventh month before this one, and no billed requests. */
+const cloudflareSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c064",
+	provider: "cloudflare",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a064",
+	accountId: LAB_CLOUDFLARE_ACCOUNT.id,
+	accountName: LAB_CLOUDFLARE_ACCOUNT.name,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
 /** A source that was just added: it waits for its first sync. */
 const justAdded = (entry: SourceWire): SourceWire => ({
 	...entry,
@@ -390,11 +425,12 @@ export const labGithubLogin = (installationId: string): string =>
 	)
 
 /**
- * What the lab's reader did since the state loaded. `openRouter` and `vercel`: added (true),
- * removed (false) or neither (null). `github`: an installation's id to whether it is a source now.
+ * What the lab's reader did since the state loaded. `openRouter`, `cloudflare` and `vercel`: added
+ * (true), removed (false) or neither (null). `github`: an installation's id to whether it is a source now.
  */
 export type LabSourceChanges = Readonly<{
 	openRouter: boolean | null
+	cloudflare: boolean | null
 	github: Readonly<Record<string, boolean>>
 	vercel: boolean | null
 }>
@@ -408,6 +444,7 @@ export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<Co
 		CostProvider.literals,
 		(provider) =>
 			(provider === "openrouter" && changes.openRouter === false) ||
+			(provider === "cloudflare" && changes.cloudflare === false) ||
 			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
 			// A team added again is a new source: it has no cost until a sync the lab does not model.
 			(provider === "vercel" && changes.vercel !== null),
@@ -424,15 +461,18 @@ export const labSourcesWith = (
 	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
 		entry.provider === "openrouter"
 			? changes.openRouter !== false
-			: entry.provider === "vercel"
-				? changes.vercel === null
-				: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+			: entry.provider === "cloudflare"
+				? changes.cloudflare !== false
+				: entry.provider === "vercel"
+					? changes.vercel === null
+					: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
 	)
-	const hasOpenRouter = Arr.some(kept, (entry) => entry.provider === "openrouter")
+	const has = (provider: CostProvider) => Arr.some(kept, (entry) => entry.provider === provider)
 	return decodeSources({
 		sources: [
 			...kept,
-			...(changes.openRouter === true && !hasOpenRouter ? [justAdded(openRouterSource)] : []),
+			...(changes.openRouter === true && !has("openrouter") ? [justAdded(openRouterSource)] : []),
+			...(changes.cloudflare === true && !has("cloudflare") ? [justAdded(cloudflareSource)] : []),
 			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
 			...Arr.map(
 				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
@@ -484,7 +524,9 @@ export const labGithubInstallations = (sources: CostSourcesResponse): GithubCost
 }
 
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({}), openRouterSource, githubSource, vercelSource] }),
+	synced: decodeSources({
+		sources: [source({}), openRouterSource, githubSource, vercelSource, cloudflareSource],
+	}),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [

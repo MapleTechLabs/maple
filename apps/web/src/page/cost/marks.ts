@@ -5,7 +5,7 @@ import { modelSlugIcon } from "@maple/views/lib/ai-vendor"
 import type { IconName } from "@maple/views/ui/icon"
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "./derive"
-import { COST_PROVIDERS } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
 
 // What a key of the grouping is at a glance: the logo of whatever bills it, or its kind's glyph.
 
@@ -14,7 +14,7 @@ export type KeyMark = SeriesMark
 const decodeProvider = Schema.decodeUnknownOption(CostProvider)
 
 const providerMark = (provider: CostProvider): KeyMark => {
-	const entry = COST_PROVIDERS[provider]
+	const entry: CostProviderEntry = COST_PROVIDERS[provider]
 	return entry.iconClassName === undefined
 		? { icon: entry.icon }
 		: { icon: entry.icon, className: entry.iconClassName }
@@ -78,9 +78,29 @@ const GITHUB_PRODUCTS: ReadonlySet<string> = new Set([
 	"Git LFS",
 ])
 
-/** The platform a service's own name says bills it, when it says: a GitHub product, an AWS service. */
+/** What Cloudflare bills by: its product families, and the plan fees Maple files under one name. */
+const CLOUDFLARE_SERVICES: ReadonlySet<string> = new Set([
+	"Workers",
+	"Durable Objects",
+	"Containers",
+	"Queues",
+	"R2",
+	"D1",
+	"Workers KV",
+	"Workers AI",
+	"Email",
+	"Subscriptions",
+])
+
+/** The platform a service's own name says bills it, when it says: a GitHub or Cloudflare product, an AWS service. */
 const namedServiceOwner = (key: string): CostProvider | undefined =>
-	GITHUB_PRODUCTS.has(key) ? "github" : isAwsServiceName(key) ? "aws" : undefined
+	GITHUB_PRODUCTS.has(key)
+		? "github"
+		: CLOUDFLARE_SERVICES.has(key)
+			? "cloudflare"
+			: isAwsServiceName(key)
+				? "aws"
+				: undefined
 
 const CATEGORY_ICONS = {
 	"AI and Machine Learning": "SparkleIcon",
@@ -134,9 +154,9 @@ export const keyMark = (
 
 /**
  * An account by what reads it: an AWS one by its id, a GitHub one by its organization, a Vercel
- * one by its team's slug (its id is a team id, kept stable through a rename), an OpenRouter one
- * by name alone while it is the org's only one (its id means nothing to a reader). Unknown ids
- * read as they are.
+ * one by its team's slug (its id is a team id, kept stable through a rename), a Cloudflare one by
+ * its account's name, an OpenRouter one by name alone while it is the org's only one (its id
+ * means nothing to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
