@@ -347,6 +347,10 @@ describe("routes", () => {
 			_tag: "SecurityDependencies",
 			search: { repo: "repo_1" },
 		})
+		expect(parse("/security/audit-log?category=credential&outcome=denied")).toMatchObject({
+			_tag: "SecurityAuditLog",
+			search: { category: "credential", outcome: "denied" },
+		})
 		expect(parse("/security/code/runs/run_9f3c2a1e7b")).toMatchObject({
 			_tag: "SecurityRun",
 			runId: "run_9f3c2a1e7b",

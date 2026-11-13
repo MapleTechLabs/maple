@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
+import { NavAudience } from "../nav"
 import { PaletteAction } from "./entries"
 
 // The command palette: mounted while open, so
@@ -32,7 +33,7 @@ export const Message = defineMessageUnion({
 	/** A pick: a click on an entry or Enter on the highlighted one (`items` in list order). */
 	ClickedEntry: { id: Schema.String },
 	/** Enter in the input; the view knows whether the org shows Releases. */
-	PressedEnter: { visibleFlagged: Schema.Array(Schema.String) },
+	PressedEnter: { visibleFlagged: Schema.Array(Schema.String), audience: NavAudience },
 	SucceededLoadServices: { serviceNames: Schema.Array(Schema.String) },
 	FailedLoadServices: {},
 	CompletedReleaseServices: {},

@@ -26,6 +26,7 @@ import { affectedUsersGroup } from "./view-affected-users"
 import { leaseHud } from "./view-lease"
 import type { Model } from "./model"
 import { sidebarBusy } from "./writes"
+import { canTriageIssues } from "../kit/grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -128,6 +129,10 @@ const severitySelect = (h: H, model: Model): Html =>
 		toParentMessage: (message) => Message.GotSeveritySelectMessage({ message }),
 	})
 
+/** A rail value that is read, not picked: the mark and its label, as the Priority row. */
+const readValue = (h: H, mark: Html, label: string): Html =>
+	hstack(h, { gap: "2", as: "span" }, [mark, typography(h, { size: "sm", tone: "foreground" }, [label])])
+
 const ENVIRONMENT_ROWS_SHOWN = 4
 
 const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironment>): Html => {
@@ -179,8 +184,12 @@ const issueIdCopy = (h: H, model: Model, id: string): Html =>
 		],
 	)
 
-/** A held lease: the HUD with Extend and Release; otherwise Claim, or nothing on a closed issue. */
+/**
+ * A held lease: the HUD with Extend and Release; otherwise Claim, or nothing on a closed issue.
+ * A viewer who cannot triage reads the HUD and the row without their buttons.
+ */
 const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boolean): Html => {
+	const canTriage = canTriageIssues(model)
 	const hud =
 		issue.leaseHolder !== null && issue.leaseExpiresAt !== null
 			? leaseHud(
@@ -193,6 +202,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 					model.leaseNowMs === 0 ? model.nowMs : model.leaseNowMs,
 				)
 			: undefined
+	if (hud !== undefined && !canTriage) return vstack(h, { gap: "2" }, hud === null ? [] : [hud])
 	if (hud !== undefined)
 		return vstack(h, { gap: "2" }, [
 			...(hud === null ? [] : [hud]),
@@ -220,7 +230,7 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 			]),
 		])
 	return detailRailRow(h, { label: canClaim ? "Unclaimed" : "Closed" }, [
-		canClaim
+		canClaim && canTriage
 			? button(
 					h,
 					{
@@ -232,7 +242,9 @@ const leaseGroup = (h: H, model: Model, issue: ErrorIssueDocument, canClaim: boo
 					},
 					["Claim"],
 				)
-			: typography(h, { size: "xs", tone: "muted" }, ["No lease needed"]),
+			: typography(h, { size: "xs", tone: "muted" }, [
+					canClaim ? "No one holds it" : "No lease needed",
+				]),
 	])
 }
 
@@ -245,22 +257,36 @@ export const issueSidebar = (
 	const priority = clampPriority(issue.priority)
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
 	const canClaim = issue.leaseHolder === null && !isTerminal
+	const canTriage = canTriageIssues(model)
 	return vstack(h, {}, [
 		detailRailGroup(h, "Details", [
-			detailRailRow(h, { label: "Status" }, [stateSelect(h, model, issue.workflowState)]),
+			detailRailRow(h, { label: "Status" }, [
+				canTriage
+					? stateSelect(h, model, issue.workflowState)
+					: readValue(
+							h,
+							workflowRingIcon(h, issue.workflowState, 12),
+							WORKFLOW_LABEL[issue.workflowState],
+						),
+			]),
 			detailRailRow(
 				h,
 				{
 					label: "Severity",
 					hint: issue.severitySource ? SEVERITY_SOURCE_HINT[issue.severitySource] : undefined,
 				},
-				[severitySelect(h, model)],
+				[
+					canTriage
+						? severitySelect(h, model)
+						: readValue(
+								h,
+								severityDot(h, issue.severity),
+								issue.severity === null ? "Not set" : SEVERITY_LABEL[issue.severity],
+							),
+				],
 			),
 			detailRailRow(h, { label: "Priority" }, [
-				hstack(h, { gap: "2", as: "span" }, [
-					priorityBarsIcon(h, priority, 12),
-					typography(h, { size: "sm", tone: "foreground" }, [PRIORITY_LABEL[priority]]),
-				]),
+				readValue(h, priorityBarsIcon(h, priority, 12), PRIORITY_LABEL[priority]),
 			]),
 			detailRailRow(h, { label: "Assignee" }, [actorChip(h, issue.assignedActor)]),
 		]),

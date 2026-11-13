@@ -6,6 +6,7 @@ import { AiTriageApiGroup } from "./ai-triage"
 import { BillingApiGroup } from "./billing"
 import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
+import { AuditTrailApiGroup } from "./audit-trail"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
@@ -55,6 +56,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AiModelsInternalApiGroup)
 	.add(AiSessionsInternalApiGroup)
 	.add(AiTriageApiGroup)
+	.add(AuditTrailApiGroup)
 	.add(BillingApiGroup)
 	.add(CodeReviewApiGroup)
 	.add(DemoApiGroup)

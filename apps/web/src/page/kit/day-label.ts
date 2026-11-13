@@ -1,4 +1,6 @@
 import { Array as Arr, Option } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { eyebrow } from "@maple/views/ui/eyebrow"
 
 // Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
 
@@ -38,3 +40,7 @@ export const dayLabel = (atMs: number, clock: DayClock): string => {
 	if (day === today - 1) return "Yesterday"
 	return timeFormat(clock.timeZone, { weekday: "short", day: "numeric", month: "short" }).format(atMs)
 }
+
+/** The day as a list's group heading: a calendar glyph and "Today", "Yesterday" or "Mon 2 Nov". */
+export const dayEyebrow = <M>(h: HtmlBuilder<M>, atMs: number, clock: DayClock): Html =>
+	eyebrow(h, { variant: "mono", icon: "CalendarIcon", className: "gap-2" }, [dayLabel(atMs, clock)])

@@ -22,10 +22,21 @@ describe("leaveEligibility", () => {
 })
 
 describe("toOrgRole", () => {
-	it("reads unknown Clerk roles as member", () => {
+	it("reads unknown Clerk roles as analyst, the least a person can hold", () => {
 		expect(toOrgRole("org:admin")).toBe("org:admin")
-		expect(toOrgRole("org:billing")).toBe("org:member")
-		expect(orgRoleLabel("org:viewer")).toBe("Member")
+		expect(toOrgRole("org:billing")).toBe("org:analyst")
+		expect(orgRoleLabel("org:viewer")).toBe("Analyst")
+	})
+
+	it("shows root, which has no entry of its own, as a member", () => {
+		expect(orgRoleLabel("root")).toBe("Member")
+	})
+
+	it("names the analyst role in a role change prompt", () => {
+		const prompt = roleChangePrompt("Ada", "org:analyst")
+		expect(prompt.confirmLabel).toBe("Make analyst")
+		expect(prompt.question).toContain("Make Ada an analyst?")
+		expect(prompt.question).toContain("builds dashboards")
 	})
 })
 

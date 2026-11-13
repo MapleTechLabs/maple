@@ -11,6 +11,15 @@ export const permissions = {
 	// The public ingest key ships in browser bundles, so every member may read it to set up an app.
 	"ingest_keys:view_public": { min: "member", action: "view the public ingest key" },
 
+	// Running the product day to day: members and above. Analysts read it and build dashboards, which
+	// every role may. The API refuses an analyst the rest in one place (`AnalystAccess`); these name
+	// it for the dashboard.
+	"error_issues:triage": { min: "member", action: "triage error issues" },
+	"incidents:respond": { min: "member", action: "acknowledge and resolve incidents" },
+	"investigations:run": { min: "member", action: "start investigations" },
+	"status_page_incidents:post": { min: "member", action: "post status page incidents and updates" },
+	"recommendations:triage": { min: "member", action: "dismiss and reopen recommendations" },
+
 	// Technical setup: engineers and above.
 	"integrations:manage": { min: "engineer", action: "manage integrations" },
 	"code_review:configure": { min: "engineer", action: "change code review settings" },

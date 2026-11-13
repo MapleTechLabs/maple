@@ -61,6 +61,7 @@ import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+import { canRunInvestigations } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -327,7 +328,7 @@ const tableSkeleton = (h: H): Html =>
 			),
 	})
 
-const hubEmpty = (h: H, view: HubView, isFiltered: boolean): Html => {
+const hubEmpty = (h: H, view: HubView, isFiltered: boolean, canRun: boolean): Html => {
 	if (isFiltered)
 		return filteredEmpty(h, {
 			noun: "investigations",
@@ -341,7 +342,7 @@ const hubEmpty = (h: H, view: HubView, isFiltered: boolean): Html => {
 			]),
 			emptyDescription(h, [
 				view === "active"
-					? "Start one above, or open an issue and choose Start investigation. When an alert rule fires, Maple opens one on its own."
+					? `${canRun ? "Start one above, or open an issue and choose Start investigation. " : ""}When an alert rule fires, Maple opens one on its own.`
 					: "Investigations you resolve, and any that fail, stay here for reference.",
 			]),
 		]),
@@ -529,7 +530,9 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const timeZone = inputs.context.timeZone
 	const all = allOf(model)
-	const isFirstRun = AsyncData.isSuccess(model.firstPage.data) && all.length === 0
+	// The hero is the investigate bar and what to ask it: only for who may start one.
+	const canRun = canRunInvestigations(model)
+	const isFirstRun = canRun && AsyncData.isSuccess(model.firstPage.data) && all.length === 0
 	if (isFirstRun) return dashboardPage(h, {}, [hubHero(h, model)])
 	const visible = visibleOf(model, all)
 	const isLoadingMore = isLoadingMoreOf(model)
@@ -555,7 +558,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		onRefreshing: () => loaded(),
 	})
 	function loaded(): Html {
-		if (visible.length === 0) return hubEmpty(h, viewOf(model.search), isFiltered)
+		if (visible.length === 0) return hubEmpty(h, viewOf(model.search), isFiltered, canRun)
 		return h.div(
 			[h.Class("contents")],
 			[
@@ -599,7 +602,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: "Investigations",
-			sticky: h.div([h.Class("contents")], [...(notice === null ? [] : [notice]), bar(h, model)]),
+			sticky: h.div(
+				[h.Class("contents")],
+				[...(notice === null ? [] : [notice]), ...(canRun ? [bar(h, model)] : [])],
+			),
 		},
 		[
 			isFailed

@@ -15,6 +15,7 @@ import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
+import { canManageAlerts, canRespondToIncidents } from "../../page/kit/session-grants"
 
 type AlertsTab = "inbox" | "rules" | "routing"
 
@@ -110,11 +111,15 @@ type HubInputs = Readonly<{
 	nowMs: number
 }>
 
-const inboxAcknowledge = (hub: HubModel) => ({
-	onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
-		HubMessageUnion.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
-	pendingIds: hub.acknowledgingIncidentIds,
-})
+/** As the hub passes it: `null` for a viewer who may not respond, whose rows carry no button. */
+const inboxAcknowledge = (hub: HubModel) =>
+	canRespondToIncidents(hub)
+		? {
+				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
+					HubMessageUnion.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+				pendingIds: hub.acknowledgingIncidentIds,
+			}
+		: null
 
 /** The sections the hub's views draw, run against the lab's hub Model. */
 export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, inputs, h) => {
@@ -144,7 +149,7 @@ export const hubSections = Submodel.defineView<HubModel, HubMessage, HubInputs>(
 						destinations: fixture.destinations,
 						status: inputs.status ?? undefined,
 						emptyState: alertsEmptyState(h, {
-							canEdit: true,
+							canEdit: canManageAlerts(hub),
 							hasDestinations: true,
 							serviceName: undefined,
 							onAddDestination: undefined,

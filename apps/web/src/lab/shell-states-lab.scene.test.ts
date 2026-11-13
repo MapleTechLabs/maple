@@ -139,3 +139,31 @@ describe("URL-held right sheet", () => {
 		)
 	})
 })
+
+describe("the shell for an analyst", () => {
+	const setup = [
+		role("link", { name: "Sources" }),
+		role("link", { name: "Settings" }),
+		role("button", { name: "Connect" }),
+	]
+
+	test("a member has the Sources and Settings rows and the Connect button", () => {
+		scene(
+			{ update, view },
+			given(at("/lab/shell")),
+			measured,
+			...Arr.map(setup, (it) => expect(it).toExist()),
+		)
+	})
+
+	test("an analyst has none of them, and keeps their own pages", () => {
+		scene(
+			{ update, view },
+			given(at("/lab/shell")),
+			measured,
+			click(role("button", { name: "Analyst" })),
+			...Arr.map(setup, (it) => expect(it).toBeAbsent()),
+			expect(role("link", { name: "Web analytics" })).toExist(),
+		)
+	})
+})

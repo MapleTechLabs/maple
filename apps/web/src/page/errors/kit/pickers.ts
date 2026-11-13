@@ -12,7 +12,8 @@ import type { QuickPickItem } from "./quick-pick"
 import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "../../kit/issue-severity"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { Array as Arr } from "effect"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 export type PickerKind = "severity" | "state"
 
@@ -83,6 +84,35 @@ export const statePickerTrigger = <M>(
 				h.DataAttribute("picker", "state"),
 				h.Title(`Status: ${WORKFLOW_LABEL[current]} · click to change`),
 			],
+		},
+		[
+			workflowRingIcon(h, current, 12, "shrink-0"),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[current]]),
+		],
+	)
+
+/** The severity lane's mark for a viewer who cannot change it. */
+export const severityReadout = <M>(h: HtmlBuilder<M>, value: IssueSeverity | null): Html =>
+	hstack(
+		h,
+		{
+			as: "span",
+			justify: "center",
+			attributes: [h.Title(value === null ? "Severity not set" : `Severity: ${SEVERITY_LABEL[value]}`)],
+		},
+		[severityIcon(h, value, 16)],
+	)
+
+/** The status lane's ring and label for a viewer who cannot change it. */
+export const stateReadout = <M>(h: HtmlBuilder<M>, current: WorkflowState): Html =>
+	hstack(
+		h,
+		{
+			as: "span",
+			gap: "1.5",
+			shrink: true,
+			className: typographyClass({ size: "2xs", tone: "muted" }),
+			attributes: [h.Title(`Status: ${WORKFLOW_LABEL[current]}`)],
 		},
 		[
 			workflowRingIcon(h, current, 12, "shrink-0"),
