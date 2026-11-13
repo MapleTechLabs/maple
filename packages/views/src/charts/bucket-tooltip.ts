@@ -1,6 +1,7 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartTooltip } from "./chart-spec"
 import { hstack, hstackClass } from "../ui/stack"
+import { swatch } from "../ui/swatch"
 import { typography } from "../ui/typography"
 import { Array as Arr } from "effect"
 
@@ -18,14 +19,7 @@ export const bucketTooltipBody = <Message>(
 	h.div(
 		[h.Class("grid min-w-[9rem] max-w-[22rem] items-start gap-1.5"), portal],
 		[
-			h.div(
-				[
-					h.Class(
-						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
-					),
-				],
-				[tooltip.heading],
-			),
+			h.div([h.Class("border-border-subtle border-b pb-1.5 text-muted-foreground")], [tooltip.heading]),
 			h.div(
 				[h.Class("grid gap-1.5")],
 				Arr.map(tooltip.rows, (row, index) =>
@@ -39,18 +33,7 @@ export const bucketTooltipBody = <Message>(
 							),
 						],
 						[
-							h.span([
-								h.Class(
-									row.dashed
-										? "size-2.5 shrink-0 rounded-xs border border-dashed"
-										: "size-2.5 shrink-0 rounded-xs",
-								),
-								h.Style(
-									row.dashed
-										? { "border-color": row.color }
-										: { "background-color": row.color },
-								),
-							]),
+							swatch(h, { color: row.color, dashed: row.dashed }),
 							hstack(
 								h,
 								{
@@ -75,8 +58,7 @@ export const bucketTooltipBody = <Message>(
 										h,
 										{
 											tone: "foreground",
-											weight: "semibold",
-											mono: true,
+											weight: "medium",
 											numeric: true,
 											className: "shrink-0",
 										},
@@ -101,11 +83,9 @@ export const bucketTooltipBody = <Message>(
 							},
 							[
 								typography(h, { tone: "muted" }, ["Total"]),
-								typography(
-									h,
-									{ tone: "foreground", weight: "semibold", mono: true, numeric: true },
-									[tooltip.total],
-								),
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									tooltip.total,
+								]),
 							],
 						),
 					]),

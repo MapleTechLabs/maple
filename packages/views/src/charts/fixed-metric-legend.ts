@@ -19,7 +19,7 @@ export const fixedMetricLegend = <M>(h: HtmlBuilder<M>, series: ReadonlyArray<Fi
 					align: "center",
 					shrink: true,
 					as: "span",
-					className: "text-foreground",
+					className: "text-muted-foreground",
 					attributes: [h.Key(entry.key)],
 				},
 				[

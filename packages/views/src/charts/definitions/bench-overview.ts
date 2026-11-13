@@ -1,3 +1,4 @@
+import { Y_GRID } from "../plot/plot-grid"
 import { focusCrosshair, focusDot } from "../plot/plot-focus"
 import { niceLinearDomain } from "../plot/plot-scales"
 import {
@@ -59,7 +60,7 @@ const xScale = (axisContext: { rangeMs: number; bucketSeconds: number | undefine
 const yScale = (domain: readonly [number, number], format: (value: number) => string, nice: boolean) => ({
 	scale: scaleLinear().domain(domain),
 	nice,
-	grid: true,
+	grid: Y_GRID,
 	axis: {
 		line: false,
 		ticks: { size: 0, padding: 6, format: (value: number) => (value === 0 ? "0" : format(value)) },

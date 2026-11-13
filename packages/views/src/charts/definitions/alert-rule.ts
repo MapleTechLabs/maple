@@ -1,5 +1,5 @@
 import { focusCrosshair } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { bucketTimeScale } from "../plot/plot-scales"
 import { formatBucketLabel } from "@maple/ui/lib/format"
@@ -221,7 +221,7 @@ export const buildAlertRule = (spec: AlertRuleSpec): BuiltChart<SignalPoint, Cha
 				},
 			},
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,

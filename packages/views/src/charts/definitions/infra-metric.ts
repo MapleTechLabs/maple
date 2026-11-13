@@ -21,7 +21,7 @@ import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { focusCrosshair, focusDot } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { type SeriesRuns, seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { axisTickFormatter, axisTickValues, formatBytes } from "@maple/ui/lib/format"
@@ -296,7 +296,7 @@ export const buildInfraMetric = (spec: InfraMetricSpec): BuiltChart<InfraDatum, 
 		scales: {
 			x: axis.x,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,

@@ -211,12 +211,63 @@ const isZonedMidnight = (date: Date, timeZone: string | undefined): boolean =>
 	date.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) ===
 	"00:00"
 
+const tickFormatters = new Map<string, Intl.DateTimeFormat>()
+
+const tickFormatter = (
+	locale: string | undefined,
+	timeZone: string | undefined,
+	options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat => {
+	const key = `${locale ?? ""}|${timeZone ?? ""}|${options.month ?? ""}|${options.hour ?? ""}|${options.minute ?? ""}|${options.second ?? ""}`
+	const cached = tickFormatters.get(key)
+	if (cached !== undefined) return cached
+	const formatter = new Intl.DateTimeFormat(locale, { timeZone, ...options })
+	tickFormatters.set(key, formatter)
+	return formatter
+}
+
+/** A 12-hour clock reads "6:00 AM"; a 24-hour one keeps its leading zero ("06:00"). */
+const isTwelveHourClock = (locale: string | undefined): boolean =>
+	tickFormatter(locale, undefined, { hour: "numeric" }).resolvedOptions().hour12 === true
+
+/**
+ * A tick's clock, as short as the locale allows: a 12-hour clock drops the leading zero and, on
+ * the hour, the minutes ("6 AM", "6:30 AM"); a 24-hour clock keeps "06:00".
+ */
+const formatTickClock = (
+	date: Date,
+	options: {
+		readonly locale: string | undefined
+		readonly timeZone: string | undefined
+		readonly withDate: boolean
+		readonly withSeconds: boolean
+	},
+): string => {
+	const day: Intl.DateTimeFormatOptions = options.withDate ? { month: "short", day: "numeric" } : {}
+	const twelveHour = isTwelveHourClock(options.locale)
+	const full = tickFormatter(options.locale, options.timeZone, {
+		...day,
+		hour: twelveHour ? "numeric" : "2-digit",
+		minute: "2-digit",
+		second: options.withSeconds ? "2-digit" : undefined,
+	})
+	const onTheHour =
+		twelveHour &&
+		!options.withSeconds &&
+		Arr.some(full.formatToParts(date), (part) => part.type === "minute" && part.value === "00")
+	const formatter = onTheHour
+		? tickFormatter(options.locale, options.timeZone, { ...day, hour: "numeric" })
+		: full
+	// An h24 clock prints midnight as "24:00".
+	return Str.replace(/(^|\s)24:/, "$100:")(formatter.format(date))
+}
+
 /**
  * Format a bucket timestamp label that adapts based on the overall time range:
  * - >= 24h with daily buckets, or a tick on midnight: "Feb 14"
- * - >= 24h with sub-day buckets: "Feb 14, 02:00 PM"
- * - 30min - 24h: "02:00 PM"
- * - <= 30min: "02:00:30 PM"
+ * - >= 24h with sub-day buckets: "Feb 14, 2 PM"
+ * - 30min - 24h: "2 PM", "2:30 PM" ("14:00" on a 24-hour clock)
+ * - <= 30min: "2:00:30 PM"
  */
 export function formatBucketLabel(
 	value: unknown,
@@ -256,31 +307,10 @@ export function formatBucketLabel(
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60 || isZonedMidnight(date, timeZone)) {
 			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
-		return Str.replace(
-			/ 24:/,
-			" 00:",
-		)(
-			date.toLocaleString(locale, {
-				timeZone,
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			}),
-		)
+		return formatTickClock(date, { locale, timeZone, withDate: true, withSeconds: false })
 	}
 
-	return Str.replace(
-		/^24:/,
-		"00:",
-	)(
-		date.toLocaleTimeString(locale, {
-			timeZone,
-			hour: "2-digit",
-			minute: "2-digit",
-			second: includeSeconds ? "2-digit" : undefined,
-		}),
-	)
+	return formatTickClock(date, { locale, timeZone, withDate: false, withSeconds: includeSeconds })
 }
 
 const bucketLabelMap: Record<number, string> = {

@@ -1,5 +1,5 @@
 import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { formatNumber } from "@maple/ui/lib/format"
 import { barY, defineChart, rect, stack } from "@tanstack/charts"
@@ -77,7 +77,7 @@ export const buildLogsVolume = (spec: VolumeSpec): BuiltChart<SeverityCell, Date
 			scales: {
 				x: axis.xBand,
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

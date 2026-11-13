@@ -1,6 +1,6 @@
 import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { focusCrosshair, focusDot } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
@@ -103,7 +103,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 					axis: { ...axis.x.axis, ticks: { ...axis.x.axis.ticks, spacing: X_TICK_SPACING } },
 				},
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

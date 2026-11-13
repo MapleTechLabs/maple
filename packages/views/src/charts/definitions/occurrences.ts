@@ -1,4 +1,4 @@
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { integerTickValues, linearYDomain, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -43,7 +43,7 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 			scales: {
 				x: axis.xBand,
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,
