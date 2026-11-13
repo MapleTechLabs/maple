@@ -19,8 +19,11 @@ import { Command, Mount } from "foldkit"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { IssueWrite, Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ResolveWindow = resolveWindowCommand("ResolveIssueWindow", Message.CompletedResolveWindow)
+
+export const FetchIssueSession = fetchSessionGrants("FetchErrorIssueSession", Message.CompletedFetchSession)
 
 export const DetailQuery = Schema.Struct({
 	start_time: Schema.String,

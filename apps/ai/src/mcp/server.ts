@@ -7,8 +7,9 @@ import {
 	McpToolsUnavailableError,
 } from "./executor-loader"
 import { CurrentMcpRequestTenant } from "./tenant"
-import { refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
+import { refusesAnalyst, refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import * as Policy from "@maple/domain/policy"
 
 /**
  * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
@@ -69,15 +70,19 @@ const annotateToolFailure = (result: McpToolResult) =>
 		: Effect.void
 
 /**
- * Hides a tool from a read-only credential's `tools/list`, and answers a call to it as unknown:
- * the registry would refuse every such call anyway, and a listed tool invites it.
+ * Hides a tool from the `tools/list` of a caller the registry would refuse, and answers a call to
+ * it as unknown: a listed tool invites the call.
  */
-const HiddenFromReadOnlyCredentials = EffectMcpServer.visibility(() =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentMcpRequestTenant
-		return tenant?.readOnly !== true
-	}),
-)
+const hiddenFrom = (isRefused: (tenant: { readOnly?: true; roles: ReadonlyArray<string> }) => boolean) =>
+	EffectMcpServer.visibility(() =>
+		Effect.gen(function* () {
+			const tenant = yield* CurrentMcpRequestTenant
+			return tenant === undefined || !isRefused(tenant)
+		}),
+	)
+
+const HiddenFromReadOnlyKeys = hiddenFrom((tenant) => tenant.readOnly === true)
+const HiddenFromAnalysts = hiddenFrom((tenant) => tenant.readOnly === true || Policy.isAnalyst(tenant.roles))
 
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
@@ -104,12 +109,16 @@ export class McpToolRegistration extends Context.Service<
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
-		const readOnlyGate = yield* Layer.build(HiddenFromReadOnlyCredentials.layer)
+		const keyGate = yield* Layer.build(HiddenFromReadOnlyKeys.layer)
+		const analystGate = yield* Layer.build(HiddenFromAnalysts.layer)
+		// A dashboard tool is hidden from read-only keys alone; every other change from analysts too.
+		const gateFor = (name: string, readOnly: boolean) => {
+			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
+			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
+		}
 		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
-				...(refusesReadOnlyCredential(descriptor.name, descriptor.annotations?.readOnlyHint === true)
-					? { services: readOnlyGate }
-					: undefined),
+				...gateFor(descriptor.name, descriptor.annotations?.readOnlyHint === true),
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
 					title: descriptor.title,

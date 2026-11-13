@@ -70,6 +70,7 @@ const cardActions = (
 	h: H,
 	issueId: NonNullable<AnomalyIncidentDocument["errorIssueId"]>,
 	isBusy: boolean,
+	canRespond: boolean,
 ): Html =>
 	hstack(h, { gap: "1.5", className: "shrink-0" }, [
 		linkButton(
@@ -81,24 +82,28 @@ const cardActions = (
 			},
 			["Open issue", icon(h, "ArrowRightIcon")],
 		),
-		iconButton(
-			h,
-			{
-				label: "Link a different issue",
-				isDisabled: isBusy,
-				attributes: [h.OnClick(Message.ClickedLinkIssue())],
-			},
-			[icon(h, "LinkIcon")],
-		),
-		iconButton(
-			h,
-			{
-				label: "Unlink issue",
-				isDisabled: isBusy,
-				attributes: [h.OnClick(Message.ClickedUnlink())],
-			},
-			[icon(h, "XmarkIcon")],
-		),
+		...(canRespond
+			? [
+					iconButton(
+						h,
+						{
+							label: "Link a different issue",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedLinkIssue())],
+						},
+						[icon(h, "LinkIcon")],
+					),
+					iconButton(
+						h,
+						{
+							label: "Unlink issue",
+							isDisabled: isBusy,
+							attributes: [h.OnClick(Message.ClickedUnlink())],
+						},
+						[icon(h, "XmarkIcon")],
+					),
+				]
+			: []),
 	])
 
 export const linkedIssueCard = (
@@ -106,6 +111,8 @@ export const linkedIssueCard = (
 	model: Model,
 	incident: AnomalyIncidentDocument,
 	isBusy: boolean,
+	/** The viewer may link, relink and unlink an issue (`incidents:respond`). */
+	canRespond: boolean,
 ): Html => {
 	const issueId = incident.errorIssueId
 	if (issueId === null)
@@ -119,11 +126,16 @@ export const linkedIssueCard = (
 							typography(h, { size: "sm", tone: "foreground", as: "p" }, [
 								"Not linked to an issue",
 							]),
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								incident.signalType === "error_spike"
-									? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
-									: "Escalate this anomaly by linking it to an existing error issue.",
-							]),
+							// The second line is an instruction, so it is left off for who cannot link.
+							...(incident.signalType === "error_spike" || canRespond
+								? [
+										typography(h, { size: "xs", tone: "muted", as: "p" }, [
+											incident.signalType === "error_spike"
+												? "This frequency increase is fingerprint-scoped, so an issue with this fingerprint may already exist for the service."
+												: "Escalate this anomaly by linking it to an existing error issue.",
+										]),
+									]
+								: []),
 							...(incident.fingerprintHash === null
 								? []
 								: [
@@ -138,16 +150,20 @@ export const linkedIssueCard = (
 									]),
 						],
 					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: isBusy,
-							attributes: [h.OnClick(Message.ClickedLinkIssue())],
-						},
-						[icon(h, "LinkIcon"), "Link issue"],
-					),
+					...(canRespond
+						? [
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isDisabled: isBusy,
+										attributes: [h.OnClick(Message.ClickedLinkIssue())],
+									},
+									[icon(h, "LinkIcon"), "Link issue"],
+								),
+							]
+						: []),
 				]),
 			],
 		)
@@ -167,7 +183,7 @@ export const linkedIssueCard = (
 				h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [shortIssueId(id)]),
 				". Couldn't load its details.",
 			]),
-			cardActions(h, id, isBusy),
+			cardActions(h, id, isBusy, canRespond),
 		])
 	}
 	function loadedIssue(wire: Parameters<typeof errorIssueFromV2>[0]): Html {
@@ -234,7 +250,7 @@ export const linkedIssueCard = (
 					]),
 				],
 			),
-			cardActions(h, issue.id, isBusy),
+			cardActions(h, issue.id, isBusy, canRespond),
 		])
 	}
 	return card(h, [cardPanel(h, [content], "space-y-3 p-4 text-sm")])

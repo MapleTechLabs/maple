@@ -43,6 +43,7 @@ import {
 	IssueSeveritySource,
 	WorkflowState,
 } from "../error-issues"
+import { AnalystAccess } from "./analyst-access"
 export {
 	ActorType,
 	ErrorIncidentReason,
@@ -919,7 +920,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: EscalationPolicyEvaluationRequest,
 			success: EscalationPolicyEvaluationDocument,
 			error: ErrorPersistenceError,
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueEscalations", "/issues/:issueId/escalations", {

@@ -50,6 +50,7 @@ import {
 	ShareWidgetNotFoundError,
 } from "../share"
 import { WireValue } from "../../wire"
+import { AnalystAccess } from "../analyst-access"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -529,28 +530,32 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardCreateParams,
 			success: V2DashboardMutation,
 			error: dashboardCreateErrors,
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "createDashboard",
-				summary: "Create a dashboard",
-				description:
-					"Creates a dashboard and returns the committed object, with optional ElectricSQL reconciliation metadata when available.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "createDashboard",
+					summary: "Create a dashboard",
+					description:
+						"Creates a dashboard and returns the committed object, with optional ElectricSQL reconciliation metadata when available.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("importPerses", "/import/perses", {
 			payload: V2DashboardPersesImportParams,
 			success: V2DashboardPersesImportResponse,
 			error: dashboardCreateErrors,
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "importPersesDashboard",
-				summary: "Import a Perses dashboard",
-				description:
-					"Converts a Perses dashboard into Maple's dashboard model and returns any conversion warnings.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "importPersesDashboard",
+					summary: "Import a Perses dashboard",
+					description:
+						"Converts a Perses dashboard into Maple's dashboard model and returns any conversion warnings.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("listTemplates", "/templates", {
@@ -592,14 +597,16 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardTemplateNotFound,
 				...dashboardCreateErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "instantiateDashboardTemplate",
-				summary: "Instantiate a dashboard template",
-				description:
-					"Builds and persists a new dashboard from a template and its required parameters.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "instantiateDashboardTemplate",
+					summary: "Instantiate a dashboard template",
+					description:
+						"Builds and persists a new dashboard from a template and its required parameters.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -642,28 +649,32 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			payload: V2DashboardUpdateParams,
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, ...dashboardUpdateErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "updateDashboard",
-				summary: "Update a dashboard",
-				description:
-					"Applies a partial JSON update; omitted fields retain their current values. Send `expected_version` to fail with 409 rather than overwrite a newer change.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "updateDashboard",
+					summary: "Update a dashboard",
+					description:
+						"Applies a partial JSON update; omitted fields retain their current values. Send `expected_version` to fail with 409 rather than overwrite a newer change.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: DashboardPublicId },
 			success: V2DashboardDeleteResponse,
 			error: [dashboardPersistence, dashboardNotFound],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "deleteDashboard",
-				summary: "Delete a dashboard",
-				description:
-					"Permanently deletes a dashboard and returns a tombstone, with optional ElectricSQL reconciliation metadata when available.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "deleteDashboard",
+					summary: "Delete a dashboard",
+					description:
+						"Permanently deletes a dashboard and returns a tombstone, with optional ElectricSQL reconciliation metadata when available.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("listVersions", "/:id/versions", {
@@ -707,13 +718,15 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			params: { id: DashboardPublicId, version_id: DashboardVersionPublicId },
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, dashboardVersionNotFound, ...dashboardUpdateErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "restoreDashboardVersion",
-				summary: "Restore a dashboard version",
-				description: "Restores a historical snapshot as the dashboard's new current version.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "restoreDashboardVersion",
+					summary: "Restore a dashboard version",
+					description: "Restores a historical snapshot as the dashboard's new current version.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("listShares", "/:id/shares", {
@@ -757,14 +770,16 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 				shareWidgetNotFound,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "upsertDashboardWidgetShare",
-				summary: "Share a single widget",
-				description:
-					"Creates a share link scoped to one widget, or changes the mode of the one it already has. The link only resolves while the dashboard itself is shared, and never grants more than the dashboard's own mode: unsharing the board disables it, sharing the board again restores it. A `public` widget share on a `public` dashboard may be embedded in an iframe.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "upsertDashboardWidgetShare",
+					summary: "Share a single widget",
+					description:
+						"Creates a share link scoped to one widget, or changes the mode of the one it already has. The link only resolves while the dashboard itself is shared, and never grants more than the dashboard's own mode: unsharing the board disables it, sharing the board again restores it. A `public` widget share on a `public` dashboard may be embedded in an iframe.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("rotateWidgetShare", "/:id/widgets/:widget_id/share/rotate", {
@@ -779,28 +794,32 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardNotFound,
 				dashboardStoredConfigInvalid,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "rotateDashboardWidgetShare",
-				summary: "Regenerate a widget's share link",
-				description:
-					"Revokes the widget's current link and mints a replacement. Any embed using the old URL stops rendering immediately.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "rotateDashboardWidgetShare",
+					summary: "Regenerate a widget's share link",
+					description:
+						"Revokes the widget's current link and mints a replacement. Any embed using the old URL stops rendering immediately.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("revokeWidgetShare", "/:id/widgets/:widget_id/share", {
 			params: { id: DashboardPublicId, widget_id: Schema.String },
 			success: V2DashboardShareDeleteResponse,
 			error: [sharePersistence, dashboardPersistence, dashboardNotFound, dashboardStoredConfigInvalid],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "revokeDashboardWidgetShare",
-				summary: "Stop sharing a widget",
-				description:
-					"Revokes the widget's share link. Idempotent — revoking an unshared widget succeeds and reports `deleted: true`.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "revokeDashboardWidgetShare",
+					summary: "Stop sharing a widget",
+					description:
+						"Revokes the widget's share link. Idempotent — revoking an unshared widget succeeds and reports `deleted: true`.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieveShare", "/:id/share", {
@@ -829,14 +848,16 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardNotFound,
 				dashboardStoredConfigInvalid,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "upsertDashboardShare",
-				summary: "Share a dashboard",
-				description:
-					"Creates the dashboard's share link, or changes the mode of the one it already has. Changing the mode keeps the same link, so the returned token is unchanged.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "upsertDashboardShare",
+					summary: "Share a dashboard",
+					description:
+						"Creates the dashboard's share link, or changes the mode of the one it already has. Changing the mode keeps the same link, so the returned token is unchanged.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("rotateShare", "/:id/share/rotate", {
@@ -851,28 +872,32 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardNotFound,
 				dashboardStoredConfigInvalid,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "rotateDashboardShare",
-				summary: "Regenerate a dashboard's share link",
-				description:
-					"Revokes the current link and mints a replacement in one step. The previous URL stops resolving immediately.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "rotateDashboardShare",
+					summary: "Regenerate a dashboard's share link",
+					description:
+						"Revokes the current link and mints a replacement in one step. The previous URL stops resolving immediately.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("revokeShare", "/:id/share", {
 			params: { id: DashboardPublicId },
 			success: V2DashboardShareDeleteResponse,
 			error: [sharePersistence, dashboardPersistence, dashboardNotFound, dashboardStoredConfigInvalid],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "revokeDashboardShare",
-				summary: "Stop sharing a dashboard",
-				description:
-					"Revokes the dashboard's share link. Idempotent — revoking an unshared dashboard succeeds and reports `deleted: true`.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "author")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "revokeDashboardShare",
+					summary: "Stop sharing a dashboard",
+					description:
+						"Revokes the dashboard's share link. Idempotent — revoking an unshared dashboard succeeds and reports `deleted: true`.",
+				}),
+			),
 	)
 	.prefix("/v2/dashboards")
 	.middleware(AuthorizationV2)

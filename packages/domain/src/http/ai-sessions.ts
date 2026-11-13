@@ -6,6 +6,7 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
+import { AnalystAccess } from "./analyst-access"
 
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
 // decode time; a session is resolved at trace granularity by
@@ -1099,4 +1100,6 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		}),
 	)
 	.prefix("/internal/ai-sessions")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an analyst may call it.
+	.annotate(AnalystAccess, "read") {}

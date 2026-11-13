@@ -51,6 +51,8 @@ export type ConversationViewOptions<M> = Readonly<{
 	suggestions?: Readonly<{ items: ReadonlyArray<string>; onSelect: (text: string) => M }>
 	/** The report card for a `submit_diagnosis` turn; without it the turn draws nothing. */
 	diagnosisCard?: (report: AiTriageResult) => Html
+	/** False for a viewer who follows the thread without driving it: the composer is left out. */
+	canReply?: boolean
 }>
 
 /** Approvals, sub-agent rows, inline cards and the chat's tables and charts. */
@@ -291,7 +293,7 @@ export const conversationView = <M>(
 		transcript(h, transcriptHostOf(h, model, options), model.messages, () =>
 			emptyStateOf(h, model, options),
 		),
-		...(model.readOnly !== null
+		...(model.readOnly !== null || options.canReply === false
 			? []
 			: [
 					h.div(

@@ -61,6 +61,9 @@ const route = (incidentId = INCIDENT_ID) => ({ _tag: "AlertIncident" as const, i
 
 const step = (model: Model, message: Message) => pageUpdate(model, message)
 
+/** The lowest role that may acknowledge an incident and start an investigation. */
+const MEMBER = Policy.grantsOf(["org:member"])
+
 describe("alert incident", () => {
 	test("entry reads the clock and loads the chart runtime; the incident's reads follow its row", () => {
 		const entered = init(route(), context)
@@ -434,6 +437,7 @@ describe("alert incident", () => {
 				Message.ReadClock({ nowMs: NOW }),
 				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
 				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
+				Message.CompletedFetchSession({ grants: MEMBER }),
 			],
 			init(route(), context).model,
 			(model, message) => step(model, message).model,
@@ -534,6 +538,7 @@ describe("alert incident", () => {
 			[
 				Message.ReadClock({ nowMs: NOW }),
 				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow()] }),
+				Message.CompletedFetchSession({ grants: MEMBER }),
 			],
 			init(route(), context).model,
 			(model, message) => step(model, message).model,
@@ -643,6 +648,7 @@ describe("alert incident", () => {
 						}),
 					],
 				}),
+				Message.CompletedFetchSession({ grants: MEMBER }),
 			],
 			init(route(), context).model,
 			(model, message) => step(model, message).model,

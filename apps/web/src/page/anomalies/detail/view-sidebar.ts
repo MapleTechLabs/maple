@@ -28,6 +28,8 @@ type H = HtmlBuilder<Message>
 export type SidebarInput = Readonly<{
 	incident: AnomalyIncidentDocument
 	isBusy: boolean
+	/** The viewer may resolve the anomaly and link an issue (`incidents:respond`). */
+	canRespond: boolean
 	nowMs: number
 	timeZone: string
 }>
@@ -37,6 +39,51 @@ const row = (h: H, label: string, children: ReadonlyArray<Html | string>, title?
 
 const mono = (h: H, value: string, className: string): Html =>
 	h.span([h.Class(cn(typographyClass({ size: "sm", mono: true, numeric: true }), className))], [value])
+
+/** Resolve the anomaly, and link it to an error issue or take the link away. */
+const actionsGroup = (h: H, input: SidebarInput): Html => {
+	const { incident } = input
+	return detailRailGroup(h, "Actions", [
+		...(incident.status === "open"
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							className: "w-full",
+							isDisabled: input.isBusy,
+							attributes: [h.OnClick(Message.ClickedResolve())],
+						},
+						["Resolve anomaly"],
+					),
+				]
+			: []),
+		incident.errorIssueId === null
+			? button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						className: "w-full",
+						isDisabled: input.isBusy,
+						attributes: [h.OnClick(Message.ClickedLinkIssue())],
+					},
+					[icon(h, "LinkIcon"), "Link issue"],
+				)
+			: button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						className: "w-full",
+						isDisabled: input.isBusy,
+						attributes: [h.OnClick(Message.ClickedUnlink())],
+					},
+					["Unlink ", shortIssueId(incident.errorIssueId)],
+				),
+	])
+}
 
 export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const { incident } = input
@@ -50,46 +97,7 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 	const time = (value: string, className?: string) =>
 		relativeTime(h, { value, nowMs: input.nowMs, timeZone: input.timeZone, className })
 	return vstack(h, {}, [
-		detailRailGroup(h, "Actions", [
-			...(isOpen
-				? [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								className: "w-full",
-								isDisabled: input.isBusy,
-								attributes: [h.OnClick(Message.ClickedResolve())],
-							},
-							["Resolve anomaly"],
-						),
-					]
-				: []),
-			incident.errorIssueId === null
-				? button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							className: "w-full",
-							isDisabled: input.isBusy,
-							attributes: [h.OnClick(Message.ClickedLinkIssue())],
-						},
-						[icon(h, "LinkIcon"), "Link issue"],
-					)
-				: button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							className: "w-full",
-							isDisabled: input.isBusy,
-							attributes: [h.OnClick(Message.ClickedUnlink())],
-						},
-						["Unlink ", shortIssueId(incident.errorIssueId)],
-					),
-		]),
+		...(input.canRespond ? [actionsGroup(h, input)] : []),
 		detailRailGroup(h, "Details", [
 			row(h, "State", [
 				h.span(

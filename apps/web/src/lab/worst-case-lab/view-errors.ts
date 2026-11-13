@@ -51,6 +51,7 @@ export const errorsSection = (h: H, model: Model): Html => {
 												sparkWindow: fixture.sparkWindow,
 												picker: null,
 												rowMenu: null,
+												canTriage: true,
 											},
 											toParentMessage: (message: SignalMessage) =>
 												Message.GotSignalRowMessage({ message }),
