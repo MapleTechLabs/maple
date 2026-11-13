@@ -4,6 +4,7 @@ import {
 	OpenRouterKeyUpdateRequest,
 	VercelCostAddRequest,
 } from "@maple/domain/http"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
 import {
@@ -148,6 +149,35 @@ export const RemoveOpenRouterCostKey = Command.define("RemoveOpenRouterCostKey",
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterCost.remove()).pipe(
 		settleTo((result) => Message.CompletedRemoveKey({ result })),
 	),
+})
+
+/** The org's GitHub installations, with which can supply cost. */
+export const FetchGithubCostInstallations = Command.define("FetchGithubCostInstallations", {
+	args: { request: Schema.Number },
+	messages: [Message.CompletedLoadGithubInstallations],
+	execute: ({ request }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.githubCost.list()).pipe(
+			settleTo((result) => Message.CompletedLoadGithubInstallations({ request, result })),
+		),
+})
+
+/** Makes the installation's cost source, once GitHub lets Maple read its billing report. */
+export const AddGithubCostSource = Command.define("AddGithubCostSource", {
+	args: { installationId: VcsInstallationId },
+	messages: [Message.CompletedAddGithubSource],
+	execute: ({ installationId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.githubCost.add({ params: { installationId } }),
+		).pipe(settleTo((result) => Message.CompletedAddGithubSource({ installationId, result }))),
+})
+
+export const RemoveGithubCostSource = Command.define("RemoveGithubCostSource", {
+	args: { installationId: VcsInstallationId },
+	messages: [Message.CompletedRemoveGithubSource],
+	execute: ({ installationId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.githubCost.remove({ params: { installationId } }),
+		).pipe(settleTo((result) => Message.CompletedRemoveGithubSource({ result }))),
 })
 
 /** Whether the org has a Vercel team connected, and whether it is a cost source already. */

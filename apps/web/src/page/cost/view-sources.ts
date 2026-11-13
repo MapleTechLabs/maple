@@ -59,33 +59,28 @@ const connectionLink = (h: H, provider: CostSourceSummary["provider"], href: str
 
 /**
  * What a row offers: an AWS source is its connection's, an OpenRouter one is its key, and a
- * Vercel one is removed here while its connection, which holds the token, stays.
+ * GitHub one only leaves, since it reads through the GitHub connection. A Vercel one leaves here
+ * too, and links to its connection, where the token it reads with is replaced.
  */
 const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
 	const { name } = COST_PROVIDERS[source.provider]
+	const remove = rowButton(
+		h,
+		"Remove",
+		`Remove ${name} source`,
+		Message.ClickedRemoveSource({ sourceId: source.id }),
+		isBusy,
+	)
 	switch (source.provider) {
 		case "openrouter":
 			return [
 				rowButton(h, "Replace key", `Replace ${name} key`, Message.ClickedReplaceKey(), isBusy),
-				rowButton(
-					h,
-					"Remove",
-					`Remove ${name} source`,
-					Message.ClickedRemoveSource({ provider: "openrouter" }),
-					isBusy,
-				),
+				remove,
 			]
+		case "github":
+			return [remove]
 		case "vercel":
-			return [
-				connectionLink(h, "vercel", VERCEL_INTEGRATION_HREF),
-				rowButton(
-					h,
-					"Remove",
-					`Remove ${name} source`,
-					Message.ClickedRemoveSource({ provider: "vercel" }),
-					isBusy,
-				),
-			]
+			return [connectionLink(h, "vercel", VERCEL_INTEGRATION_HREF), remove]
 		case "aws":
 			return [connectionLink(h, "aws", AWS_INTEGRATION_HREF)]
 	}

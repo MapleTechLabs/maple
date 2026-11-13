@@ -1,6 +1,13 @@
-import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH, type VercelCostTeam } from "@maple/domain/http"
+import {
+	type CostSourceSummary,
+	CostSourcesResponse,
+	OPENROUTER_KEY_MAX_LENGTH,
+	type VercelCostTeam,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Option, Result, String as Str } from "effect"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import type { CostSourceId } from "@maple/primitives"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
@@ -21,6 +28,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
+	AddGithubCostSource,
 	AddVercelCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
@@ -30,8 +38,10 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchGithubCostInstallations,
 	FetchVercelCostStatus,
 	ReadCostGrants,
+	RemoveGithubCostSource,
 	RemoveOpenRouterCostKey,
 	RemoveVercelCostSource,
 	ResolveWindow,
@@ -54,7 +64,7 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
-import { Message, type RemovableProvider } from "./message"
+import { Message } from "./message"
 import { type AddStep, type Model, type Search, vercelStepOf } from "./model"
 import { COST_PROVIDERS } from "./providers"
 
@@ -195,8 +205,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		keyError: null,
 		vercel: Keyed.idle(),
 		vercelError: null,
+		githubInstallations: AsyncData.Idle(),
+		githubRead: 0,
+		githubAdding: null,
+		githubRefusal: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
-		removeProvider: "openrouter",
+		removeTarget: null,
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
@@ -233,10 +247,11 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 })
 
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedKey = (model: Model): Model => ({
+const clearedDialog = (model: Model): Model => ({
 	...model,
 	keyDraft: Field.init(),
 	keyError: null,
+	githubRefusal: null,
 	vercelError: null,
 })
 
@@ -275,7 +290,7 @@ const addableVercelTeam = (model: Model): Option.Option<VercelCostTeam> =>
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedKey(model), addStep }, Dialog.open(model.addDialog))
+		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -289,10 +304,10 @@ const withReread = (step: Return, context: PageContext): Return =>
 	)
 
 /**
- * The list on show without the provider's source, which a removal just deleted: its row is gone
- * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
+ * The list on show without the source a removal just deleted: its row is gone at once, so no
+ * refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
+const withoutSource = (model: Model, sourceId: CostSourceId | undefined): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -300,30 +315,48 @@ const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
 			model.sources.data,
 			(response) =>
 				new CostSourcesResponse({
-					sources: Arr.filter(response.sources, (source) => source.provider !== provider),
+					sources: Arr.filter(response.sources, (source) => source.id !== sourceId),
 				}),
 		),
 	},
 })
 
-/** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
-const hasOpenRouterSource = (model: Model): boolean =>
-	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
-		Arr.some(sources, (source) => source.provider === "openrouter"),
+const sourceOf = (model: Model, sourceId: CostSourceId): CostSourceSummary | undefined =>
+	AsyncData.getData(model.sources.data).pipe(
+		Option.flatMap(({ sources }) => Arr.findFirst(sources, (source) => source.id === sourceId)),
+		Option.getOrUndefined,
 	)
 
-/** A removal's answer: the dialog closes either way, and a removed source leaves the page at once. */
-const removed = (
-	model: Model,
-	provider: RemovableProvider,
-	failure: Option.Option<LoadFailure>,
-	context: PageContext,
-): Return => {
+const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
+
+/** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
+export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
+
+/** The call that removes `source`: OpenRouter's key, the GitHub source of its installation, the org's Vercel source. */
+const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
+	switch (source.provider) {
+		case "openrouter":
+			return [RemoveOpenRouterCostKey()]
+		case "github":
+			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>
+				RemoveGithubCostSource({ installationId }),
+			)
+		case "vercel":
+			return [RemoveVercelCostSource()]
+		// An AWS source leaves with its connection's Cost module, on the integration's page.
+		case "aws":
+			return []
+	}
+}
+
+/** A removal answered: the confirm closes, and on success the source's row and cost leave the page. */
+const removed = (model: Model, result: Result.Result<unknown, LoadFailure>, context: PageContext): Return => {
+	const target = model.removeTarget
 	// The cost on show includes the removed source's: it goes with the row, so the reads that
 	// follow start empty and one that fails leaves no removed cost beside its error.
 	const closed = liftRemoveDialog(
-		Option.isNone(failure)
-			? withoutSourceOf(
+		Result.isSuccess(result)
+			? withoutSource(
 					{
 						...model,
 						sourceWrite: "Settling",
@@ -332,19 +365,25 @@ const removed = (
 						breakdown: emptied(model.breakdown),
 						facets: emptied(model.facets),
 					},
-					provider,
+					target?.id,
 				)
 			: { ...model, sourceWrite: "Idle" },
 		Dialog.close(model.removeDialog),
 	)
-	return Option.match(failure, {
-		onSome: (reason): Return => ({
+	return Result.match(result, {
+		onFailure: (failure): Return => ({
 			...closed,
-			outMessage: toast("error", "Couldn't remove the source", failureMessage(reason)),
+			outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
 		}),
-		onNone: (): Return =>
+		onSuccess: (): Return =>
 			withReread(
-				{ ...closed, outMessage: toast("success", `${COST_PROVIDERS[provider].name} removed`) },
+				{
+					...closed,
+					outMessage: toast(
+						"success",
+						`${target === null ? "Source" : COST_PROVIDERS[target.provider].name} removed`,
+					),
+				},
 				context,
 			),
 	})
@@ -355,12 +394,18 @@ const added = (model: Model, title: string, description: string, context: PageCo
 	withReread(
 		{
 			...liftAddDialog(
-				clearedKey({ ...model, sourceWrite: "Settling" }),
+				clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
 				Dialog.close(model.addDialog),
 			),
 			outMessage: toast("success", title, description),
 		},
 		context,
+	)
+
+/** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
+const hasOpenRouterSource = (model: Model): boolean =>
+	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
+		Arr.some(sources, (source) => source.provider === "openrouter"),
 	)
 
 export const routeChanged = (
@@ -495,42 +540,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
-		ClickedAddVercel: () =>
-			model.sourceWrite !== "Idle"
-				? { model }
-				: requestVercelStatus({ ...clearedKey(model), addStep: "vercel" }, context),
-		CompletedLoadVercelStatus: ({ key, result }) => ({
-			model: { ...model, vercel: Keyed.accept(model.vercel, key, result) },
-		}),
-		// The add names the team on show: one connected since is refused, not added in its place.
-		ClickedConfirmAddVercel: () =>
-			Option.match(model.sourceWrite === "Idle" ? addableVercelTeam(model) : Option.none(), {
-				onNone: (): Return => ({ model }),
-				onSome: (team): Return => ({
-					model: { ...model, sourceWrite: "Saving", vercelError: null },
-					commands: [AddVercelCostSource({ teamId: team.id })],
-				}),
-			}),
-		// A refused add keeps the dialog open with Vercel's reason under the team. When the reason
-		// is that the connection changed, it is read again: the team on show is the one to add now.
-		CompletedAddVercel: ({ result }) =>
-			Result.match(result, {
-				onFailure: (failure): Return => {
-					const refused: Model = {
-						...model,
-						sourceWrite: "Idle",
-						vercelError: failureMessage(failure),
-					}
-					return failure.code === CONNECTION_CHANGED_CODE
-						? requestVercelStatus(refused, context)
-						: { model: refused }
-				},
-				onSuccess: (): Return =>
-					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
-			}),
+		ClickedAddOpenRouter: () => ({ model: { ...clearedDialog(model), addStep: "openrouter" } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
+			model.sourceWrite === "Idle"
+				? { model: { ...clearedDialog(model), addStep: "pick" } }
+				: { model },
 		ClickedReplaceKey: () => openAdd(model, "openrouter"),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
@@ -538,7 +552,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"
-				? { ...lifted, model: clearedKey(lifted.model) }
+				? { ...lifted, model: clearedDialog(lifted.model) }
 				: lifted
 		},
 		GotKeyDraftMessage: ({ message: inner }) =>
@@ -585,26 +599,117 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 								context,
 							),
 			}),
-		ClickedRemoveSource: ({ provider }) =>
+		ClickedAddGithub: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: liftRemoveDialog({ ...model, removeProvider: provider }, Dialog.open(model.removeDialog)),
+				: {
+						model: {
+							...clearedDialog(model),
+							addStep: "github",
+							githubInstallations: AsyncData.Loading(),
+							githubRead: model.githubRead + 1,
+						},
+						commands: [FetchGithubCostInstallations({ request: model.githubRead + 1 })],
+					},
+		// An answer to a read the step has since replaced would show a list from before a later add.
+		CompletedLoadGithubInstallations: ({ request, result }) =>
+			request !== model.githubRead
+				? { model }
+				: {
+						model: {
+							...model,
+							githubInstallations: Result.match(result, {
+								onFailure: (failure) => AsyncData.fail(failure),
+								onSuccess: (installations) => AsyncData.succeed(installations),
+							}),
+						},
+					},
+		ClickedAddGithubInstallation: ({ installationId }) =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: {
+							...model,
+							sourceWrite: "Saving",
+							githubAdding: installationId,
+							githubRefusal: null,
+						},
+						commands: [AddGithubCostSource({ installationId })],
+					},
+		// A refused add keeps the dialog open with GitHub's reason in the installation's row.
+		CompletedAddGithubSource: ({ installationId, result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: {
+						...model,
+						sourceWrite: "Idle",
+						githubAdding: null,
+						githubRefusal: {
+							installationId,
+							message: failureMessage(failure),
+							needsPermission: failure.code === GITHUB_PERMISSION_MISSING_CODE,
+						},
+					},
+				}),
+				onSuccess: (source): Return =>
+					added(
+						model,
+						"GitHub added",
+						`The first sync of ${source.accountLogin} runs within a few minutes.`,
+						context,
+					),
+			}),
+		ClickedAddVercel: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestVercelStatus({ ...clearedDialog(model), addStep: "vercel" }, context),
+		CompletedLoadVercelStatus: ({ key, result }) => ({
+			model: { ...model, vercel: Keyed.accept(model.vercel, key, result) },
+		}),
+		// The add names the team on show: one connected since is refused, not added in its place.
+		ClickedConfirmAddVercel: () =>
+			Option.match(model.sourceWrite === "Idle" ? addableVercelTeam(model) : Option.none(), {
+				onNone: (): Return => ({ model }),
+				onSome: (team): Return => ({
+					model: { ...model, sourceWrite: "Saving", vercelError: null },
+					commands: [AddVercelCostSource({ teamId: team.id })],
+				}),
+			}),
+		// A refused add keeps the dialog open with Vercel's reason under the team. When the reason
+		// is that the connection changed, it is read again: the team on show is the one to add now.
+		CompletedAddVercel: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => {
+					const refused: Model = {
+						...model,
+						sourceWrite: "Idle",
+						vercelError: failureMessage(failure),
+					}
+					return failure.code === CONNECTION_CHANGED_CODE
+						? requestVercelStatus(refused, context)
+						: { model: refused }
+				},
+				onSuccess: (): Return =>
+					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
+			}),
+		ClickedRemoveSource: ({ sourceId }) => {
+			const target = sourceOf(model, sourceId)
+			return model.sourceWrite !== "Idle" || target === undefined
+				? { model }
+				: liftRemoveDialog({ ...model, removeTarget: target }, Dialog.open(model.removeDialog))
+		},
 		GotRemoveDialogMessage: ({ message: inner }) =>
 			model.sourceWrite === "Removing"
 				? { model }
 				: liftRemoveDialog(model, Dialog.update(model.removeDialog, inner)),
-		ClickedConfirmRemove: () =>
-			model.sourceWrite !== "Idle"
+		ClickedConfirmRemove: () => {
+			const commands = model.removeTarget === null ? [] : removeCommand(model.removeTarget)
+			return model.sourceWrite !== "Idle" || commands.length === 0
 				? { model }
-				: {
-						model: { ...model, sourceWrite: "Removing" },
-						commands: [
-							model.removeProvider === "vercel"
-								? RemoveVercelCostSource()
-								: RemoveOpenRouterCostKey(),
-						],
-					},
-		CompletedRemoveKey: ({ result }) => removed(model, "openrouter", Result.getFailure(result), context),
-		CompletedRemoveVercel: ({ result }) => removed(model, "vercel", Result.getFailure(result), context),
+				: { model: { ...model, sourceWrite: "Removing" }, commands }
+		},
+		CompletedRemoveKey: ({ result }) => removed(model, result, context),
+		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
+		CompletedRemoveVercel: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),
 	})

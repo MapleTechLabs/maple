@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
+import { countryLabel, isGoogleSearchHost, languageLabel, referrerLabel, utmLabel } from "./labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,
@@ -7,8 +7,7 @@ import {
 	isMetricAvailable,
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -25,27 +24,19 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink } from "../kit/signal-empty-state"
-import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
+import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { Message } from "./message"
 import type { Model, Summary } from "./model"
-import { filtersOf } from "./requests"
+import { filtersOf, searchSiteOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { dividedList } from "@maple/views/ui/rule"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
-
-// Eight tiles in two or four columns: `divide-*` would double the outer border at row ends,
-// so each tile rules its own inner right and top edges per column count.
-const GRID = cn(
-	"grid grid-cols-2 overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4",
-	"[&>*]:border-border [&>*:nth-child(odd)]:border-r @min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r",
-	"@max-[879px]/page:[&>*:nth-child(n+3)]:border-t @min-[880px]/page:[&>*:nth-child(n+5)]:border-t",
-)
-const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>
 	Option.getOrUndefined(AsyncData.getData(slot.data))
@@ -90,8 +81,9 @@ const metricStrip = (
 	previous: AnalyticsMetricSource | undefined,
 	selected: string,
 ): Html =>
-	h.div(
-		[h.Class(GRID)],
+	metricGrid(
+		h,
+		{},
 		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
@@ -105,8 +97,7 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				className: TILE_NARROW,
-				valueClassName: "@max-[560px]/page:text-xl",
+				...METRIC_TILE,
 			})
 		}),
 	)
@@ -121,9 +112,10 @@ const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMet
 const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => [
-			h.div(
-				[h.Class(GRID), h.AriaBusy(true)],
-				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, TILE_NARROW)),
+			metricGrid(
+				h,
+				{ isBusy: true },
+				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, METRIC_TILE.className)),
 			),
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
@@ -188,6 +180,42 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 		},
 	})
 
+/**
+ * Under the referrers, once the Search Console status is in: how many sessions Google's search
+ * sent, and the way to what they searched (the Search tab, which also holds the connect step).
+ */
+const googleSearchNote = (model: Model, referrers: ReadonlyArray<{ name: string; count: number }>) => {
+	const status = dataOf(model.searchStatus)
+	const sessions = Arr.reduce(referrers, 0, (sum, row) =>
+		isGoogleSearchHost(row.name) ? sum + row.count : sum,
+	)
+	if (status === undefined || sessions === 0) return undefined
+	const isImported = searchSiteOf(model.search, status) !== undefined
+	return (h: H): Html =>
+		hstack(
+			h,
+			{
+				justify: "between",
+				wrap: true,
+				className: stripClass("row", "gap-x-3 gap-y-1 text-2xs text-muted-foreground"),
+			},
+			[
+				hstack(h, { gap: "2", as: "span" }, [
+					icon(h, "GoogleIcon", { size: 12, className: "shrink-0" }),
+					`${formatNumber(sessions)} ${pluralize(sessions, "session")} from Google Search`,
+				]),
+				textLink(
+					h,
+					{ href: hrefOf(AppRoute.Analytics({ search: { ...model.search, tab: "search" } })) },
+					[
+						isImported ? "See what they searched" : "Connect Search Console",
+						icon(h, "ArrowRightIcon", { size: 12 }),
+					],
+				),
+			],
+		)
+}
+
 /** The overview's cards, built from the page's data (the dialog reads the same list). */
 export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
 	const breakdowns = dataOf(model.breakdowns)
@@ -206,6 +234,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					noun: "referrer",
 					nounPlural: "referrers",
 					formatValue: referrerLabel,
+					note: googleSearchNote(model, breakdowns.referrerHosts),
 				},
 				{
 					tab: "UTM source",

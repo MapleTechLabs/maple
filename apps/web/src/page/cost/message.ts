@@ -5,6 +5,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
 	VercelCostSourceAdded,
@@ -12,6 +15,8 @@ import {
 	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import { CostSourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -38,10 +43,6 @@ const GroupBy = Schema.Literals(COST_GROUP_BYS)
 const FacetRows = Schema.Array(CostBreakdownRow)
 export const CostFacets = Schema.Struct(perDimension(() => FacetRows))
 export type CostFacets = typeof CostFacets.Type
-
-/** The providers whose source the page itself removes; an AWS source goes with its connection. */
-export const RemovableProvider = Schema.Literals(["openrouter", "vercel"])
-export type RemovableProvider = typeof RemovableProvider.Type
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
@@ -82,10 +83,22 @@ export const Message = defineMessageUnion({
 	GotKeyDraftMessage: { message: Field.Message },
 	SubmittedKey: {},
 	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
-	ClickedRemoveSource: { provider: RemovableProvider },
+	/** Opens the dialog on the org's GitHub installations, and reads them. */
+	ClickedAddGithub: {},
+	CompletedLoadGithubInstallations: {
+		request: Schema.Number,
+		result: Schema.Result(GithubCostInstallations, LoadFailure),
+	},
+	ClickedAddGithubInstallation: { installationId: VcsInstallationId },
+	CompletedAddGithubSource: {
+		installationId: VcsInstallationId,
+		result: Schema.Result(GithubCostSourceAdded, LoadFailure),
+	},
+	ClickedRemoveSource: { sourceId: CostSourceId },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
+	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })

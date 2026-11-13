@@ -40,7 +40,8 @@ const platformsOf = (sources: ReadonlyArray<CostSourceSummary>): ReadonlyArray<C
 
 /**
  * Whose service or region a key is, when its name does not say: the org's only platform, AWS
- * while no source is known, and nobody's when two platforms could each have billed it.
+ * while no source is known, and nobody's when two platforms could each have billed it. One rule
+ * for every provider: a name first, then this, and never a logo that is only a guess.
  */
 const onlyPlatform = (sources: ReadonlyArray<CostSourceSummary>): CostProvider | undefined => {
 	const platforms = platformsOf(sources)
@@ -67,6 +68,19 @@ export const accountProvider = (
 			() => (isAwsAccountId(key) ? Option.some<CostProvider>("aws") : Option.none()),
 		),
 	)
+
+/** GitHub's products as the cost rows name them. */
+const GITHUB_PRODUCTS: ReadonlySet<string> = new Set([
+	"Actions",
+	"Copilot",
+	"Packages",
+	"Codespaces",
+	"Git LFS",
+])
+
+/** The platform a service's own name says bills it, when it says: a GitHub product, an AWS service. */
+const namedServiceOwner = (key: string): CostProvider | undefined =>
+	GITHUB_PRODUCTS.has(key) ? "github" : isAwsServiceName(key) ? "aws" : undefined
 
 const CATEGORY_ICONS = {
 	"AI and Machine Learning": "SparkleIcon",
@@ -98,7 +112,7 @@ export const keyMark = (
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
 			if (key === "AWS Lambda") return { icon: "AwsLambdaIcon" }
-			return markOf(isAwsServiceName(key) ? "aws" : onlyPlatform(sources), "CubeIcon")
+			return markOf(namedServiceOwner(key) ?? onlyPlatform(sources), "CubeIcon")
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
 		case "region":
@@ -108,7 +122,7 @@ export const keyMark = (
 				return providerMark("vercel")
 			}
 			return markOf(onlyPlatform(sources), "GlobeIcon")
-		// A resource is what a charge is for (a Vercel project): its provider is in the row, not the key.
+		// A resource is what a charge is for (a GitHub repository, a Vercel project): its key does not say whose.
 		case "resource":
 			return glyph("FolderIcon")
 		case "account": {
@@ -119,15 +133,16 @@ export const keyMark = (
 }
 
 /**
- * An account by what reads it: an AWS one by its id, a Vercel one by its team's slug (its id is a
- * team id, kept stable through a rename), an OpenRouter one by name alone while it is the org's
- * only one (its id means nothing to a reader). Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a GitHub one by its organization, a Vercel
+ * one by its team's slug (its id is a team id, kept stable through a rename), an OpenRouter one
+ * by name alone while it is the org's only one (its id means nothing to a reader). Unknown ids
+ * read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
 	if (provider === undefined) return key
 	const name = COST_PROVIDERS[provider].name
-	if (provider === "aws") return `${name} ${key}`
+	if (provider === "aws" || provider === "github") return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
 	const accountName = Arr.findFirst(sameProvider, (source) => source.accountId === key).pipe(
 		Option.flatMapNullishOr((source) => source.accountName),

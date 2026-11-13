@@ -98,6 +98,33 @@ const queryEngine: QueryEngineServiceApi = {
 	cachedDirect: (_tenant, _route, _payload, effect) => effect,
 }
 
+const encodeKey = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/**
+ * A query engine that keeps every answer by its key, as the cache does inside its time to live,
+ * and the routes it had to compute.
+ */
+const makeCachingQueryEngine = () => {
+	const answers = new Map<string, unknown>()
+	const computed: string[] = []
+	const engine: QueryEngineServiceApi = {
+		...queryEngine,
+		cachedDirect: (_tenant, route, payload, effect) => {
+			const key = `${route} ${encodeKey(payload)}`
+			return answers.has(key)
+				? // SAFETY: the answer under a key is the one this effect produced for it.
+					Effect.succeed(answers.get(key) as never)
+				: Effect.tap(effect, (answer) =>
+						Effect.sync(() => {
+							computed.push(route)
+							answers.set(key, answer)
+						}),
+					)
+		},
+	}
+	return { engine, computed }
+}
+
 interface SourceFixture {
 	readonly id: string
 	readonly orgId?: string
@@ -768,6 +795,40 @@ describe("makeCostReads", () => {
 			expect(moneyReads(statements)).toHaveLength(3)
 		}).pipe(Effect.provide(testDb.layer))
 	})
+
+	it.effect(
+		"reads the warehouse again once a sync has written, where the same window alone is cached",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* insertSources(testDb, [{ id: SOURCE_A }])
+				yield* TestClock.setTime(Date.parse(NOW))
+				const { warehouse } = makeWarehouse({})
+				const { engine, computed } = makeCachingQueryEngine()
+				const reads = makeCostReads({
+					warehouse,
+					queryEngine: engine,
+					database: yield* Database,
+					featureFlags: withFlags({ cloudCost: true }),
+				})
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals"])
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals"])
+
+				// A sync step stamps the source it wrote.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE cost_sources SET updated_at = updated_at + interval '5 minutes' WHERE id = $1",
+						[SOURCE_A],
+					),
+				)
+				yield* reads.totals(tenant, new CostTotalsRequest(WINDOW))
+				expect(computed).toEqual(["costCurrencies", "costTotals", "costCurrencies", "costTotals"])
+			}).pipe(Effect.provide(testDb.layer))
+		},
+	)
 
 	it.effect("refuses every read for an org outside the cloudCost rollout", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -3276,6 +3276,8 @@ export type CostSourceStatus = typeof CostSourceStatus.Type
 export const CostSourceSummary = Schema.Struct({
 	id: CostSourceId,
 	provider: CostProvider,
+	/** The id of the provider's connection the source reads through, which its row actions name. */
+	connectionRef: Schema.String,
 	accountId: Schema.String,
 	/** How a reader knows the account, where its id is not it: a Vercel team's slug beside its team id. */
 	accountName: Schema.optionalKey(Schema.String),

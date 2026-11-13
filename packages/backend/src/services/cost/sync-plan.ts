@@ -32,6 +32,11 @@ export const HISTORY_MONTHS = 13
  */
 const OPENROUTER_HISTORY_DAYS = 28
 /**
+ * GitHub's billing report served usage five months back when checked, and its retention is not
+ * documented. History stops at the first day of the month this many months back, well inside that.
+ */
+const GITHUB_HISTORY_MONTHS = 3
+/**
  * Vercel serves a year at most in one request, so its history starts at the first day of the month
  * this many months before the current one: a window from there to today is never over a year.
  */
@@ -71,6 +76,7 @@ interface CostSyncProfile {
 const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
+	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0 },
 	vercel: { floor: (today) => monthStart(today, -VERCEL_HISTORY_MONTHS), lagDays: 0 },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 

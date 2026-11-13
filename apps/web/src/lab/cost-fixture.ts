@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import {
 	CostBreakdownResponse,
 	type CostBreakdownSortBy,
@@ -5,8 +6,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
 } from "@maple/domain/http"
-import { Array as Arr, Number as Num, Order, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Number as Num, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
@@ -58,7 +60,33 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 	drift,
 })
 
-/** The Vercel team the lab's source reads, by its slug. */
+/** The GitHub organization the lab's source reads, and the installation it reads through. */
+const LAB_GITHUB_ORG = "example-org"
+const LAB_GITHUB_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e061"
+/** A second organization the lab's reader can add. */
+const LAB_GITHUB_OTHER_ORG = "example-labs"
+const LAB_GITHUB_OTHER_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e062"
+
+/** `repository` is the row's resource; a seat product names none. */
+const githubLine = (
+	product: string,
+	sku: string,
+	repository: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "github",
+	service_category: "Developer Tools",
+	region: "global",
+	usage_type: sku,
+	resource: repository,
+	account: LAB_GITHUB_ORG,
+	daily,
+	drift,
+})
+
+/** The Vercel team the lab's source reads: its id is the account, its slug what the page shows. */
 export const LAB_VERCEL_TEAM = {
 	id: "team_labExample000000000000",
 	name: "Example Team",
@@ -108,6 +136,10 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
+	githubLine("Actions", "Actions Linux", "example-api", 9.4, 0.25),
+	githubLine("Actions", "Actions storage", "example-site", 0.7, 0.05),
+	githubLine("Copilot", "Copilot Business", "", 6.3, 0.0),
+	githubLine("Packages", "Packages storage", "example-api", 0.4, -0.1),
 	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
@@ -163,8 +195,8 @@ const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 type Request = Readonly<{
 	days: number
 	filters: CostFilters | undefined
-	/** Providers whose source the lab's reader removed: their lines are in no read, whatever the filters say. */
-	without?: ReadonlyArray<string>
+	/** Providers the lab's reader removed: their lines are in no read, whatever the filters say. */
+	without?: ReadonlyArray<CostProvider>
 }>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
@@ -284,6 +316,7 @@ type SourceWire = (typeof CostSourcesResponse.Encoded)["sources"][number]
 const source = (over: Partial<SourceWire>): SourceWire => ({
 	id: "0190f2b3-0000-7000-8000-00000000c057",
 	provider: "aws",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a057",
 	accountId: LAB_ACCOUNT,
 	status: "ok",
 	watermarkDate: dayAt(1),
@@ -300,16 +333,29 @@ const source = (over: Partial<SourceWire>): SourceWire => ({
 const openRouterSource = source({
 	id: "0190f2b3-0000-7000-8000-00000000c060",
 	provider: "openrouter",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a060",
 	accountId: LAB_OPENROUTER_ACCOUNT,
 	backfillDate: dayAt(29),
 	lastSyncedAt: LAB_NOW_MS - 3 * 3_600_000,
 	requestsThisMonth: 0,
 })
 
+/** The GitHub source: this month and the three before it, and no billed requests. */
+const githubSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c061",
+	provider: "github",
+	connectionRef: LAB_GITHUB_INSTALLATION,
+	accountId: LAB_GITHUB_ORG,
+	backfillDate: "2026-08-01",
+	lastSyncedAt: LAB_NOW_MS - 5 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
 /** The Vercel source: eleven months of history, all one request serves, and no billed requests. */
 const vercelSource = source({
-	id: "0190f2b3-0000-7000-8000-00000000c061",
+	id: "0190f2b3-0000-7000-8000-00000000c063",
 	provider: "vercel",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a063",
 	accountId: LAB_VERCEL_TEAM.id,
 	accountName: LAB_VERCEL_TEAM.slug,
 	backfillDate: "2025-12-01",
@@ -317,39 +363,128 @@ const vercelSource = source({
 	requestsThisMonth: 0,
 })
 
-/** The sources the lab's reader can add and remove on the page, as they are once synced. */
-const ADDABLE = { openrouter: openRouterSource, vercel: vercelSource } as const
-type LabAddable = keyof typeof ADDABLE
+/** A source that was just added: it waits for its first sync. */
+const justAdded = (entry: SourceWire): SourceWire => ({
+	...entry,
+	status: "pending",
+	watermarkDate: null,
+	backfillDate: null,
+	historyComplete: false,
+	lastSyncedAt: null,
+})
+
+/** The organizations the lab's reader can add and remove, each with the source it gets. */
+const LAB_GITHUB_ORGS = [
+	{ installationId: LAB_GITHUB_INSTALLATION, login: LAB_GITHUB_ORG, sourceId: githubSource.id },
+	{
+		installationId: LAB_GITHUB_OTHER_INSTALLATION,
+		login: LAB_GITHUB_OTHER_ORG,
+		sourceId: "0190f2b3-0000-7000-8000-00000000c062",
+	},
+]
+
+/** The organization of a lab installation, as the add's answer names it. */
+export const labGithubLogin = (installationId: string): string =>
+	Arr.findFirst(LAB_GITHUB_ORGS, (org) => org.installationId === installationId).pipe(
+		Option.match({ onNone: () => installationId, onSome: (org) => org.login }),
+	)
 
 /**
- * `sources` after the lab's reader added a provider's source (true: a new one, which waits for
- * its first sync whatever the state had) or removed it (false); null leaves it as the state has it.
+ * What the lab's reader did since the state loaded. `openRouter` and `vercel`: added (true),
+ * removed (false) or neither (null). `github`: an installation's id to whether it is a source now.
+ */
+export type LabSourceChanges = Readonly<{
+	openRouter: boolean | null
+	github: Readonly<Record<string, boolean>>
+	vercel: boolean | null
+}>
+
+/**
+ * The providers whose cost is in no read any more. GitHub's cost is all `example-org`'s: it leaves
+ * when that source is removed, and stays out while a source added again waits for its first sync.
+ */
+export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<CostProvider> =>
+	Arr.filter(
+		CostProvider.literals,
+		(provider) =>
+			(provider === "openrouter" && changes.openRouter === false) ||
+			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
+			// A team added again is a new source: it has no cost until a sync the lab does not model.
+			(provider === "vercel" && changes.vercel !== null),
+	)
+
+/**
+ * `sources` after what the lab's reader did: a source that was added waits for its first sync, one
+ * that was removed is gone.
  */
 export const labSourcesWith = (
 	sources: CostSourcesResponse,
-	provider: LabAddable,
-	added: boolean | null,
+	changes: LabSourceChanges,
 ): CostSourcesResponse => {
-	if (added === null) return sources
-	const others = Arr.filter(sources.sources, (entry) => entry.provider !== provider)
-	if (!added) return new CostSourcesResponse({ sources: others })
+	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
+		entry.provider === "openrouter"
+			? changes.openRouter !== false
+			: entry.provider === "vercel"
+				? changes.vercel === null
+				: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+	)
+	const hasOpenRouter = Arr.some(kept, (entry) => entry.provider === "openrouter")
 	return decodeSources({
 		sources: [
-			...Schema.encodeSync(CostSourcesResponse)(new CostSourcesResponse({ sources: others })).sources,
+			...kept,
+			...(changes.openRouter === true && !hasOpenRouter ? [justAdded(openRouterSource)] : []),
+			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
+			...Arr.map(
+				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
+				(org) =>
+					justAdded({
+						...githubSource,
+						id: org.sourceId,
+						connectionRef: org.installationId,
+						accountId: org.login,
+					}),
+			),
+		],
+	})
+}
+
+type InstallationWire = (typeof GithubCostInstallations.Encoded)["installations"][number]
+
+/**
+ * The org's GitHub installations as the dialog lists them: the organization that is a source, one
+ * that can be added, a user account and a suspended installation. `sources` decides which are added.
+ */
+export const labGithubInstallations = (sources: CostSourcesResponse): GithubCostInstallations => {
+	const added = Arr.filter(sources.sources, (entry) => entry.provider === "github")
+	const organization = (installationId: string, accountLogin: string): InstallationWire => ({
+		installationId,
+		accountLogin,
+		state: Arr.some(added, (entry) => entry.connectionRef === installationId) ? "added" : "available",
+		settingsUrl: `https://github.com/organizations/${accountLogin}/settings/installations/1000001`,
+	})
+	return Schema.decodeSync(GithubCostInstallations)({
+		installations: [
+			organization(LAB_GITHUB_INSTALLATION, LAB_GITHUB_ORG),
+			organization(LAB_GITHUB_OTHER_INSTALLATION, LAB_GITHUB_OTHER_ORG),
 			{
-				...ADDABLE[provider],
-				status: "pending",
-				watermarkDate: null,
-				backfillDate: null,
-				historyComplete: false,
-				lastSyncedAt: null,
+				installationId: "0190f2b3-0000-4000-8000-00000000e063",
+				accountLogin: "example-user",
+				state: "user_account",
+				settingsUrl: "https://github.com/settings/installations/1000003",
+			},
+			{
+				installationId: "0190f2b3-0000-4000-8000-00000000e064",
+				accountLogin: "example-archive",
+				state: "inactive",
+				settingsUrl:
+					"https://github.com/organizations/example-archive/settings/installations/1000004",
 			},
 		],
 	})
 }
 
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({}), openRouterSource, vercelSource] }),
+	synced: decodeSources({ sources: [source({}), openRouterSource, githubSource, vercelSource] }),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [

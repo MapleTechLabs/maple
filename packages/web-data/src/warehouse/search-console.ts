@@ -6,7 +6,6 @@ import {
 	SearchConsoleLandingPagesRequest,
 	SearchConsoleOverviewRequest,
 	SearchConsoleTimeseriesRequest,
-	SearchConsoleTopPagesRequest,
 	SearchConsoleTopQueriesRequest,
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -15,7 +14,6 @@ import { decodeInput, runWarehouseQuery } from "./effect-utils"
 export type GetSearchConsoleOverviewInput = typeof SearchConsoleOverviewRequest.Encoded
 export type GetSearchConsoleTimeseriesInput = typeof SearchConsoleTimeseriesRequest.Encoded
 export type GetSearchConsoleTopQueriesInput = typeof SearchConsoleTopQueriesRequest.Encoded
-export type GetSearchConsoleTopPagesInput = typeof SearchConsoleTopPagesRequest.Encoded
 export type GetSearchConsoleLandingPagesInput = typeof SearchConsoleLandingPagesRequest.Encoded
 
 export const getSearchConsoleOverview = Effect.fn("QueryEngine.getSearchConsoleOverview")(function* ({
@@ -58,21 +56,6 @@ export const getSearchConsoleTopQueries = Effect.fn("QueryEngine.getSearchConsol
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.searchConsoleTopQueries({ payload })
-		}),
-	)
-	return result.data
-})
-
-export const getSearchConsoleTopPages = Effect.fn("QueryEngine.getSearchConsoleTopPages")(function* ({
-	data,
-}: {
-	data: GetSearchConsoleTopPagesInput
-}) {
-	const payload = yield* decodeInput(SearchConsoleTopPagesRequest, data, "getSearchConsoleTopPages")
-	const result = yield* runWarehouseQuery("searchConsoleTopPages", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.searchConsoleTopPages({ payload })
 		}),
 	)
 	return result.data

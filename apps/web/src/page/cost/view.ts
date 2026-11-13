@@ -40,7 +40,6 @@ import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { keyMark } from "./marks"
 import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
-import { COST_PROVIDERS } from "./providers"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -67,7 +66,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a Vercel team by product and project.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -108,29 +107,40 @@ const onRamp = (
 		emptyFrameClass("dashed"),
 	)
 
-/**
- * What the first syncs bring in, by the providers that have no cost yet (waiting or failing
- * alike): AWS and Vercel keep about a year, OpenRouter four weeks.
- */
+/** What a provider's first sync brings in: said on its own, and named beside other providers. */
+const FIRST_SYNC = {
+	aws: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "AWS brings in this month and the last, and older months fill in after that.",
+	},
+	openrouter: {
+		alone: "It brings in the last four weeks, which is all OpenRouter keeps.",
+		named: "OpenRouter brings in its last four weeks.",
+	},
+	github: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "GitHub brings in this month and the last, then the two months before.",
+	},
+	vercel: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "Vercel brings in this month and the last, and older months fill in after that.",
+	},
+} as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
+
+/** What the first syncs bring in, by the providers that have no cost yet (waiting or failing alike). */
 const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
-	const unsynced = Arr.dedupe(
-		Arr.map(
-			Arr.filter(sources, (source) => source.watermarkDate === null),
-			(source) => source.provider,
-		),
+	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
+	const providers = Arr.filter(CostProvider.literals, (provider) =>
+		Arr.some(unsynced, (source) => source.provider === provider),
 	)
-	const hasOpenRouter = Arr.contains(unsynced, "openrouter")
-	// In the order the page names providers everywhere else.
-	const others = Arr.map(
-		Arr.filter(
-			CostProvider.literals,
-			(provider) => provider !== "openrouter" && Arr.contains(unsynced, provider),
-		),
-		(provider) => COST_PROVIDERS[provider].name,
-	)
-	if (!hasOpenRouter) return "It brings in this month and the last, and older months fill in after that."
-	if (others.length === 0) return "It brings in the last four weeks, which is all OpenRouter keeps."
-	return `${Arr.join(others, " and ")} ${others.length === 1 ? "brings" : "bring"} in this month and the last, and older months fill in after that. OpenRouter brings in its last four weeks.`
+	const [only, ...others] = providers
+	if (only === undefined) return FIRST_SYNC.aws.alone
+	return others.length === 0
+		? FIRST_SYNC[only].alone
+		: Arr.join(
+				Arr.map(providers, (provider) => FIRST_SYNC[provider].named),
+				" ",
+			)
 }
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */

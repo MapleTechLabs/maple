@@ -129,6 +129,7 @@ const toSourceSummary = (
 	return {
 		id: row.id,
 		provider: row.provider,
+		connectionRef: row.connectionRef,
 		accountId: row.accountId,
 		...(accountName === undefined ? undefined : { accountName }),
 		status: !row.enabled
@@ -205,6 +206,10 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 						metric: payload.metric,
 						filters: payload.filters,
 						sourceIds: Arr.map(sources, (source) => source.id),
+						// A sync stamps its source at every step it writes.
+						written: Arr.reduce(sources, 0, (latest, source) =>
+							Math.max(latest, source.updatedAt),
+						),
 					}
 		})
 

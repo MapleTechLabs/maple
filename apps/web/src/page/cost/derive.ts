@@ -127,12 +127,13 @@ export const unsplitDimensions = (
 
 /**
  * The grouping a row's click switches to, or the current one when every next step is narrowed.
- * `unsplit` are the dimensions with nothing to split by, which it passes over.
+ * `unsplit` are the dimensions with nothing to split by, which it passes over: resources, until
+ * the rail's read says some cost names one.
  */
 export const drillTarget = (
 	search: Search,
 	dimension: CostGroupBy,
-	unsplit: ReadonlyArray<CostGroupBy> = [],
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
 ): CostGroupBy =>
 	Arr.findFirst(
 		DRILL_ORDER[dimension],
@@ -143,7 +144,7 @@ export const drillTarget = (
 export const drilledInto = (
 	search: Search,
 	filter: ActiveFilter,
-	unsplit: ReadonlyArray<CostGroupBy> = [],
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
 ): Search => {
 	const narrowed = withFilter(search, filter)
 	return narrowed === search

@@ -5,6 +5,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
 	VercelCostSourceAdded,
@@ -12,6 +15,8 @@ import {
 	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import { CostSourceId } from "@maple/primitives"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	click,
@@ -41,9 +46,9 @@ import {
 	seriesLabels,
 	withFilter,
 } from "./derive"
-import { Message, type RemovableProvider } from "./message"
+import { Message } from "./message"
 import type { Model, Search } from "./model"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -83,6 +88,7 @@ type SourceWire = (typeof CostSourcesResponse.Encoded)["sources"][number]
 const source = (over: Partial<SourceWire> = {}): SourceWire => ({
 	id: "0190f2b3-0000-7000-8000-00000000c057",
 	provider: "aws",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a057",
 	accountId: "123456789012",
 	status: "ok",
 	watermarkDate: "2026-11-09",
@@ -159,6 +165,52 @@ const answered = (model: Model, totalsAnswer = totals()): Model =>
 		(next, message) => pageUpdate(next, message).model,
 	)
 
+const OPENROUTER_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c060")
+const GITHUB_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c061")
+const GITHUB_ORG = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e061")
+const VERCEL_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c063")
+const GITHUB_LABS = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e062")
+
+type InstallationWire = (typeof GithubCostInstallations.Encoded)["installations"][number]
+
+/** An organization that is a source, one that can be added, a user account and a suspended one. */
+const GITHUB_INSTALLATIONS: ReadonlyArray<InstallationWire> = [
+	{
+		installationId: GITHUB_ORG,
+		accountLogin: "example-org",
+		state: "added",
+		settingsUrl: "https://github.com/organizations/example-org/settings/installations/1000001",
+	},
+	{
+		installationId: GITHUB_LABS,
+		accountLogin: "example-labs",
+		state: "available",
+		settingsUrl: "https://github.com/organizations/example-labs/settings/installations/1000002",
+	},
+	{
+		installationId: "0190f2b3-0000-4000-8000-00000000e063",
+		accountLogin: "example-user",
+		state: "user_account",
+		settingsUrl: "https://github.com/settings/installations/1000003",
+	},
+	{
+		installationId: "0190f2b3-0000-4000-8000-00000000e064",
+		accountLogin: "example-archive",
+		state: "inactive",
+		settingsUrl: "https://github.com/organizations/example-archive/settings/installations/1000004",
+	},
+]
+
+/** The dialog's GitHub step with its installations read. */
+const githubListed = (model: Model, installations: ReadonlyArray<InstallationWire>): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadGithubInstallations({
+			request: model.githubRead,
+			result: Result.succeed(Schema.decodeSync(GithubCostInstallations)({ installations })),
+		}),
+	).model
+
 const populated = (search: Search = { groupBy: "region" }, totalsAnswer = totals()): Model =>
 	answered(entered(search, [source()]).model, totalsAnswer)
 
@@ -187,7 +239,7 @@ describe("cost page", () => {
 			expectView(text("Add a cost source")).toExist(),
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
-			expectView(text(/OpenRouter and Vercel requests are free/)).toExist(),
+			expectView(text(/OpenRouter, GitHub and Vercel requests are free/)).toExist(),
 			expectView(role("button", { name: /^Vercel/ })).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
 			expectView(
@@ -339,8 +391,18 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
 		)
 
-		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "openrouter" })).model
+		const confirming = pageUpdate(
+			model,
+			Message.ClickedRemoveSource({ sourceId: OPENROUTER_SOURCE }),
+		).model
 		expect(confirming.removeDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the OpenRouter source?")).toExist(),
+		)
 		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
 		expect(names(removing.commands)).toEqual(["RemoveOpenRouterCostKey"])
 		const removed = pageUpdate(
@@ -429,6 +491,262 @@ describe("cost page", () => {
 				description: "The next sync runs within a few minutes.",
 			}),
 		)
+	})
+
+	test("adding GitHub lists the org's installations: one to add, one added, and why the others cannot be", () => {
+		const opened = pageUpdate(entered({}, [source()]).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^GitHub/ })).toExist(),
+			expectView(text(/OpenRouter, GitHub and Vercel requests are free/)).toExist(),
+		)
+		const reading = pageUpdate(opened, Message.ClickedAddGithub())
+		expect(names(reading.commands)).toEqual(["FetchGithubCostInstallations"])
+		scene(
+			{ update: pageUpdate, view },
+			given(reading.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add GitHub")).toExist(),
+			expectView(text("Reading your GitHub organizations")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(githubListed(reading.model, GITHUB_INSTALLATIONS)),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Add example-labs" })).toBeEnabled(),
+			// The organization that is a source already has nothing to click.
+			expectView(text("Added")).toExist(),
+			expectView(role("button", { name: "Add example-org" })).not.toExist(),
+			expectView(text("Only organization accounts have a billing report.")).toExist(),
+			expectView(role("button", { name: "Add example-user" })).not.toExist(),
+			expectView(text("Suspended or removed in GitHub. Reconnect it first.")).toExist(),
+			expectView(role("link", { name: "Connect it to Maple" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=github",
+			),
+			expectView(role("button", { name: "Back" })).toExist(),
+		)
+		// With no installation the step leads to the GitHub connect flow.
+		scene(
+			{ update: pageUpdate, view },
+			given(githubListed(reading.model, [])),
+			resolveTheme,
+			dialogMounted,
+			expectView(text(/No GitHub organization is connected to Maple yet/)).toExist(),
+			// The way on is the step's primary action, in the footer beside Back.
+			expectView(role("link", { name: "Connect GitHub" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=github",
+			),
+			expectView(role("button", { name: "Back" })).toExist(),
+		)
+		// While the read is in flight, and once it lists organizations, the footer offers only Back.
+		scene(
+			{ update: pageUpdate, view },
+			given(reading.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("link", { name: "Connect GitHub" })).not.toExist(),
+		)
+		// An answer to a read the step has since replaced is dropped.
+		expect(
+			pageUpdate(
+				reading.model,
+				Message.CompletedLoadGithubInstallations({
+					request: reading.model.githubRead - 1,
+					result: Result.fail(toLoadFailure("late")),
+				}),
+			).model.githubInstallations,
+		).toEqual(reading.model.githubInstallations)
+		// A list that could not be read says so, and can be asked for again.
+		const unread = pageUpdate(
+			reading.model,
+			Message.CompletedLoadGithubInstallations({
+				request: reading.model.githubRead,
+				result: Result.fail(toLoadFailure("unreachable")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(unread),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toExist(),
+			expectView(role("button", { name: "Try again" })).toExist(),
+		)
+		expect(names(pageUpdate(unread, Message.ClickedAddGithub()).commands)).toEqual([
+			"FetchGithubCostInstallations",
+		])
+	})
+
+	test("a refused GitHub add stays in the dialog with the reason and the settings link; an accepted one closes it", () => {
+		const listed = githubListed(
+			pageUpdate(
+				pageUpdate(entered({}, [source()]).model, Message.ClickedAddSource()).model,
+				Message.ClickedAddGithub(),
+			).model,
+			GITHUB_INSTALLATIONS,
+		)
+		const adding = pageUpdate(
+			listed,
+			Message.ClickedAddGithubInstallation({ installationId: GITHUB_LABS }),
+		)
+		expect(adding.commands).toMatchObject([
+			{ name: "AddGithubCostSource", args: { installationId: GITHUB_LABS } },
+		])
+		// A second click while the first add is in flight sends nothing more.
+		expect(
+			names(
+				pageUpdate(
+					adding.model,
+					Message.ClickedAddGithubInstallation({ installationId: GITHUB_LABS }),
+				).commands,
+			),
+		).toEqual([])
+
+		const refused = pageUpdate(
+			adding.model,
+			Message.CompletedAddGithubSource({
+				installationId: GITHUB_LABS,
+				result: Result.fail({
+					...toLoadFailure("refused"),
+					code: GITHUB_PERMISSION_MISSING_CODE,
+					message: "GitHub has not granted Maple access to billing yet.",
+				}),
+			}),
+		).model
+		expect(refused.addDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(refused),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toContainText("GitHub has not granted Maple access to billing yet."),
+			expectView(role("link", { name: "Open the GitHub App settings" })).toHaveAttr(
+				"href",
+				"https://github.com/organizations/example-labs/settings/installations/1000002",
+			),
+			expectView(role("button", { name: "Add example-labs" })).toBeEnabled(),
+		)
+		// A failure the organization cannot fix in GitHub (an outage) says so without the settings link.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					adding.model,
+					Message.CompletedAddGithubSource({
+						installationId: GITHUB_LABS,
+						result: Result.fail(toLoadFailure("unreachable")),
+					}),
+				).model,
+			),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toExist(),
+			expectView(role("link", { name: "Open the GitHub App settings" })).not.toExist(),
+		)
+		// Trying again takes the old reason away while GitHub is asked.
+		const retrying = pageUpdate(
+			refused,
+			Message.ClickedAddGithubInstallation({ installationId: GITHUB_LABS }),
+		)
+		expect(retrying.model.githubRefusal).toBeNull()
+
+		const added = pageUpdate(
+			retrying.model,
+			Message.CompletedAddGithubSource({
+				installationId: GITHUB_LABS,
+				result: Result.succeed(new GithubCostSourceAdded({ accountLogin: "example-labs" })),
+			}),
+		)
+		expect(added.model.addDialog.isOpen).toBe(false)
+		expect(names(added.commands)).toContain("FetchCostSources")
+		expect(added.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "GitHub added",
+				description: "The first sync of example-labs runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("a GitHub source is named by its organization, bills no requests and can only be removed", () => {
+		const github = source({
+			id: GITHUB_SOURCE,
+			provider: "github",
+			connectionRef: GITHUB_ORG,
+			accountId: "example-org",
+			backfillDate: "2026-08-01",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [source(), github]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("GitHub")).toExist(),
+			expectView(text("example-org")).toExist(),
+			expectView(text(/0 provider requests/)).not.toExist(),
+			// It reads through the GitHub connection: there is no key to replace.
+			expectView(role("button", { name: /^Replace/ })).not.toExist(),
+			expectView(role("button", { name: "Remove GitHub source" })).toExist(),
+		)
+
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ sourceId: GITHUB_SOURCE })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the GitHub source?")).toExist(),
+			expectView(text(/stops reading the billed usage of example-org/)).toExist(),
+			expectView(text(/no key is deleted/)).toExist(),
+			expectView(text(/brings back this month and the three before it/)).toExist(),
+		)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(removing.commands).toMatchObject([
+			{ name: "RemoveGithubCostSource", args: { installationId: GITHUB_ORG } },
+		])
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveGithubSource({
+				result: Result.succeed(new GithubCostSourceRemoved({ removed: true })),
+			}),
+		)
+		expect(removed.model.removeDialog.isOpen).toBe(false)
+		expect(names(removed.commands)).toEqual(
+			expect.arrayContaining([
+				"FetchCostSources",
+				"FetchCostTotals",
+				"FetchCostTimeseries",
+				"FetchCostBreakdown",
+			]),
+		)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "GitHub removed", description: "" }),
+		)
+		// Its row is gone at once, and the AWS source stays.
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("example-org")).not.toExist(),
+			expectView(text("123456789012")).toExist(),
+		)
+
+		// A removal GitHub's source service could not make keeps the row and says so.
+		const failed = pageUpdate(
+			removing.model,
+			Message.CompletedRemoveGithubSource({ result: Result.fail(toLoadFailure("unreachable")) }),
+		)
+		expect(failed.model.sourceWrite).toBe("Idle")
+		expect(failed.outMessage).toMatchObject({ type: "error", title: "Couldn't remove the source" })
 	})
 
 	const vercelTeam = { id: "team_1", name: "Acme Inc", slug: "acme" }
@@ -725,7 +1043,7 @@ describe("cost page", () => {
 
 	test("a Vercel source is named by its team, bills no requests and is removed after a confirm", () => {
 		const vercel = source({
-			id: "0190f2b3-0000-7000-8000-00000000c061",
+			id: VERCEL_SOURCE,
 			provider: "vercel",
 			accountId: "team_1",
 			accountName: "acme",
@@ -761,7 +1079,7 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^OpenRouter/ })).toExist(),
 		)
 
-		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ provider: "vercel" })).model
+		const confirming = pageUpdate(model, Message.ClickedRemoveSource({ sourceId: VERCEL_SOURCE })).model
 		scene(
 			{ update: pageUpdate, view },
 			given(confirming),
@@ -868,41 +1186,42 @@ describe("cost page", () => {
 
 	test("cost read for a source that was removed never stands in for the next source's", () => {
 		const openRouter = source({
-			id: "0190f2b3-0000-7000-8000-00000000c060",
+			id: OPENROUTER_SOURCE,
 			provider: "openrouter",
 			accountId: "user_2openrouterAccount",
 		})
 		const vercel = source({
-			id: "0190f2b3-0000-7000-8000-00000000c061",
+			id: VERCEL_SOURCE,
 			provider: "vercel",
 			accountId: "team_1",
 			accountName: "acme",
 		})
+		// GitHub's removal is the same handler: one more row here would add nothing.
 		const removals: ReadonlyArray<
-			Readonly<{ only: SourceWire; provider: RemovableProvider; removed: Message }>
+			Readonly<{ only: SourceWire; sourceId: CostSourceId; removed: Message }>
 		> = [
 			{
 				only: vercel,
-				provider: "vercel",
+				sourceId: VERCEL_SOURCE,
 				removed: Message.CompletedRemoveVercel({
 					result: Result.succeed(new VercelCostSourceRemoved({ removed: true })),
 				}),
 			},
 			{
 				only: openRouter,
-				provider: "openrouter",
+				sourceId: OPENROUTER_SOURCE,
 				removed: Message.CompletedRemoveKey({
 					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
 				}),
 			},
 		]
-		Arr.forEach(removals, ({ only, provider, removed: answer }) => {
+		Arr.forEach(removals, ({ only, sourceId, removed: answer }) => {
 			// The removed source was the only one with cost: the reads are skipped, not refreshed.
 			const model = answered(entered({}, [only]).model)
 			const totalsKey = model.totals.key ?? ""
 			const removed = pageUpdate(
 				pageUpdate(
-					pageUpdate(model, Message.ClickedRemoveSource({ provider })).model,
+					pageUpdate(model, Message.ClickedRemoveSource({ sourceId })).model,
 					Message.ClickedConfirmRemove(),
 				).model,
 				answer,
@@ -952,7 +1271,7 @@ describe("cost page", () => {
 
 	test("the rail offers resources where cost has one, and a service under a region breaks down by them", () => {
 		const vercel = source({
-			id: "0190f2b3-0000-7000-8000-00000000c061",
+			id: VERCEL_SOURCE,
 			provider: "vercel",
 			accountId: "team_1",
 			accountName: "acme",
@@ -995,19 +1314,19 @@ describe("cost page", () => {
 
 	test("removing one provider's source leaves the other's on the page", () => {
 		const openRouter = source({
-			id: "0190f2b3-0000-7000-8000-00000000c060",
+			id: OPENROUTER_SOURCE,
 			provider: "openrouter",
 			accountId: "user_2openrouterAccount",
 		})
 		const vercel = source({
-			id: "0190f2b3-0000-7000-8000-00000000c061",
+			id: VERCEL_SOURCE,
 			provider: "vercel",
 			accountId: "team_1",
 			accountName: "acme",
 		})
 		const model = answered(entered({}, [openRouter, vercel]).model)
 		const removing = pageUpdate(
-			pageUpdate(model, Message.ClickedRemoveSource({ provider: "openrouter" })).model,
+			pageUpdate(model, Message.ClickedRemoveSource({ sourceId: OPENROUTER_SOURCE })).model,
 			Message.ClickedConfirmRemove(),
 		)
 		// The confirm removes the source its dialog asked about.
@@ -1102,10 +1421,11 @@ describe("cost page", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")
 		expect(keyLabel("provider", "vercel")).toBe("Vercel")
-		// A Vercel project is the row's resource; a charge of no project says so.
+		// A Vercel project or a GitHub repository is the row's resource; a charge of neither says so.
 		expect(keyLabel("resource", "web")).toBe("web")
 		expect(keyLabel("resource", "")).toBe("No resource")
 		expect(requestFilters({ resource: ["web"] })).toEqual({ resource: ["web"] })
+		expect(keyLabel("provider", "github")).toBe("GitHub")
 		// A provider this build does not know still shows, as the rows name it.
 		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
 		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })
@@ -1179,10 +1499,33 @@ describe("cost page", () => {
 			expectView(text(/AWS brings in this month and the last/)).toExist(),
 			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
 		)
-		// A Vercel team reads back like an AWS account: the two are named together.
+		// GitHub keeps a few months: this one and the last at once, then the two before.
+		const github = source({
+			...unsynced,
+			id: GITHUB_SOURCE,
+			provider: "github",
+			accountId: "example-org",
+			status: "pending",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [github]).model),
+			resolveTheme,
+			expectView(text(/It brings in this month and the last, then the two months before/)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [failingAws, github]).model),
+			resolveTheme,
+			expectView(text(/AWS brings in this month and the last/)).toExist(),
+			expectView(
+				text(/GitHub brings in this month and the last, then the two months before/),
+			).toExist(),
+		)
+		// A Vercel team reads back like an AWS account, and each provider on the page is named.
 		const vercel = source({
 			...unsynced,
-			id: "0190f2b3-0000-7000-8000-00000000c061",
+			id: VERCEL_SOURCE,
 			provider: "vercel",
 			accountId: "team_1",
 			accountName: "acme",
@@ -1196,9 +1539,12 @@ describe("cost page", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given(entered({}, [failingAws, vercel, openRouter]).model),
+			given(entered({}, [failingAws, openRouter, github, vercel]).model),
 			resolveTheme,
-			expectView(text(/AWS and Vercel bring in this month and the last/)).toExist(),
+			expectView(text(/AWS brings in this month and the last/)).toExist(),
+			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+			expectView(text(/GitHub brings in this month and the last/)).toExist(),
+			expectView(text(/Vercel brings in this month and the last/)).toExist(),
 		)
 	})
 

@@ -21,6 +21,7 @@ const source = (
 	Schema.decodeSync(CostSourceSummary)({
 		id,
 		provider,
+		connectionRef: id,
 		accountId,
 		status: "ok",
 		watermarkDate: "2026-11-10",
@@ -60,6 +61,54 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "", [])).toBeNull()
 	})
 
+	test("a GitHub account reads by its organization, with nothing beside it, and wears GitHub's mark", () => {
+		const github = keyMark("provider", "github", [])?.icon
+		const withGithub = [
+			...sources,
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		expect(keyLabel("account", "example-org", withGithub)).toBe("GitHub example-org")
+		expect(keyDetail("account", "example-org", withGithub)).toBeNull()
+		expect(keyMark("account", "example-org", withGithub)?.icon).toBe(github)
+		// A second organization reads the same way: the name already tells them apart.
+		const two = [...withGithub, source("github", "example-labs", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22")]
+		expect(keyLabel("account", "example-labs", two)).toBe("GitHub example-labs")
+	})
+
+	test("a GitHub product wears GitHub's mark, also beside AWS services; its category a glyph", () => {
+		const aws = keyMark("provider", "aws", [])?.icon
+		const github = keyMark("provider", "github", [])?.icon
+		const both = [...sources, source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")]
+		expect(keyMark("cloud_service", "Actions", both)?.icon).toBe(github)
+		expect(keyMark("cloud_service", "Git LFS", [])?.icon).toBe(github)
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", both)?.icon).toBe(aws)
+		// A product GitHub starts billing later: GitHub's when no AWS account could bill it.
+		const githubOnly = [source("github", "example-org"), source("openrouter", "user_one")]
+		expect(keyMark("cloud_service", "Models", githubOnly)?.icon).toBe(github)
+		// Beside an AWS account its name says neither: a neutral glyph, never a logo that is a guess.
+		const unknown = keyMark("cloud_service", "Models", both)?.icon
+		expect([unknown === aws, unknown === github]).toEqual([false, false])
+		expect(keyMark("service_category", "Developer Tools", [])?.icon).toBe("CodeIcon")
+		// GitHub bills no region: its rows are `global`, which is the globe and not a logo.
+		expect(keyMark("region", "global", both)?.icon).toBe("GlobeIcon")
+	})
+
+	test("a GitHub row drills like any other: a provider to its services, a service to its accounts", () => {
+		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "github" })).toEqual({
+			groupBy: "cloud_service",
+			provider: ["github"],
+		})
+		expect(
+			drilledInto(
+				{ groupBy: "cloud_service", provider: ["github"], region: ["global"] },
+				{ dimension: "cloud_service", value: "Actions" },
+			),
+		).toMatchObject({ groupBy: "account", cloud_service: ["Actions"] })
+		expect(facetFilters({ provider: ["github"], account: ["example-org"] }, "account")).toEqual({
+			provider: ["github"],
+		})
+	})
+
 	test("a Vercel account reads as the team it is, with the Vercel mark and nothing aside", () => {
 		// The account is the team's id, which a rename leaves alone; the slug is how it is known.
 		const team = source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")
@@ -93,6 +142,49 @@ describe("cost key marks", () => {
 		// An airport code is Vercel's only for an org that reads Vercel.
 		expect(keyMark("region", "fra1", sources)?.icon).toBe(aws)
 		expect(keyMark("region", "global", both)?.icon).toBe(keyMark("region", "global", [])?.icon)
+	})
+
+	test("an org with AWS, GitHub and Vercel: each key wears its own platform's mark, or none", () => {
+		const aws = keyMark("provider", "aws", [])?.icon
+		const github = keyMark("provider", "github", [])?.icon
+		const vercel = keyMark("provider", "vercel", [])?.icon
+		const all = [
+			source("aws", "465760687006"),
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+			{ ...source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22"), accountName: "acme" },
+		]
+		// Services: a name that says whose it is, else no logo.
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", all)?.icon).toBe(aws)
+		expect(keyMark("cloud_service", "Actions", all)?.icon).toBe(github)
+		const unnamed = keyMark("cloud_service", "Function Duration", all)?.icon
+		expect([unnamed === aws, unnamed === github, unnamed === vercel]).toEqual([false, false, false])
+		// Regions: AWS's codes, Vercel's ids, and the globe for what bills none.
+		expect(keyMark("region", "eu-west-1", all)?.icon).toBe(aws)
+		expect(keyMark("region", "iad1", all)?.icon).toBe(vercel)
+		expect(keyMark("region", "global", all)?.icon).toBe("GlobeIcon")
+		const elsewhere = keyMark("region", "north-1", all)?.icon
+		expect([elsewhere === aws, elsewhere === vercel]).toEqual([false, false])
+		// Accounts read as what they are.
+		expect([
+			keyLabel("account", "465760687006", all),
+			keyLabel("account", "example-org", all),
+			keyLabel("account", "team_1", all),
+		]).toEqual(["AWS 465760687006", "GitHub example-org", "Vercel acme"])
+		expect(keyMark("account", "example-org", all)?.icon).toBe(github)
+		expect(keyMark("account", "team_1", all)?.icon).toBe(vercel)
+	})
+
+	test("a resource is a GitHub repository or a Vercel project: it reads by its name under one glyph", () => {
+		const sources = [source("github", "example-org"), source("vercel", "team_1")]
+		// The key does not say who bills it, so a repository and a project wear the same mark.
+		const repository = keyMark("resource", "example-api", sources)
+		expect(repository?.icon).toBe("FolderIcon")
+		expect(keyMark("resource", "web", sources)).toEqual(repository)
+		expect(keyLabel("resource", "example-api", sources)).toBe("example-api")
+		expect(keyDetail("resource", "example-api", sources)).toBeNull()
+		// A seat product names no repository, a plan fee no project.
+		expect(keyLabel("resource", "", sources)).toBe("No resource")
+		expect(keyMark("resource", "", sources)).toBeNull()
 	})
 
 	test("a resource wears its own glyph, since its key does not say who bills it", () => {
@@ -146,6 +238,14 @@ describe("cost filter rail", () => {
 		expect(drilledInto({}, service, withProjects).groupBy).toBe("region")
 		// Under a region it moves on to the projects, where the org has any, else to accounts.
 		expect(drilledInto({ region: ["iad1"] }, service, withProjects).groupBy).toBe("resource")
+		// A GitHub product goes on to its repositories the same way.
+		expect(
+			drilledInto(
+				{ provider: ["github"], region: ["global"] },
+				{ dimension: "cloud_service", value: "Actions" },
+				withProjects,
+			).groupBy,
+		).toBe("resource")
 		expect(drilledInto({ region: ["iad1"] }, service, without).groupBy).toBe("account")
 		// A project splits by its services.
 		expect(drilledInto({}, { dimension: "resource", value: "web" }, withProjects)).toEqual({

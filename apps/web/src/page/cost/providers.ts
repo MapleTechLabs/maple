@@ -28,6 +28,12 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
+	github: {
+		name: PROVIDERS.github.name,
+		icon: PROVIDERS.github.icon,
+		iconClassName: PROVIDERS.github.iconClassName,
+		requestUsd: null,
+	},
 	vercel: {
 		name: PROVIDERS.vercel.name,
 		icon: PROVIDERS.vercel.icon,
