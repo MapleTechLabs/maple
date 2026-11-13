@@ -321,6 +321,11 @@ const listenForDrags = <A>(
 	const onDragMove = (event: PointerEvent) => {
 		const drag = state.drag
 		if (drag === null) return
+		// A release the page never saw (the window lost focus mid-drag): no button is down any more.
+		if ((event.buttons & 1) === 0) {
+			cancel()
+			return
+		}
 		if (!drag.moved) {
 			if (Math.abs(event.clientX - drag.fromX) < DRAG_THRESHOLD_PX) return
 			drag.moved = true

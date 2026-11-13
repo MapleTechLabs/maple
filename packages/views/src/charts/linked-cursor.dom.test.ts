@@ -37,8 +37,9 @@ const setUp = () => {
 }
 type Parts = ReturnType<typeof setUp>
 
-const pointer = (type: string, x: number, pointerType = "mouse") =>
-	new PointerEvent(type, { bubbles: true, clientX: x, clientY: 100, button: 0, pointerType })
+/** A pointer event at `x`; a move carries the held primary button unless `buttons` says otherwise. */
+const pointer = (type: string, x: number, pointerType = "mouse", buttons = type === "pointermove" ? 1 : 0) =>
+	new PointerEvent(type, { bubbles: true, clientX: x, clientY: 100, button: 0, buttons, pointerType })
 
 /** The spans the zoom reports while `gesture` plays on a mounted group. */
 const rangesFor = (gesture: (parts: Parts) => void) =>
@@ -99,6 +100,19 @@ describe("linked zoom gesture", () => {
 			plot.dispatchEvent(pointer("pointerup", 450))
 		})
 		expect(ranges).toEqual([])
+	})
+
+	test("a drag whose release never arrived ends at the next move with no button down", async () => {
+		const labels: Array<string> = []
+		const ranges = await rangesFor(({ plot, label }) => {
+			plot.dispatchEvent(pointer("pointerdown", 300))
+			plot.dispatchEvent(pointer("pointermove", 450))
+			plot.dispatchEvent(pointer("pointermove", 470, "mouse", 0))
+			labels.push(label.textContent)
+			plot.dispatchEvent(pointer("pointerup", 470))
+		})
+		expect(ranges).toEqual([])
+		expect(labels).toEqual([""])
 	})
 
 	test("a press on what the page lays over the plot, or a touch, starts no drag", async () => {
