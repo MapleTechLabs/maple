@@ -25,11 +25,15 @@ export type AnswerTrailOptions<M> = Readonly<{
 }>
 
 const CHIP =
-	"inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card py-0.5 pr-2 pl-1.5 text-foreground"
+	"inline-flex max-w-full min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card py-0.5 pr-2 pl-1.5 text-foreground"
 
 const doneStep = <M>(h: HtmlBuilder<M>, step: AnswerTrailStep<M>): Html => {
 	const answer = step.answer ?? step.label
-	const content = [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" }), answer]
+	// A long answer truncates inside the chip rather than pushing the trail past a phone's width.
+	const content = [
+		icon(h, "CheckIcon", { size: 12, className: "shrink-0 text-severity-info" }),
+		h.span([h.Class("truncate")], [answer]),
+	]
 	const onClick = step.onClick ?? null
 	// The check is decorative, so a static chip says its state in words; a button says it in its name.
 	return onClick === null
@@ -51,7 +55,7 @@ const step = <M>(h: HtmlBuilder<M>, entry: AnswerTrailStep<M>): Html => {
 	return h.li(
 		[
 			h.Key(entry.label),
-			h.Class("inline-flex items-center"),
+			h.Class("inline-flex min-w-0 max-w-full items-center"),
 			...(isCurrent ? [h.AriaCurrent("step")] : []),
 		],
 		[
