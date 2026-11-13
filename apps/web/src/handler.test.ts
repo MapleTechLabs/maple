@@ -38,6 +38,11 @@ describe("apiProxyPath", () => {
 		expect(apiProxyPath("/_api/docs")).toBeUndefined()
 		expect(apiProxyPath("/_api/v2/docs/")).toBeUndefined()
 		expect(apiProxyPath("/_api/v2/docs-like")).toBe("/v2/docs-like")
+		// However the path is spelled, if the API's router would read it as a reference page.
+		expect(apiProxyPath("/_api/%64ocs")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/doc%73")).toBeUndefined()
+		expect(apiProxyPath("/_api/docs;x")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/traces%2Fdocs")).toBe("/v2/traces%2Fdocs")
 	})
 })
 
