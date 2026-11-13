@@ -25,6 +25,7 @@ import * as activityQueries from "../ch/queries/activity"
 import * as alertCheckQueries from "../ch/queries/alert-checks"
 import * as ciRunsQueries from "../ch/queries/ci-runs"
 import * as auditLogQueries from "../ch/queries/audit-log"
+import * as auditTrailQueries from "../ch/queries/audit-trail"
 import * as cancellationEvidenceQueries from "../ch/queries/cancellation-evidence"
 import * as anomalyQueries from "../ch/queries/anomaly"
 import * as attributeKeyQueries from "../ch/queries/attribute-keys"
@@ -279,6 +280,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	activity: activityQueries,
 	"alert-checks": alertCheckQueries,
 	"audit-log": auditLogQueries,
+	"audit-trail": auditTrailQueries,
 	"cancellation-evidence": cancellationEvidenceQueries,
 	"ci-runs": ciRunsQueries,
 	anomaly: anomalyQueries,

@@ -9,6 +9,11 @@ import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/a
 import { AUDIT_LOG_DATASOURCE } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
+	AuditTrailService,
+	type AuditTrailServiceApi,
+} from "@maple/backend/services/audit-trail/AuditTrailService"
+import { mapleAuditTrailEvents } from "@maple/backend/services/audit-trail/providers/maple"
+import {
 	type AuditLogEvent,
 	auditEventToRow,
 	decodeAuditLogEvent,
@@ -21,7 +26,7 @@ import {
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const AuditEventsLive = WarehouseQueryService.layer.pipe(
+export const AuditEventsLive = Layer.mergeAll(WarehouseQueryService.layer, AuditTrailService.layer).pipe(
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 
@@ -72,8 +77,24 @@ const retryOrExhaust = (message: Message, cause: unknown, maxRetries: number) =>
 }
 
 /**
- * Audit events queue consumer: lowers each event to its `audit_log` row and
- * writes one batch per org through the managed ingest pipeline. The table is a
+ * Changes and refusals also go to the unified audit trail. `audit_log` is the record, so a failed
+ * copy is logged and dropped: retrying the message for it would send stored entries to the DLQ.
+ */
+const copyToTrail = (trail: AuditTrailServiceApi, orgId: OrgId, events: ReadonlyArray<AuditLogEvent>) =>
+	Effect.suspend(() => trail.write(orgId, mapleAuditTrailEvents(events), { bestEffort: true })).pipe(
+		Effect.catchCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.interrupt
+				: Effect.logWarning("Audit trail copy failed; audit_log kept the entries").pipe(
+						Effect.annotateLogs({ orgId, entries: events.length, error: summarizeCause(cause) }),
+					),
+		),
+	)
+
+/**
+ * Audit events queue consumer: lowers each event to its `audit_log` row (and, for a change or
+ * a refusal, its `audit_trail_events` row) and writes one batch per org through the managed
+ * ingest pipeline. The table is a
  * ReplacingMergeTree on the entry id, so queue redelivery collapses at merge
  * time; write failures retry through the queue's policy and, once exhausted,
  * land in `audit-events-dlq` rather than disappearing.
@@ -83,6 +104,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 	maxRetries: number,
 ) {
 	const warehouse = yield* WarehouseQueryService
+	const trail = yield* AuditTrailService
 	const now = yield* Clock.currentTimeMillis
 
 	const decodedPerMessage = yield* Effect.forEach(batch.messages, (message) =>
@@ -113,14 +135,16 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 
 	yield* Effect.forEach(
 		byOrg,
-		([orgId, group]) =>
-			warehouse
+		([orgId, group]) => {
+			const events = Arr.map(group, ({ event }) => event)
+			return warehouse
 				.ingest(
 					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					AUDIT_LOG_DATASOURCE,
-					Arr.map(group, ({ event }) => auditEventToRow(event, now)),
+					Arr.map(events, (event) => auditEventToRow(event, now)),
 				)
 				.pipe(
+					Effect.andThen(copyToTrail(trail, orgId, events)),
 					Effect.flatMap(() =>
 						Effect.sync(() => {
 							for (const { message } of group) message.ack()
@@ -146,7 +170,8 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 									},
 								),
 					),
-				),
+				)
+		},
 		{ concurrency: 3, discard: true },
 	)
 })

@@ -17,6 +17,8 @@ const RETENTION_DAYS = {
 	ai_crawler_requests: 30,
 	// Six years — HIPAA's documentation retention floor. Never rebuildable.
 	audit_log: 2190,
+	// Thirteen months: a year of audit history plus a month to compare against.
+	audit_trail_events: 400,
 	attribute_keys_hourly: 90,
 	attribute_values_hourly: 90,
 	error_events: 90,

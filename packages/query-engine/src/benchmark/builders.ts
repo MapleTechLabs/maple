@@ -1459,6 +1459,49 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				},
 			),
 	},
+	// Audit trail listing (packages/backend/src/services/audit-trail/AuditTrailService.ts `list`).
+	{
+		module: "audit-trail",
+		name: "auditTrailEventsQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.auditTrailEventsQuery({ limit: 51 }), { orgId: ORG_ID }),
+	},
+	{
+		// Every optional filter bound at once, with the keyset cursor.
+		module: "audit-trail",
+		name: "auditTrailEventsQuery",
+		label: "filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.auditTrailEventsQuery({
+					provider: true,
+					account: true,
+					category: true,
+					outcome: true,
+					action: true,
+					actor: true,
+					actorAlias: true,
+					since: true,
+					until: true,
+					before: true,
+					limit: 51,
+				}),
+				{
+					orgId: ORG_ID,
+					provider: "github",
+					account: "acme",
+					category: "membership",
+					outcome: "success",
+					action: "org.add_member",
+					actor: "octocat@acme.test",
+					actorAlias: "user_1",
+					since: START_TIME,
+					until: END_TIME,
+					beforeOccurredAt: END_TIME,
+					beforeId: "0f6f2c1e7a554c0e9a3b0d2c7e5b9a11",
+				},
+			),
+	},
 	// Cancellation evidence (CancellationTelemetryEvidence.read).
 	{
 		module: "cancellation-evidence",
