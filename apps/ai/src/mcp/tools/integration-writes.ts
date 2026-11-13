@@ -346,6 +346,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+		scopeFamily: "scrape_targets",
 		phrases: ["Adding a scrape target"],
 		handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
 			const tenant = yield* permitted("create_scrape_target", "scrape_targets:manage")
@@ -414,6 +415,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		scopeFamily: "scrape_targets",
 		phrases: ["Updating a scrape target"],
 		handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
 			const tenant = yield* permitted("update_scrape_target", "scrape_targets:manage")
@@ -468,6 +470,7 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "scrape_targets",
 		phrases: ["Deleting a scrape target"],
 		handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {
 			if (params.confirm !== true) {

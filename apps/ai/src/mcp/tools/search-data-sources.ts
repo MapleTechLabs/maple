@@ -35,6 +35,7 @@ export function registerSearchDataSourcesTool(server: McpToolRegistrar) {
 		}),
 		aliases: { q: "query", search: "query" },
 		hints: { readOnly: true },
+		scopeFamily: "data_sources",
 		phrases: ["Searching data sources", "Finding where the data lives"],
 		handler: Effect.fn("McpTool.searchDataSources")(function* ({ query, limit }) {
 			const trimmed = Str.trim(query)

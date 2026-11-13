@@ -257,6 +257,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Checking uptime monitors"],
 		handler: Effect.fn("McpTool.listUptimeMonitors")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -358,6 +359,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		}),
 		aliases: ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Adding an uptime monitor"],
 		handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
 			const tenant = yield* adminOnly("create_uptime_monitor")
@@ -416,6 +418,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		}),
 		aliases: ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Updating an uptime monitor"],
 		handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
 			const tenant = yield* adminOnly("update_uptime_monitor")
@@ -472,6 +475,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Deleting an uptime monitor"],
 		handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
 			// A member is refused before being asked to confirm, as create and update are.

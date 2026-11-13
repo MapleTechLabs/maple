@@ -153,6 +153,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "slos",
 		phrases: ["Checking SLOs"],
 		handler: Effect.fn("McpTool.listSlos")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -273,6 +274,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 			slo: P.text("The SLO's name or id (list_slos lists them)"),
 		}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "slos",
 		phrases: ["Inspecting an SLO"],
 		handler: Effect.fn("McpTool.inspectSlo")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -362,6 +364,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		scopeFamily: "slos",
 		phrases: ["Adding an SLO"],
 		handler: Effect.fn("McpTool.createSlo")(function* (params) {
 			const tenant = yield* canManage("create_slo")
@@ -406,6 +409,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		scopeFamily: "slos",
 		phrases: ["Updating an SLO"],
 		handler: Effect.fn("McpTool.updateSlo")(function* (params) {
 			const tenant = yield* canManage("update_slo")
@@ -452,6 +456,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "slos",
 		phrases: ["Deleting an SLO"],
 		handler: Effect.fn("McpTool.deleteSlo")(function* (params) {
 			// A member is refused before being asked to confirm, as create and update are.

@@ -299,6 +299,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then redact rules by position).",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Listing ingest rules"],
 		handler: Effect.fn("McpTool.listIngestRules")(function* () {
 			const tenant = yield* CurrentMcpTenant
@@ -359,6 +360,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Previewing an ingest rule"],
 		handler: Effect.fn("McpTool.previewIngestRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -455,6 +457,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			position: P.optionalNumber("Run order among redact rules; default after the last rule"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		scopeFamily: "ingest_rules",
 		phrases: ["Adding an ingest rule"],
 		handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
 			const tenant = yield* adminOnly("create_ingest_rule")
@@ -491,6 +494,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Updating an ingest rule"],
 		handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
 			const tenant = yield* adminOnly("update_ingest_rule")
@@ -533,6 +537,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "ingest_rules",
 		phrases: ["Deleting an ingest rule"],
 		handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {
 			if (params.confirm !== true) {
