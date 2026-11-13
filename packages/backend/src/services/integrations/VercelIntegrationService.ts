@@ -53,7 +53,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { vercelTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -68,6 +68,7 @@ import {
 	reportPoll,
 	upsertWithSource,
 } from "@maple/backend/services/integrations/integration-sources"
+import { releaseVercelCostSources, removeVercelCostSources } from "../cost/vercel-cost-sources"
 import {
 	createDrain,
 	deleteDrain,
@@ -84,6 +85,25 @@ import {
 	type VercelProjectListing,
 	type VercelTeamInfo,
 } from "./vercel/api"
+import { openVercelToken } from "./vercel/token"
+
+/** What a connection forgets when it moves to another team: that team's drains and deployments. */
+const NEW_TEAM_RESET = {
+	logDrainId: null,
+	traceDrainId: null,
+	aiGatewayDrainId: null,
+	speedInsightsDrainId: null,
+	webAnalyticsDrainId: null,
+	auditLogDrainId: null,
+	logDrainState: null,
+	traceDrainState: null,
+	aiGatewayDrainState: null,
+	speedInsightsDrainState: null,
+	webAnalyticsDrainState: null,
+	auditLogDrainState: null,
+	drainKeyHash: null,
+	deploymentsWatermarkAt: null,
+} as const
 
 const DISCOVERY_TTL_MS = 60 * 60_000
 const LEASE_MS = 4 * 60_000
@@ -469,8 +489,9 @@ export class VercelIntegrationService extends Context.Service<
 								.where(($) => [$.orgId.eq(orgId)])
 								.returning("id", "sourceId"),
 						)
-						// The connection's source goes with it.
+						// The connection's source goes with it, and so does its cost source.
 						yield* deleteSourcesOf(db, orgId, rows)
+						yield* removeVercelCostSources(db, orgId)
 						yield* db.run(PG.deleteFrom(VercelDeployments).where(($) => [$.orgId.eq(orgId)]))
 						yield* db.run(PG.deleteFrom(VercelProjects).where(($) => [$.orgId.eq(orgId)]))
 					}),
@@ -478,11 +499,9 @@ export class VercelIntegrationService extends Context.Service<
 			)
 
 		const decryptToken = (connection: VercelConnectionRow) =>
-			openSecret(
+			openVercelToken(
 				keyring,
-				vercelTokenSlot,
-				{ orgId: connection.orgId },
-				{ ciphertext: connection.tokenCiphertext, iv: connection.tokenIv, tag: connection.tokenTag },
+				connection,
 				() => new IntegrationsPersistenceError({ message: "Failed to decrypt the Vercel token" }),
 			)
 
@@ -1196,60 +1215,54 @@ export class VercelIntegrationService extends Context.Service<
 			// A reconnect keeps the connection id and so its source.
 			const connection = yield* dbExecute((db) =>
 				db.transaction(
-					upsertWithSource(
-						db,
-						orgId,
-						{ platform: "vercel", name: integrationSourceName.vercel({ teamName: team.name }) },
-						now,
-						db
-							.run(
-								PG.from(VercelConnections)
-									.select("sourceId")
-									.where(($) => [$.orgId.eq(orgId)])
-									.limit(1)
-									// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
-									.forUpdate(),
-							)
-							.pipe(Effect.map(([row]) => row?.sourceId ?? null)),
-						(sourceId) =>
-							db
-								.run(
-									PG.insertInto(VercelConnections)
-										.values({
-											id: randomUUID(),
-											orgId,
-											sourceId,
-											...fields,
-											createdAt: now,
-										})
-										.onConflictDoUpdate({
-											target: ["orgId"],
-											// A new team starts its drains and deployment history over.
-											set: () =>
-												sameTeam
-													? fields
-													: {
-															...fields,
-															logDrainId: null,
-															traceDrainId: null,
-															aiGatewayDrainId: null,
-															speedInsightsDrainId: null,
-															webAnalyticsDrainId: null,
-															auditLogDrainId: null,
-															logDrainState: null,
-															traceDrainState: null,
-															aiGatewayDrainState: null,
-															speedInsightsDrainState: null,
-															webAnalyticsDrainState: null,
-															auditLogDrainState: null,
-															drainKeyHash: null,
-															deploymentsWatermarkAt: null,
-														},
-										})
-										.returning(),
-								)
-								.pipe(Effect.map(([row]) => row)),
-					),
+					Effect.gen(function* () {
+						// Held until the upsert, so a concurrent disconnect cannot delete the reused source.
+						// The team is read here, not before: a reconnect that committed since may have moved it.
+						const [locked] = yield* db.run(
+							PG.from(VercelConnections)
+								.select("sourceId", "teamId")
+								.where(($) => [$.orgId.eq(orgId)])
+								.limit(1)
+								.forUpdate(),
+						)
+						const keepsTeam = locked !== undefined && locked.teamId === team.id
+						const saved = yield* upsertWithSource(
+							db,
+							orgId,
+							{
+								platform: "vercel",
+								name: integrationSourceName.vercel({ teamName: team.name }),
+							},
+							now,
+							Effect.succeed(locked?.sourceId ?? null),
+							(sourceId) =>
+								db
+									.run(
+										PG.insertInto(VercelConnections)
+											.values({
+												id: randomUUID(),
+												orgId,
+												sourceId,
+												...fields,
+												createdAt: now,
+											})
+											.onConflictDoUpdate({
+												target: ["orgId"],
+												// A new team starts its drains and deployment history over.
+												set: () =>
+													keepsTeam ? fields : { ...fields, ...NEW_TEAM_RESET },
+											})
+											.returning(),
+									)
+									.pipe(Effect.map(([row]) => row)),
+						)
+						// A cost source reads one team: the new team's spend would overwrite its days.
+						// The same team with a new token keeps it, and makes it due again at once.
+						yield* keepsTeam
+							? Effect.asVoid(releaseVercelCostSources(db, orgId, now))
+							: Effect.asVoid(removeVercelCostSources(db, orgId))
+						return saved
+					}),
 				),
 			)
 			if (connection === undefined) {

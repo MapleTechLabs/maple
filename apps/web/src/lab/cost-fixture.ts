@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import {
 	CostBreakdownResponse,
 	type CostBreakdownSortBy,
@@ -5,8 +6,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
 } from "@maple/domain/http"
-import { Array as Arr, Number as Num, Order, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Number as Num, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
@@ -20,7 +22,7 @@ export const LAB_NOW_MS = LAB_TODAY_MS + 14.5 * 3_600_000
 const ESTIMATED_DAYS = 2
 const DAY_MS = 86_400_000
 
-type Line = Readonly<Record<CostGroupBy, string> & { daily: number; drift: number }>
+type Line = Readonly<Record<CostGroupBy | "usage_type", string> & { daily: number; drift: number }>
 
 const line = (
 	cloud_service: string,
@@ -29,7 +31,87 @@ const line = (
 	usage_type: string,
 	daily: number,
 	drift: number,
-): Line => ({ cloud_service, service_category, region, usage_type, account: LAB_ACCOUNT, daily, drift })
+): Line => ({
+	cloud_service,
+	provider: "aws",
+	service_category,
+	region,
+	usage_type,
+	resource: "",
+	account: LAB_ACCOUNT,
+	daily,
+	drift,
+})
+
+/** A saved OpenRouter key, as OpenRouter masks it. */
+export const LAB_OPENROUTER_KEY = "sk-or-v1-4f2...c81"
+/** The OpenRouter account the lab's source reads: a personal account's user id. */
+const LAB_OPENROUTER_ACCOUNT = "user_2labExampleAccount0000000000"
+
+const modelLine = (model: string, servedBy: string, daily: number, drift: number): Line => ({
+	cloud_service: model,
+	provider: "openrouter",
+	service_category: "AI and Machine Learning",
+	region: "global",
+	usage_type: servedBy,
+	resource: "",
+	account: LAB_OPENROUTER_ACCOUNT,
+	daily,
+	drift,
+})
+
+/** The GitHub organization the lab's source reads, and the installation it reads through. */
+const LAB_GITHUB_ORG = "example-org"
+const LAB_GITHUB_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e061"
+/** A second organization the lab's reader can add. */
+const LAB_GITHUB_OTHER_ORG = "example-labs"
+const LAB_GITHUB_OTHER_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e062"
+
+/** `repository` is the row's resource; a seat product names none. */
+const githubLine = (
+	product: string,
+	sku: string,
+	repository: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "github",
+	service_category: "Developer Tools",
+	region: "global",
+	usage_type: sku,
+	resource: repository,
+	account: LAB_GITHUB_ORG,
+	daily,
+	drift,
+})
+
+/** The Vercel team the lab's source reads: its id is the account, its slug what the page shows. */
+export const LAB_VERCEL_TEAM = {
+	id: "team_labExample000000000000",
+	name: "Example Team",
+	slug: "example-team",
+}
+
+const productLine = (
+	product: string,
+	category: string,
+	region: string,
+	sku: string,
+	project: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "vercel",
+	service_category: category,
+	region,
+	usage_type: sku,
+	resource: project,
+	account: LAB_VERCEL_TEAM.id,
+	daily,
+	drift,
+})
 
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
@@ -50,6 +132,36 @@ const LINES: ReadonlyArray<Line> = [
 	line("Example Logs", "Management", "north-1", "north-1:ingested-gb", 8.8, -0.35),
 	// A charge with no region, the way a support plan is billed.
 	line("Example Support", "", "", "support-plan", 11.0, 0.0),
+	modelLine("example/large-model", "Example Labs", 38.5, 0.42),
+	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
+	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
+	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
+	githubLine("Actions", "Actions Linux", "example-api", 9.4, 0.25),
+	githubLine("Actions", "Actions storage", "example-site", 0.7, 0.05),
+	githubLine("Copilot", "Copilot Business", "", 6.3, 0.0),
+	githubLine("Packages", "Packages storage", "example-api", 0.4, -0.1),
+	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
+	productLine(
+		"Example Function Duration",
+		"Compute",
+		"fra1",
+		"function-duration",
+		"example-docs",
+		3.1,
+		0.05,
+	),
+	productLine("Example Data Transfer", "Networking", "global", "data-transfer", "example-web", 6.7, 0.12),
+	productLine(
+		"Example Image Optimization",
+		"Web",
+		"global",
+		"image-optimization",
+		"example-docs",
+		2.2,
+		-0.08,
+	),
+	// The plan's monthly fee, as Vercel spreads it over the days: it belongs to no project.
+	productLine("Example Pro Plan", "Other", "global", "", "", 0.67, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -65,19 +177,32 @@ const chargeAt = (entry: Line, index: number, offset: number): number => {
 
 const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 	Arr.every(
-		["cloud_service", "service_category", "region", "usage_type", "account"] as const,
+		[
+			"cloud_service",
+			"provider",
+			"service_category",
+			"region",
+			"usage_type",
+			"resource",
+			"account",
+		] as const,
 		(dimension) => {
 			const values = filters?.[dimension] ?? []
 			return values.length === 0 || Arr.contains(values, entry[dimension])
 		},
 	)
 
-type Request = Readonly<{ days: number; filters: CostFilters | undefined }>
+type Request = Readonly<{
+	days: number
+	filters: CostFilters | undefined
+	/** Providers the lab's reader removed: their lines are in no read, whatever the filters say. */
+	without?: ReadonlyArray<CostProvider>
+}>
 
 /** Each matching line with its charge on every day of the window (oldest first) and of the period before. */
 const windowOf = (request: Request) =>
 	Arr.flatMap(LINES, (entry, index) =>
-		matches(entry, request.filters)
+		matches(entry, request.filters) && !Arr.contains(request.without ?? [], entry.provider)
 			? [
 					{
 						entry,
@@ -191,6 +316,7 @@ type SourceWire = (typeof CostSourcesResponse.Encoded)["sources"][number]
 const source = (over: Partial<SourceWire>): SourceWire => ({
 	id: "0190f2b3-0000-7000-8000-00000000c057",
 	provider: "aws",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a057",
 	accountId: LAB_ACCOUNT,
 	status: "ok",
 	watermarkDate: dayAt(1),
@@ -203,8 +329,162 @@ const source = (over: Partial<SourceWire>): SourceWire => ({
 	...over,
 })
 
+/** The OpenRouter source: four weeks of history, which is all the provider keeps, and no billed requests. */
+const openRouterSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c060",
+	provider: "openrouter",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a060",
+	accountId: LAB_OPENROUTER_ACCOUNT,
+	backfillDate: dayAt(29),
+	lastSyncedAt: LAB_NOW_MS - 3 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/** The GitHub source: this month and the three before it, and no billed requests. */
+const githubSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c061",
+	provider: "github",
+	connectionRef: LAB_GITHUB_INSTALLATION,
+	accountId: LAB_GITHUB_ORG,
+	backfillDate: "2026-08-01",
+	lastSyncedAt: LAB_NOW_MS - 5 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/** The Vercel source: eleven months of history, all one request serves, and no billed requests. */
+const vercelSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c063",
+	provider: "vercel",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a063",
+	accountId: LAB_VERCEL_TEAM.id,
+	accountName: LAB_VERCEL_TEAM.slug,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/** A source that was just added: it waits for its first sync. */
+const justAdded = (entry: SourceWire): SourceWire => ({
+	...entry,
+	status: "pending",
+	watermarkDate: null,
+	backfillDate: null,
+	historyComplete: false,
+	lastSyncedAt: null,
+})
+
+/** The organizations the lab's reader can add and remove, each with the source it gets. */
+const LAB_GITHUB_ORGS = [
+	{ installationId: LAB_GITHUB_INSTALLATION, login: LAB_GITHUB_ORG, sourceId: githubSource.id },
+	{
+		installationId: LAB_GITHUB_OTHER_INSTALLATION,
+		login: LAB_GITHUB_OTHER_ORG,
+		sourceId: "0190f2b3-0000-7000-8000-00000000c062",
+	},
+]
+
+/** The organization of a lab installation, as the add's answer names it. */
+export const labGithubLogin = (installationId: string): string =>
+	Arr.findFirst(LAB_GITHUB_ORGS, (org) => org.installationId === installationId).pipe(
+		Option.match({ onNone: () => installationId, onSome: (org) => org.login }),
+	)
+
+/**
+ * What the lab's reader did since the state loaded. `openRouter` and `vercel`: added (true),
+ * removed (false) or neither (null). `github`: an installation's id to whether it is a source now.
+ */
+export type LabSourceChanges = Readonly<{
+	openRouter: boolean | null
+	github: Readonly<Record<string, boolean>>
+	vercel: boolean | null
+}>
+
+/**
+ * The providers whose cost is in no read any more. GitHub's cost is all `example-org`'s: it leaves
+ * when that source is removed, and stays out while a source added again waits for its first sync.
+ */
+export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<CostProvider> =>
+	Arr.filter(
+		CostProvider.literals,
+		(provider) =>
+			(provider === "openrouter" && changes.openRouter === false) ||
+			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
+			// A team added again is a new source: it has no cost until a sync the lab does not model.
+			(provider === "vercel" && changes.vercel !== null),
+	)
+
+/**
+ * `sources` after what the lab's reader did: a source that was added waits for its first sync, one
+ * that was removed is gone.
+ */
+export const labSourcesWith = (
+	sources: CostSourcesResponse,
+	changes: LabSourceChanges,
+): CostSourcesResponse => {
+	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
+		entry.provider === "openrouter"
+			? changes.openRouter !== false
+			: entry.provider === "vercel"
+				? changes.vercel === null
+				: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+	)
+	const hasOpenRouter = Arr.some(kept, (entry) => entry.provider === "openrouter")
+	return decodeSources({
+		sources: [
+			...kept,
+			...(changes.openRouter === true && !hasOpenRouter ? [justAdded(openRouterSource)] : []),
+			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
+			...Arr.map(
+				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
+				(org) =>
+					justAdded({
+						...githubSource,
+						id: org.sourceId,
+						connectionRef: org.installationId,
+						accountId: org.login,
+					}),
+			),
+		],
+	})
+}
+
+type InstallationWire = (typeof GithubCostInstallations.Encoded)["installations"][number]
+
+/**
+ * The org's GitHub installations as the dialog lists them: the organization that is a source, one
+ * that can be added, a user account and a suspended installation. `sources` decides which are added.
+ */
+export const labGithubInstallations = (sources: CostSourcesResponse): GithubCostInstallations => {
+	const added = Arr.filter(sources.sources, (entry) => entry.provider === "github")
+	const organization = (installationId: string, accountLogin: string): InstallationWire => ({
+		installationId,
+		accountLogin,
+		state: Arr.some(added, (entry) => entry.connectionRef === installationId) ? "added" : "available",
+		settingsUrl: `https://github.com/organizations/${accountLogin}/settings/installations/1000001`,
+	})
+	return Schema.decodeSync(GithubCostInstallations)({
+		installations: [
+			organization(LAB_GITHUB_INSTALLATION, LAB_GITHUB_ORG),
+			organization(LAB_GITHUB_OTHER_INSTALLATION, LAB_GITHUB_OTHER_ORG),
+			{
+				installationId: "0190f2b3-0000-4000-8000-00000000e063",
+				accountLogin: "example-user",
+				state: "user_account",
+				settingsUrl: "https://github.com/settings/installations/1000003",
+			},
+			{
+				installationId: "0190f2b3-0000-4000-8000-00000000e064",
+				accountLogin: "example-archive",
+				state: "inactive",
+				settingsUrl:
+					"https://github.com/organizations/example-archive/settings/installations/1000004",
+			},
+		],
+	})
+}
+
 export const LAB_SOURCES = {
-	synced: decodeSources({ sources: [source({})] }),
+	synced: decodeSources({ sources: [source({}), openRouterSource, githubSource, vercelSource] }),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
 		sources: [
@@ -241,6 +521,8 @@ export const LAB_SOURCES = {
 				lastSyncedAt: Date.UTC(2026, 8, 30, 23, 10),
 				requestsThisMonth: 0,
 			}),
+			openRouterSource,
+			vercelSource,
 		],
 	}),
 } as const

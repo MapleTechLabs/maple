@@ -41,7 +41,10 @@ export const ALERTING_SCHEDULE = {
 	},
 	// Offset by two minutes: `*/5` is at the six-lane limit, and a fire of its own keeps the
 	// Vercel poller off the Railway and Cloudflare pollers' minute.
-	"2-59/5 * * * *": { lanes: ["vercel"], deadline: "270 seconds" },
+	// `cost_sync` pulls cloud cost: a source's head once a day, its history a few months per tick
+	// until done. Every five minutes so a new source has cost within minutes; a tick with nothing
+	// due costs a few queries.
+	"2-59/5 * * * *": { lanes: ["vercel", "cost_sync"], deadline: "270 seconds" },
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
@@ -51,9 +54,8 @@ export const ALERTING_SCHEDULE = {
 		deadline: "10 minutes",
 	},
 	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
-	// `cost_sync` pulls cloud cost: a source's head once a day, a few months of history per tick until done.
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal", "cost_sync"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>

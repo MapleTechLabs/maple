@@ -22,7 +22,6 @@ import {
 	FetchPageviews,
 	FetchSearchLanding,
 	FetchSearchOverview,
-	FetchSearchPages,
 	FetchSearchQueries,
 	FetchSearchStatus,
 	FetchSearchTimeseries,
@@ -205,7 +204,12 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 					summary("summary", { startTime, endTime, ...filters }),
 				]
 			: []
-	const search = tabOf(model.search) === "search" ? searchPlan(model, window) : []
+	const search =
+		tabOf(model.search) === "search"
+			? searchPlan(model, window)
+			: overview.length > 0
+				? [searchStatus]
+				: []
 	return [...page, ...overview, ...ai, ...search]
 }
 
@@ -225,7 +229,6 @@ export const searchSiteOf = (
 }
 
 const SEARCH_LIST_LIMIT = 100
-const SEARCH_LANDING_LIMIT = 50
 
 /** A table's sort until someone clicks: most clicks first. */
 export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
@@ -242,14 +245,17 @@ const searchOrderOf = (model: Model, table: SearchTable) => {
 		: { sortBy: sort.key, sortDir: sort.dir }
 }
 
+/** Whether Search Console is connected: the Search tab's first read, and the Overview's pointer to it. */
+const searchStatus: Request = {
+	slot: "searchStatus",
+	fn: "searchConsoleStatus",
+	input: {},
+	command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
+}
+
 /** The Search tab: status first; the reads once a property has finished its first import. */
 const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
-	const status: Request = {
-		slot: "searchStatus",
-		fn: "searchConsoleStatus",
-		input: {},
-		command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
-	}
+	const status = searchStatus
 	const site = searchSiteOf(model.search, Option.getOrUndefined(AsyncData.getData(model.searchStatus.data)))
 	if (site === undefined || site.watermarkDate === null) return [status]
 	// Windows end at the last complete day, so today's partial numbers never count or compare.
@@ -260,11 +266,10 @@ const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> =>
 		completeThrough: completeThrough(site.watermarkDate, pacificToday(model.nowMs)),
 	}
 	const queries = { ...base, ...searchOrderOf(model, "queries"), limit: SEARCH_LIST_LIMIT }
-	const pages = { ...base, ...searchOrderOf(model, "pages"), limit: SEARCH_LIST_LIMIT }
 	const eventName = filtersOf(model.search).eventName
-	// The page's event filter, when set, is what the landing table counts as a conversion.
-	const landingBase = { ...base, ...searchOrderOf(model, "landing"), limit: SEARCH_LANDING_LIMIT }
-	const landing = eventName === undefined ? landingBase : { ...landingBase, conversionEvent: eventName }
+	// The page's event filter, when set, is what the Pages table counts as a conversion.
+	const pagesBase = { ...base, ...searchOrderOf(model, "pages"), limit: SEARCH_LIST_LIMIT }
+	const landing = eventName === undefined ? pagesBase : { ...pagesBase, conversionEvent: eventName }
 	return [
 		status,
 		{
@@ -284,12 +289,6 @@ const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> =>
 			fn: "searchConsoleTopQueries",
 			input: queries,
 			command: (key) => FetchSearchQueries({ slot: "searchQueries", key, input: queries }),
-		},
-		{
-			slot: "searchPages",
-			fn: "searchConsoleTopPages",
-			input: pages,
-			command: (key) => FetchSearchPages({ slot: "searchPages", key, input: pages }),
 		},
 		{
 			slot: "searchLanding",

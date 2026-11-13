@@ -26,11 +26,16 @@ let unpatch: Array<() => void> = []
 /** Set while listeners run: a listener that logs must not be captured again. */
 let dispatching = false
 
+/** The SDKs' own diagnostics. They describe Maple's export, not the host app, so they are never captured. */
+const SDK_LINE = /^\[(?:maple|Maple(?:Client|Server|Cloudflare)SDK)\]/
+const isSdkLine = (args: ReadonlyArray<unknown>): boolean =>
+	typeof args[0] === "string" && SDK_LINE.test(args[0])
+
 function wrapLevel(level: Level) {
 	return (original: Console[Level], hooks: () => Set<ConsoleListener> | undefined): Console[Level] =>
 		(...args: unknown[]): void => {
 			const subscribers = hooks()
-			if (subscribers && !dispatching) {
+			if (subscribers && !dispatching && !isSdkLine(args)) {
 				dispatching = true
 				try {
 					for (const listener of subscribers) listener(level, args)

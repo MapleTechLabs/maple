@@ -1396,6 +1396,135 @@ describe("VercelIntegrationService", () => {
 		)
 	})
 
+	it.effect(
+		"a cost source stays through a reconnect of its team, and goes with the team or the connection",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			fake.teams = [
+				{ id: "team_1", slug: "acme", name: "Acme" },
+				{ id: "team_2", slug: "beta", name: "Beta" },
+			]
+			/** The org adds its connected team as a cost source, the way the Cost page does. */
+			const addCostSource = Effect.promise(() =>
+				testDb.pglite.query(
+					`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 SELECT gen_random_uuid()::text, org_id, 'vercel', id, team_id, now(), now() FROM vercel_connections`,
+				),
+			)
+			const held = Effect.promise(() =>
+				queryFirstRow<{
+					error: string | null
+					reason: string | null
+					held: boolean
+					failures: number
+					leased: boolean
+					synced: boolean
+				}>(
+					testDb,
+					`SELECT last_error AS error, last_error_reason AS reason, next_attempt_at IS NOT NULL AS held,
+					        consecutive_failures AS failures, lease_until IS NOT NULL AS leased,
+					        last_synced_at IS NOT NULL AS synced
+					   FROM cost_sources WHERE provider = 'vercel'`,
+				),
+			)
+			const costSources = Effect.promise(() =>
+				testDb.pglite.query<{ account: string }>(
+					"SELECT account_id AS account FROM cost_sources WHERE provider = 'vercel'",
+				),
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.account)))
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					yield* addCostSource
+					// The source is held for the old token's failure, with a pull on it still in flight.
+					yield* Effect.promise(() =>
+						testDb.pglite.query(
+							`UPDATE cost_sources SET last_error = 'Vercel rejected the saved token.',
+							        last_error_reason = 'auth', next_attempt_at = now() + interval '6 hours',
+							        consecutive_failures = 3, lease_until = now() + interval '20 minutes',
+							        watermark_date = '2026-10-18', last_synced_at = now()`,
+						),
+					)
+					// The team renamed its slug at Vercel since: the connection learns it on the reconnect.
+					fake.teams = [
+						{ id: "team_1", slug: "acme-labs", name: "Acme" },
+						{ id: "team_2", slug: "beta", name: "Beta" },
+					]
+					// A new token for the same team: the source and its history stay, and its account is the
+					// team's id, which the rename leaves alone, so stored rows and new ones stay one account.
+					yield* connect({ token: "vc_token_456" })
+					assert.deepStrictEqual(yield* costSources, ["team_1"])
+					// It is due at the next tick: no hold, no claim, and no last sync to wait a day from.
+					assert.deepStrictEqual(yield* held, {
+						error: null,
+						reason: null,
+						held: false,
+						failures: 0,
+						leased: false,
+						synced: false,
+					})
+					// Another team: its spend would overwrite the days the source holds.
+					yield* connect({ token: "vc_token_789", teamId: "team_2" })
+					assert.deepStrictEqual(yield* costSources, [])
+
+					yield* addCostSource
+					assert.deepStrictEqual(yield* costSources, ["team_2"])
+					yield* disconnect()
+					assert.deepStrictEqual(yield* costSources, [])
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"a reconnect decides from the team the connection has when it writes, not from an earlier read",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			fake.teams = [
+				{ id: "team_1", slug: "acme", name: "Acme" },
+				{ id: "team_2", slug: "beta", name: "Beta" },
+			]
+			const costSources = Effect.promise(() =>
+				testDb.pglite.query<{ account: string }>(
+					"SELECT account_id AS account FROM cost_sources WHERE provider = 'vercel'",
+				),
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.account)))
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					// This reconnect read team_1 as the connection's team. While it removes the old
+					// team's drains, another request commits the move to team_2 and adds its cost source.
+					let moved = false
+					fake.respond = (call) => {
+						if (moved || call.method !== "GET" || call.path !== "/v1/drains") return undefined
+						moved = true
+						return testDb.pglite
+							.query("UPDATE vercel_connections SET team_id = 'team_2', team_slug = 'beta'")
+							.then(() =>
+								testDb.pglite.query(
+									`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+									 SELECT gen_random_uuid()::text, org_id, 'vercel', id, 'team_2', now(), now() FROM vercel_connections`,
+								),
+							)
+							.then(() => json({ drains: [] }))
+					}
+					const reconnected = yield* connect({ token: "vc_token_456", teamId: "team_2" })
+					assert.isTrue(moved)
+					assert.strictEqual(reconnected.team?.id, "team_2")
+					// The connection was on team_2 already when this write ran: its source is that
+					// team's and stays. Decided from the earlier read, it would have been deleted.
+					assert.deepStrictEqual(yield* costSources, ["team_2"])
+				}),
+			)
+		},
+	)
+
 	it.effect("a first connect Vercel refuses deletes the drains it made and stays disconnected", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fake = makeFake()

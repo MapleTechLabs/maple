@@ -272,7 +272,8 @@ async fn flush_loop(
 ) {
     let mut accumulator: HashMap<AccumulatorKey, PendingUsage> = HashMap::new();
     let mut consecutive_failures: u64 = 0;
-    let critical_threshold: u64 = (300 / flush_interval.as_secs().max(1)).max(1);
+    // ~5 minutes of failures, but never a single blip on a long interval.
+    let critical_threshold: u64 = (300 / flush_interval.as_secs().max(1)).max(2);
 
     let mut interval = tokio::time::interval(flush_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

@@ -28,6 +28,10 @@ export interface ExecuteBatcher<E> {
 	readonly enqueue: (
 		payload: QueryEngineExecuteRequest,
 	) => Effect.Effect<QueryEngineExecuteResponse, ExecuteFailure<E>>
+	/** Sends this query now as a batch of one, so a slow query never holds its siblings. */
+	readonly executeAlone: (
+		payload: QueryEngineExecuteRequest,
+	) => Effect.Effect<QueryEngineExecuteResponse, ExecuteFailure<E>>
 }
 
 interface Pending<E> {
@@ -149,5 +153,12 @@ export const makeExecuteBatcher = <E>(
 				return yield* Deferred.await(settled)
 			})
 
-		return { enqueue } satisfies ExecuteBatcher<E>
+		const executeAlone = (payload: QueryEngineExecuteRequest) =>
+			Effect.gen(function* () {
+				const settled = yield* Deferred.make<QueryEngineExecuteResponse, ExecuteFailure<E>>()
+				yield* dispatch([{ payload, settled }])
+				return yield* Deferred.await(settled)
+			})
+
+		return { enqueue, executeAlone } satisfies ExecuteBatcher<E>
 	})

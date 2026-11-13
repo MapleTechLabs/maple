@@ -5,7 +5,7 @@
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
 import type { RunBudgetHook, RunUsageDelta } from "@yielded/agent/run-options"
 import type { ModelCallUsage } from "@yielded/agent/usage"
-import { Effect } from "effect"
+import { Array as Arr, Effect, Number as Num } from "effect"
 import { autumnModelId } from "../platform/ai-credits"
 
 /**
@@ -48,8 +48,16 @@ const MERGE_CEILING_TOKENS = 32_000
 const chargeInput = (spend: AiModelSpend) =>
 	spend.inputTokens + spend.cacheReadTokens + spend.cacheWriteTokens
 
-/** One model call into the run's AI credit charges, merged into the last one when that is safe. */
+/** What the provider billed for the call, or undefined when it reported no cost. */
+const providerCostOf = (call: ModelCallUsage): number | undefined =>
+	call.pricingStatus === "estimated" ? call.costMicrousd : undefined
+
+/**
+ * One model call into the run's AI credit charges, merged into the last one when that is safe:
+ * same model, both priced by the provider or both not, and under the long-context ceiling.
+ */
 const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
+	const providerCostMicrousd = providerCostOf(call)
 	const charge = {
 		modelId: autumnModelId(call.model),
 		inputTokens: call.inputTokens.uncached,
@@ -57,11 +65,13 @@ const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
 		cacheReadTokens: call.inputTokens.cacheRead,
 		cacheWriteTokens: call.inputTokens.cacheWrite,
 		reasoningTokens: call.outputTokens.reasoning,
+		...(providerCostMicrousd === undefined ? undefined : { providerCostMicrousd }),
 	}
 	const last = usage.charges.at(-1)
 	if (
 		last === undefined ||
 		last.modelId !== charge.modelId ||
+		(last.providerCostMicrousd === undefined) !== (providerCostMicrousd === undefined) ||
 		chargeInput(last) + chargeInput(charge) > MERGE_CEILING_TOKENS
 	) {
 		usage.charges.push(charge)
@@ -72,6 +82,17 @@ const recordCharge = (usage: RunUsage, call: ModelCallUsage) => {
 	last.cacheReadTokens += charge.cacheReadTokens
 	last.cacheWriteTokens += charge.cacheWriteTokens
 	last.reasoningTokens += charge.reasoningTokens
+	if (last.providerCostMicrousd !== undefined && providerCostMicrousd !== undefined) {
+		last.providerCostMicrousd += providerCostMicrousd
+	}
+}
+
+/** What the provider reported the run's calls cost, in microdollars; undefined when none reported one. */
+export const reportedCostMicrousd = (usage: Pick<RunUsage, "charges">): number | undefined => {
+	const priced = Arr.flatMap(usage.charges, (charge) =>
+		charge.providerCostMicrousd === undefined ? [] : [charge.providerCostMicrousd],
+	)
+	return priced.length === 0 ? undefined : Num.sumAll(priced)
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 	CodeReviewListResponse,
 	type CodeReviewSortKey,
 	CodeReviewRepositoryCount,
+	CodeReviewSpend,
 	CodeReviewTotals,
 	CodeReviewVerdicts,
 	PrReviewNotFoundError,
@@ -23,6 +24,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/primitives"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { Context, Effect, Layer, Option, Order, Schema, String as Str, Array as Arr } from "effect"
@@ -46,6 +48,14 @@ export interface PrReviewAnalyticsServiceApi {
 		orgId: OrgId,
 		query: CodeReviewFindingsQuery,
 	) => Effect.Effect<CodeReviewFindingsResponse, PrReviewPersistenceError>
+	/**
+	 * Where code review credits went between two epoch-ms bounds (a billing cycle), over every org
+	 * the bill covers: a billing org and the orgs it pays for.
+	 */
+	readonly spend: (
+		orgIds: ReadonlyArray<OrgId>,
+		window: { readonly start: number; readonly end: number },
+	) => Effect.Effect<CodeReviewSpend, PrReviewPersistenceError>
 }
 
 const HOUR = 3_600
@@ -75,6 +85,10 @@ const decodeFinding = Schema.decodeUnknownEffect(CodeReviewFinding)
 const decodeReport = Schema.decodeUnknownOption(PrReviewReport)
 const decodePostMerge = Schema.decodeUnknownOption(PrReviewPostMerge)
 const decodeTotals = Schema.decodeUnknownEffect(CodeReviewTotals)
+const decodeSpend = Schema.decodeUnknownEffect(CodeReviewSpend)
+
+/** A provider cost in microdollars as the AI credits the org pays for it. */
+const creditsOf = (costMicrousd: number) => aiCreditsUsd(costMicrousd / 1_000_000)
 
 const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Effect<A, Schema.SchemaError>) =>
 	Effect.forEach(rows, decode).pipe(
@@ -810,7 +824,141 @@ export class PrReviewAnalyticsService extends Context.Service<
 			})
 		})
 
-		return { analytics, listReviews, getReview, listFindings } satisfies PrReviewAnalyticsServiceApi
+		const spend = Effect.fn("PrReviewAnalyticsService.spend")(function* (
+			orgIds: ReadonlyArray<OrgId>,
+			window: Window,
+		) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.code_review.orgs": orgIds.length,
+				"maple.code_review.span_ms": window.end - window.start,
+			})
+			// Every review that ran a model: a superseded one started and was billed; a queued one, or
+			// one skipped or failed before it began, was not.
+			const ran = ($: Reviews) => [
+				$.orgId.in_(...orgIds),
+				$.createdAt.gte(window.start),
+				$.createdAt.lt(window.end),
+				PG.or(
+					$.costMicrousd.isNotNull(),
+					$.startedAt.isNotNull(),
+					$.status.in_("running", "completed"),
+				),
+			]
+			const costSum = ($: Reviews) => PG.sql(PG.float8)`coalesce(sum(${$.costMicrousd}), 0)::float8`
+			// One row per pull request: its reviews, their cost, and the first one's cost.
+			const perPullRequest = () =>
+				PG.from(PrReviews)
+					.innerJoin(VcsRepositories, "repo", (review, repo) => repo.id.eq(review.repositoryId))
+					.select(($) => ({
+						repositoryId: $.repositoryId,
+						fullName: $.repo.fullName,
+						number: $.number,
+						reviews: PG.count(),
+						cost: costSum($),
+						firstCost: PG.sql(
+							PG.float8,
+						)`coalesce((array_agg(${$.costMicrousd} order by ${$.createdAt}))[1], 0)::float8`,
+						title: PG.sql(
+							PG.nullable(PG.text),
+						)`(array_agg(${$.title} order by ${$.createdAt} desc))[1]`,
+						url: PG.sql(PG.text)`(array_agg(${$.url} order by ${$.createdAt} desc))[1]`,
+					}))
+					.where(ran)
+					.groupBy("repositoryId", "fullName", "number")
+
+			const [totalRows, repeatRows, repositoryRows, pullRequestRows] = yield* Effect.all(
+				[
+					dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => ({
+									reviews: PG.count(),
+									pullRequests: pullRequestCountOf($),
+									cost: costSum($),
+									// Every turn records its cost, so one that ran without it ran before costs were
+									// kept (a running review just has not ended its turn yet).
+									unpriced: PG.countIf(
+										PG.and($.costMicrousd.isNull(), $.status.neq("running")),
+									),
+								}))
+								.where(ran),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.fromQuery(perPullRequest(), "pr").select(($) => ({
+								reReviews: PG.sql(PG.float8)`coalesce(sum(${$.reviews} - 1), 0)::float8`,
+								reReviewCost: PG.sql(
+									PG.float8,
+								)`coalesce(sum(${$.cost} - ${$.firstCost}), 0)::float8`,
+							})),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.innerJoin(VcsRepositories, "repo", (review, repo) =>
+									repo.id.eq(review.repositoryId),
+								)
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.repo.fullName,
+									pullRequests: pullRequestCountOf($),
+									reviews: PG.count(),
+									cost: costSum($),
+								}))
+								.where(ran)
+								.groupBy("repositoryId", "fullName")
+								.orderBy(["cost", "desc"], ["reviews", "desc"])
+								.limit(TOP),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.fromQuery(perPullRequest(), "pr")
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.fullName,
+									number: $.number,
+									title: $.title,
+									url: $.url,
+									reviews: $.reviews,
+									cost: $.cost,
+								}))
+								.orderBy(["cost", "desc"], ["reviews", "desc"])
+								.limit(TOP),
+						),
+					),
+				],
+				{ concurrency: 4 },
+			)
+			const total = totalRows[0]
+			const repeat = repeatRows[0]
+			return yield* decodeSpend({
+				reviews: total?.reviews ?? 0,
+				pullRequests: total?.pullRequests ?? 0,
+				credits: creditsOf(total?.cost ?? 0),
+				unpricedReviews: total?.unpriced ?? 0,
+				reReviews: repeat?.reReviews ?? 0,
+				reReviewCredits: creditsOf(repeat?.reReviewCost ?? 0),
+				repositories: Arr.map(repositoryRows, ({ cost, ...row }) => ({
+					...row,
+					credits: creditsOf(cost),
+				})),
+				topPullRequests: Arr.map(pullRequestRows, ({ cost, ...row }) => ({
+					...row,
+					credits: creditsOf(cost),
+				})),
+			}).pipe(Effect.mapError(toPersistence))
+		})
+
+		return {
+			analytics,
+			listReviews,
+			getReview,
+			listFindings,
+			spend,
+		} satisfies PrReviewAnalyticsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

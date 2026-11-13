@@ -94,6 +94,18 @@ describe("startClientSession replay", () => {
 		await session.stop()
 	})
 
+	it("gives the replay session the noise filter, for the sink it starts after a rotation", async () => {
+		stubPage()
+		const session = startClientSession(BASE)
+		await vi.waitFor(() => expect(startReplaySession).toHaveBeenCalledTimes(1))
+		const filter = vi.mocked(startReplaySession).mock.calls[0]?.[0].isErrorNoise
+		expect(
+			filter?.("ResizeObserver loop completed with undelivered notifications.", "window.onerror"),
+		).toBe(true)
+		expect(filter?.(new Error("boom"), "window.onerror", "https://app.example.com/app.js")).toBe(false)
+		await session.stop()
+	})
+
 	it("records no replay for a crawler, which still gets its session events", async () => {
 		stubPage("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
 		const session = startClientSession(BASE)
@@ -102,6 +114,37 @@ describe("startClientSession replay", () => {
 
 		expect(startReplaySession).not.toHaveBeenCalled()
 		expect(getActiveSink()).toBeDefined()
+		await session.stop()
+	})
+})
+
+describe("startClientSession session errors", () => {
+	/** The fields of an `ErrorEvent` the capture reads; node has no `ErrorEvent`. */
+	const uncaught = (message: string, filename = "https://app.example.com/assets/app.js"): Event =>
+		Object.assign(new Event("error"), { message, filename, error: null })
+
+	it("counts a real uncaught error and not the benign ResizeObserver notice", async () => {
+		stubPage()
+		const session = startClientSession({ ...BASE, replay: { enabled: false } })
+
+		window.dispatchEvent(uncaught("ResizeObserver loop completed with undelivered notifications."))
+		window.dispatchEvent(uncaught("ResizeObserver loop limit exceeded"))
+		expect(getActiveSink()?.getErrorCount()).toBe(0)
+
+		window.dispatchEvent(uncaught("Cannot read properties of undefined (reading 'id')"))
+		expect(getActiveSink()?.getErrorCount()).toBe(1)
+		await session.stop()
+	})
+
+	it("counts no error thrown by a browser extension's script", async () => {
+		stubPage()
+		const session = startClientSession({ ...BASE, replay: { enabled: false } })
+
+		window.dispatchEvent(
+			uncaught("boom", "chrome-extension://fmkadmapgofadopljbjfkapdkoienihi/build/a.js"),
+		)
+
+		expect(getActiveSink()?.getErrorCount()).toBe(0)
 		await session.stop()
 	})
 })
