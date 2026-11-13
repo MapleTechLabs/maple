@@ -308,8 +308,8 @@ describe("logs stream: find in page", () => {
 		selector(`[data-findable-side="${side}"] [data-findable-index="${index}"]`)
 	const standIns = (side: "before" | "after") =>
 		all.selector(`[data-findable-side="${side}"] [data-findable-index]`)
-	const found = (index: number) =>
-		Mount.resolve(VirtualizeLogStream, Message.FoundRow({ match: { index, side: "after" } }))
+	const found = (index: number, side: "before" | "after" = "after") =>
+		Mount.resolve(VirtualizeLogStream, Message.FoundRow({ match: { index, side } }))
 
 	test("every row outside the window has a stand-in on its side, hidden until found", () => {
 		scene(
@@ -342,6 +342,20 @@ describe("logs stream: find in page", () => {
 			expect(selector('[data-findable-index="51"]')).not.toExist(),
 			Subscription.emit(windowOf(0, 24)),
 			expect(standIn("after", 50)).toHaveAttr("hidden", "until-found"),
+		)
+	})
+
+	test("a match above the window is kept in the before layer, ahead of the rows", () => {
+		scene(
+			program,
+			given(withWindow(40, 59)),
+			found(10, "before"),
+			Subscription.emit(windowOf(0, 20)),
+			expect(within(rowOf(10), role("listitem"))).toHaveAttr("data-focused", "true"),
+			expect(standIn("before", 10)).not.toHaveAttr("hidden"),
+			expect(selector('[data-findable-side="after"] [data-findable-index="10"]')).not.toExist(),
+			Subscription.emit(windowOf(40, 59)),
+			expect(standIn("before", 10)).toHaveAttr("hidden", "until-found"),
 		)
 	})
 })

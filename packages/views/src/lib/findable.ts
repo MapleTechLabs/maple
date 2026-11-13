@@ -2,12 +2,9 @@ import { Array as Arr, Option, Order, Schema } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import type { Instance } from "./virtualizer"
 
-// Find in page (Cmd+F) for a virtualized list. Every row outside the rendered window gets a
-// stand-in holding its text with `hidden="until-found"`, in a layer before the window (rows above)
-// or after it (rows below), so the browser counts and steps through matches in list order. On a
-// match the browser fires `beforematch`; the stand-in moves to its row's offset, the browser's own
-// scroll lands there and the virtualizer renders the row. The found stand-in stays (the browser's
-// active match lives in it) until its row leaves the window. After ui-sdk.dev's `findable`.
+// Find in page (Cmd+F) for a virtualized list, after ui-sdk.dev's `findable`: rows outside the
+// window get `hidden="until-found"` stand-ins before and after it, in list order. On `beforematch`
+// the stand-in moves to its row's offset, so the browser's own scroll brings the row on screen.
 
 export const FindableSide = Schema.Literals(["before", "after"])
 export type FindableSide = typeof FindableSide.Type
@@ -63,8 +60,8 @@ export interface FindableLayers<A> {
 	readonly found: Option.Option<Found>
 }
 
+// Keyed by side and chunk: bounded by the row count / CHUNK.
 const lazyGroup = createKeyedLazy()
-const lazyStandIn = createKeyedLazy()
 
 const standIn = <A, Message>(
 	h: HtmlBuilder<Message>,
@@ -102,16 +99,7 @@ const group = <A, Message>(
 		Arr.flatMap(Arr.range(chunk * CHUNK, chunk * CHUNK + CHUNK - 1), (index) => {
 			const item = items[index]
 			if (item === undefined || ((index < from || index > to) && index !== found)) return []
-			// Each stand-in is memoized too: a window move re-lists a chunk without rebuilding its rows.
-			const vnode = lazyStandIn(`${side}-${index}`, standIn, [
-				h,
-				index,
-				index === found,
-				item,
-				textOf,
-				variant,
-			])
-			return vnode === null ? [] : [vnode]
+			return [standIn(h, index, index === found, item, textOf, variant)]
 		}),
 	)
 
@@ -196,11 +184,11 @@ export const bindFindable = (
 		if (target.dataset.findableIndex === undefined || !Number.isInteger(index)) return
 		const side = target.closest<HTMLElement>(`[data-${SIDE_ATTRIBUTE}]`)?.dataset.findableSide
 		if (side !== "before" && side !== "after") return
+		// A row the virtualizer has not counted yet has no offset to scroll to.
 		const item = virtualizer.measurementsCache[index]
-		if (item !== undefined) {
-			target.style.top = `${item.start - virtualizer.options.scrollMargin}px`
-			target.style.height = `${item.size}px`
-		}
+		if (item === undefined) return
+		target.style.top = `${item.start - virtualizer.options.scrollMargin}px`
+		target.style.height = `${item.size}px`
 		onMatch({ index, side })
 	}
 	scroller.addEventListener("beforematch", onBeforeMatch)
