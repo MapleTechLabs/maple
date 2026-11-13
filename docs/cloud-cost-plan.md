@@ -143,8 +143,10 @@ currency the figures are in and lists the others. Nothing is added across curren
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, provider, category, region, usage type, resource or account
-  with filters, and each source's sync state. Sources are added from the page: AWS through its
+  daily chart, a breakdown by service, provider, category, region, resource or account, a filter
+  rail with a section per dimension, and each source's sync state. A row click narrows to the
+  row and regroups by the next dimension (a service under a region goes on to its resources).
+  The resource section and that step show only where some cost names a resource. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
   also replace or remove, Vercel by adding the team the org has connected, which the page can
   remove again. Recommendations (list and detail with the evidence chart) come with phase 2.
@@ -253,7 +255,9 @@ against a fake server that answers what the spec describes.
 - Rows: the product (`ServiceName`) is `CloudService`, its `SkuId` the `UsageType` (left empty
   when it equals the product name), `ServiceCategory` the category (`Other` when absent),
   `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
-  `Tags.ProjectId`) the resource, which the page groups and filters by. `ChargeCategory` maps
+  `Tags.ProjectId`) the resource, which the page groups and filters by. On the page the team
+  reads as "Vercel <slug>", and its services and regions wear the Vercel mark where no other
+  platform of the org could have billed them. `ChargeCategory` maps
   onto Maple's (`Usage`, `Purchase`, `Credit`, `Tax`, `Adjustment`), so plan fees and credits
   are their own rows. Lines of one day,
   product, SKU, project, region and kind of charge are summed. A sum with no billed and no
@@ -262,7 +266,8 @@ against a fake server that answers what the spec describes.
 - Every field but `BilledCost`, `ChargePeriodStart` and `ServiceName` is read as optional, since
   the spec is the only source. A line that is not such a charge fails the whole pull as an
   invalid response: storing part of a day would hide the older pull of it. So does a
-  `ChargePeriodStart` that is not a UTC date-time, and any answer but a 200 (a 204 or a 206
+  `ChargePeriodStart` that is not a UTC date-time on a real calendar day (no February 31st, a
+  February 29th in leap years only), and any answer but a 200 (a 204 or a 206
   would store days empty or by halves).
 - Open risk: a 200 with an empty body reads as a team with no charges, and the window's days
   are stored empty. Nothing in the answer tells an empty month from a broken one, so a broken

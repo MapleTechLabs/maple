@@ -143,9 +143,11 @@ function buildMapping(
 	const inputFields: string[] = []
 	// Two columns can map to the same JSON leaf (e.g. logs `Timestamp` and
 	// `TimestampTime` both read `$.timestamp`). The `format()` structure must
-	// declare each leaf once, but the SELECT may reference it for several
-	// target columns. Track the first type seen per leaf and skip duplicates in
-	// the input schema only.
+	// declare each leaf once, and the SELECT reads it once per target column.
+	// A repeated read is cast to its target column's type: ClickHouse 25.x's
+	// `input()` rejects reading one raw input column twice, even under an alias
+	// ("Cannot add column timestamp"), which dropped every log batch on a
+	// self-managed ClickHouse. The cast is the conversion the insert does anyway.
 	const seenLeaves = new Set<string>()
 
 	for (const { column, type, jsonPath, hasDefaultExpression } of spec) {
@@ -163,7 +165,7 @@ function buildMapping(
 		}
 		const leaf = jsonLeaf(table, column, jsonPath)
 		columns.push(column)
-		selects.push(leaf)
+		selects.push(seenLeaves.has(leaf) ? `CAST(${leaf} AS ${type})` : leaf)
 		if (!seenLeaves.has(leaf)) {
 			seenLeaves.add(leaf)
 			inputFields.push(`${leaf} ${type}`)

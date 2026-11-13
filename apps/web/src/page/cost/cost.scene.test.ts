@@ -33,6 +33,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	chartRows,
+	perDimension,
 	isUnderADay,
 	keyLabel,
 	previousPeriodOf,
@@ -40,8 +41,8 @@ import {
 	seriesLabels,
 	withFilter,
 } from "./derive"
-import { Message } from "./message"
-import type { Model, RemovableProvider, Search } from "./model"
+import { Message, type RemovableProvider } from "./message"
+import type { Model, Search } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -835,6 +836,66 @@ describe("cost page", () => {
 		})
 	})
 
+	/** The rail's read answered: `resources` are the keys of its resource facet, by cost. */
+	const withFacets = (model: Model, resources: ReadonlyArray<string>): Model =>
+		pageUpdate(
+			model,
+			Message.CompletedLoadFacets({
+				key: model.facets.key ?? "",
+				result: Result.succeed(
+					perDimension((dimension) =>
+						dimension === "resource"
+							? Arr.map(resources, (key) => ({ key, cost: 40, previousCost: 30 }))
+							: dimension === "account"
+								? [{ key: "acme", cost: 40, previousCost: 30 }]
+								: breakdown.rows,
+					),
+				),
+			}),
+		).model
+
+	test("the rail offers resources where cost has one, and a service under a region breaks down by them", () => {
+		const vercel = source({
+			id: "0190f2b3-0000-7000-8000-00000000c061",
+			provider: "vercel",
+			accountId: "acme",
+		})
+		const underRegion = answered(entered({ region: ["north-1"] }, [source(), vercel]).model)
+		// A Vercel team's projects are its resources: the rail lists them, the plan fee has none.
+		scene(
+			{ update: pageUpdate, view },
+			given(withFacets(underRegion, ["web", ""])),
+			resolveTheme,
+			expectView(role("checkbox", { name: "web" })).toExist(),
+			expectView(role("checkbox", { name: "No resource" })).toExist(),
+			// The account reads as the team it is.
+			expectView(text("Vercel acme")).toExist(),
+			expectView(role("link", { name: "Unassigned" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=resource&cloud_service=%5B%22%22%5D&region=%5B%22north-1%22%5D",
+			),
+		)
+		// An org whose cost names no resource gets no such section, and the drill-down passes it over.
+		scene(
+			{ update: pageUpdate, view },
+			given(withFacets(underRegion, [""])),
+			resolveTheme,
+			expectView(role("checkbox", { name: "No resource" })).not.toExist(),
+			expectView(role("link", { name: "Unassigned" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=account&cloud_service=%5B%22%22%5D&region=%5B%22north-1%22%5D",
+			),
+		)
+		// A filter by resource from the URL keeps its section, so its checkbox can clear it.
+		const filtered = answered(entered({ resource: ["gone"] }, [source()]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(withFacets(filtered, [""])),
+			resolveTheme,
+			expectView(role("checkbox", { name: "No resource" })).toExist(),
+		)
+	})
+
 	test("removing one provider's source leaves the other's on the page", () => {
 		const openRouter = source({
 			id: "0190f2b3-0000-7000-8000-00000000c060",
@@ -1091,7 +1152,7 @@ describe("cost page", () => {
 		)
 	})
 
-	test("a row links to the view filtered to it; the chip removes the filter again", () => {
+	test("a row breaks its key down by the next dimension; the chip removes the filter again", () => {
 		const model = populated()
 		scene(
 			{ update: pageUpdate, view },
@@ -1099,12 +1160,23 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(role("link", { name: "north-1" })).toHaveAttr(
 				"href",
-				"/cost?groupBy=region&region=%5B%22north-1%22%5D",
+				"/cost?groupBy=cloud_service&region=%5B%22north-1%22%5D",
 			),
 			// The empty key filters too: its placeholder is only how it reads.
 			expectView(role("link", { name: "No region" })).toHaveAttr(
 				"href",
-				"/cost?groupBy=region&region=%5B%22%22%5D",
+				"/cost?groupBy=cloud_service&region=%5B%22%22%5D",
+			),
+		)
+		// Grouped by service under a region filter, a service row moves on to accounts,
+		// not back to regions.
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(routeChanged(model, { search: { region: ["north-1"] } }, context).model)),
+			resolveTheme,
+			expectView(role("link", { name: "Unassigned" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=account&cloud_service=%5B%22%22%5D&region=%5B%22north-1%22%5D",
 			),
 		)
 		const filtered = routeChanged(model, { search: { groupBy: "region", region: ["north-1"] } }, context)
@@ -1138,18 +1210,18 @@ describe("cost page", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			resolveTheme,
-			click(role("button", { name: "Usage type" })),
+			click(role("button", { name: "Region" })),
 			expectOutMessage(
-				PageOutMessage.RequestedNavigation({ url: "/cost?groupBy=usage_type", isReplace: false }),
+				PageOutMessage.RequestedNavigation({ url: "/cost?groupBy=region", isReplace: false }),
 			),
 		)
-		const regrouped = routeChanged(model, { search: { groupBy: "usage_type" } }, context)
+		const regrouped = routeChanged(model, { search: { groupBy: "region" } }, context)
 		expect(names(regrouped.commands)).not.toContain("FetchCostTotals")
 		expect(inputOf(regrouped.commands, "FetchCostTimeseries")).toMatchObject({
-			groupBy: "usage_type",
+			groupBy: "region",
 			limit: 8,
 		})
-		expect(inputOf(regrouped.commands, "FetchCostBreakdown")).toMatchObject({ groupBy: "usage_type" })
+		expect(inputOf(regrouped.commands, "FetchCostBreakdown")).toMatchObject({ groupBy: "region" })
 	})
 
 	test("sorting by change moves the URL, and the breakdown alone is read again in that order", () => {
@@ -1354,7 +1426,7 @@ describe("cost page", () => {
 			estimatedFrom: "2026-11-09",
 			currency: "USD",
 		})
-		expect(chartRows(response, "usage_type")).toEqual([
+		expect(chartRows(response, "region")).toEqual([
 			{ bucket: "2026-11-09T00:00:00Z", "bucket (series)": 5, "partial (series)": 4, partial: true },
 		])
 	})

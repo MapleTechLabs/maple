@@ -20,7 +20,7 @@ export const LAB_NOW_MS = LAB_TODAY_MS + 14.5 * 3_600_000
 const ESTIMATED_DAYS = 2
 const DAY_MS = 86_400_000
 
-type Line = Readonly<Record<CostGroupBy, string> & { daily: number; drift: number }>
+type Line = Readonly<Record<CostGroupBy | "usage_type", string> & { daily: number; drift: number }>
 
 const line = (
 	cloud_service: string,
@@ -108,19 +108,11 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
+	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
 		"Compute",
-		"east-1",
-		"function-duration",
-		"example-web",
-		9.4,
-		0.2,
-	),
-	productLine(
-		"Example Function Duration",
-		"Compute",
-		"central-1",
+		"fra1",
 		"function-duration",
 		"example-docs",
 		3.1,

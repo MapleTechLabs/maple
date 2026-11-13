@@ -571,7 +571,6 @@ export const COST_GROUP_BYS = [
 	"provider",
 	"service_category",
 	"region",
-	"usage_type",
 	"resource",
 	"account",
 ] as const
@@ -588,7 +587,6 @@ export const CostSearch = Schema.Struct({
 	provider: OptionalStringArrayParam,
 	service_category: OptionalStringArrayParam,
 	region: OptionalStringArrayParam,
-	usage_type: OptionalStringArrayParam,
 	resource: OptionalStringArrayParam,
 	account: OptionalStringArrayParam,
 })
