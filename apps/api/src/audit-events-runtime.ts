@@ -81,7 +81,7 @@ const retryOrExhaust = (message: Message, cause: unknown, maxRetries: number) =>
  * copy is logged and dropped: retrying the message for it would send stored entries to the DLQ.
  */
 const copyToTrail = (trail: AuditTrailServiceApi, orgId: OrgId, events: ReadonlyArray<AuditLogEvent>) =>
-	Effect.suspend(() => trail.write(orgId, mapleAuditTrailEvents(events))).pipe(
+	Effect.suspend(() => trail.write(orgId, mapleAuditTrailEvents(events), { bestEffort: true })).pipe(
 		Effect.catchCause((cause) =>
 			Cause.hasInterruptsOnly(cause)
 				? Effect.interrupt
