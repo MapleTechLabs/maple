@@ -515,7 +515,7 @@ describe("cost page", () => {
 			),
 			// What is left to do there: the template starts on all accounts.
 			expectView(text(/Under Account Resources pick the one account/)).toExist(),
-			expectView(text(/reads billing and nothing more/)).toExist(),
+			expectView(text(/refuses a token it finds can read more than billing/)).toExist(),
 			// The other provider's form is not this one.
 			expectView(text("Management key")).not.toExist(),
 			expectView(role("button", { name: "Add source" })).toBeDisabled(),
