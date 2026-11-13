@@ -246,21 +246,30 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
-	// The expand dialog shows one of them, so it closes with them.
-	const dialog = isSameTab ? model.expandDialog : Dialog.close(model.expandDialog).model
+	// The expand dialog shows one of them, so it closes with them. Its exit commands go out with
+	// the step: dropped, the leave transition never settles and the page stays locked behind it.
+	const closing = isSameTab ? { model: model.expandDialog } : Dialog.close(model.expandDialog)
+	const closeCommands = Command.mapMessages(closing.commands ?? [], (message) =>
+		Message.GotExpandDialogMessage({ message }),
+	)
 	const next = {
 		...model,
 		search: route.search,
 		panels: isSameTab ? model.panels : {},
 		expandedPanel: isSameTab ? model.expandedPanel : null,
-		expandDialog: dialog,
+		expandDialog: closing.model,
 	}
+	const withClose = (step: Return): Return => ({
+		...step,
+		commands: [...(step.commands ?? []), ...closeCommands],
+	})
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({
-			model: next,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-		}),
-		requestAll: (mode) => withRequests(next, context, mode),
+		resolve: (): Return =>
+			withClose({
+				model: next,
+				commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+			}),
+		requestAll: (mode) => withClose(withRequests(next, context, mode)),
 	})
 }
 

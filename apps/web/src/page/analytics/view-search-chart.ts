@@ -32,7 +32,8 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 		// CTR and position are derived from impressions; clicks and impressions are plain counts.
 		const needsImpressions = metric.valueFormat !== "count"
 		// Google's days are calendar days; the bucket axis reads them as UTC midnights. A day
-		// nobody saw the site has no CTR or position, so the line breaks there.
+		// nobody saw the site has no CTR or position: no reading, which the chart bridges or
+		// dashes like any other gap, instead of a drop to zero.
 		const points = Arr.map(inputs.points, (point) => ({
 			bucket: `${point.date}T00:00:00Z`,
 			primary: needsImpressions && point.impressions === 0 ? null : point[metric.key],

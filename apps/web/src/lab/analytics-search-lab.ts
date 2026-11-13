@@ -5,6 +5,7 @@ import { AsyncData, Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../page/contract"
+import { CompleteReloadSpin, ResolveWindow } from "../page/analytics/command"
 import { Message as AnalyticsMessage, type SlotName } from "../page/analytics/message"
 import { Model as AnalyticsModel, type SearchTable } from "../page/analytics/model"
 import { searchSortOf } from "../page/analytics/requests"
@@ -71,6 +72,7 @@ export const Message = defineMessageUnion({ GotPageMessage: { message: Analytics
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
+type PageCommand = Command.Command<AnalyticsMessage, never, Resources>
 
 const LAB_CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_search"),
@@ -138,6 +140,14 @@ const answerOf = (
 	if (state === "error" || (state === "partial" && slot !== "searchLanding"))
 		return Option.some(Result.fail(toLoadFailure("The warehouse did not answer in time")))
 	const isEmpty = state === "empty" || state === "recent"
+	// The second property is a smaller site: a third of the rows and of the traffic.
+	const isSecond = model.search.site === SEARCH_STATUS.sites[1]?.siteUrl
+	const ofSite = <Row>(rows: ReadonlyArray<Row>): ReadonlyArray<Row> =>
+		isSecond ? Arr.filter(rows, (_, index) => index % 3 === 0) : rows
+	const scaled = <Row extends SearchMetrics>(row: Row): Row =>
+		isSecond
+			? { ...row, clicks: Math.round(row.clicks / 3), impressions: Math.round(row.impressions / 3) }
+			: row
 	switch (slot) {
 		case "searchOverview":
 			return Option.some(
@@ -150,14 +160,16 @@ const answerOf = (
 								position: 0,
 								previous: { clicks: 0, impressions: 0, ctr: 0, position: 0 },
 							}
-						: SEARCH_OVERVIEW,
+						: { ...scaled(SEARCH_OVERVIEW), previous: scaled(SEARCH_OVERVIEW.previous) },
 				),
 			)
 		case "searchTimeseries":
-			return Option.some(Result.succeed(isEmpty ? [] : SEARCH_TIMESERIES))
+			return Option.some(Result.succeed(isEmpty ? [] : Arr.map(SEARCH_TIMESERIES, scaled)))
 		case "searchQueries":
 			return Option.some(
-				Result.succeed(isEmpty ? [] : ordered(model, "queries", SEARCH_QUERIES, (row) => row.query)),
+				Result.succeed(
+					isEmpty ? [] : ordered(model, "queries", ofSite(SEARCH_QUERIES), (row) => row.query),
+				),
 			)
 		case "searchLanding":
 			return Option.some(
@@ -165,7 +177,7 @@ const answerOf = (
 					isEmpty
 						? []
 						: Arr.map(
-								ordered(model, "pages", SEARCH_LANDING, (row) => row.page),
+								ordered(model, "pages", ofSite(SEARCH_LANDING), (row) => row.page),
 								(row) =>
 									model.search.eventName === undefined
 										? row
@@ -249,6 +261,34 @@ const settle = (state: LabState, model: AnalyticsModel): AnalyticsModel =>
 		),
 	)
 
+/**
+ * The page's two clock commands, answered from the fixture clock instead of the real one: a
+ * window resolve (always the fixture's month) and Reload's spin.
+ */
+const answerClock = (
+	model: AnalyticsModel,
+	commands: ReadonlyArray<PageCommand> | undefined,
+): AnalyticsModel =>
+	Arr.reduce(commands ?? [], model, (next, command) => {
+		if (command.name === ResolveWindow.name)
+			return Analytics.update(
+				next,
+				AnalyticsMessage.CompletedResolveWindow({
+					window: SEARCH_WINDOW,
+					nowMs: SEARCH_NOW_MS,
+					mode: command.args?.["mode"] === "Refresh" ? "Refresh" : "Load",
+				}),
+				LAB_CONTEXT,
+			).model
+		if (command.name === CompleteReloadSpin.name)
+			return Analytics.update(
+				next,
+				AnalyticsMessage.CompletedReloadSpin({ version: next.refreshVersion }),
+				LAB_CONTEXT,
+			).model
+		return next
+	})
+
 const decodeSearch = Schema.decodeUnknownOption(AnalyticsSearch)
 
 /** The search a page navigation lands on, read off its URL. */
@@ -257,8 +297,6 @@ const searchOfUrl = (url: string, fallback: Search): Search =>
 		decodeSearch(Rec.fromEntries([...new URL(url, "https://lab.local").searchParams.entries()])),
 		() => fallback,
 	)
-
-type PageCommand = Command.Command<AnalyticsMessage, never, Resources>
 
 const lift = (commands: ReadonlyArray<PageCommand> | undefined) =>
 	Command.mapMessages(keepLocal(commands), (message) => Message.GotPageMessage({ message }))
@@ -270,17 +308,11 @@ export const init = (flags: Flags): Return => {
 			? { tab: "search", timePreset: "1mo", eventName: "signup_completed" }
 			: { tab: "search", timePreset: flags.state === "recent" ? "24h" : "1mo" }
 	const entered = Analytics.init({ search }, LAB_CONTEXT)
-	const windowed = Analytics.update(
-		entered.model,
-		AnalyticsMessage.CompletedResolveWindow({
-			window: SEARCH_WINDOW,
-			nowMs: SEARCH_NOW_MS,
-			mode: "Load",
-		}),
-		LAB_CONTEXT,
-	)
 	return {
-		model: { state: flags.state, page: settle(flags.state, windowed.model) },
+		model: {
+			state: flags.state,
+			page: settle(flags.state, answerClock(entered.model, entered.commands)),
+		},
 		commands: lift(entered.commands),
 	}
 }
@@ -292,7 +324,10 @@ export const update = (model: Model, message: Message): Return =>
 			const out = step.outMessage
 			if (out?._tag !== "RequestedNavigation")
 				return {
-					model: { ...model, page: settle(model.state, step.model) },
+					model: {
+						...model,
+						page: settle(model.state, answerClock(step.model, step.commands)),
+					},
 					commands: lift(step.commands),
 				}
 			const moved = Analytics.routeChanged(
@@ -301,7 +336,10 @@ export const update = (model: Model, message: Message): Return =>
 				LAB_CONTEXT,
 			)
 			return {
-				model: { ...model, page: settle(model.state, moved.model) },
+				model: {
+					...model,
+					page: settle(model.state, answerClock(moved.model, moved.commands)),
+				},
 				commands: [...lift(step.commands), ...lift(moved.commands)],
 			}
 		},

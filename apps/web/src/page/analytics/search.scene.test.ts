@@ -26,7 +26,7 @@ import { FetchEvents, FetchSearchQueries, FetchSearchTimeseries } from "./comman
 import { Message, type SlotName } from "./message"
 import type { SearchConsoleIntegrationStatus } from "@maple/domain/http"
 import type { Model } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -698,6 +698,17 @@ describe("web analytics: Search tab", () => {
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
 			expectView(role("dialog")).toContainText("Couldn't load queries"),
 		)
+	})
+
+	test("leaving the tab closes its expanded table and lets the dialog finish closing", () => {
+		const opened = pageUpdate(populated(), Message.ClickedExpandPanel({ panel: "search-queries" })).model
+		const left = routeChanged(opened, { search: {} }, context)
+		expect(left.model.expandedPanel).toBeNull()
+		expect(left.model.expandDialog.isOpen).toBe(false)
+		// Without the dialog's own exit commands its leave never settles and the page stays inert.
+		const closed = Dialog.close(opened.expandDialog)
+		expect(names(closed.commands).length).toBeGreaterThan(0)
+		expect(names(left.commands)).toEqual(expect.arrayContaining(names(closed.commands)))
 	})
 
 	test("sorting by position starts with the best (lowest) one", () => {
