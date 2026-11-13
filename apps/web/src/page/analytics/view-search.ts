@@ -14,7 +14,7 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
-import { linkButton } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { delta } from "@maple/views/ui/delta"
 import {
 	empty,
@@ -26,6 +26,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
+import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { revealIcon } from "@maple/views/ui/reveal-icon"
@@ -37,6 +38,15 @@ import { rowLink } from "@maple/views/ui/table"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
 import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../kit/data-table"
+import {
+	integrationEmpty,
+	integrationEmptyCard,
+	integrationEmptyFeatures,
+	integrationEmptyFooter,
+	integrationEmptyHint,
+	integrationEmptyMedia,
+} from "../kit/integration-empty"
+import { providerBrand } from "../kit/providers"
 import { sectionHeading } from "../kit/section-heading"
 import { sortRows } from "../kit/table-sort"
 import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
@@ -67,52 +77,81 @@ const formatDay = (day: string): string => DAY_FORMAT.format(new Date(`${day}T00
 
 const integrationsHref = hrefOf(AppRoute.Integrations({ search: { integration: "google-search-console" } }))
 
-const onRamp = (h: H, options: Readonly<{ title: string; description: string; action: string }>): Html =>
-	empty(h, [
-		emptyHeader(h, [
-			emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon")]),
-			emptyTitle(h, [options.title]),
-			emptyDescription(h, [options.description]),
-		]),
-		emptyContent(h, [
-			emptyActions(h, [
-				linkButton(h, { variant: "default", size: "sm", href: integrationsHref }, [options.action]),
-			]),
-		]),
+const BRAND = providerBrand("google-search-console")
+
+/** What the tab shows once a property is connected. */
+const FEATURES = [
+	{
+		label: "Queries",
+		title: "What people searched",
+		description: "Every search that showed your site, with its clicks, impressions, CTR and position.",
+	},
+	{
+		label: "Pages",
+		title: "Search next to sessions",
+		description: "Google's numbers for each page beside the sessions that started on it.",
+	},
+	{
+		label: "Trend",
+		title: "Ranking by day",
+		description: "Clicks, impressions, CTR and average position per day, against the period before.",
+	},
+] as const
+
+/** The tab's waiting-room card: Google's mark, what is going on, and the one way forward. */
+const searchCard = (
+	h: H,
+	options: Readonly<{ title: string; hint: string; action?: string; footer?: string }>,
+): Html =>
+	integrationEmptyCard(h, [
+		integrationEmptyMedia(h, BRAND),
+		heading(h, { level: 2, variant: "section" }, [options.title]),
+		integrationEmptyHint(h, [options.hint]),
+		...(options.action === undefined
+			? []
+			: [
+					linkButton(h, { href: integrationsHref }, [
+						options.action,
+						icon(h, "ArrowRightIcon", { size: 14 }),
+					]),
+				]),
+		...(options.footer === undefined ? [] : [integrationEmptyFooter(h, [options.footer])]),
 	])
 
 const notConnected = (h: H, status: SearchConsoleIntegrationStatus): Html =>
 	status.revoked
-		? onRamp(h, {
+		? searchCard(h, {
 				title: "Reconnect Google Search Console",
-				description:
-					"Google stopped accepting Maple's access to Search Console. Reconnect to keep importing clicks and impressions.",
+				hint: "Google stopped accepting Maple's access to Search Console. Reconnect to keep importing clicks and impressions.",
 				action: "Reconnect Search Console",
 			})
 		: status.connected
-			? onRamp(h, {
+			? searchCard(h, {
 					title: "Pick a Search Console property",
-					description:
-						"Search Console is connected, but no property is selected. Choose the sites to import.",
+					hint: "Search Console is connected, but no property is selected. Choose the sites to import.",
 					action: "Choose properties",
 				})
-			: onRamp(h, {
-					title: "No search data yet",
-					description:
-						"Connect Google Search Console to see the queries people search before they land on your site, and how those visits behave once they arrive.",
-					action: "Connect Search Console",
-				})
+			: integrationEmpty(
+					h,
+					[
+						integrationEmptyFeatures(h, FEATURES),
+						searchCard(h, {
+							title: "See what people search before they land here",
+							hint: "Connect Google Search Console to line up Google's clicks and rankings with how those visits behave on your site.",
+							action: "Connect Search Console",
+							footer: "Read-only access · the last two weeks arrive within about 15 minutes.",
+						}),
+					],
+					// Where the features stack (a phone), the way to connect comes first.
+					"@max-2xl/page:flex-col-reverse",
+				)
 
 const importing = (h: H): Html =>
-	empty(h, [
-		emptyHeader(h, [
-			emptyMedia(h, { variant: "icon" }, [icon(h, "ClockIcon")]),
-			emptyTitle(h, ["Importing from Search Console"]),
-			emptyDescription(h, [
-				"The first import brings in the last two weeks and lands within about 15 minutes. Older days fill in after that.",
-			]),
-		]),
-	])
+	searchCard(h, {
+		title: "Importing from Search Console",
+		hint: "The first import brings in the last two weeks and lands within about 15 minutes. Older days fill in after that.",
+		footer: "This page updates on its own when the first days are in.",
+	})
 
 const importError = (h: H, message: string, isBlocking: boolean): Html =>
 	alert(h, { variant: isBlocking ? "crit" : "warn", size: "sm" }, [
@@ -682,8 +721,62 @@ const sharedFailure = (model: Model): LoadFailure | undefined => {
 		: undefined
 }
 
+/** Presets a month or longer: widening from one of them would not help. */
+const MONTH_OR_LONGER: ReadonlySet<string | undefined> = new Set([
+	"30d",
+	"1mo",
+	"6w",
+	"2mo",
+	"3mo",
+	"6mo",
+	"12mo",
+])
+
+/** Google reported nothing at all for the window: totals, queries and pages are in, and all empty. */
+const isQuietWindow = (model: Model): boolean =>
+	dataOf(model.searchOverview)?.impressions === 0 &&
+	dataOf(model.searchQueries)?.length === 0 &&
+	dataOf(model.searchLanding)?.length === 0
+
+/**
+ * One explanation instead of four empty cards. Google's days arrive 2 to 3 days late, so a short
+ * window carried over from another tab is the usual cause, and a month is the way out.
+ */
+const quietWindow = (h: H, model: Model): Html => {
+	const isShort = model.search.startTime !== undefined || !MONTH_OR_LONGER.has(model.search.timePreset)
+	return empty(h, [
+		emptyHeader(h, [
+			emptyMedia(h, { variant: "icon" }, [icon(h, "MagnifierIcon")]),
+			emptyTitle(h, ["No search data in this window"]),
+			emptyDescription(h, [
+				isShort
+					? "Google's numbers arrive 2 to 3 days late, so a short or recent window can be empty."
+					: "Google reported no impressions for this property in this window.",
+			]),
+		]),
+		...(isShort
+			? [
+					emptyContent(h, [
+						emptyActions(h, [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedWidenSearchRange())],
+								},
+								["Show the last month"],
+							),
+						]),
+					]),
+				]
+			: []),
+	])
+}
+
 const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): ReadonlyArray<Html> => {
 	const points = dataOf(model.searchTimeseries) ?? []
+	if (isQuietWindow(model)) return [quietWindow(h, model)]
 	const shared = sharedFailure(model)
 	if (shared !== undefined)
 		return [

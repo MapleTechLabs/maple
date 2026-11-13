@@ -147,8 +147,72 @@ describe("web analytics: Search tab", () => {
 			{ update: pageUpdate, view },
 			given(model.model),
 			resolveTheme,
-			expectView(text("No search data yet")).toExist(),
-			expectView(text("Connect Search Console")).toExist(),
+			expectView(text("See what people search before they land here")).toExist(),
+			expectView(role("link", { name: "Connect Search Console" })).toExist(),
+			// What the tab will show, before there is anything to show.
+			expectView(text("What people searched")).toExist(),
+		)
+	})
+
+	test("with no property to read, the event rail has nothing to filter and stays away", () => {
+		const disconnected = answer(windowed().model, "searchStatus", status({ connected: false, sites: [] }))
+		const withBreakdowns = answer(disconnected.model, "breakdowns", breakdowns).model
+		const model = answer(withBreakdowns, "events", [{ name: "signup", events: 9, sessions: 7 }]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("signup")).not.toExist(),
+		)
+	})
+
+	test("a window Google reported nothing for explains the delay and offers the last month", () => {
+		const connected = answer(windowed({ timePreset: "24h" }).model, "searchStatus", status()).model
+		const nothing = { clicks: 0, impressions: 0, ctr: 0, position: 0 }
+		const quiet = Arr.reduce(
+			[
+				["searchOverview", { ...nothing, previous: nothing }],
+				["searchTimeseries", []],
+				["searchQueries", []],
+				["searchLanding", []],
+			] as const,
+			connected,
+			(model, [slot, value]) => answer(model, slot, value).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(quiet),
+			resolveTheme,
+			expectView(text("No search data in this window")).toExist(),
+			// One explanation, not a card per empty read.
+			expectView(text("No queries in this window")).not.toExist(),
+		)
+		expect(pageUpdate(quiet, Message.ClickedWidenSearchRange()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/analytics?timePreset=1mo&tab=search",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("a month with nothing in it does not offer the month again", () => {
+		const connected = answer(windowed({ timePreset: "1mo" }).model, "searchStatus", status()).model
+		const nothing = { clicks: 0, impressions: 0, ctr: 0, position: 0 }
+		const quiet = Arr.reduce(
+			[
+				["searchOverview", { ...nothing, previous: nothing }],
+				["searchQueries", []],
+				["searchLanding", []],
+			] as const,
+			connected,
+			(model, [slot, value]) => answer(model, slot, value).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(quiet),
+			resolveTheme,
+			expectView(text("No search data in this window")).toExist(),
+			expectView(role("button", { name: "Show the last month" })).not.toExist(),
 		)
 	})
 

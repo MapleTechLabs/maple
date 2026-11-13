@@ -82,6 +82,8 @@ export const Message = defineMessageUnion({
 	/** Any failed Search tab read, the status included. */
 	ClickedRetrySearch: {},
 	PickedSearchSite: { siteUrl: Schema.String },
+	/** An empty Search window's way out: the last month. */
+	ClickedWidenSearchRange: {},
 	ClickedSearchSort: { table: SearchTable, key: SearchSortKey },
 	PickedSearchMetric: { metric: SearchConsoleSortKey },
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */

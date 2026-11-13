@@ -175,3 +175,72 @@ export const SEARCH_EVENTS = [
 	{ name: "signup_completed", events: 41, sessions: 38 },
 	{ name: "docs_copied_snippet", events: 212, sessions: 97 },
 ]
+
+// The Overview tab, for its pointer to Search: a month of sessions, a third of them from Google.
+
+export const OVERVIEW_BREAKDOWNS = {
+	referrerHosts: [
+		{ name: "www.google.com", count: 211 },
+		{ name: "", count: 164 },
+		{ name: "github.com", count: 97 },
+		{ name: "www.google.de", count: 38 },
+		{ name: "news.ycombinator.com", count: 31 },
+		{ name: "mail.google.com", count: 6 },
+	],
+	countries: [
+		{ name: "US", count: 240 },
+		{ name: "DE", count: 121 },
+	],
+	deviceTypes: [{ name: "desktop", count: 430 }],
+	browsers: [{ name: "Chrome", count: 388 }],
+	operatingSystems: [{ name: "macOS", count: 301 }],
+	languages: [{ name: "en", count: 402 }],
+	utmSources: [],
+	utmMediums: [],
+	utmCampaigns: [],
+	entryPaths: [{ name: "/", count: 412 }],
+	exitPaths: [{ name: "/pricing", count: 96 }],
+	hosts: [{ name: "acme.dev", count: 547 }],
+}
+
+export const OVERVIEW_SUMMARY = {
+	visitors: 498,
+	sessions: 547,
+	newSessions: 402,
+	bouncedSessions: 211,
+	identifiedSessions: 547,
+	avgDurationMs: 148_000,
+	botSessions: 0,
+	botShare: null,
+	coverage: 1,
+	bounceRate: 0.39,
+}
+
+const bucketOf = (index: number): string =>
+	`${Str.slice(0, 10)(new Date(FIRST_DAY_MS + index * DAY_MS).toISOString())} 00:00:00`
+
+export const OVERVIEW_TIMESERIES = Arr.makeBy(28, (index) => {
+	const sessions = Math.round(12 + index * 0.5 + wobble(index + 0.7) * 14)
+	return {
+		bucket: bucketOf(index),
+		visitors: Math.round(sessions * 0.91),
+		sessions,
+		newSessions: Math.round(sessions * 0.73),
+		bouncedSessions: Math.round(sessions * 0.39),
+		identifiedSessions: sessions,
+		avgDurationMs: 148_000,
+	}
+})
+
+export const OVERVIEW_PAGEVIEWS = Arr.map(OVERVIEW_TIMESERIES, (point) => ({
+	bucket: point.bucket,
+	pageViews: Math.round(point.sessions * 2.3),
+	sessions: point.sessions,
+}))
+
+export const OVERVIEW_PAGES = Arr.map(SEARCH_LANDING, (row) => ({
+	host: row.host,
+	pagePath: row.path,
+	pageViews: Math.round(row.sessions * 1.8),
+	sessions: row.sessions,
+}))

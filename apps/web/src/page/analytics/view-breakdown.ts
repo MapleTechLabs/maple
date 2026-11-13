@@ -35,6 +35,8 @@ export type BreakdownDimension = Readonly<{
 	renderIcon?: (h: H, row: BreakdownRow) => Html
 	viewsLabel?: string
 	countLabel?: string
+	/** A line under the table that leads on from these rows (the referrers' way to the Search tab). */
+	note?: (h: H) => Html
 }>
 
 export type BreakdownCard = Readonly<{ id: string; dimensions: ReadonlyArray<BreakdownDimension> }>
@@ -363,6 +365,7 @@ export const breakdownPanel = (
 						selected: options.selectedOf(dimension.filterKey),
 						isWaiting: options.isWaiting,
 					}),
+					...(dimension.note === undefined ? [] : [dimension.note(h)]),
 					expandTableFooter(h, {
 						onClick: Message.ClickedExpandPanel({ panel: card.id }),
 						count: `${formatNumber(dimension.rows.length)} ${dimension.nounPlural}`,

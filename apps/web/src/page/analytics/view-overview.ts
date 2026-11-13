@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
+import { countryLabel, isGoogleSearchHost, languageLabel, referrerLabel, utmLabel } from "./labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,
@@ -7,7 +7,7 @@ import {
 	isMetricAvailable,
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -27,13 +27,14 @@ import { docsLink } from "../kit/signal-empty-state"
 import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { Message } from "./message"
 import type { Model, Summary } from "./model"
-import { filtersOf } from "./requests"
+import { filtersOf, searchSiteOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { dividedList } from "@maple/views/ui/rule"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -179,6 +180,42 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 		},
 	})
 
+/**
+ * Under the referrers, once the Search Console status is in: how many sessions Google's search
+ * sent, and the way to what they searched (the Search tab, which also holds the connect step).
+ */
+const googleSearchNote = (model: Model, referrers: ReadonlyArray<{ name: string; count: number }>) => {
+	const status = dataOf(model.searchStatus)
+	const sessions = Arr.reduce(referrers, 0, (sum, row) =>
+		isGoogleSearchHost(row.name) ? sum + row.count : sum,
+	)
+	if (status === undefined || sessions === 0) return undefined
+	const isImported = searchSiteOf(model.search, status) !== undefined
+	return (h: H): Html =>
+		hstack(
+			h,
+			{
+				justify: "between",
+				wrap: true,
+				className: stripClass("row", "gap-x-3 gap-y-1 text-2xs text-muted-foreground"),
+			},
+			[
+				hstack(h, { gap: "2", as: "span" }, [
+					icon(h, "GoogleIcon", { size: 12, className: "shrink-0" }),
+					`${formatNumber(sessions)} ${pluralize(sessions, "session")} from Google Search`,
+				]),
+				textLink(
+					h,
+					{ href: hrefOf(AppRoute.Analytics({ search: { ...model.search, tab: "search" } })) },
+					[
+						isImported ? "See what they searched" : "Connect Search Console",
+						icon(h, "ArrowRightIcon", { size: 12 }),
+					],
+				),
+			],
+		)
+}
+
 /** The overview's cards, built from the page's data (the dialog reads the same list). */
 export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
 	const breakdowns = dataOf(model.breakdowns)
@@ -197,6 +234,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					noun: "referrer",
 					nounPlural: "referrers",
 					formatValue: referrerLabel,
+					note: googleSearchNote(model, breakdowns.referrerHosts),
 				},
 				{
 					tab: "UTM source",

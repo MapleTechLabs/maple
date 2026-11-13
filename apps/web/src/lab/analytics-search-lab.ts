@@ -14,6 +14,11 @@ import { view as analyticsView } from "../page/analytics/view"
 import type { Resources } from "../platform/resources"
 import { AnalyticsSearch } from "../route/search"
 import {
+	OVERVIEW_BREAKDOWNS,
+	OVERVIEW_PAGEVIEWS,
+	OVERVIEW_PAGES,
+	OVERVIEW_SUMMARY,
+	OVERVIEW_TIMESERIES,
 	SEARCH_EVENTS,
 	SEARCH_LANDING,
 	SEARCH_NOW_MS,
@@ -26,7 +31,8 @@ import {
 import { keepLocal } from "./local-commands"
 
 // `/lab/analytics-search`: Web analytics' Search tab over fixtures. Sorting, the tiles, the filters
-// and the property picker all work: each read the page asks for is answered here. `?state=` picks a start.
+// and the property picker all work: each read the page asks for is answered here. `?state=` picks
+// a start; `overview` and `overview-connected` open the Overview tab, for its pointer to Search.
 
 export const LabState = Schema.Literals([
 	"populated",
@@ -36,8 +42,13 @@ export const LabState = Schema.Literals([
 	"empty",
 	"error",
 	"partial",
+	"recent",
 	"importing",
 	"disconnected",
+	"revoked",
+	"unpicked",
+	"overview",
+	"overview-connected",
 ])
 export type LabState = typeof LabState.Type
 
@@ -94,7 +105,14 @@ const ordered = <Row extends SearchMetrics>(
 
 const statusOf = (state: LabState) => {
 	const [first, ...rest] = SEARCH_STATUS.sites
-	if (state === "disconnected") return { ...SEARCH_STATUS, connected: false, sites: [] }
+	if (state === "disconnected" || state === "overview")
+		return { ...SEARCH_STATUS, connected: false, sites: [] }
+	if (state === "revoked") return { ...SEARCH_STATUS, revoked: true }
+	if (state === "unpicked")
+		return {
+			...SEARCH_STATUS,
+			sites: Arr.map(SEARCH_STATUS.sites, (site) => ({ ...site, enabled: false })),
+		}
 	if (first === undefined) return SEARCH_STATUS
 	if (state === "importing")
 		return { ...SEARCH_STATUS, sites: [{ ...first, watermarkDate: null, backfillDate: null }, ...rest] }
@@ -110,12 +128,16 @@ const answerOf = (
 	slot: SlotName,
 ): Option.Option<Result.Result<unknown, LoadFailure>> => {
 	if (slot === "searchStatus") return Option.some(Result.succeed(statusOf(state)))
+	if (isOverview(state))
+		return Option.map(Option.fromNullishOr(OVERVIEW_ANSWERS.get(slot)), (answer) =>
+			Result.succeed(answer),
+		)
 	if (slot === "breakdowns") return Option.some(Result.succeed(NO_BREAKDOWNS))
 	if (slot === "events") return Option.some(Result.succeed(SEARCH_EVENTS))
 	if (state === "loading") return Option.none()
 	if (state === "error" || (state === "partial" && slot !== "searchLanding"))
 		return Option.some(Result.fail(toLoadFailure("The warehouse did not answer in time")))
-	const isEmpty = state === "empty"
+	const isEmpty = state === "empty" || state === "recent"
 	switch (slot) {
 		case "searchOverview":
 			return Option.some(
@@ -177,6 +199,21 @@ const NO_BREAKDOWNS = {
 	hosts: [],
 }
 
+const isOverview = (state: LabState): boolean => state === "overview" || state === "overview-connected"
+
+/** The Overview tab's reads, each answered once; the rest (the live badge) stay unasked. */
+const OVERVIEW_ANSWERS = new Map<SlotName, unknown>([
+	["breakdowns", OVERVIEW_BREAKDOWNS],
+	["events", SEARCH_EVENTS],
+	["summary", OVERVIEW_SUMMARY],
+	["mix", OVERVIEW_SUMMARY],
+	["previousSummary", OVERVIEW_SUMMARY],
+	["timeseries", OVERVIEW_TIMESERIES],
+	["pageviews", OVERVIEW_PAGEVIEWS],
+	["previousPageviews", OVERVIEW_PAGEVIEWS],
+	["pages", OVERVIEW_PAGES],
+])
+
 const LAB_SLOTS: ReadonlyArray<SlotName> = [
 	"searchStatus",
 	"breakdowns",
@@ -185,6 +222,13 @@ const LAB_SLOTS: ReadonlyArray<SlotName> = [
 	"searchTimeseries",
 	"searchQueries",
 	"searchLanding",
+	"summary",
+	"mix",
+	"previousSummary",
+	"timeseries",
+	"pageviews",
+	"previousPageviews",
+	"pages",
 ]
 
 /** Answers every read the page is waiting on; the status answer asks for the rest, so twice. */
@@ -220,10 +264,11 @@ const lift = (commands: ReadonlyArray<PageCommand> | undefined) =>
 	Command.mapMessages(keepLocal(commands), (message) => Message.GotPageMessage({ message }))
 
 export const init = (flags: Flags): Return => {
-	const search: Search =
-		flags.state === "conversions"
+	const search: Search = isOverview(flags.state)
+		? { timePreset: "1mo" }
+		: flags.state === "conversions"
 			? { tab: "search", timePreset: "1mo", eventName: "signup_completed" }
-			: { tab: "search", timePreset: "1mo" }
+			: { tab: "search", timePreset: flags.state === "recent" ? "24h" : "1mo" }
 	const entered = Analytics.init({ search }, LAB_CONTEXT)
 	const windowed = Analytics.update(
 		entered.model,

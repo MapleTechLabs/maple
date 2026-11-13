@@ -204,7 +204,12 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 					summary("summary", { startTime, endTime, ...filters }),
 				]
 			: []
-	const search = tabOf(model.search) === "search" ? searchPlan(model, window) : []
+	const search =
+		tabOf(model.search) === "search"
+			? searchPlan(model, window)
+			: overview.length > 0
+				? [searchStatus]
+				: []
 	return [...page, ...overview, ...ai, ...search]
 }
 
@@ -240,14 +245,17 @@ const searchOrderOf = (model: Model, table: SearchTable) => {
 		: { sortBy: sort.key, sortDir: sort.dir }
 }
 
+/** Whether Search Console is connected: the Search tab's first read, and the Overview's pointer to it. */
+const searchStatus: Request = {
+	slot: "searchStatus",
+	fn: "searchConsoleStatus",
+	input: {},
+	command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
+}
+
 /** The Search tab: status first; the reads once a property has finished its first import. */
 const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
-	const status: Request = {
-		slot: "searchStatus",
-		fn: "searchConsoleStatus",
-		input: {},
-		command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
-	}
+	const status = searchStatus
 	const site = searchSiteOf(model.search, Option.getOrUndefined(AsyncData.getData(model.searchStatus.data)))
 	if (site === undefined || site.watermarkDate === null) return [status]
 	// Windows end at the last complete day, so today's partial numbers never count or compare.

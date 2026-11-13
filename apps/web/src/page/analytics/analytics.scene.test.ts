@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -210,6 +210,61 @@ describe("web analytics", () => {
 			resolveTheme,
 			expectView(text("www.google.com")).toExist(),
 			expectView(text("Clear all")).toExist(),
+		)
+	})
+
+	const searchConsole = (connected: boolean) => ({
+		configured: true,
+		connected,
+		accountEmail: null,
+		connectedByUserId: null,
+		revoked: false,
+		sites: [],
+	})
+
+	const overviewWith = (referrerHosts: Breakdowns["referrerHosts"], connected: boolean): Model => {
+		const loaded = settled(settled(windowed(), "summary", summary), "breakdowns", {
+			...breakdowns,
+			referrerHosts,
+		})
+		return pageUpdate(
+			loaded,
+			Message.CompletedFetch({
+				slot: "searchStatus",
+				key: loaded.searchStatus.key ?? "",
+				result: Result.succeed(searchConsole(connected)),
+			}),
+		).model
+	}
+
+	test("Google's search visits point to the Search tab, where Search Console connects", () => {
+		// Gmail is Google too, but not a search: its sessions stay out of the count.
+		const model = overviewWith(
+			[
+				{ name: "www.google.com", count: 63 },
+				{ name: "www.google.de", count: 4 },
+				{ name: "mail.google.com", count: 9 },
+			],
+			false,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("67 sessions from Google Search")).toExist(),
+			expectView(role("link", { name: "Connect Search Console" })).toHaveAttr(
+				"href",
+				"/analytics?tab=search",
+			),
+		)
+	})
+
+	test("without visits from Google's search there is nothing to point at", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(overviewWith([{ name: "news.ycombinator.com", count: 9 }], false)),
+			resolveTheme,
+			expectView(text("Connect Search Console")).not.toExist(),
 		)
 	})
 

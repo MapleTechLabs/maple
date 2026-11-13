@@ -345,6 +345,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySearch: () => retryFailed(model, context, SEARCH_SLOTS),
 		ClickedRetryEvents: () => retryFailed(model, context, ["events"]),
 		PickedSearchSite: ({ siteUrl }) => navigate(model, { ...model.search, site: siteUrl }),
+		ClickedWidenSearchRange: () =>
+			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: "1mo" }),
 		ClickedSearchSort: ({ table, key }) => {
 			// Names and position start ascending: lower position is better.
 			const next = nextSort<SearchSortKey>(searchSortOf(model, table), key, {
