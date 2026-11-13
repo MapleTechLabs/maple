@@ -62,6 +62,7 @@ export const COST_PROVIDERS = {
 	anthropic: {
 		name: "Anthropic",
 		icon: "AnthropicIcon",
+		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
 	openai: {
