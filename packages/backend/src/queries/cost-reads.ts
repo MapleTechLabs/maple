@@ -200,6 +200,10 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 						metric: payload.metric,
 						filters: payload.filters,
 						sourceIds: Arr.map(sources, (source) => source.id),
+						// A sync stamps its source at every step it writes.
+						written: Arr.reduce(sources, 0, (latest, source) =>
+							Math.max(latest, source.updatedAt),
+						),
 					}
 		})
 

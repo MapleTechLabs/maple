@@ -135,6 +135,10 @@ Every read names the org's cost sources, since a disconnected source keeps its r
 to one currency: the largest in the window unless the request names one. The response says which
 currency the figures are in and lists the others. Nothing is added across currencies.
 
+Answers are cached by their window, and a past window is held for 15 minutes. A sync writes past
+days, so the key also carries when the org's sources were last written: a sync step shows on the
+next read.
+
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
