@@ -64,14 +64,12 @@ interface LineShare extends DayShare {
 	readonly usageType: string
 	readonly resourceId: string
 	readonly resourceType: string
-	readonly estimated: boolean
 }
 
 const sharesOfLine = (
 	line: InvoiceLineItem,
 	period: CostPullWindow,
 	window: CostPullWindow,
-	estimated: boolean,
 ): ReadonlyArray<LineShare> => {
 	const resource = line.resource ?? undefined
 	const named = {
@@ -79,7 +77,6 @@ const sharesOfLine = (
 		usageType: line.metric_name ?? "",
 		resourceId: resource?.name ?? "",
 		resourceType: resource === undefined ? "" : Str.toLowerCase(resource.type ?? "branch"),
-		estimated,
 	}
 	return Arr.map(
 		Arr.filter(
@@ -92,21 +89,21 @@ const sharesOfLine = (
 
 /**
  * The window's days of the invoices that bill them. A discount line is negative and spread like
- * its charge, so a branch's days net out to what it cost. A line of zero is left out. Days of an
- * unpaid invoice can still change, until its month ended before `finalBefore`: by then only the
- * payment is open, and no later pull would come back to mark the days final.
+ * its charge, so a branch's days net out to what it cost. A line of zero is left out. Days from
+ * `openDay` on are not final, as every provider's newest days are. The shares of the whole open
+ * month can still move until its invoice closes: the source row says so, since marking a month of
+ * days would dim every other provider's days with it.
  */
 export const toCostRows = (
 	invoices: ReadonlyArray<InvoiceWithLineItems>,
 	accountId: string,
 	window: CostPullWindow,
-	finalBefore: string,
+	openDay: string,
 ): ReadonlyArray<CostPullRow> => {
 	const shares = Arr.flatMap(invoices, ({ invoice, lineItems }) => {
 		const period = invoicePeriod(invoice)
-		const estimated = !invoice.paid && period.endDay >= finalBefore
 		return Arr.flatMap(lineItems, (line) =>
-			line.subtotal === 0 ? [] : sharesOfLine(line, period, window, estimated),
+			line.subtotal === 0 ? [] : sharesOfLine(line, period, window),
 		)
 	})
 	// NUL separates the four parts of the key: PlanetScale's names hold none.
@@ -135,7 +132,7 @@ export const toCostRows = (
 			consumedQuantity: 0,
 			consumedUnit: "",
 			tags: {},
-			estimated: Arr.some(group, (share) => share.estimated),
+			estimated: first.day >= openDay,
 		}
 	})
 }

@@ -798,7 +798,11 @@ describe("cost page", () => {
 			expectView(text("acme")).toExist(),
 			expectView(text(/provider requests/)).not.toExist(),
 			// Beside the figures, the row says its days are shares of a monthly invoice.
-			expectView(text(/each day shows an even share of the month's invoice for each branch/)).toExist(),
+			expectView(
+				text(
+					/an even share of the month's invoice for each branch, and can change until the invoice closes/,
+				),
+			).toExist(),
 		)
 
 		const replacing = pageUpdate(

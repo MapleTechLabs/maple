@@ -3,7 +3,7 @@
 import { Duration, Effect, Array as Arr } from "effect"
 import type { HttpClient } from "effect/http"
 import { CostProviderError, type CostPullRow, type CostPullWindow } from "../../CostProvider"
-import { addDays, PREVIOUS_MONTH_OPEN_DAYS } from "../../sync-plan"
+import { addDays } from "../../sync-plan"
 import {
 	listInvoiceLineItems,
 	listInvoices,
@@ -97,10 +97,8 @@ export const pullInvoiceCost = (
 		Effect.tap((invoices) =>
 			Effect.annotateCurrentSpan("maple.cost.planetscale.invoices", invoices.length),
 		),
-		// The sync pulls the previous month once more after it closed: that pull writes it final.
-		Effect.map((invoices) =>
-			toCostRows(invoices, credentials.organization, window, addDays(today, -PREVIOUS_MONTH_OPEN_DAYS)),
-		),
+		// Today and yesterday are still arriving, as with the other providers.
+		Effect.map((invoices) => toCostRows(invoices, credentials.organization, window, addDays(today, -1))),
 		Effect.timeoutOrElse({
 			duration: PULL_TIMEOUT,
 			orElse: () =>

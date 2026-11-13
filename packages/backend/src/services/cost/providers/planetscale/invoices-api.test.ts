@@ -50,8 +50,8 @@ describe("PlanetScale invoice API", () => {
 			Effect.gen(function* () {
 				const invoices = yield* withClient((httpClient) => listInvoices(httpClient, CREDENTIALS))
 				assert.deepStrictEqual(
-					Arr.map(invoices, (invoice) => [invoice.id, invoice.paid]),
-					Arr.map(SIX_MONTHS, (invoice) => [invoice.id, invoice.paid]),
+					Arr.map(invoices, (invoice) => invoice.id),
+					Arr.map(SIX_MONTHS, (invoice) => invoice.id),
 				)
 				assert.deepStrictEqual(world.urls, ["/v1/organizations/acme/invoices?per_page=50&page=1"])
 				assert.deepStrictEqual(world.authorizations, [

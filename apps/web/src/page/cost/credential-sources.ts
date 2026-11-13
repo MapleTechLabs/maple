@@ -201,7 +201,8 @@ export const CREDENTIAL_SOURCES = {
 				"Maple deletes the token and stops reading the organization's invoices, and its cost leaves this page. Adding PlanetScale again reads the last year again.",
 			toast: "PlanetScale removed",
 		},
-		rowNote: "Billed by the month: each day shows an even share of the month's invoice for each branch.",
+		rowNote:
+			"Billed by the month: each day shows an even share of the month's invoice for each branch, and can change until the invoice closes.",
 		save: (token, [organization = "", tokenId = ""]) =>
 			SavePlanetScaleCostToken({ organization, tokenId, token }),
 		delete: () => RemovePlanetScaleCostToken(),

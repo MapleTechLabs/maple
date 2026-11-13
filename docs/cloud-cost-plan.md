@@ -327,8 +327,8 @@ currency the figures are in and lists the others. Nothing is added across curren
 - There are no daily figures. Each line item is spread evenly over the days of the invoice's month
   on which its branch existed (the whole month for a line with no branch), a discount line the
   same way, so a branch's days net out to what it cost. The shares of a line add up to its
-  subtotal. The open month shows its days so far, marked as not final. The page says that
-  PlanetScale days are a monthly invoice spread evenly.
+  subtotal. The open month shows its days so far. The source's row on the page says that its
+  days are an even share of a monthly invoice and can change until the invoice closes.
 - It needs a service token with the `read_invoices` organization access, sent as
   `Authorization: <token id>:<token>`. Maple's PlanetScale OAuth app has no invoice scope, so the
   existing connection is not used: the org pastes the organization name, the token ID and the
@@ -342,13 +342,18 @@ currency the figures are in and lists the others. Nothing is added across curren
   `UsageType`, the branch is the resource, the category is "Databases", the region is `global`.
 - Sync: twelve months back, through today. A pull is one invoice list plus one line-item read per
   month in its window. Requests are free, so the source counts none. The daily pull takes the
-  whole open month, not the trailing days: a new line changes the share of every day of it. A
-  month with more than 5,000 line items is refused as too large.
+  whole open month, not the trailing days: a new line changes the share of every day of it.
+  Through the tenth it takes the month before too, since a closed month still gains lines (a
+  branch deleted on its last day is discounted after). A month with more than 5,000 line items
+  is refused as too large.
+- A settle after pulls stopped over a month end goes back to the month before the watermark's
+  when the last settle was before that month closed. The watermark sits inside the usual start
+  then, so the gap rule sees nothing to resume.
 - Not used: `cluster-size-skus?rates=true`. A daily estimate from rates would only be replaced by
   the invoice.
-- A month's days are not final while its invoice is unpaid, until the month ended more than ten
-  days ago: the previous month is pulled for the last time after the tenth, and that pull writes
-  it final whether or not the payment went through.
+- Only today and yesterday are marked as not final, as with the other providers. The whole open
+  month can still move, but the page dims a day when any source marks it: a month of marked days
+  would dim every provider's bars and count them all in "not final yet". The row says it instead.
 
 ### Supabase (estimated)
 

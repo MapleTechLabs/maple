@@ -5,25 +5,24 @@ import { Invoice, InvoiceLineItem } from "./invoices-api"
 import { chargedDays, type InvoiceWithLineItems, invoicePeriod, spreadEvenly, toCostRows } from "./normalize"
 
 const ORGANIZATION = "acme"
-/** A pull on 2026-11-12: an unpaid invoice whose month ended before this day is final. */
-const FINAL_BEFORE = "2026-11-02"
+/** A pull on 2026-11-12: that day and the one before are still arriving. */
+const OPEN_DAY = "2026-11-11"
 
 const toRows = (
 	invoices: ReadonlyArray<InvoiceWithLineItems>,
 	accountId: string,
 	window: { readonly startDay: string; readonly endDay: string },
-) => toCostRows(invoices, accountId, window, FINAL_BEFORE)
+) => toCostRows(invoices, accountId, window, OPEN_DAY)
 
-const invoice = (month: string, nextMonth: string, paid = true) =>
+const invoice = (month: string, nextMonth: string) =>
 	Schema.decodeSync(Invoice)({
 		id: `inv_${month}`,
 		billing_period_start: `${month}-01T00:00:00.000Z`,
 		billing_period_end: `${nextMonth}-01T00:00:00.000Z`,
-		paid,
 	})
 
 const OCTOBER = invoice("2026-10", "2026-11")
-const NOVEMBER = invoice("2026-11", "2026-12", false)
+const NOVEMBER = invoice("2026-11", "2026-12")
 const OCTOBER_DAYS = { startDay: "2026-10-01", endDay: "2026-10-31" }
 
 const line = (overrides: Partial<typeof InvoiceLineItem.Encoded>) =>
@@ -80,7 +79,6 @@ describe("invoicePeriod of an organization's first invoice", () => {
 			id: "inv_first",
 			billing_period_start: "2024-05-24T00:00:00.000Z",
 			billing_period_end: "2024-06-01T00:00:00.000Z",
-			paid: true,
 		})
 		assert.deepStrictEqual(invoicePeriod(first), { startDay: "2024-05-24", endDay: "2024-05-31" })
 		const rows = toRows([{ invoice: first, lineItems: [line({ subtotal: "8.00" })] }], ORGANIZATION, {
@@ -235,42 +233,33 @@ describe("toCostRows", () => {
 		assert.closeTo(total(rows), 22, 1e-9)
 	})
 
-	it("shows the open month's days so far as not final, each a share of the whole month's line", () => {
+	it("shows the open month's days so far, each a share of the whole month's line, and only the newest two as not final", () => {
 		const rows = toRows([{ invoice: NOVEMBER, lineItems: [line({ subtotal: "30.00" })] }], ORGANIZATION, {
 			startDay: "2026-11-01",
 			endDay: "2026-11-12",
 		})
 		assert.strictEqual(rows.length, 12)
-		assert.isTrue(Arr.every(rows, (row) => row.estimated && row.billedCost === 1))
-	})
-
-	it("stops calling an unpaid invoice's days not final once its month ended before the cutoff", () => {
-		const unpaidOctober = invoice("2026-10", "2026-11", false)
-		const estimatedOn = (finalBefore: string) =>
-			Arr.dedupe(
-				Arr.map(
-					toCostRows(
-						[{ invoice: unpaidOctober, lineItems: [line({})] }],
-						ORGANIZATION,
-						OCTOBER_DAYS,
-						finalBefore,
-					),
-					(row) => row.estimated,
-				),
-			)
-		// Pulled on November 10 the month can still change; on the 11th only the payment is open.
-		assert.deepStrictEqual(estimatedOn("2026-10-31"), [true])
-		assert.deepStrictEqual(estimatedOn("2026-11-01"), [false])
+		assert.isTrue(Arr.every(rows, (row) => row.billedCost === 1))
+		// The whole month's shares can still move, but a month of days marked would dim every provider's.
+		assert.deepStrictEqual(
+			Arr.map(
+				Arr.filter(Arr.sort(rows, byDay), (row) => row.estimated),
+				(row) => row.day,
+			),
+			["2026-11-11", "2026-11-12"],
+		)
 	})
 
 	it("takes each day of a window that crosses two invoices from the invoice that bills it", () => {
-		const rows = toRows(
+		// Pulled on November 2: the first and the second are still arriving, whichever invoice bills them.
+		const rows = toCostRows(
 			[
 				{ invoice: NOVEMBER, lineItems: [line({ subtotal: "60.00" })] },
 				{ invoice: OCTOBER, lineItems: [line({ subtotal: "31.00" })] },
 			],
 			ORGANIZATION,
 			{ startDay: "2026-10-30", endDay: "2026-11-02" },
+			"2026-11-01",
 		)
 		assert.deepStrictEqual(
 			Arr.map(Arr.sort(rows, byDay), (row) => `${row.day} ${row.billedCost} ${row.estimated}`),

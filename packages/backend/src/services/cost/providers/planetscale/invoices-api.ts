@@ -83,7 +83,6 @@ export const Invoice = Schema.Struct({
 	id: Schema.String,
 	billing_period_start: Schema.DateTimeUtcFromString,
 	billing_period_end: Schema.DateTimeUtcFromString,
-	paid: Schema.Boolean,
 })
 export type Invoice = typeof Invoice.Type
 

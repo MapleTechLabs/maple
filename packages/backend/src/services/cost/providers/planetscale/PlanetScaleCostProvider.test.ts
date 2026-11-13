@@ -29,7 +29,7 @@ const HEADER = `${FAKE_PLANETSCALE_TOKEN_ID}:${FAKE_PLANETSCALE_TOKEN}`
 const WINDOW = { startDay: "2026-10-30", endDay: "2026-11-02" }
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-02T06:00:00Z"))
 
-/** October closed and paid, November open; one cluster on `main` in each. */
+/** October closed, November open; one cluster on `main` in each. */
 const twoMonths = (overrides: Partial<FakePlanetScale> = {}) =>
 	makeFakePlanetScale({
 		invoices: [
@@ -103,7 +103,7 @@ describe("PlanetScaleCostProvider", () => {
 					])
 					assert.deepStrictEqual(world.authorizations, Arr.replicate(HEADER, 3))
 					assert.strictEqual(pulled.requests, 0)
-					// Rows carry the organization; the open month's days can still change.
+					// Rows carry the organization; today and yesterday are not final yet.
 					assert.deepStrictEqual(
 						Arr.map(
 							Arr.sort(
