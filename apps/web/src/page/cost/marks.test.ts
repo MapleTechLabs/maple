@@ -173,6 +173,8 @@ describe("cost key marks", () => {
 		expect(markOf("Actions")).toBe(keyMark("provider", "github", [])?.icon)
 		expect(markOf("Amazon Simple Storage Service")).toBe(keyMark("provider", "aws", [])?.icon)
 		expect(markOf("Workers")).toBe(keyMark("provider", "cloudflare", [])?.icon)
+		// A PlanetScale charge with no database and no description is filed under the provider's name.
+		expect(markOf("PlanetScale")).toBe(keyMark("provider", "planetscale", [])?.icon)
 		// A charge no name or shape places, in an org three platforms could bill: a glyph, no logo.
 		expect(markOf("Support plan")).toBe("CubeIcon")
 		expect(keyLabel("account", "acme", org)).toBe("PlanetScale acme")

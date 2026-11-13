@@ -79,6 +79,9 @@ const isDatabaseName = (key: string): boolean => /^[a-z0-9][a-z0-9_-]*$/u.test(k
 const isPlanetScaleDatabase = (key: string, sources: ReadonlyArray<CostSourceSummary>): boolean =>
 	isDatabaseName(key) && Arr.some(sources, (source) => source.provider === "planetscale")
 
+/** What a PlanetScale charge that names no database and has no description is filed under. */
+const PLANETSCALE_UNNAMED = "PlanetScale"
+
 /** The platforms the org reads whose services are products, not models. */
 const platformsOf = (sources: ReadonlyArray<CostSourceSummary>): ReadonlyArray<CostProvider> =>
 	Arr.dedupe(Arr.flatMap(sources, (source) => (source.provider === "openrouter" ? [] : [source.provider])))
@@ -95,6 +98,7 @@ const serviceProvider = (
 	if (GITHUB_PRODUCTS.has(key)) return "github"
 	if (CLOUDFLARE_SERVICES.has(key)) return "cloudflare"
 	if (isAwsService(key)) return "aws"
+	if (key === PLANETSCALE_UNNAMED) return "planetscale"
 	// After the known names, so it claims no other platform's key.
 	if (isPlanetScaleDatabase(key, sources)) return "planetscale"
 	const [only, ...others] = platformsOf(sources)
