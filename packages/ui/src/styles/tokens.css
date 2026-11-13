@@ -812,6 +812,10 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
+	/* Selected text takes the primary's strong wash instead of the system blue; the text keeps its colour. */
+	::selection {
+		background-color: var(--color-primary-a4);
+	}
 	body {
 		@apply font-sans bg-background text-foreground;
 	}

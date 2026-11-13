@@ -1,3 +1,4 @@
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
@@ -21,6 +22,23 @@ export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =
 		{ Home: () => [{ label: "Overview" }], NotFound: () => [{ label: "Page not found" }] },
 		() => [{ label: route._tag }],
 	)
+
+const APP_NAME = "Maple"
+
+/** A crumb standing in for a name that has not loaded ("Loading…") names nothing yet. */
+const isPendingLabel = (label: string) => Str.endsWith("…")(label)
+
+/**
+ * The tab title: the page's own name first, then its parent, so a row of narrow tabs still tells
+ * them apart ("checkout-api · Services · Maple").
+ */
+export const documentTitleOf = (breadcrumbs: ReadonlyArray<BreadcrumbEntry>): string => {
+	const names = Arr.filter(
+		Arr.map(breadcrumbs, (crumb) => crumb.label),
+		(label) => label !== "" && !isPendingLabel(label),
+	)
+	return Arr.join([...Arr.reverse(Arr.takeRight(names, 2)), APP_NAME], " · ")
+}
 
 /**
  * The page content while the page has no slot or context yet (no org open, a plan-gate
