@@ -124,7 +124,7 @@ export const FEEDBACK_TOOL = "send_maple_feedback"
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
 	!readOnly && name !== FEEDBACK_TOOL
 
-/** Whether the caller may only read: a read-only API key, or anyone whose role is observer. */
+/** Whether the caller may only read: a read-only API key, or anyone whose role is analyst. */
 export const isReadOnlyTenant = (tenant: {
 	readonly readOnly?: true
 	readonly roles: ReadonlyArray<string>

@@ -88,14 +88,14 @@ const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
 		]),
 	)
 
-/** What an observer's sidebar calls each of its pages (`/alerts` is "Incidents"), plus their account. */
-const OBSERVER_TITLES: ReadonlyMap<string, string> = new Map([
-	...Arr.map(navRowsOf(navGroups(EVERY_FLAG, "observer")), (row) => [row.href, row.title] as const),
+/** What an analyst's sidebar calls each of its pages (`/alerts` is "Incidents"), plus their account. */
+const ANALYST_TITLES: ReadonlyMap<string, string> = new Map([
+	...Arr.map(navRowsOf(navGroups(EVERY_FLAG, "analyst")), (row) => [row.href, row.title] as const),
 	["/account", "Account"] as const,
 ])
 
 /**
- * The entries as the viewer's palette lists them. An observer gets their own pages under their
+ * The entries as the viewer's palette lists them. An analyst gets their own pages under their
  * sidebar's names, dashboards and the app actions; the ids stay, so a pick resolves either way.
  */
 export const entriesFor = (
@@ -107,7 +107,7 @@ export const entriesFor = (
 		: Arr.flatMap(entries, (entry): ReadonlyArray<PaletteEntry> => {
 				if (entry.group === "Actions" || entry.group === "Dashboards") return [entry]
 				if (entry.group !== "Navigation" || entry.target._tag !== "Href") return []
-				const title = OBSERVER_TITLES.get(entry.target.href)
+				const title = ANALYST_TITLES.get(entry.target.href)
 				return title === undefined
 					? []
 					: [{ ...entry, title, keywords: `${entry.keywords} ${title}` }]

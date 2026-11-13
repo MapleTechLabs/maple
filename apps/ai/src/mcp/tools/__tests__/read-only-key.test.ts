@@ -71,15 +71,15 @@ describe("read-only API key over MCP", () => {
 	)
 })
 
-describe("an observer over MCP", () => {
+describe("an analyst over MCP", () => {
 	// A layer per test: each owns a database that `afterEach` removes.
-	const observer = () => makeLayer(false, undefined, "org:observer")
+	const analyst = () => makeLayer(false, undefined, "org:analyst")
 
 	it.effect("runs read tools", () =>
 		Effect.gen(function* () {
 			const result = yield* call("get_error_notification_policy", {})
 			expect(Result.isSuccess(result)).toBe(true)
-		}).pipe(Effect.provide(observer())),
+		}).pipe(Effect.provide(analyst())),
 	)
 
 	it.effect("refuses a tool that changes data and says which role can", () =>
@@ -91,7 +91,7 @@ describe("an observer over MCP", () => {
 				expect(result.failure.message).toContain("update_error_notification_policy")
 				expect(result.failure.message).toContain("Ask an org admin for the Member role")
 			}
-		}).pipe(Effect.provide(observer())),
+		}).pipe(Effect.provide(analyst())),
 	)
 })
 

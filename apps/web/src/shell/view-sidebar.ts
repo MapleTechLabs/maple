@@ -405,8 +405,8 @@ export const shellSidebarFooter = (
 		sidebarMenu(h, undefined, [
 			// A row of the footer's list, so it keeps the list's 4px rhythm.
 			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
-			// An observer sets nothing up: their account is in the user menu below.
-			...(shellAudience(clerk) === "observer"
+			// An analyst sets nothing up: their account is in the user menu below.
+			...(shellAudience(clerk) === "analyst"
 				? []
 				: [
 						footerNavRow(

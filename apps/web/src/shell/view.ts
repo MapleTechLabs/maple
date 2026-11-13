@@ -68,7 +68,7 @@ const railTipTitles = (model: Model, clerk: ShellClerk | null): ReadonlyArray<st
 		"Search",
 		...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
 		...(isPillShown(onCall) ? [onCallDetail(onCall)] : []),
-		...(shellAudience(clerk) === "observer" ? [] : ["Sources", "Settings"]),
+		...(shellAudience(clerk) === "analyst" ? [] : ["Sources", "Settings"]),
 	]
 }
 
@@ -196,7 +196,7 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 						inputs.topbarActions(),
 						railTriggers,
 						!hidesTopbarConnect(inputs.currentPath) &&
-							shellAudience(inputs.clerk ?? null) !== "observer",
+							shellAudience(inputs.clerk ?? null) !== "analyst",
 						inputs.sourceLink ?? null,
 					),
 					...(inputs.clerk === undefined || inputs.clerk === null

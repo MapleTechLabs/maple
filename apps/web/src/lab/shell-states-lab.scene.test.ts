@@ -140,7 +140,7 @@ describe("URL-held right sheet", () => {
 	})
 })
 
-describe("the shell for an observer", () => {
+describe("the shell for an analyst", () => {
 	const setup = [
 		role("link", { name: "Sources" }),
 		role("link", { name: "Settings" }),
@@ -156,12 +156,12 @@ describe("the shell for an observer", () => {
 		)
 	})
 
-	test("an observer has none of them, and keeps their own pages", () => {
+	test("an analyst has none of them, and keeps their own pages", () => {
 		scene(
 			{ update, view },
 			given(at("/lab/shell")),
 			measured,
-			click(role("button", { name: "Observer" })),
+			click(role("button", { name: "Analyst" })),
 			...Arr.map(setup, (it) => expect(it).toBeAbsent()),
 			expect(role("link", { name: "Web analytics" })).toExist(),
 		)

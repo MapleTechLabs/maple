@@ -51,12 +51,12 @@ export const check = <E>(
 ): Effect.Effect<void, E> =>
 	can(roles, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
 
-/** Whether the roles may only read: an observer, with no higher role beside it. */
-export const isReadOnly = (roles: ReadonlyArray<string>): boolean => highestRole(roles) === "observer"
+/** Whether the roles may only read: an analyst, with no higher role beside it. */
+export const isReadOnly = (roles: ReadonlyArray<string>): boolean => highestRole(roles) === "analyst"
 
-/** What an observer is told when a change is refused, on every surface. */
+/** What an analyst is told when a change is refused, on every surface. */
 export const readOnlyMessage =
-	"Observers can read Maple but not change it. Ask an org admin for the Member role to make changes."
+	"Analysts can read Maple but not change it. Ask an org admin for the Member role to make changes."
 
 /** Every permission the roles hold, for a page model to keep instead of role flags. */
 export const grantsOf = (roles: ReadonlyArray<string>): ReadonlyArray<Permission> =>

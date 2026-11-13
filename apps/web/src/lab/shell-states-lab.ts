@@ -167,13 +167,13 @@ const sheetStep = (model: Model, step: SheetStep): Return => ({
 	],
 })
 
-/** A signed-in observer with nothing else read yet: all the shell needs to pick their sidebar. */
-const OBSERVER_CLERK: ShellClerk = {
+/** A signed-in analyst with nothing else read yet: all the shell needs to pick their sidebar. */
+const ANALYST_CLERK: ShellClerk = {
 	maybeUser: Option.none(),
 	maybeOrganization: Option.none(),
 	memberships: [],
 	customer: undefined,
-	maybeRole: Option.some("org:observer"),
+	maybeRole: Option.some("org:analyst"),
 }
 
 /** The fixture's shifts, read on the lab's fixed clock. */
@@ -364,7 +364,7 @@ const page = (h: HtmlBuilder<Message>, model: Model): Html =>
 						onChange: (viewer) => Message.ClickedViewer({ viewer }),
 						options: [
 							{ value: "operator", label: "Member and above" },
-							{ value: "observer", label: "Observer" },
+							{ value: "analyst", label: "Analyst" },
 						],
 					}),
 				),
@@ -395,7 +395,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			TooltipHost.view(h, model.tooltip, toTooltip),
 			...labShellView(h, model.shell, toShell, {
 				currentPath: STAND_ON_PATH[model.standOn],
-				clerk: model.viewer === "observer" ? OBSERVER_CLERK : null,
+				clerk: model.viewer === "analyst" ? ANALYST_CLERK : null,
 				breadcrumbs: [{ label: "Lab" }, { label: "Shell states" }],
 				page: () => page(h, model),
 			}),
