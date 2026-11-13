@@ -1,16 +1,11 @@
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureMessage } from "@maple/views/data/load-failure"
 import { alert, alertDescription } from "@maple/views/ui/alert"
-import { button, linkButton } from "@maple/views/ui/button"
-import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import { listRow } from "@maple/views/ui/list-row"
-import { spinner } from "@maple/views/ui/spinner"
-import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { connectionStep, type ConnectionStepAction } from "../kit/connection-step"
 import { Message } from "./message"
 import { type Model, type PlanetScaleStep, planetScaleStepOf } from "./model"
 import { COST_PROVIDERS } from "./providers"
@@ -110,28 +105,22 @@ const connection = (h: H, model: Model, step: PlanetScaleStep): ReadonlyArray<Ht
 	}
 }
 
-const reconnectButton = (h: H): Html => linkButton(h, { href: PLANETSCALE_INTEGRATION_HREF }, [RECONNECT])
-
 /** The step's primary action, by what the connection allows: add it, connect one, or authorize it again. */
-const primary = (h: H, model: Model, step: PlanetScaleStep): ReadonlyArray<Html> => {
+const primary = (model: Model, step: PlanetScaleStep): ConnectionStepAction<Message> | null => {
+	const reconnect = { label: RECONNECT, href: PLANETSCALE_INTEGRATION_HREF }
 	switch (step._tag) {
 		case "NotConnected":
-			return [linkButton(h, { href: CONNECT_PLANETSCALE_HREF }, ["Connect PlanetScale"])]
+			return { label: "Connect PlanetScale", href: CONNECT_PLANETSCALE_HREF }
 		case "Added":
-			return step.needsReconnect ? [reconnectButton(h)] : []
+			return step.needsReconnect ? reconnect : null
 		case "NeedsReconnect":
-			return [reconnectButton(h)]
+			return reconnect
 		case "Ready":
-			return [
-				button(
-					h,
-					{
-						isLoading: model.sourceWrite === "Saving",
-						attributes: [h.OnClick(Message.ClickedConfirmAddPlanetScale())],
-					},
-					["Add source"],
-				),
-			]
+			return {
+				label: "Add source",
+				onClick: Message.ClickedConfirmAddPlanetScale(),
+				isLoading: model.sourceWrite === "Saving",
+			}
 	}
 }
 
@@ -139,66 +128,17 @@ const primary = (h: H, model: Model, step: PlanetScaleStep): ReadonlyArray<Html>
  * The dialog's PlanetScale step: the organization the org has connected, added with one click.
  * Nothing is typed: the connection already holds the authorization.
  */
-export const planetScaleStep = (h: H, model: Model, id: string): ReadonlyArray<Html> => {
-	const step = AsyncData.matchData(model.planetscale.data, {
-		onEmpty: () => null,
-		onFailure: () => null,
-		onData: planetScaleStepOf,
+export const planetScaleStep = (h: H, model: Model, id: string): ReadonlyArray<Html> =>
+	connectionStep(h, {
+		dialogId: id,
+		title: "Add PlanetScale",
+		description:
+			"PlanetScale bills by the month, so Maple spreads each invoice line evenly over the days its branch ran.",
+		read: model.planetscale.data,
+		readingLabel: "Reading the PlanetScale connection",
+		onRetry: Message.ClickedAddPlanetScale(),
+		content: (status) => connection(h, model, planetScaleStepOf(status)),
+		primary: (status) => primary(model, planetScaleStepOf(status)),
+		onBack: Message.ClickedBackToProviders(),
+		isBusy: model.sourceWrite === "Saving",
 	})
-	return [
-		DialogView.dialogHeader(h, "dialog", [
-			DialogView.dialogTitle(h, "dialog", id, "Add PlanetScale"),
-			DialogView.dialogDescription(
-				h,
-				"dialog",
-				id,
-				"PlanetScale bills by the month, so Maple spreads each invoice line evenly over the days its branch ran.",
-			),
-		]),
-		DialogView.dialogPanel(h, "dialog", id, [
-			vstack(
-				h,
-				{ gap: "3" },
-				AsyncData.matchData(model.planetscale.data, {
-					onEmpty: () => [
-						hstack(h, { gap: "2" }, [
-							spinner(h, undefined, 14, true),
-							typography(h, { size: "sm", tone: "muted" }, [
-								"Reading the PlanetScale connection",
-							]),
-						]),
-					],
-					onFailure: (failure) => [
-						alert(h, { variant: "crit", size: "sm" }, [
-							alertDescription(h, [failureMessage(failure)]),
-						]),
-						hstack(h, {}, [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedAddPlanetScale())],
-								},
-								["Try again"],
-							),
-						]),
-					],
-					onData: (status) => connection(h, model, planetScaleStepOf(status)),
-				}),
-			),
-		]),
-		DialogView.dialogFooter(h, "dialog", [
-			button(
-				h,
-				{
-					variant: "outline",
-					isDisabled: model.sourceWrite === "Saving",
-					attributes: [h.OnClick(Message.ClickedBackToProviders())],
-				},
-				["Back"],
-			),
-			...(step === null ? [] : primary(h, model, step)),
-		]),
-	]
-}
