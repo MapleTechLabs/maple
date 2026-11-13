@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import * as Frame from "../../../kit/time-frame"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { Message } from "./message"
 import type { HostSummary, Model } from "./model"
 import { init, update } from "./update"
@@ -38,7 +38,7 @@ const summary: NonNullable<HostSummary> = {
 /** The page root reads theme colours and the metrics panel wires the linked cursor. */
 const mounted = () => [
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+	Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 ]
 
 const resolved = (model: Model, at = window) =>

@@ -1,3 +1,4 @@
+import { zoomSearchPatch } from "../kit/chart-zoom"
 import { pickerStep } from "../kit/page-time"
 import { keyed as keyedStep, runSteps, type Step as KitStep } from "../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
@@ -371,9 +372,7 @@ export const init = initWith(isClerkAuthEnabled)
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (context.audience === "analyst")
-		return withAnalyst({ ...model, search: route.search }, (analyst) =>
-			Analyst.revive(analyst, context),
-		)
+		return withAnalyst({ ...model, search: route.search }, (analyst) => Analyst.revive(analyst, context))
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
 	const anomalies = Keyed.request(
 		Keyed.forgetFailure(model.anomalies),
@@ -513,6 +512,7 @@ const withChart = (model: Model, chartId: string, message: Chart.Message): Retur
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedMountLinkedCursor: () => ({ model }),
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }),
 		CompletedReadEntry: ({ nowMs, hint }) =>
 			resolveSetupWindow(
 				sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),

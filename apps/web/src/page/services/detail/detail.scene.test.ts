@@ -29,7 +29,7 @@ import {
 	FetchRuntimes,
 	FetchWorkloads,
 } from "./command"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
@@ -434,7 +434,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(loaded),
 			themeResolved(),
-			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(text("10 versions")).toExist(),
 			expectView(text("v1.0.1")).not.toExist(),
 			click(role("button", { name: "Show all 10 deploys" })),
@@ -499,7 +499,7 @@ describe("where the service runs", () => {
 	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
 	const settled = [
 		themeResolved(),
-		Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+		Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 	]
 
 	test("a service on Cloud Run lists it under Runs on, linked to its Google Cloud page", () => {
@@ -699,6 +699,24 @@ describe("the API tab's endpoint drawer", () => {
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
 			expectView(text("No endpoints match these filters")).toExist(),
+		)
+	})
+})
+
+describe("chart zoom", () => {
+	test("a drag across a chart opens that span as the window, as a push so Back returns", () => {
+		const zoomed = pageUpdate(
+			entered({ timePreset: "24h", tab: "operations" }),
+			Message.SelectedChartRange({
+				startMs: Date.parse("2026-10-01T09:00:00Z"),
+				endMs: Date.parse("2026-10-01T09:45:00Z"),
+			}),
+		)
+		expect(zoomed.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?tab=operations&startTime=2026-10-01+09%3A00%3A00&endTime=2026-10-01+09%3A45%3A00",
+				isReplace: false,
+			}),
 		)
 	})
 })

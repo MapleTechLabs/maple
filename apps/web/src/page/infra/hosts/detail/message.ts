@@ -18,6 +18,7 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
+	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
 	GotChartMessage: { metric: HostMetric, message: Chart.Message },
 	GotCopyMessage: { label: Schema.String, message: CopyButton.Message },
 	GotFrameMessage: { message: Frame.Message },

@@ -19,7 +19,7 @@ import { pageContextOf, settle, shellClerkOf, update } from "./update"
 import { view } from "./view"
 import type { HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, scene, text } from "foldkit/scene"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { MountAnalystHome } from "./page/overview/analyst/command"
 import { Message as AnalystMessage } from "./page/overview/analyst/message"
@@ -109,7 +109,7 @@ describe("the Overview the root draws", () => {
 			entered("org:admin"),
 			...shellMounted,
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(text("Open incidents")).toBeAbsent(),
 		)
 	})

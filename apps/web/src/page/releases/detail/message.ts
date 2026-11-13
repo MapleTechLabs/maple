@@ -36,6 +36,7 @@ export const Message = defineMessageUnion({
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
 	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
+	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
 	GotOverlaysMessage: { message: Overlays.Message },
 })
 export type Message = typeof Message.Type

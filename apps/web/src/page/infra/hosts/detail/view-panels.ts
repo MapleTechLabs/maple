@@ -1,3 +1,4 @@
+import { cn } from "@maple/ui/lib/utils"
 import { countLabel } from "@maple/ui/lib/format"
 import { relativeTime } from "../../../kit/relative-time"
 import { AsyncData } from "foldkit"
@@ -6,7 +7,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { formatValueWithUnit } from "@maple/views/lib/infra-chart-units"
-import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LINKED_CURSOR_STYLE, LINKED_ZOOM_CLASS, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import {
 	INFRA_METRIC_CHART_HEIGHT,
 	type InfraSeriesInfo,
@@ -153,7 +154,11 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 			]),
 		}),
 		h.div(
-			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],
+			[
+				h.Class(cn("px-4", LINKED_ZOOM_CLASS)),
+				h.Style(LINKED_CURSOR_STYLE),
+				h.OnMount(MountLinkedZoom({ timeZone })),
+			],
 			Arr.map(METRIC_STRIPS, (strip) => metricStrip(h, model, strip, timeZone)),
 		),
 	])
