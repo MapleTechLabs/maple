@@ -8,7 +8,6 @@ import {
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
 import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { cn } from "@maple/ui/lib/utils"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -25,7 +24,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink } from "../kit/signal-empty-state"
-import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
+import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { Message } from "./message"
 import type { Model, Summary } from "./model"
 import { filtersOf } from "./requests"
@@ -37,15 +36,6 @@ import { typography } from "@maple/views/ui/typography"
 import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
-
-// Eight tiles in two or four columns: `divide-*` would double the outer border at row ends,
-// so each tile rules its own inner right and top edges per column count.
-const GRID = cn(
-	"grid grid-cols-2 overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4",
-	"[&>*]:border-border [&>*:nth-child(odd)]:border-r @min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r",
-	"@max-[879px]/page:[&>*:nth-child(n+3)]:border-t @min-[880px]/page:[&>*:nth-child(n+5)]:border-t",
-)
-const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>
 	Option.getOrUndefined(AsyncData.getData(slot.data))
@@ -90,8 +80,9 @@ const metricStrip = (
 	previous: AnalyticsMetricSource | undefined,
 	selected: string,
 ): Html =>
-	h.div(
-		[h.Class(GRID)],
+	metricGrid(
+		h,
+		{},
 		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
@@ -105,8 +96,7 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				className: TILE_NARROW,
-				valueClassName: "@max-[560px]/page:text-xl",
+				...METRIC_TILE,
 			})
 		}),
 	)
@@ -121,9 +111,10 @@ const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMet
 const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => [
-			h.div(
-				[h.Class(GRID), h.AriaBusy(true)],
-				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, TILE_NARROW)),
+			metricGrid(
+				h,
+				{ isBusy: true },
+				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, METRIC_TILE.className)),
 			),
 			chartLoading(h, { variant: "area", height: 224 }),
 		],

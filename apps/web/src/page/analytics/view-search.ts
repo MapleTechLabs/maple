@@ -3,10 +3,13 @@ import {
 	type SearchConsoleIntegrationStatus,
 	type SearchConsoleLandingPage,
 	type SearchConsoleOverview,
+	type SearchConsoleSiteStatus,
+	type SearchConsoleSortKey,
 } from "@maple/domain/http"
 import { completeThrough, pacificToday, searchConsoleCoverage } from "@maple/domain/search-console"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Option, Array as Arr } from "effect"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
+import { Option, Array as Arr, Order, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -19,56 +22,43 @@ import {
 	emptyDescription,
 	emptyHeader,
 	emptyMedia,
+	emptyMessage,
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
-import { panel, panelHeader } from "@maple/views/ui/panel"
+import { revealIcon } from "@maple/views/ui/reveal-icon"
+import { stripClass } from "@maple/views/ui/rule"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import {
-	ariaSort,
-	numericTableCell,
-	sortButton,
-	table,
-	tableBody,
-	tableHead,
-	tableHeader,
-	tableRow,
-	truncatedTableCell,
-} from "@maple/views/ui/table"
-import { typography } from "@maple/views/ui/typography"
-import { grid } from "@maple/views/ui/grid"
+import { rowLink } from "@maple/views/ui/table"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { columnClass } from "@maple/views/ui/column"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows } from "../kit/data-table"
 import { sectionHeading } from "../kit/section-heading"
 import { sortRows } from "../kit/table-sort"
-import { statRail, statRailItem } from "../kit/stat-rail"
+import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { Message } from "./message"
-import type { Model, SearchSort, SearchSortKey, SearchTable } from "./model"
+import { type Model, SearchTable } from "./model"
 import { filtersOf, searchSiteOf, searchSortOf } from "./requests"
-import { searchTrendChart, type SearchTrendInputs } from "./view-search-chart"
+import { SEARCH_METRICS, searchMetricOf, type SearchMetrics } from "./search-metrics"
+import { panelOf, SEARCH_DATA_SLOTS } from "./update"
+import { columnLabel, panelFilterInput, shareBarStyle } from "./view-breakdown"
+import { analyticsPanel, CARD_SURFACE, DIALOG_SURFACE } from "./view-panel"
+import { searchTrendChart, searchTrendHeading, type SearchTrendInputs } from "./view-search-chart"
 import { chartCard } from "../kit/chart-card"
-import type * as Keyed from "@maple/views/data/keyed"
-import type { LoadFailure } from "@maple/views/data/load-failure"
+import * as Keyed from "@maple/views/data/keyed"
+import { isSameFailure, type LoadFailure } from "@maple/views/data/load-failure"
 
 // The Search tab: Google Search Console performance for one property, beside Maple's own
-// sessions on the same landing pages.
+// sessions on the same pages.
 
 type H = HtmlBuilder<Message>
-type Metrics = Readonly<{ clicks: number; impressions: number; ctr: number; position: number }>
 
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>
 	Option.getOrUndefined(AsyncData.getData(slot.data))
-
-const formatPosition = (value: number): string => (value > 0 ? value.toFixed(1) : EMPTY_VALUE)
-
-/** CTR reads empty, like position, when there were no impressions to click. */
-const formatCtr = (metrics: Metrics): string =>
-	metrics.impressions > 0 ? formatPercent(metrics.ctr) : EMPTY_VALUE
-
-/** Human sessions entering on the page from any referrer, not only Google's clicks. */
-const ENTRY_SESSIONS_HINT = "All human sessions that entered on this page, from any referrer"
 
 const DAY_FORMAT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 
@@ -143,292 +133,81 @@ const historyImporting = (h: H, backfillDate: string | null): Html =>
 		alertDescription(h, ["Changes against the previous period show once those days are in."]),
 	])
 
-const sitePicker = (h: H, status: SearchConsoleIntegrationStatus, current: string): ReadonlyArray<Html> => {
-	const enabled = Arr.filter(status.sites, (site) => site.enabled)
-	if (enabled.length < 2) return []
-	return [
+/** The property and how fresh its data is; with several properties the picker is the title. */
+const propertyHeading = (
+	h: H,
+	status: SearchConsoleIntegrationStatus,
+	site: SearchConsoleSiteStatus,
+	through: string,
+): Html => {
+	const hint = `Data through ${formatDay(through)}. Google's latest days are preliminary and can still change.`
+	const enabled = Arr.filter(status.sites, (candidate) => candidate.enabled)
+	if (enabled.length < 2) return sectionHeading(h, { title: searchConsoleSiteLabel(site.siteUrl), hint })
+	return hstack(h, { gap: "3", wrap: true, className: "gap-y-2" }, [
 		nativeSelect(
 			h,
 			{
 				size: "sm",
-				defaultValue: current,
+				defaultValue: site.siteUrl,
 				attributes: [
 					h.AriaLabel("Search Console property"),
 					h.OnChange((siteUrl) => Message.PickedSearchSite({ siteUrl })),
 				],
 			},
-			Arr.map(enabled, (site) => nativeOption(site.siteUrl, searchConsoleSiteLabel(site.siteUrl))),
+			Arr.map(enabled, (candidate) =>
+				nativeOption(candidate.siteUrl, searchConsoleSiteLabel(candidate.siteUrl)),
+			),
 		),
-	]
+		typography(h, { size: "xs", tone: "muted" }, [hint]),
+	])
 }
 
 /**
- * Change against the previous period; position is inverted, since a lower one is better. With no
- * impressions now there is nothing to compare (position reads empty), so no metric shows a change;
- * nor while either period's history is still importing (`isComparable` false).
+ * The four totals; the picked one is what the chart draws. Changes run against the previous
+ * period, with position inverted (lower is better). With no impressions now there is nothing to
+ * compare, so no tile shows a change; nor while either period's history is still importing.
  */
 const kpis = (
 	h: H,
-	overview: SearchConsoleOverview | undefined,
-	spark: ReadonlyArray<Metrics>,
+	model: Model,
+	overview: SearchConsoleOverview,
+	spark: ReadonlyArray<SearchMetrics>,
 	isComparable: boolean,
 ): Html => {
-	const hasDeltas = overview !== undefined && overview.impressions > 0 && isComparable
-	const item = (
-		eyebrow: string,
-		pick: (metrics: Metrics) => number,
-		format: (metrics: Metrics) => string,
-		options: Readonly<{ invert?: boolean; subline?: string }> = {},
-	) =>
-		statRailItem(h, {
-			eyebrow,
-			value: overview === undefined ? EMPTY_VALUE : format(overview),
-			spark: Arr.map(spark, pick),
-			delta:
-				overview === undefined || !hasDeltas || pick(overview.previous) === 0
-					? undefined
-					: delta(h, {
-							current: pick(overview),
-							previous: pick(overview.previous),
-							invert: options.invert,
-						}),
-			subline: options.subline,
-		})
-	return statRail(h, {}, [
-		item(
-			"Clicks",
-			(m) => m.clicks,
-			(m) => formatNumber(m.clicks),
-		),
-		item(
-			"Impressions",
-			(m) => m.impressions,
-			(m) => formatNumber(m.impressions),
-		),
-		item("CTR", (m) => m.ctr, formatCtr),
-		item(
-			"Avg position",
-			(m) => m.position,
-			(m) => formatPosition(m.position),
-			{
-				invert: true,
-				subline: "Lower is better",
-			},
-		),
-	])
-}
-
-type Column<Row> = Readonly<{
-	key: SearchSortKey
-	label: string
-	value: (row: Row) => number | string
-	cell: (row: Row) => string
-}>
-
-const metricColumns = <Row extends Metrics>(): ReadonlyArray<Column<Row>> => [
-	{ key: "clicks", label: "Clicks", value: (row) => row.clicks, cell: (row) => formatNumber(row.clicks) },
-	{
-		key: "impressions",
-		label: "Impressions",
-		value: (row) => row.impressions,
-		cell: (row) => formatNumber(row.impressions),
-	},
-	{ key: "ctr", label: "CTR", value: (row) => row.ctr, cell: formatCtr },
-	{
-		key: "position",
-		label: "Position",
-		value: (row) => row.position,
-		cell: (row) => formatPosition(row.position),
-	},
-]
-
-/** One sortable table of the tab: a name column, the four search metrics, then any extras. */
-const searchTable = <Row extends Metrics>(
-	h: H,
-	options: Readonly<{
-		table: SearchTable
-		label: string
-		sort: SearchSort
-		name: (row: Row) => string
-		nameCell: (row: Row) => Html | string
-		extra?: ReadonlyArray<Readonly<{ label: string; hint?: string; cell: (row: Row) => string }>>
-		key: (row: Row) => string
-		/** The rows answer an earlier sort, still on screen while the new order loads. */
-		isStale: boolean
-	}>,
-	rows: ReadonlyArray<Row>,
-): Html => {
-	const columns = metricColumns<Row>()
-	const read = (row: Row, key: string): number | string =>
-		key === "name"
-			? options.name(row)
-			: Option.getOrElse(
-					Option.map(
-						Arr.findFirst(columns, (column) => column.key === key),
-						(column) => column.value(row),
-					),
-					() => 0,
-				)
-	const head = (key: SearchSortKey, label: string, align: "left" | "right") => {
-		const isActive = options.sort.key === key
-		return tableHead(
-			h,
-			[
-				sortButton(
-					h,
-					{
-						isActive,
-						direction: options.sort.dir,
-						align,
-						onClick: Message.ClickedSearchSort({ table: options.table, key }),
-					},
-					[label],
-				),
-			],
-			align === "right" ? "text-right" : undefined,
-			ariaSort(h, isActive, options.sort.dir),
-		)
-	}
-	return table(h, { size: "sm", variant: "bare", ariaLabel: options.label }, [
-		tableHeader(h, [
-			tableRow(h, [
-				head("name", options.label, "left"),
-				...Arr.map(columns, (column) => head(column.key, column.label, "right")),
-				...Arr.map(options.extra ?? [], (column) =>
-					tableHead(
-						h,
-						[column.label],
-						"text-right",
-						column.hint === undefined ? [] : [h.Title(column.hint)],
-					),
-				),
-			]),
-		]),
-		tableBody(
-			h,
-			// A metric sort is the read's own order; names, and rows from an earlier sort, sort here.
-			Arr.map(
-				options.sort.key === "name" || options.isStale ? sortRows(rows, options.sort, read) : rows,
-				(row) =>
-					tableRow(
-						h,
-						[
-							// A floor so narrow screens scroll the table instead of squeezing names to a few letters.
-							truncatedTableCell(h, [options.nameCell(row)], "min-w-40"),
-							...Arr.map(columns, (column) => numericTableCell(h, [column.cell(row)])),
-							...Arr.map(options.extra ?? [], (column) =>
-								numericTableCell(h, [column.cell(row)]),
-							),
-						],
-						undefined,
-						[h.Key(options.key(row))],
-					),
-			),
-		),
-	])
-}
-
-const tablePanel = (h: H, title: string, hint: string | undefined, body: Html): Html =>
-	panel(h, {}, [
-		panelHeader(h, {
-			title,
-			action: hint === undefined ? undefined : typography(h, { size: "2xs", tone: "subtle" }, [hint]),
-		}),
-		body,
-	])
-
-const tableEmpty = (h: H, message: string): Html =>
-	typography(h, { size: "xs", tone: "muted", as: "p", className: "px-4 py-6 text-center" }, [message])
-
-/** A read's slot as a panel body: skeleton, failure with retry, empty line, or the table. */
-const slotBody = <A>(
-	h: H,
-	slot: Keyed.Keyed<ReadonlyArray<A>, LoadFailure>,
-	options: Readonly<{
-		what: string
-		empty: string
-		render: (rows: ReadonlyArray<A>, isStale: boolean) => Html
-	}>,
-): Html =>
-	AsyncData.matchData(slot.data, {
-		onEmpty: () => skeleton(h, "m-4 h-40"),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: `Couldn't load ${options.what}`,
-				onRetry: Message.ClickedRetrySearch(),
-			}),
-		onData: (rows) =>
-			rows.length === 0
-				? tableEmpty(h, options.empty)
-				: options.render(rows, AsyncData.isRefreshing(slot.data)),
-	})
-
-/** A query that truncates inside its cell: the block stack gives `truncate` a width to clip at. */
-const queryCell = (h: H, query: string): Html =>
-	vstack(h, { gap: "0", shrink: true }, [
-		typography(h, { size: "xs", truncate: true, attributes: [h.Title(query)] }, [query]),
-	])
-
-const pathCell = (h: H, path: string, host: string | undefined): Html =>
-	vstack(h, { gap: "0", shrink: true }, [
-		typography(h, { size: "xs", mono: true, truncate: true, attributes: [h.Title(path)] }, [path]),
-		...(host === undefined
-			? []
-			: [typography(h, { size: "2xs", tone: "subtle", truncate: true }, [host])]),
-	])
-
-const landingTable = (
-	h: H,
-	model: Model,
-	rows: ReadonlyArray<SearchConsoleLandingPage>,
-	isMultiHost: boolean,
-	isStale: boolean,
-) => {
-	const hasConversions = Arr.some(rows, (row) => row.conversions !== null)
-	return searchTable(
+	const hasDeltas = overview.impressions > 0 && isComparable
+	const picked = searchMetricOf(model.searchMetric)
+	return metricGrid(
 		h,
-		{
-			table: "landing",
-			label: "Landing page",
-			sort: searchSortOf(model, "landing"),
-			name: (row) => row.path,
-			nameCell: (row) => pathCell(h, row.path, isMultiHost ? row.host : undefined),
-			key: (row) => `${row.host}${row.path}`,
-			isStale,
-			extra: [
-				{
-					label: "Entry sessions",
-					hint: ENTRY_SESSIONS_HINT,
-					cell: (row) => formatNumber(row.sessions),
-				},
-				{
-					label: "Bounce rate",
-					cell: (row) => (row.bounceRate === null ? EMPTY_VALUE : formatPercent(row.bounceRate)),
-				},
-				...(hasConversions
-					? [
-							{
-								label: "Conversions",
-								cell: (row: SearchConsoleLandingPage) =>
-									row.conversions === null ? EMPTY_VALUE : formatNumber(row.conversions),
-							},
-						]
-					: []),
-			],
-		},
-		rows,
+		{},
+		Arr.map(SEARCH_METRICS, (metric) => {
+			const previous = overview.previous[metric.key]
+			const isCompared = hasDeltas && previous !== 0
+			return statRailItem(h, {
+				eyebrow: metric.label,
+				value: metric.format(overview),
+				spark: Arr.map(spark, (point) => point[metric.key]),
+				delta: isCompared
+					? delta(h, { current: overview[metric.key], previous, invert: metric.isInverted })
+					: undefined,
+				subline: isCompared ? `vs ${metric.format(overview.previous)} before` : undefined,
+				isSelected: metric.key === picked.key,
+				onSelect: Message.PickedSearchMetric({ metric: metric.key }),
+				...METRIC_TILE,
+			})
+		}),
 	)
 }
 
-/** The clicks chart; a failed read shows its error and retry, not an empty window. */
-const trend = (h: H, model: Model, points: SearchTrendInputs["points"], isNarrow: boolean): Html | null =>
-	AsyncData.matchData(model.searchTimeseries.data, {
-		onEmpty: () => chartCard(h, { title: "Clicks" }, [skeleton(h, "m-4 h-40")]),
+/** The picked metric's chart; a failed read shows its error and retry, not an empty window. */
+const trend = (h: H, model: Model, points: SearchTrendInputs["points"], isNarrow: boolean): Html | null => {
+	const heading = searchTrendHeading(model.searchMetric)
+	return AsyncData.matchData(model.searchTimeseries.data, {
+		onEmpty: () => chartCard(h, heading, [skeleton(h, "m-4 h-40")]),
 		onFailure: (failure) =>
-			chartCard(h, { title: "Clicks" }, [
+			chartCard(h, heading, [
 				errorState(h, {
 					failure,
+					variant: "row",
 					title: "Couldn't load the search trend",
 					onRetry: Message.ClickedRetrySearch(),
 				}),
@@ -440,89 +219,500 @@ const trend = (h: H, model: Model, points: SearchTrendInputs["points"], isNarrow
 						slotId: "analytics-search-chart",
 						model: model.chart,
 						view: searchTrendChart,
-						viewInputs: { points, theme: model.themeColors, isNarrow },
+						viewInputs: {
+							metric: searchMetricOf(model.searchMetric).key,
+							points,
+							theme: model.themeColors,
+							isNarrow,
+						},
 						toParentMessage: (message) => Message.GotChartMessage({ message }),
 					}),
 	})
+}
+
+/** A column that only fits a wider card: its head and cells appear from that card width up. */
+const FROM = {
+	wide: { head: "hidden @min-[640px]/panel:flex", cell: "hidden @min-[640px]/panel:block" },
+	full: { head: "hidden @min-[760px]/panel:flex", cell: "hidden @min-[760px]/panel:block" },
+} as const
+
+type Column<Row> = Readonly<{
+	label: string
+	width: string
+	from?: keyof typeof FROM
+	/** One of Google's four metrics, which the read can order by. */
+	sortKey?: SearchConsoleSortKey
+	tooltip?: string
+	text: (row: Row) => string
+	/** A zero or a blank: it reads quieter than a figure. */
+	isQuiet: (row: Row) => boolean
+	/** The first column that is Maple's own, ruled off from Google's four. */
+	isOwnStart?: boolean
+}>
+
+/** The rule between Google's metrics and Maple's, on the head and every row alike. */
+const OWN_START = "border-l border-border-subtle pl-3"
+
+/** Each metric's column. A row's position is already an average, so its head just says Position. */
+const METRIC_COLUMNS = {
+	clicks: { label: "Clicks", width: "w-16" },
+	impressions: { label: "Impressions", width: "w-24" },
+	ctr: { label: "CTR", width: "w-14", from: "wide" },
+	position: { label: "Position", width: "w-20", from: "wide" },
+} as const satisfies Record<SearchConsoleSortKey, Readonly<{ label: string; width: string; from?: "wide" }>>
+
+const metricColumns = <Row extends SearchMetrics>(): ReadonlyArray<Column<Row>> =>
+	Arr.map(SEARCH_METRICS, (metric) => ({
+		...METRIC_COLUMNS[metric.key],
+		sortKey: metric.key,
+		text: metric.format,
+		isQuiet: (row) => row[metric.key] === 0,
+	}))
+
+/** Google's four, then Maple's own: the human sessions that entered on the page from anywhere. */
+const pageColumns = (
+	rows: ReadonlyArray<SearchConsoleLandingPage>,
+	eventName: string | undefined,
+): ReadonlyArray<Column<SearchConsoleLandingPage>> => [
+	...metricColumns<SearchConsoleLandingPage>(),
+	{
+		label: "Sessions",
+		width: "w-24",
+		from: "full",
+		tooltip:
+			eventName === undefined
+				? "Every human session that started on this page, from any referrer. Pick an event in the sidebar to count the ones that converted."
+				: "Every human session that started on this page, from any referrer",
+		text: (row) => formatNumber(row.sessions),
+		isQuiet: (row) => row.sessions === 0,
+		isOwnStart: true,
+	},
+	{
+		label: "Bounce",
+		width: "w-16",
+		from: "full",
+		text: (row) => (row.bounceRate === null ? EMPTY_VALUE : formatPercent(row.bounceRate)),
+		isQuiet: (row) => row.bounceRate === null,
+	},
+	...(Arr.some(rows, (row) => row.conversions !== null)
+		? [
+				{
+					label: "Conversions",
+					width: "w-28",
+					from: "full" as const,
+					tooltip:
+						eventName === undefined
+							? undefined
+							: `Sessions that started on this page and fired ${eventName}`,
+					text: (row: SearchConsoleLandingPage) =>
+						row.conversions === null ? EMPTY_VALUE : formatNumber(row.conversions),
+					isQuiet: (row: SearchConsoleLandingPage) =>
+						row.conversions === null || row.conversions === 0,
+				},
+			]
+		: []),
+]
+
+/** One of the tab's two tables: what its rows are called and how a row draws its name. */
+type TableSpec<Row extends SearchMetrics> = Readonly<{
+	table: SearchTable
+	title: string
+	hint: string
+	noun: string
+	nounPlural: string
+	columns: ReadonlyArray<Column<Row>>
+	/** The name as shown: its tooltip, and what a name sort orders by. */
+	name: (row: Row) => string
+	/** What the filter matches, when a row is found by more than its name shows. */
+	search?: (row: Row) => string
+	nameCell: (h: H, row: Row) => ReadonlyArray<Html | string>
+	key: (row: Row) => string
+	/** Where the row leads, in a new tab; a row without one is plain. */
+	href?: (row: Row) => string
+}>
+
+/** A table's card id: its filter text in `panels`, and the dialog it expands into. */
+const panelIdOf = (table: SearchTable): string => `search-${table}`
+
+/** Whether the expand dialog is showing one of the Search tables. */
+export const isSearchPanel = (panelId: string | null): boolean =>
+	Arr.some(SearchTable.literals, (table) => panelIdOf(table) === panelId)
+
+const SURFACES = { card: CARD_SURFACE, dialog: DIALOG_SURFACE } as const
+
+/**
+ * The table, its head pinned over a capped row area. The bar behind a row is its share of the
+ * top row's volume: clicks under a clicks or name sort, impressions under any other. The
+ * dialog numbers its rows and keeps every column, scrolling sideways on a phone.
+ */
+const searchTable = <Row extends SearchMetrics>(
+	h: H,
+	model: Model,
+	spec: TableSpec<Row>,
+	rows: ReadonlyArray<Row>,
+	options: Readonly<{ isStale: boolean; surface: keyof typeof SURFACES }>,
+): Html => {
+	const sort = searchSortOf(model, spec.table)
+	const isDialog = options.surface === "dialog"
+	const sortKey = sort.key
+	// A metric sort is the read's own order; names, and rows from an earlier sort, sort here.
+	const ordered =
+		sortKey === "name" || options.isStale
+			? sortRows(rows, sort, (row) => (sortKey === "name" ? spec.name(row) : row[sortKey]))
+			: rows
+	const barKey = sortKey === "clicks" || sortKey === "name" ? "clicks" : "impressions"
+	const top = Arr.reduce(rows, 0, (max, row) => Math.max(max, row[barKey]))
+	const needle = Str.toLowerCase(Str.trim(panelOf(model, panelIdOf(spec.table)).query))
+	const searched = spec.search ?? spec.name
+	const visible = Arr.filter(
+		ordered,
+		(row) => needle === "" || Str.includes(needle)(Str.toLowerCase(searched(row))),
+	)
+	const hiddenBelow = (column: Column<Row>) =>
+		isDialog || column.from === undefined ? undefined : FROM[column.from]
+	const nameColumn = columnClass({ min: "0", className: isDialog ? "max-sm:min-w-48" : undefined })
+	const sortHead = (key: SearchConsoleSortKey | "name") => ({
+		isActive: sortKey === key,
+		dir: sort.dir,
+		onSort: Message.ClickedSearchSort({ table: spec.table, key }),
+	})
+	const head = [
+		...(isDialog
+			? [
+					columnHead(h, {
+						label: "#",
+						width: "w-6",
+						align: "right",
+						hidden: "max-sm:hidden",
+						isTable: true,
+					}),
+				]
+			: []),
+		columnHead(h, {
+			label: columnLabel(spec.noun),
+			width: nameColumn,
+			sort: sortHead("name"),
+			isTable: true,
+		}),
+		...Arr.map(spec.columns, (column) =>
+			columnHead(h, {
+				label: column.label,
+				width: column.width,
+				className: cn("shrink-0", column.isOwnStart === true && OWN_START),
+				align: "right",
+				sort: column.sortKey === undefined ? undefined : sortHead(column.sortKey),
+				tooltip: column.tooltip,
+				hidden: hiddenBelow(column)?.head,
+				isTable: true,
+			}),
+		),
+	]
+	const nameOf = (row: Row): Html => {
+		const name = spec.name(row)
+		const href = spec.href?.(row)
+		const text = { size: "xs", tone: "soft", truncate: true } as const
+		return href === undefined
+			? typography(h, { ...text, attributes: [h.Title(name)] }, spec.nameCell(h, row))
+			: rowLink(
+					h,
+					{
+						href,
+						label: `${name}, opens in a new tab`,
+						className: typographyClass({ ...text, className: "group-hover:text-foreground" }),
+						attributes: [h.Title(name), h.Target("_blank"), h.Rel("noopener noreferrer")],
+					},
+					spec.nameCell(h, row),
+				)
+	}
+	const cells = (row: Row, rank: number): ReadonlyArray<Html> => [
+		...(isDialog
+			? [
+					typography(
+						h,
+						{
+							size: "2xs",
+							mono: true,
+							numeric: true,
+							tone: "subtle",
+							className: "w-6 shrink-0 text-right max-sm:hidden",
+							attributes: [h.Role("cell")],
+						},
+						[String(rank)],
+					),
+				]
+			: []),
+		hstack(h, { gap: "2", grow: true, as: "span", className: nameColumn, attributes: [h.Role("cell")] }, [
+			nameOf(row),
+			...(spec.href === undefined ? [] : [revealIcon(h, "ExternalLinkIcon", { size: 12 })]),
+		]),
+		...Arr.map(spec.columns, (column) =>
+			typography(
+				h,
+				{
+					size: "xs",
+					mono: true,
+					numeric: true,
+					tone: column.isQuiet(row)
+						? "subtle"
+						: column.sortKey === sortKey
+							? "foreground"
+							: "muted",
+					className: cn(
+						"shrink-0 text-right",
+						column.width,
+						column.isOwnStart === true && OWN_START,
+						hiddenBelow(column)?.cell,
+					),
+					attributes: [h.Role("cell")],
+				},
+				[column.text(row)],
+			),
+		),
+	]
+	// A linked row tints under the pointer; its link is stretched over it, so it needs a frame.
+	const rowClass = stripClass(
+		"row",
+		cn("group relative", spec.href !== undefined && "hover:bg-surface-sunken active:bg-surface-sunken"),
+	)
+	const body =
+		visible.length === 0
+			? [dataTableEmpty(h, [`No ${spec.noun} matches that filter`])]
+			: Arr.map(visible, (row, index) =>
+					hstack(
+						h,
+						{
+							gap: "4",
+							className: rowClass,
+							attributes: [
+								h.Key(spec.key(row)),
+								h.Role("row"),
+								h.Style(shareBarStyle(top > 0 ? row[barKey] / top : 0, "quiet")),
+							],
+						},
+						cells(row, index + 1),
+					),
+				)
+	return dataTable(
+		h,
+		{
+			ariaLabel: spec.title,
+			isWaiting: options.isStale,
+			isTable: true,
+			...SURFACES[options.surface],
+		},
+		head,
+		body,
+	)
+}
+
+const QUERIES: TableSpec<SearchMetrics & Readonly<{ query: string }>> = {
+	table: "queries",
+	title: "Queries",
+	hint: "What people searched to find this site. Google leaves out rare queries.",
+	noun: "query",
+	nounPlural: "queries",
+	columns: metricColumns(),
+	name: (row) => row.query,
+	nameCell: (_h, row) => [row.query],
+	key: (row) => row.query,
+}
+
+/**
+ * The host most of the rows are on, which a path need not repeat: the busier one on a tie, so
+ * the pick does not move with the sort.
+ */
+const commonHostOf = (rows: ReadonlyArray<SearchConsoleLandingPage>): string | undefined => {
+	const hosts = Arr.map(Rec.toEntries(Arr.groupBy(rows, (row) => row.host)), ([host, onHost]) => ({
+		host,
+		pages: onHost.length,
+		clicks: Arr.reduce(onHost, 0, (sum, row) => sum + row.clicks),
+	}))
+	type Host = (typeof hosts)[number]
+	const most = Arr.head(
+		Arr.sort(
+			hosts,
+			Order.combineAll([
+				Order.mapInput(Order.flip(Order.Number), (entry: Host) => entry.pages),
+				Order.mapInput(Order.flip(Order.Number), (entry: Host) => entry.clicks),
+				Order.mapInput(Order.String, (entry: Host) => entry.host),
+			]),
+		),
+	)
+	return Option.getOrUndefined(Option.map(most, (entry) => entry.host))
+}
+
+const pagesSpec = (
+	model: Model,
+	rows: ReadonlyArray<SearchConsoleLandingPage>,
+): TableSpec<SearchConsoleLandingPage> => {
+	const commonHost = commonHostOf(rows)
+	return {
+		table: "pages",
+		title: "Pages",
+		hint: "Google's numbers for each page, next to the sessions that started on it",
+		noun: "page",
+		nounPlural: "pages",
+		columns: pageColumns(rows, filtersOf(model.search).eventName),
+		name: (row) => (row.host === commonHost ? row.path : `${row.host}${row.path}`),
+		search: (row) => `${row.host}${row.path}`,
+		// Only a page on another host (a docs or status subdomain) says which.
+		nameCell: (h, row) =>
+			row.host === commonHost ? [row.path] : [typography(h, { tone: "subtle" }, [row.host]), row.path],
+		key: (row) => `${row.host}${row.path}`,
+		href: (row) => row.page,
+	}
+}
+
+/** What stands in for a table with no rows to draw: skeleton rows, the failure and its retry, or an empty line. */
+const tableFallback = <Row extends SearchMetrics>(
+	h: H,
+	slot: Keyed.Keyed<ReadonlyArray<Row>, LoadFailure>,
+	spec: TableSpec<Row>,
+): Html | null =>
+	AsyncData.matchData(slot.data, {
+		onEmpty: () =>
+			h.div(
+				[h.AriaBusy(true)],
+				skeletonRows(h, 8, () => [
+					skeleton(h, "h-3 w-0 flex-1"),
+					skeleton(h, "h-3 w-10"),
+					skeleton(h, "h-3 w-14"),
+				]),
+			),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				variant: "row",
+				title: `Couldn't load ${spec.nounPlural}`,
+				onRetry: Message.ClickedRetrySearch(),
+			}),
+		onData: (rows) =>
+			rows.length === 0
+				? emptyMessage(h, { className: "py-10" }, [`No ${spec.nounPlural} in this window`])
+				: null,
+	})
+
+type SpecOf<Row extends SearchMetrics> = (rows: ReadonlyArray<Row>) => TableSpec<Row>
+
+/** A table's card: the capped table under its filter, or what stands in for it. */
+const tableCard = <Row extends SearchMetrics>(
+	h: H,
+	model: Model,
+	slot: Keyed.Keyed<ReadonlyArray<Row>, LoadFailure>,
+	specOf: SpecOf<Row>,
+): Html => {
+	const rows = dataOf(slot) ?? []
+	const spec = specOf(rows)
+	const panelId = panelIdOf(spec.table)
+	const fallback = tableFallback(h, slot, spec)
+	if (fallback !== null) return analyticsPanel(h, { title: spec.title, hint: spec.hint }, [fallback])
+	return analyticsPanel(h, {
+		title: spec.title,
+		hint: spec.hint,
+		aside: panelFilterInput(
+			h,
+			panelId,
+			panelOf(model, panelId).query,
+			spec.nounPlural,
+			"w-40 @min-[640px]/panel:w-56",
+		),
+		expand: {
+			id: panelId,
+			count: `${formatNumber(rows.length)} ${pluralize(rows.length, spec.noun, spec.nounPlural)}`,
+			table: searchTable(h, model, spec, rows, {
+				surface: "card",
+				isStale: AsyncData.isRefreshing(slot.data),
+			}),
+		},
+	})
+}
+
+/** A table card's dialog: the same rows, numbered, in a taller frame with every column. */
+export const searchDialogTable = (
+	h: H,
+	model: Model,
+	panelId: string,
+): Readonly<{ title: string; hint: string; filter: Html; table: Html }> | null => {
+	const dialog = <Row extends SearchMetrics>(
+		slot: Keyed.Keyed<ReadonlyArray<Row>, LoadFailure>,
+		specOf: SpecOf<Row>,
+	) => {
+		const rows = dataOf(slot) ?? []
+		const spec = specOf(rows)
+		return {
+			title: spec.title,
+			hint: spec.hint,
+			filter: panelFilterInput(
+				h,
+				panelId,
+				panelOf(model, panelId).query,
+				spec.nounPlural,
+				"w-56",
+				"-dialog",
+				true,
+			),
+			// A sort is a new read: if it fails, the dialog says so instead of going blank.
+			table:
+				tableFallback(h, slot, spec) ??
+				searchTable(h, model, spec, rows, {
+					surface: "dialog",
+					isStale: AsyncData.isRefreshing(slot.data),
+				}),
+		}
+	}
+	if (panelId === panelIdOf("queries")) return dialog(model.searchQueries, () => QUERIES)
+	if (panelId === panelIdOf("pages")) return dialog(model.searchLanding, (rows) => pagesSpec(model, rows))
+	return null
+}
+
+/**
+ * Every read failing the same way, with nothing to show, reads as one failure with one Try
+ * again. A failed refresh keeps its rows, so it does not count.
+ */
+const sharedFailure = (model: Model): LoadFailure | undefined => {
+	const slots: ReadonlyArray<Keyed.Keyed<unknown, LoadFailure>> = Arr.map(
+		SEARCH_DATA_SLOTS,
+		(name) => model[name],
+	)
+	const failures = Arr.map(slots, (slot) => Option.getOrUndefined(Keyed.failureWithoutData(slot)))
+	const first = failures[0]
+	return first !== undefined &&
+		Arr.every(failures, (failure) => failure !== undefined && isSameFailure(failure, first))
+		? first
+		: undefined
+}
 
 const content = (h: H, model: Model, isNarrow: boolean, isComparable: boolean): ReadonlyArray<Html> => {
-	const overview = dataOf(model.searchOverview)
 	const points = dataOf(model.searchTimeseries) ?? []
-	const pages = dataOf(model.searchPages) ?? []
-	const isMultiHost = new Set(Arr.map(pages, (row) => row.host)).size > 1
-	const eventName = filtersOf(model.search).eventName
+	const shared = sharedFailure(model)
+	if (shared !== undefined)
+		return [
+			errorState(h, {
+				failure: shared,
+				title: "Couldn't load search data",
+				onRetry: Message.ClickedRetrySearch(),
+			}),
+		]
 	return [
 		AsyncData.matchData(model.searchOverview.data, {
-			onEmpty: () => kpis(h, undefined, [], isComparable),
+			onEmpty: () =>
+				metricGrid(
+					h,
+					{ isBusy: true },
+					Arr.map(SEARCH_METRICS, () => statRailItemSkeleton(h, METRIC_TILE.className)),
+				),
 			onFailure: (failure) =>
 				errorState(h, {
 					failure,
+					variant: "row",
 					title: "Couldn't load search totals",
 					onRetry: Message.ClickedRetrySearch(),
 				}),
-			onData: () => kpis(h, overview, points, isComparable),
+			onData: (overview) => kpis(h, model, overview, points, isComparable),
 		}),
 		...Arr.filter([trend(h, model, points, isNarrow)], (node): node is Html => node !== null),
-		grid(h, { cols: 1, lg: 2, gap: "4", className: "items-start" }, [
-			tablePanel(
-				h,
-				"Top queries",
-				"Google leaves out rare queries",
-				slotBody(h, model.searchQueries, {
-					what: "search queries",
-					empty: "No queries in this window",
-					render: (rows, isStale) =>
-						searchTable(
-							h,
-							{
-								table: "queries",
-								isStale,
-								label: "Query",
-								sort: searchSortOf(model, "queries"),
-								name: (row) => row.query,
-								nameCell: (row) => queryCell(h, row.query),
-								key: (row) => row.query,
-							},
-							rows,
-						),
-				}),
-			),
-			tablePanel(
-				h,
-				"Top pages",
-				undefined,
-				slotBody(h, model.searchPages, {
-					what: "search pages",
-					empty: "No pages in this window",
-					render: (rows, isStale) =>
-						searchTable(
-							h,
-							{
-								table: "pages",
-								isStale,
-								label: "Page",
-								sort: searchSortOf(model, "pages"),
-								name: (row) => row.path,
-								nameCell: (row) => pathCell(h, row.path, isMultiHost ? row.host : undefined),
-								key: (row) => row.page,
-							},
-							rows,
-						),
-				}),
-			),
-		]),
-		tablePanel(
-			h,
-			"Landing pages",
-			eventName === undefined
-				? "Entry sessions are every human session that started there. Filter by an event to count conversions"
-				: `Entry sessions are every human session that started there; conversions fired ${eventName}`,
-			slotBody(h, model.searchLanding, {
-				what: "landing pages",
-				empty: "No landing pages in this window",
-				render: (rows, isStale) => landingTable(h, model, rows, isMultiHost, isStale),
-			}),
-		),
+		tableCard(h, model, model.searchQueries, () => QUERIES),
+		tableCard(h, model, model.searchLanding, (rows) => pagesSpec(model, rows)),
 	]
 }
 
@@ -551,12 +741,8 @@ export const searchTab = (h: H, model: Model, isNarrow: boolean): Html =>
 							today,
 						)
 			const isComparable = coverage === undefined || (coverage.current && coverage.previous)
-			return vstack(h, { gap: "6" }, [
-				sectionHeading(h, {
-					title: searchConsoleSiteLabel(site.siteUrl),
-					hint: `Data through ${formatDay(through)}. Google's latest days are preliminary and can still change`,
-					actions: hstack(h, { gap: "2" }, sitePicker(h, status, site.siteUrl)),
-				}),
+			return vstack(h, { gap: "4" }, [
+				propertyHeading(h, status, site, through),
 				...(site.lastError === null ? [] : [importError(h, site.lastError, false)]),
 				...(isComparable ? [] : [historyImporting(h, site.backfillDate)]),
 				...content(h, model, isNarrow, isComparable),

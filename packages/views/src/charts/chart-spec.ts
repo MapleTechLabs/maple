@@ -354,7 +354,8 @@ export const ChartSpec = defineTaggedUnion({
 		),
 		/**
 		 * The metric keys behind `primary` and (when paired) `companion`, in paint order. `label`
-		 * names a series that is not an analytics metric (Search Console clicks); it formats as a count.
+		 * names a series that is not an analytics metric (a Search Console metric); it reads in
+		 * `valueFormat`.
 		 */
 		series: Schema.Array(
 			Schema.Struct({
@@ -365,6 +366,12 @@ export const ChartSpec = defineTaggedUnion({
 		),
 		/** The metric whose format the y ticks use. */
 		tickMetric: Schema.String,
+		/**
+		 * How a labelled series and the ticks read; without it the ticks use `tickMetric`'s format
+		 * and a labelled series is a count. `percent` is a 0..1 ratio (CTR), `decimal` one decimal
+		 * place (average position).
+		 */
+		valueFormat: Schema.optionalKey(Schema.Literals(["count", "percent", "decimal"])),
 		/** Resolved `primary` / `companion` colours plus `border` / `background` chrome. */
 		colors: Schema.Record(Schema.String, Schema.String),
 		timeZone: Schema.String,

@@ -16,6 +16,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
+import * as Dialog from "@maple/views/ui/dialog"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
@@ -103,17 +104,6 @@ const populated = (statusWire: StatusWire = status()): Model => {
 			["searchTimeseries", [{ date: "2026-09-28", ...metrics }]],
 			["searchQueries", [{ query: "opentelemetry tracing", ...metrics }]],
 			[
-				"searchPages",
-				[
-					{
-						page: "https://acme.dev/docs/tracing",
-						host: "acme.dev",
-						path: "/docs/tracing",
-						...metrics,
-					},
-				],
-			],
-			[
 				"searchLanding",
 				[
 					{
@@ -145,7 +135,6 @@ describe("web analytics: Search tab", () => {
 				"FetchSearchConsoleOverview",
 				"FetchSearchConsoleTimeseries",
 				"FetchSearchConsoleTopQueries",
-				"FetchSearchConsoleTopPages",
 				"FetchSearchConsoleLandingPages",
 			]),
 		)
@@ -204,7 +193,7 @@ describe("web analytics: Search tab", () => {
 		)
 	})
 
-	test("populated: KPIs, the lag note, queries, pages and landing pages with sessions", () => {
+	test("populated: KPIs, the lag note, queries, and pages with their sessions", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(populated()),
@@ -212,12 +201,12 @@ describe("web analytics: Search tab", () => {
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
 			// Google's day at NOW is Oct 1 and the watermark Sep 29: complete through Sep 29.
 			expectView(
-				text("Data through Sep 29. Google's latest days are preliminary and can still change"),
+				text("Data through Sep 29. Google's latest days are preliminary and can still change."),
 			).toExist(),
 			// Clicks rose from 100 to 120 against a fully imported previous period.
 			expectView(text(/20(\.0)?%/)).toExist(),
 			expectView(text(/still importing/)).not.toExist(),
-			expectView(text("Entry sessions")).toExist(),
+			expectView(text("Sessions")).toExist(),
 			expectView(text("Avg position")).toExist(),
 			expectView(text("opentelemetry tracing")).toExist(),
 			expectView(text("41%")).toExist(),
@@ -347,7 +336,7 @@ describe("web analytics: Search tab", () => {
 			{ update: pageUpdate, view },
 			given(failed),
 			resolveTheme,
-			expectView(text("Couldn't load search queries")).toExist(),
+			expectView(text("Couldn't load queries")).toExist(),
 		)
 		expect(names(pageUpdate(failed, Message.ClickedRetrySearch()).commands)).toContain(
 			"FetchSearchConsoleTopQueries",
@@ -377,6 +366,14 @@ describe("web analytics: Search tab", () => {
 		(check: (commands: Commands) => void) =>
 		<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
 			check(simulation.commands)
+			return simulation
+		}
+
+	/** A scene step that checks the text the page shows. */
+	const shown =
+		(check: (page: string) => void) =>
+		<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
+			check(textContent(simulation.html))
 			return simulation
 		}
 
@@ -460,12 +457,12 @@ describe("web analytics: Search tab", () => {
 	test("a table renders the read's order, and an older sort's answer is dropped", () => {
 		const byClicks = populated()
 		const sorted = pageUpdate(byClicks, Message.ClickedSearchSort({ table: "pages", key: "impressions" }))
-		const staleKey = byClicks.searchPages.key ?? ""
+		const staleKey = byClicks.searchLanding.key ?? ""
 		const late = pageUpdate(
 			sorted.model,
-			Message.CompletedFetch({ slot: "searchPages", key: staleKey, result: Result.succeed([]) }),
+			Message.CompletedFetch({ slot: "searchLanding", key: staleKey, result: Result.succeed([]) }),
 		).model
-		expect(late.searchPages.key).toBe(sorted.model.searchPages.key)
+		expect(late.searchLanding.key).toBe(sorted.model.searchLanding.key)
 		const row = (path: string, impressions: number) => ({
 			page: `https://acme.dev${path}`,
 			host: "acme.dev",
@@ -474,18 +471,168 @@ describe("web analytics: Search tab", () => {
 			impressions,
 			ctr: 0.01,
 			position: 3,
+			sessions: 4,
+			bounceRate: null,
+			conversions: null,
 		})
 		// Served out of the client's order on purpose: the table must keep the read's order.
-		const answered = answer(late, "searchPages", [row("/fewer", 100), row("/more", 900)]).model
+		const answered = answer(late, "searchLanding", [row("/fewer", 100), row("/more", 900)]).model
 		scene(
 			{ update: pageUpdate, view },
 			given(answered),
 			resolveTheme,
 			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
-			<M, Msg, Out>(simulation: SceneSimulation<M, Msg, Out>): SceneSimulation<M, Msg, Out> => {
-				expect(textContent(simulation.html)).toMatch(/\/fewer.*\/more/su)
-				return simulation
+			shown((page) => expect(page).toMatch(/\/fewer.*\/more/su)),
+		)
+	})
+
+	test("picking a tile charts that metric", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(populated()),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Clicks per day")).toExist(),
+			click(first(all.role("button", { name: /Avg position/ }))),
+			expectView(text("Avg position per day")).toExist(),
+			expectView(text("Clicks per day")).not.toExist(),
+		)
+	})
+
+	test("the filter narrows a table to the rows that match", () => {
+		const model = answer(populated(), "searchQueries", [
+			{ query: "opentelemetry tracing", ...metrics },
+			{ query: "trace waterfall viewer", ...metrics, clicks: 0 },
+		]).model
+		const filtered = pageUpdate(
+			model,
+			Message.ChangedPanelQuery({ panel: "search-queries", value: "Waterfall" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(filtered),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("trace waterfall viewer")).toExist(),
+			expectView(text("opentelemetry tracing")).not.toExist(),
+		)
+	})
+
+	test("a page names its host only when most pages are on another", () => {
+		const landing = (host: string, path: string) => ({
+			page: `https://${host}${path}`,
+			host,
+			path,
+			...metrics,
+			sessions: 3,
+			bounceRate: null,
+			conversions: null,
+		})
+		const model = answer(populated(), "searchLanding", [
+			landing("acme.dev", "/pricing"),
+			landing("acme.dev", "/docs"),
+			landing("status.acme.dev", "/history"),
+		]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			shown((page) => {
+				expect(page).toContain("status.acme.dev/history")
+				expect(page).not.toContain("acme.dev/pricing")
+			}),
+		)
+		// The filter still finds a page by the host its name leaves out.
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(model, Message.ChangedPanelQuery({ panel: "search-pages", value: "acme.dev/pri" }))
+					.model,
+			),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("/pricing")).toExist(),
+			expectView(text("/docs")).not.toExist(),
+		)
+	})
+
+	test("with an event picked, pages count the sessions that fired it", () => {
+		const model = answer(populated(), "searchLanding", [
+			{
+				page: "https://acme.dev/docs/tracing",
+				host: "acme.dev",
+				path: "/docs/tracing",
+				...metrics,
+				sessions: 96,
+				bounceRate: 0.41,
+				conversions: 17,
 			},
+		]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("Conversions")).toExist(),
+			expectView(text("17")).toExist(),
+		)
+	})
+
+	test("every read failing the same way is one failure, and its retry asks for them all", () => {
+		const connected = answer(windowed().model, "searchStatus", status()).model
+		const failed = Arr.reduce(
+			["searchOverview", "searchTimeseries", "searchQueries", "searchLanding"] as const,
+			connected,
+			(model, slot) => failSlot(model, slot, "warehouse down"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			expectView(text("Couldn't load search data")).toExist(),
+			expectView(text("Couldn't load queries")).not.toExist(),
+			expectView(text("Couldn't load the search trend")).not.toExist(),
+		)
+		const retried = names(pageUpdate(failed, Message.ClickedRetrySearch()).commands)
+		expect(retried).toContain("FetchSearchConsoleOverview")
+		expect(retried).toContain("FetchSearchConsoleLandingPages")
+	})
+
+	test("a reload that fails keeps the rows it already had", () => {
+		const reloading = pageUpdate(
+			populated(),
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Refresh" }),
+		).model
+		const failed = Arr.reduce(
+			["searchOverview", "searchTimeseries", "searchQueries", "searchLanding"] as const,
+			reloading,
+			(model, slot) => failSlot(model, slot, "warehouse down"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			expectView(text("opentelemetry tracing")).toExist(),
+			expectView(text("Couldn't load search data")).not.toExist(),
+		)
+	})
+
+	test("a sort that fails inside the expanded table says so there", () => {
+		const opened = pageUpdate(populated(), Message.ClickedExpandPanel({ panel: "search-queries" })).model
+		const sorting = pageUpdate(
+			opened,
+			Message.ClickedSearchSort({ table: "queries", key: "impressions" }),
+		).model
+		const failed = failSlot(sorting, "searchQueries", "warehouse down")
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			Mount.resolve(MountChart, Chart.Message.CompletedMountChart()),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("dialog")).toContainText("Couldn't load queries"),
 		)
 	})
 

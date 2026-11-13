@@ -190,6 +190,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/analytics-search",
+		title: "Web analytics: Search",
+		description:
+			"The Search tab's tiles, trend, queries and pages over a young site's Search Console data; sorting, the tiles and the filters work. Conversions, loading, empty, failing (all reads, or some), importing and not connected too (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/search-console",
 		title: "Google Search Console",
 		description:

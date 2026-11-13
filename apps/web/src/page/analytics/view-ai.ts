@@ -32,17 +32,8 @@ import { type FilterKey, Message } from "./message"
 import type { AiCrawlers, Model } from "./model"
 import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
-import {
-	aiEmpty,
-	aiPanel,
-	aiProductCard,
-	CARD_SURFACE,
-	contentFormats,
-	crawlerTable,
-	DIALOG_SURFACE,
-	plural,
-	rankingTable,
-} from "./view-ai-parts"
+import { aiEmpty, aiProductCard, contentFormats, crawlerTable, plural, rankingTable } from "./view-ai-parts"
+import { analyticsPanel, CARD_SURFACE, DIALOG_SURFACE } from "./view-panel"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -200,7 +191,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 						onData: (data) => [
 							contentFormats(h, data.formats),
 							data.pages.length === 0
-								? aiPanel(h, { title: "Pages read by AI crawlers" }, [
+								? analyticsPanel(h, { title: "Pages read by AI crawlers" }, [
 										aiEmpty(h, ["No page was served to an AI crawler in this window"]),
 									])
 								: (breakdownPanel(h, model, crawledPagesCard(model, data), {
@@ -219,12 +210,12 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {
 	const options = { title: "Share of AI visits", hint: "Change in share since the previous period" }
 	return ranks.length === 0
-		? aiPanel(h, options, [
+		? analyticsPanel(h, options, [
 				aiEmpty(h, [
 					"No visits from AI assistants in this window. When someone follows a link from ChatGPT, Perplexity, Claude or another assistant, it shows up here.",
 				]),
 			])
-		: aiPanel(h, {
+		: analyticsPanel(h, {
 				...options,
 				expand: {
 					id: "ai-ranking",
@@ -245,8 +236,8 @@ const crawlersPanel = (
 		title: "AI crawlers",
 		hint: "Pages served to each crawler. Error responses are not counted as reads.",
 	}
-	if (data.crawlers.length === 0) return aiPanel(h, options, [aiEmpty(h, NO_CRAWLS(h))])
-	return aiPanel(h, {
+	if (data.crawlers.length === 0) return analyticsPanel(h, options, [aiEmpty(h, NO_CRAWLS(h))])
+	return analyticsPanel(h, {
 		...options,
 		aside:
 			failed > 0

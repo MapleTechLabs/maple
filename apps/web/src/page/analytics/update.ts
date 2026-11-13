@@ -6,7 +6,6 @@ import {
 	SearchConsoleIntegrationStatus,
 	SearchConsoleLandingPage,
 	SearchConsoleOverview,
-	SearchConsolePageRow,
 	SearchConsolePoint,
 	SearchConsoleQueryRow,
 } from "@maple/domain/http"
@@ -72,7 +71,6 @@ const SLOT_SCHEMAS = {
 	searchOverview: SearchConsoleOverview,
 	searchTimeseries: Schema.Array(SearchConsolePoint),
 	searchQueries: Schema.Array(SearchConsoleQueryRow),
-	searchPages: Schema.Array(SearchConsolePageRow),
 	searchLanding: Schema.Array(SearchConsoleLandingPage),
 } satisfies Record<SlotName, Schema.Top>
 
@@ -125,19 +123,17 @@ const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMod
 }
 
 /** The Search tab's reads that need the status's property. */
-const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
+export const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
 	"searchOverview",
 	"searchTimeseries",
 	"searchQueries",
-	"searchPages",
 	"searchLanding",
 ]
 const SEARCH_SLOTS: ReadonlyArray<SlotName> = ["searchStatus", ...SEARCH_DATA_SLOTS]
 
 const SEARCH_TABLE_SLOT = {
 	queries: "searchQueries",
-	pages: "searchPages",
-	landing: "searchLanding",
+	pages: "searchLanding",
 } as const satisfies Record<SearchTable, SlotName>
 
 const defaultPanel: PanelState = { pickedTab: null, query: "", sortKey: null, sortDir: "desc" }
@@ -209,9 +205,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		searchOverview: Keyed.idle(),
 		searchTimeseries: Keyed.idle(),
 		searchQueries: Keyed.idle(),
-		searchPages: Keyed.idle(),
 		searchLanding: Keyed.idle(),
 		searchSorts: {},
+		searchMetric: null,
 		presence: SignalPresenceData.Loading(),
 		pickedMetric: null,
 		panels: {},
@@ -250,7 +246,15 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
-	const next = { ...model, search: route.search, panels: isSameTab ? model.panels : {} }
+	// The expand dialog shows one of them, so it closes with them.
+	const dialog = isSameTab ? model.expandDialog : Dialog.close(model.expandDialog).model
+	const next = {
+		...model,
+		search: route.search,
+		panels: isSameTab ? model.panels : {},
+		expandedPanel: isSameTab ? model.expandedPanel : null,
+		expandDialog: dialog,
+	}
 	return routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
 			model: next,
@@ -353,6 +357,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: sorted }
 				: requestSlots(sorted, context, sorted.window, "Load", [SEARCH_TABLE_SLOT[table]])
 		},
+		PickedSearchMetric: ({ metric }) => ({ model: { ...model, searchMetric: metric } }),
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))

@@ -1,3 +1,4 @@
+import { SearchConsoleSortKey } from "@maple/domain/http"
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
@@ -32,7 +33,6 @@ export const SlotName = Schema.Literals([
 	"searchOverview",
 	"searchTimeseries",
 	"searchQueries",
-	"searchPages",
 	"searchLanding",
 ])
 export type SlotName = typeof SlotName.Type
@@ -83,6 +83,7 @@ export const Message = defineMessageUnion({
 	ClickedRetrySearch: {},
 	PickedSearchSite: { siteUrl: Schema.String },
 	ClickedSearchSort: { table: SearchTable, key: SearchSortKey },
+	PickedSearchMetric: { metric: SearchConsoleSortKey },
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	/** A sidebar section picked a single value (or cleared it). */

@@ -1,4 +1,3 @@
-import { formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -8,30 +7,42 @@ import type { ChartSpec } from "@maple/views/charts/chart-spec"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { CHART_HEIGHT, chartCard, chartCardMessage } from "../kit/chart-card"
-import { seriesLegend } from "../kit/series-legend"
+import type { SearchConsoleSortKey } from "@maple/domain/http"
+import { searchMetricOf, type SearchMetrics } from "./search-metrics"
 
-// The Search tab's trend: clicks per Google day, on the traffic chart. Impressions run orders of
-// magnitude higher and would flatten clicks on one linear axis; the KPI row carries them.
+// The Search tab's trend: the picked tile's metric per Google day, on the traffic chart. One
+// metric at a time: impressions run orders of magnitude above clicks and would flatten them.
 
 export type SearchTrendInputs = Readonly<{
-	points: ReadonlyArray<Readonly<{ date: string; clicks: number }>>
+	metric: SearchConsoleSortKey
+	points: ReadonlyArray<SearchMetrics & Readonly<{ date: string }>>
 	theme: ThemeColors
 	isNarrow: boolean
 }>
 
+/** The chart card's title and the line under it, the same while the trend loads or fails. */
+export const searchTrendHeading = (key: SearchConsoleSortKey | null) => {
+	const metric = searchMetricOf(key)
+	return { title: `${metric.label} per day`, description: metric.hint }
+}
+
 export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendInputs>(
 	(model, inputs, h): Html => {
-		// Google's days are calendar days; the bucket axis reads them as UTC midnights.
+		const metric = searchMetricOf(inputs.metric)
+		// CTR and position are derived from impressions; clicks and impressions are plain counts.
+		const needsImpressions = metric.valueFormat !== "count"
+		// Google's days are calendar days; the bucket axis reads them as UTC midnights. A day
+		// nobody saw the site has no CTR or position, so the line breaks there.
 		const points = Arr.map(inputs.points, (point) => ({
 			bucket: `${point.date}T00:00:00Z`,
-			primary: point.clicks,
+			primary: needsImpressions && point.impressions === 0 ? null : point[metric.key],
 		}))
-		const clicks = Arr.reduce(inputs.points, 0, (sum, point) => sum + point.clicks)
 		const spec: ChartSpec = {
 			_tag: "AnalyticsTraffic",
 			points,
-			series: [{ key: "primary", metric: "searchClicks", label: "Clicks" }],
+			series: [{ key: "primary", metric: `search-${metric.key}`, label: metric.label }],
 			tickMetric: "sessions",
+			valueFormat: metric.valueFormat,
 			colors: {
 				primary: resolveColor(inputs.theme, "--primary"),
 				companion: resolveColor(inputs.theme, "--chart-2"),
@@ -42,12 +53,7 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 			gradientPrefix: "search-trend",
 			isNarrow: inputs.isNarrow,
 		}
-		const legend = seriesLegend(h, {
-			items: [
-				{ key: "primary", label: "Clicks", color: "var(--primary)", value: formatNumber(clicks) },
-			],
-		})
-		return chartCard(h, { title: "Clicks", legend }, [
+		return chartCard(h, searchTrendHeading(inputs.metric), [
 			points.length === 0
 				? chartCardMessage(h, "No search data in this window")
 				: h.div(
@@ -56,7 +62,7 @@ export const searchTrendChart = Submodel.defineView<Model, Message, SearchTrendI
 							plotFrame(h, {
 								chartId: "search-trend",
 								spec,
-								ariaLabel: "Search clicks per day",
+								ariaLabel: searchTrendHeading(inputs.metric).title,
 								className: "h-full w-full",
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>
