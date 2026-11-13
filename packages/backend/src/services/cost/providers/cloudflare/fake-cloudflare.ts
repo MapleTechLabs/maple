@@ -14,6 +14,9 @@ import type { Subscription, UsageRow } from "./cloudflare-billing-api"
 export type FakeUsageRow = typeof UsageRow.Encoded
 export type FakeSubscription = typeof Subscription.Encoded
 
+/** The things a billing token must not see, by the request that asks for each. */
+export type FakeReach = "members" | "workers_subdomain" | "audit_logs" | "zones" | "workers_scripts"
+
 export interface FakeCloudflare {
 	/** Status of `GET /accounts`. */
 	accountsStatus: number
@@ -36,6 +39,10 @@ export interface FakeCloudflare {
 	subscriptionsInfo: "pages_and_count" | "count" | "none"
 	/** Subscriptions the listing counts and never returns. */
 	subscriptionsNeverReturned: number
+	/** What the token may read beyond billing: each is asked for when a token is saved. */
+	canRead: ReadonlyArray<FakeReach>
+	/** A probe Cloudflare answers with a status that is neither access nor a refusal. */
+	brokenProbe: { readonly reach: FakeReach; readonly status: number } | null
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
 	readonly urls: Array<string>
@@ -56,6 +63,8 @@ export const makeFakeCloudflare = (overrides: Partial<FakeCloudflare> = {}): Fak
 	subscriptionsPageSize: 50,
 	subscriptionsInfo: "pages_and_count",
 	subscriptionsNeverReturned: 0,
+	canRead: [],
+	brokenProbe: null,
 	cloudCost: true,
 	urls: [],
 	authorizations: [],
@@ -144,6 +153,29 @@ const subscriptionsAnswer = (world: FakeCloudflare, params: URLSearchParams): Re
 			)
 }
 
+const PROBE_PATHS: ReadonlyArray<readonly [suffix: string, reach: FakeReach]> = [
+	["/members", "members"],
+	["/workers/subdomain", "workers_subdomain"],
+	["/audit_logs", "audit_logs"],
+	["/zones", "zones"],
+	["/workers/scripts", "workers_scripts"],
+]
+
+/**
+ * A probe's answer as the real API gave it: without the permission the three account reads are
+ * refused, while zones and scripts answer an empty list.
+ */
+const probeAnswer = (world: FakeCloudflare, reach: FakeReach): Response => {
+	if (world.brokenProbe?.reach === reach) return refused(world.brokenProbe.status)
+	const allowed = Arr.contains(world.canRead, reach)
+	const isListing = reach === "zones" || reach === "workers_scripts"
+	return isListing
+		? envelope(allowed ? [{ id: "example" }] : [], { total_count: allowed ? 1 : 0 })
+		: allowed
+			? envelope({ id: "example" })
+			: refused(403)
+}
+
 const fetchStub =
 	(world: FakeCloudflare): typeof fetch =>
 	async (input: string | URL | Request, init?: RequestInit) => {
@@ -156,6 +188,8 @@ const fetchStub =
 				? envelope(world.accounts, { total_count: world.accounts.length, total_pages: 1 })
 				: refused(world.accountsStatus)
 		}
+		const probe = Arr.findFirst(PROBE_PATHS, ([suffix]) => Str.endsWith(suffix)(url.pathname))
+		if (probe._tag === "Some") return probeAnswer(world, probe.value[1])
 		if (world.billingStatus !== 200) return refused(world.billingStatus)
 		if (Str.endsWith("/billable-usage/info")(url.pathname)) {
 			return envelope({ covered: world.covered, subscriptions: [] })
