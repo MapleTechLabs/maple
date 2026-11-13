@@ -94,6 +94,9 @@ describe("cost key marks", () => {
 			keyMark("provider", "aws", [])?.icon,
 		)
 		expect(keyMark("cloud_service", "openai/gpt-5", withPlanetScale)?.icon).not.toBe(planetScale)
+		// A charge that names no database is PlanetScale's where the org reads no other platform.
+		const onlyPlanetScale = [source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")]
+		expect(keyMark("cloud_service", "Support plan", onlyPlanetScale)?.icon).toBe(planetScale)
 		// Without a PlanetScale source a lowercase name is no database of its.
 		expect(keyMark("cloud_service", "orders-prod", sources)?.icon).not.toBe(planetScale)
 		// Its charges have no region: the one it carries is the globe every provider's `global` gets.

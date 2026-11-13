@@ -50,12 +50,18 @@ const isDatabaseName = (key: string): boolean => /^[a-z0-9][a-z0-9_-]*$/u.test(k
 const isPlanetScaleDatabase = (key: string, sources: ReadonlyArray<CostSourceSummary>): boolean =>
 	isDatabaseName(key) && Arr.some(sources, (source) => source.provider === "planetscale")
 
-/** The provider a service that is not a model belongs to: AWS, unless it is Cloudflare's or a PlanetScale database. */
+/**
+ * The provider a service that is not a model belongs to: Cloudflare's products and PlanetScale's
+ * databases by name, else AWS where the org reads it, else the platform it does read.
+ */
 const serviceProvider = (key: string, sources: ReadonlyArray<CostSourceSummary>): CostProvider => {
 	if (CLOUDFLARE_SERVICES.has(key)) return "cloudflare"
 	if (isPlanetScaleDatabase(key, sources)) return "planetscale"
 	const reads = (provider: CostProvider) => Arr.some(sources, (source) => source.provider === provider)
-	return reads("cloudflare") && !reads("aws") ? "cloudflare" : "aws"
+	if (reads("aws")) return "aws"
+	if (reads("cloudflare")) return "cloudflare"
+	// A PlanetScale charge that names no database (a plan or support line) is still PlanetScale's.
+	return reads("planetscale") ? "planetscale" : "aws"
 }
 
 /** An AWS account id is twelve digits; an OpenRouter one is its user or org id, a Cloudflare one 32 hex digits. */
