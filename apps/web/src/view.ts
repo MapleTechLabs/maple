@@ -71,6 +71,7 @@ const renderPage = (
 	isPresenceFailed: boolean | undefined,
 	integrations: ShellInfraSurfaces["integrations"] | undefined,
 	remembered: ShellInfraSurfaces["remembered"],
+	audience: PageContext["audience"],
 	isMobile: boolean,
 	isBelowSm: boolean,
 	isBelowLg: boolean,
@@ -86,6 +87,7 @@ const renderPage = (
 				...(presence === undefined || isPresenceFailed === undefined || integrations === undefined
 					? undefined
 					: { infra: { presence, isPresenceFailed, integrations, remembered } }),
+				...(audience === undefined ? undefined : { audience }),
 			},
 			isMobile,
 			isBelowSm,
@@ -101,7 +103,7 @@ const renderPage = (
  */
 const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Option.Option<Html> =>
 	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
-		Option.map(pageContextOf(model), ({ orgId, pinnedNamespace, timeZone, infra }) =>
+		Option.map(pageContextOf(model), ({ orgId, pinnedNamespace, timeZone, infra, audience }) =>
 			lazyPage(position, renderPage, [
 				h,
 				page,
@@ -112,6 +114,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 				infra?.isPresenceFailed,
 				infra?.integrations,
 				infra?.remembered,
+				audience,
 				model.shell.isMobile,
 				model.shell.isBelowSm,
 				model.shell.isFilterCollapsed,

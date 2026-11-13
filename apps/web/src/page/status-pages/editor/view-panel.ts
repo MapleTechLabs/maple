@@ -28,7 +28,7 @@ import { checkedRows, hasRowIssues } from "../shared/picker"
 import { pickerView } from "../shared/picker-view"
 import { FocusNewRow } from "./command"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { canManage, canPostIncidents, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
 import { ADD_PICKER_ID, PANEL_TITLE_ID } from "./update-components"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -428,7 +428,7 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 				names.length === 0 ? "No components named" : Arr.join(names, ", "),
 				...(window === null ? [] : [" · ", ...window]),
 			]),
-			incidentActions(h, model, incident),
+			...(canPostIncidents(model) ? [incidentActions(h, model, incident)] : []),
 			vstack(h, { gap: "2", as: "section", attributes: [h.AriaLabel("Updates")] }, [
 				eyebrow(h, { as: "h3" }, ["Updates"]),
 				h.ol(
@@ -460,25 +460,26 @@ export const incidentPanel = (h: H, model: Model, incident: V2StatusPageIncident
 					),
 				),
 			]),
-			h.div(
-				[h.Class("border-t pt-4")],
-				[
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "destructive-outline",
-							attributes: [
-								h.OnClick(Message.ClickedDeleteIncident({ incidentId: incident.id })),
-							],
-						},
-						[incident.kind === "incident" ? "Delete incident" : "Delete maintenance"],
-					),
-				],
-			),
+			...(canPostIncidents(model) ? [deleteIncidentAction(h, incident)] : []),
 		],
 	)
 }
+
+const deleteIncidentAction = (h: H, incident: V2StatusPageIncident): Html =>
+	h.div(
+		[h.Class("border-t pt-4")],
+		[
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "destructive-outline",
+					attributes: [h.OnClick(Message.ClickedDeleteIncident({ incidentId: incident.id }))],
+				},
+				[incident.kind === "incident" ? "Delete incident" : "Delete maintenance"],
+			),
+		],
+	)
 
 // ADD
 

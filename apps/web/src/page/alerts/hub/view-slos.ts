@@ -1,5 +1,4 @@
 import { pluralize } from "@maple/ui/lib/format"
-import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -26,14 +25,12 @@ import { newSloHref, sloHref } from "../shared/slo-commands"
 import {
 	burnTone,
 	fastestBurn,
-	firingTier,
 	formatBurn,
 	formatSli,
 	formatTarget,
 	formatWindow,
-	holdingTier,
 	isBudgetSpent,
-	openIncident,
+	isBurning,
 	scopeLine,
 	sliLabel,
 	sliTone,
@@ -69,12 +66,6 @@ const slosEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean)
 		],
 		"py-12",
 	)
-
-/** Burning: a tier fires, or a tier holds (no events) while the SLO's incident stays open. */
-const isBurning = (row: SloListRow, incidents: ReadonlyArray<AlertIncidentRow>): boolean =>
-	row.status !== null &&
-	(Option.isSome(firingTier(row.status)) ||
-		(Option.isSome(holdingTier(row.status)) && Option.isSome(openIncident(row.slo, incidents))))
 
 const readout = (h: H, model: Model, rows: ReadonlyArray<SloListRow>): ReadonlyArray<Html> => {
 	// Every SLO's status arrives in one read; none at all means that read failed, not that nothing burns.

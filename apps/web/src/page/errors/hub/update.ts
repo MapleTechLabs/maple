@@ -25,6 +25,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import {
 	FetchEnvironments,
+	FetchHubSession,
 	FetchInvestigations,
 	FetchPage,
 	FetchRanking,
@@ -66,6 +67,8 @@ import {
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
+import { acceptGrants } from "../../kit/session-grants"
+import { initialGrants, readsSessionGrants } from "../kit/grants"
 
 export type Return = PageReturn<Model, Message>
 
@@ -319,6 +322,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const search = route.search
 	const model: Model = {
 		search,
+		grants: initialGrants,
 		window: null,
 		nowMs: 0,
 		summary: Keyed.idle(),
@@ -359,6 +363,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		model,
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
+			...(readsSessionGrants ? [FetchHubSession({ orgId: context.orgId })] : []),
 			resolveCommand(context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -489,6 +494,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchSummary: ({ key, result }) => ({
 			model: settled(model, "summary", Keyed.accept(model.summary, key, result)),
 		}),

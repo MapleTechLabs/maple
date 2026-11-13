@@ -6,26 +6,27 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { CurrentMcpTenant } from "../../tenant"
-import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { executeRegisteredMcpToolUnscoped, mapleToolCatalog } from "../registry"
+import { DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL, refusalFor } from "../types"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const tenant = (readOnly: boolean, scopes?: ReadonlyArray<string>): TenantContext => ({
+const tenant = (readOnly: boolean, scopes?: ReadonlyArray<string>, role = "root"): TenantContext => ({
 	orgId: Schema.decodeSync(OrgId)("org_read_only_key"),
 	userId: Schema.decodeSync(UserId)("user_read_only_key"),
-	roles: [Schema.decodeSync(RoleName)("root")],
+	roles: [Schema.decodeSync(RoleName)(role)],
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
 	...(scopes === undefined ? undefined : { scopes }),
 })
 
-const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>) => {
+const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>, role?: string) => {
 	const database = createTestDb(createdDbs).layer
 	return Layer.mergeAll(
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
 		database,
-		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes)),
+		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes, role)),
 		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () => Effect.succeed({ destinations: [] }),
 		} as never),
@@ -69,6 +70,52 @@ describe("read-only API key over MCP", () => {
 			expect(Result.isSuccess(result)).toBe(true)
 		}).pipe(Effect.provide(makeLayer(false))),
 	)
+})
+
+describe("an analyst over MCP", () => {
+	// A layer per test: each owns a database that `afterEach` removes.
+	const analyst = () => makeLayer(false, undefined, "org:analyst")
+
+	it.effect("runs read tools", () =>
+		Effect.gen(function* () {
+			const result = yield* call("get_error_notification_policy", {})
+			expect(Result.isSuccess(result)).toBe(true)
+		}).pipe(Effect.provide(analyst())),
+	)
+
+	it.effect("refuses a tool that changes data and says which role can", () =>
+		Effect.gen(function* () {
+			const result = yield* call("update_error_notification_policy", updatePolicy)
+			expect(Result.isFailure(result)).toBe(true)
+			if (Result.isFailure(result)) {
+				expect(result.failure._tag).toBe("@maple/mcp/errors/McpAuthInvalidError")
+				expect(result.failure.message).toContain("update_error_notification_policy")
+				expect(result.failure.message).toContain("Ask an org admin for the Member role")
+			}
+		}).pipe(Effect.provide(analyst())),
+	)
+})
+
+describe("what an analyst may change over MCP", () => {
+	const changing = Arr.filter(mapleToolCatalog, (definition) => !definition.hints.readOnly)
+	const openTo = (caller: Parameters<typeof refusalFor>[0]) =>
+		Arr.filter(
+			Arr.map(changing, (definition) => definition.name),
+			(name) => refusalFor(caller, name, false) === undefined,
+		).sort()
+
+	it("is the dashboard tools and Maple's feedback channel, out of every tool that changes data", () => {
+		expect(openTo({ roles: ["org:analyst"] })).toEqual(
+			[...DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL].sort(),
+		)
+	})
+
+	it("is only the feedback channel when their key is read-only", () => {
+		expect(openTo({ roles: ["org:analyst"], readOnly: true })).toEqual([FEEDBACK_TOOL])
+		expect(refusalFor({ roles: ["org:analyst"], readOnly: true }, "create_dashboard", false)).toBe(
+			"read_only_key",
+		)
+	})
 })
 
 describe("a scoped key without users:read over MCP", () => {

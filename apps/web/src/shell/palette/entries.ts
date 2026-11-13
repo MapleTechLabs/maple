@@ -7,7 +7,7 @@ import { AppRoute, hrefOf } from "../../route"
 import type { IconName } from "@maple/views/ui/icon"
 import type { PinnedDashboardRow } from "../dashboards-shape"
 import type { Theme } from "../message"
-import { navGroups } from "../nav"
+import { type NavAudience, type NavGroup, navGroups } from "../nav"
 
 // The palette's entries.
 
@@ -64,29 +64,58 @@ export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
+const EVERY_FLAG = { cloudCost: true, releases: true, securityAudit: true, statusPages: true }
+
+/** A page's palette row under each title the nav gives it: the section, its children, their views. */
+const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
+	Arr.flatMap(groups, (group) =>
+		Arr.flatMap(group.items, (item) => [
+			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
+			...Arr.flatMap(item.subItems ?? [], (sub) => [
+				{
+					id: `nav:${item.title}:${sub.title}`,
+					title: sub.paletteTitle ?? sub.title,
+					href: sub.href,
+					icon: sub.icon ?? item.icon,
+				},
+				...Arr.map(sub.views ?? [], (view) => ({
+					id: `nav:${item.title}:${sub.title}:${view.title}`,
+					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
+					href: view.href,
+					icon: view.paletteIcon ?? sub.icon ?? item.icon,
+				})),
+			]),
+		]),
+	)
+
+/** What an analyst's sidebar calls each of its pages (`/alerts` is "Incidents"), plus their account. */
+const ANALYST_TITLES: ReadonlyMap<string, string> = new Map([
+	...Arr.map(navRowsOf(navGroups(EVERY_FLAG, "analyst")), (row) => [row.href, row.title] as const),
+	["/account", "Account"] as const,
+])
+
+/**
+ * The entries as the viewer's palette lists them. An analyst gets their own pages under their
+ * sidebar's names, dashboards and the app actions; the ids stay, so a pick resolves either way.
+ */
+export const entriesFor = (
+	entries: ReadonlyArray<PaletteEntry>,
+	audience: NavAudience,
+): ReadonlyArray<PaletteEntry> =>
+	audience === "operator"
+		? entries
+		: Arr.flatMap(entries, (entry): ReadonlyArray<PaletteEntry> => {
+				if (entry.group === "Actions" || entry.group === "Dashboards") return [entry]
+				if (entry.group !== "Navigation" || entry.target._tag !== "Href") return []
+				const title = ANALYST_TITLES.get(entry.target.href)
+				return title === undefined
+					? []
+					: [{ ...entry, title, keywords: `${entry.keywords} ${title}` }]
+			})
+
 /** Every section, its children and their views, deduplicated by title and href. */
 const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
-	const rows = Arr.flatMap(
-		navGroups({ cloudCost: true, releases: true, securityAudit: true, statusPages: true }),
-		(group) =>
-			Arr.flatMap(group.items, (item) => [
-				{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
-				...Arr.flatMap(item.subItems ?? [], (sub) => [
-					{
-						id: `nav:${item.title}:${sub.title}`,
-						title: sub.paletteTitle ?? sub.title,
-						href: sub.href,
-						icon: sub.icon ?? item.icon,
-					},
-					...Arr.map(sub.views ?? [], (view) => ({
-						id: `nav:${item.title}:${sub.title}:${view.title}`,
-						title: view.paletteTitle ?? `${sub.title} ${view.title}`,
-						href: view.href,
-						icon: view.paletteIcon ?? sub.icon ?? item.icon,
-					})),
-				]),
-			]),
-	)
+	const rows = navRowsOf(navGroups(EVERY_FLAG))
 	// One row per page, titled by its most specific row ("Traces", not its "Explore" parent);
 	// every title that opens the same page stays searchable as a keyword.
 	const unique = Arr.reverse(Arr.dedupeWith(Arr.reverse(rows), (a, b) => a.href === b.href))

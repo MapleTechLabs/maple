@@ -20,7 +20,8 @@ import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForTurn } from "./profiles"
+import { profileForRoles, profileForTurn } from "./profiles"
+import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
 
@@ -134,6 +135,29 @@ describe("profileForTurn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.property(tools, name, `${name} was withheld from the connector`)
 			assert.equal(evaluatePermission(profile.ruleset, name), "ask", name)
+		}
+	})
+
+	it("proposes dashboard changes to an analyst and offers no other tool that changes data", () => {
+		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:analyst",
+		])
+		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit
+		assert.property(tools, "search_traces")
+		for (const name of MUTATING_TOOL_NAMES) {
+			if (DASHBOARD_AUTHORING_TOOLS.has(name)) {
+				assert.equal(evaluatePermission(profile.ruleset, name), "ask", name)
+			} else {
+				assert.notProperty(tools, name, `${name} was offered to an analyst`)
+			}
+		}
+		assert.property(tools, "create_dashboard")
+		// A member's turn on the same session still proposes every one of them.
+		const member = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:member",
+		])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
 		}
 	})
 

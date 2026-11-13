@@ -40,6 +40,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
 import type { TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -145,6 +146,12 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	// The dashboard's only conversation is an investigation's; bot threads and reviews have their own drivers.
 	if (chatSessionKind(sessionId).mode !== "investigate") {
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
+	}
+
+	// Driving an investigation is a member's job (`investigations:run`): a follow-up can file a new
+	// diagnosis, and a stop ends a running pass. An analyst reads the thread.
+	if (request.method !== "GET" && Policy.isAnalyst(tenant.roles)) {
+		return { ok: false, failure: problem(Policy.analystMessage, 403) } as const
 	}
 
 	const stub = (yield* ChatSessions).session(sessionId)

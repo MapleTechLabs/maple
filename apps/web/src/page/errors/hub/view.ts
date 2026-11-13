@@ -15,6 +15,7 @@ import { isNarrowedBySidebar } from "./view-empty"
 import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
 import { Array as Arr } from "effect"
+import { canTriageIssues } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -35,6 +36,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const status = listStatusOf(model)
 	const sparkWindow = stableSparkWindow(model.window)
 	const isSelecting = model.selectedIds.length > 0
+	const canTriage = canTriageIssues(model)
 	const strip = statStrip(h, model)
 	return h.div(
 		[],
@@ -60,6 +62,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
 							? model.rowMenu
 							: null,
+					canTriage,
 				}),
 			}),
 		],

@@ -62,6 +62,48 @@ describe("isNavItemActive", () => {
 	})
 })
 
+describe("navGroups for an analyst", () => {
+	const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
+	/** Every page the analyst's sidebar links to: rows, then their sub-rows. */
+	const hrefs = (flags: NavFlags) =>
+		Arr.dedupe(
+			Arr.flatMap(navGroups(flags, "analyst"), (group) =>
+				Arr.flatMap(group.items, (item) => [
+					item.href,
+					...Arr.map(item.subItems ?? [], (sub) => sub.href),
+				]),
+			),
+		)
+
+	test("links to what is wrong and how the product is doing, and to no setup or explorer page", () => {
+		expect(hrefs(off)).toEqual([
+			"/",
+			"/alerts",
+			"/alerts/uptime",
+			"/alerts/slos",
+			"/errors",
+			"/analytics",
+			"/users",
+			"/replays",
+			"/dashboards",
+		])
+	})
+
+	test("adds Status pages, Releases and Cost only for an org in each rollout", () => {
+		expect(hrefs({ ...off, statusPages: true })).toContain("/status-pages")
+		expect(hrefs({ ...off, releases: true })).toContain("/releases")
+		expect(hrefs({ ...off, cloudCost: true })).toContain("/cost")
+		// Security is an engineer's page, whatever the flag says.
+		expect(hrefs({ ...off, securityAudit: true })).not.toContain("/security")
+	})
+
+	test("marks only Incidents on an uptime page, with its Uptime row", () => {
+		const items = Arr.flatMap(navGroups(off, "analyst"), (group) => group.items)
+		const active = Arr.filter(items, (item) => isNavItemActive("/alerts/uptime", item))
+		expect(Arr.map(active, (item) => item.title)).toEqual(["Incidents"])
+	})
+})
+
 describe("navGroups", () => {
 	const titles = (flags: NavFlags) =>
 		Arr.flatMap(navGroups(flags), (group) => Arr.map(group.items, (item) => item.title))
