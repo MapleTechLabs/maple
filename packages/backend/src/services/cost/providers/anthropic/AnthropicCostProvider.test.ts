@@ -123,6 +123,13 @@ describe("AnthropicCostProvider", () => {
 				const error = yield* Effect.flip(pull(ORG, connectionRef))
 				assert.deepStrictEqual(reasonOf(error), ["too_large", 0, "anthropic"])
 				assert.strictEqual(world.urls.length, 60)
+
+				// A next page that is the page just read would repeat it: the pull stops at once.
+				world.urls.length = 0
+				world.repeatCursor = true
+				const repeated = yield* Effect.flip(pull(ORG, connectionRef))
+				assert.deepStrictEqual(reasonOf(repeated), ["invalid_response", 0, "anthropic"])
+				assert.strictEqual(world.urls.length, 2)
 			}),
 		)
 	})

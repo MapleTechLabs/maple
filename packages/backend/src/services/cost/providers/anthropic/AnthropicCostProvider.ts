@@ -82,8 +82,10 @@ export class AnthropicCostProvider extends Context.Service<AnthropicCostProvider
 					const next = { buckets: [...read.buckets, ...body.data], pages: read.pages + 1 }
 					if (!body.has_more) return next
 					const cursor = body.next_page ?? null
-					// More pages and no way to ask for them: what was read is only part of the window.
-					if (cursor === null) return yield* failed("invalid_response", UNREADABLE)
+					// More pages and no way to ask for them, or the same page again: reading on would only
+					// repeat it, so what was read is only part of the window.
+					if (cursor === null || cursor === page)
+						return yield* failed("invalid_response", UNREADABLE)
 					return yield* readReport(key, window, cursor, next)
 				})
 

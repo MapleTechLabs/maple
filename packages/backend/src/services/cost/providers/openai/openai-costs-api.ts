@@ -49,7 +49,7 @@ export const CostResult = Schema.Struct({
 	),
 	line_item: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	project_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	/** Not in the documented schema, but on real answers: the only place a key's organization shows. */
+	/** Not in the documented schema, but on real answers; the `openai-organization` header comes first. */
 	organization_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	quantity: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	quantity_unit: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -110,7 +110,13 @@ const costsPage = (
 				failed("invalid_response", "answered with a body that is not JSON"),
 			),
 		)
-		return yield* Schema.decodeUnknownEffect(CostPage)(body)
+		const page = yield* Schema.decodeUnknownEffect(CostPage)(body)
+		// Documented as the organization associated with the request.
+		const organization = response.headers["openai-organization"]
+		return {
+			page,
+			organization: organization === undefined || organization === "" ? undefined : organization,
+		}
 	}).pipe(
 		Effect.timeout(REQUEST_TIMEOUT),
 		Effect.catchTags({
@@ -136,6 +142,8 @@ export interface CostListing {
 	readonly pages: number
 	/** False when more pages were left than `maxPages` allowed. */
 	readonly complete: boolean
+	/** The `openai-organization` header of the first page, when OpenAI sent one. */
+	readonly organization: string | undefined
 }
 
 /** Every bucket of the query, following `next_page` one page at a time up to `maxPages`. */
@@ -149,14 +157,19 @@ export const listCosts = (
 		page: string | undefined,
 		held: ReadonlyArray<CostBucket>,
 		pages: number,
+		organization: string | undefined,
 	): Effect.Effect<CostListing, OpenAiCostsError> =>
-		Effect.flatMap(costsPage(httpClient, key, query, page), (body) => {
+		Effect.flatMap(costsPage(httpClient, key, query, page), (answer) => {
+			const body = answer.page
 			const buckets = [...held, ...body.data]
 			const read = pages + 1
-			if (!body.has_more) return Effect.succeed({ buckets, pages: read, complete: true })
+			const org = organization ?? answer.organization
+			if (!body.has_more)
+				return Effect.succeed({ buckets, pages: read, complete: true, organization: org })
 			const next = body.next_page ?? ""
-			// More to read and no cursor to read it with: what was read is only part of the costs.
-			if (next === "") {
+			// More to read and no cursor to read it with, or the same page again: reading on would only
+			// repeat it, so what was read is only part of the costs.
+			if (next === "" || next === page) {
 				return Effect.fail(
 					new OpenAiCostsError({
 						message: "OpenAI API says there is more and gives no next page",
@@ -165,8 +178,8 @@ export const listCosts = (
 				)
 			}
 			return read >= maxPages
-				? Effect.succeed({ buckets, pages: read, complete: false })
-				: from(next, buckets, read)
+				? Effect.succeed({ buckets, pages: read, complete: false, organization: org })
+				: from(next, buckets, read, org)
 		})
-	return from(undefined, [], 0)
+	return from(undefined, [], 0, undefined)
 }

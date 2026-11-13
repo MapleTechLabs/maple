@@ -503,10 +503,12 @@ The billing API facts, which hold for either credential:
 
 - Read with an Admin API key (`sk-admin-...`), kept in `cost_connections`. `GET
   /v1/organization/costs`, daily buckets grouped by `project_id` and `line_item`, 180 a page.
-- No endpoint names the organization an admin key belongs to. The org id comes from
-  `organization_id` on the key's own cost results, so a save reads the last 180 days and refuses
-  an organization with no spend in them (nothing to show yet) or results of two organizations.
-  The label is the id: OpenAI reports no name.
+- No endpoint answers an admin key with its organization. A save reads the last 180 days of costs
+  and takes the organization from the `openai-organization` response header (documented as the
+  organization of the request), else from the one `organization_id` the results carry (seen on real
+  answers, not in the schema). A key with neither is refused: with no spend in those days as
+  having nothing to read yet, with spend as an organization OpenAI did not name. Results of two
+  organizations are refused too. The label is the id.
 - Rows: a line item `<model>, <part>` is `openai/<model>`, any other `openai/<line item>`. The
   line item is the usage type, the project the resource, the quantity and its unit kept.
 

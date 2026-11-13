@@ -124,6 +124,16 @@ describe("OpenAiCostProvider", () => {
 						(yield* Effect.flip(pull(ORG, connectionRef))).reason,
 						"invalid_response",
 					)
+
+					// A next page that is the page just read would repeat it: the pull stops at once.
+					world.dropCursor = false
+					world.repeatCursor = true
+					world.urls.length = 0
+					assert.strictEqual(
+						(yield* Effect.flip(pull(ORG, connectionRef))).reason,
+						"invalid_response",
+					)
+					assert.lengthOf(world.urls, 2)
 				}),
 			)
 		},

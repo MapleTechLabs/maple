@@ -24,6 +24,8 @@ export interface FakeAnthropic {
 	buckets: ReadonlyArray<FakeCostBucket> | string
 	/** A report that always says there is another page. */
 	endless: boolean
+	/** A report whose next page is the one just asked for. */
+	repeatCursor: boolean
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
 	readonly urls: Array<string>
@@ -39,6 +41,7 @@ export const makeFakeAnthropic = (overrides: Partial<FakeAnthropic> = {}): FakeA
 	costStatus: 200,
 	buckets: [],
 	endless: false,
+	repeatCursor: false,
 	cloudCost: true,
 	urls: [],
 	headers: [],
@@ -87,7 +90,11 @@ const costAnswer = (world: FakeAnthropic, params: URLSearchParams): Response => 
 	return Response.json({
 		data,
 		has_more: hasMore,
-		next_page: hasMore ? `page_${offset + limit}` : null,
+		next_page: hasMore
+			? world.repeatCursor
+				? (params.get("page") ?? "page_0")
+				: `page_${offset + limit}`
+			: null,
 	})
 }
 

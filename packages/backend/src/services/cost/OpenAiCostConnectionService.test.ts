@@ -189,6 +189,42 @@ describe("OpenAiCostConnectionService", () => {
 		)
 	})
 
+	it.effect("takes the organization from the openai-organization header first, also with no spend", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeOpenAi({ organizationHeader: "org-FromHeader0000" })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				// No spend, but OpenAI names the organization: there is an account to read from.
+				assert.deepStrictEqual(yield* set(KEY), {
+					accountId: "org-FromHeader0000",
+					accountLabel: "org-FromHeader0000",
+				})
+			}),
+		)
+	})
+
+	it.effect("refuses a key with spend whose organization OpenAI does not name, saying so", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeOpenAi({ costs: [{ day: "2026-10-20", value: 1, organizationId: "" }] })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const error = yield* Effect.flip(set(KEY))
+				assert.deepStrictEqual(
+					[error._tag, error.message],
+					[
+						VALIDATION,
+						"OpenAI did not say which organization this key belongs to, so Maple cannot add it yet.",
+					],
+				)
+				assert.isUndefined(yield* storedKey(testDb))
+			}),
+		)
+	})
+
 	it.effect(
 		"refuses a key whose costs name two organizations, since either could be the one it reads",
 		() => {

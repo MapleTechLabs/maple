@@ -65,8 +65,8 @@ export class OpenAiCostConnectionService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 
 		/**
-		 * The organization the key reads. No OpenAI endpoint names it, so it comes off the key's own
-		 * cost results: a key whose organization has spent nothing has none to show yet.
+		 * The organization the key reads: the documented `openai-organization` header of the costs
+		 * answer, else the one `organization_id` its results carry. No other OpenAI endpoint names it.
 		 */
 		const validateWithOpenAi = Effect.fn("OpenAiCostConnectionService.validateWithOpenAi")(function* (
 			key: Redacted.Redacted,
@@ -83,7 +83,7 @@ export class OpenAiCostConnectionService extends Context.Service<
 				},
 				MAX_PULL_PAGES,
 			).pipe(Effect.mapError(toKeyError))
-			const organizations = Arr.dedupe(
+			const fromResults = Arr.dedupe(
 				Arr.flatMap(listing.buckets, (bucket) =>
 					Arr.flatMap(bucket.results, (result) =>
 						result.organization_id === undefined ||
@@ -94,20 +94,29 @@ export class OpenAiCostConnectionService extends Context.Service<
 					),
 				),
 			)
+			const charges = Arr.some(listing.buckets, (bucket) => Arr.isReadonlyArrayNonEmpty(bucket.results))
 			yield* Effect.annotateCurrentSpan({
 				"maple.cost.openai.pages": listing.pages,
-				"maple.cost.openai.organizations": organizations.length,
+				"maple.cost.openai.organization_header": listing.organization !== undefined,
+				"maple.cost.openai.organizations": fromResults.length,
+				"maple.cost.openai.has_results": charges,
 			})
-			const [organization] = organizations
-			if (organization === undefined) {
-				return yield* refused(
-					"This OpenAI organization has no API spend in the last 180 days, so there is nothing to read yet.",
-				)
+			// The documented `openai-organization` header first; else the one organization the results name.
+			if (listing.organization !== undefined) {
+				return { accountId: listing.organization, accountLabel: listing.organization }
 			}
 			// Results of two organizations leave no telling which one the key belongs to.
-			if (organizations.length > 1) {
+			if (fromResults.length > 1) {
 				return yield* refused(
 					"OpenAI reports costs of more than one organization for this key, so Maple cannot tell which one it reads.",
+				)
+			}
+			const [organization] = fromResults
+			if (organization === undefined) {
+				return yield* refused(
+					charges
+						? "OpenAI did not say which organization this key belongs to, so Maple cannot add it yet."
+						: "This OpenAI organization has no API spend in the last 180 days, so there is nothing to read yet.",
 				)
 			}
 			return { accountId: organization, accountLabel: organization }

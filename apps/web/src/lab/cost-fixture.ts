@@ -561,12 +561,27 @@ export const labGithubLogin = (installationId: string): string =>
 	)
 
 /**
- * What the lab's reader did since the state loaded. `credentials`: a pasted-credential provider to
- * whether it was added (true) or removed (false), absent for neither; `vercel` and `planetScale`
- * the same, null for neither. `github`: an installation's id to whether it is a source now.
+/**
+ * What happened to a pasted-credential source: `added` (or its credential replaced), `removed`, or
+ * `readded` after a removal, which is a new source with none of the old one's cost.
+ */
+export const LabCredentialChange = Schema.Literals(["added", "removed", "readded"])
+export type LabCredentialChange = typeof LabCredentialChange.Type
+
+/** The change a save (`isSource`) or a removal makes to a provider's `previous` one. */
+export const credentialChangeAfter = (
+	previous: LabCredentialChange | undefined,
+	isSource: boolean,
+): LabCredentialChange =>
+	!isSource ? "removed" : previous === "removed" || previous === "readded" ? "readded" : "added"
+
+/**
+ * What the lab's reader did since the state loaded. `credentials`: a pasted-credential provider's
+ * change, absent for none; `vercel` and `planetScale`: added (true), removed (false) or neither
+ * (null). `github`: an installation's id to whether it is a source now.
  */
 export type LabSourceChanges = Readonly<{
-	credentials: Readonly<Partial<Record<CredentialProvider, boolean>>>
+	credentials: Readonly<Partial<Record<CredentialProvider, LabCredentialChange>>>
 	github: Readonly<Record<string, boolean>>
 	vercel: boolean | null
 	planetScale: boolean | null
@@ -580,7 +595,9 @@ export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<Co
 	Arr.filter(
 		CostProvider.literals,
 		(provider) =>
-			(isCredentialProvider(provider) && changes.credentials[provider] === false) ||
+			(isCredentialProvider(provider) &&
+				(changes.credentials[provider] === "removed" ||
+					changes.credentials[provider] === "readded")) ||
 			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
 			// A team added again is a new source: it has no cost until a sync the lab does not model.
 			(provider === "vercel" && changes.vercel !== null) ||
@@ -598,7 +615,8 @@ export const labSourcesWith = (
 ): CostSourcesResponse => {
 	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
 		isCredentialProvider(entry.provider)
-			? changes.credentials[entry.provider] !== false
+			? changes.credentials[entry.provider] === undefined ||
+				changes.credentials[entry.provider] === "added"
 			: entry.provider === "vercel"
 				? changes.vercel === null
 				: entry.provider === "planetscale"
@@ -612,7 +630,9 @@ export const labSourcesWith = (
 			...Arr.map(
 				Arr.filter(
 					CredentialProvider.literals,
-					(provider) => changes.credentials[provider] === true && !has(provider),
+					(provider) =>
+						changes.credentials[provider] === "readded" ||
+						(changes.credentials[provider] === "added" && !has(provider)),
 				),
 				(provider) => justAdded(CREDENTIAL_SOURCE_OF[provider]),
 			),

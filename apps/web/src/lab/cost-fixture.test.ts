@@ -3,6 +3,8 @@ import { CredentialProvider } from "../page/cost/providers"
 import { describe, expect, test } from "vitest"
 import {
 	LAB_SOURCES,
+	type LabCredentialChange,
+	credentialChangeAfter,
 	labBreakdown,
 	labGithubInstallations,
 	labRemovedProviders,
@@ -48,9 +50,9 @@ describe("cost lab fixture", () => {
 	test.each(CredentialProvider.literals)(
 		"%s is added waiting for its first sync, and a removed one takes its cost with it",
 		(provider) => {
-			const outcome = (added: boolean | null, from = LAB_SOURCES.synced) => {
+			const outcome = (change: LabCredentialChange | null, from = LAB_SOURCES.synced) => {
 				const changes = {
-					credentials: added === null ? {} : { [provider]: added },
+					credentials: change === null ? {} : { [provider]: change },
 					github: {},
 					vercel: null,
 					planetScale: null,
@@ -67,8 +69,13 @@ describe("cost lab fixture", () => {
 				}
 			}
 			expect(outcome(null)).toEqual({ sources: ["ok"], costRemoved: false })
-			expect(outcome(false)).toEqual({ sources: [], costRemoved: true })
-			expect(outcome(true, LAB_SOURCES.none)).toEqual({ sources: ["pending"], costRemoved: false })
+			expect(outcome("removed")).toEqual({ sources: [], costRemoved: true })
+			expect(outcome("added", LAB_SOURCES.none)).toEqual({ sources: ["pending"], costRemoved: false })
+			// A replaced credential keeps the source and its cost.
+			expect(outcome("added")).toEqual({ sources: ["ok"], costRemoved: false })
+			// Added again after a removal: a new source waiting for its sync, without the old cost.
+			expect(credentialChangeAfter(credentialChangeAfter(undefined, false), true)).toBe("readded")
+			expect(outcome("readded")).toEqual({ sources: ["pending"], costRemoved: true })
 		},
 	)
 

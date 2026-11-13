@@ -34,6 +34,10 @@ export interface FakeOpenAi {
 	pageSize: number
 	/** Answers `has_more` with no `next_page`. */
 	dropCursor: boolean
+	/** Answers `has_more` with the cursor it was asked with, so reading on repeats the page. */
+	repeatCursor: boolean
+	/** The `openai-organization` header every answer carries; none when undefined. */
+	organizationHeader: string | undefined
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
 	readonly urls: Array<string>
@@ -46,6 +50,8 @@ export const makeFakeOpenAi = (overrides: Partial<FakeOpenAi> = {}): FakeOpenAi 
 	organizationId: FAKE_OPENAI_ORG,
 	pageSize: 180,
 	dropCursor: false,
+	repeatCursor: false,
+	organizationHeader: undefined,
 	cloudCost: true,
 	urls: [],
 	authorizations: [],
@@ -108,7 +114,12 @@ const costsAnswer = (world: FakeOpenAi, costs: ReadonlyArray<FakeCost>, params: 
 		object: "page",
 		data: days === 0 ? [] : buckets,
 		has_more: hasMore,
-		next_page: hasMore && !world.dropCursor ? `page_${next}` : null,
+		next_page:
+			hasMore && !world.dropCursor
+				? world.repeatCursor
+					? (params.get("page") ?? "page_0")
+					: `page_${next}`
+				: null,
 	})
 }
 
@@ -126,7 +137,11 @@ const fetchStub =
 			)
 		}
 		if (typeof world.costs === "string") return new Response(world.costs, { status: 200 })
-		return costsAnswer(world, world.costs, url.searchParams)
+		const answer = costsAnswer(world, world.costs, url.searchParams)
+		if (world.organizationHeader !== undefined) {
+			answer.headers.set("openai-organization", world.organizationHeader)
+		}
+		return answer
 	}
 
 /** Everything the OpenAI cost services need, over the fake and a test database. */

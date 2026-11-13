@@ -63,7 +63,9 @@ import {
 	LAB_TODAY,
 	LAB_PLANETSCALE_ORGANIZATION,
 	LAB_VERCEL_TEAM,
+	LabCredentialChange,
 	type LabSourceChanges,
+	credentialChangeAfter,
 	labBreakdown,
 	labGithubInstallations,
 	labGithubLogin,
@@ -137,7 +139,7 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 export const Model = Schema.Struct({
 	state: LabState,
 	/** Pasted-credential providers added (true) or removed (false) since the state loaded. */
-	credentials: Schema.Record(CredentialProvider, Schema.optionalKey(Schema.Boolean)),
+	credentials: Schema.Record(CredentialProvider, Schema.optionalKey(LabCredentialChange)),
 	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
 	github: Schema.Record(Schema.String, Schema.Boolean),
 	/** Vercel added (true) or removed (false) since the state loaded; null before either. */
@@ -641,7 +643,10 @@ const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answere
 		})
 		const withCredential = (provider: CredentialProvider, isSource: boolean): LabSourceChanges => ({
 			...current,
-			credentials: { ...current.credentials, [provider]: isSource },
+			credentials: {
+				...current.credentials,
+				[provider]: credentialChangeAfter(current.credentials[provider], isSource),
+			},
 		})
 		switch (answer._tag) {
 			case "CompletedSaveCredential":
