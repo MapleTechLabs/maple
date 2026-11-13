@@ -4,6 +4,7 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	PlanetScaleCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Option, Schema } from "effect"
@@ -19,13 +20,34 @@ import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import { CostFacets } from "./message"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { CredentialProvider } from "./providers"
+import { CredentialProvider, RemovableProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's two faces: the providers, then the chosen one's credential form. */
-export const AddStep = Schema.Union([Schema.Literal("pick"), CredentialProvider])
+/** The add-source dialog's faces: the providers, then the chosen one's credential form or connection step. */
+export const AddStep = Schema.Union([Schema.Literals(["pick", "planetscale"]), CredentialProvider])
 export type AddStep = typeof AddStep.Type
+
+/** Why PlanetScale refused an add, and whether only connecting it again fixes that. */
+export const PlanetScaleAddError = Schema.Struct({ message: Schema.String, needsReconnect: Schema.Boolean })
+export type PlanetScaleAddError = typeof PlanetScaleAddError.Type
+
+/**
+ * What the PlanetScale step can do with the connection it read: only a `Ready` organization can
+ * be added. One that is a source already can still have lost its access to invoices, which stops
+ * its sync.
+ */
+export type PlanetScaleStep =
+	| Readonly<{ _tag: "NotConnected" }>
+	| Readonly<{ _tag: "NeedsReconnect" | "Ready"; organization: string }>
+	| Readonly<{ _tag: "Added"; organization: string; needsReconnect: boolean }>
+
+export const planetScaleStepOf = (status: PlanetScaleCostStatus): PlanetScaleStep => {
+	if (status.organization === null) return { _tag: "NotConnected" }
+	return status.added
+		? { _tag: "Added", organization: status.organization, needsReconnect: !status.invoiceAccess }
+		: { _tag: status.invoiceAccess ? "Ready" : "NeedsReconnect", organization: status.organization }
+}
 
 export const Model = Schema.Struct({
 	search: CostSearch,
@@ -50,13 +72,15 @@ export const Model = Schema.Struct({
 	addStep: AddStep,
 	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
 	credentialDraft: Field.Model,
-	/** The plain fields the step's provider asks before the credential, in its order; none for most. */
-	credentialIdentifiers: Schema.Array(Field.Model),
 	/** Why the last save was refused, shown under the field until the credential changes. */
 	credentialError: Schema.NullOr(Schema.String),
+	/** The org's PlanetScale connection, read when the dialog turns to PlanetScale. */
+	planetscale: KeyedSchema(PlanetScaleCostStatus, LoadFailure),
+	/** Why the last add of the organization was refused, shown in the step until it is left. */
+	planetscaleError: Schema.NullOr(PlanetScaleAddError),
 	removeDialog: Dialog.Model,
 	/** The provider whose source the remove dialog asks about; null until it first opens. */
-	removeProvider: Schema.NullOr(CredentialProvider),
+	removeProvider: Schema.NullOr(RemovableProvider),
 	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })

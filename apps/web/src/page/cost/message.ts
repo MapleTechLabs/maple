@@ -5,6 +5,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	PlanetScaleCostSourceAdded,
+	PlanetScaleCostSourceRemoved,
+	PlanetScaleCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
@@ -20,7 +23,7 @@ import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import { perDimension } from "./derive"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { CredentialProvider } from "./providers"
+import { CredentialProvider, RemovableProvider } from "./providers"
 
 /** A read's answer; `key` is what it was requested under, so a stale one is dropped. */
 const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
@@ -68,20 +71,24 @@ export const Message = defineMessageUnion({
 	ClickedReplaceCredential: { provider: CredentialProvider },
 	GotAddDialogMessage: { message: Dialog.Message },
 	GotCredentialDraftMessage: { message: Field.Message },
-	/** A plain field before the credential, by its place in the provider's list. */
-	GotCredentialIdentifierMessage: { index: Schema.Int, message: Field.Message },
 	SubmittedCredential: {},
 	CompletedSaveCredential: {
 		provider: CredentialProvider,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
-	ClickedRemoveSource: { provider: CredentialProvider },
+	/** Turns the dialog to PlanetScale and reads the org's connection; also the step's Try again. */
+	ClickedAddPlanetScale: {},
+	CompletedLoadPlanetScaleStatus: result(PlanetScaleCostStatus),
+	ClickedConfirmAddPlanetScale: {},
+	CompletedAddPlanetScale: { result: Schema.Result(PlanetScaleCostSourceAdded, LoadFailure) },
+	ClickedRemoveSource: { provider: RemovableProvider },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveCredential: {
 		provider: CredentialProvider,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
+	CompletedRemovePlanetScale: { result: Schema.Result(PlanetScaleCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

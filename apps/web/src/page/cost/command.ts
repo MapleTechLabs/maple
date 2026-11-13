@@ -3,7 +3,7 @@ import {
 	CostBreakdownSortBy,
 	CostFilters,
 	OpenRouterKeyUpdateRequest,
-	PlanetScaleCostTokenRequest,
+	PlanetScaleCostAddRequest,
 } from "@maple/domain/http"
 import { reloadSpin } from "@maple/views/data/timing"
 import { settleTo } from "@maple/views/data/load-failure"
@@ -178,39 +178,32 @@ export const RemoveCloudflareCostToken = Command.define("RemoveCloudflareCostTok
 	),
 })
 
-/**
- * Saves the org's PlanetScale service token for one organization, which makes (or keeps) its cost
- * source. The three values travel as one object: the tracer exports any top-level argument whose
- * name ends in `Id`, and the token's ID is half of the credential. An object is never exported.
- */
-export const SavePlanetScaleCostToken = Command.define("SavePlanetScaleCostToken", {
-	args: {
-		credential: Schema.Struct({
-			organization: Schema.String,
-			tokenIdentifier: Schema.String,
-			token: Schema.String,
-		}),
-	},
-	messages: [Message.CompletedSaveCredential],
-	execute: ({ credential }) =>
-		Effect.flatMap(MapleInternalApiClient, (client) =>
-			client.planetScaleCost.set({
-				payload: new PlanetScaleCostTokenRequest({
-					organization: credential.organization,
-					tokenId: credential.tokenIdentifier,
-					token: credential.token,
-				}),
-			}),
-		).pipe(
-			Effect.asVoid,
-			settleTo((result) => Message.CompletedSaveCredential({ provider: "planetscale", result })),
+// PlanetScale's source reads through the integration's connection: no command of it carries a secret.
+
+/** Whether the org has PlanetScale connected, whether it can read invoices, and whether it is a source already. */
+export const FetchPlanetScaleCostStatus = Command.define("FetchPlanetScaleCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadPlanetScaleStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.planetScaleCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadPlanetScaleStatus({ key, result })),
 		),
 })
 
-export const RemovePlanetScaleCostToken = Command.define("RemovePlanetScaleCostToken", {
-	messages: [Message.CompletedRemoveCredential],
+/** Makes the connected PlanetScale organization a cost source, once PlanetScale let the connection list its invoices. */
+export const AddPlanetScaleCostSource = Command.define("AddPlanetScaleCostSource", {
+	// The organization the dialog showed: the API refuses the add when another one is bound by now.
+	args: { organization: Schema.String },
+	messages: [Message.CompletedAddPlanetScale],
+	execute: ({ organization }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.planetScaleCost.add({ payload: new PlanetScaleCostAddRequest({ organization }) }),
+		).pipe(settleTo((result) => Message.CompletedAddPlanetScale({ result }))),
+})
+
+export const RemovePlanetScaleCostSource = Command.define("RemovePlanetScaleCostSource", {
+	messages: [Message.CompletedRemovePlanetScale],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.planetScaleCost.remove()).pipe(
-		Effect.asVoid,
-		settleTo((result) => Message.CompletedRemoveCredential({ provider: "planetscale", result })),
+		settleTo((result) => Message.CompletedRemovePlanetScale({ result })),
 	),
 })

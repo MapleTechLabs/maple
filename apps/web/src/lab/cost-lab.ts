@@ -1,3 +1,9 @@
+import {
+	PLANETSCALE_COST_RECONNECT_CODE,
+	PlanetScaleCostSourceAdded,
+	PlanetScaleCostSourceRemoved,
+	PlanetScaleCostStatus,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
@@ -14,13 +20,14 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	AddPlanetScaleCostSource,
+	FetchPlanetScaleCostStatus,
 	ReadCostGrants,
 	RemoveCloudflareCostToken,
-	RemovePlanetScaleCostToken,
+	RemovePlanetScaleCostSource,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveCloudflareCostToken,
-	SavePlanetScaleCostToken,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
@@ -35,6 +42,7 @@ import { urlToAppRoute } from "../route"
 import { perDimension } from "../page/cost/derive"
 import {
 	LAB_NOW_MS,
+	LAB_PLANETSCALE_ORGANIZATION,
 	LAB_SOURCES,
 	LAB_TODAY,
 	type LabSourceChanges,
@@ -70,8 +78,9 @@ export const LabState = Schema.Literals([
 	"replace-token",
 	"remove-cloudflare",
 	"add-planetscale",
+	"planetscale-reconnect",
+	"planetscale-not-connected",
 	"planetscale-refused",
-	"replace-planetscale",
 	"remove-planetscale",
 	"member",
 	"member-onramp",
@@ -129,6 +138,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-cloudflare" ||
 	state === "token-refused" ||
 	state === "add-planetscale" ||
+	state === "planetscale-reconnect" ||
+	state === "planetscale-not-connected" ||
 	state === "planetscale-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
@@ -167,26 +178,15 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "remove-cloudflare":
 			return [CostMessage.ClickedRemoveSource({ provider: "cloudflare" })]
 		case "add-planetscale":
-			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "planetscale" })]
+		case "planetscale-reconnect":
+		case "planetscale-not-connected":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddPlanetScale()]
 		case "planetscale-refused":
 			return [
 				CostMessage.ClickedAddSource(),
-				CostMessage.PickedProvider({ provider: "planetscale" }),
-				CostMessage.GotCredentialIdentifierMessage({
-					index: 0,
-					message: Field.Message.ChangedValue({ value: "example-org" }),
-				}),
-				CostMessage.GotCredentialIdentifierMessage({
-					index: 1,
-					message: Field.Message.ChangedValue({ value: "abcdef123456" }),
-				}),
-				CostMessage.GotCredentialDraftMessage({
-					message: Field.Message.ChangedValue({ value: "pscale_tkn_example" }),
-				}),
-				CostMessage.SubmittedCredential(),
+				CostMessage.ClickedAddPlanetScale(),
+				CostMessage.ClickedConfirmAddPlanetScale(),
 			]
-		case "replace-planetscale":
-			return [CostMessage.ClickedReplaceCredential({ provider: "planetscale" })]
 		case "remove-planetscale":
 			return [CostMessage.ClickedRemoveSource({ provider: "planetscale" })]
 		// Without Clerk the page starts with every permission: the member states take them away.
@@ -239,11 +239,24 @@ const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
 const facetsArgs = argsOf(FacetsInput)
 
-const refusedServiceToken = {
+/** PlanetScale took the stored grant's word for its scopes, then refused the invoice read. */
+const refusedInvoices = {
 	...toLoadFailure("refused"),
-	message:
-		"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale.",
+	code: PLANETSCALE_COST_RECONNECT_CODE,
+	message: "Reconnect PlanetScale to grant Maple access to invoices.",
 }
+
+/** What the org's PlanetScale connection is, by the state the lab loaded in. */
+const planetScaleStatusFor = (state: LabState) =>
+	new PlanetScaleCostStatus(
+		state === "planetscale-not-connected"
+			? { organization: null, invoiceAccess: false, added: false }
+			: {
+					organization: LAB_PLANETSCALE_ORGANIZATION,
+					invoiceAccess: state !== "planetscale-reconnect",
+					added: false,
+				},
+	)
 
 const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
@@ -361,18 +374,32 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			return Option.some(removedAnswer("openrouter"))
 		case RemoveCloudflareCostToken.name:
 			return Option.some(removedAnswer("cloudflare"))
-		case SavePlanetScaleCostToken.name:
-			return Option.some(
-				CostMessage.CompletedSaveCredential({
-					provider: "planetscale",
-					result:
-						state === "planetscale-refused"
-							? Result.fail(refusedServiceToken)
-							: Result.succeed(undefined),
+		case FetchPlanetScaleCostStatus.name:
+			return Option.map(keyArgs(command.args), ({ key }) =>
+				CostMessage.CompletedLoadPlanetScaleStatus({
+					key,
+					result: Result.succeed(planetScaleStatusFor(state)),
 				}),
 			)
-		case RemovePlanetScaleCostToken.name:
-			return Option.some(removedAnswer("planetscale"))
+		case AddPlanetScaleCostSource.name:
+			return Option.some(
+				CostMessage.CompletedAddPlanetScale({
+					result:
+						state === "planetscale-refused"
+							? Result.fail(refusedInvoices)
+							: Result.succeed(
+									new PlanetScaleCostSourceAdded({
+										organization: LAB_PLANETSCALE_ORGANIZATION,
+									}),
+								),
+				}),
+			)
+		case RemovePlanetScaleCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemovePlanetScale({
+					result: Result.succeed(new PlanetScaleCostSourceRemoved({ removed: true })),
+				}),
+			)
 		default:
 			return Option.none()
 	}
@@ -381,15 +408,25 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
 type Settled = Step & Pick<World, "changes">
 
-/** A saved credential adds its provider to the sources the lab answers with next, a removal takes it out. */
+/** What a successful answer did to the lab's sources: added a provider's (true), removed it (false). */
+const changeOf = (answer: CostMessage): Partial<LabSourceChanges> => {
+	switch (answer._tag) {
+		case "CompletedSaveCredential":
+			return Result.isSuccess(answer.result) ? { [answer.provider]: true } : {}
+		case "CompletedRemoveCredential":
+			return Result.isSuccess(answer.result) ? { [answer.provider]: false } : {}
+		case "CompletedAddPlanetScale":
+			return Result.isSuccess(answer.result) ? { planetscale: true } : {}
+		case "CompletedRemovePlanetScale":
+			return Result.isSuccess(answer.result) ? { planetscale: false } : {}
+		default:
+			return {}
+	}
+}
+
+/** A source added on the page joins the sources the lab answers with next, a removal takes it out. */
 const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMessage>): LabSourceChanges =>
-	Arr.reduce(answers, changes, (current, answer) =>
-		answer._tag === "CompletedSaveCredential" && Result.isSuccess(answer.result)
-			? { ...current, [answer.provider]: true }
-			: answer._tag === "CompletedRemoveCredential" && Result.isSuccess(answer.result)
-				? { ...current, [answer.provider]: false }
-				: current,
-	)
+	Arr.reduce(answers, changes, (current, answer) => ({ ...current, ...changeOf(answer) }))
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the

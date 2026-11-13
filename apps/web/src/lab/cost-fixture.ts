@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Number as Num, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
-import type { CredentialProvider } from "../page/cost/providers"
+import type { RemovableProvider } from "../page/cost/providers"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
 // Nothing here is read by the product.
@@ -76,7 +76,7 @@ const productLine = (
 })
 
 /** The PlanetScale organization the lab's source reads. */
-const LAB_PLANETSCALE_ORGANIZATION = "example-org"
+export const LAB_PLANETSCALE_ORGANIZATION = "example-org"
 
 /** A day's share of a branch's monthly invoice line: the database is the service, the SKU the usage type. */
 const branchLine = (database: string, sku: string, daily: number, drift: number): Line => ({
@@ -308,14 +308,14 @@ const planetScaleSource = source({
 	requestsThisMonth: 0,
 })
 
-const LAB_CREDENTIAL_SOURCES = {
+const LAB_ADDED_SOURCES = {
 	openrouter: openRouterSource,
 	cloudflare: cloudflareSource,
 	planetscale: planetScaleSource,
 } as const
 
-/** What the lab's reader did to each pasted-credential source since the state loaded; null for nothing. */
-export type LabSourceChanges = Readonly<Record<CredentialProvider, boolean | null>>
+/** What the lab's reader did to each source the page adds and removes, since the state loaded; null for nothing. */
+export type LabSourceChanges = Readonly<Record<RemovableProvider, boolean | null>>
 
 /**
  * `sources` after the lab's reader added a provider (true: it waits for its first sync) or removed
@@ -334,7 +334,7 @@ export const labSourcesWith = (
 					sources: [
 						...Schema.encodeSync(CostSourcesResponse)(current).sources,
 						{
-							...LAB_CREDENTIAL_SOURCES[provider],
+							...LAB_ADDED_SOURCES[provider],
 							status: "pending",
 							watermarkDate: null,
 							backfillDate: null,

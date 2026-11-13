@@ -1,4 +1,8 @@
-import { CostSourcesResponse } from "@maple/domain/http"
+import {
+	CostSourcesResponse,
+	PLANETSCALE_COST_RECONNECT_CODE,
+	type PlanetScaleCostStatus,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -6,7 +10,7 @@ import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
-import { failureMessage } from "@maple/views/data/load-failure"
+import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -29,7 +33,10 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	AddPlanetScaleCostSource,
+	FetchPlanetScaleCostStatus,
 	ReadCostGrants,
+	RemovePlanetScaleCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
 	type WindowInput,
@@ -50,10 +57,10 @@ import {
 	withoutFilter,
 	withoutFilters,
 } from "./derive"
-import { CREDENTIAL_SOURCES, credentialSourceOf } from "./credential-sources"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { Message } from "./message"
-import type { AddStep, Model, Search } from "./model"
-import type { CredentialProvider } from "./providers"
+import { type AddStep, type Model, planetScaleStepOf, type Search } from "./model"
+import { COST_PROVIDERS, type CredentialProvider, type RemovableProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -173,8 +180,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addDialog: Dialog.init("cost-add-source", "dialog"),
 		addStep: "pick",
 		credentialDraft: Field.init(),
-		credentialIdentifiers: [],
 		credentialError: null,
+		planetscale: Keyed.idle(),
+		planetscaleError: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
 		removeProvider: null,
 		sourceWrite: "Idle",
@@ -212,35 +220,41 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	),
 })
 
-/** The plain fields of a step's provider: empty, or what its source says when one is being replaced. */
-const identifierDrafts = (model: Model, addStep: AddStep): ReadonlyArray<Field.Model> => {
-	if (addStep === "pick") return []
-	const existing = Option.flatMap(AsyncData.getData(model.sources.data), ({ sources }) =>
-		Arr.findFirst(sources, (source) => source.provider === addStep),
-	)
-	return Arr.map(credentialSourceOf(addStep).identifiers ?? [], (identifier) =>
-		Field.init(
-			Option.match(existing, {
-				onNone: () => "",
-				onSome: (replaced) => identifier.fromSource?.(replaced) ?? "",
-			}),
-		),
-	)
-}
-
-/** The dialog on `addStep`, with nothing typed and no refusal on show: how it opens and what it leaves behind. */
-const clearedCredential = (model: Model, addStep: AddStep = model.addStep): Model => ({
+/** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
+const clearedCredential = (model: Model): Model => ({
 	...model,
-	addStep,
 	credentialDraft: Field.init(),
-	credentialIdentifiers: identifierDrafts(model, addStep),
 	credentialError: null,
+	planetscaleError: null,
 })
+
+/**
+ * The org's PlanetScale connection, read again each time the dialog turns to PlanetScale. The
+ * answer on show is dropped first: the step never offers an add on a connection read before it
+ * was left, and a read that fails says so. The key stays, so an older read in flight cannot answer.
+ */
+const requestPlanetScaleStatus = (model: Model, context: PageContext): Return =>
+	applySteps<Model, Message>(model, [
+		keyed(
+			{ ...Keyed.idle<PlanetScaleCostStatus, LoadFailure>(), key: model.planetscale.key },
+			requestKey(context.orgId, "planetScaleCostStatus", {}),
+			"Supersede",
+			(planetscale) => ({ planetscale }),
+			(key) => FetchPlanetScaleCostStatus({ key }),
+		),
+	])
+
+/** The organization on show, when it can be added: a grant that reads invoices and no source yet. */
+const addablePlanetScaleOrganization = (model: Model): Option.Option<string> =>
+	Option.flatMap(AsyncData.getData(model.planetscale.data), (status) => {
+		const step = planetScaleStepOf(status)
+		return step._tag === "Ready" ? Option.some(step.organization) : Option.none()
+	})
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog(clearedCredential(model, addStep), Dialog.open(model.addDialog))
+		: liftAddDialog({ ...clearedCredential(model), addStep }, Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -257,7 +271,7 @@ const withReread = (step: Return, context: PageContext): Return =>
  * The list on show without `provider`'s source, which a removal just deleted: its row is gone
  * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutSourceOf = (model: Model, provider: CredentialProvider): Model => ({
+const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -274,6 +288,32 @@ const withoutSourceOf = (model: Model, provider: CredentialProvider): Model => (
 /** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
 const hasSource = (model: Model, provider: CredentialProvider): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) => hasSourceOf(sources, provider))
+
+/** A removal's answer: the dialog closes either way, and a removed source leaves the page at once. */
+const removed = (
+	model: Model,
+	provider: RemovableProvider,
+	failure: Option.Option<LoadFailure>,
+	context: PageContext,
+): Return => {
+	const closed = liftRemoveDialog(
+		Option.isNone(failure)
+			? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
+			: { ...model, sourceWrite: "Idle" },
+		Dialog.close(model.removeDialog),
+	)
+	return Option.match(failure, {
+		onSome: (reason): Return => ({
+			...closed,
+			outMessage: toast("error", "Couldn't remove the source", failureMessage(reason)),
+		}),
+		onNone: (): Return =>
+			withReread(
+				{ ...closed, outMessage: toast("success", `${COST_PROVIDERS[provider].name} removed`) },
+				context,
+			),
+	})
+}
 
 export const routeChanged = (
 	model: Model,
@@ -407,9 +447,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		PickedProvider: ({ provider }) => ({ model: clearedCredential(model, provider) }),
+		PickedProvider: ({ provider }) => ({ model: { ...clearedCredential(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle" ? { model: clearedCredential(model, "pick") } : { model },
+			model.sourceWrite === "Idle"
+				? { model: { ...clearedCredential(model), addStep: "pick" } }
+				: { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
@@ -431,49 +473,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
 						},
 					},
-		GotCredentialIdentifierMessage: ({ index, message: inner }) =>
-			model.sourceWrite === "Saving"
-				? { model }
-				: {
-						model: {
-							...model,
-							credentialIdentifiers: Arr.map(model.credentialIdentifiers, (draft, at) =>
-								at === index ? Field.update(draft, inner).model : draft,
-							),
-							// The refusal was about what was typed then.
-							credentialError: inner._tag === "ChangedValue" ? null : model.credentialError,
-						},
-					},
 		SubmittedCredential: () => {
 			const secret = Str.trim(model.credentialDraft.value)
-			const identifiers = Arr.map(model.credentialIdentifiers, (draft) => Str.trim(draft.value))
 			if (
 				secret === "" ||
-				Arr.contains(identifiers, "") ||
 				model.sourceWrite !== "Idle" ||
-				model.addStep === "pick"
+				model.addStep === "pick" ||
+				model.addStep === "planetscale"
 			) {
 				return { model }
 			}
-			const source = credentialSourceOf(model.addStep)
+			const source = CREDENTIAL_SOURCES[model.addStep]
 			// The request refuses a longer one before it is sent, which would leave the save unanswered.
-			const tooLong = Option.orElse(
-				Option.map(
-					Arr.findFirst(
-						Arr.zip(source.identifiers ?? [], identifiers),
-						([text, value]) => value.length > text.maxLength,
-					),
-					([text]) => text.tooLong,
-				),
-				() =>
-					secret.length > source.field.maxLength
-						? Option.some(source.field.tooLong)
-						: Option.none(),
-			)
-			if (Option.isSome(tooLong)) return { model: { ...model, credentialError: tooLong.value } }
+			if (secret.length > source.field.maxLength) {
+				return { model: { ...model, credentialError: source.field.tooLong } }
+			}
 			return {
 				model: { ...model, sourceWrite: "Saving", credentialError: null },
-				commands: [source.save(secret, identifiers)],
+				commands: [source.save(secret)],
 			}
 		},
 		// A refused credential keeps the dialog open with the reason under the field.
@@ -507,29 +524,63 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: {
 						model: { ...model, sourceWrite: "Removing" },
-						commands: [CREDENTIAL_SOURCES[model.removeProvider].delete()],
+						commands: [
+							model.removeProvider === "planetscale"
+								? RemovePlanetScaleCostSource()
+								: CREDENTIAL_SOURCES[model.removeProvider].delete(),
+						],
 					},
-		CompletedRemoveCredential: ({ provider, result }) => {
-			const closed = liftRemoveDialog(
-				Result.isSuccess(result)
-					? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
-					: { ...model, sourceWrite: "Idle" },
-				Dialog.close(model.removeDialog),
-			)
-			return Result.match(result, {
+		CompletedRemoveCredential: ({ provider, result }) =>
+			removed(model, provider, Result.getFailure(result), context),
+		CompletedRemovePlanetScale: ({ result }) =>
+			removed(model, "planetscale", Result.getFailure(result), context),
+		ClickedAddPlanetScale: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestPlanetScaleStatus({ ...clearedCredential(model), addStep: "planetscale" }, context),
+		CompletedLoadPlanetScaleStatus: ({ key, result }) => ({
+			model: { ...model, planetscale: Keyed.accept(model.planetscale, key, result) },
+		}),
+		// The add names the organization on show: one bound since is refused, not added in its place.
+		ClickedConfirmAddPlanetScale: () =>
+			Option.match(
+				model.sourceWrite === "Idle" ? addablePlanetScaleOrganization(model) : Option.none(),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (organization): Return => ({
+						model: { ...model, sourceWrite: "Saving", planetscaleError: null },
+						commands: [AddPlanetScaleCostSource({ organization })],
+					}),
+				},
+			),
+		// A refused add keeps the dialog open with the reason under the organization.
+		CompletedAddPlanetScale: ({ result }) =>
+			Result.match(result, {
 				onFailure: (failure): Return => ({
-					...closed,
-					outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
+					model: {
+						...model,
+						sourceWrite: "Idle",
+						planetscaleError: {
+							message: failureMessage(failure),
+							needsReconnect: failure.code === PLANETSCALE_COST_RECONNECT_CODE,
+						},
+					},
 				}),
 				onSuccess: (): Return =>
 					withReread(
 						{
-							...closed,
-							outMessage: toast("success", CREDENTIAL_SOURCES[provider].remove.toast),
+							...liftAddDialog(
+								clearedCredential({ ...model, sourceWrite: "Settling" }),
+								Dialog.close(model.addDialog),
+							),
+							outMessage: toast(
+								"success",
+								"PlanetScale added",
+								"The first sync runs within a few minutes.",
+							),
 						},
 						context,
 					),
-			})
-		},
+			}),
 		...chartEnvHandlers(model),
 	})

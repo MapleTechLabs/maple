@@ -11,10 +11,11 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../kit/relative-time"
-import { CREDENTIAL_SOURCES, credentialSourceOf } from "./credential-sources"
+import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
 import { COST_PROVIDERS, type CostProviderEntry, credentialProviderOf } from "./providers"
+import { PLANETSCALE_INTEGRATION_HREF } from "./view-add-planetscale"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 
 type H = HtmlBuilder<Message>
@@ -44,24 +45,34 @@ const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: 
 		[label],
 	)
 
-/** What a row offers: a connection's source is managed there, a pasted credential's here. */
+/** Where the source's connection is changed: an account's Cost module, an organization's authorization. */
+const connectionLink = (h: H, name: string, href: string): Html =>
+	linkButton(
+		h,
+		{ variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(`Manage ${name} connection`)] },
+		["Manage connection"],
+	)
+
+/**
+ * What a row offers: an AWS source is its connection's, a pasted credential's is replaced and
+ * removed here, and a PlanetScale one is removed here while its connection stays.
+ */
 const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
 	const { name } = COST_PROVIDERS[source.provider]
-	const provider = credentialProviderOf(source.provider)
-	if (provider === null) {
+	if (source.provider === "planetscale") {
 		return [
-			linkButton(
+			connectionLink(h, name, PLANETSCALE_INTEGRATION_HREF),
+			rowButton(
 				h,
-				{
-					variant: "ghost",
-					size: "sm",
-					href: AWS_INTEGRATION_HREF,
-					attributes: [h.AriaLabel(`Manage ${name} connection`)],
-				},
-				["Manage connection"],
+				"Remove",
+				`Remove ${name} source`,
+				Message.ClickedRemoveSource({ provider: "planetscale" }),
+				isBusy,
 			),
 		]
 	}
+	const provider = credentialProviderOf(source.provider)
+	if (provider === null) return [connectionLink(h, name, AWS_INTEGRATION_HREF)]
 	const { label } = CREDENTIAL_SOURCES[provider].replace
 	return [
 		rowButton(
@@ -126,12 +137,11 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				: []
 
 /** What the provider's source says about its own figures, whatever its status. */
-const providerNote = (h: H, source: CostSourceSummary): ReadonlyArray<Html> => {
-	const provider = credentialProviderOf(source.provider)
-	const entry = provider === null ? null : credentialSourceOf(provider)
-	return entry?.rowNote === undefined
+const sourceNote = (h: H, source: CostSourceSummary): ReadonlyArray<Html> => {
+	const entry: CostProviderEntry = COST_PROVIDERS[source.provider]
+	return entry.sourceNote === undefined
 		? []
-		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.rowNote])]
+		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.sourceNote])]
 }
 
 const sourceRow = (
@@ -181,7 +191,7 @@ const sourceRow = (
 						typography(h, { size: "xs", tone: "muted" }, [fact]),
 					),
 				),
-				...providerNote(h, source),
+				...sourceNote(h, source),
 				...note(h, source),
 			]),
 		],

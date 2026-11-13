@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import type { CostSourceSummary } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 import { Array as Arr, String as Str } from "effect"
@@ -7,15 +8,7 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import * as Field from "@maple/views/ui/field"
-import {
-	field,
-	fieldDescription,
-	fieldError,
-	fieldErrorText,
-	type FieldIds,
-	fieldLabel,
-	input,
-} from "@maple/views/ui/field"
+import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "@maple/views/ui/field"
 import { formDialogForm } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
@@ -23,16 +16,12 @@ import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
-import {
-	CREDENTIAL_SOURCES,
-	type CredentialIdentifier,
-	type CredentialSource,
-	credentialSourceOf,
-} from "./credential-sources"
+import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { hasSourceOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider, providerNames } from "./providers"
+import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 
 type H = HtmlBuilder<Message>
 
@@ -71,12 +60,30 @@ const credentialRow = (
 			})
 }
 
+/** PlanetScale reads through its connection: to its step, or named as added once its source exists. */
+const planetScaleRow = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
+	hasSourceOf(sources, "planetscale")
+		? listRow(h, {
+				leading: mark(h, COST_PROVIDERS.planetscale),
+				title: COST_PROVIDERS.planetscale.name,
+				meta: "Remove it in the Sources panel",
+				trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
+			})
+		: listRow(h, {
+				onClick: Message.ClickedAddPlanetScale(),
+				leading: mark(h, COST_PROVIDERS.planetscale),
+				title: COST_PROVIDERS.planetscale.name,
+				// Short enough to stand whole in the list: the step says the rest.
+				meta: "Monthly invoices, spread over each branch's days",
+				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+			})
+
 /** The providers that bill nothing for the requests Maple makes, by name. */
 const FREE_REQUESTS = providerNames(
-	Arr.filter(CredentialProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+	Arr.filter(CostProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
 )
 
-/** The providers to add: AWS goes to its connect flow, the others to their credential form. */
+/** The providers to add: AWS goes to its connect flow, the others to their credential form or connection step. */
 const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
 		vstack(h, { gap: "0" }, [
@@ -88,9 +95,8 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 				meta: "Daily cost by service, region and usage type",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
-			...Arr.map(CredentialProvider.literals, (provider, index) =>
-				credentialRow(h, provider, sources, index === CredentialProvider.literals.length - 1),
-			),
+			...Arr.map(CredentialProvider.literals, (provider) => credentialRow(h, provider, sources, false)),
+			planetScaleRow(h, sources),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
@@ -108,52 +114,8 @@ const CREDENTIAL_IDS: FieldIds = {
 	description: "cost-source-credential-description",
 }
 
-const identifierIds = (index: number, isDescribed: boolean): FieldIds => ({
-	control: `cost-source-identifier-${index}`,
-	label: `cost-source-identifier-${index}-label`,
-	error: `cost-source-identifier-${index}-error`,
-	...(isDescribed ? { description: `cost-source-identifier-${index}-description` } : undefined),
-})
-
-/**
- * A plain field before the credential, shown as typed. Locked when a replace took it from the
- * source: the new credential must be for the same one.
- */
-const identifierField = (
-	h: H,
-	model: Model,
-	text: CredentialIdentifier,
-	index: number,
-	isLocked: boolean,
-): Html => {
-	const draft = model.credentialIdentifiers[index] ?? Field.init()
-	const state = Field.stateOf(draft, false)
-	const ids = identifierIds(index, text.description !== undefined)
-	return field(h, { state }, [
-		fieldLabel(h, { ids, state }, text.label),
-		input(h, {
-			ids,
-			state,
-			isDisabled: isLocked || model.sourceWrite === "Saving",
-			attributes: [
-				h.Type("text"),
-				h.Attribute("autocomplete", "off"),
-				h.Attribute("autocapitalize", "none"),
-				h.Attribute("spellcheck", "false"),
-				h.Placeholder(text.placeholder),
-				...Field.controlAttributes(h, draft, (message) =>
-					Message.GotCredentialIdentifierMessage({ index, message }),
-				),
-			],
-		}),
-		...(text.description === undefined ? [] : [fieldDescription(h, { ids, state }, [text.description])]),
-	])
-}
-
-/** The credential, typed hidden. `ownsError`: a refusal is about this field alone, and stands under it. */
-const credentialField = (h: H, model: Model, { field: text }: CredentialSource, ownsError: boolean): Html => {
-	const error = ownsError ? model.credentialError : null
-	const state = Field.stateOf(model.credentialDraft, error !== null)
+const credentialField = (h: H, model: Model, { field: text }: CredentialSource): Html => {
+	const state = Field.stateOf(model.credentialDraft, model.credentialError !== null)
 	return field(h, { state }, [
 		fieldLabel(h, { ids: CREDENTIAL_IDS, state }, text.label),
 		input(h, {
@@ -169,9 +131,13 @@ const credentialField = (h: H, model: Model, { field: text }: CredentialSource, 
 				),
 			],
 		}),
-		...(error === null
+		...(model.credentialError === null
 			? []
-			: [fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [error])]),
+			: [
+					fieldError(h, { ids: CREDENTIAL_IDS, state, attributes: [h.Role("alert")] }, [
+						model.credentialError,
+					]),
+				]),
 		fieldDescription(h, { ids: CREDENTIAL_IDS, state }, [
 			text.help.before,
 			textLink(
@@ -198,42 +164,17 @@ const credentialForm = (
 	close: Parameters<DialogView.ViewInputs["toContent"]>[0],
 ): Html => {
 	const id = model.addDialog.id
-	const source = credentialSourceOf(provider)
-	const identifiers = source.identifiers ?? []
+	const source = CREDENTIAL_SOURCES[provider]
 	const isReplacing = hasSourceOf(sources, provider)
 	const isSaving = model.sourceWrite === "Saving"
-	const canSubmit =
-		!isSaving &&
-		Str.trim(model.credentialDraft.value) !== "" &&
-		Arr.every(model.credentialIdentifiers, (draft) => Str.trim(draft.value) !== "")
+	const canSubmit = !isSaving && Str.trim(model.credentialDraft.value) !== ""
 	const text = isReplacing ? source.replace : source.add
 	return formDialogForm(h, canSubmit ? Message.SubmittedCredential() : undefined, [
 		DialogView.dialogHeader(h, "dialog", [
 			DialogView.dialogTitle(h, "dialog", id, text.title),
 			DialogView.dialogDescription(h, "dialog", id, text.description),
 		]),
-		DialogView.dialogPanel(h, "dialog", id, [
-			vstack(h, { gap: "4" }, [
-				...Arr.map(identifiers, (identifier, index) =>
-					identifierField(
-						h,
-						model,
-						identifier,
-						index,
-						isReplacing && identifier.fromSource !== undefined,
-					),
-				),
-				credentialField(h, model, source, identifiers.length === 0),
-				// With several fields a refusal can be about any of them: it stands under them all.
-				...(identifiers.length === 0 || model.credentialError === null
-					? []
-					: [
-							fieldErrorText(h, { className: "font-prose", attributes: [h.Role("alert")] }, [
-								model.credentialError,
-							]),
-						]),
-			]),
-		]),
+		DialogView.dialogPanel(h, "dialog", id, [credentialField(h, model, source)]),
 		DialogView.dialogFooter(h, "dialog", [
 			// A replace has no providers to go back to.
 			isReplacing
@@ -291,15 +232,20 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 								button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 							]),
 						]
-					: [credentialForm(h, model, step, sources, close)],
+					: step === "planetscale"
+						? planetScaleStep(h, model, id)
+						: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
 
-/** Removing a credential's source: what leaves the page, and what adding it again brings back. */
+/** Removing a source the page added: what leaves the page, and what adding it again brings back. */
 export const removeSourceDialog = (h: H, model: Model): Html => {
 	if (model.removeProvider === null) return h.empty
-	const { remove } = CREDENTIAL_SOURCES[model.removeProvider]
+	const remove =
+		model.removeProvider === "planetscale"
+			? PLANETSCALE_REMOVE
+			: CREDENTIAL_SOURCES[model.removeProvider].remove
 	return confirmDialog(h, {
 		slotId: "cost-remove-source",
 		model: model.removeDialog,

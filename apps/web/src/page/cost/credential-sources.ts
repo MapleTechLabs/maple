@@ -1,40 +1,16 @@
-import {
-	CLOUDFLARE_COST_TOKEN_MAX_LENGTH,
-	type CostSourceSummary,
-	OPENROUTER_KEY_MAX_LENGTH,
-	PLANETSCALE_COST_ORGANIZATION_MAX_LENGTH,
-	PLANETSCALE_COST_TOKEN_ID_MAX_LENGTH,
-	PLANETSCALE_COST_TOKEN_MAX_LENGTH,
-} from "@maple/domain/http"
+import { CLOUDFLARE_COST_TOKEN_MAX_LENGTH, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
 import type { Command } from "foldkit"
 import type { Resources } from "../../platform/resources"
 import {
 	RemoveCloudflareCostToken,
 	RemoveOpenRouterCostKey,
-	RemovePlanetScaleCostToken,
 	SaveCloudflareCostToken,
 	SaveOpenRouterCostKey,
-	SavePlanetScaleCostToken,
 } from "./command"
 import type { Message } from "./message"
 import type { CredentialProvider } from "./providers"
 
 type Cmd = Command.Command<Message, never, Resources>
-
-/**
- * A plain field asked before the credential: what the credential is for, or its public half. It
- * is shown as typed.
- */
-export type CredentialIdentifier = Readonly<{
-	label: string
-	placeholder: string
-	maxLength: number
-	/** Shown when the text is longer than `maxLength`, which the request would refuse to carry. */
-	tooLong: string
-	description?: string
-	/** What a replace sets the field to, read off the source: it is then shown, not asked. */
-	fromSource?: (source: CostSourceSummary) => string
-}>
 
 /**
  * A cost source added by pasting a credential: everything its dialog steps, its Sources row and
@@ -43,9 +19,6 @@ export type CredentialIdentifier = Readonly<{
 export type CredentialSource = Readonly<{
 	/** The line under the provider's name in the list, and once its source exists. */
 	pick: Readonly<{ meta: string; addedMeta: string }>
-	/** The fields before the credential, in the order they are asked and handed to `save`. */
-	identifiers?: ReadonlyArray<CredentialIdentifier>
-	/** The credential itself, typed hidden. */
 	field: Readonly<{
 		label: string
 		placeholder: string
@@ -64,9 +37,7 @@ export type CredentialSource = Readonly<{
 		toast: string
 	}>
 	remove: Readonly<{ title: string; description: string; toast: string }>
-	/** What a reader of the figures must know about how this source's days come about, on its Sources row. */
-	rowNote?: string
-	save: (secret: string, identifiers: ReadonlyArray<string>) => Cmd
+	save: (secret: string) => Cmd
 	delete: () => Cmd
 }>
 
@@ -146,69 +117,4 @@ export const CREDENTIAL_SOURCES = {
 		save: (apiToken) => SaveCloudflareCostToken({ apiToken }),
 		delete: () => RemoveCloudflareCostToken(),
 	},
-	planetscale: {
-		pick: {
-			// Short enough to stand whole in the list: the form says the rest.
-			meta: "Monthly invoices, spread over each branch's days",
-			addedMeta: "Replace its token in the Sources panel",
-		},
-		identifiers: [
-			{
-				label: "Organization",
-				placeholder: "acme",
-				maxLength: PLANETSCALE_COST_ORGANIZATION_MAX_LENGTH,
-				tooLong: "That is too long to be a PlanetScale organization name.",
-				description: "The name in app.planetscale.com/<organization>.",
-				// The organization is the source's account.
-				fromSource: (source) => source.accountId,
-			},
-			{
-				label: "Service token ID",
-				placeholder: "abcdef123456",
-				maxLength: PLANETSCALE_COST_TOKEN_ID_MAX_LENGTH,
-				tooLong: "That is too long to be a service token ID.",
-				description: "PlanetScale shows it with the token when you create one.",
-			},
-		],
-		field: {
-			label: "Service token",
-			placeholder: "pscale_tkn_...",
-			maxLength: PLANETSCALE_COST_TOKEN_MAX_LENGTH,
-			tooLong: "That is too long to be a PlanetScale service token.",
-			help: {
-				before: "",
-				link: "Create a service token",
-				href: "https://app.planetscale.com/",
-				after: " in your organization's settings and give it the read_invoices organization access. Maple checks the token with PlanetScale, then stores it encrypted.",
-			},
-		},
-		add: {
-			title: "Add PlanetScale",
-			description:
-				"PlanetScale bills by the month, so Maple spreads each invoice line evenly over the days its branch ran. It reads this month and the last at once, then the year before.",
-			toast: "PlanetScale added",
-		},
-		replace: {
-			title: "Replace the PlanetScale token",
-			description:
-				"The source and its history stay. Use a token for the same PlanetScale organization.",
-			label: "Replace token",
-			toast: "PlanetScale token replaced",
-		},
-		remove: {
-			title: "Remove the PlanetScale source?",
-			description:
-				"Maple deletes the token and stops reading the organization's invoices, and its cost leaves this page. Adding PlanetScale again reads the last year again.",
-			toast: "PlanetScale removed",
-		},
-		rowNote:
-			"Billed by the month: each day shows an even share of the month's invoice for each branch, and can change until the invoice closes.",
-		save: (token, [organization = "", tokenIdentifier = ""]) =>
-			SavePlanetScaleCostToken({ credential: { organization, tokenIdentifier, token } }),
-		delete: () => RemovePlanetScaleCostToken(),
-	},
 } satisfies Record<CredentialProvider, CredentialSource>
-
-/** A provider's entry, by the fields every entry may have. */
-export const credentialSourceOf = (provider: CredentialProvider): CredentialSource =>
-	CREDENTIAL_SOURCES[provider]
