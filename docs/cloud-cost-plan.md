@@ -286,11 +286,64 @@ next read.
 
 ### Cloudflare (billed, pay-as-you-go accounts)
 
-"Live" here means checked against a real pay-as-you-go account on 2026-11-12.
+"Live" here means checked against a real pay-as-you-go account on 2026-11-12, and on 2026-11-13
+for the token's reach and the OAuth scopes.
 
-- It needs an API token with the "Billing: Read" permission on one account. No billing scope is
-  known for the OAuth app, so the integration's connection is not used: the org pastes a token on
-  the Cost page, which Maple checks and stores sealed in `cost_connections`.
+- It needs an API token with the "Billing: Read" permission on one account. OAuth clients are
+  offered no billing scope, so the integration's connection is not used (see "OAuth is the intended
+  home" below): the org pastes a token on the Cost page, which Maple checks and stores sealed in
+  `cost_connections`.
+
+**The token is kept least privileged.** A token cannot be asked what it may do: listing its own
+policies (`GET /user/tokens/{id}`) needs the "API Tokens Read" permission, and
+`GET /user/tokens/verify` answers `id`, `status` and `expires_on` only. So there are two halves.
+
+- The right token is the easy one to make. Live: Cloudflare's dashboard takes a template in the
+  URL. The dialog's link (`permissionGroupKeys=[{"key":"billing","type":"read"}]`, with a name,
+  `accountId=*` and `zoneId=all`) opens "Create Token" with the name filled in and one permission
+  ticked, Account > Billing > Read, over all accounts. The help text says what is left: pick the
+  one account, optionally set an expiry, create, paste.
+- A token for several accounts is refused (above), so a billing token for every account the
+  person can see does not get stored.
+- A token that visibly reads more than billing is refused. After the checks above pass, five
+  requests are made side by side, on a save and a replace only, never in a sync pull. Live, with
+  two tokens on one account:
+
+    | Request                                    | Billing: Read only | Billing, Workers Scripts and Account Settings Read |
+    | ------------------------------------------ | ------------------ | -------------------------------------------------- |
+    | `GET /accounts/{id}/members?per_page=1`    | 403 (code 10000)   | 200                                                |
+    | `GET /accounts/{id}/workers/subdomain`     | 403 (code 10000)   | 200                                                |
+    | `GET /accounts/{id}/audit_logs?per_page=1` | 403 (code 10000)   | 200                                                |
+    | `GET /zones?per_page=1`                    | 200, empty list    | 200, zones listed                                  |
+    | `GET /accounts/{id}/workers/scripts`       | 200, empty list    | 200, scripts listed                                |
+
+    The first three are read off the status: a 200 is access, whatever the account holds. The last
+    two answer a billing token with an empty list, so only a list with something in it is access.
+    A 401 or 403 is no access. Any other answer (a 5xx, a 404, no answer) fails the save as a
+    check that could not be made: it neither passes nor refuses the token.
+
+- The refusal names what was found, so the person knows which permission to drop: "This token
+  can do more than read billing: it can also read account members and Workers scripts. Create one
+  with only the Billing: Read permission."
+- What this does not prove: the probes ask for a few things a billing token must not see. A token
+  with some other extra permission none of them touches passes (Live: R2 and KV answer 403 and 401
+  to both tokens, so they tell nothing). It catches the common over-broad tokens, an edit-Workers
+  or a read-all token, not every one.
+
+**OAuth is the intended home.** The cost source should read through the org's existing Cloudflare
+connection, not a pasted token. It cannot today. Live, 2026-11-13: `GET /client/v4/oauth/scopes`
+lists 404 scopes, and none is for billing, invoices, subscriptions or usage. The category named
+`account_and_billing` holds account settings, memberships and token scopes only. When Cloudflare
+adds one:
+
+- add it to `CLOUDFLARE_OAUTH_SCOPES`, and read billing through the connection as the PlanetScale
+  source does with its grant;
+- offer "Reconnect to grant billing access" for connections made before the scope;
+- retire the pasted token: re-point each existing source's `connectionRef` at the connection, then
+  delete the stored tokens.
+
+The billing API facts, which hold for either credential:
+
 - Live: `GET /accounts` lists the accounts the token reads. A token for one account lists one,
   and its id is the source's account. A token that lists none or several is refused. A
   replacement token must read the same account, since another account's charges would overwrite
@@ -408,8 +461,8 @@ Each phase is one PR stack.
 
 ## Open questions
 
-- Cloudflare: is there an OAuth billing scope. With one, the integration's connection could
-  supply cost and no token would be pasted.
+- Cloudflare: move the cost source to OAuth once a billing scope exists. Checked on 2026-11-13,
+  OAuth clients are offered none, so the source is a pasted token for now (see its section).
 - GitHub: does an installation token with "Administration: read" read the billing report (the
   spec says so, no installation has been read yet), and how long the report keeps usage.
 - Railway: can a workspace token read `customer`.
