@@ -32,6 +32,10 @@ export interface FakeCloudflare {
 	subscriptions: ReadonlyArray<FakeSubscription>
 	/** Subscriptions one page holds, to make a listing span pages. */
 	subscriptionsPageSize: number
+	/** What the listing says of its paging: both figures, the count alone as the docs have it, or nothing. */
+	subscriptionsInfo: "pages_and_count" | "count" | "none"
+	/** Subscriptions the listing counts and never returns. */
+	subscriptionsNeverReturned: number
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean
 	readonly urls: Array<string>
@@ -50,6 +54,8 @@ export const makeFakeCloudflare = (overrides: Partial<FakeCloudflare> = {}): Fak
 	oldestDay: "2000-01-01",
 	subscriptions: [],
 	subscriptionsPageSize: 50,
+	subscriptionsInfo: "pages_and_count",
+	subscriptionsNeverReturned: 0,
 	cloudCost: true,
 	urls: [],
 	authorizations: [],
@@ -90,8 +96,15 @@ const periodStart = (day: string, anchorDay: number): string => {
 	return `${Str.slice(0, 8)(previous)}${anchor}`
 }
 
-const envelope = (result: unknown, info: Record<string, unknown> = {}) =>
-	Response.json({ success: true, errors: [], messages: [], result, result_info: info })
+/** A listing's answer. The usage and info calls answer without `result_info`, as the real API does. */
+const envelope = (result: unknown, info?: Record<string, unknown>) =>
+	Response.json({
+		success: true,
+		errors: [],
+		messages: [],
+		result,
+		...(info === undefined ? undefined : { result_info: info }),
+	})
 
 const refused = (status: number) =>
 	Response.json(
@@ -118,11 +131,17 @@ const usageAnswer = (world: FakeCloudflare, params: URLSearchParams): Response =
 const subscriptionsAnswer = (world: FakeCloudflare, params: URLSearchParams): Response => {
 	const page = Number(params.get("page") ?? "1")
 	const size = world.subscriptionsPageSize
-	return envelope(Arr.take(Arr.drop(world.subscriptions, (page - 1) * size), size), {
-		page,
-		total_pages: Math.max(1, Math.ceil(world.subscriptions.length / size)),
-		total_count: world.subscriptions.length,
-	})
+	const total = world.subscriptions.length + world.subscriptionsNeverReturned
+	const result = Arr.take(Arr.drop(world.subscriptions, (page - 1) * size), size)
+	const count = { page, per_page: size, total_count: total }
+	return world.subscriptionsInfo === "none"
+		? Response.json({ success: true, errors: [], messages: [], result })
+		: envelope(
+				result,
+				world.subscriptionsInfo === "count"
+					? count
+					: { ...count, total_pages: Math.max(1, Math.ceil(total / size)) },
+			)
 }
 
 const fetchStub =

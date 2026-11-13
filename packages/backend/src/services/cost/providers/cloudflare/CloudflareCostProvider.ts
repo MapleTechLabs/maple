@@ -14,7 +14,7 @@ import {
 import { CostConnectionStore, loadFailureOf } from "../../CostConnectionStore"
 import { addDays, utcToday } from "../../sync-plan"
 import * as CloudflareBilling from "./cloudflare-billing-api"
-import { toSubscriptionRows, toUsageRows } from "./normalize"
+import { toSubscriptionRows, toUsageRows, unplacedFees } from "./normalize"
 
 /** Days of a window one request reads: with the period it leads with, under the API's 90 day cap. */
 const PIECE_DAYS = 55
@@ -108,6 +108,8 @@ export class CloudflareCostProvider extends Context.Service<CloudflareCostProvid
 					yield* Effect.annotateCurrentSpan({
 						"maple.cost.rows": rows.length,
 						"maple.cost.cloudflare.fee_rows": fees.length,
+						// Charged subscriptions no row holds: a frequency Maple does not step, or no period.
+						"maple.cost.cloudflare.fees_skipped": unplacedFees(subscriptions),
 						"maple.cost.cloudflare.usage_requests": usage.length,
 					})
 					return { rows, requests: 0 } satisfies CostPull

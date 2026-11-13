@@ -1,7 +1,7 @@
 import type { CostSourceStatus, CostSourceSummary } from "@maple/domain/http"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -31,33 +31,49 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
+/** A row's action. Its accessible name says whose source it acts on: two rows can offer the same one. */
+const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: boolean): Html =>
+	button(
+		h,
+		{
+			variant: "ghost",
+			size: "sm",
+			isDisabled: isBusy,
+			attributes: [h.AriaLabel(name), h.OnClick(onClick)],
+		},
+		[label],
+	)
+
 /** What a row offers: a connection's source is managed there, a pasted credential's here. */
 const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
+	const { name } = COST_PROVIDERS[source.provider]
 	const provider = credentialProviderOf(source.provider)
-	return provider === null
-		? [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
-		: [
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedReplaceCredential({ provider }))],
-					},
-					[CREDENTIAL_SOURCES[provider].replace.label],
-				),
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedRemoveSource({ provider }))],
-					},
-					["Remove"],
-				),
-			]
+	if (provider === null) {
+		return [
+			linkButton(
+				h,
+				{
+					variant: "ghost",
+					size: "sm",
+					href: AWS_INTEGRATION_HREF,
+					attributes: [h.AriaLabel(`Manage ${name} connection`)],
+				},
+				["Manage connection"],
+			),
+		]
+	}
+	const { label } = CREDENTIAL_SOURCES[provider].replace
+	return [
+		rowButton(
+			h,
+			label,
+			// "Replace key" as "Replace OpenRouter key".
+			Str.replace("Replace", `Replace ${name}`)(label),
+			Message.ClickedReplaceCredential({ provider }),
+			isBusy,
+		),
+		rowButton(h, "Remove", `Remove ${name} source`, Message.ClickedRemoveSource({ provider }), isBusy),
+	]
 }
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
