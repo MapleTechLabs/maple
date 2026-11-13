@@ -15,7 +15,17 @@ import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "@maple/views/ui/toast"
-import { pageContextOf, shellClerkOf } from "./update"
+import { pageContextOf, settle, shellClerkOf, update } from "./update"
+import { view } from "./view"
+import type { HtmlBuilder } from "foldkit/html"
+import { expect as expectView, given, Mount, scene, text } from "foldkit/scene"
+import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import { MountObserverHome } from "./page/overview/observer/command"
+import { Message as ObserverMessage } from "./page/overview/observer/message"
+import { MeasureSidebarOverflow } from "./shell/mounts"
+import { Message as ShellMessage } from "./shell/message"
+import type { Message } from "./message"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 // The page and the shell read the viewer's audience from the same Clerk role, so they never disagree.
@@ -67,5 +77,40 @@ describe("page context audience", () => {
 		expect(audienceOf(signedIn("org:admin"))).toBe("operator")
 		expect(audienceOf(signedIn("org:member"))).toBe("operator")
 		expect(audienceOf(signedIn(null))).toBe("operator")
+	})
+})
+
+describe("the Overview the root draws", () => {
+	const body = (model: Model, h: HtmlBuilder<Message>) => view(model, h).body
+	// An org known to render the app is past the plan gate, so the page itself is drawn.
+	const entered = (role: string) =>
+		given(settle({ ...signedIn(role), knownToRenderApp: { [orgId]: true } }).model)
+
+	const shellMounted = [
+		Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+		Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+		Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
+	]
+
+	test("an observer gets their own page, not the engineers'", () => {
+		scene(
+			{ update, view: body },
+			entered("org:observer"),
+			...shellMounted,
+			Mount.resolve(MountObserverHome, ObserverMessage.Entered()),
+			expectView(text("Open incidents")).toExist(),
+			expectView(text("Top errors")).toExist(),
+		)
+	})
+
+	test("an admin keeps the engineers' page", () => {
+		scene(
+			{ update, view: body },
+			entered("org:admin"),
+			...shellMounted,
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("Open incidents")).toBeAbsent(),
+		)
 	})
 })

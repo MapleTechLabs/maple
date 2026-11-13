@@ -74,6 +74,20 @@ describe("alerts inbox, observer", () => {
 		)
 	})
 
+	test("an observer's Incidents page has no New rule button, and a member's keeps it", () => {
+		const observerView = withViewInputs(pageView, { context: { ...context, audience: "observer" } })()
+		scene(
+			{ update: pageUpdate, view: observerView },
+			given(loaded(OBSERVER)),
+			expectView(role("link", { name: "New rule" })).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(MEMBER)),
+			expectView(role("link", { name: "New rule" })).toExist(),
+		)
+	})
+
 	test("a member gets a button to flip each row's acknowledgement", () => {
 		scene(
 			{ update: pageUpdate, view },
