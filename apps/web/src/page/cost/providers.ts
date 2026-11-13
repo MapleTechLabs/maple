@@ -1,6 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
-import { Option, Schema } from "effect"
+import { Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -55,12 +55,6 @@ export const COST_PROVIDERS = {
  */
 export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
 export type CredentialProvider = typeof CredentialProvider.Type
-
-const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)
-
-/** `provider` as one whose source is its pasted credential, or null for a connection's source. */
-export const credentialProviderOf = (provider: CostProvider): CredentialProvider | null =>
-	Option.getOrNull(decodeCredentialProvider(provider))
 
 /** Whether a dialog step or a provider is one added by pasting a credential. */
 export const isCredentialProvider = Schema.is(CredentialProvider)
