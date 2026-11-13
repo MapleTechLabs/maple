@@ -86,7 +86,9 @@ const actions = (
 	const manage = (href: string) => connectionLink(h, named(`Manage ${name} connection`), href)
 	switch (source.provider) {
 		case "openrouter":
-		case "cloudflare": {
+		case "cloudflare":
+		case "anthropic":
+		case "openai": {
 			const { label } = CREDENTIAL_SOURCES[source.provider].replace
 			return [
 				rowButton(

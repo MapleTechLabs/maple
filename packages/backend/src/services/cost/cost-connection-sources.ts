@@ -11,7 +11,11 @@ import { Array as Arr, Effect } from "effect"
 import { randomUUID } from "node:crypto"
 
 /** The providers whose credential lives in `cost_connections`: one added here needs no table, slot or reconcile of its own. */
-export const COST_CONNECTION_PROVIDERS = ["cloudflare"] as const satisfies ReadonlyArray<CostProvider>
+export const COST_CONNECTION_PROVIDERS = [
+	"cloudflare",
+	"anthropic",
+	"openai",
+] as const satisfies ReadonlyArray<CostProvider>
 export type CostConnectionProvider = (typeof COST_CONNECTION_PROVIDERS)[number]
 
 /** Whether `provider` keeps its credential in `cost_connections`. */

@@ -1,7 +1,9 @@
 import {
+	AnthropicCostKeyRequest,
 	CloudflareCostTokenRequest,
 	CostBreakdownSortBy,
 	CostFilters,
+	OpenAiCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,
 	VercelCostAddRequest,
@@ -177,6 +179,48 @@ export const RemoveCloudflareCostToken = Command.define("RemoveCloudflareCostTok
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.cloudflareCost.remove()).pipe(
 		Effect.asVoid,
 		settleTo((result) => Message.CompletedRemoveCredential({ provider: "cloudflare", result })),
+	),
+})
+
+/** Saves the org's Anthropic Admin API key, which makes (or keeps) its cost source. */
+export const SaveAnthropicCostKey = Command.define("SaveAnthropicCostKey", {
+	args: { apiKey: Schema.String },
+	messages: [Message.CompletedSaveCredential],
+	execute: ({ apiKey }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.anthropicCost.set({ payload: new AnthropicCostKeyRequest({ apiKey }) }),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "anthropic", result })),
+		),
+})
+
+export const RemoveAnthropicCostKey = Command.define("RemoveAnthropicCostKey", {
+	messages: [Message.CompletedRemoveCredential],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.anthropicCost.remove()).pipe(
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "anthropic", result })),
+	),
+})
+
+/** Saves the org's OpenAI Admin API key, which makes (or keeps) its cost source. */
+export const SaveOpenAiCostKey = Command.define("SaveOpenAiCostKey", {
+	args: { apiKey: Schema.String },
+	messages: [Message.CompletedSaveCredential],
+	execute: ({ apiKey }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.openaiCost.set({ payload: new OpenAiCostKeyRequest({ apiKey }) }),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "openai", result })),
+		),
+})
+
+export const RemoveOpenAiCostKey = Command.define("RemoveOpenAiCostKey", {
+	messages: [Message.CompletedRemoveCredential],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openaiCost.remove()).pipe(
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "openai", result })),
 	),
 })
 

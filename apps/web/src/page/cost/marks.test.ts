@@ -48,6 +48,29 @@ describe("cost key marks", () => {
 		)
 	})
 
+	test("Anthropic and OpenAI spend wears its model's or vendor's mark, never a platform's", () => {
+		const vendors = [source("anthropic", "org-uuid-1"), source("openai", "org-AbC123")]
+		const anthropic = keyMark("provider", "anthropic", [])?.icon
+		const openai = keyMark("provider", "openai", [])?.icon
+		// A Claude model wears its family's mark, as it does when OpenRouter bills it.
+		expect(keyMark("cloud_service", "anthropic/claude-opus-5-5", vendors)?.icon).toBe("ClaudeIcon")
+		expect(keyMark("cloud_service", "Web search", vendors)?.icon).toBe(anthropic)
+		expect(keyMark("cloud_service", "openai/gpt-5", vendors)?.icon).toBe(openai)
+		expect(keyMark("account", "org-AbC123", vendors)?.icon).toBe(openai)
+		expect(keyLabel("account", "org-AbC123", vendors)).toBe("OpenAI")
+	})
+
+	test("a model vendor beside one platform leaves that platform the owner of a name it does not know", () => {
+		const withVendors = [
+			source("cloudflare", "cf-account"),
+			source("anthropic", "org-uuid-1"),
+			source("openai", "org-AbC123"),
+		]
+		expect(keyMark("cloud_service", "Example Product", withVendors)?.icon).toBe(
+			keyMark("provider", "cloudflare", [])?.icon,
+		)
+	})
+
 	test("two OpenRouter accounts keep their ids so their series stay apart", () => {
 		const two = [...sources, source("openrouter", "org_second", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e20")]
 		expect(keyLabel("account", "org_second", two)).toBe("OpenRouter org_second")

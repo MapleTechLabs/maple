@@ -31,6 +31,8 @@ export const CostProvider = Schema.Literals([
 	"vercel",
 	"cloudflare",
 	"planetscale",
+	"anthropic",
+	"openai",
 ])
 export type CostProvider = typeof CostProvider.Type
 

@@ -66,7 +66,9 @@ import { SupabaseConnectionService } from "@maple/backend/services/integrations/
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
+import { AnthropicCostConnectionService } from "@maple/backend/services/cost/AnthropicCostConnectionService"
 import { CloudflareCostConnectionService } from "@maple/backend/services/cost/CloudflareCostConnectionService"
+import { OpenAiCostConnectionService } from "@maple/backend/services/cost/OpenAiCostConnectionService"
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
@@ -195,6 +197,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	OrgOpenRouterKeyService.layer,
 	OpenRouterCostConnectionService.layer,
 	CloudflareCostConnectionService.layer,
+	AnthropicCostConnectionService.layer,
+	OpenAiCostConnectionService.layer,
 	GithubCostSourceService.layer,
 	PlanetScaleCostSourceService.layer,
 	VercelCostSourceService.layer,

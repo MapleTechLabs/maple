@@ -429,6 +429,8 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 			return PLANETSCALE_REMOVE
 		case "openrouter":
 		case "cloudflare":
+		case "anthropic":
+		case "openai":
 			return CREDENTIAL_SOURCES[target.provider].remove
 		// An AWS source has no Remove: it leaves with its connection's Cost module. The confirm is closed then.
 		default:

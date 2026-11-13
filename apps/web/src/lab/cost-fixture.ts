@@ -10,6 +10,7 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Number as Num, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import type { CostGroupBy } from "../page/cost/derive"
+import { CredentialProvider, isCredentialProvider } from "../page/cost/providers"
 
 // Synthetic cost for `/lab/cost`: invented services, regions and amounts on one made-up account.
 // Nothing here is read by the product.
@@ -132,6 +133,50 @@ const cloudflareLine = (
 	drift,
 })
 
+/** The Anthropic organization the lab's source reads: rows carry its id, the page shows its name. */
+const LAB_ANTHROPIC_ORGANIZATION = { id: "0b1c2d3e-0000-4000-8000-00000000a070", name: "Example Labs" }
+
+/** A model's or tool's daily Anthropic spend in one workspace, named the way the sync names it. */
+const anthropicLine = (
+	service: string,
+	usage: string,
+	workspace: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: service,
+	provider: "anthropic",
+	service_category: "AI and Machine Learning",
+	region: "global",
+	usage_type: usage,
+	resource: workspace,
+	account: LAB_ANTHROPIC_ORGANIZATION.id,
+	daily,
+	drift,
+})
+
+/** The OpenAI organization the lab's source reads: OpenAI names it by its id alone. */
+const LAB_OPENAI_ORGANIZATION = "org-LabExampleOrganization00"
+
+/** A model's daily OpenAI spend in one project. */
+const openAiLine = (
+	model: string,
+	lineItem: string,
+	project: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: `openai/${model}`,
+	provider: "openai",
+	service_category: "AI and Machine Learning",
+	region: "global",
+	usage_type: lineItem,
+	resource: project,
+	account: LAB_OPENAI_ORGANIZATION,
+	daily,
+	drift,
+})
+
 /** The PlanetScale organization the lab's source reads. */
 export const LAB_PLANETSCALE_ORGANIZATION = "example-data"
 
@@ -182,6 +227,31 @@ const LINES: ReadonlyArray<Line> = [
 	cloudflareLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
 	cloudflareLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
 	cloudflareLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
+	anthropicLine(
+		"anthropic/claude-opus-5-5",
+		"Claude Opus 5.5 Usage - Output Tokens",
+		"wrkspc_example_agents",
+		24.6,
+		0.35,
+	),
+	anthropicLine(
+		"anthropic/claude-opus-5-5",
+		"Claude Opus 5.5 Usage - Input Tokens",
+		"wrkspc_example_agents",
+		8.1,
+		0.2,
+	),
+	anthropicLine(
+		"anthropic/claude-haiku-5-5",
+		"Claude Haiku 5.5 Usage - Input Tokens",
+		"default",
+		1.9,
+		-0.05,
+	),
+	anthropicLine("Web search", "Web search", "wrkspc_example_agents", 0.8, 0.1),
+	openAiLine("gpt-5", "gpt-5, output", "proj_ExampleSupport", 14.2, 0.12),
+	openAiLine("gpt-5", "gpt-5, input", "proj_ExampleSupport", 5.3, 0.08),
+	openAiLine("text-embedding-3-large", "text-embedding-3-large, input", "proj_ExampleSearch", 0.9, 0.0),
 	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
 	productLine(
 		"Example Function Duration",
@@ -421,6 +491,38 @@ const cloudflareSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Anthropic source: this month and the three before it, and no billed requests. */
+const anthropicSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c066",
+	provider: "anthropic",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a066",
+	accountId: LAB_ANTHROPIC_ORGANIZATION.id,
+	accountName: LAB_ANTHROPIC_ORGANIZATION.name,
+	backfillDate: "2026-08-01",
+	lastSyncedAt: LAB_NOW_MS - 70 * 60_000,
+	requestsThisMonth: 0,
+})
+
+/** The OpenAI source: the same history, named by its organization id. */
+const openAiSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c067",
+	provider: "openai",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a067",
+	accountId: LAB_OPENAI_ORGANIZATION,
+	accountName: LAB_OPENAI_ORGANIZATION,
+	backfillDate: "2026-08-01",
+	lastSyncedAt: LAB_NOW_MS - 80 * 60_000,
+	requestsThisMonth: 0,
+})
+
+/** The source each credential provider's add brings in. */
+const CREDENTIAL_SOURCE_OF = {
+	openrouter: openRouterSource,
+	cloudflare: cloudflareSource,
+	anthropic: anthropicSource,
+	openai: openAiSource,
+} as const satisfies Record<CredentialProvider, SourceWire>
+
 /** The PlanetScale source: invoices back to the twelfth month before this one, and no billed requests. */
 const planetScaleSource = source({
 	id: "0190f2b3-0000-7000-8000-00000000c065",
@@ -459,13 +561,12 @@ export const labGithubLogin = (installationId: string): string =>
 	)
 
 /**
- * What the lab's reader did since the state loaded. `openRouter`, `cloudflare`, `vercel` and
- * `planetScale`: added (true), removed (false) or neither (null). `github`: an installation's id
- * to whether it is a source now.
+ * What the lab's reader did since the state loaded. `credentials`: a pasted-credential provider to
+ * whether it was added (true) or removed (false), absent for neither; `vercel` and `planetScale`
+ * the same, null for neither. `github`: an installation's id to whether it is a source now.
  */
 export type LabSourceChanges = Readonly<{
-	openRouter: boolean | null
-	cloudflare: boolean | null
+	credentials: Readonly<Partial<Record<CredentialProvider, boolean>>>
 	github: Readonly<Record<string, boolean>>
 	vercel: boolean | null
 	planetScale: boolean | null
@@ -479,8 +580,7 @@ export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<Co
 	Arr.filter(
 		CostProvider.literals,
 		(provider) =>
-			(provider === "openrouter" && changes.openRouter === false) ||
-			(provider === "cloudflare" && changes.cloudflare === false) ||
+			(isCredentialProvider(provider) && changes.credentials[provider] === false) ||
 			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
 			// A team added again is a new source: it has no cost until a sync the lab does not model.
 			(provider === "vercel" && changes.vercel !== null) ||
@@ -497,22 +597,25 @@ export const labSourcesWith = (
 	changes: LabSourceChanges,
 ): CostSourcesResponse => {
 	const kept = Arr.filter(Schema.encodeSync(CostSourcesResponse)(sources).sources, (entry) =>
-		entry.provider === "openrouter"
-			? changes.openRouter !== false
-			: entry.provider === "cloudflare"
-				? changes.cloudflare !== false
-				: entry.provider === "vercel"
-					? changes.vercel === null
-					: entry.provider === "planetscale"
-						? changes.planetScale === null
-						: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+		isCredentialProvider(entry.provider)
+			? changes.credentials[entry.provider] !== false
+			: entry.provider === "vercel"
+				? changes.vercel === null
+				: entry.provider === "planetscale"
+					? changes.planetScale === null
+					: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
 	)
 	const has = (provider: CostProvider) => Arr.some(kept, (entry) => entry.provider === provider)
 	return decodeSources({
 		sources: [
 			...kept,
-			...(changes.openRouter === true && !has("openrouter") ? [justAdded(openRouterSource)] : []),
-			...(changes.cloudflare === true && !has("cloudflare") ? [justAdded(cloudflareSource)] : []),
+			...Arr.map(
+				Arr.filter(
+					CredentialProvider.literals,
+					(provider) => changes.credentials[provider] === true && !has(provider),
+				),
+				(provider) => justAdded(CREDENTIAL_SOURCE_OF[provider]),
+			),
 			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
 			...(changes.planetScale === true ? [justAdded(planetScaleSource)] : []),
 			...Arr.map(
@@ -573,6 +676,8 @@ export const LAB_SOURCES = {
 			vercelSource,
 			cloudflareSource,
 			planetScaleSource,
+			anthropicSource,
+			openAiSource,
 		],
 	}),
 	none: decodeSources({ sources: [] }),

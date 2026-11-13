@@ -2,7 +2,7 @@
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
 into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
-2026-11-12, PlanetScale on 2026-11-13.
+2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -166,15 +166,17 @@ next read.
   row and regroups by the next dimension (a service under a region goes on to its resources).
   The resource section and that step show only where some cost names a resource: a GitHub
   repository, a Vercel project, a PlanetScale database's branch. Sources are added from the page:
-  AWS through its connection (which has a Cost switch), OpenRouter by pasting a management key and
-  Cloudflare by pasting an API token, which the page can also replace or remove, GitHub by picking
+  AWS through its connection (which has a Cost switch), OpenRouter by pasting a management key,
+  Cloudflare by pasting an API token and Anthropic and OpenAI by pasting an Admin API key, which
+  the page can also replace or remove, GitHub by picking
   one of the organizations the GitHub App is installed on, and Vercel and PlanetScale by adding
   the team or organization the org has connected, all three of which the page can remove again.
   The pasted-credential step is one form described by data (`credential-sources.ts`).
   Recommendations (list and detail with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
-  `/internal/cost/cloudflare` for the pasted credentials, `GET /internal/cost/github` with `PUT` /
+  `/internal/cost/cloudflare`, `/internal/cost/anthropic` and `/internal/cost/openai` for the
+  pasted credentials, `GET /internal/cost/github` with `PUT` /
   `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
   `DELETE` on `/internal/cost/vercel` and `/internal/cost/planetscale` for the Vercel and
   PlanetScale sources. A public `/v2/cost/*` is not built.
@@ -482,6 +484,38 @@ The billing API facts, which hold for either credential:
 - Not built: enterprise contracts, zone-level analytics, the restricted "Version 2" endpoints,
   invoices and credits.
 
+### Anthropic (billed, Claude API only)
+
+- Read with an Admin API key (`sk-ant-admin...`) the org pastes, kept in `cost_connections`.
+  `GET /v1/organizations/me` names the organization (its id is the account, its name the label).
+- `GET /v1/organizations/cost_report`, daily buckets grouped by `workspace_id` and `description`,
+  31 buckets a page, followed by `next_page`. `amount` is a decimal string in cents. The docs call
+  it legacy beside `/v1/organizations/analytics/cost`, which Console organizations only get as an
+  early-access preview, so the legacy report is the one every org can read.
+- Rows: a model's lines are `anthropic/<model>` (the Cost page shows the model's mark), web search,
+  code execution and Managed Agents sessions their own names, anything else `Anthropic API`. The
+  description is the usage type, the workspace the resource (`default` for the default
+  workspace), the inference geography the region.
+- Not covered: Claude subscriptions billed through claude.ai, and Claude on Bedrock, Vertex AI or
+  Foundry, which bill through those clouds.
+
+### OpenAI (billed, API only)
+
+- Read with an Admin API key (`sk-admin-...`), kept in `cost_connections`. `GET
+  /v1/organization/costs`, daily buckets grouped by `project_id` and `line_item`, 180 a page.
+- No endpoint names the organization an admin key belongs to. The org id comes from
+  `organization_id` on the key's own cost results, so a save reads the last 180 days and refuses
+  an organization with no spend in them (nothing to show yet) or results of two organizations.
+  The label is the id: OpenAI reports no name.
+- Rows: a line item `<model>, <part>` is `openai/<model>`, any other `openai/<line item>`. The
+  line item is the usage type, the project the resource, the quantity and its unit kept.
+
+Neither vendor offers an admin key that can only read cost: the key can also manage members and
+keys. The dialog says so and suggests a key made for Maple alone; Maple only calls the endpoints
+above. Retention of either report is not documented, so history starts three months back. Open:
+check both against a real account (restated days, how far back each serves, Anthropic answering
+an `ending_at` of tomorrow).
+
 ### Railway (estimated per service, billed per workspace)
 
 - Schema: `usage(workspaceId, startDate, endDate, groupBy, measurements)` returns quantities
@@ -583,7 +617,7 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale are built. Railway,
+3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI are built. Railway,
    GCP, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter and a
    sync profile. One read with a pasted credential also adds itself to
    `COST_CONNECTION_PROVIDERS`, a connection service that checks the credential with the vendor,

@@ -1,4 +1,5 @@
 import { Array as Arr } from "effect"
+import { CredentialProvider } from "../page/cost/providers"
 import { describe, expect, test } from "vitest"
 import {
 	LAB_SOURCES,
@@ -25,7 +26,7 @@ describe("cost lab fixture", () => {
 					.rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "vercel", "cloudflare", "github", "planetscale"])
+		).toEqual(["aws", "anthropic", "vercel", "openai", "cloudflare", "github", "planetscale"])
 
 		// Filtered to OpenRouter there is nothing left: AWS cost must not show under that filter.
 		expect(labTotals(openRouterOnly).cost).toBeGreaterThan(0)
@@ -44,36 +45,37 @@ describe("cost lab fixture", () => {
 		).toEqual([])
 	})
 
-	test("Cloudflare is added waiting for its first sync, and a removed one takes its cost with it", () => {
-		const cloudflare = (added: boolean | null, from = LAB_SOURCES.synced) => {
-			const changes = {
-				openRouter: null,
-				cloudflare: added,
-				github: {},
-				vercel: null,
-				planetScale: null,
-			}
-			return {
-				sources: Arr.map(
-					Arr.filter(
-						labSourcesWith(from, changes).sources,
-						(source) => source.provider === "cloudflare",
+	test.each(CredentialProvider.literals)(
+		"%s is added waiting for its first sync, and a removed one takes its cost with it",
+		(provider) => {
+			const outcome = (added: boolean | null, from = LAB_SOURCES.synced) => {
+				const changes = {
+					credentials: added === null ? {} : { [provider]: added },
+					github: {},
+					vercel: null,
+					planetScale: null,
+				}
+				return {
+					sources: Arr.map(
+						Arr.filter(
+							labSourcesWith(from, changes).sources,
+							(source) => source.provider === provider,
+						),
+						(source) => source.status,
 					),
-					(source) => source.status,
-				),
-				costRemoved: Arr.contains(labRemovedProviders(changes), "cloudflare"),
+					costRemoved: Arr.contains(labRemovedProviders(changes), provider),
+				}
 			}
-		}
-		expect(cloudflare(null)).toEqual({ sources: ["ok"], costRemoved: false })
-		expect(cloudflare(false)).toEqual({ sources: [], costRemoved: true })
-		expect(cloudflare(true, LAB_SOURCES.none)).toEqual({ sources: ["pending"], costRemoved: false })
-	})
+			expect(outcome(null)).toEqual({ sources: ["ok"], costRemoved: false })
+			expect(outcome(false)).toEqual({ sources: [], costRemoved: true })
+			expect(outcome(true, LAB_SOURCES.none)).toEqual({ sources: ["pending"], costRemoved: false })
+		},
+	)
 
 	test("a GitHub organization is added and removed on its own, and the other keeps its source and cost", () => {
 		const github = (changes: Readonly<Record<string, boolean>>) => {
 			const sources = labSourcesWith(LAB_SOURCES.synced, {
-				openRouter: null,
-				cloudflare: null,
+				credentials: {},
 				github: changes,
 				vercel: null,
 				planetScale: null,
@@ -89,8 +91,7 @@ describe("cost lab fixture", () => {
 				),
 				costRemoved: Arr.contains(
 					labRemovedProviders({
-						openRouter: null,
-						cloudflare: null,
+						credentials: {},
 						github: changes,
 						vercel: null,
 						planetScale: null,
@@ -133,13 +134,13 @@ describe("cost lab fixture", () => {
 				labBreakdown({ ...window, without: ["vercel"], groupBy: "provider", sortBy: "cost" }).rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "openrouter", "cloudflare", "github", "planetscale"])
+		).toEqual(["aws", "openrouter", "anthropic", "openai", "cloudflare", "github", "planetscale"])
 		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
 	})
 
 	test("a Vercel source added again after its removal is a new one that waits for its first sync", () => {
 		const after = (vercel: boolean | null) => {
-			const changes = { openRouter: null, cloudflare: null, github: {}, vercel, planetScale: null }
+			const changes = { credentials: {}, github: {}, vercel, planetScale: null }
 			const sources = labSourcesWith(LAB_SOURCES.synced, changes)
 			return {
 				vercel: Arr.map(
@@ -159,7 +160,7 @@ describe("cost lab fixture", () => {
 
 	test("a PlanetScale source added again after its removal is a new one that waits for its first sync", () => {
 		const after = (planetScale: boolean | null) => {
-			const changes = { openRouter: null, cloudflare: null, github: {}, vercel: null, planetScale }
+			const changes = { credentials: {}, github: {}, vercel: null, planetScale }
 			const sources = labSourcesWith(LAB_SOURCES.synced, changes)
 			return {
 				planetScale: Arr.map(
@@ -181,17 +182,21 @@ describe("cost lab fixture", () => {
 		).toBe(0)
 	})
 
-	test("grouped by resource, cost splits by GitHub repository, Vercel project and PlanetScale branch, and the rest has none", () => {
+	test("grouped by resource, cost splits by GitHub repository, Vercel project, PlanetScale branch, Anthropic workspace and OpenAI project, and the rest has none", () => {
 		expect(
 			Arr.map(labBreakdown({ ...window, groupBy: "resource", sortBy: "cost" }).rows, (row) => row.key),
 		).toEqual([
 			"",
+			"wrkspc_example_agents",
+			"proj_ExampleSupport",
 			"example-web",
 			"example-orders/main",
 			"example-api",
 			"example-docs",
+			"default",
 			"example-search/main",
 			"example-orders/staging",
+			"proj_ExampleSearch",
 			"example-site",
 		])
 		// Narrowed to a provider, only its own resources are left.

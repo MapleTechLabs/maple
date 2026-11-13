@@ -66,7 +66,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch, an Anthropic or OpenAI organization by model and workspace or project.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -132,6 +132,14 @@ const FIRST_SYNC = {
 	planetscale: {
 		alone: "It brings in this month's invoice and the last, and the year before fills in after that.",
 		named: "PlanetScale brings in this month's invoice and the last, and the year before fills in after that.",
+	},
+	anthropic: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "Anthropic brings in this month and the last, then the two months before.",
+	},
+	openai: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "OpenAI brings in this month and the last, then the two months before.",
 	},
 } as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
 
