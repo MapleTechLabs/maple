@@ -14,6 +14,10 @@ import { randomUUID } from "node:crypto"
 export const COST_CONNECTION_PROVIDERS = ["cloudflare"] as const satisfies ReadonlyArray<CostProvider>
 export type CostConnectionProvider = (typeof COST_CONNECTION_PROVIDERS)[number]
 
+/** Whether `provider` keeps its credential in `cost_connections`. */
+export const isCostConnectionProvider = (provider: CostProvider): provider is CostConnectionProvider =>
+	Arr.contains<CostProvider>(COST_CONNECTION_PROVIDERS, provider)
+
 /** Sources one run creates and removes, each. */
 const RECONCILE_LIMIT = 200
 

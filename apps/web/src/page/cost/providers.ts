@@ -1,6 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
-import { Array as Arr, Option, Schema } from "effect"
+import { Option, Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -16,6 +16,7 @@ export type CostProviderEntry = Readonly<{
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
 // Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
+// Vercel's requests are free, like OpenRouter's.
 export const COST_PROVIDERS = {
 	aws: {
 		name: PROVIDERS.aws.name,
@@ -40,6 +41,12 @@ export const COST_PROVIDERS = {
 		iconClassName: PROVIDERS.github.iconClassName,
 		requestUsd: null,
 	},
+	vercel: {
+		name: PROVIDERS.vercel.name,
+		icon: PROVIDERS.vercel.icon,
+		iconClassName: PROVIDERS.vercel.iconClassName,
+		requestUsd: null,
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
 /**
@@ -55,8 +62,5 @@ const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)
 export const credentialProviderOf = (provider: CostProvider): CredentialProvider | null =>
 	Option.getOrNull(decodeCredentialProvider(provider))
 
-const names = new Intl.ListFormat("en", { type: "conjunction" })
-
-/** Providers by name as one list in a sentence: "OpenRouter, Cloudflare, and GitHub". */
-export const providerNames = (providers: ReadonlyArray<CostProvider>): string =>
-	names.format(Arr.map(providers, (provider) => COST_PROVIDERS[provider].name))
+/** Whether a dialog step or a provider is one added by pasting a credential. */
+export const isCredentialProvider = Schema.is(CredentialProvider)

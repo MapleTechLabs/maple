@@ -5,6 +5,8 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 	GithubCostInstallations,
+	VercelCostStatus,
+	type VercelCostTeam,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -25,9 +27,25 @@ import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form or list. */
-export const AddStep = Schema.Union([Schema.Literals(["pick", "github"]), CredentialProvider])
+/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+export const AddStep = Schema.Union([Schema.Literals(["pick", "github", "vercel"]), CredentialProvider])
 export type AddStep = typeof AddStep.Type
+
+/**
+ * What the Vercel step can do with the connection it read: only a `Ready` team can be added. A
+ * team that is a source already can still have lost its token, which stops its sync.
+ */
+export type VercelStep =
+	| Readonly<{ _tag: "NotConnected" }>
+	| Readonly<{ _tag: "TokenRejected" | "Ready"; team: VercelCostTeam }>
+	| Readonly<{ _tag: "Added"; team: VercelCostTeam; isTokenRejected: boolean }>
+
+export const vercelStepOf = (status: VercelCostStatus): VercelStep => {
+	if (status.team === null) return { _tag: "NotConnected" }
+	return status.added
+		? { _tag: "Added", team: status.team, isTokenRejected: status.authFailed }
+		: { _tag: status.authFailed ? "TokenRejected" : "Ready", team: status.team }
+}
 
 export const Model = Schema.Struct({
 	search: CostSearch,
@@ -71,6 +89,10 @@ export const Model = Schema.Struct({
 			needsPermission: Schema.Boolean,
 		}),
 	),
+	/** The org's Vercel connection, read when the dialog turns to Vercel. */
+	vercel: KeyedSchema(VercelCostStatus, LoadFailure),
+	/** Why Vercel refused the last add, shown in the step until it is left. */
+	vercelError: Schema.NullOr(Schema.String),
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */
 	removeTarget: Schema.NullOr(CostSourceSummary),

@@ -475,6 +475,56 @@ describe("planCostSync for a provider that serves a few months up to today", () 
 	})
 })
 
+describe("planCostSync for a provider that serves a year in one request", () => {
+	const VERCEL_NEW: CostSyncState = { ...NEW, provider: "vercel" }
+	const vercelPulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({ ...pulled(now, backfillDate, ago), provider: "vercel" })
+
+	it("starts with the previous month through today, like a provider with a longer history", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(VERCEL_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-20",
+		})
+	})
+
+	it("keeps its history floor at the first day of the month eleven months back", () => {
+		assert.deepStrictEqual(
+			[historyFloor("vercel", "2026-11-20"), historyFloor("vercel", "2024-12-31")],
+			["2025-12-01", "2024-01-01"],
+		)
+	})
+
+	it("never asks for more than a year, whatever day and however long it was held", () => {
+		// The longest window there is: a source held since before the floor, on a leap year's last day.
+		const now = at("2024-12-31T12:00:00Z")
+		const held = vercelPulled(now, "2023-06-01", { head: 400 * DAY_MS, settle: 400 * DAY_MS })
+		const plan = planCostSync(held, now)
+		assert.deepStrictEqual(plan, { mode: "settle", startDay: "2024-01-01", endDay: "2024-12-31" })
+		assert.strictEqual(plan.mode === "idle" ? 0 : daysOfWindow(plan).length, 366)
+	})
+
+	it("walks history a month per step and stops at the floor", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const current = { head: HOUR_MS, settle: HOUR_MS }
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2026-02-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-01-01",
+			endDay: "2026-01-31",
+		})
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2026-01-01", current), now), {
+			mode: "backfill",
+			startDay: "2025-12-01",
+			endDay: "2025-12-31",
+		})
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2025-12-01", current), now), { mode: "idle" })
+	})
+})
+
 describe("planCostSync request budgets", () => {
 	const now = at("2026-11-11T12:00:00Z")
 	const current = { head: HOUR_MS, settle: HOUR_MS }

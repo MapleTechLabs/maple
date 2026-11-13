@@ -24,6 +24,7 @@ import { QueryEngineApiGroup } from "./query-engine"
 import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
+import { VercelCostApiGroup } from "./vercel-cost"
 import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
@@ -65,6 +66,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OpenRouterCostApiGroup)
 	.add(CloudflareCostApiGroup)
 	.add(GithubCostApiGroup)
+	.add(VercelCostApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)
 	.add(OrganizationCreationApiGroup)

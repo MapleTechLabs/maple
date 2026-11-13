@@ -1,4 +1,4 @@
-import { type CostSourceSummary, CostSourcesResponse } from "@maple/domain/http"
+import { type CostSourceSummary, CostSourcesResponse, type VercelCostTeam } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import type { CostSourceId } from "@maple/primitives"
@@ -24,6 +24,7 @@ import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	AddGithubCostSource,
+	AddVercelCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
 	FetchCostBreakdown,
@@ -33,8 +34,10 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	FetchGithubCostInstallations,
+	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
+	RemoveVercelCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
 	type WindowInput,
@@ -44,7 +47,6 @@ import {
 	facetFilters,
 	perDimension,
 	groupByOf,
-	hasSourceOf,
 	onlyFilter,
 	toggledFilter,
 	hasSynced,
@@ -57,13 +59,16 @@ import {
 } from "./derive"
 import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { Message } from "./message"
-import type { AddStep, Model, Search } from "./model"
-import { COST_PROVIDERS, type CredentialProvider } from "./providers"
+import { type AddStep, type Model, type Search, vercelStepOf } from "./model"
+import { COST_PROVIDERS, type CredentialProvider, isCredentialProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET: PresetValue = "30d"
+
+/** The API's code for a write refused because the org's connection changed under it. */
+const CONNECTION_CHANGED_CODE = "integration_connection_changed"
 
 /** The keys that get their own series in the chart; the rest fold into "Other". */
 export const SERIES_LIMIT = 8
@@ -102,7 +107,20 @@ const requestSources = (model: Model, context: PageContext, mode: Keyed.ReadMode
 /** The window's reads, once a source has cost to read: an org with none sends no warehouse query. */
 const requestData = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const sources = Option.getOrUndefined(AsyncData.getData(model.sources.data))
-	if (model.window === null || sources === undefined || !hasSynced(sources.sources)) return { model }
+	if (model.window === null || sources === undefined) return { model }
+	// No source has cost: what was read for the sources there were is dropped. The reads are
+	// keyed by the window, not by the sources, so it would stand in for the next source's cost.
+	if (!hasSynced(sources.sources)) {
+		return {
+			model: {
+				...model,
+				totals: Keyed.idle(),
+				timeseries: Keyed.idle(),
+				breakdown: Keyed.idle(),
+				facets: Keyed.idle(),
+			},
+		}
+	}
 	const filters = requestFilters(model.search)
 	const window: WindowInput = {
 		startTime: model.window.startTime,
@@ -179,6 +197,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addStep: "pick",
 		credentialDraft: Field.init(),
 		credentialError: null,
+		vercel: Keyed.idle(),
+		vercelError: null,
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -226,7 +246,40 @@ const clearedDialog = (model: Model): Model => ({
 	credentialDraft: Field.init(),
 	credentialError: null,
 	githubRefusal: null,
+	vercelError: null,
 })
+
+/**
+ * A slot with nothing on show that keeps its key: the read after it is the key's next generation,
+ * so an older read in flight cannot answer, and a failure has no earlier answer to stand beside.
+ */
+const emptied = <A>(slot: Keyed.Keyed<A, LoadFailure>): Keyed.Keyed<A, LoadFailure> => ({
+	...Keyed.idle<A, LoadFailure>(),
+	key: slot.key,
+})
+
+/**
+ * The org's Vercel connection, read again each time the dialog turns to Vercel. The answer on
+ * show is dropped first: the step never offers an add on a connection read before it was left,
+ * and a read that fails says so.
+ */
+const requestVercelStatus = (model: Model, context: PageContext): Return =>
+	applySteps<Model, Message>(model, [
+		keyed(
+			emptied(model.vercel),
+			requestKey(context.orgId, "vercelCostStatus", {}),
+			"Supersede",
+			(vercel) => ({ vercel }),
+			(key) => FetchVercelCostStatus({ key }),
+		),
+	])
+
+/** The team on show, when it can be added: a token Vercel takes and no source yet. */
+const addableVercelTeam = (model: Model): Option.Option<VercelCostTeam> =>
+	Option.flatMap(AsyncData.getData(model.vercel.data), (status) => {
+		const step = vercelStepOf(status)
+		return step._tag === "Ready" ? Option.some(step.team) : Option.none()
+	})
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
@@ -273,7 +326,7 @@ const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
 /** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
 export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
 
-/** The call that removes `source`: its pasted credential, or the GitHub source of its installation. */
+/** The call that removes `source`: its pasted credential, the GitHub source of its installation, the org's Vercel source. */
 const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 	switch (source.provider) {
 		case "openrouter":
@@ -283,6 +336,8 @@ const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>
 				RemoveGithubCostSource({ installationId }),
 			)
+		case "vercel":
+			return [RemoveVercelCostSource()]
 		// An AWS source leaves with its connection's Cost module, on the integration's page.
 		case "aws":
 			return []
@@ -292,9 +347,21 @@ const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 /** A removal answered: the confirm closes, and on success the source's row and cost leave the page. */
 const removed = (model: Model, result: Result.Result<unknown, LoadFailure>, context: PageContext): Return => {
 	const target = model.removeTarget
+	// The cost on show includes the removed source's: it goes with the row, so the reads that
+	// follow start empty and one that fails leaves no removed cost beside its error.
 	const closed = liftRemoveDialog(
 		Result.isSuccess(result)
-			? withoutSource({ ...model, sourceWrite: "Settling" }, target?.id)
+			? withoutSource(
+					{
+						...model,
+						sourceWrite: "Settling",
+						totals: emptied(model.totals),
+						timeseries: emptied(model.timeseries),
+						breakdown: emptied(model.breakdown),
+						facets: emptied(model.facets),
+					},
+					target?.id,
+				)
 			: { ...model, sourceWrite: "Idle" },
 		Dialog.close(model.removeDialog),
 	)
@@ -317,9 +384,24 @@ const removed = (model: Model, result: Result.Result<unknown, LoadFailure>, cont
 	})
 }
 
+/** A source was added or its key replaced: the dialog closes, and the page reads what it now has. */
+const added = (model: Model, title: string, description: string, context: PageContext): Return =>
+	withReread(
+		{
+			...liftAddDialog(
+				clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
+				Dialog.close(model.addDialog),
+			),
+			outMessage: toast("success", title, description),
+		},
+		context,
+	)
+
 /** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
 const hasSource = (model: Model, provider: CredentialProvider): boolean =>
-	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) => hasSourceOf(sources, provider))
+	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) =>
+		Arr.some(sources, (source) => source.provider === provider),
+	)
 
 export const routeChanged = (
 	model: Model,
@@ -482,7 +564,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		SubmittedCredential: () => {
 			const secret = Str.trim(model.credentialDraft.value)
 			const step = model.addStep
-			if (secret === "" || model.sourceWrite !== "Idle" || step === "pick" || step === "github") {
+			if (secret === "" || model.sourceWrite !== "Idle" || !isCredentialProvider(step)) {
 				return { model }
 			}
 			const source = CREDENTIAL_SOURCES[step]
@@ -502,15 +584,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: { ...model, sourceWrite: "Idle", credentialError: failureMessage(failure) },
 				}),
 				onSuccess: (): Return => {
-					const closed = liftAddDialog(
-						clearedDialog({ ...model, sourceWrite: "Settling" }),
-						Dialog.close(model.addDialog),
-					)
 					const source = CREDENTIAL_SOURCES[provider]
-					const outMessage = hasSource(model, provider)
-						? toast("success", source.replace.toast, "The next sync runs within a few minutes.")
-						: toast("success", source.add.toast, "The first sync runs within a few minutes.")
-					return withReread({ ...closed, outMessage }, context)
+					return hasSource(model, provider)
+						? added(
+								model,
+								source.replace.toast,
+								"The next sync runs within a few minutes.",
+								context,
+							)
+						: added(model, source.add.toast, "The first sync runs within a few minutes.", context)
 				},
 			}),
 		ClickedAddGithub: () =>
@@ -565,18 +647,46 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 					},
 				}),
-				onSuccess: (added): Return => {
-					const closed = liftAddDialog(
-						clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
-						Dialog.close(model.addDialog),
-					)
-					const outMessage = toast(
-						"success",
+				onSuccess: (source): Return =>
+					added(
+						model,
 						"GitHub added",
-						`The first sync of ${added.accountLogin} runs within a few minutes.`,
-					)
-					return withReread({ ...closed, outMessage }, context)
+						`The first sync of ${source.accountLogin} runs within a few minutes.`,
+						context,
+					),
+			}),
+		ClickedAddVercel: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestVercelStatus({ ...clearedDialog(model), addStep: "vercel" }, context),
+		CompletedLoadVercelStatus: ({ key, result }) => ({
+			model: { ...model, vercel: Keyed.accept(model.vercel, key, result) },
+		}),
+		// The add names the team on show: one connected since is refused, not added in its place.
+		ClickedConfirmAddVercel: () =>
+			Option.match(model.sourceWrite === "Idle" ? addableVercelTeam(model) : Option.none(), {
+				onNone: (): Return => ({ model }),
+				onSome: (team): Return => ({
+					model: { ...model, sourceWrite: "Saving", vercelError: null },
+					commands: [AddVercelCostSource({ teamId: team.id })],
+				}),
+			}),
+		// A refused add keeps the dialog open with Vercel's reason under the team. When the reason
+		// is that the connection changed, it is read again: the team on show is the one to add now.
+		CompletedAddVercel: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => {
+					const refused: Model = {
+						...model,
+						sourceWrite: "Idle",
+						vercelError: failureMessage(failure),
+					}
+					return failure.code === CONNECTION_CHANGED_CODE
+						? requestVercelStatus(refused, context)
+						: { model: refused }
 				},
+				onSuccess: (): Return =>
+					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
 			}),
 		ClickedRemoveSource: ({ sourceId }) => {
 			const target = sourceOf(model, sourceId)
@@ -596,5 +706,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedRemoveCredential: ({ result }) => removed(model, result, context),
 		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
+		CompletedRemoveVercel: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),
 	})

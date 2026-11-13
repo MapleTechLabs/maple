@@ -1,4 +1,11 @@
-import { GithubCostInstallations, GithubCostSourceAdded, GithubCostSourceRemoved } from "@maple/domain/http"
+import {
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
+} from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -10,6 +17,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
 	AddGithubCostSource,
+	AddVercelCostSource,
 	BreakdownInput,
 	FacetsInput,
 	FetchCostBreakdown,
@@ -18,10 +26,12 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	FetchGithubCostInstallations,
+	FetchVercelCostStatus,
 	ReadCostGrants,
-	RemoveCloudflareCostToken,
 	RemoveGithubCostSource,
+	RemoveCloudflareCostToken,
 	RemoveOpenRouterCostKey,
+	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveCloudflareCostToken,
 	SaveOpenRouterCostKey,
@@ -40,6 +50,7 @@ import {
 	LAB_NOW_MS,
 	LAB_SOURCES,
 	LAB_TODAY,
+	LAB_VERCEL_TEAM,
 	type LabSourceChanges,
 	labBreakdown,
 	labGithubInstallations,
@@ -66,6 +77,7 @@ export const LabState = Schema.Literals([
 	"loading",
 	"by-provider",
 	"cloudflare",
+	"by-resource",
 	"add-source",
 	"add-openrouter",
 	"key-refused",
@@ -80,6 +92,10 @@ export const LabState = Schema.Literals([
 	"github-refused",
 	"github-none",
 	"remove-github",
+	"add-vercel",
+	"vercel-not-connected",
+	"vercel-refused",
+	"remove-vercel",
 	"member",
 	"member-onramp",
 ])
@@ -103,6 +119,8 @@ export const Model = Schema.Struct({
 	cloudflare: Schema.NullOr(Schema.Boolean),
 	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
 	github: Schema.Record(Schema.String, Schema.Boolean),
+	/** Vercel added (true) or removed (false) since the state loaded; null before either. */
+	vercel: Schema.NullOr(Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -120,9 +138,11 @@ const searchFor = (state: LabState): Search =>
 		? { groupBy: "region", cloud_service: ["Example Compute"] }
 		: state === "by-provider"
 			? { groupBy: "provider" }
-			: state === "cloudflare"
-				? { provider: ["cloudflare"] }
-				: {}
+			: state === "by-resource"
+				? { groupBy: "resource" }
+				: state === "cloudflare"
+					? { provider: ["cloudflare"] }
+					: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
@@ -134,7 +154,10 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-cloudflare" ||
 	state === "token-refused" ||
 	state === "token-too-broad" ||
-	state === "github-none"
+	state === "github-none" ||
+	state === "add-vercel" ||
+	state === "vercel-not-connected" ||
+	state === "vercel-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -175,6 +198,17 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			]
 		case "remove-github":
 			return removalOf("github")
+		case "add-vercel":
+		case "vercel-not-connected":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddVercel()]
+		case "vercel-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddVercel(),
+				CostMessage.ClickedConfirmAddVercel(),
+			]
+		case "remove-vercel":
+			return removalOf("vercel")
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -193,7 +227,7 @@ const submissionOf = (provider: CredentialProvider, secret: string): ReadonlyArr
 ]
 
 /** The click on Remove in the row of the lab's source of `provider`. */
-const removalOf = (provider: CredentialProvider | "github"): ReadonlyArray<CostMessage> =>
+const removalOf = (provider: CredentialProvider | "github" | "vercel"): ReadonlyArray<CostMessage> =>
 	Arr.map(
 		Arr.filter(LAB_SOURCES.synced.sources, (source) => source.provider === provider),
 		(source) => CostMessage.ClickedRemoveSource({ sourceId: source.id }),
@@ -204,6 +238,12 @@ const refusedBilling = {
 	code: Cost.GITHUB_PERMISSION_MISSING_CODE,
 	message:
 		"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
+}
+
+const refusedVercel = {
+	...toLoadFailure("refused"),
+	message:
+		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
 }
 
 const refusedKey = {
@@ -242,6 +282,17 @@ const sourcesFor = (state: LabState) =>
 			: state === "sources"
 				? LAB_SOURCES.mixed
 				: LAB_SOURCES.synced
+
+/** The org's Vercel connection as the state has it, and whether the page's sources hold its team. */
+const vercelStatusOf = (world: World): VercelCostStatus =>
+	new VercelCostStatus({
+		team: world.state === "vercel-not-connected" ? null : LAB_VERCEL_TEAM,
+		authFailed: false,
+		added: Arr.some(
+			labSourcesWith(sourcesFor(world.state), world).sources,
+			(source) => source.provider === "vercel",
+		),
+	})
 
 const failure = toLoadFailure("The warehouse did not answer in time")
 
@@ -402,6 +453,25 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: Result.succeed(new GithubCostSourceRemoved({ removed: true })),
 				}),
 			)
+		case FetchVercelCostStatus.name:
+			return Option.map(keyArgs(command.args), ({ key }) =>
+				CostMessage.CompletedLoadVercelStatus({ key, result: Result.succeed(vercelStatusOf(world)) }),
+			)
+		case AddVercelCostSource.name:
+			return Option.some(
+				CostMessage.CompletedAddVercel({
+					result:
+						state === "vercel-refused"
+							? Result.fail(refusedVercel)
+							: Result.succeed(new VercelCostSourceAdded({ team: LAB_VERCEL_TEAM })),
+				}),
+			)
+		case RemoveVercelCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemoveVercel({
+					result: Result.succeed(new VercelCostSourceRemoved({ removed: true })),
+				}),
+			)
 		default:
 			return Option.none()
 	}
@@ -411,10 +481,11 @@ const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
 
 /** `changes` alone, without whatever else the value carries. */
-const changesOf = ({ openRouter, cloudflare, github }: LabSourceChanges): LabSourceChanges => ({
+const changesOf = ({ openRouter, cloudflare, github, vercel }: LabSourceChanges): LabSourceChanges => ({
 	openRouter,
 	cloudflare,
 	github,
+	vercel,
 })
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
@@ -447,6 +518,10 @@ const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answere
 					onSome: ({ installationId }) =>
 						Result.isSuccess(answer.result) ? withGithub(installationId, false) : current,
 				})
+			case "CompletedAddVercel":
+				return Result.isSuccess(answer.result) ? { ...current, vercel: true } : current
+			case "CompletedRemoveVercel":
+				return Result.isSuccess(answer.result) ? { ...current, vercel: false } : current
 			default:
 				return current
 		}
@@ -494,7 +569,7 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null, cloudflare: null, github: {} }
+	const world: World = { state: flags.state, openRouter: null, cloudflare: null, github: {}, vercel: null }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)

@@ -14,8 +14,9 @@ import { relativeTime } from "../kit/relative-time"
 import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
-import { COST_PROVIDERS, type CostProviderEntry, credentialProviderOf } from "./providers"
+import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
+import { VERCEL_INTEGRATION_HREF } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -31,6 +32,17 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
+/** The account as its row names it: a Vercel team's slug, else the id the provider knows it by. */
+const accountOf = (source: CostSourceSummary): string => source.accountName ?? source.accountId
+
+/**
+ * What a row's action is called to assistive technology: the action on the provider's source,
+ * and the account too when the org has several sources of that provider, which would else all
+ * read the same ("Remove GitHub source acme-labs").
+ */
+const actionName = (action: string, source: CostSourceSummary, isRepeated: boolean): string =>
+	isRepeated ? `${action} ${accountOf(source)}` : action
+
 /** A row's action. Its accessible name says whose source it acts on: two rows can offer the same one. */
 const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: boolean): Html =>
 	button(
@@ -44,47 +56,55 @@ const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: 
 		[label],
 	)
 
+/** Where the source's connection is changed: an account's Cost module, a team's token. */
+const connectionLink = (h: H, name: string, href: string): Html =>
+	linkButton(h, { variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(name)] }, [
+		"Manage connection",
+	])
+
 /**
- * What a row offers: a connection's source is managed there, a pasted credential's is replaced or
- * removed here, and a GitHub one only leaves, since it reads through the GitHub connection.
+ * What a row offers: an AWS source is its connection's, a pasted credential's is replaced or
+ * removed here, and a GitHub one only leaves, since it reads through the GitHub connection. A
+ * Vercel one leaves here too, and links to its connection, where the token it reads with is replaced.
  */
-const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
+const actions = (
+	h: H,
+	source: CostSourceSummary,
+	options: Readonly<{ isBusy: boolean; isRepeated: boolean }>,
+): ReadonlyArray<Html> => {
 	const { name } = COST_PROVIDERS[source.provider]
+	const named = (action: string) => actionName(action, source, options.isRepeated)
 	const remove = rowButton(
 		h,
 		"Remove",
-		`Remove ${name} source`,
+		named(`Remove ${name} source`),
 		Message.ClickedRemoveSource({ sourceId: source.id }),
-		isBusy,
+		options.isBusy,
 	)
-	const provider = credentialProviderOf(source.provider)
-	if (provider !== null) {
-		const { label } = CREDENTIAL_SOURCES[provider].replace
-		return [
-			rowButton(
-				h,
-				label,
-				// "Replace key" as "Replace OpenRouter key".
-				Str.replace("Replace", `Replace ${name}`)(label),
-				Message.ClickedReplaceCredential({ provider }),
-				isBusy,
-			),
-			remove,
-		]
+	const manage = (href: string) => connectionLink(h, named(`Manage ${name} connection`), href)
+	switch (source.provider) {
+		case "openrouter":
+		case "cloudflare": {
+			const { label } = CREDENTIAL_SOURCES[source.provider].replace
+			return [
+				rowButton(
+					h,
+					label,
+					// "Replace key" as "Replace OpenRouter key".
+					named(Str.replace("Replace", `Replace ${name}`)(label)),
+					Message.ClickedReplaceCredential({ provider: source.provider }),
+					options.isBusy,
+				),
+				remove,
+			]
+		}
+		case "github":
+			return [remove]
+		case "vercel":
+			return [manage(VERCEL_INTEGRATION_HREF), remove]
+		case "aws":
+			return [manage(AWS_INTEGRATION_HREF)]
 	}
-	if (source.provider === "github") return [remove]
-	return [
-		linkButton(
-			h,
-			{
-				variant: "ghost",
-				size: "sm",
-				href: AWS_INTEGRATION_HREF,
-				attributes: [h.AriaLabel(`Manage ${name} connection`)],
-			},
-			["Manage connection"],
-		),
-	]
 }
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
@@ -141,7 +161,7 @@ const sourceRow = (
 	source: CostSourceSummary,
 	nowMs: number,
 	timeZone: string,
-	options: Readonly<{ isBusy: boolean; canManage: boolean }>,
+	options: Readonly<{ isBusy: boolean; canManage: boolean; isRepeated: boolean }>,
 ): Html => {
 	const provider: CostProviderEntry = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
@@ -162,18 +182,12 @@ const sourceRow = (
 					hstack(h, { gap: "2", wrap: true }, [
 						typography(h, { size: "sm", weight: "medium" }, [provider.name]),
 						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-							source.accountId,
+							accountOf(source),
 						]),
 						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
 					]),
 					...(options.canManage
-						? [
-								hstack(
-									h,
-									{ gap: "1", className: "-my-1 shrink-0" },
-									actions(h, source, options.isBusy),
-								),
-							]
+						? [hstack(h, { gap: "1", className: "-my-1 shrink-0" }, actions(h, source, options))]
 						: []),
 				]),
 				hstack(
@@ -223,6 +237,12 @@ export const sourcesSection = (
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
-			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone, options)),
+			Arr.map(sources, (source) =>
+				sourceRow(h, source, nowMs, timeZone, {
+					...options,
+					// Several sources of one provider: their actions name the account too.
+					isRepeated: Arr.filter(sources, (other) => other.provider === source.provider).length > 1,
+				}),
+			),
 		),
 	])

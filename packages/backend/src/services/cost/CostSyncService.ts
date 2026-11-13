@@ -33,10 +33,12 @@ import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
 import { reconcileGithubCostSources } from "./github-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
+import { reconcileVercelCostSources } from "./vercel-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -171,6 +173,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
 				github: yield* GithubCostProvider,
+				vercel: yield* VercelCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
@@ -220,6 +223,15 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** Vercel sources whose connection is gone are removed (see `reconcileVercelCostSources`). */
+			const reconcileVercel = Effect.fn("CostSyncService.reconcileVercel")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileVercelCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "vercel",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** The sources of every provider read with a pasted credential, in step with `cost_connections`. */
 			const reconcileConnections = Effect.fn("CostSyncService.reconcileConnections")(function* (
 				now: number,
@@ -235,13 +247,14 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
-			/** One function per connection table; each owns the sources of its own. */
+			/** One function per provider or connection table; each owns the sources of its own. */
 			const reconcile = (now: number) =>
 				Effect.all(
 					[
 						reconcileAws(now),
 						reconcileOpenRouter(now),
 						reconcileGithub(),
+						reconcileVercel(),
 						reconcileConnections(now),
 					],
 					{
@@ -710,6 +723,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
 				GithubCostProvider.layer,
+				VercelCostProvider.layer,
 				CloudflareCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,

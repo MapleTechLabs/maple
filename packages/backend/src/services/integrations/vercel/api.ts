@@ -3,7 +3,7 @@
  * No Effect SDK exists, so this decodes only the fields Maple reads. Failures fold into one
  * {@link VercelApiError} whose `kind` drives the poller (auth failure, back-off, missing drain).
  */
-import { Duration, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Duration, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 
 const BASE_URL = "https://api.vercel.com"
@@ -16,7 +16,15 @@ export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 	"@maple/backend/integrations/VercelApiError",
 	{
 		message: Schema.String,
-		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "not_found", "upstream"]),
+		// `invalid_response`: a 2xx answer Maple could not read. Only the charges read tells it from `upstream`.
+		kind: Schema.Literals([
+			"unauthorized",
+			"forbidden",
+			"rate_limited",
+			"not_found",
+			"upstream",
+			"invalid_response",
+		]),
 		status: Schema.optionalKey(Schema.Number),
 		/** Vercel's own error message, without the status prefix. */
 		detail: Schema.optionalKey(Schema.String),
@@ -40,6 +48,17 @@ const errorKind = (status: number): VercelApiError["kind"] =>
 					? "rate_limited"
 					: "upstream"
 
+/** A non-2xx answer as the error callers branch on, with Vercel's own message when the body has one. */
+const refusal = (status: number, body: unknown) => {
+	const detail = Option.getOrUndefined(decodeErrorBody(body))?.error.message
+	return new VercelApiError({
+		message: `Vercel API returned ${status}${detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`}`,
+		kind: errorKind(status),
+		status,
+		...(detail === undefined ? undefined : { detail: Str.slice(0, 300)(detail) }),
+	})
+}
+
 const call = <S extends Schema.Top>(
 	httpClient: HttpClient.HttpClient,
 	token: string,
@@ -51,15 +70,7 @@ const call = <S extends Schema.Top>(
 	return Effect.gen(function* () {
 		const response = yield* httpClient.execute(HttpClientRequest.bearerToken(request, token))
 		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-		if (response.status >= 300) {
-			const detail = Option.getOrUndefined(decodeErrorBody(body))?.error.message
-			return yield* new VercelApiError({
-				message: `Vercel API returned ${response.status}${detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`}`,
-				kind: errorKind(response.status),
-				status: response.status,
-				...(detail === undefined ? undefined : { detail: Str.slice(0, 300)(detail) }),
-			})
-		}
+		if (response.status >= 300) return yield* refusal(response.status, body)
 		return yield* Schema.decodeEffect(schema)(body)
 	}).pipe(
 		Effect.timeout(REQUEST_TIMEOUT),
@@ -463,3 +474,120 @@ export const deleteDrain = Effect.fn("VercelApi.deleteDrain")(function* (
 		),
 	)
 })
+
+// Billing
+
+const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
+
+/** An ISO 8601 date-time in UTC, to the minute at least: `2026-11-02T00:00:00.000Z`. */
+const UTC_DATE_TIME =
+	/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]00:00)$/
+
+const isLeapYear = (year: number): boolean => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+
+const daysInMonth = (year: number, month: number): number =>
+	month === 2 ? (isLeapYear(year) ? 29 : 28) : Arr.contains([4, 6, 9, 11], month) ? 30 : 31
+
+/** Whether the day a date-time starts with exists: no February 31st, a February 29th in leap years only. */
+const startsWithRealDay = (value: string): boolean =>
+	Number(Str.slice(8, 10)(value)) <=
+	daysInMonth(Number(Str.slice(0, 4)(value)), Number(Str.slice(5, 7)(value)))
+
+/**
+ * One line of the charges answer: a FOCUS v1.3 charge. The shape is Vercel's OpenAPI spec, not a
+ * recorded answer, so everything Maple can do without is optional and may be null.
+ */
+export const VercelCharge = Schema.Struct({
+	// Finite: `1e309` is valid JSON and parses as Infinity, which no sum or store survives.
+	BilledCost: Schema.Finite,
+	/** Inclusive, ISO 8601 in UTC: its first ten characters are the usage day. */
+	ChargePeriodStart: Schema.String.check(
+		Schema.isPattern(UTC_DATE_TIME),
+		Schema.makeFilter(startsWithRealDay, { expected: "a date-time on a day of the calendar" }),
+	),
+	/** The product's display name. */
+	ServiceName: Schema.String,
+	BillingCurrency: optional(Schema.String),
+	/** `Usage`, `Purchase`, `Credit`, `Tax` or `Adjustment`. */
+	ChargeCategory: optional(Schema.String),
+	/** Null when the charge is not usage. */
+	ConsumedQuantity: optional(Schema.Finite),
+	ConsumedUnit: optional(Schema.String),
+	EffectiveCost: optional(Schema.Finite),
+	RegionId: optional(Schema.String),
+	/** A FOCUS category: `Compute`, `Networking`, `Storage`, ... */
+	ServiceCategory: optional(Schema.String),
+	/** The product's stable id. */
+	SkuId: optional(Schema.String),
+	Tags: optional(
+		Schema.Struct({ ProjectId: optional(Schema.String), ProjectName: optional(Schema.String) }),
+	),
+})
+export type VercelCharge = typeof VercelCharge.Type
+
+const decodeChargeLine = Schema.decodeUnknownEffect(Schema.fromJsonString(VercelCharge))
+
+/**
+ * The team's billed charges from `from` (inclusive) to `to` (exclusive), both ISO 8601 in UTC, one
+ * per line of the JSONL answer as it streams in. Blank lines are skipped. A line that is not a
+ * charge fails the read as `invalid_response`.
+ */
+export const streamBillingCharges = (
+	httpClient: HttpClient.HttpClient,
+	token: string,
+	teamId: string,
+	range: { readonly from: string; readonly to: string },
+): Stream.Stream<VercelCharge, VercelApiError> =>
+	Stream.unwrap(
+		Effect.gen(function* () {
+			const response = yield* httpClient
+				.execute(
+					HttpClientRequest.bearerToken(
+						teamUrl("/v1/billing/charges", teamId, { from: range.from, to: range.to }),
+						token,
+					),
+				)
+				.pipe(Effect.annotateSpans("peer.service", "vercel"))
+			if (response.status >= 300) {
+				const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
+				return yield* refusal(response.status, body)
+			}
+			// Only a 200 is the whole range: a 204 or a 206 would store days empty or by halves.
+			if (response.status !== 200) {
+				return yield* new VercelApiError({
+					message: `Vercel API answered ${response.status} where the charges are a 200`,
+					kind: "invalid_response",
+					status: response.status,
+				})
+			}
+			return response.stream.pipe(
+				Stream.decodeText(),
+				Stream.splitLines,
+				Stream.map(Str.trim),
+				Stream.filter(Str.isNonEmpty),
+				Stream.mapEffect((line) => decodeChargeLine(line)),
+			)
+		}),
+	).pipe(
+		Stream.catchTags({
+			HttpClientError: (cause) =>
+				// A team with no charges in the range may answer with no body at all.
+				cause.reason._tag === "EmptyBodyError"
+					? Stream.empty
+					: Stream.fail(
+							new VercelApiError({
+								message: "Vercel API request failed",
+								kind: "upstream",
+								cause,
+							}),
+						),
+			SchemaError: (cause) =>
+				Stream.fail(
+					new VercelApiError({
+						message: "Vercel API answered with a charge Maple could not read",
+						kind: "invalid_response",
+						cause,
+					}),
+				),
+		}),
+	)

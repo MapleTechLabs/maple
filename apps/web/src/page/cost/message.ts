@@ -8,6 +8,9 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -68,6 +71,11 @@ export const Message = defineMessageUnion({
 	ClickedAddSource: {},
 	/** Picks a provider added by pasting a credential: the dialog moves to its form. */
 	PickedProvider: { provider: CredentialProvider },
+	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */
+	ClickedAddVercel: {},
+	CompletedLoadVercelStatus: result(VercelCostStatus),
+	ClickedConfirmAddVercel: {},
+	CompletedAddVercel: { result: Schema.Result(VercelCostSourceAdded, LoadFailure) },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
 	ClickedReplaceCredential: { provider: CredentialProvider },
@@ -97,6 +105,7 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
 	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
+	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type
