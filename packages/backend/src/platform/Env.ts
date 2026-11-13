@@ -398,9 +398,10 @@ const envConfig = Config.all({
 	// ambiguous. Default = the scopes the Maple OAuth app is provisioned with: a scope the app
 	// lacks fails every authorize, so the app gains a scope before this list does.
 	// `organization:write_databases` lets Maple register its webhook on each database.
+	// `organization:read_invoices` is what the Cost page reads the organization's invoices with.
 	PLANETSCALE_OAUTH_SCOPES: stringWithDefault(
 		"PLANETSCALE_OAUTH_SCOPES",
-		"user:read_organizations organization:read_organization organization:read_databases organization:write_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
+		"user:read_organizations organization:read_organization organization:read_invoices organization:read_databases organization:write_databases organization:read_branches organization:read_backups organization:read_comments organization:read_deploy_requests branch:read_branch",
 	),
 	SUPABASE_OAUTH_CLIENT_ID: optionalString("SUPABASE_OAUTH_CLIENT_ID"),
 	SUPABASE_OAUTH_CLIENT_SECRET: optionalRedacted("SUPABASE_OAUTH_CLIENT_SECRET"),

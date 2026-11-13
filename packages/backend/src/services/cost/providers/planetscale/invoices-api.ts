@@ -1,12 +1,10 @@
 /**
  * PlanetScale's invoice API as the cost source reads it: an organization's invoices and one
- * invoice's line items, with a service token. Plain requests with the status read off the answer:
- * a 401, 403 or 404 is an expected answer when a token is checked, not a failed call.
+ * invoice's line items, with the authorization its caller holds. Plain requests with the status
+ * read off the answer: a 401, 403 or 404 is an expected answer for a grant, not a failed call.
  */
-import { Effect, Redacted, Schema, SchemaTransformation, Array as Arr } from "effect"
+import { Effect, Redacted, Schema, SchemaTransformation, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, type HttpClient, HttpClientRequest } from "effect/http"
-
-const PLANETSCALE_API_URL = "https://api.planetscale.com/v1"
 
 const INVOICES_PER_PAGE = 50
 const LINE_ITEMS_PER_PAGE = 100
@@ -15,24 +13,19 @@ const MAX_INVOICE_PAGES = 50
 /** 5,000 line items in one month: more is refused, never read in part. */
 const MAX_LINE_ITEM_PAGES = 50
 
-/** What a token without the access is told, when it is saved and when a pull is refused. */
-export const NO_INVOICE_ACCESS =
-	"This service token cannot read invoices. Add the read_invoices organization access to it in PlanetScale."
-
 export interface PlanetScaleInvoiceCredentials {
+	/** `MAPLE_PLANETSCALE_API_BASE_URL`, without the `/v1` prefix. */
+	readonly apiBaseUrl: string
 	/** The organization's slug, as in `app.planetscale.com/<organization>`. */
 	readonly organization: string
-	/** `<token id>:<token>`: the whole `Authorization` header PlanetScale takes, with no scheme. */
+	/** The whole `Authorization` header: `Bearer <access token>` for the org's OAuth grant. */
 	readonly authorization: Redacted.Redacted
 }
 
-/** The header value a service token is sent as. */
-export const serviceTokenAuthorization = (tokenId: string, token: string): Redacted.Redacted =>
-	Redacted.make(`${tokenId}:${token}`)
-
 /**
- * `unauthorized` (401): not a live token. `forbidden` (403): the token lacks `read_invoices`.
- * `not_found` (404): the token cannot see the organization. `too_large`: more pages than a read takes.
+ * `unauthorized` (401): the access token is not live. `forbidden` (403): the grant lacks
+ * `read_invoices`. `not_found` (404): the grant cannot see the organization. `too_large`: more
+ * pages than a read takes.
  */
 export class PlanetScaleInvoiceApiError extends Schema.TaggedError<PlanetScaleInvoiceApiError>()(
 	"@maple/backend/cost/PlanetScaleInvoiceApiError",
@@ -128,7 +121,7 @@ const getPage =
 		httpClient
 			.execute(
 				HttpClientRequest.get(
-					`${PLANETSCALE_API_URL}/organizations/${encodeURIComponent(credentials.organization)}${path}`,
+					`${Str.replace(/\/$/, "")(credentials.apiBaseUrl)}/v1/organizations/${encodeURIComponent(credentials.organization)}${path}`,
 				).pipe(
 					HttpClientRequest.setUrlParams({ per_page: `${perPage}`, page: `${page}` }),
 					HttpClientRequest.setHeader("Authorization", Redacted.value(credentials.authorization)),

@@ -1,27 +1,24 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr, Record as Rec } from "effect"
+import { Effect, Layer, Redacted, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import {
+	FAKE_PLANETSCALE_ACCESS_TOKEN,
+	FAKE_PLANETSCALE_API_URL,
 	FAKE_PLANETSCALE_ORGANIZATION,
-	FAKE_PLANETSCALE_TOKEN,
-	FAKE_PLANETSCALE_TOKEN_ID,
 	type FakePlanetScale,
 	fakeInvoice,
 	fakeLineItem,
 	fakePlanetScaleFetch,
 	makeFakePlanetScale,
 } from "./fake-planetscale"
-import {
-	listInvoiceLineItems,
-	listInvoices,
-	type PlanetScaleInvoiceCredentials,
-	serviceTokenAuthorization,
-} from "./invoices-api"
+import { listInvoiceLineItems, listInvoices, type PlanetScaleInvoiceCredentials } from "./invoices-api"
 import { readInvoicesOfWindow } from "./pull"
 
+const BEARER = `Bearer ${FAKE_PLANETSCALE_ACCESS_TOKEN}`
 const CREDENTIALS: PlanetScaleInvoiceCredentials = {
+	apiBaseUrl: FAKE_PLANETSCALE_API_URL,
 	organization: FAKE_PLANETSCALE_ORGANIZATION,
-	authorization: serviceTokenAuthorization(FAKE_PLANETSCALE_TOKEN_ID, FAKE_PLANETSCALE_TOKEN),
+	authorization: Redacted.make(BEARER),
 }
 
 const MONTHS = ["2026-11", "2026-10", "2026-09", "2026-08", "2026-07", "2026-06"] as const
@@ -43,7 +40,7 @@ const withClient = <A, E>(use: (httpClient: HttpClient.HttpClient) => Effect.Eff
 	Effect.flatMap(HttpClient.HttpClient, use)
 
 describe("PlanetScale invoice API", () => {
-	it.effect("lists invoices with the token as the whole Authorization header", () => {
+	it.effect("lists invoices with the authorization its caller holds, on the API host it is given", () => {
 		const world = makeFakePlanetScale({ invoices: SIX_MONTHS })
 		return run(
 			world,
@@ -54,9 +51,7 @@ describe("PlanetScale invoice API", () => {
 					Arr.map(SIX_MONTHS, (invoice) => invoice.id),
 				)
 				assert.deepStrictEqual(world.urls, ["/v1/organizations/acme/invoices?per_page=50&page=1"])
-				assert.deepStrictEqual(world.authorizations, [
-					`${FAKE_PLANETSCALE_TOKEN_ID}:${FAKE_PLANETSCALE_TOKEN}`,
-				])
+				assert.deepStrictEqual(world.authorizations, [BEARER])
 			}),
 		)
 	})
@@ -163,30 +158,33 @@ describe("PlanetScale invoice API", () => {
 		)
 	})
 
-	it.effect("answers not found for another organization or a token PlanetScale does not know", () => {
-		const world = makeFakePlanetScale({ invoices: SIX_MONTHS })
-		return run(
-			world,
-			Effect.gen(function* () {
-				const reasons = yield* Effect.forEach(
-					[
-						{ ...CREDENTIALS, organization: "someone-else" },
-						{ ...CREDENTIALS, authorization: serviceTokenAuthorization("tokenid0123", "wrong") },
-					],
-					(credentials) =>
-						Effect.flip(withClient((httpClient) => listInvoices(httpClient, credentials))).pipe(
-							Effect.map((error) => error.reason),
-						),
-				)
-				assert.deepStrictEqual(reasons, ["not_found", "not_found"])
-			}),
-		)
-	})
+	it.effect(
+		"answers not found for another organization, and unauthorized for a token PlanetScale does not know",
+		() => {
+			const world = makeFakePlanetScale({ invoices: SIX_MONTHS })
+			return run(
+				world,
+				Effect.gen(function* () {
+					const reasons = yield* Effect.forEach(
+						[
+							{ ...CREDENTIALS, organization: "someone-else" },
+							{ ...CREDENTIALS, authorization: Redacted.make("Bearer wrong") },
+						],
+						(credentials) =>
+							Effect.flip(
+								withClient((httpClient) => listInvoices(httpClient, credentials)),
+							).pipe(Effect.map((error) => error.reason)),
+					)
+					assert.deepStrictEqual(reasons, ["not_found", "unauthorized"])
+				}),
+			)
+		},
+	)
 
 	it.effect("reports a request that never reached PlanetScale without repeating what it sent", () => {
 		const world = makeFakePlanetScale({
 			invoices: SIX_MONTHS,
-			networkError: `connect failed for ${FAKE_PLANETSCALE_TOKEN_ID}:${FAKE_PLANETSCALE_TOKEN}`,
+			networkError: `connect failed for ${BEARER}`,
 		})
 		return run(
 			world,

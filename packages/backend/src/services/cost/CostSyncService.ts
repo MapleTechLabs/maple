@@ -32,6 +32,7 @@ import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
+import { reconcilePlanetScaleCostSources } from "./planetscale-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
@@ -226,10 +227,25 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			})
 
 			/** One function per connection table; each owns the sources of its own. */
-			const reconcile = (now: number) =>
-				Effect.all([reconcileAws(now), reconcileOpenRouter(now), reconcileConnections(now)], {
-					discard: true,
+			/** PlanetScale sources whose connection is gone or reads another organization by now. */
+			const reconcilePlanetScale = Effect.fn("CostSyncService.reconcilePlanetScale")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcilePlanetScaleCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "planetscale",
+					"maple.cost.sources_removed": reconciled.removed,
 				})
+			})
+
+			const reconcile = (now: number) =>
+				Effect.all(
+					[
+						reconcileAws(now),
+						reconcileOpenRouter(now),
+						reconcileConnections(now),
+						reconcilePlanetScale(),
+					],
+					{ discard: true },
+				)
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
