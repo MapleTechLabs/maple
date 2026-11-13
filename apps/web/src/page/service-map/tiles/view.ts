@@ -486,31 +486,31 @@ const viewport = (h: H, model: Model, board: Board, inputs: ViewInputs, flowing:
 	)
 }
 
+// One line whatever the hint says: a footer that wraps when a tile is lifted would shrink the
+// map under the pointer.
 const footer = (h: H, model: Model): Html =>
 	hstack(
 		h,
 		{
-			gap: "2",
+			gap: "3",
 			align: "center",
 			justify: "between",
-			wrap: true,
 			className: "shrink-0 border-t px-4 py-2 text-3xs text-muted-foreground",
 		},
 		[
-			h.span(
-				[],
-				[
-					heldIdOf(model) !== null
-						? model.pickedId === null
-							? "Click a pale cell to put the tile down · or arrow keys, then Enter"
-							: "Click a pale cell or another tile · or arrow keys, then Enter · Esc puts it back"
-						: model.isBuilding
-							? `Click a tile to lift it, or press Enter on its name · drag to pan · right-drag to turn`
-							: `Click anything · drag to pan · right-drag to turn`,
-				],
-			),
-			hstack(h, { gap: "3", wrap: true, as: "span" }, [
-				h.span([], ["Touching tiles share a road · the rest go by rail"]),
+			typography(h, { truncate: true, className: "min-w-0" }, [
+				heldIdOf(model) !== null
+					? model.pickedId === null
+						? "Click a pale cell to put the tile down · or arrow keys, then Enter"
+						: "Click a pale cell or another tile · or arrow keys, then Enter · Esc puts it back"
+					: model.isBuilding
+						? `Click a tile to lift it, or press Enter on its name · drag to pan · right-drag to turn`
+						: `Click anything · drag to pan · right-drag to turn`,
+			]),
+			hstack(h, { gap: "3", as: "span", className: "shrink-0 whitespace-nowrap" }, [
+				typography(h, { className: "hidden @5xl/page:inline" }, [
+					"Touching tiles share a road · the rest go by rail",
+				]),
 				...Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
 					hstack(h, { gap: "1", as: "span" }, [
 						statusDot(h, {

@@ -36,4 +36,7 @@ export const listRowTitleStyles = "truncate font-medium text-foreground"
 
 export const listRowMetaStyles = "truncate text-muted-foreground text-xs"
 
+/** A second line that says something the reader must be able to read whole: it wraps. */
+export const listRowMetaWrapStyles = "text-muted-foreground text-xs"
+
 export const listRowTrailingStyles = "flex shrink-0 items-center gap-2"

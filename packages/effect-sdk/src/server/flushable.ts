@@ -23,7 +23,7 @@ import {
 	makeSerializedFlush,
 	type Resolved,
 	runFlush,
-	type SignalState,
+	makeSignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
@@ -109,9 +109,9 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	const metrics = makeMetricBuffer()
 	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)
 
-	const tracesState: SignalState = { disabledUntil: 0 }
-	const logsState: SignalState = { disabledUntil: 0 }
-	const metricsState: SignalState = { disabledUntil: 0 }
+	const tracesState = makeSignalState()
+	const logsState = makeSignalState()
+	const metricsState = makeSignalState()
 	const noOpNotice = makeNoOpNotice(
 		"[MapleServerSDK]",
 		"set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector",

@@ -1112,6 +1112,24 @@
 	[data-scrollstory] [data-inline] {
 		display: block !important;
 	}
+	/* A pinnable story keeps its two columns with the pane gone: each step's
+	   copy sits beside its own plate, on the same tracks the pinned layout
+	   uses, instead of a narrow column next to an empty one. */
+	@media (min-width: 1024px) {
+		[data-scrollstory]:has([data-sticky]) .story-steps {
+			grid-column: 1 / -1;
+		}
+		[data-scrollstory]:has([data-sticky]) .story-steps [data-step] {
+			--story-step-pad: 3rem;
+			grid-template-columns: 9px minmax(0, 0.8fr) minmax(0, 1.38fr);
+			grid-template-rows: auto auto 1fr;
+		}
+		[data-scrollstory]:has([data-sticky]) [data-inline] {
+			grid-column: 3;
+			grid-row: 1 / span 3;
+			margin-top: 0;
+		}
+	}
 	[data-scrollstory] .story-steps [data-step]::after {
 		display: none !important;
 	}

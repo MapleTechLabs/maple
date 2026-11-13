@@ -14,7 +14,12 @@ import {
 	startBufferedRecording,
 	startRecording,
 } from "../replay/record"
-import { type IngestConfig, type NetworkBodyOptions, postSessionMeta } from "../platform/transport"
+import {
+	type ErrorNoiseFilter,
+	type IngestConfig,
+	type NetworkBodyOptions,
+	postSessionMeta,
+} from "../platform/transport"
 import { type SessionLifecycleHandle, type SessionLifecycleOptions, startSessionLifecycle } from "./lifecycle"
 import { markReplayTriggered } from "./session"
 import { getObservedTraceIds, publishSessionSink } from "./sink"
@@ -32,6 +37,8 @@ export interface ReplaySessionOptions extends SessionLifecycleOptions {
 	readonly canvasFps?: number | undefined
 	/** Keep request and response bodies of these URLs on replay network events. */
 	readonly networkBodies?: NetworkBodyOptions | undefined
+	/** Uncaught errors that are not the app's: the sink this session starts after a rotation skips them too. */
+	readonly isErrorNoise?: ErrorNoiseFilter | undefined
 	/** Notifies consumers that the session id used for span linking changed. */
 	readonly onSessionChange?: ((sessionId: string) => void) | undefined
 	/**
@@ -70,6 +77,7 @@ export function startReplaySession(options: ReplaySessionOptions): ReplaySession
 		maskAllInputs: options.maskAllInputs,
 		maskAllText: options.maskAllText,
 		getIdentity: options.getIdentity,
+		isErrorNoise: options.isErrorNoise,
 		canvasFps: options.canvasFps,
 		networkBodies: options.networkBodies,
 	}

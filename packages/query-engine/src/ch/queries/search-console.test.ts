@@ -108,6 +108,16 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("ORDER BY position ASC")
 	})
 
+	it("breaks ties on the busier row before the name, so zero-click rows are not alphabetical", () => {
+		const byClicks = oneLine(compileUnsafe(searchConsoleTopQueriesQuery(), params).sql)
+		expect(byClicks).toContain("ORDER BY clicks DESC, impressions DESC, query ASC")
+		// Impressions cannot break their own ties, so clicks do.
+		const byImpressions = oneLine(
+			compileUnsafe(searchConsoleTopPagesQuery({ sortBy: "impressions" }), params).sql,
+		)
+		expect(byImpressions).toContain("ORDER BY impressions DESC, clicks DESC, page ASC")
+	})
+
 	it("narrows pages by page only: the page grain has no country or device", () => {
 		const flat = oneLine(
 			compileUnsafe(searchConsoleTopPagesQuery({ page: "https://acme.dev/docs" }), params).sql,

@@ -134,15 +134,20 @@ export interface SearchPageSort {
 	readonly sortDir?: "asc" | "desc"
 }
 
-/** A metric order, descending by default and ascending for position; the URL breaks ties. */
+/**
+ * A metric order, descending by default and ascending for position. Ties go to the busier page
+ * (impressions, or clicks under an impressions sort), as the query orders them, then the URL.
+ */
 const searchPageOrder = (opts: SearchPageSort): Order.Order<MergedSearchPage> => {
 	const sortBy = opts.sortBy ?? "clicks"
 	const direction = opts.sortDir ?? (sortBy === "position" ? "asc" : "desc")
 	const byMetric = Order.mapInput(Order.Number, (row: MergedSearchPage) => row[sortBy])
-	return Order.combine(
+	const tieBreak = sortBy === "impressions" ? "clicks" : "impressions"
+	return Order.combineAll([
 		direction === "asc" ? byMetric : Order.flip(byMetric),
+		Order.mapInput(Order.flip(Order.Number), (row: MergedSearchPage) => row[tieBreak]),
 		Order.mapInput(Str.Order, (row: MergedSearchPage) => row.page),
-	)
+	])
 }
 
 /**

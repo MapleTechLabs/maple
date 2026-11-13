@@ -52,10 +52,16 @@ header. The password is an Effect `Redacted` value.
 
 ## Streaming and limits
 
-The parser frames rows at the byte level before strict UTF-8 decoding, so chunk
+The parser frames rows at the byte level and decodes each complete row, so chunk
 boundaries may fall anywhere, including inside a multibyte character. It accepts
 LF, CRLF, empty results, and a complete final row without a trailing newline. It
-rejects malformed JSON, non-object rows, invalid UTF-8, and incomplete final rows.
+rejects malformed JSON, non-object rows, and incomplete final rows.
+
+A cell can hold bytes that are not valid UTF-8: a string function that cuts a
+multibyte character, or an `AggregateFunction` state selected as is. Those bytes
+decode to U+FFFD (the replacement character) and the row is still returned. The
+replacement is lossy, so read such columns with `hex()` or `base64Encode()` when
+the bytes matter.
 
 - `maxBytes` counts decompressed network bytes before buffering or JSON parsing,
   including whitespace and exception frames. It is optional.
@@ -82,7 +88,7 @@ or its credentials. Applications remain responsible for redacting server message
 before exposing them: database errors can contain query text or values.
 
 HTTP 200 does not imply query success. The decoder recognizes legacy appended
-ClickHouse exceptions and validates the tag, footer, and UTF-8 byte length of modern
+ClickHouse exceptions and validates the tag, footer, and raw byte length of modern
 exception frames. A complete frame is recognized before waiting for EOF because
 ClickHouse may close HTTP chunk framing abruptly after writing an exception.
 Malformed or truncated exception frames fail as protocol errors.

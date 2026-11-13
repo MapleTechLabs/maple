@@ -134,6 +134,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ai-credits",
+		title: "AI credits",
+		description:
+			"The AI credits page under Settings › Billing: spend by feature and model, and code review by repository and pull request (`?state=` code-review, chat, empty, loading, error).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/billing-orgs",
 		title: "Billing orgs",
 		description:
@@ -178,6 +186,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Vercel integration",
 		description:
 			"Integrations → Vercel not connected, the connect steps, and a connected team healthy, with a broken drain and with a rejected token, over fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/analytics-search",
+		title: "Web analytics: Search",
+		description:
+			"The Search tab's tiles, trend, queries and pages over a young site's Search Console data; sorting, the tiles and the filters work. Conversions, loading, an empty window, failing (all reads, or some), importing, revoked, no property and not connected too, and the Overview tab's pointer to Search (`?state=`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -439,7 +455,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/aws-connection",
 		title: "AWS connection",
 		description:
-			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|flow|flow-before).",
+			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, the card before its stack is deployed, with a failing role, a stopped stream and metrics off, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|pending|failing|stopped|metrics-off|flow|flow-before).",
 		kind: "lab",
 		session: "none",
 	},

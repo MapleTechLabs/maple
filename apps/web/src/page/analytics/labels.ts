@@ -15,6 +15,10 @@ import { Array as Arr, Option, String as Str } from "effect"
  */
 export const referrerLabel = (host: string): string => (host === WEB_ANALYTICS_UNSET ? "Direct" : host)
 
+/** A referrer that is Google's search results (`www.google.de`), not another Google product. */
+export const isGoogleSearchHost = (host: string): boolean =>
+	/^(?:www\.)?google\.[a-z]{2,3}(?:\.[a-z]{2})?$/u.test(host)
+
 /** The untagged group of a `utm_*` dimension. */
 export const utmLabel = (value: string): string => (value === WEB_ANALYTICS_UNSET ? "Not set" : value)
 

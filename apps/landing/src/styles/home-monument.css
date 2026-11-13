@@ -393,6 +393,10 @@ html:not([lang="en"]) .monument-hero h1 {
 	line-height: 1.13;
 	width: auto;
 }
+/* Japanese wraps between phrases, not in the middle of a katakana word. */
+html[lang="ja"] .monument-hero h1 span {
+	word-break: auto-phrase;
+}
 /* Large monitors: fixed-pixel type and a 120px proof rail read as miniature on
    a 2560px canvas, so the whole composition steps up together. */
 @media (min-width: 1800px) {
@@ -498,9 +502,15 @@ html:not([lang="en"]) .monument-hero h1 {
 		margin: -13px -14px;
 		padding: 13px 14px;
 	}
+	/* Each line wraps once here rather than shrinking to fit: a headline at
+	   body size stops reading as the headline. */
 	.monument-hero h1 {
-		font-size: clamp(1.35rem, 5.8vw, 2.75rem);
-		margin-top: 35px;
+		width: auto;
+		font-size: clamp(1.6rem, 7.4vw, 2.75rem);
+		margin-top: 30px;
+	}
+	.monument-hero h1 span {
+		text-wrap: balance;
 	}
 	.monument-hero__copy {
 		width: 100%;
@@ -540,7 +550,7 @@ html:not([lang="en"]) .monument-hero h1 {
 		font-size: 17px;
 	}
 	html:not([lang="en"]) .monument-hero h1 {
-		font-size: clamp(1.2rem, 4.9vw, 2.4rem);
+		font-size: clamp(1.5rem, 6.6vw, 2.4rem);
 	}
 }
 @media (prefers-reduced-motion: reduce) {

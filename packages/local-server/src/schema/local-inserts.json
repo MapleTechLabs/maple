@@ -86,7 +86,7 @@
 			"selects": [
 				"__ORG__",
 				"timestamp",
-				"timestamp",
+				"CAST(timestamp AS DateTime)",
 				"trace_id",
 				"span_id",
 				"flags",

@@ -98,6 +98,19 @@ describe("mergeLandingPages order", () => {
 		expect(paths({ sortBy: "position" })).toEqual(["/b", "/c", "/a"])
 		expect(paths({ sortBy: "clicks", sortDir: "asc" })).toEqual(["/b", "/c", "/a"])
 	})
+
+	it("ranks pages tied on the sorted metric by the busier one, not by URL", () => {
+		const pages = [
+			page("https://acme.dev/a", 0, 3, 9),
+			page("https://acme.dev/b", 0, 800, 12),
+			page("https://acme.dev/c", 4, 40, 4),
+			page("https://acme.dev/d", 9, 40, 2),
+		]
+		const paths = (sort?: Parameters<typeof mergeLandingPages>[0]["sort"]) =>
+			Arr.map(mergeLandingPages({ pages, entries: [], conversions: null, sort }), (row) => row.path)
+		expect(paths()).toEqual(["/d", "/c", "/b", "/a"])
+		expect(paths({ sortBy: "impressions" })).toEqual(["/b", "/d", "/c", "/a"])
+	})
 })
 
 describe("topSearchPages", () => {

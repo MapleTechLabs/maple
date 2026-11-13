@@ -100,6 +100,8 @@ export type FilterSectionConfig<M> = Readonly<{
 	/** The label's `title` when it is more than the label. */
 	getOptionDescription?: (name: string) => string | undefined
 	showCounts?: boolean
+	/** How a row's count reads (an amount of money); a compact number when absent. */
+	formatCount?: (count: number) => string
 	/** The info mark beside the title, this text in its tooltip. */
 	description?: string
 }>
@@ -137,7 +139,12 @@ const rowAction = <M>(
 		[text],
 	)
 
-const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boolean): Html =>
+const countText = <M>(
+	h: HtmlBuilder<M>,
+	option: FilterOption,
+	isTriState: boolean,
+	format: (count: number) => string = formatNumber,
+): Html =>
 	h.span(
 		[
 			h.Class(
@@ -149,7 +156,7 @@ const countText = <M>(h: HtmlBuilder<M>, option: FilterOption, isTriState: boole
 			),
 			h.Title(option.count.toLocaleString("en-US")),
 		],
-		[formatNumber(option.count)],
+		[format(option.count)],
 	)
 
 /** The info mark beside a filter's title, its description in a tooltip. */
@@ -257,7 +264,9 @@ const optionRow = <M>(h: HtmlBuilder<M>, config: FilterSectionConfig<M>, option:
 			h.span(
 				[h.Class("relative flex shrink-0 items-center justify-end")],
 				[
-					...(config.showCounts === false ? [] : [countText(h, option, isTriState)]),
+					...(config.showCounts === false
+						? []
+						: [countText(h, option, isTriState, config.formatCount)]),
 					...(config.onExclude === undefined
 						? []
 						: [

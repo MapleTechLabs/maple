@@ -65,7 +65,7 @@ When the **Event** filter names an event that annotated spans also produce, a **
 
 ### Search
 
-**Search** shows Google Search Console data next to your sessions: **Clicks**, **Impressions**, **CTR** and **Avg position**, the **Top queries**, and **Landing pages** with their **Entry sessions**, **Bounce rate** and, with an **Event** filter, **Conversions**. Click **Connect Search Console** and choose the properties to import. Google reports with a delay of 2 to 3 days. Only the **Event** filter applies on this tab.
+**Search** shows Google Search Console data next to your sessions. Four tiles give **Clicks**, **Impressions**, **CTR** and **Avg position**; pick one to chart it by day. **Queries** lists what people searched. **Pages** lists the pages they found, with the **Sessions** that started on each, its **Bounce** rate and, with an **Event** filter, **Conversions**. Sort either table by a column, type to filter it, or open it larger with **Expand table**. Click **Connect Search Console** and choose the properties to import. Google reports with a delay of 2 to 3 days. Only the **Event** filter applies on this tab.
 
 ## What each part needs
 

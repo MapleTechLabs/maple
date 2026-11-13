@@ -44,6 +44,8 @@ export const resourceHref = (link: AuditResourceLink): string => {
 			return `/anomalies/${encodeURIComponent(link.params.incidentId)}`
 		case "/alerts/routing":
 			return hrefOf(AppRoute.AlertsSection({ section: "routing", search: {} }))
+		case "/cost":
+			return hrefOf(AppRoute.Cost({ search: {} }))
 		case "/integrations":
 			return hrefOf(AppRoute.Integrations({ search: link.search }))
 		case "/settings":
