@@ -12,6 +12,7 @@ import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
+import { canTriageIssues } from "../kit/grants"
 import { Array as Arr, Option } from "effect"
 
 type Return = PageReturn<Model, Message>
@@ -19,10 +20,15 @@ type Return = PageReturn<Model, Message>
 /** What each top-level entry does, in entry order (the submenu and separator do nothing themselves). */
 type Action = "submenu" | "separator" | "claim" | "release" | "open" | "copy-link" | "copy-id" | "copy-prompt"
 
-const actionsOf = (issue: ErrorIssueDocument): ReadonlyArray<Action> => [
-	"submenu",
-	...(issue.leaseHolder === null ? ["claim" as const] : ["release" as const]),
-	"separator",
+/** Changing status, claiming and releasing are triage: without it the menu opens and copies. */
+const actionsOf = (issue: ErrorIssueDocument, canTriage: boolean): ReadonlyArray<Action> => [
+	...(canTriage
+		? [
+				"submenu" as const,
+				issue.leaseHolder === null ? ("claim" as const) : ("release" as const),
+				"separator" as const,
+			]
+		: []),
 	"open",
 	"copy-link",
 	"copy-id",
@@ -44,10 +50,11 @@ const targetsOf = (issue: ErrorIssueDocument): ReadonlyArray<WorkflowState> =>
 export const rowMenuEntries = <M>(
 	h: HtmlBuilder<M>,
 	issue: ErrorIssueDocument,
+	canTriage: boolean,
 ): ReadonlyArray<ContextMenuView.Entry> => {
 	const targets = targetsOf(issue)
 	const current = issue.workflowState
-	return Arr.map(actionsOf(issue), (action): ContextMenuView.Entry => {
+	return Arr.map(actionsOf(issue, canTriage), (action): ContextMenuView.Entry => {
 		switch (action) {
 			case "separator":
 				return { _tag: "Separator" }
@@ -131,7 +138,9 @@ export const rowMenuStep = (model: Model, message: ContextMenu.Message): Return 
 		...step,
 		commands: [...lifted.commands, ...(step.commands ?? [])],
 	})
+	const canTriage = canTriageIssues(model)
 	if (next.outMessage._tag === "SelectedSubItem") {
+		if (!canTriage) return lifted
 		// The first row is the current state, disabled; moves follow it.
 		const toState = targetsOf(issue)[next.outMessage.index - 1]
 		return toState === undefined
@@ -139,7 +148,7 @@ export const rowMenuStep = (model: Model, message: ContextMenu.Message): Return 
 			: done(startHubWrite(lifted.model, [issue.id], { _tag: "Transition", toState }, false))
 	}
 	const href = `/errors/issues/${issue.id}`
-	switch (actionsOf(issue)[next.outMessage.index]) {
+	switch (actionsOf(issue, canTriage)[next.outMessage.index]) {
 		case "claim":
 			return done(startHubWrite(lifted.model, [issue.id], { _tag: "Claim" }, false))
 		case "release":

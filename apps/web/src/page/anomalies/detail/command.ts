@@ -5,9 +5,12 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { fetchSessionGrants } from "../../kit/session-grants"
 import { Message } from "./message"
 
 export const ReadAnomalyClock = readClock("ReadAnomalyClock", Message.ReadClock)
+
+export const FetchAnomalySession = fetchSessionGrants("FetchAnomalySession", Message.CompletedFetchSession)
 
 export const FetchIncident = Command.define("FetchAnomalyIncident", {
 	args: { key: Schema.String, id: AnomalyIncidentId },

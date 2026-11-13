@@ -29,7 +29,7 @@ import {
 	pageStatus,
 } from "../shared/derive"
 import { Message } from "./message"
-import { canBreakGlass, canManage, type Model } from "./model"
+import { canBreakGlass, canManage, canPostIncidents, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf, pageOf, statusReadsReady } from "./reads"
 import { PAGE_MENU_ID, resolveView } from "./update"
 import { canvas } from "./view-canvas"
@@ -143,7 +143,7 @@ const headerActions = (h: H, model: Model, page: V2StatusPage): Html => {
 	const isPageView = resolveView(model.search.view) === "page"
 	const entries = menuEntries(model, page)
 	return detailActions(h, [
-		...(isPageView
+		...(isPageView && canPostIncidents(model)
 			? [
 					button(
 						h,

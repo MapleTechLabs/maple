@@ -4,6 +4,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
+import * as Policy from "@maple/domain/policy"
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -122,6 +123,32 @@ export const FEEDBACK_TOOL = "send_maple_feedback"
  */
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
 	!readOnly && name !== FEEDBACK_TOOL
+
+/** The tools that build dashboards: the only changes an analyst's role reaches. */
+export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
+	"create_dashboard",
+	"update_dashboard",
+	"add_dashboard_widget",
+	"update_dashboard_widget",
+	"remove_dashboard_widget",
+	"reorder_dashboard_widgets",
+	"replace_dashboard_widgets",
+])
+
+/** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
+export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
+	refusesReadOnlyCredential(name, readOnly) && !DASHBOARD_AUTHORING_TOOLS.has(name)
+
+/** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
+export const refusalFor = (
+	tenant: { readonly readOnly?: true; readonly roles: ReadonlyArray<string> },
+	name: string,
+	readOnly: boolean,
+): "analyst" | "read_only_key" | undefined => {
+	if (Policy.isAnalyst(tenant.roles) && refusesAnalyst(name, readOnly)) return "analyst"
+	if (tenant.readOnly === true && refusesReadOnlyCredential(name, readOnly)) return "read_only_key"
+	return undefined
+}
 
 /**
  * Who a tool is for.

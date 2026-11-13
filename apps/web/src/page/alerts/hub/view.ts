@@ -50,7 +50,7 @@ import { slosTab } from "./view-slos"
 import { deleteScheduleDialog, hasSchedules, oncallTab, whoIsOnCallStrip } from "./view-oncall"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, canRespondToIncidents } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -201,7 +201,10 @@ const headerActions = (
 	model: Model,
 	tab: AlertsTab,
 	overview: Option.Option<AlertsOverviewReady>,
+	audience: PageViewInputs["context"]["audience"],
 ): Html | undefined => {
+	// An analyst follows incidents and sets nothing up.
+	if (audience === "analyst") return undefined
 	if (tab === "inbox" || tab === "rules")
 		// The first-run empty state offers the templates and "Start from scratch" to who can create.
 		return canManageAlerts(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))
@@ -274,11 +277,13 @@ const hubBody = (
 				serviceName: model.search.serviceName,
 				onAddDestination: canManageAlerts(model) ? Message.ClickedNewDestination() : undefined,
 			})
-			const acknowledge = {
-				onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
-					Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
-				pendingIds: model.acknowledgingIncidentIds,
-			}
+			const acknowledge = canRespondToIncidents(model)
+				? {
+						onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) =>
+							Message.ClickedAcknowledgeIncident({ incidentId, acknowledged }),
+						pendingIds: model.acknowledgingIncidentIds,
+					}
+				: null
 			if (tab === "inbox") {
 				const signal = resolveSignal(model.search.signal)
 				// A team can set up on-call before its first rule, so the strip shows on the empty inbox too.
@@ -352,7 +357,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: TAB_LABEL[tab],
-					actions: headerActions(h, model, tab, overview),
+					actions: headerActions(h, model, tab, overview, inputs.context.audience),
 				},
 				[
 					tab === "routing"

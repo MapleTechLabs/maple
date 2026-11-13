@@ -2,6 +2,7 @@ import { InfraSurfaceLiteral } from "@maple/domain/http"
 import { V2Source } from "@maple/domain/http/v2"
 import type { BillingCustomer } from "@maple/domain/http"
 import type { ClerkOrganization, ClerkUser } from "../platform/clerk"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "@maple/views/ui/anchor"
@@ -15,7 +16,7 @@ import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
 import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
-import { NavSurface } from "./nav"
+import { type NavAudience, NavSurface } from "./nav"
 import { OnCallSnapshot } from "./oncall"
 import {
 	type InfraSurfaces,
@@ -132,6 +133,12 @@ export type ShellClerk = Readonly<{
 	/** The viewer's role in the active org (`org:admin`), once Clerk has read their membership. */
 	maybeRole: Option.Option<string>
 }>
+
+/** Who the shell is drawn for; self-hosted has no Clerk role, so it is never an analyst. */
+export const shellAudience = (clerk: ShellClerk | null): NavAudience =>
+	clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.isAnalyst([role]))
+		? "analyst"
+		: "operator"
 
 /** A rail item's tooltip: right of the item, centred. */
 export const initRailTooltip = (): Tooltip.Model =>

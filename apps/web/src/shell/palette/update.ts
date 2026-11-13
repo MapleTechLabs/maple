@@ -4,8 +4,10 @@ import Fuse from "fuse.js"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../platform/resources"
+import type { NavAudience } from "../nav"
 import {
 	browseEntries,
+	entriesFor,
 	type EntryInputs,
 	groupEntries,
 	MAX_RESULTS,
@@ -61,8 +63,9 @@ const computeShownEntries = (
 	model: Model,
 	context: Context,
 	visibleFlagged: ReadonlyArray<string>,
+	audience: NavAudience,
 ): Shown => {
-	const all = entriesOf(model, context)
+	const all = entriesFor(entriesOf(model, context), audience)
 	const entries = Arr.filter(
 		all,
 		(entry) =>
@@ -84,7 +87,7 @@ const sameItems = <A>(a: ReadonlyArray<A>, b: ReadonlyArray<A>) =>
 
 type ShownInputs = Readonly<{ query: string; serviceNames: ReadonlyArray<string> }> &
 	Context &
-	Readonly<{ visibleFlagged: ReadonlyArray<string> }>
+	Readonly<{ visibleFlagged: ReadonlyArray<string>; audience: NavAudience }>
 
 const sameInputs = (a: ShownInputs, b: ShownInputs) =>
 	a.query === b.query &&
@@ -92,7 +95,8 @@ const sameInputs = (a: ShownInputs, b: ShownInputs) =>
 	sameItems(a.serviceNames, b.serviceNames) &&
 	sameItems(a.dashboards, b.dashboards) &&
 	sameItems(a.favorites, b.favorites) &&
-	sameItems(a.visibleFlagged, b.visibleFlagged)
+	sameItems(a.visibleFlagged, b.visibleFlagged) &&
+	a.audience === b.audience
 
 /** Every render rebuilds the context, so the last answer is kept by its inputs, not by reference. */
 let lastShown: { inputs: ShownInputs; shown: Shown } | null = null
@@ -101,23 +105,30 @@ export const shownEntries = (
 	model: Model,
 	context: Context,
 	visibleFlagged: ReadonlyArray<string>,
+	audience: NavAudience = "operator",
 ): Shown => {
 	const inputs: ShownInputs = {
 		...context,
 		query: model.list.inputValue,
 		serviceNames: model.serviceNames,
 		visibleFlagged,
+		audience,
 	}
 	if (lastShown !== null && sameInputs(lastShown.inputs, inputs)) return lastShown.shown
-	const shown = computeShownEntries(model, context, visibleFlagged)
+	const shown = computeShownEntries(model, context, visibleFlagged, audience)
 	lastShown = { inputs, shown }
 	return shown
 }
 
 /** The entries in list order (grouped), what the highlight indexes. */
-const listedEntries = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>) =>
+const listedEntries = (
+	model: Model,
+	context: Context,
+	visibleFlagged: ReadonlyArray<string>,
+	audience: NavAudience,
+) =>
 	Arr.flatMap(
-		groupEntries(shownEntries(model, context, visibleFlagged).entries),
+		groupEntries(shownEntries(model, context, visibleFlagged, audience).entries),
 		(section) => section.entries,
 	)
 
@@ -143,8 +154,13 @@ const toList = Command.mapMessage((message: Combobox.Message) => Message.GotList
 const toDialog = Command.mapMessage((message: Dialog.Message) => Message.GotDialogMessage({ message }))
 
 /** Base UI's Enter: the highlighted entry is picked. */
-const enter = (model: Model, context: Context, visibleFlagged: ReadonlyArray<string>): UpdateReturn =>
-	picked(model, listedEntries(model, context, visibleFlagged)[model.list.highlighted ?? -1])
+const enter = (
+	model: Model,
+	context: Context,
+	visibleFlagged: ReadonlyArray<string>,
+	audience: NavAudience,
+): UpdateReturn =>
+	picked(model, listedEntries(model, context, visibleFlagged, audience)[model.list.highlighted ?? -1])
 
 /** The inline autocomplete: typing searches, arrows move the highlight into view, Enter picks. */
 const listStep = (model: Model, child: Combobox.Message, context: Context): UpdateReturn => {
@@ -176,7 +192,7 @@ export const update = (model: Model, message: Message, context: Context): Update
 			}
 		},
 		GotListMessage: ({ message: child }) => listStep(model, child, context),
-		PressedEnter: ({ visibleFlagged }) => enter(model, context, visibleFlagged),
+		PressedEnter: ({ visibleFlagged, audience }) => enter(model, context, visibleFlagged, audience),
 		ClickedEntry: ({ id }) => {
 			const entry = findEntry(model, context, id)
 			// A link's own click navigates (the root routes it), so only the palette closes.
