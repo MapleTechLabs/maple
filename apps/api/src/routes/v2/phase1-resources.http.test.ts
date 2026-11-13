@@ -902,9 +902,9 @@ describe("v2 error_issues over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets an observer read an issue and refuses to let them triage it", async () => {
+	it("lets an analyst read an issue and refuses to let them triage it", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(undefined, ["org:observer"])
+		const key = await harness.bootstrapKey(undefined, ["org:analyst"])
 
 		const read = await harness.request("GET", `/v2/error_issues/${ISS_ID}`, { token: key.secret })
 		expect(read.status).toBe(200)
@@ -915,7 +915,7 @@ describe("v2 error_issues over HTTP", () => {
 		})
 		expect(refused.status).toBe(403)
 		expect(refused.body.error.code).toBe("insufficient_permissions")
-		expect(refused.body.error.message).toContain("Observers can read Maple")
+		expect(refused.body.error.message).toContain("Analysts can read Maple")
 		expect(harness.issueActions()).toEqual([])
 		await harness.dispose()
 	})

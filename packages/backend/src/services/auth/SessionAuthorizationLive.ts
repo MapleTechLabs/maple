@@ -10,7 +10,7 @@ import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { getBearerToken } from "./bearer-token"
-import { refuseObserverWrites } from "./observer-gate"
+import { refuseAnalystWrites } from "./analyst-gate"
 
 /**
  * Authorization for the internal API: Clerk sessions only.
@@ -48,7 +48,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* regions.ensureServedHere(tenant.orgId)
-					yield* refuseObserverWrites(tenant.roles, options)
+					yield* refuseAnalystWrites(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
@@ -87,7 +87,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					}
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
-					yield* refuseObserverWrites(tenant.roles, options)
+					yield* refuseAnalystWrites(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),

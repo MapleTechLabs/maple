@@ -32,8 +32,8 @@ describe("Policy.can", () => {
 		}
 	})
 
-	it("holds nothing a member has for an observer or a Clerk role it does not know", () => {
-		for (const roles of [["org:observer"], ["org:billing"]]) {
+	it("holds nothing a member has for an analyst or a Clerk role it does not know", () => {
+		for (const roles of [["org:analyst"], ["org:billing"]]) {
 			expect(Policy.can(roles, "ingest_keys:view_public")).toBe(false)
 			expect(Policy.grantsOf(roles)).toEqual([])
 		}
@@ -67,11 +67,11 @@ describe("Policy.check", () => {
 		}),
 	)
 
-	it.effect("tells an observer which roles hold a member permission", () =>
+	it.effect("tells an analyst which roles hold a member permission", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
 				Policy.check(
-					["org:observer"],
+					["org:analyst"],
 					"ingest_keys:view_public",
 					(denial) => new Forbidden({ message: denial.message }),
 				),
@@ -119,26 +119,26 @@ describe("roleOf", () => {
 		])
 	})
 
-	it("reads the observer key as observer, below every assignable role", () => {
-		expect(Policy.roleOf("org:observer")).toBe("observer")
+	it("reads the analyst key as analyst, below every assignable role", () => {
+		expect(Policy.roleOf("org:analyst")).toBe("analyst")
 		for (const entry of Policy.assignableRoles) {
-			expect(Policy.outranks(entry.role, "observer")).toBe(true)
+			expect(Policy.outranks(entry.role, "analyst")).toBe(true)
 		}
 	})
 })
 
 describe("highestRole", () => {
-	it("keeps an observer an observer instead of lifting them to member", () => {
-		expect(Policy.highestRole(["org:observer"])).toBe("observer")
-		expect(Policy.highestRole(["org:observer", "org:billing"])).toBe("observer")
+	it("keeps an analyst an analyst instead of lifting them to member", () => {
+		expect(Policy.highestRole(["org:analyst"])).toBe("analyst")
+		expect(Policy.highestRole(["org:analyst", "org:billing"])).toBe("analyst")
 	})
 
-	it("takes the highest when an observer role sits beside a higher one", () => {
-		expect(Policy.highestRole(["org:observer", "org:engineer"])).toBe("engineer")
+	it("takes the highest when an analyst role sits beside a higher one", () => {
+		expect(Policy.highestRole(["org:analyst", "org:engineer"])).toBe("engineer")
 	})
 
-	it("retires a member-pinned credential when its owner becomes an observer", () => {
+	it("retires a member-pinned credential when its owner becomes an analyst", () => {
 		const pinned = Policy.highestRole(["org:member"])
-		expect(Policy.outranks(pinned, Policy.highestRole(["org:observer"]))).toBe(true)
+		expect(Policy.outranks(pinned, Policy.highestRole(["org:analyst"]))).toBe(true)
 	})
 })

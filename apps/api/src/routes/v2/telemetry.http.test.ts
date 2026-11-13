@@ -571,9 +571,9 @@ describe("v2 telemetry reads over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets an observer search traces, a POST that only reads", async () => {
+	it("lets an analyst search traces, a POST that only reads", async () => {
 		const harness = makeHarness()
-		const key = await harness.bootstrapKey(undefined, ["org:observer"])
+		const key = await harness.bootstrapKey(undefined, ["org:analyst"])
 		const searched = await harness.request("POST", "/v2/traces/search", key.secret, {
 			start_time: START,
 			end_time: END,
