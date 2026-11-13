@@ -41,6 +41,8 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	/** Shell state the root's reads would bring (the Alerts › Inbox count), as a fixture. */
 	seedShell?: (shell: Shell.Model) => Shell.Model
+	/** Who the shell is drawn for (`OBSERVER_CLERK`); an operator when absent. */
+	clerk?: Shell.ShellClerk
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
@@ -161,6 +163,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 					...labShellView(h, model.shell, toShell, {
 						currentPath: currentPathOf(model.page),
 						breadcrumbs: breadcrumbsOf(model.page),
+						clerk: page.clerk ?? null,
 						page: () =>
 							h.submodel({
 								slotId: "lab-page",

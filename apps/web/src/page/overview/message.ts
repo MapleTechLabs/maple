@@ -8,6 +8,7 @@ import * as Select from "@maple/views/ui/select"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
+import { Message as ObserverMessage } from "./observer/message"
 import { HealthMessages } from "../kit/service-health"
 import { FacetsHint, HealthSnapshot, OverviewFacets, OverviewPoint, RefinementPoint, Usage } from "./model"
 
@@ -47,5 +48,6 @@ export const Message = defineMessageUnion({
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
 	GotSetupMessage: { message: SetupChecklist.Message },
+	GotObserverMessage: { message: ObserverMessage },
 })
 export type Message = typeof Message.Type

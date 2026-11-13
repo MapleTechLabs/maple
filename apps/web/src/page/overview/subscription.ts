@@ -1,4 +1,4 @@
-import { Schema, Stream, Array as Arr } from "effect"
+import { Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
@@ -11,6 +11,7 @@ import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { isPolling as isSetupPolling } from "./setup-checklist-update"
 import { backoffPollTicks } from "../../data/poll"
+import { subscriptions as observerSubscriptions } from "./observer/subscription"
 
 /** Five minutes of 15 s polls before the setup card slows to one a minute. */
 const SETUP_FAST_POLLS = 20
@@ -47,57 +48,62 @@ const byOrg = (stream: (orgId: string) => Stream.Stream<Message, never, OrgColle
 	dependenciesToStream: ({ orgId }: { readonly orgId: string }) => stream(orgId),
 })
 
-export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
-	(entry) => ({
-		incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
-		/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
-		incidentsLoadFailed: entry(
-			{ orgId: Schema.String, isWaiting: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isWaiting: AsyncData.isLoading(model.incidents),
-				}),
-				dependenciesToStream: ({ orgId, isWaiting }) =>
-					incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
-			},
-		),
-		/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */
-		rulesLoadFailed: entry(
-			{ orgId: Schema.String, isWaiting: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isWaiting: AsyncData.isLoading(model.rules),
-				}),
-				dependenciesToStream: ({ orgId, isWaiting }) =>
-					isWaiting
-						? collectionLoadFailed(
-								`alert_rules:${orgId}`,
-								() => Message.FailedLoadRules({ orgId }),
-								ENRICHMENT_LOAD_TIMEOUT_MS,
-							)
-						: Stream.empty,
-			},
-		),
-		rules: entry({ orgId: Schema.String }, byOrg(rules)),
-		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
-		/** Waits for the first real service: every 15 s for five minutes, then every minute. */
-		setupPoll: entry(
-			{ isPolling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isPolling: model.setup !== null && isSetupPolling(model.setup),
-				}),
-				dependenciesToStream: ({ isPolling }) =>
-					isPolling
-						? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
-								Stream.map(() =>
-									Message.GotSetupMessage({ message: SetupMessage.TickedPoll() }),
-								),
-							)
-						: Stream.empty,
-			},
-		),
-	}),
-)
+/** The observer page's live alert rows, only while there is an observer page. */
+const observer = Subscription.lift(observerSubscriptions)<PageSubscriptionInput<Model>, Message>({
+	read: ({ model, context }) =>
+		model.observer === null ? Option.none() : Option.some({ model: model.observer, context }),
+	toParentMessage: (message) => Message.GotObserverMessage({ message }),
+})
+
+const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
+	incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
+	/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
+	incidentsLoadFailed: entry(
+		{ orgId: Schema.String, isWaiting: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWaiting: AsyncData.isLoading(model.incidents),
+			}),
+			dependenciesToStream: ({ orgId, isWaiting }) =>
+				incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
+		},
+	),
+	/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */
+	rulesLoadFailed: entry(
+		{ orgId: Schema.String, isWaiting: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWaiting: AsyncData.isLoading(model.rules),
+			}),
+			dependenciesToStream: ({ orgId, isWaiting }) =>
+				isWaiting
+					? collectionLoadFailed(
+							`alert_rules:${orgId}`,
+							() => Message.FailedLoadRules({ orgId }),
+							ENRICHMENT_LOAD_TIMEOUT_MS,
+						)
+					: Stream.empty,
+		},
+	),
+	rules: entry({ orgId: Schema.String }, byOrg(rules)),
+	ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
+	/** Waits for the first real service: every 15 s for five minutes, then every minute. */
+	setupPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({
+				isPolling: model.setup !== null && isSetupPolling(model.setup),
+			}),
+			dependenciesToStream: ({ isPolling }) =>
+				isPolling
+					? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
+							Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
+						)
+					: Stream.empty,
+		},
+	),
+}))
+
+export const subscriptions = Subscription.aggregate(operator, observer)

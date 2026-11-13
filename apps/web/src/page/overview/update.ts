@@ -53,6 +53,9 @@ import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
 import { Message as SetupMessage } from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
+import type { Message as ObserverMessage } from "./observer/message"
+import type * as ObserverModel from "./observer/model"
+import * as Observer from "./observer/update"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof HomeSearch.Type
@@ -267,6 +270,17 @@ const withSetup = (
 	return next.outMessage === undefined ? lifted : { ...lifted, outMessage: next.outMessage }
 }
 
+const toObserver = (message: ObserverMessage) => Message.GotObserverMessage({ message })
+
+/** Runs an observer step; the Submodel starts empty when the role arrived after `init`. */
+const withObserver = (model: Model, step: (observer: ObserverModel.Model) => Observer.Return): Return => {
+	const next = step(model.observer ?? Observer.EMPTY)
+	return {
+		model: { ...model, observer: next.model },
+		commands: Command.mapMessages(next.commands ?? [], toObserver),
+	}
+}
+
 /** The setup card's last-hour window. */
 const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	const nowMs = result.model.nowMs
@@ -292,7 +306,10 @@ const loadChartRuntime = () => LoadChartRuntime()
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
-		const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
+		// An observer gets their own page: the engineers' reads and setup card never start.
+		const observer = context.audience === "observer" ? Observer.init(context) : null
+		const setup =
+			isClerk && observer === null ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
 		const model: Model = {
 			search: route.search,
 			nowMs: null,
@@ -320,7 +337,10 @@ export const initWith =
 			refreshVersion: 0,
 			isReloading: false,
 			setup: setup?.model ?? null,
+			observer: observer?.model ?? null,
 		}
+		if (observer !== null)
+			return { model, commands: Command.mapMessages(observer.commands ?? [], toObserver) }
 		return {
 			model,
 			commands: [
@@ -350,6 +370,10 @@ export const init = initWith(isClerkAuthEnabled)
 
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	if (context.audience === "observer")
+		return withObserver({ ...model, search: route.search }, (observer) =>
+			Observer.revive(observer, context),
+		)
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
 	const anomalies = Keyed.request(
 		Keyed.forgetFailure(model.anomalies),
@@ -574,4 +598,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
 		GotSetupMessage: ({ message: inner }) =>
 			withSetup({ model }, (setup) => Setup.update(setup, inner, context)),
+		GotObserverMessage: ({ message: inner }) =>
+			withObserver(model, (observer) => Observer.update(observer, inner, context)),
 	})
