@@ -486,16 +486,16 @@ The billing API facts, which hold for either credential:
 
 ### Anthropic (billed, Claude API only)
 
-- Read with an Admin API key (`sk-ant-admin...`) the org pastes, kept in `cost_connections`.
-  `GET /v1/organizations/me` names the organization (its id is the account, its name the label).
-- `GET /v1/organizations/cost_report`, daily buckets grouped by `workspace_id` and `description`,
-  31 buckets a page, followed by `next_page`. `amount` is a decimal string in cents. The docs call
-  it legacy beside `/v1/organizations/analytics/cost`, which Console organizations only get as an
+- Read with an Admin API key (`sk-ant-admin...`) the org pastes, kept in `cost_connections`. `GET
+  /v1/organizations/me` names the organization (its id is the account, its name the label).
+- `GET /v1/organizations/cost_report`, daily buckets grouped by `workspace_id` and `description`, 31
+  buckets a page, followed by `next_page`. `amount` is a decimal string in cents. The docs call it
+  legacy beside `/v1/organizations/analytics/cost`, which Console organizations only get as an
   early-access preview, so the legacy report is the one every org can read.
 - Rows: a model's lines are `anthropic/<model>` (the Cost page shows the model's mark), web search,
   code execution and Managed Agents sessions their own names, anything else `Anthropic API`. The
-  description is the usage type, the workspace the resource (`default` for the default
-  workspace), the inference geography the region.
+  description is the usage type, the workspace the resource (`default` for the default workspace),
+  and the inference geography a tag.
 - Not covered: Claude subscriptions billed through claude.ai, and Claude on Bedrock, Vertex AI or
   Foundry, which bill through those clouds.
 
