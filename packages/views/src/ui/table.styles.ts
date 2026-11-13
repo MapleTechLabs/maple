@@ -23,8 +23,7 @@ export const tableRowStyles =
 
 // Column labels share the eyebrow overline token (size, case, tracking, colour) with list headers.
 // Div-based tables (infra) use the label type alone.
-export const tableHeadLabelStyles =
-	"font-medium text-3xs uppercase tracking-overline text-muted-foreground leading-none"
+export const tableHeadLabelStyles = "font-medium text-2xs text-muted-foreground leading-none"
 
 export const tableHeadStyles = `h-10 whitespace-nowrap px-2.5 text-left align-middle ${tableHeadLabelStyles} in-data-[size=sm]:h-8 in-data-[size=sm]:px-2 in-data-[size=xs]:h-auto in-data-[size=xs]:px-0 in-data-[size=xs]:pr-2 in-data-[size=xs]:pb-1 has-[[role=checkbox]]:w-px last:has-[[role=checkbox]]:ps-0 first:has-[[role=checkbox]]:pe-0`
 
