@@ -100,7 +100,7 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
 - Selected text is `primary-foreground` on `primary`, set once in tokens.css: an opaque pair, so it
   reads the same over muted text or a tone. A chip keeps its own look when selected (a kit `badge`,
   or a label on a solid fill: `text-on-fill`, `text-primary-foreground`): a band inside a fill
-  only fights it. No `selection:` utility at a call site.
+  only fights it, so a thin underline in the chip's own ink marks the selected letters. No `selection:` utility at a call site.
 - Washes are translucent and read the same on any surface: `surface-faint`, `surface-sunken`,
   `surface-strong`.
 - A see-through surface is a token, never `bg-background/NN` or `bg-card/NN`

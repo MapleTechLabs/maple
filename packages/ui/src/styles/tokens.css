@@ -818,8 +818,8 @@
 		background-color: var(--color-primary);
 		color: var(--color-primary-foreground);
 	}
-	/* A chip keeps its own look when selected: a band inside a fill or a tint only fights it. The
-	   text is still selected and still copies. */
+	/* A chip keeps its own look when selected: a band inside a fill or a tint only fights it. A
+	   thin underline in its own ink marks the selected letters instead. */
 	[data-slot="badge"]::selection,
 	[data-slot="badge"] ::selection,
 	.text-on-fill::selection,
@@ -828,6 +828,9 @@
 	.text-primary-foreground ::selection {
 		background-color: transparent;
 		color: currentColor;
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 2px;
 	}
 	body {
 		@apply font-sans bg-background text-foreground;
