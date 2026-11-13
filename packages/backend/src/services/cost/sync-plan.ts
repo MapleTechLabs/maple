@@ -69,8 +69,9 @@ interface CostSyncProfile {
 	/** Days the newest day served trails today: 0 when today itself is served. */
 	readonly lagDays: number
 	/**
-	 * `month`: a head re-pulls the newest day's whole month, not the trailing days. For a provider
-	 * whose days are shares of a monthly bill: a new line changes every day of the month.
+	 * `month`: a head re-pulls the newest day's whole month, not the trailing days, and the month
+	 * before it too while that one is still closing. For a provider whose days are shares of a
+	 * monthly bill: a new line changes every day of the month.
 	 */
 	readonly head: "days" | "month"
 }
@@ -146,12 +147,19 @@ export const requestsThisMonth = (
 export const nextMonthStartMs = (now: number): number =>
 	DateTime.toEpochMillis(dayStart(monthStart(utcToday(now), 1)))
 
+/** Whether the month before `today`'s is still closing: its bill can change through day 10. */
+const previousMonthOpen = (today: string): boolean =>
+	Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS
+
+/** Whether the last settle was before day 11 of `day`'s month began, or never: before the month before it closed. */
+const settledBeforeClose = (day: string, lastSettledAt: number | null): boolean =>
+	lastSettledAt === null ||
+	lastSettledAt < DateTime.toEpochMillis(dayStart(addDays(monthStart(day), PREVIOUS_MONTH_OPEN_DAYS)))
+
 // A settle still takes the previous month through day 10, and once after it: when the last settle
 // was before day 11 began (or never), the previous month's last pull predates its closing.
 const settlesPreviousMonth = (today: string, lastSettledAt: number | null): boolean =>
-	Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS ||
-	lastSettledAt === null ||
-	lastSettledAt < DateTime.toEpochMillis(dayStart(addDays(monthStart(today), PREVIOUS_MONTH_OPEN_DAYS)))
+	previousMonthOpen(today) || settledBeforeClose(today, lastSettledAt)
 
 /**
  * The next pull of a source. SETTLE (the open months, whole) when it is new or a head is due and
@@ -176,13 +184,23 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 		const usualStart = settleDue
 			? monthStart(today, settlesPreviousMonth(today, state.lastSettledAt) ? -1 : 0)
 			: profile.head === "month"
-				? monthStart(latest)
+				? // A closed month keeps changing for days: a branch deleted on its last day is discounted after.
+					monthStart(latest, previousMonthOpen(today) ? -1 : 0)
 				: addDays(latest, -(HEAD_DAYS - 1))
 		// A gap below the usual start: the days up to the watermark were pulled while their month was
 		// open and no later window revisits them. Resume a month before the watermark's, so that month
 		// and the one before it (still open then, perhaps) get their final amounts.
 		const gap = addDays(state.watermarkDate, 1) < usualStart
-		const startDay = maxDay(floor, gap ? monthStart(state.watermarkDate, -1) : usualStart)
+		// A month head has no gap inside a month, so pulls that stopped over a month end can leave the
+		// month before the watermark's on what a settle saw before it closed. This settle takes it.
+		const reopens =
+			settleDue &&
+			profile.head === "month" &&
+			settledBeforeClose(state.watermarkDate, state.lastSettledAt)
+		const startDay = maxDay(
+			floor,
+			gap || reopens ? minDay(usualStart, monthStart(state.watermarkDate, -1)) : usualStart,
+		)
 		return { mode: settleDue ? "settle" : "head", startDay, endDay: latest }
 	}
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }

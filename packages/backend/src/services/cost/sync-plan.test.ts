@@ -449,19 +449,79 @@ describe("planCostSync for a provider that bills by the month, a year back", () 
 		})
 	})
 
-	it("starts its head at the new month on the first, and leaves the closed month to the settle", () => {
-		const now = at("2026-12-01T12:00:00Z")
-		const state = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS })
-		assert.deepStrictEqual(planCostSync(state, now), {
-			mode: "head",
-			startDay: "2026-12-01",
-			endDay: "2026-12-01",
+	it("keeps the closed month in its head through the tenth: a branch deleted on its last day is discounted after", () => {
+		const first = at("2026-12-01T12:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(planetScalePulled(first, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS }), first),
+			{ mode: "head", startDay: "2026-11-01", endDay: "2026-12-01" },
+		)
+		const tenth = at("2026-12-10T12:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(planetScalePulled(tenth, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS }), tenth),
+			{ mode: "head", startDay: "2026-11-01", endDay: "2026-12-10" },
+		)
+		// From the eleventh the closed month is the settle's, which takes it once more.
+		const eleventh = at("2026-12-11T12:00:00Z")
+		assert.deepStrictEqual(
+			planCostSync(
+				planetScalePulled(eleventh, "2026-10-01", { head: DAY_MS, settle: 2 * DAY_MS }),
+				eleventh,
+			),
+			{ mode: "head", startDay: "2026-12-01", endDay: "2026-12-11" },
+		)
+		assert.deepStrictEqual(
+			planCostSync(
+				planetScalePulled(eleventh, "2026-10-01", { head: DAY_MS, settle: 8 * DAY_MS }),
+				eleventh,
+			),
+			{ mode: "settle", startDay: "2026-11-01", endDay: "2026-12-11" },
+		)
+	})
+
+	it("takes the month before the watermark's when pulls stopped over a month end before it closed", () => {
+		// October was last settled on November 2, still open. Pulls failed from the 9th to December 2.
+		const now = at("2026-12-03T12:00:00Z")
+		const stalled: CostSyncState = {
+			...PLANETSCALE_NEW,
+			watermarkDate: "2026-11-08",
+			backfillDate: "2026-09-01",
+			lastSyncedAt: at("2026-11-08T12:00:00Z"),
+			lastSettledAt: at("2026-11-02T12:00:00Z"),
+		}
+		// The watermark is inside the usual start, so no gap is seen: October would keep what
+		// November 2 saw of it.
+		assert.deepStrictEqual(planCostSync(stalled, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-12-03",
 		})
-		const settling = planetScalePulled(now, "2026-10-01", { head: DAY_MS, settle: 8 * DAY_MS })
-		assert.deepStrictEqual(planCostSync(settling, now), {
+		// Settled after October closed, the same stall leaves October alone.
+		assert.deepStrictEqual(planCostSync({ ...stalled, lastSettledAt: at("2026-11-11T00:00:00Z") }, now), {
 			mode: "settle",
 			startDay: "2026-11-01",
-			endDay: "2026-12-01",
+			endDay: "2026-12-03",
+		})
+		// A provider whose head is its trailing days plans as before.
+		assert.deepStrictEqual(planCostSync({ ...stalled, provider: "aws" }, now), {
+			mode: "settle",
+			startDay: "2026-11-01",
+			endDay: "2026-12-03",
+		})
+	})
+
+	it("never reaches under its floor for the month before the watermark's", () => {
+		const now = at("2026-12-03T12:00:00Z")
+		const stalled: CostSyncState = {
+			...PLANETSCALE_NEW,
+			watermarkDate: "2025-12-20",
+			backfillDate: "2025-12-01",
+			lastSyncedAt: at("2025-12-20T12:00:00Z"),
+			lastSettledAt: at("2025-12-05T12:00:00Z"),
+		}
+		assert.deepStrictEqual(planCostSync(stalled, now), {
+			mode: "settle",
+			startDay: "2025-12-01",
+			endDay: "2026-12-03",
 		})
 	})
 
