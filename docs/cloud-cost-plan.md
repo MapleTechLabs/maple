@@ -516,9 +516,11 @@ The billing API facts, which hold for either credential:
 
 Neither vendor offers an admin key that can only read cost: the key can also manage members and
 keys. The dialog says so and suggests a key made for Maple alone; Maple only calls the endpoints
-above. Retention of either report is not documented, so history starts three months back. Open:
-check Anthropic against a real account (restated days, how far back it serves, an `ending_at` of
-tomorrow), and how far back OpenAI serves.
+above. Retention of either report is not documented, so history starts three months back. Live
+(2026-11-13): Anthropic accepts an `ending_at` of tomorrow, `group_by[]` and a year's range, and its
+newest bucket trails by about a day, inside the two open days; the key checked against an
+organization with no spend, so its row shapes are still from the docs. Open: Anthropic rows from a
+real organization with spend, restated days, and how far back OpenAI serves.
 
 ### Railway (estimated per service, billed per workspace)
 
