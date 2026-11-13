@@ -34,6 +34,7 @@ import {
 	type PlanetScaleTokenRejectedError,
 	runPlanetScale,
 } from "@maple/backend/services/integrations/planetscale/api"
+import { releasePlanetScaleCostSources } from "../cost/planetscale-cost-sources"
 import { makeOAuthConnectionHelpers, toUpstreamError } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
 import { newOAuthState } from "./oauth/oauth-state"
@@ -171,10 +172,13 @@ export interface PlanetScaleOAuthServiceApi {
 	/**
 	 * Run `use` with the org's access token. A 401 forces one refresh and a retry; when the
 	 * fresh token is rejected too, the grant is stamped revoked so pollers stop using it.
+	 * `stampRevoked: false` fails as revoked without stamping: for an endpoint whose 401 does not
+	 * prove the grant dead (invoices, which a grant without that scope has never been seen to ask).
 	 */
 	readonly withAccessToken: <A, E>(
 		orgId: OrgId,
 		use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
+		options?: { readonly stampRevoked?: boolean },
 	) => Effect.Effect<A, Exclude<E, PlanetScaleTokenRejectedError> | PlanetScaleAccessTokenError>
 	/** Organizations the stored grant can access: org-picker material. */
 	readonly listOrganizations: (
@@ -234,11 +238,16 @@ export class PlanetScaleOAuthService extends Context.Service<
 			env,
 			// A new grant starts clean: an inventory failure from the old one must not count toward
 			// the repeated-403 revoke in PlanetScaleService.pollOrg, even if the callback fails after.
+			// The Cost page's source is due again too: the new grant may carry the invoice scope, and
+			// a grant that sees several organizations is never bound again to say so.
 			onUpsert: (db, orgId, currentTime) =>
-				db.run(
-					PG.update(PlanetscaleConnections)
-						.set({ lastInventoryError: null, updatedAt: currentTime })
-						.where(($) => [$.orgId.eq(orgId)]),
+				Effect.andThen(
+					db.run(
+						PG.update(PlanetscaleConnections)
+							.set({ lastInventoryError: null, updatedAt: currentTime })
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					releasePlanetScaleCostSources(db, orgId, currentTime),
 				),
 		})
 
@@ -515,10 +524,11 @@ export class PlanetScaleOAuthService extends Context.Service<
 		const withAccessToken = <A, E>(
 			orgId: OrgId,
 			use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
+			options?: { readonly stampRevoked?: boolean },
 		) =>
 			resolveConfig(env).pipe(
 				Effect.flatMap((config) =>
-					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use),
+					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use, options),
 				),
 				Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }),
 			)

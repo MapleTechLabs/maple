@@ -171,6 +171,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/openrouter-key/OpenRouterKeyAddOnRequiredError",
 	"@maple/http/openrouter-key/OpenRouterKeyForbiddenError",
 	"@maple/http/openrouter-key/OpenRouterKeyValidationError",
+	"@maple/http/planetscale-cost/PlanetScaleCostReconnectRequiredError",
 	"@maple/http/pr-review/PrReviewNotFoundError",
 	"@maple/http/pr-review/PrReviewReplyNotFoundError",
 	"@maple/http/security-audit/SecurityAuditCreditsUsedUpError",

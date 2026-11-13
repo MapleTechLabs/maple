@@ -15,6 +15,7 @@ import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { formatDay, requestsCost } from "./derive"
 import { Message } from "./message"
 import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { PLANETSCALE_INTEGRATION_HREF } from "./view-add-planetscale"
 import { AWS_INTEGRATION_HREF } from "./view-add-source"
 import { VERCEL_INTEGRATION_HREF } from "./view-add-vercel"
 
@@ -56,7 +57,7 @@ const rowButton = (h: H, label: string, name: string, onClick: Message, isBusy: 
 		[label],
 	)
 
-/** Where the source's connection is changed: an account's Cost module, a team's token. */
+/** Where the source's connection is changed: an account's Cost module, a team's token, an organization's authorization. */
 const connectionLink = (h: H, name: string, href: string): Html =>
 	linkButton(h, { variant: "ghost", size: "sm", href, attributes: [h.AriaLabel(name)] }, [
 		"Manage connection",
@@ -65,7 +66,8 @@ const connectionLink = (h: H, name: string, href: string): Html =>
 /**
  * What a row offers: an AWS source is its connection's, a pasted credential's is replaced or
  * removed here, and a GitHub one only leaves, since it reads through the GitHub connection. A
- * Vercel one leaves here too, and links to its connection, where the token it reads with is replaced.
+ * Vercel one leaves here too, and links to its connection, where the token it reads with is replaced,
+ * as a PlanetScale one does to the connection it is authorized on.
  */
 const actions = (
 	h: H,
@@ -102,6 +104,8 @@ const actions = (
 			return [remove]
 		case "vercel":
 			return [manage(VERCEL_INTEGRATION_HREF), remove]
+		case "planetscale":
+			return [manage(PLANETSCALE_INTEGRATION_HREF), remove]
 		case "aws":
 			return [manage(AWS_INTEGRATION_HREF)]
 	}
@@ -197,6 +201,10 @@ const sourceRow = (
 						typography(h, { size: "xs", tone: "muted" }, [fact]),
 					),
 				),
+				// What the provider's source says about its own figures, whatever its status.
+				...(provider.sourceNote === undefined
+					? []
+					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [provider.sourceNote])]),
 				...note(h, source),
 			]),
 		],

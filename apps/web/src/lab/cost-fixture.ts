@@ -132,6 +132,25 @@ const cloudflareLine = (
 	drift,
 })
 
+/** The PlanetScale organization the lab's source reads. */
+export const LAB_PLANETSCALE_ORGANIZATION = "example-data"
+
+/**
+ * A day's share of a branch's monthly invoice line: the database is the service, the SKU the
+ * usage type, the database's branch the resource.
+ */
+const branchLine = (database: string, branch: string, sku: string, daily: number, drift: number): Line => ({
+	cloud_service: database,
+	provider: "planetscale",
+	service_category: "Databases",
+	region: "global",
+	usage_type: sku,
+	resource: `${database}/${branch}`,
+	account: LAB_PLANETSCALE_ORGANIZATION,
+	daily,
+	drift,
+})
+
 /** `daily` is the charge per day today; `drift` how much it grew or shrank over the last 30 days. */
 const LINES: ReadonlyArray<Line> = [
 	line("Example Compute", "Compute", "north-1", "north-1:instance-hours", 61.2, 0.18),
@@ -185,6 +204,10 @@ const LINES: ReadonlyArray<Line> = [
 	),
 	// The plan's monthly fee, as Vercel spreads it over the days: it belongs to no project.
 	productLine("Example Pro Plan", "Other", "global", "", "", 0.67, 0.0),
+	branchLine("example-orders", "main", "PS_20_AWS_ARM", 9.7, 0.0),
+	branchLine("example-orders", "main", "egress", 0.6, 0.2),
+	branchLine("example-orders", "staging", "PS_10_AWS_ARM", 1.1, 0.0),
+	branchLine("example-search", "main", "PS_10_AWS_ARM", 1.3, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -398,6 +421,17 @@ const cloudflareSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The PlanetScale source: invoices back to the twelfth month before this one, and no billed requests. */
+const planetScaleSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c065",
+	provider: "planetscale",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a065",
+	accountId: LAB_PLANETSCALE_ORGANIZATION,
+	backfillDate: "2025-11-01",
+	lastSyncedAt: LAB_NOW_MS - 90 * 60_000,
+	requestsThisMonth: 0,
+})
+
 /** A source that was just added: it waits for its first sync. */
 const justAdded = (entry: SourceWire): SourceWire => ({
 	...entry,
@@ -425,14 +459,16 @@ export const labGithubLogin = (installationId: string): string =>
 	)
 
 /**
- * What the lab's reader did since the state loaded. `openRouter`, `cloudflare` and `vercel`: added
- * (true), removed (false) or neither (null). `github`: an installation's id to whether it is a source now.
+ * What the lab's reader did since the state loaded. `openRouter`, `cloudflare`, `vercel` and
+ * `planetScale`: added (true), removed (false) or neither (null). `github`: an installation's id
+ * to whether it is a source now.
  */
 export type LabSourceChanges = Readonly<{
 	openRouter: boolean | null
 	cloudflare: boolean | null
 	github: Readonly<Record<string, boolean>>
 	vercel: boolean | null
+	planetScale: boolean | null
 }>
 
 /**
@@ -447,7 +483,9 @@ export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<Co
 			(provider === "cloudflare" && changes.cloudflare === false) ||
 			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
 			// A team added again is a new source: it has no cost until a sync the lab does not model.
-			(provider === "vercel" && changes.vercel !== null),
+			(provider === "vercel" && changes.vercel !== null) ||
+			// The same holds for a PlanetScale organization added again.
+			(provider === "planetscale" && changes.planetScale !== null),
 	)
 
 /**
@@ -465,7 +503,9 @@ export const labSourcesWith = (
 				? changes.cloudflare !== false
 				: entry.provider === "vercel"
 					? changes.vercel === null
-					: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+					: entry.provider === "planetscale"
+						? changes.planetScale === null
+						: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
 	)
 	const has = (provider: CostProvider) => Arr.some(kept, (entry) => entry.provider === provider)
 	return decodeSources({
@@ -474,6 +514,7 @@ export const labSourcesWith = (
 			...(changes.openRouter === true && !has("openrouter") ? [justAdded(openRouterSource)] : []),
 			...(changes.cloudflare === true && !has("cloudflare") ? [justAdded(cloudflareSource)] : []),
 			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
+			...(changes.planetScale === true ? [justAdded(planetScaleSource)] : []),
 			...Arr.map(
 				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
 				(org) =>
@@ -525,7 +566,14 @@ export const labGithubInstallations = (sources: CostSourcesResponse): GithubCost
 
 export const LAB_SOURCES = {
 	synced: decodeSources({
-		sources: [source({}), openRouterSource, githubSource, vercelSource, cloudflareSource],
+		sources: [
+			source({}),
+			openRouterSource,
+			githubSource,
+			vercelSource,
+			cloudflareSource,
+			planetScaleSource,
+		],
 	}),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({

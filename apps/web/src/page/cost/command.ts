@@ -3,6 +3,7 @@ import {
 	CostBreakdownSortBy,
 	CostFilters,
 	OpenRouterKeyUpdateRequest,
+	PlanetScaleCostAddRequest,
 	VercelCostAddRequest,
 } from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -233,5 +234,35 @@ export const RemoveVercelCostSource = Command.define("RemoveVercelCostSource", {
 	messages: [Message.CompletedRemoveVercel],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.remove()).pipe(
 		settleTo((result) => Message.CompletedRemoveVercel({ result })),
+	),
+})
+
+// PlanetScale's source reads through the integration's connection: no command of it carries a secret.
+
+/** Whether the org has PlanetScale connected, whether it can read invoices, and whether it is a source already. */
+export const FetchPlanetScaleCostStatus = Command.define("FetchPlanetScaleCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadPlanetScaleStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.planetScaleCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadPlanetScaleStatus({ key, result })),
+		),
+})
+
+/** Makes the connected PlanetScale organization a cost source, once PlanetScale let the connection list its invoices. */
+export const AddPlanetScaleCostSource = Command.define("AddPlanetScaleCostSource", {
+	// The organization the dialog showed: the API refuses the add when another one is bound by now.
+	args: { organization: Schema.String },
+	messages: [Message.CompletedAddPlanetScale],
+	execute: ({ organization }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.planetScaleCost.add({ payload: new PlanetScaleCostAddRequest({ organization }) }),
+		).pipe(settleTo((result) => Message.CompletedAddPlanetScale({ result }))),
+})
+
+export const RemovePlanetScaleCostSource = Command.define("RemovePlanetScaleCostSource", {
+	messages: [Message.CompletedRemovePlanetScale],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.planetScaleCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemovePlanetScale({ result })),
 	),
 })

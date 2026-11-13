@@ -46,6 +46,8 @@ const GITHUB_HISTORY_MONTHS = 3
  * this many months before the current one: a window from there to today is never over a year.
  */
 const VERCEL_HISTORY_MONTHS = 11
+/** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
+const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
 // it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
@@ -76,22 +78,38 @@ interface CostSyncProfile {
 	readonly floor: (today: string) => string
 	/** Days the newest day served trails today: 0 when today itself is served. */
 	readonly lagDays: number
+	/**
+	 * `month`: a head re-pulls the newest day's whole month, not the trailing days, and the month
+	 * before it too while that one is still closing. For a provider whose days are shares of a
+	 * monthly bill: a new line changes every day of the month.
+	 */
+	readonly head: "days" | "month"
 }
 
 const COST_SYNC_PROFILES = {
-	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
-	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
-	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0 },
-	vercel: { floor: (today) => monthStart(today, -VERCEL_HISTORY_MONTHS), lagDays: 0 },
-	cloudflare: { floor: (today) => monthStart(today, -CLOUDFLARE_HISTORY_MONTHS), lagDays: 1 },
+	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0, head: "days" },
+	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1, head: "days" },
+	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0, head: "days" },
+	vercel: { floor: (today) => monthStart(today, -VERCEL_HISTORY_MONTHS), lagDays: 0, head: "days" },
+	cloudflare: {
+		floor: (today) => monthStart(today, -CLOUDFLARE_HISTORY_MONTHS),
+		lagDays: 1,
+		head: "days",
+	},
+	// The open month's invoice is listed, and its days so far are a share of the month's lines.
+	planetscale: {
+		floor: (today) => monthStart(today, -PLANETSCALE_HISTORY_MONTHS),
+		lagDays: 0,
+		head: "month",
+	},
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */
 export const historyFloor = (provider: CostProvider, today: string): string =>
 	COST_SYNC_PROFILES[provider].floor(today)
 
-const minDay = (a: string, b: string) => (a < b ? a : b)
-const maxDay = (a: string, b: string) => (a > b ? a : b)
+export const minDay = (a: string, b: string) => (a < b ? a : b)
+export const maxDay = (a: string, b: string) => (a > b ? a : b)
 
 const DAY_MS = 86_400_000
 
@@ -141,12 +159,19 @@ export const requestsThisMonth = (
 export const nextMonthStartMs = (now: number): number =>
 	DateTime.toEpochMillis(dayStart(monthStart(utcToday(now), 1)))
 
+/** Whether the month before `today`'s is still closing: its bill can change through day 10. */
+const previousMonthOpen = (today: string): boolean =>
+	Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS
+
+/** Whether the last settle was before day 11 of `day`'s month began, or never: before the month before it closed. */
+const settledBeforeClose = (day: string, lastSettledAt: number | null): boolean =>
+	lastSettledAt === null ||
+	lastSettledAt < DateTime.toEpochMillis(dayStart(addDays(monthStart(day), PREVIOUS_MONTH_OPEN_DAYS)))
+
 // A settle still takes the previous month through day 10, and once after it: when the last settle
 // was before day 11 began (or never), the previous month's last pull predates its closing.
 const settlesPreviousMonth = (today: string, lastSettledAt: number | null): boolean =>
-	Number(Str.slice(8, 10)(today)) <= PREVIOUS_MONTH_OPEN_DAYS ||
-	lastSettledAt === null ||
-	lastSettledAt < DateTime.toEpochMillis(dayStart(addDays(monthStart(today), PREVIOUS_MONTH_OPEN_DAYS)))
+	previousMonthOpen(today) || settledBeforeClose(today, lastSettledAt)
 
 /**
  * The next pull of a source. SETTLE (the open months, whole) when it is new or a head is due and
@@ -159,7 +184,8 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 	if (requests >= MONTHLY_REQUEST_BUDGET) return { mode: "idle", budget: "monthly" }
 	const today = utcToday(now)
 	const floor = historyFloor(state.provider, today)
-	const latest = addDays(today, -COST_SYNC_PROFILES[state.provider].lagDays)
+	const profile: CostSyncProfile = COST_SYNC_PROFILES[state.provider]
+	const latest = addDays(today, -profile.lagDays)
 	// The first pull takes the previous month too, so there is something to compare against at once.
 	if (state.watermarkDate === null) {
 		return { mode: "settle", startDay: maxDay(floor, monthStart(today, -1)), endDay: latest }
@@ -169,12 +195,24 @@ export const planCostSync = (state: CostSyncState, now: number): CostSyncPlan =>
 		const settleDue = state.lastSettledAt === null || now - state.lastSettledAt >= SETTLE_INTERVAL_MS
 		const usualStart = settleDue
 			? monthStart(today, settlesPreviousMonth(today, state.lastSettledAt) ? -1 : 0)
-			: addDays(latest, -(HEAD_DAYS - 1))
+			: profile.head === "month"
+				? // A closed month keeps changing for days: a branch deleted on its last day is discounted after.
+					monthStart(latest, previousMonthOpen(today) ? -1 : 0)
+				: addDays(latest, -(HEAD_DAYS - 1))
 		// A gap below the usual start: the days up to the watermark were pulled while their month was
 		// open and no later window revisits them. Resume a month before the watermark's, so that month
 		// and the one before it (still open then, perhaps) get their final amounts.
 		const gap = addDays(state.watermarkDate, 1) < usualStart
-		const startDay = maxDay(floor, gap ? monthStart(state.watermarkDate, -1) : usualStart)
+		// A month head has no gap inside a month, so pulls that stopped over a month end can leave the
+		// month before the watermark's on what a settle saw before it closed. This settle takes it.
+		const reopens =
+			settleDue &&
+			profile.head === "month" &&
+			settledBeforeClose(state.watermarkDate, state.lastSettledAt)
+		const startDay = maxDay(
+			floor,
+			gap || reopens ? minDay(usualStart, monthStart(state.watermarkDate, -1)) : usualStart,
+		)
 		return { mode: settleDue ? "settle" : "head", startDay, endDay: latest }
 	}
 	if (state.backfillDate === null || state.backfillDate <= floor) return { mode: "idle" }

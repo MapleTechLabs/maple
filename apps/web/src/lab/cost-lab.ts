@@ -2,6 +2,10 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
+	PLANETSCALE_COST_RECONNECT_CODE,
+	PlanetScaleCostSourceAdded,
+	PlanetScaleCostSourceRemoved,
+	PlanetScaleCostStatus,
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
@@ -17,6 +21,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
 	AddGithubCostSource,
+	AddPlanetScaleCostSource,
 	AddVercelCostSource,
 	BreakdownInput,
 	FacetsInput,
@@ -26,11 +31,13 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	FetchGithubCostInstallations,
+	FetchPlanetScaleCostStatus,
 	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
 	RemoveCloudflareCostToken,
 	RemoveOpenRouterCostKey,
+	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveCloudflareCostToken,
@@ -50,6 +57,7 @@ import {
 	LAB_NOW_MS,
 	LAB_SOURCES,
 	LAB_TODAY,
+	LAB_PLANETSCALE_ORGANIZATION,
 	LAB_VERCEL_TEAM,
 	type LabSourceChanges,
 	labBreakdown,
@@ -91,11 +99,18 @@ export const LabState = Schema.Literals([
 	"add-github",
 	"github-refused",
 	"github-none",
+	"github-reading",
+	"github-unread",
 	"remove-github",
 	"add-vercel",
 	"vercel-not-connected",
 	"vercel-refused",
 	"remove-vercel",
+	"add-planetscale",
+	"planetscale-reconnect",
+	"planetscale-not-connected",
+	"planetscale-refused",
+	"remove-planetscale",
 	"member",
 	"member-onramp",
 ])
@@ -121,6 +136,8 @@ export const Model = Schema.Struct({
 	github: Schema.Record(Schema.String, Schema.Boolean),
 	/** Vercel added (true) or removed (false) since the state loaded; null before either. */
 	vercel: Schema.NullOr(Schema.Boolean),
+	/** The same for PlanetScale. */
+	planetScale: Schema.NullOr(Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -155,9 +172,15 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "token-refused" ||
 	state === "token-too-broad" ||
 	state === "github-none" ||
+	state === "github-reading" ||
+	state === "github-unread" ||
 	state === "add-vercel" ||
 	state === "vercel-not-connected" ||
-	state === "vercel-refused"
+	state === "vercel-refused" ||
+	state === "add-planetscale" ||
+	state === "planetscale-reconnect" ||
+	state === "planetscale-not-connected" ||
+	state === "planetscale-refused"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -183,6 +206,8 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return removalOf("cloudflare")
 		case "add-github":
 		case "github-none":
+		case "github-reading":
+		case "github-unread":
 			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGithub()]
 		case "github-refused":
 			return [
@@ -209,6 +234,18 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			]
 		case "remove-vercel":
 			return removalOf("vercel")
+		case "add-planetscale":
+		case "planetscale-reconnect":
+		case "planetscale-not-connected":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddPlanetScale()]
+		case "planetscale-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddPlanetScale(),
+				CostMessage.ClickedConfirmAddPlanetScale(),
+			]
+		case "remove-planetscale":
+			return removalOf("planetscale")
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -227,7 +264,9 @@ const submissionOf = (provider: CredentialProvider, secret: string): ReadonlyArr
 ]
 
 /** The click on Remove in the row of the lab's source of `provider`. */
-const removalOf = (provider: CredentialProvider | "github" | "vercel"): ReadonlyArray<CostMessage> =>
+const removalOf = (
+	provider: CredentialProvider | "github" | "vercel" | "planetscale",
+): ReadonlyArray<CostMessage> =>
 	Arr.map(
 		Arr.filter(LAB_SOURCES.synced.sources, (source) => source.provider === provider),
 		(source) => CostMessage.ClickedRemoveSource({ sourceId: source.id }),
@@ -244,6 +283,12 @@ const refusedVercel = {
 	...toLoadFailure("refused"),
 	message:
 		"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
+}
+
+/** The read of the org's GitHub installations did not come back. */
+const unreadInstallations = {
+	...toLoadFailure("unread"),
+	message: "Maple could not read your GitHub organizations.",
 }
 
 const refusedKey = {
@@ -282,6 +327,28 @@ const sourcesFor = (state: LabState) =>
 			: state === "sources"
 				? LAB_SOURCES.mixed
 				: LAB_SOURCES.synced
+
+/** PlanetScale took the stored grant's word for its scopes, then refused the invoice read. */
+const refusedInvoices = {
+	...toLoadFailure("refused"),
+	code: PLANETSCALE_COST_RECONNECT_CODE,
+	message: "Reconnect PlanetScale to grant Maple access to invoices.",
+}
+
+/** The org's PlanetScale connection as the state has it, and whether the page's sources hold its organization. */
+const planetScaleStatusOf = (world: World): PlanetScaleCostStatus =>
+	new PlanetScaleCostStatus(
+		world.state === "planetscale-not-connected"
+			? { organization: null, invoiceAccess: false, added: false }
+			: {
+					organization: LAB_PLANETSCALE_ORGANIZATION,
+					invoiceAccess: world.state !== "planetscale-reconnect",
+					added: Arr.some(
+						labSourcesWith(sourcesFor(world.state), world).sources,
+						(source) => source.provider === "planetscale",
+					),
+				},
+	)
 
 /** The org's Vercel connection as the state has it, and whether the page's sources hold its team. */
 const vercelStatusOf = (world: World): VercelCostStatus =>
@@ -423,14 +490,19 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 		case RemoveCloudflareCostToken.name:
 			return Option.some(removedAnswer("cloudflare"))
 		case FetchGithubCostInstallations.name:
+			// The read that never answers leaves the step on its loading line.
+			if (state === "github-reading") return Option.none()
 			return Option.map(readArgs(command.args), ({ request }) =>
 				CostMessage.CompletedLoadGithubInstallations({
 					request,
-					result: Result.succeed(
-						state === "github-none"
-							? new GithubCostInstallations({ installations: [] })
-							: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
-					),
+					result:
+						state === "github-unread"
+							? Result.fail(unreadInstallations)
+							: Result.succeed(
+									state === "github-none"
+										? new GithubCostInstallations({ installations: [] })
+										: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
+								),
 				}),
 			)
 		case AddGithubCostSource.name:
@@ -466,6 +538,32 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 							: Result.succeed(new VercelCostSourceAdded({ team: LAB_VERCEL_TEAM })),
 				}),
 			)
+		case FetchPlanetScaleCostStatus.name:
+			return Option.map(keyArgs(command.args), ({ key }) =>
+				CostMessage.CompletedLoadPlanetScaleStatus({
+					key,
+					result: Result.succeed(planetScaleStatusOf(world)),
+				}),
+			)
+		case AddPlanetScaleCostSource.name:
+			return Option.some(
+				CostMessage.CompletedAddPlanetScale({
+					result:
+						state === "planetscale-refused"
+							? Result.fail(refusedInvoices)
+							: Result.succeed(
+									new PlanetScaleCostSourceAdded({
+										organization: LAB_PLANETSCALE_ORGANIZATION,
+									}),
+								),
+				}),
+			)
+		case RemovePlanetScaleCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemovePlanetScale({
+					result: Result.succeed(new PlanetScaleCostSourceRemoved({ removed: true })),
+				}),
+			)
 		case RemoveVercelCostSource.name:
 			return Option.some(
 				CostMessage.CompletedRemoveVercel({
@@ -481,11 +579,18 @@ const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
 
 /** `changes` alone, without whatever else the value carries. */
-const changesOf = ({ openRouter, cloudflare, github, vercel }: LabSourceChanges): LabSourceChanges => ({
+const changesOf = ({
 	openRouter,
 	cloudflare,
 	github,
 	vercel,
+	planetScale,
+}: LabSourceChanges): LabSourceChanges => ({
+	openRouter,
+	cloudflare,
+	github,
+	vercel,
+	planetScale,
 })
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
@@ -522,6 +627,10 @@ const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answere
 				return Result.isSuccess(answer.result) ? { ...current, vercel: true } : current
 			case "CompletedRemoveVercel":
 				return Result.isSuccess(answer.result) ? { ...current, vercel: false } : current
+			case "CompletedAddPlanetScale":
+				return Result.isSuccess(answer.result) ? { ...current, planetScale: true } : current
+			case "CompletedRemovePlanetScale":
+				return Result.isSuccess(answer.result) ? { ...current, planetScale: false } : current
 			default:
 				return current
 		}
@@ -569,7 +678,14 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null, cloudflare: null, github: {}, vercel: null }
+	const world: World = {
+		state: flags.state,
+		openRouter: null,
+		cloudflare: null,
+		github: {},
+		vercel: null,
+		planetScale: null,
+	}
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)

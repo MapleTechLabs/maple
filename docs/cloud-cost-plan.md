@@ -1,7 +1,8 @@
 # Cloud cost: plan
 
 Status: **phase 1 built, 2026-11-11, behind the `cloudCost` org flag.** AWS spend is synced daily
-into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on 2026-11-12.
+into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
+2026-11-12, PlanetScale on 2026-11-13.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Recommendations (phase 2) and the other providers are not built.
 
@@ -129,7 +130,9 @@ never for today. GitHub's report is asked for one calendar month at a time, back
 of the month three months before the current one. Vercel serves a year in one request, today
 included: its history starts at the first day of the month eleven months back, so no window is
 longer than a year. Cloudflare serves a year of completed days: its history stops at the first day
-of the eleventh month back, and it never asks for today.
+of the eleventh month back, and it never asks for today. PlanetScale bills by the month: it reads
+twelve months back, through today, and its daily pull takes the whole open month, since a day
+there is a share of the month's invoice.
 
 Each step writes its days whole under one `IngestedAt`. A day a pull returned nothing for gets a
 marker row (`ChargeCategory = 'none'`), so it supersedes the older pull. Reads leave it out.
@@ -162,18 +165,19 @@ next read.
   rail with a section per dimension, and each source's sync state. A row click narrows to the
   row and regroups by the next dimension (a service under a region goes on to its resources).
   The resource section and that step show only where some cost names a resource: a GitHub
-  repository, a Vercel project. Sources are added from the page: AWS through its connection
-  (which has a Cost switch), OpenRouter by pasting a management key and Cloudflare by pasting an
-  API token, which the page can also replace or remove, GitHub by picking one of the
-  organizations the GitHub App is installed on, and Vercel by adding the team the org has
-  connected, both of which the page can remove again. The pasted-credential step is one form
-  described by data (`credential-sources.ts`). Recommendations (list and detail with the evidence
-  chart) come with phase 2.
+  repository, a Vercel project, a PlanetScale database's branch. Sources are added from the page:
+  AWS through its connection (which has a Cost switch), OpenRouter by pasting a management key and
+  Cloudflare by pasting an API token, which the page can also replace or remove, GitHub by picking
+  one of the organizations the GitHub App is installed on, and Vercel and PlanetScale by adding
+  the team or organization the org has connected, all three of which the page can remove again.
+  The pasted-credential step is one form described by data (`credential-sources.ts`).
+  Recommendations (list and detail with the evidence chart) come with phase 2.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
   `/internal/cost/cloudflare` for the pasted credentials, `GET /internal/cost/github` with `PUT` /
   `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
-  `DELETE /internal/cost/vercel` for the Vercel source. A public `/v2/cost/*` is not built.
+  `DELETE` on `/internal/cost/vercel` and `/internal/cost/planetscale` for the Vercel and
+  PlanetScale sources. A public `/v2/cost/*` is not built.
 - MCP: `cost_overview`, `cost_breakdown`, `compare_cost_periods`, `list_cost_recommendations`,
   `inspect_cost_recommendation`.
 
@@ -488,12 +492,79 @@ The billing API facts, which hold for either credential:
 - Open: whether a workspace token can read `customer`.
 - Recommendations are Maple's own: CPU and memory usage against the limit is already polled.
 
-### PlanetScale (billed, monthly)
+### PlanetScale (billed, monthly invoices spread over days)
 
-- Schema: invoices and line items per database, with scope `organization:read_invoices`. The scope
-  must be added to the registered OAuth app, and connected orgs must authorize again.
-- Schema: `cluster-size-skus?rates=true` returns rates with the scope Maple already holds. Daily
-  figures are an estimate from those rates, corrected by the invoice.
+"Live" here means checked on 2026-11-12 against a real organization's invoices, with a service
+token that has only `read_invoices`. The endpoints and shapes are the same for the OAuth grant the
+source reads with; that path is covered by tests against a fake only, since Maple's one PlanetScale
+OAuth application redirects to production and a reconnect cannot run on a preview.
+
+- Live: `GET /organizations/{org}/invoices` lists one invoice per calendar month, newest first,
+  the open month included (`paid: false`). `billing_period_end` is exclusive: the first instant of
+  the next month. An organization's first invoice can start mid-month, and months with no invoice
+  are simply missing.
+- Live: `GET /organizations/{org}/invoices/{id}/line-items` names the database, the branch (with
+  when it was made and deleted), the SKU (`metric_name`) and a `subtotal` in USD as a decimal
+  string. Vitess and Postgres clusters look the same.
+- Live: a closed invoice's line items add up to its `total`. The open invoice's `total` lags its
+  line items, so Maple reads line items only.
+- Live: a cluster's line on the open invoice already carries the whole month's charge, not a
+  month-to-date figure.
+- Live: a branch deleted or resized mid-month has its charge line plus a negative "Prorated ...
+  discount" line with the same database, branch and SKU. The two together are what it cost.
+- There are no daily figures. Each line item is spread evenly over the days of the invoice's month
+  on which its branch existed (the whole month for a line with no branch), a discount line the
+  same way, so a branch's days net out to what it cost. The shares of a line add up to its
+  subtotal. The open month shows its days so far. The source's row on the page says that its
+  days are an even share of a monthly invoice and can change until the invoice closes.
+- It connects through the PlanetScale integration the org already has, with nothing pasted. The
+  source is a `cost_sources` row whose `connection_ref` is the `planetscale_connections` row and
+  whose account is the connection's organization. Adding on the Cost page makes the row, removing
+  deletes it, and the connection itself is never changed from there.
+- Invoices are read with the integration's OAuth grant, as `Authorization: Bearer <access token>`,
+  through the grant's own token handling: a 401 forces one refresh. A fresh token the invoice API
+  refuses too fails the cost read and leaves the grant as it is. The grant is shared with metrics
+  and webhooks, the OAuth path has not run against PlanetScale yet, and a 401 for a missing scope
+  would otherwise revoke a healthy grant. Only the integration's own reads stamp it revoked; a
+  grant so stamped is then asked nothing.
+- Scope: `organization:read_invoices`, ticked on Maple's OAuth application on 2026-11-13 and added
+  to the default of `PLANETSCALE_OAUTH_SCOPES`. A grant made before that lacks it. The stored grant
+  records its scopes, so the Cost page says "Reconnect PlanetScale to grant access to invoices"
+  without a request, an add is refused under its own error code, and a pull is held as not ready.
+  A 403 from the API reads the same. A grant PlanetScale reported no scopes for is not ruled out:
+  the read itself then answers.
+- Reconnecting keeps the connection row and its id. A new grant makes the source due at the next
+  tick, in the grant's own transaction, since it may carry the scope: a grant that sees several
+  organizations is not bound again, so the bind cannot be what releases it. Binding another
+  organization removes the source (its invoices would overwrite the source's days), decided in the
+  bind's transaction by the source's own account, as does a disconnect. The sync also removes a
+  source whose connection is gone or reads another organization.
+- An add reads one page of the invoice list first, so a refusal shows before the source exists,
+  and names the organization the dialog showed: one bound since is refused. The read is bounded
+  at twenty seconds. After a refusal the dialog reads the connection again.
+- Live, with a service token: an organization the token cannot see answers 404. Docs: a grant
+  without `read_invoices` answers 403.
+- Rows: the database is `CloudService` (the engine is not in the response), the SKU is
+  `UsageType`, the category is "Databases", the region is `global`. The resource is the branch
+  with its database (`orders/main`): nearly every database has a `main`, and under the page's
+  Resource grouping a branch name alone would add them up as one. A line with no branch has none.
+- On the page a database wears the PlanetScale mark by its shape (one lowercase word) only in an
+  org that has the source and no Vercel source beside it: Vercel also bills a product named in one
+  lowercase word. A charge filed under the provider's own name always does.
+- Sync: twelve months back, through today. A pull is one invoice list plus one line-item read per
+  month in its window. Requests are free, so the source counts none. The daily pull takes the
+  whole open month, not the trailing days: a new line changes the share of every day of it.
+  Through the tenth it takes the month before too, since a closed month still gains lines (a
+  branch deleted on its last day is discounted after). A month with more than 5,000 line items
+  is refused as too large.
+- A settle after pulls stopped over a month end goes back to the month before the watermark's
+  when the last settle was before that month closed. The watermark sits inside the usual start
+  then, so the gap rule sees nothing to resume.
+- Not used: `cluster-size-skus?rates=true`. A daily estimate from rates would only be replaced by
+  the invoice.
+- Only today and yesterday are marked as not final, as with the other providers. The whole open
+  month can still move, but the page dims a day when any source marks it: a month of marked days
+  would dim every provider's bars and count them all in "not final yet". The row says it instead.
 
 ### Supabase (estimated)
 
@@ -512,12 +583,14 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter, GitHub, Vercel and Cloudflare are built. Railway, GCP,
-   PlanetScale, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter
-   and a sync profile. One read with a pasted credential also adds itself to
+3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale are built. Railway,
+   GCP, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter and a
+   sync profile. One read with a pasted credential also adds itself to
    `COST_CONNECTION_PROVIDERS`, a connection service that checks the credential with the vendor,
    its `PUT` / `DELETE` endpoints, and on the Cost page two commands and an entry in
-   `CREDENTIAL_SOURCES`. One read through a connection adds a reconcile function instead.
+   `CREDENTIAL_SOURCES`. One read through a connection adds a reconcile function instead, and
+   when the org opts in on the Cost page (GitHub, Vercel, PlanetScale) a source service with its
+   endpoints and a step in the Add source dialog.
 4. **Closing the loop.** Budgets and cost anomalies as managed alert signals, a cost block in the
    weekly digest, cost per request on service pages, realized savings once an accepted
    recommendation stops firing.
@@ -539,7 +612,6 @@ Each phase is one PR stack.
 - GitHub: does an installation token with "Administration: read" read the billing report (the
   spec says so, no installation has been read yet), and how long the report keeps usage.
 - Railway: can a workspace token read `customer`.
-- PlanetScale: the time unit of SKU `rate`, and whether the open invoice is listed.
 - AWS: the request rate limit of Cost Explorer is not published. The adapter backs off on
   `LimitExceededException`.
 - AWS: a management account's rows include its member accounts and carry the connected account's

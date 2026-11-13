@@ -8,6 +8,10 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
+	PLANETSCALE_COST_RECONNECT_CODE,
+	PlanetScaleCostSourceAdded,
+	PlanetScaleCostSourceRemoved,
+	PlanetScaleCostStatus,
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
@@ -45,7 +49,7 @@ import {
 	withFilter,
 } from "./derive"
 import { Message } from "./message"
-import type { Model, Search } from "./model"
+import { type Model, type Search, sourcesOf } from "./model"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -168,6 +172,7 @@ const GITHUB_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-0
 const CLOUDFLARE_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c063")
 const GITHUB_ORG = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e061")
 const VERCEL_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c063")
+const PLANETSCALE_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c065")
 const GITHUB_LABS = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e062")
 
 type InstallationWire = (typeof GithubCostInstallations.Encoded)["installations"][number]
@@ -213,6 +218,16 @@ const githubListed = (model: Model, installations: ReadonlyArray<InstallationWir
 const populated = (search: Search = { groupBy: "region" }, totalsAnswer = totals()): Model =>
 	answered(entered(search, [source()]).model, totalsAnswer)
 
+/** The dialog's PlanetScale step with its connection read answered. */
+const planetScaleAnswered = (model: Model, status: typeof PlanetScaleCostStatus.Encoded): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedLoadPlanetScaleStatus({
+			key: model.planetscale.key ?? "",
+			result: Result.succeed(new PlanetScaleCostStatus(status)),
+		}),
+	).model
+
 describe("cost page", () => {
 	test("an org with no cost source gets the connect on-ramp and no warehouse read", () => {
 		const step = entered({}, [])
@@ -222,6 +237,7 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
+			expectView(text(/a PlanetScale organization by database and branch/)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
 			expectView(text("Sources")).not.toExist(),
@@ -238,7 +254,9 @@ describe("cost page", () => {
 			expectView(text("Add a cost source")).toExist(),
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
-			expectView(text(/OpenRouter, GitHub, Vercel and Cloudflare requests are free/)).toExist(),
+			expectView(
+				text(/OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale requests are free/),
+			).toExist(),
 			expectView(role("button", { name: /^Vercel/ })).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
 			expectView(
@@ -698,7 +716,9 @@ describe("cost page", () => {
 			resolveTheme,
 			dialogMounted,
 			expectView(role("button", { name: /^GitHub/ })).toExist(),
-			expectView(text(/OpenRouter, GitHub, Vercel and Cloudflare requests are free/)).toExist(),
+			expectView(
+				text(/OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale requests are free/),
+			).toExist(),
 		)
 		const reading = pageUpdate(opened, Message.ClickedAddGithub())
 		expect(names(reading.commands)).toEqual(["FetchGithubCostInstallations"])
@@ -1510,6 +1530,48 @@ describe("cost page", () => {
 		)
 	})
 
+	test("a PlanetScale branch is a resource named with its database, in the rail and in the table", () => {
+		const planetScale = source({
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a065",
+			accountId: "acme",
+			requestsThisMonth: 0,
+		})
+		const byResource = answered(entered({ groupBy: "resource" }, [source(), planetScale]).model)
+		const model = pageUpdate(
+			withFacets(byResource, ["orders-prod/main", "search/main", ""]),
+			Message.CompletedLoadBreakdown({
+				key: byResource.breakdown.key ?? "",
+				result: Result.succeed(
+					Schema.decodeSync(CostBreakdownResponse)({
+						currency: "USD",
+						rows: [
+							{ key: "", cost: 900, previousCost: 600 },
+							{ key: "orders-prod/main", cost: 300, previousCost: 280 },
+							{ key: "search/main", cost: 40, previousCost: 40 },
+						],
+					}),
+				),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			// Two databases each have a `main`: the database in the name keeps them apart.
+			expectView(role("checkbox", { name: "orders-prod/main" })).toExist(),
+			expectView(role("checkbox", { name: "search/main" })).toExist(),
+			// A branch's row breaks down like any resource's: by service, narrowed to it.
+			expectView(role("link", { name: "orders-prod/main" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=cloud_service&resource=%5B%22orders-prod%2Fmain%22%5D",
+			),
+			// The AWS cost beside it names no resource.
+			expectView(role("checkbox", { name: "No resource" })).toExist(),
+		)
+	})
+
 	test("removing one provider's source leaves the other's on the page", () => {
 		const openRouter = source({
 			id: OPENROUTER_SOURCE,
@@ -1602,6 +1664,321 @@ describe("cost page", () => {
 		)
 	})
 
+	test("PlanetScale is added from the connection the org already has, with nothing typed", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
+			// Where the reader picks it, the page says its days are a month's invoice spread out.
+			expectView(text("Monthly invoices, spread over each branch's days")).toExist(),
+		)
+		// The step reads the org's connection before it offers anything.
+		const reading = pageUpdate(opened, Message.ClickedAddPlanetScale())
+		expect(names(reading.commands)).toEqual(["FetchPlanetScaleCostStatus"])
+		scene(
+			{ update: pageUpdate, view },
+			given(reading.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add PlanetScale")).toExist(),
+			expectView(text("Reading the PlanetScale connection")).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		const ready = planetScaleAnswered(reading.model, {
+			organization: "acme",
+			invoiceAccess: true,
+			added: false,
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("acme")).toExist(),
+			expectView(text(/spreads each invoice line evenly over the days its branch ran/)).toExist(),
+			// It reads through the connection: there is no token, id or organization to type.
+			expectView(role("textbox")).not.toExist(),
+			expectView(text(/Nothing is pasted/)).toExist(),
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+			expectView(role("button", { name: "Back" })).toExist(),
+		)
+		// The add names the organization the step showed.
+		const saving = pageUpdate(ready, Message.ClickedConfirmAddPlanetScale())
+		expect(saving.commands).toMatchObject([
+			{ name: "AddPlanetScaleCostSource", args: { organization: "acme" } },
+		])
+		// A second click while it saves sends nothing more, and Back waits.
+		expect(names(pageUpdate(saving.model, Message.ClickedConfirmAddPlanetScale()).commands)).toEqual([])
+		expect(pageUpdate(saving.model, Message.ClickedBackToProviders()).model.addStep).toBe("planetscale")
+
+		const saved = pageUpdate(
+			saving.model,
+			Message.CompletedAddPlanetScale({
+				result: Result.succeed(new PlanetScaleCostSourceAdded({ organization: "acme" })),
+			}),
+		)
+		expect(saved.model.addDialog.isOpen).toBe(false)
+		expect(names(saved.commands)).toContain("FetchCostSources")
+		expect(saved.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "PlanetScale added",
+				description: "The first sync runs within a few minutes.",
+			}),
+		)
+	})
+
+	test("a connection that cannot read invoices says to reconnect; none says to connect", () => {
+		const reading = pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedAddPlanetScale(),
+		).model
+		// Authorized before Maple asked for invoices: the organization is known, the access is not there.
+		const stale = planetScaleAnswered(reading, {
+			organization: "acme",
+			invoiceAccess: false,
+			added: false,
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(stale),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("acme")).toExist(),
+			expectView(text(/Reconnect PlanetScale to grant access to invoices/)).toExist(),
+			// The way on is the existing PlanetScale connection, not this dialog.
+			expectView(role("link", { name: "Reconnect PlanetScale" })).toHaveAttr(
+				"href",
+				"/integrations?integration=planetscale",
+			),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		// Nothing is sent for an organization that cannot be added.
+		expect(names(pageUpdate(stale, Message.ClickedConfirmAddPlanetScale()).commands)).toEqual([])
+
+		const none = planetScaleAnswered(reading, { organization: null, invoiceAccess: false, added: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(none),
+			resolveTheme,
+			dialogMounted,
+			expectView(text(/PlanetScale is not connected yet/)).toExist(),
+			expectView(role("link", { name: "Connect PlanetScale" })).toHaveAttr(
+				"href",
+				"/sources/new?integration=planetscale",
+			),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+
+		// A status read that failed says so, and Try again asks once more.
+		const failed = pageUpdate(
+			reading,
+			Message.CompletedLoadPlanetScaleStatus({
+				key: reading.planetscale.key ?? "",
+				result: Result.fail(toLoadFailure("The connection could not be read")),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Try again" })).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		expect(names(pageUpdate(failed, Message.ClickedAddPlanetScale()).commands)).toEqual([
+			"FetchPlanetScaleCostStatus",
+		])
+	})
+
+	test("a refused add stays in the step with its reason, and links to the connection only when a reconnect fixes it", () => {
+		const ready = planetScaleAnswered(
+			pageUpdate(
+				pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+				Message.ClickedAddPlanetScale(),
+			).model,
+			{ organization: "acme", invoiceAccess: true, added: false },
+		)
+		const saving = pageUpdate(ready, Message.ClickedConfirmAddPlanetScale()).model
+		const refusal = (failure: ReturnType<typeof toLoadFailure>) =>
+			pageUpdate(saving, Message.CompletedAddPlanetScale({ result: Result.fail(failure) }))
+		/** The step after a refusal, once the connection it reads again has answered. */
+		const refusedWith = (
+			failure: ReturnType<typeof toLoadFailure>,
+			status: typeof PlanetScaleCostStatus.Encoded = {
+				organization: "acme",
+				invoiceAccess: true,
+				added: false,
+			},
+		) => planetScaleAnswered(refusal(failure).model, status)
+
+		// PlanetScale answered 403 to a grant whose stored scopes did not say: only a reconnect helps.
+		const reconnect = refusedWith({
+			...toLoadFailure("refused"),
+			code: PLANETSCALE_COST_RECONNECT_CODE,
+			message: "Reconnect PlanetScale to grant Maple access to invoices.",
+		})
+		expect(reconnect.addDialog.isOpen).toBe(true)
+		scene(
+			{ update: pageUpdate, view },
+			given(reconnect),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Reconnect PlanetScale to grant Maple access to invoices.")).toExist(),
+			expectView(role("link", { name: "Reconnect PlanetScale" })).toHaveAttr(
+				"href",
+				"/integrations?integration=planetscale",
+			),
+			// The organization is still there to add once that is done.
+			expectView(role("button", { name: "Add source" })).toBeEnabled(),
+		)
+
+		// An outage is not the connection's to fix: the reason shows, with no link away.
+		const outage = refusedWith({
+			...toLoadFailure("refused"),
+			message: "PlanetScale did not answer the invoice request.",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(outage),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("PlanetScale did not answer the invoice request.")).toExist(),
+			expectView(role("link", { name: "Reconnect PlanetScale" })).not.toExist(),
+		)
+		// Leaving the step leaves the refusal behind.
+		expect(pageUpdate(outage, Message.ClickedBackToProviders()).model.planetscaleError).toBeNull()
+
+		// A refusal reads the connection again: what the step showed may be what was refused.
+		const changed = {
+			...toLoadFailure("refused"),
+			message: "The PlanetScale connection now reads another organization (beta).",
+		}
+		expect(names(refusal(changed).commands)).toEqual(["FetchPlanetScaleCostStatus"])
+		expect(refusal(changed).model.sourceWrite).toBe("Idle")
+		// Bound to another organization meanwhile: the step shows that one, and a retry sends it.
+		const rebound = refusedWith(changed, { organization: "beta", invoiceAccess: true, added: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(rebound),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("beta")).toExist(),
+			expectView(text("acme")).not.toExist(),
+			expectView(text("The PlanetScale connection now reads another organization (beta).")).toExist(),
+		)
+		expect(pageUpdate(rebound, Message.ClickedConfirmAddPlanetScale()).commands).toMatchObject([
+			{ name: "AddPlanetScaleCostSource", args: { organization: "beta" } },
+		])
+		// Disconnected meanwhile: nothing is left to add, and the step says to connect.
+		const gone = refusedWith(changed, { organization: null, invoiceAccess: false, added: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(gone),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("link", { name: "Connect PlanetScale" })).toExist(),
+			expectView(role("button", { name: "Add source" })).not.toExist(),
+		)
+		expect(names(pageUpdate(gone, Message.ClickedConfirmAddPlanetScale()).commands)).toEqual([])
+	})
+
+	test("a PlanetScale source links to its connection and is removed here, with no token to replace", () => {
+		const cloudflare = source({
+			id: CLOUDFLARE_SOURCE,
+			provider: "cloudflare",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a063",
+			accountId: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+			requestsThisMonth: 0,
+		})
+		const planetScale = source({
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a064",
+			accountId: "acme",
+			backfillDate: "2025-11-01",
+			requestsThisMonth: 0,
+		})
+		const model = answered(entered({}, [cloudflare, planetScale]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("PlanetScale")).toExist(),
+			expectView(text("acme")).toExist(),
+			expectView(text(/provider requests/)).not.toExist(),
+			// The row's actions are named by their provider, as the Cloudflare row's are.
+			expectView(role("link", { name: "Manage PlanetScale connection" })).toHaveAttr(
+				"href",
+				"/integrations?integration=planetscale",
+			),
+			expectView(role("button", { name: "Remove PlanetScale source" })).toExist(),
+			// There is no credential of its own to replace: the connection holds the authorization.
+			expectView(role("button", { name: /Replace PlanetScale/ })).not.toExist(),
+			expectView(role("button", { name: "Replace Cloudflare token" })).toExist(),
+			// Beside the figures, the row says its days are shares of a monthly invoice.
+			expectView(
+				text(
+					/an even share of the month's invoice for each branch, and can change until the invoice closes/,
+				),
+			).toExist(),
+		)
+
+		// It exists: the list does not offer it again.
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.ClickedAddSource()).model),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^PlanetScale/ })).not.toExist(),
+			expectView(text("Remove it in the Sources panel")).toExist(),
+		)
+
+		const confirming = pageUpdate(
+			model,
+			Message.ClickedRemoveSource({ sourceId: PLANETSCALE_SOURCE }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(confirming),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Remove the PlanetScale source?")).toExist(),
+			expectView(text(/The PlanetScale connection stays/)).toExist(),
+		)
+		const removing = pageUpdate(confirming, Message.ClickedConfirmRemove())
+		expect(names(removing.commands)).toEqual(["RemovePlanetScaleCostSource"])
+
+		const failedRemoval = pageUpdate(
+			removing.model,
+			Message.CompletedRemovePlanetScale({ result: Result.fail(toLoadFailure("unavailable")) }),
+		)
+		expect(failedRemoval.outMessage).toMatchObject({ type: "error", title: "Couldn't remove the source" })
+		expect(sourcesOf(failedRemoval.model).length).toBe(2)
+
+		const removed = pageUpdate(
+			removing.model,
+			Message.CompletedRemovePlanetScale({
+				result: Result.succeed(new PlanetScaleCostSourceRemoved({ removed: true })),
+			}),
+		)
+		expect(removed.outMessage).toEqual(
+			PageOutMessage.RequestedToast({ type: "success", title: "PlanetScale removed", description: "" }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(removed.model),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("acme")).not.toExist(),
+			// The other provider's source is still listed.
+			expectView(text("1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")).toExist(),
+		)
+	})
+
 	test("a view filtered to a provider compares with the period before when that provider's history reaches it", () => {
 		const aws = Schema.decodeSync(CostSourcesResponse)({ sources: [source()] }).sources
 		const both = Schema.decodeSync(CostSourcesResponse)({
@@ -1677,6 +2054,7 @@ describe("cost page", () => {
 		expect(keyLabel("provider", "aws")).toBe("AWS")
 		expect(keyLabel("provider", "cloudflare")).toBe("Cloudflare")
 		expect(keyLabel("provider", "vercel")).toBe("Vercel")
+		expect(keyLabel("provider", "planetscale")).toBe("PlanetScale")
 		// A Vercel project or a GitHub repository is the row's resource; a charge of neither says so.
 		expect(keyLabel("resource", "web")).toBe("web")
 		expect(keyLabel("resource", "")).toBe("No resource")
@@ -1692,6 +2070,53 @@ describe("cost page", () => {
 				{ key: "openrouter", other: false },
 			]),
 		).toEqual(["AWS", "OpenRouter"])
+	})
+
+	test("a PlanetScale account's row reads by its organization and breaks down into its databases", () => {
+		const planetScale = source({
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a064",
+			accountId: "acme",
+			requestsThisMonth: 0,
+		})
+		const byAccount = entered({ groupBy: "account" }, [source(), planetScale]).model
+		const rows = Schema.decodeSync(CostBreakdownResponse)({
+			currency: "USD",
+			rows: [
+				{ key: "123456789012", cost: 900, previousCost: 600 },
+				{ key: "acme", cost: 310, previousCost: 300 },
+			],
+		})
+		const model = Arr.reduce(
+			[
+				Message.CompletedLoadTotals({
+					key: byAccount.totals.key ?? "",
+					result: Result.succeed(totals()),
+				}),
+				Message.CompletedLoadTimeseries({
+					key: byAccount.timeseries.key ?? "",
+					result: Result.succeed(timeseries),
+				}),
+				Message.CompletedLoadBreakdown({
+					key: byAccount.breakdown.key ?? "",
+					result: Result.succeed(rows),
+				}),
+			],
+			byAccount,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			// The organization is the account, named with what bills it, as the AWS row beside it is.
+			expectView(role("link", { name: "PlanetScale acme" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=cloud_service&account=%5B%22acme%22%5D",
+			),
+			expectView(role("link", { name: "AWS 123456789012" })).toExist(),
+		)
 	})
 
 	test("sources that have not synced yet say when the first sync runs, and list themselves", () => {
@@ -1824,6 +2249,27 @@ describe("cost page", () => {
 			expectView(text(/AWS brings in this month and the last/)).toExist(),
 			expectView(text(/Cloudflare brings in this month and the last/)).toExist(),
 			expectView(text(/OpenRouter brings in its last four weeks/)).toExist(),
+		)
+		// PlanetScale bills by the month: its first sync is said in invoices.
+		const planetScale = source({
+			...unsynced,
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			accountId: "acme",
+			status: "pending",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [planetScale]).model),
+			resolveTheme,
+			expectView(text(/It brings in this month's invoice and the last/)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(entered({}, [github, planetScale]).model),
+			resolveTheme,
+			expectView(text(/GitHub brings in this month and the last/)).toExist(),
+			expectView(text(/PlanetScale brings in this month's invoice and the last/)).toExist(),
 		)
 	})
 

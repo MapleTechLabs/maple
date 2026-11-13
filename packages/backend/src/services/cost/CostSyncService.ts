@@ -33,11 +33,13 @@ import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
 import { reconcileGithubCostSources } from "./github-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
+import { reconcilePlanetScaleCostSources } from "./planetscale-cost-sources"
 import { reconcileVercelCostSources } from "./vercel-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import {
 	advanceCostSync,
@@ -175,6 +177,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				github: yield* GithubCostProvider,
 				vercel: yield* VercelCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
+				planetscale: yield* PlanetScaleCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -247,6 +250,15 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** PlanetScale sources whose connection is gone or reads another organization by now. */
+			const reconcilePlanetScale = Effect.fn("CostSyncService.reconcilePlanetScale")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcilePlanetScaleCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "planetscale",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** One function per provider or connection table; each owns the sources of its own. */
 			const reconcile = (now: number) =>
 				Effect.all(
@@ -256,10 +268,9 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 						reconcileGithub(),
 						reconcileVercel(),
 						reconcileConnections(now),
+						reconcilePlanetScale(),
 					],
-					{
-						discard: true,
-					},
+					{ discard: true },
 				)
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
@@ -725,6 +736,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				GithubCostProvider.layer,
 				VercelCostProvider.layer,
 				CloudflareCostProvider.layer,
+				PlanetScaleCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

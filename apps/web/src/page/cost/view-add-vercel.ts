@@ -1,19 +1,14 @@
 import type { VercelCostTeam } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureMessage } from "@maple/views/data/load-failure"
 import { alert, alertDescription } from "@maple/views/ui/alert"
-import { button, linkButton } from "@maple/views/ui/button"
-import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
-import { spinner } from "@maple/views/ui/spinner"
-import { hstack, vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { connectionStep, type ConnectionStepAction } from "../kit/connection-step"
 import { Message } from "./message"
 import { type Model, type VercelStep, vercelStepOf } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
@@ -102,29 +97,22 @@ const connection = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> =
 	}
 }
 
-const connectionLink = (h: H): Html =>
-	linkButton(h, { href: VERCEL_INTEGRATION_HREF }, ["Open the Vercel connection"])
-
 /** The step's primary action, by what the connection allows: add it, connect one, or fix its token. */
-const primary = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> => {
+const primary = (model: Model, step: VercelStep): ConnectionStepAction<Message> | null => {
+	const connection = { label: "Open the Vercel connection", href: VERCEL_INTEGRATION_HREF }
 	switch (step._tag) {
 		case "NotConnected":
-			return [linkButton(h, { href: CONNECT_VERCEL_HREF }, ["Connect Vercel"])]
+			return { label: "Connect Vercel", href: CONNECT_VERCEL_HREF }
 		case "Added":
-			return step.isTokenRejected ? [connectionLink(h)] : []
+			return step.isTokenRejected ? connection : null
 		case "TokenRejected":
-			return [connectionLink(h)]
+			return connection
 		case "Ready":
-			return [
-				button(
-					h,
-					{
-						isLoading: model.sourceWrite === "Saving",
-						attributes: [h.OnClick(Message.ClickedConfirmAddVercel())],
-					},
-					["Add source"],
-				),
-			]
+			return {
+				label: "Add source",
+				onClick: Message.ClickedConfirmAddVercel(),
+				isLoading: model.sourceWrite === "Saving",
+			}
 	}
 }
 
@@ -132,64 +120,17 @@ const primary = (h: H, model: Model, step: VercelStep): ReadonlyArray<Html> => {
  * The dialog's Vercel step: the team the org has connected, added with one click. Nothing is
  * typed: the connection already holds the token.
  */
-export const vercelStep = (h: H, model: Model, id: string): ReadonlyArray<Html> => {
-	const step = AsyncData.matchData(model.vercel.data, {
-		onEmpty: () => null,
-		onFailure: () => null,
-		onData: vercelStepOf,
+export const vercelStep = (h: H, model: Model, id: string): ReadonlyArray<Html> =>
+	connectionStep(h, {
+		dialogId: id,
+		title: "Add Vercel",
+		description:
+			"Maple reads what Vercel bills the team each day by product, project and region, plan fees included.",
+		read: model.vercel.data,
+		readingLabel: "Reading the Vercel connection",
+		onRetry: Message.ClickedAddVercel(),
+		content: (status) => connection(h, model, vercelStepOf(status)),
+		primary: (status) => primary(model, vercelStepOf(status)),
+		onBack: Message.ClickedBackToProviders(),
+		isBusy: model.sourceWrite === "Saving",
 	})
-	return [
-		DialogView.dialogHeader(h, "dialog", [
-			DialogView.dialogTitle(h, "dialog", id, "Add Vercel"),
-			DialogView.dialogDescription(
-				h,
-				"dialog",
-				id,
-				"Maple reads what Vercel bills the team each day by product, project and region, plan fees included.",
-			),
-		]),
-		DialogView.dialogPanel(h, "dialog", id, [
-			vstack(
-				h,
-				{ gap: "3" },
-				AsyncData.matchData(model.vercel.data, {
-					onEmpty: () => [
-						hstack(h, { gap: "2" }, [
-							spinner(h, undefined, 14, true),
-							typography(h, { size: "sm", tone: "muted" }, ["Reading the Vercel connection"]),
-						]),
-					],
-					onFailure: (failure) => [
-						alert(h, { variant: "crit", size: "sm" }, [
-							alertDescription(h, [failureMessage(failure)]),
-						]),
-						hstack(h, {}, [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedAddVercel())],
-								},
-								["Try again"],
-							),
-						]),
-					],
-					onData: (status) => connection(h, model, vercelStepOf(status)),
-				}),
-			),
-		]),
-		DialogView.dialogFooter(h, "dialog", [
-			button(
-				h,
-				{
-					variant: "outline",
-					isDisabled: model.sourceWrite === "Saving",
-					attributes: [h.OnClick(Message.ClickedBackToProviders())],
-				},
-				["Back"],
-			),
-			...(step === null ? [] : primary(h, model, step)),
-		]),
-	]
-}

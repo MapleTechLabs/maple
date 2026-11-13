@@ -47,6 +47,10 @@ import {
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
 import { planetScaleWebhookStatus, PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import {
+	removePlanetScaleCostSources,
+	removePlanetScaleCostSourcesOfOthers,
+} from "../cost/planetscale-cost-sources"
+import {
 	deleteSourcesOf,
 	createIntegrationSource,
 	integrationSourceName,
@@ -621,6 +625,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 									})
 								}
 
+								// The Cost page's source reads this connection, and another organization's
+								// invoices are not its history. Decided by the source's own account, here in
+								// the transaction, not by the connection as it was read before it.
+								yield* removePlanetScaleCostSourcesOfOthers(db, orgId, organization)
+
 								const previousTargetId = existing.scrapeTargetId
 								if (previousTargetId === null || previousTargetId === scrapeTargetId) {
 									return []
@@ -794,6 +803,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 							yield* db.run(
 								PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)]),
 							)
+							// The Cost page's source read through this connection.
+							yield* removePlanetScaleCostSources(db, orgId)
 							yield* deleteSourcesOf(db, orgId, [connection])
 						}),
 					),

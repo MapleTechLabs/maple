@@ -1,10 +1,8 @@
 import type { CostSourceSummary, GithubCostInstallation } from "@maple/domain/http"
 import { CostProvider } from "@maple/domain/cost"
 import { Array as Arr, String as Str } from "effect"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { failureMessage } from "@maple/views/data/load-failure"
-import { button, linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
@@ -13,15 +11,16 @@ import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input }
 import { formDialogForm } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
-import { spinner } from "@maple/views/ui/spinner"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { connectionStep } from "../kit/connection-step"
 import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
+import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 import { providerMark, vercelStep } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
@@ -86,7 +85,7 @@ const FREE_REQUESTS = nameList.format(
 
 /**
  * The providers to add: AWS goes to its connect flow, a pasted credential's to its form, GitHub to
- * its organizations, Vercel to its team.
+ * its organizations, Vercel to its team, PlanetScale to its organization.
  */
 const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
@@ -121,6 +120,14 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 				meta: "Daily charges by product, project and region",
 				addedMeta: "Remove it in the Sources panel",
 				onClick: Message.ClickedAddVercel(),
+				divided: true,
+			}),
+			addableRow(h, COST_PROVIDERS.planetscale, {
+				isAdded: hasSourceOf(sources, "planetscale"),
+				// Short enough to stand whole in the list: the step says the rest.
+				meta: "Monthly invoices, spread over each branch's days",
+				addedMeta: "Remove it in the Sources panel",
+				onClick: Message.ClickedAddPlanetScale(),
 			}),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
@@ -304,70 +311,67 @@ const githubInstallationRow = (h: H, model: Model, installation: GithubCostInsta
 }
 
 /** The org's GitHub installations to pick from, or how to get one. */
-const githubInstallations = (h: H, model: Model): Html =>
-	AsyncData.matchDataSplitEmpty(model.githubInstallations, {
-		onIdle: () => h.empty,
-		onLoading: () =>
-			hstack(h, { gap: "2", className: "py-2" }, [
-				spinner(h, undefined, 14),
-				typography(h, { size: "sm", tone: "muted" }, ["Reading your GitHub organizations"]),
-			]),
-		onFailure: (error) =>
-			vstack(h, { gap: "2", align: "start" }, [
-				typography(h, { size: "sm", tone: "destructive", as: "p", attributes: [h.Role("alert")] }, [
-					failureMessage(error),
-				]),
-				button(
-					h,
-					{ variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedAddGithub())] },
-					["Try again"],
-				),
-			]),
-		onData: ({ installations }) =>
-			Arr.isReadonlyArrayNonEmpty(installations)
-				? vstack(h, { gap: "3" }, [
-						vstack(
-							h,
-							{ as: "ul", gap: "0" },
-							Arr.map(installations, (installation) =>
-								githubInstallationRow(h, model, installation),
-							),
+const githubInstallations = (
+	h: H,
+	model: Model,
+	installations: ReadonlyArray<GithubCostInstallation>,
+): ReadonlyArray<Html> =>
+	Arr.isReadonlyArrayNonEmpty(installations)
+		? [
+				vstack(h, { gap: "3" }, [
+					vstack(
+						h,
+						{ as: "ul", gap: "0" },
+						Arr.map(installations, (installation) =>
+							githubInstallationRow(h, model, installation),
 						),
-						typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-							"Missing an organization? ",
-							textLink(
-								h,
-								{ href: CONNECT_GITHUB_HREF, tone: "inherit", className: "underline" },
-								["Connect it to Maple"],
-							),
-							" first.",
+					),
+					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
+						"Missing an organization? ",
+						textLink(h, { href: CONNECT_GITHUB_HREF, tone: "inherit", className: "underline" }, [
+							"Connect it to Maple",
 						]),
-					])
-				: // The way on is the step's primary action, in the footer beside Back.
-					typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
-						"No GitHub organization is connected to Maple yet. Connect one, then add it here as a cost source.",
+						" first.",
 					]),
-	})
+				]),
+			]
+		: // The way on is the step's primary action, in the footer beside Back.
+			[
+				typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
+					"No GitHub organization is connected to Maple yet. Connect one, then add it here as a cost source.",
+				]),
+			]
 
-/** The GitHub step's primary action: connecting an organization, while the org has none to pick. */
-const githubPrimary = (h: H, model: Model): ReadonlyArray<Html> =>
-	AsyncData.matchData(model.githubInstallations, {
-		onEmpty: () => [],
-		onFailure: () => [],
-		onData: ({ installations }) =>
+/**
+ * The dialog's GitHub step: the organizations the GitHub App is installed on, each added with a
+ * click. Its primary action connects one, while the org has none to pick.
+ */
+const githubStep = (h: H, model: Model, id: string): ReadonlyArray<Html> =>
+	connectionStep(h, {
+		dialogId: id,
+		title: "Add GitHub",
+		description:
+			"Maple reads an organization's billed usage through the GitHub App it already has. No key is needed.",
+		read: model.githubInstallations,
+		readingLabel: "Reading your GitHub organizations",
+		onRetry: Message.ClickedAddGithub(),
+		content: ({ installations }) => githubInstallations(h, model, installations),
+		primary: ({ installations }) =>
 			Arr.isReadonlyArrayNonEmpty(installations)
-				? []
-				: [linkButton(h, { href: CONNECT_GITHUB_HREF }, ["Connect GitHub"])],
+				? null
+				: { label: "Connect GitHub", href: CONNECT_GITHUB_HREF },
+		onBack: Message.ClickedBackToProviders(),
+		isBusy: model.sourceWrite === "Saving",
 	})
 
 /**
  * Add a source, or replace a source's credential: the providers first, then the chosen one's
- * credential form, GitHub's organizations or Vercel's team. Opened on the form for a replace.
+ * credential form, GitHub's organizations, Vercel's team or PlanetScale's organization. Opened on
+ * the form for a replace.
  */
 export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const id = model.addDialog.id
 	const step = model.addStep
-	const isSaving = model.sourceWrite === "Saving"
 	return h.submodel({
 		slotId: "cost-add-source",
 		model: model.addDialog,
@@ -380,48 +384,29 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			toContent: (close) =>
 				step === "vercel"
 					? vercelStep(h, model, id)
-					: step === "github"
-						? [
-								DialogView.dialogHeader(h, "dialog", [
-									DialogView.dialogTitle(h, "dialog", id, "Add GitHub"),
-									DialogView.dialogDescription(
-										h,
-										"dialog",
-										id,
-										"Maple reads an organization's billed usage through the GitHub App it already has. No key is needed.",
-									),
-								]),
-								DialogView.dialogPanel(h, "dialog", id, [githubInstallations(h, model)]),
-								DialogView.dialogFooter(h, "dialog", [
-									button(
-										h,
-										{
-											variant: "outline",
-											isDisabled: isSaving,
-											attributes: [h.OnClick(Message.ClickedBackToProviders())],
-										},
-										["Back"],
-									),
-									...githubPrimary(h, model),
-								]),
-							]
-						: step === "pick"
-							? [
-									DialogView.dialogHeader(h, "dialog", [
-										DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-										DialogView.dialogDescription(
-											h,
-											"dialog",
-											id,
-											"Maple reads what the source bills each day and keeps it next to your telemetry.",
-										),
-									]),
-									DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
-									DialogView.dialogFooter(h, "dialog", [
-										button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
-									]),
-								]
-							: [credentialForm(h, model, step, sources, close)],
+					: step === "planetscale"
+						? planetScaleStep(h, model, id)
+						: step === "github"
+							? githubStep(h, model, id)
+							: step === "pick"
+								? [
+										DialogView.dialogHeader(h, "dialog", [
+											DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
+											DialogView.dialogDescription(
+												h,
+												"dialog",
+												id,
+												"Maple reads what the source bills each day and keeps it next to your telemetry.",
+											),
+										]),
+										DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
+										DialogView.dialogFooter(h, "dialog", [
+											button(h, { variant: "outline", attributes: [...close] }, [
+												"Close",
+											]),
+										]),
+									]
+								: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
@@ -440,6 +425,8 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 				description:
 					"Maple stops reading the team's charges, and its cost leaves this page. The Vercel connection stays as it is. Adding Vercel again reads the last eleven months again.",
 			}
+		case "planetscale":
+			return PLANETSCALE_REMOVE
 		case "openrouter":
 		case "cloudflare":
 			return CREDENTIAL_SOURCES[target.provider].remove

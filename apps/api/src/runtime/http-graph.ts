@@ -15,6 +15,7 @@ import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
+import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
 import { HttpVercelCostLive } from "@/routes/internal/vercel-cost.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
@@ -172,6 +173,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDigestLive,
 			HttpCloudflareCostLive,
 			HttpGithubCostLive,
+			HttpPlanetScaleCostLive,
 			HttpOpenRouterCostLive,
 			HttpOpenRouterKeyLive,
 			HttpServiceMapWorldLive,

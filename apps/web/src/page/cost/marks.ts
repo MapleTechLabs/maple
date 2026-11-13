@@ -92,7 +92,13 @@ const CLOUDFLARE_SERVICES: ReadonlySet<string> = new Set([
 	"Subscriptions",
 ])
 
-/** The platform a service's own name says bills it, when it says: a GitHub or Cloudflare product, an AWS service. */
+/** What a PlanetScale charge that names no database and has no description is filed under. */
+const PLANETSCALE_UNNAMED = "PlanetScale"
+
+/**
+ * The platform a service's own name says bills it, when it says: a GitHub or Cloudflare product,
+ * an AWS service, a PlanetScale charge filed under the provider's name.
+ */
 const namedServiceOwner = (key: string): CostProvider | undefined =>
 	GITHUB_PRODUCTS.has(key)
 		? "github"
@@ -100,7 +106,32 @@ const namedServiceOwner = (key: string): CostProvider | undefined =>
 			? "cloudflare"
 			: isAwsServiceName(key)
 				? "aws"
-				: undefined
+				: key === PLANETSCALE_UNNAMED
+					? "planetscale"
+					: undefined
+
+/**
+ * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and
+ * underscores. AWS, GitHub and Cloudflare name theirs with a capital or a space.
+ */
+const isDatabaseName = (key: string): boolean => /^[a-z0-9][a-z0-9_-]*$/u.test(key)
+
+/** The platforms whose own products can be one lowercase word (Vercel's "v0"). */
+const LOWERCASE_NAMING: ReadonlySet<CostProvider> = new Set<CostProvider>(["vercel"])
+
+/**
+ * A database's name is anyone's word, so its shape says PlanetScale only in an org that has that
+ * source, and no platform beside it that could name a product the same way. It comes after the
+ * known names, and takes no other platform's key.
+ */
+const databaseOwner = (key: string, sources: ReadonlyArray<CostSourceSummary>): CostProvider | undefined => {
+	const platforms = platformsOf(sources)
+	return isDatabaseName(key) &&
+		Arr.contains(platforms, "planetscale") &&
+		!Arr.some(platforms, (platform) => LOWERCASE_NAMING.has(platform))
+		? "planetscale"
+		: undefined
+}
 
 const CATEGORY_ICONS = {
 	"AI and Machine Learning": "SparkleIcon",
@@ -132,7 +163,10 @@ export const keyMark = (
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
 			if (key === "AWS Lambda") return { icon: "AwsLambdaIcon" }
-			return markOf(namedServiceOwner(key) ?? onlyPlatform(sources), "CubeIcon")
+			return markOf(
+				namedServiceOwner(key) ?? databaseOwner(key, sources) ?? onlyPlatform(sources),
+				"CubeIcon",
+			)
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
 		case "region":
@@ -142,7 +176,8 @@ export const keyMark = (
 				return providerMark("vercel")
 			}
 			return markOf(onlyPlatform(sources), "GlobeIcon")
-		// A resource is what a charge is for (a GitHub repository, a Vercel project): its key does not say whose.
+		// A resource is what a charge is for (a GitHub repository, a Vercel project, a PlanetScale
+		// database's branch): its key does not say whose.
 		case "resource":
 			return glyph("FolderIcon")
 		case "account": {
@@ -153,16 +188,17 @@ export const keyMark = (
 }
 
 /**
- * An account by what reads it: an AWS one by its id, a GitHub one by its organization, a Vercel
- * one by its team's slug (its id is a team id, kept stable through a rename), a Cloudflare one by
- * its account's name, an OpenRouter one by name alone while it is the org's only one (its id
- * means nothing to a reader). Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a GitHub or PlanetScale one by its
+ * organization, a Vercel one by its team's slug (its id is a team id, kept stable through a
+ * rename), a Cloudflare one by its account's name, an OpenRouter one by name alone while it is the
+ * org's only one (its id means nothing to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
 	if (provider === undefined) return key
 	const name = COST_PROVIDERS[provider].name
-	if (provider === "aws" || provider === "github") return `${name} ${key}`
+	// These ids are names a reader knows: the account reads once, as "PlanetScale acme".
+	if (provider === "aws" || provider === "github" || provider === "planetscale") return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
 	const accountName = Arr.findFirst(sameProvider, (source) => source.accountId === key).pipe(
 		Option.flatMapNullishOr((source) => source.accountName),

@@ -8,6 +8,9 @@ import {
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
+	PlanetScaleCostSourceAdded,
+	PlanetScaleCostSourceRemoved,
+	PlanetScaleCostStatus,
 	VercelCostSourceAdded,
 	VercelCostSourceRemoved,
 	VercelCostStatus,
@@ -76,6 +79,11 @@ export const Message = defineMessageUnion({
 	CompletedLoadVercelStatus: result(VercelCostStatus),
 	ClickedConfirmAddVercel: {},
 	CompletedAddVercel: { result: Schema.Result(VercelCostSourceAdded, LoadFailure) },
+	/** Turns the dialog to PlanetScale and reads the org's connection; also the step's Try again. */
+	ClickedAddPlanetScale: {},
+	CompletedLoadPlanetScaleStatus: result(PlanetScaleCostStatus),
+	ClickedConfirmAddPlanetScale: {},
+	CompletedAddPlanetScale: { result: Schema.Result(PlanetScaleCostSourceAdded, LoadFailure) },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
 	ClickedReplaceCredential: { provider: CredentialProvider },
@@ -106,6 +114,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
+	CompletedRemovePlanetScale: { result: Schema.Result(PlanetScaleCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

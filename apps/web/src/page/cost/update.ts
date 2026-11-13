@@ -1,4 +1,9 @@
-import { type CostSourceSummary, CostSourcesResponse, type VercelCostTeam } from "@maple/domain/http"
+import {
+	type CostSourceSummary,
+	CostSourcesResponse,
+	PLANETSCALE_COST_RECONNECT_CODE,
+	type VercelCostTeam,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import type { CostSourceId } from "@maple/primitives"
@@ -24,6 +29,7 @@ import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	AddGithubCostSource,
+	AddPlanetScaleCostSource,
 	AddVercelCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
@@ -34,9 +40,11 @@ import {
 	FetchCostTimeseries,
 	FetchCostTotals,
 	FetchGithubCostInstallations,
+	FetchPlanetScaleCostStatus,
 	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
+	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
@@ -59,7 +67,7 @@ import {
 } from "./derive"
 import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { Message } from "./message"
-import { type AddStep, type Model, type Search, vercelStepOf } from "./model"
+import { type AddStep, type Model, planetScaleStepOf, type Search, vercelStepOf } from "./model"
 import { COST_PROVIDERS, type CredentialProvider, isCredentialProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
@@ -199,6 +207,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		credentialError: null,
 		vercel: Keyed.idle(),
 		vercelError: null,
+		planetscale: Keyed.idle(),
+		planetscaleError: null,
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -247,6 +257,7 @@ const clearedDialog = (model: Model): Model => ({
 	credentialError: null,
 	githubRefusal: null,
 	vercelError: null,
+	planetscaleError: null,
 })
 
 /**
@@ -279,6 +290,25 @@ const addableVercelTeam = (model: Model): Option.Option<VercelCostTeam> =>
 	Option.flatMap(AsyncData.getData(model.vercel.data), (status) => {
 		const step = vercelStepOf(status)
 		return step._tag === "Ready" ? Option.some(step.team) : Option.none()
+	})
+
+/** The org's PlanetScale connection, read again each time the dialog turns to PlanetScale, as Vercel's is. */
+const requestPlanetScaleStatus = (model: Model, context: PageContext): Return =>
+	applySteps<Model, Message>(model, [
+		keyed(
+			emptied(model.planetscale),
+			requestKey(context.orgId, "planetScaleCostStatus", {}),
+			"Supersede",
+			(planetscale) => ({ planetscale }),
+			(key) => FetchPlanetScaleCostStatus({ key }),
+		),
+	])
+
+/** The organization on show, when it can be added: a grant that reads invoices and no source yet. */
+const addablePlanetScaleOrganization = (model: Model): Option.Option<string> =>
+	Option.flatMap(AsyncData.getData(model.planetscale.data), (status) => {
+		const step = planetScaleStepOf(status)
+		return step._tag === "Ready" ? Option.some(step.organization) : Option.none()
 	})
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
@@ -326,7 +356,10 @@ const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
 /** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
 export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
 
-/** The call that removes `source`: its pasted credential, the GitHub source of its installation, the org's Vercel source. */
+/**
+ * The call that removes `source`: its pasted credential, the GitHub source of its installation,
+ * the org's Vercel or PlanetScale source.
+ */
 const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 	switch (source.provider) {
 		case "openrouter":
@@ -338,6 +371,9 @@ const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 			)
 		case "vercel":
 			return [RemoveVercelCostSource()]
+		// The org has one PlanetScale connection, so one source at most: the call names none.
+		case "planetscale":
+			return [RemovePlanetScaleCostSource()]
 		// An AWS source leaves with its connection's Cost module, on the integration's page.
 		case "aws":
 			return []
@@ -688,6 +724,45 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onSuccess: (): Return =>
 					added(model, "Vercel added", "The first sync runs within a few minutes.", context),
 			}),
+		ClickedAddPlanetScale: () =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: requestPlanetScaleStatus({ ...clearedDialog(model), addStep: "planetscale" }, context),
+		CompletedLoadPlanetScaleStatus: ({ key, result }) => ({
+			model: { ...model, planetscale: Keyed.accept(model.planetscale, key, result) },
+		}),
+		// The add names the organization on show: one bound since is refused, not added in its place.
+		ClickedConfirmAddPlanetScale: () =>
+			Option.match(
+				model.sourceWrite === "Idle" ? addablePlanetScaleOrganization(model) : Option.none(),
+				{
+					onNone: (): Return => ({ model }),
+					onSome: (organization): Return => ({
+						model: { ...model, sourceWrite: "Saving", planetscaleError: null },
+						commands: [AddPlanetScaleCostSource({ organization })],
+					}),
+				},
+			),
+		// A refused add keeps the dialog open with the reason under the organization, and reads the
+		// connection again whatever the reason: a grant refused or an organization bound since both
+		// leave the one on show stale, and a retry would send it again.
+		CompletedAddPlanetScale: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return =>
+					requestPlanetScaleStatus(
+						{
+							...model,
+							sourceWrite: "Idle",
+							planetscaleError: {
+								message: failureMessage(failure),
+								needsReconnect: failure.code === PLANETSCALE_COST_RECONNECT_CODE,
+							},
+						},
+						context,
+					),
+				onSuccess: (): Return =>
+					added(model, "PlanetScale added", "The first sync runs within a few minutes.", context),
+			}),
 		ClickedRemoveSource: ({ sourceId }) => {
 			const target = sourceOf(model, sourceId)
 			return model.sourceWrite !== "Idle" || target === undefined
@@ -707,5 +782,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedRemoveCredential: ({ result }) => removed(model, result, context),
 		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
 		CompletedRemoveVercel: ({ result }) => removed(model, result, context),
+		CompletedRemovePlanetScale: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),
 	})

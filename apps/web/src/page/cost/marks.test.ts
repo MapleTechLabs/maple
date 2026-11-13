@@ -151,6 +151,92 @@ describe("cost key marks", () => {
 		expect(keyMark("account", "465760687006", all)?.icon).toBe(markOf("aws"))
 	})
 
+	test("a PlanetScale account reads by its organization, and its databases wear its mark", () => {
+		const withPlanetScale = [
+			...sources,
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		const planetScale = keyMark("provider", "planetscale", [])?.icon
+		// The organization is a name its reader knows: it stays in the label, with nothing aside.
+		expect(keyLabel("account", "acme", withPlanetScale)).toBe("PlanetScale acme")
+		expect(keyDetail("account", "acme", withPlanetScale)).toBeNull()
+		expect(keyMark("account", "acme", withPlanetScale)?.icon).toBe(planetScale)
+		// A database is the service. Its name is lowercase, where every other platform's has a capital or a space.
+		expect(keyMark("cloud_service", "orders-prod", withPlanetScale)?.icon).toBe(planetScale)
+		expect(keyMark("cloud_service", "Amazon Relational Database Service", withPlanetScale)?.icon).toBe(
+			keyMark("provider", "aws", [])?.icon,
+		)
+		expect(keyMark("cloud_service", "openai/gpt-5", withPlanetScale)?.icon).not.toBe(planetScale)
+		// A charge that names no database is PlanetScale's where the org reads no other platform.
+		const onlyPlanetScale = [source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")]
+		expect(keyMark("cloud_service", "Support plan", onlyPlanetScale)?.icon).toBe(planetScale)
+		// Without a PlanetScale source a lowercase name is no database of its.
+		expect(keyMark("cloud_service", "orders-prod", sources)?.icon).not.toBe(planetScale)
+		// Its charges have no region: the one it carries is the globe every provider's `global` gets.
+		expect(keyMark("region", "global", withPlanetScale)?.icon).toBe(keyMark("region", "global", [])?.icon)
+	})
+
+	test("with AWS, GitHub and PlanetScale in one org, a database's shape claims no other platform's key", () => {
+		const org = [
+			source("aws", "465760687006"),
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22"),
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		const markOf = (key: string) => keyMark("cloud_service", key, org)?.icon
+		expect(markOf("orders-prod")).toBe(keyMark("provider", "planetscale", [])?.icon)
+		// The names every platform is known by come first.
+		expect(markOf("Actions")).toBe(keyMark("provider", "github", [])?.icon)
+		expect(markOf("Amazon Simple Storage Service")).toBe(keyMark("provider", "aws", [])?.icon)
+		expect(markOf("Workers")).toBe(keyMark("provider", "cloudflare", [])?.icon)
+		// A PlanetScale charge with no database and no description is filed under the provider's name.
+		expect(markOf("PlanetScale")).toBe(keyMark("provider", "planetscale", [])?.icon)
+		// A charge no name or shape places, in an org three platforms could bill: a glyph, no logo.
+		expect(markOf("Support plan")).toBe("CubeIcon")
+		expect(keyLabel("account", "acme", org)).toBe("PlanetScale acme")
+		expect(keyLabel("account", "example-org", org)).toBe("GitHub example-org")
+	})
+
+	test("beside Vercel a lowercase name could be either platform's, so it gets a glyph", () => {
+		const org = [
+			source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e23"),
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		const markOf = (key: string) => keyMark("cloud_service", key, org)?.icon
+		// Vercel bills a product named in one lowercase word: a database's shape proves nothing here.
+		expect(markOf("v0")).toBe("CubeIcon")
+		expect(markOf("orders-prod")).toBe("CubeIcon")
+		// The provider's own name still says whose the charge is.
+		expect(markOf("PlanetScale")).toBe(keyMark("provider", "planetscale", [])?.icon)
+	})
+
+	test("a PlanetScale resource is a database's branch: it reads whole, under the resource glyph", () => {
+		const org = [
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22"),
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		// The database is in the key: two databases' `main` branches are two resources.
+		expect(keyLabel("resource", "orders-prod/main", org)).toBe("orders-prod/main")
+		expect(keyDetail("resource", "orders-prod/main", org)).toBeNull()
+		expect(keyMark("resource", "orders-prod/main", org)).toEqual(keyMark("resource", "example-api", org))
+		// A plan or support line names no branch.
+		expect(keyLabel("resource", "", org)).toBe("No resource")
+	})
+
+	test("a PlanetScale row filters and drills like any other: provider to its databases, a database on", () => {
+		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "planetscale" })).toEqual(
+			{
+				groupBy: "cloud_service",
+				provider: ["planetscale"],
+			},
+		)
+		expect(
+			facetFilters({ provider: ["planetscale"], cloud_service: ["orders-prod"] }, "account"),
+		).toEqual({
+			provider: ["planetscale"],
+			cloud_service: ["orders-prod"],
+		})
+	})
+
 	test("a GitHub row drills like any other: a provider to its services, a service to its accounts", () => {
 		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "github" })).toEqual({
 			groupBy: "cloud_service",

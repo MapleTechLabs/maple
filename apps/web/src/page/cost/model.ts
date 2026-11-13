@@ -5,6 +5,7 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 	GithubCostInstallations,
+	PlanetScaleCostStatus,
 	VercelCostStatus,
 	type VercelCostTeam,
 } from "@maple/domain/http"
@@ -28,7 +29,10 @@ import { CredentialProvider } from "./providers"
 export type Search = typeof CostSearch.Type
 
 /** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
-export const AddStep = Schema.Union([Schema.Literals(["pick", "github", "vercel"]), CredentialProvider])
+export const AddStep = Schema.Union([
+	Schema.Literals(["pick", "github", "vercel", "planetscale"]),
+	CredentialProvider,
+])
 export type AddStep = typeof AddStep.Type
 
 /**
@@ -45,6 +49,27 @@ export const vercelStepOf = (status: VercelCostStatus): VercelStep => {
 	return status.added
 		? { _tag: "Added", team: status.team, isTokenRejected: status.authFailed }
 		: { _tag: status.authFailed ? "TokenRejected" : "Ready", team: status.team }
+}
+
+/** Why PlanetScale refused an add, and whether only connecting it again fixes that. */
+export const PlanetScaleAddError = Schema.Struct({ message: Schema.String, needsReconnect: Schema.Boolean })
+export type PlanetScaleAddError = typeof PlanetScaleAddError.Type
+
+/**
+ * What the PlanetScale step can do with the connection it read: only a `Ready` organization can
+ * be added. One that is a source already can still have lost its access to invoices, which stops
+ * its sync.
+ */
+export type PlanetScaleStep =
+	| Readonly<{ _tag: "NotConnected" }>
+	| Readonly<{ _tag: "NeedsReconnect" | "Ready"; organization: string }>
+	| Readonly<{ _tag: "Added"; organization: string; needsReconnect: boolean }>
+
+export const planetScaleStepOf = (status: PlanetScaleCostStatus): PlanetScaleStep => {
+	if (status.organization === null) return { _tag: "NotConnected" }
+	return status.added
+		? { _tag: "Added", organization: status.organization, needsReconnect: !status.invoiceAccess }
+		: { _tag: status.invoiceAccess ? "Ready" : "NeedsReconnect", organization: status.organization }
 }
 
 export const Model = Schema.Struct({
@@ -93,6 +118,10 @@ export const Model = Schema.Struct({
 	vercel: KeyedSchema(VercelCostStatus, LoadFailure),
 	/** Why Vercel refused the last add, shown in the step until it is left. */
 	vercelError: Schema.NullOr(Schema.String),
+	/** The org's PlanetScale connection, read when the dialog turns to PlanetScale. */
+	planetscale: KeyedSchema(PlanetScaleCostStatus, LoadFailure),
+	/** Why the last add of the organization was refused, shown in the step until it is left. */
+	planetscaleError: Schema.NullOr(PlanetScaleAddError),
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */
 	removeTarget: Schema.NullOr(CostSourceSummary),

@@ -12,11 +12,14 @@ export type CostProviderEntry = Readonly<{
 	icon: IconName
 	iconClassName?: string
 	requestUsd: number | null
+	/** What a reader of the figures must know about how this source's days come about, on its Sources row. */
+	sourceNote?: string
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
 // Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
 // Vercel's requests are free, like OpenRouter's.
+// PlanetScale's source reads through its integration's connection, and is added and removed here.
 export const COST_PROVIDERS = {
 	aws: {
 		name: PROVIDERS.aws.name,
@@ -46,6 +49,14 @@ export const COST_PROVIDERS = {
 		icon: PROVIDERS.vercel.icon,
 		iconClassName: PROVIDERS.vercel.iconClassName,
 		requestUsd: null,
+	},
+	planetscale: {
+		name: PROVIDERS.planetscale.name,
+		icon: PROVIDERS.planetscale.icon,
+		iconClassName: "text-foreground",
+		requestUsd: null,
+		sourceNote:
+			"Billed by the month: each day shows an even share of the month's invoice for each branch, and can change until the invoice closes.",
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
