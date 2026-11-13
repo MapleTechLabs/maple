@@ -14,12 +14,13 @@ import { stripClass } from "@maple/views/ui/rule"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
-import { pressable } from "@maple/views/ui/pressable"
+import { panel } from "@maple/views/ui/panel"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { columnHead, dataTable } from "../kit/data-table"
 import { relativeTime } from "../kit/relative-time"
-import { Message } from "./message"
+import type { Message } from "./message"
+import { shareBarStyle } from "./view-breakdown"
+import type { TableSurface } from "./view-panel"
 import type { AiCrawlers } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -81,63 +82,6 @@ export const aiProductIcon = (h: H, product: string, size = 16, className?: stri
 		),
 	})
 }
-
-/** A titled card, optionally with the capped table and its Expand button. */
-export const aiPanel = (
-	h: H,
-	options: Readonly<{
-		title: string
-		hint?: string
-		aside?: Html
-		className?: string
-		expand?: Readonly<{ id: string; count: string; table: Html }>
-	}>,
-	children: ReadonlyArray<Html> = [],
-): Html =>
-	panel(h, { className: cn("@container/panel", options.className) }, [
-		panelHeader(h, {
-			divided: false,
-			className: "items-start pt-3 pb-2.5",
-			action:
-				options.aside === undefined
-					? undefined
-					: typography(h, { size: "2xs", tone: "muted", as: "div", className: "shrink-0" }, [
-							options.aside,
-						]),
-			children: [
-				h.div(
-					[h.Class("min-w-0")],
-					[
-						panelTitle(h, [options.title]),
-						...(options.hint === undefined
-							? []
-							: [h.div([h.Class("mt-0.5 text-2xs text-foreground-subtle")], [options.hint])]),
-					],
-				),
-			],
-		}),
-		...children,
-		...(options.expand === undefined
-			? []
-			: [
-					options.expand.table,
-					pressable(
-						h,
-						{
-							onClick: Message.ClickedExpandPanel({ panel: options.expand.id }),
-							className:
-								"flex w-full items-center justify-between gap-2 rounded-b-md border-t border-border-subtle px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
-						},
-						[
-							hstack(h, { gap: "1.5", as: "span" }, [
-								icon(h, "MaximizeIcon", { size: 12 }),
-								"Expand table",
-							]),
-							typography(h, { mono: true, numeric: true }, [options.expand.count]),
-						],
-					),
-				]),
-	])
 
 export const aiEmpty = (h: H, children: ReadonlyArray<Html | string>): Html =>
 	emptyMessage(h, { className: "px-6 leading-relaxed" }, children)
@@ -243,19 +187,6 @@ export const aiProductCard = (
 			),
 		],
 	)
-}
-
-export type TableSurface = Readonly<{ maxHeight: string; surfaceClass: string }>
-export const CARD_SURFACE: TableSurface = { maxHeight: "360px", surfaceClass: "bg-card" }
-export const DIALOG_SURFACE: TableSurface = { maxHeight: "min(62vh, 640px)", surfaceClass: "bg-popover" }
-
-const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
-	const pct = Math.min(100, share * 100)
-	if (!Number.isFinite(pct) || pct < 0.5) return {}
-	const fill = "color-mix(in oklab, var(--primary) 14%, transparent)"
-	return {
-		"background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)`,
-	}
 }
 
 const shareChange = (h: H, share: number, points: number | null): Html => {

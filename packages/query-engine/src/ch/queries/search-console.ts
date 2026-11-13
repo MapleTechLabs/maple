@@ -198,6 +198,13 @@ export interface SearchConsolePageListOpts extends SearchConsoleSortOpts {
 const sortDirOf = (opts: SearchConsoleSortOpts): "asc" | "desc" =>
 	opts.sortDir ?? (opts.sortBy === "position" ? "asc" : "desc")
 
+/**
+ * What ranks rows tied on the sorted metric: the busier one first. Most queries of a young site
+ * tie at zero clicks, and an alphabetical tie-break buries the ones people actually see.
+ */
+const tieBreakOf = (sortBy: SearchConsoleSortKey): "clicks" | "impressions" =>
+	sortBy === "impressions" ? "clicks" : "impressions"
+
 export interface SearchConsoleTopQueriesOutput {
 	readonly query: string
 	readonly clicks: number
@@ -219,7 +226,7 @@ export function searchConsoleTopQueriesQuery(opts: SearchConsoleListOpts = {}) {
 			}),
 		}))
 		.groupBy("query")
-		.orderBy([sortBy, sortDirOf(opts)], ["query", "asc"])
+		.orderBy([sortBy, sortDirOf(opts)], [tieBreakOf(sortBy), "desc"], ["query", "asc"])
 		.limit(opts.limit ?? 50)
 		.format("JSON")
 		.route("ingest")
@@ -250,7 +257,7 @@ export function searchConsoleTopPagesQuery(opts: SearchConsolePageListOpts = {})
 			}),
 		}))
 		.groupBy("page")
-		.orderBy([sortBy, sortDirOf(opts)], ["page", "asc"])
+		.orderBy([sortBy, sortDirOf(opts)], [tieBreakOf(sortBy), "desc"], ["page", "asc"])
 		.limit(opts.limit ?? 50)
 		.format("JSON")
 		.route("ingest")

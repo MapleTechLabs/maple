@@ -24,7 +24,7 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
-import { filtersOf, tabOf } from "./requests"
+import { filtersOf, searchSiteOf, tabOf } from "./requests"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
 
@@ -179,8 +179,15 @@ export const filtersRail = (h: H, model: Model): Html =>
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})
 
-/** The Search tab's rail: only the event filter applies there, as the landing table's conversion. */
-export const searchEventRail = (h: H, model: Model): Html => {
+/**
+ * The Search tab's rail: only the event filter applies there, as the Pages table's conversion.
+ * It arrives with the tables, once the status names an imported property: until then there is
+ * nothing to filter, and a rail that flashes in and out moves the whole page.
+ */
+export const searchEventRail = (h: H, model: Model): Html | undefined => {
+	const status = Option.getOrUndefined(AsyncData.getData(model.searchStatus.data))
+	const site = searchSiteOf(model.search, status)
+	if (site === undefined || site.watermarkDate === null) return undefined
 	const eventName = filtersOf(model.search).eventName
 	// No Search panel shows this read, so the rail carries its failure and the retry.
 	if (AsyncData.isFailure(model.events.data))
