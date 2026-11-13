@@ -12,7 +12,7 @@ import {
 	filterSidebarHeader,
 	filterSidebarLoading,
 } from "@maple/views/ui/filters/filter-sidebar"
-import { activeFilters, type CostGroupBy, DIMENSIONS, keyLabel } from "./derive"
+import { activeFilters, type CostGroupBy, DIMENSIONS, keyLabel, unsplitDimensions } from "./derive"
 import { keyDetail, keyMark } from "./marks"
 import { type CostFacets, Message } from "./message"
 import { sourcesOf, type Model } from "./model"
@@ -24,12 +24,25 @@ const RAIL_ORDER = [
 	"provider",
 	"account",
 	"cloud_service",
+	"resource",
 	"service_category",
 	"region",
 ] as const satisfies ReadonlyArray<CostGroupBy>
 
 /** Long lists get a search field. */
-const SEARCHABLE = new Set<CostGroupBy>(["cloud_service", "region", "account"])
+const SEARCHABLE = new Set<CostGroupBy>(["cloud_service", "resource", "region", "account"])
+
+/**
+ * The sections on show: a dimension no cost splits by is left out, unless the URL filters by it
+ * (its chip must have a checkbox to clear).
+ */
+const railSections = (model: Model, facets: CostFacets): ReadonlyArray<CostGroupBy> => {
+	const unsplit = unsplitDimensions(facets)
+	return Arr.filter(
+		RAIL_ORDER,
+		(dimension) => !Arr.contains(unsplit, dimension) || (model.search[dimension] ?? []).length > 0,
+	)
+}
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
@@ -97,7 +110,7 @@ export const filtersRail = (h: H, model: Model): Html =>
 				...filterSidebarBody(
 					h,
 					"cost-filters",
-					Arr.map(RAIL_ORDER, (dimension) => section(h, model, facets, dimension)),
+					Arr.map(railSections(model, facets), (dimension) => section(h, model, facets, dimension)),
 				),
 			]),
 	})

@@ -10,6 +10,9 @@ import {
 	GithubCostSourceRemoved,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
+	VercelCostSourceAdded,
+	VercelCostSourceRemoved,
+	VercelCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -68,6 +71,11 @@ export const Message = defineMessageUnion({
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
 	ClickedAddOpenRouter: {},
+	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */
+	ClickedAddVercel: {},
+	CompletedLoadVercelStatus: result(VercelCostStatus),
+	ClickedConfirmAddVercel: {},
+	CompletedAddVercel: { result: Schema.Result(VercelCostSourceAdded, LoadFailure) },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the key form, for the source that exists. */
 	ClickedReplaceKey: {},
@@ -91,6 +99,7 @@ export const Message = defineMessageUnion({
 	ClickedConfirmRemove: {},
 	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
 	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
+	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

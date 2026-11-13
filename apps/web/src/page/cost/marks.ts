@@ -23,6 +23,34 @@ const providerMark = (provider: CostProvider): KeyMark => {
 /** OpenRouter names a model `vendor/model`; an AWS service name never has a slash. */
 const isModelSlug = (key: string): boolean => Str.includes("/")(key)
 
+/** How AWS names its services: "Amazon Simple Storage Service", "AWS Lambda", "EC2 - Other". */
+const isAwsServiceName = (key: string): boolean => /^(Amazon|AWS|EC2|Elastic|CloudWatch)/u.test(key)
+
+/** A Vercel region is an airport code and a digit: `iad1`, `fra1`. */
+const isVercelRegionId = (key: string): boolean => /^[a-z]{3}\d$/u.test(key)
+
+/** The org's providers that bill services and regions of their own. OpenRouter's are model slugs. */
+const platformsOf = (sources: ReadonlyArray<CostSourceSummary>): ReadonlyArray<CostProvider> =>
+	Arr.dedupe(
+		Arr.filter(
+			Arr.map(sources, (source) => source.provider),
+			(provider) => provider !== "openrouter",
+		),
+	)
+
+/**
+ * Whose service or region a key is, when its name does not say: the org's only platform, AWS
+ * while no source is known, and nobody's when two platforms could each have billed it. One rule
+ * for every provider: a name first, then this, and never a logo that is only a guess.
+ */
+const onlyPlatform = (sources: ReadonlyArray<CostSourceSummary>): CostProvider | undefined => {
+	const platforms = platformsOf(sources)
+	return platforms.length > 1 ? undefined : (platforms[0] ?? "aws")
+}
+
+const markOf = (provider: CostProvider | undefined, fallback: IconName): KeyMark =>
+	provider === undefined ? glyph(fallback) : providerMark(provider)
+
 /** An AWS account id is twelve digits; an OpenRouter one is its user or org id. */
 const isAwsAccountId = (key: string): boolean => /^\d{12}$/u.test(key)
 
@@ -50,18 +78,9 @@ const GITHUB_PRODUCTS: ReadonlySet<string> = new Set([
 	"Git LFS",
 ])
 
-/**
- * The provider that bills a service which is not a model: GitHub for its known products, else the
- * org's only provider with such services (a product GitHub bills that is not named above), else AWS.
- */
-const serviceProvider = (key: string, sources: ReadonlyArray<CostSourceSummary>): CostProvider => {
-	if (GITHUB_PRODUCTS.has(key)) return "github"
-	const billing = Arr.dedupe(
-		Arr.flatMap(sources, (source) => (source.provider === "openrouter" ? [] : [source.provider])),
-	)
-	const [only, ...others] = billing
-	return only === undefined || others.length > 0 ? "aws" : only
-}
+/** The platform a service's own name says bills it, when it says: a GitHub product, an AWS service. */
+const namedServiceOwner = (key: string): CostProvider | undefined =>
+	GITHUB_PRODUCTS.has(key) ? "github" : isAwsServiceName(key) ? "aws" : undefined
 
 const CATEGORY_ICONS = {
 	"AI and Machine Learning": "SparkleIcon",
@@ -92,13 +111,20 @@ export const keyMark = (
 			return Option.match(decodeProvider(key), { onNone: () => null, onSome: providerMark })
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
-			return key === "AWS Lambda"
-				? { icon: "AwsLambdaIcon" }
-				: providerMark(serviceProvider(key, sources))
+			if (key === "AWS Lambda") return { icon: "AwsLambdaIcon" }
+			return markOf(namedServiceOwner(key) ?? onlyPlatform(sources), "CubeIcon")
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
 		case "region":
-			return key === "global" ? glyph("GlobeIcon") : providerMark("aws")
+			if (key === "global") return glyph("GlobeIcon")
+			if (isAwsRegion(key)) return providerMark("aws")
+			if (isVercelRegionId(key) && Arr.contains(platformsOf(sources), "vercel")) {
+				return providerMark("vercel")
+			}
+			return markOf(onlyPlatform(sources), "GlobeIcon")
+		// A resource is what a charge is for (a GitHub repository, a Vercel project): its key does not say whose.
+		case "resource":
+			return glyph("FolderIcon")
 		case "account": {
 			const provider = accountProvider(key, sources)
 			return provider === undefined ? glyph("IdBadgeIcon") : providerMark(provider)
@@ -107,9 +133,10 @@ export const keyMark = (
 }
 
 /**
- * An account by what reads it: an AWS one by its id, a GitHub one by its organization, an
- * OpenRouter one by name alone while it is the org's only one (its id means nothing to a reader).
- * Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a GitHub one by its organization, a Vercel
+ * one by its team's slug (its id is a team id, kept stable through a rename), an OpenRouter one
+ * by name alone while it is the org's only one (its id means nothing to a reader). Unknown ids
+ * read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
@@ -117,6 +144,11 @@ export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSumma
 	const name = COST_PROVIDERS[provider].name
 	if (provider === "aws" || provider === "github") return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
+	const accountName = Arr.findFirst(sameProvider, (source) => source.accountId === key).pipe(
+		Option.flatMapNullishOr((source) => source.accountName),
+		Option.getOrUndefined,
+	)
+	if (accountName !== undefined) return `${name} ${accountName}`
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }
 

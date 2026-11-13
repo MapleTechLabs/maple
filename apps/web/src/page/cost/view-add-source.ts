@@ -1,5 +1,5 @@
 import type { CostSourceSummary, GithubCostInstallation } from "@maple/domain/http"
-import { cn } from "@maple/ui/lib/utils"
+import { CostProvider } from "@maple/domain/cost"
 import { Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -21,6 +21,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { COST_PROVIDERS, type CostProviderEntry } from "./providers"
+import { providerMark, vercelStep } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -34,51 +35,96 @@ const OPENROUTER_KEYS_URL = "https://openrouter.ai/settings/management-keys"
 /** Where a GitHub organization is connected to Maple. */
 const CONNECT_GITHUB_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))
 
-/** Whether the org has its OpenRouter source, which there is at most one of. */
-const hasOpenRouterSource = (sources: ReadonlyArray<CostSourceSummary>): boolean =>
-	Arr.some(sources, (source) => source.provider === "openrouter")
+/** Whether the org has its source of a provider it can have one of at most. */
+const hasSourceOf = (
+	sources: ReadonlyArray<CostSourceSummary>,
+	provider: CostSourceSummary["provider"],
+): boolean => Arr.some(sources, (source) => source.provider === provider)
 
-const mark = (h: H, provider: CostProviderEntry): Html =>
-	icon(h, provider.icon, { size: 18, className: cn("shrink-0", provider.iconClassName) })
+/**
+ * A provider the org has one source of at most: a row to click while it has none, and one that
+ * says where the source is changed once it does.
+ */
+const addableRow = (
+	h: H,
+	provider: CostProviderEntry,
+	options: Readonly<{
+		isAdded: boolean
+		/** What the source brings in. */
+		meta: string
+		/** Where an added source is changed. */
+		addedMeta: string
+		onClick: Message
+		divided?: boolean
+	}>,
+): Html =>
+	options.isAdded
+		? listRow(h, {
+				divided: options.divided ?? false,
+				leading: providerMark(h, provider),
+				title: provider.name,
+				meta: options.addedMeta,
+				trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
+			})
+		: listRow(h, {
+				divided: options.divided ?? false,
+				onClick: options.onClick,
+				leading: providerMark(h, provider),
+				title: provider.name,
+				meta: options.meta,
+				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+			})
 
-/** The providers to add: AWS goes to its connect flow, OpenRouter to the key form, GitHub to its organizations. */
-const providers = (h: H, hasOpenRouter: boolean): Html =>
+const nameList = new Intl.ListFormat("en-GB", { type: "conjunction" })
+
+/** The providers whose requests cost their customer nothing, as one list: "A, B and C". */
+const FREE_REQUESTS = nameList.format(
+	Arr.map(
+		Arr.filter(CostProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+		(provider) => COST_PROVIDERS[provider].name,
+	),
+)
+
+/**
+ * The providers to add: AWS goes to its connect flow, OpenRouter to the key form, GitHub to its
+ * organizations, Vercel to its team.
+ */
+const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 	vstack(h, { gap: "3" }, [
 		vstack(h, { gap: "0" }, [
 			listRow(h, {
 				divided: true,
 				href: CONNECT_AWS_HREF,
-				leading: mark(h, COST_PROVIDERS.aws),
+				leading: providerMark(h, COST_PROVIDERS.aws),
 				title: COST_PROVIDERS.aws.name,
 				meta: "Daily cost by service, region and usage type",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
-			hasOpenRouter
-				? listRow(h, {
-						divided: true,
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Replace its key in the Sources panel",
-						trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
-					})
-				: listRow(h, {
-						divided: true,
-						onClick: Message.ClickedAddOpenRouter(),
-						leading: mark(h, COST_PROVIDERS.openrouter),
-						title: COST_PROVIDERS.openrouter.name,
-						meta: "Daily spend by model and serving provider",
-						trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-					}),
+			addableRow(h, COST_PROVIDERS.openrouter, {
+				isAdded: hasSourceOf(sources, "openrouter"),
+				meta: "Daily spend by model and serving provider",
+				addedMeta: "Replace its key in the Sources panel",
+				onClick: Message.ClickedAddOpenRouter(),
+				divided: true,
+			}),
+			// An org can add several organizations, so the row stays open with sources on the page.
 			listRow(h, {
+				divided: true,
 				onClick: Message.ClickedAddGithub(),
-				leading: mark(h, COST_PROVIDERS.github),
+				leading: providerMark(h, COST_PROVIDERS.github),
 				title: COST_PROVIDERS.github.name,
-				meta: "Daily billed usage by product",
+				meta: "Daily billed usage by product and repository",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
+			}),
+			addableRow(h, COST_PROVIDERS.vercel, {
+				isAdded: hasSourceOf(sources, "vercel"),
+				meta: "Daily charges by product, project and region",
+				addedMeta: "Remove it in the Sources panel",
+				onClick: Message.ClickedAddVercel(),
 			}),
 		]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-			"AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. OpenRouter and GitHub requests are free. ",
+			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
 				"Turn on Cost for an AWS account that is connected",
 			]),
@@ -143,7 +189,7 @@ const githubInstallationRow = (h: H, model: Model, installation: GithubCostInsta
 	const refusal =
 		model.githubRefusal?.installationId === installation.installationId ? model.githubRefusal : undefined
 	const row = listRow(h, {
-		leading: mark(h, COST_PROVIDERS.github),
+		leading: providerMark(h, COST_PROVIDERS.github),
 		title: installation.accountLogin,
 		meta: GITHUB_STATE_NOTE[installation.state],
 		wrapMeta: true,
@@ -249,23 +295,31 @@ const githubInstallations = (h: H, model: Model): Html =>
 							" first.",
 						]),
 					])
-				: vstack(h, { gap: "3", align: "start" }, [
-						typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
-							"No GitHub organization is connected to Maple yet.",
-						]),
-						linkButton(h, { variant: "outline", size: "sm", href: CONNECT_GITHUB_HREF }, [
-							"Connect GitHub",
-						]),
+				: // The way on is the step's primary action, in the footer beside Back.
+					typography(h, { size: "sm", tone: "muted", as: "p", className: "font-prose" }, [
+						"No GitHub organization is connected to Maple yet. Connect one, then add it here as a cost source.",
 					]),
 	})
 
+/** The GitHub step's primary action: connecting an organization, while the org has none to pick. */
+const githubPrimary = (h: H, model: Model): ReadonlyArray<Html> =>
+	AsyncData.matchData(model.githubInstallations, {
+		onEmpty: () => [],
+		onFailure: () => [],
+		onData: ({ installations }) =>
+			Arr.isReadonlyArrayNonEmpty(installations)
+				? []
+				: [linkButton(h, { href: CONNECT_GITHUB_HREF }, ["Connect GitHub"])],
+	})
+
 /**
- * Add a source, or replace the OpenRouter key: the providers first, then OpenRouter's key form or
- * GitHub's organizations. Opened on the form for a replace, which has no providers to go back to.
+ * Add a source, or replace the OpenRouter key: the providers first, then OpenRouter's key form,
+ * GitHub's organizations or Vercel's team. Opened on the form for a replace, which has no
+ * providers to go back to.
  */
 export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	const id = model.addDialog.id
-	const isReplacing = hasOpenRouterSource(sources)
+	const isReplacing = hasSourceOf(sources, "openrouter")
 	const isSaving = model.sourceWrite === "Saving"
 	const canSubmit = !isSaving && Str.trim(model.keyDraft.value) !== ""
 	const onPick = model.addStep === "pick"
@@ -279,115 +333,129 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 			hasDescription: true,
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				model.addStep === "github"
-					? [
-							DialogView.dialogHeader(h, "dialog", [
-								DialogView.dialogTitle(h, "dialog", id, "Add GitHub"),
-								DialogView.dialogDescription(
-									h,
-									"dialog",
-									id,
-									"Maple reads an organization's billed usage through the GitHub App it already has. No key is needed.",
-								),
-							]),
-							DialogView.dialogPanel(h, "dialog", id, [githubInstallations(h, model)]),
-							DialogView.dialogFooter(h, "dialog", [
-								button(
-									h,
-									{
-										variant: "outline",
-										isDisabled: isSaving,
-										attributes: [h.OnClick(Message.ClickedBackToProviders())],
-									},
-									["Back"],
-								),
-							]),
-						]
-					: onPick
+				model.addStep === "vercel"
+					? vercelStep(h, model, id)
+					: model.addStep === "github"
 						? [
 								DialogView.dialogHeader(h, "dialog", [
-									DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
+									DialogView.dialogTitle(h, "dialog", id, "Add GitHub"),
 									DialogView.dialogDescription(
 										h,
 										"dialog",
 										id,
-										"Maple reads what the source bills each day and keeps it next to your telemetry.",
+										"Maple reads an organization's billed usage through the GitHub App it already has. No key is needed.",
 									),
 								]),
-								DialogView.dialogPanel(h, "dialog", id, [providers(h, isReplacing)]),
+								DialogView.dialogPanel(h, "dialog", id, [githubInstallations(h, model)]),
 								DialogView.dialogFooter(h, "dialog", [
-									button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
+									button(
+										h,
+										{
+											variant: "outline",
+											isDisabled: isSaving,
+											attributes: [h.OnClick(Message.ClickedBackToProviders())],
+										},
+										["Back"],
+									),
+									...githubPrimary(h, model),
 								]),
 							]
-						: [
-								formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
+						: onPick
+							? [
 									DialogView.dialogHeader(h, "dialog", [
-										DialogView.dialogTitle(
-											h,
-											"dialog",
-											id,
-											isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
-										),
+										DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
 										DialogView.dialogDescription(
 											h,
 											"dialog",
 											id,
-											isReplacing
-												? "The source and its history stay. Use a key from the same OpenRouter account."
-												: "Maple reads the last four weeks at once, then every day from here on.",
+											"Maple reads what the source bills each day and keeps it next to your telemetry.",
 										),
 									]),
-									DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
+									DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
 									DialogView.dialogFooter(h, "dialog", [
-										isReplacing
-											? button(
-													h,
-													{
-														variant: "outline",
-														isDisabled: isSaving,
-														attributes: isSaving ? [] : [...close],
-													},
-													["Cancel"],
-												)
-											: button(
-													h,
-													{
-														variant: "outline",
-														isDisabled: isSaving,
-														attributes: [
-															h.OnClick(Message.ClickedBackToProviders()),
-														],
-													},
-													["Back"],
-												),
-										button(
-											h,
-											{
-												type: "submit",
-												isLoading: isSaving,
-												isDisabled: !canSubmit,
-											},
-											[isReplacing ? "Replace key" : "Add source"],
-										),
+										button(h, { variant: "outline", attributes: [...close] }, ["Close"]),
 									]),
-								]),
-							],
+								]
+							: [
+									formDialogForm(h, canSubmit ? Message.SubmittedKey() : undefined, [
+										DialogView.dialogHeader(h, "dialog", [
+											DialogView.dialogTitle(
+												h,
+												"dialog",
+												id,
+												isReplacing ? "Replace the OpenRouter key" : "Add OpenRouter",
+											),
+											DialogView.dialogDescription(
+												h,
+												"dialog",
+												id,
+												isReplacing
+													? "The source and its history stay. Use a key from the same OpenRouter account."
+													: "Maple reads the last four weeks at once, then every day from here on.",
+											),
+										]),
+										DialogView.dialogPanel(h, "dialog", id, [keyField(h, model)]),
+										DialogView.dialogFooter(h, "dialog", [
+											isReplacing
+												? button(
+														h,
+														{
+															variant: "outline",
+															isDisabled: isSaving,
+															attributes: isSaving ? [] : [...close],
+														},
+														["Cancel"],
+													)
+												: button(
+														h,
+														{
+															variant: "outline",
+															isDisabled: isSaving,
+															attributes: [
+																h.OnClick(Message.ClickedBackToProviders()),
+															],
+														},
+														["Back"],
+													),
+											button(
+												h,
+												{
+													type: "submit",
+													isLoading: isSaving,
+													isDisabled: !canSubmit,
+												},
+												[isReplacing ? "Replace key" : "Add source"],
+											),
+										]),
+									]),
+								],
 		},
 	})
 }
 
 /** What removing a source says: what leaves the page, and what adding it again brings back. */
-const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string; description: string }> =>
-	target?.provider === "github"
-		? {
+const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string; description: string }> => {
+	switch (target?.provider) {
+		case "github":
+			return {
 				title: "Remove the GitHub source?",
 				description: `Maple stops reading the billed usage of ${target.accountId}, and its cost leaves this page. The GitHub connection stays and no key is deleted. Adding it again brings back this month and the three before it.`,
 			}
-		: {
+		case "vercel":
+			return {
+				title: "Remove the Vercel source?",
+				description:
+					"Maple stops reading the team's charges, and its cost leaves this page. The Vercel connection stays as it is. Adding Vercel again reads the last eleven months again.",
+			}
+		// An AWS source has no Remove: it leaves with its connection's Cost module.
+		default:
+			return {
 				title: "Remove the OpenRouter source?",
 				description:
 					"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
 			}
+	}
+}
 
 /** The confirm before a source is removed. */
 export const removeSourceDialog = (h: H, model: Model): Html =>

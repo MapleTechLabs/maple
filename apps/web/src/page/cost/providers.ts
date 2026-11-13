@@ -14,6 +14,7 @@ export type CostProviderEntry = Readonly<{
 }>
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
+// Vercel's requests are free, like OpenRouter's.
 export const COST_PROVIDERS = {
 	aws: {
 		name: PROVIDERS.aws.name,
@@ -31,6 +32,12 @@ export const COST_PROVIDERS = {
 		name: PROVIDERS.github.name,
 		icon: PROVIDERS.github.icon,
 		iconClassName: PROVIDERS.github.iconClassName,
+		requestUsd: null,
+	},
+	vercel: {
+		name: PROVIDERS.vercel.name,
+		icon: PROVIDERS.vercel.icon,
+		iconClassName: PROVIDERS.vercel.iconClassName,
 		requestUsd: null,
 	},
 } as const satisfies Record<CostProvider, CostProviderEntry>

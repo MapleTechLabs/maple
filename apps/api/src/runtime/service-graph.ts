@@ -68,6 +68,7 @@ import { SupabaseLogsService } from "@maple/backend/services/integrations/Supaba
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
+import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ServiceMapWorldService } from "@maple/backend/services/service-map/ServiceMapWorldService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -190,6 +191,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	OrgOpenRouterKeyService.layer,
 	OpenRouterCostConnectionService.layer,
 	GithubCostSourceService.layer,
+	VercelCostSourceService.layer,
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,

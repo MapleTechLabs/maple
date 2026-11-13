@@ -25,7 +25,7 @@ describe("cost lab fixture", () => {
 					.rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "github"])
+		).toEqual(["aws", "vercel", "github"])
 
 		// Filtered to OpenRouter there is nothing left: AWS cost must not show under that filter.
 		expect(labTotals(openRouterOnly).cost).toBeGreaterThan(0)
@@ -46,7 +46,11 @@ describe("cost lab fixture", () => {
 
 	test("a GitHub organization is added and removed on its own, and the other keeps its source and cost", () => {
 		const github = (changes: Readonly<Record<string, boolean>>) => {
-			const sources = labSourcesWith(LAB_SOURCES.synced, { openRouter: null, github: changes })
+			const sources = labSourcesWith(LAB_SOURCES.synced, {
+				openRouter: null,
+				github: changes,
+				vercel: null,
+			})
 			return {
 				sources: Arr.map(
 					Arr.filter(sources.sources, (source) => source.provider === "github"),
@@ -57,7 +61,7 @@ describe("cost lab fixture", () => {
 					(installation) => `${installation.accountLogin} ${installation.state}`,
 				),
 				costRemoved: Arr.contains(
-					labRemovedProviders({ openRouter: null, github: changes }),
+					labRemovedProviders({ openRouter: null, github: changes, vercel: null }),
 					"github",
 				),
 			}
@@ -88,5 +92,53 @@ describe("cost lab fixture", () => {
 			costRemoved: true,
 		})
 		expect(github({ [org]: true })).toMatchObject({ sources: ["example-org pending"], costRemoved: true })
+	})
+	test("a removed Vercel source leaves every read too, and the other providers stay", () => {
+		expect(labTotals({ ...window, without: ["vercel"] }).cost).toBeLessThan(labTotals(window).cost)
+		expect(
+			Arr.map(
+				labBreakdown({ ...window, without: ["vercel"], groupBy: "provider", sortBy: "cost" }).rows,
+				(row) => row.key,
+			),
+		).toEqual(["aws", "openrouter", "github"])
+		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
+	})
+
+	test("a Vercel source added again after its removal is a new one that waits for its first sync", () => {
+		const after = (vercel: boolean | null) => {
+			const changes = { openRouter: null, github: {}, vercel }
+			const sources = labSourcesWith(LAB_SOURCES.synced, changes)
+			return {
+				vercel: Arr.map(
+					Arr.filter(sources.sources, (source) => source.provider === "vercel"),
+					(source) => `${source.accountName} ${source.status}`,
+				),
+				others: Arr.filter(sources.sources, (source) => source.provider !== "vercel").length,
+				costRemoved: Arr.contains(labRemovedProviders(changes), "vercel"),
+			}
+		}
+		const others = LAB_SOURCES.synced.sources.length - 1
+		expect(after(null)).toEqual({ vercel: ["example-team ok"], others, costRemoved: false })
+		expect(after(false)).toEqual({ vercel: [], others, costRemoved: true })
+		// Not the synced row it started with, and no cost until a sync the lab does not model.
+		expect(after(true)).toEqual({ vercel: ["example-team pending"], others, costRemoved: true })
+	})
+
+	test("grouped by resource, cost splits by GitHub repository and Vercel project, and the rest has none", () => {
+		expect(
+			Arr.map(labBreakdown({ ...window, groupBy: "resource", sortBy: "cost" }).rows, (row) => row.key),
+		).toEqual(["", "example-web", "example-api", "example-docs", "example-site"])
+		// Narrowed to a provider, only its own resources are left.
+		expect(
+			Arr.map(
+				labBreakdown({
+					days: 30,
+					filters: { provider: ["github"] },
+					groupBy: "resource",
+					sortBy: "cost",
+				}).rows,
+				(row) => row.key,
+			),
+		).toEqual(["example-api", "", "example-site"])
 	})
 })

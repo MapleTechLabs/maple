@@ -32,6 +32,7 @@ import { typography } from "@maple/views/ui/typography"
 import {
 	DIMENSIONS,
 	drilledInto,
+	unsplitDimensions,
 	formatMoney,
 	formatMoneyChange,
 	groupByOf,
@@ -127,7 +128,11 @@ const row = (
 	const color = colors.get(entry.key)
 	const mark = keyMark(dimension, entry.key, sources)
 	const detail = keyDetail(dimension, entry.key, sources)
-	const next = drilledInto(model.search, filter)
+	const next = drilledInto(
+		model.search,
+		filter,
+		unsplitDimensions(Option.getOrUndefined(AsyncData.getData(model.facets.data))),
+	)
 	const name = hstack(h, { gap: "2", shrink: true }, [
 		...(mark === null
 			? []
