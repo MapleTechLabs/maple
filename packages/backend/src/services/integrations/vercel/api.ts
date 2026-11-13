@@ -483,6 +483,16 @@ const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.
 const UTC_DATE_TIME =
 	/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d+)?)?(Z|[+-]00:00)$/
 
+const isLeapYear = (year: number): boolean => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+
+const daysInMonth = (year: number, month: number): number =>
+	month === 2 ? (isLeapYear(year) ? 29 : 28) : Arr.contains([4, 6, 9, 11], month) ? 30 : 31
+
+/** Whether the day a date-time starts with exists: no February 31st, a February 29th in leap years only. */
+const startsWithRealDay = (value: string): boolean =>
+	Number(Str.slice(8, 10)(value)) <=
+	daysInMonth(Number(Str.slice(0, 4)(value)), Number(Str.slice(5, 7)(value)))
+
 /**
  * One line of the charges answer: a FOCUS v1.3 charge. The shape is Vercel's OpenAPI spec, not a
  * recorded answer, so everything Maple can do without is optional and may be null.
@@ -490,7 +500,10 @@ const UTC_DATE_TIME =
 export const VercelCharge = Schema.Struct({
 	BilledCost: Schema.Number,
 	/** Inclusive, ISO 8601 in UTC: its first ten characters are the usage day. */
-	ChargePeriodStart: Schema.String.check(Schema.isPattern(UTC_DATE_TIME)),
+	ChargePeriodStart: Schema.String.check(
+		Schema.isPattern(UTC_DATE_TIME),
+		Schema.makeFilter(startsWithRealDay, { expected: "a date-time on a day of the calendar" }),
+	),
 	/** The product's display name. */
 	ServiceName: Schema.String,
 	BillingCurrency: optional(Schema.String),

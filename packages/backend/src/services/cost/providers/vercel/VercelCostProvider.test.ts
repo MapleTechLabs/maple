@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { Database } from "@maple/backend/platform/DatabaseLive"
@@ -174,6 +174,11 @@ describe("VercelCostProvider", () => {
 					// A day followed by anything but a UTC time is not a day Maple may file the cost under.
 					jsonl([charge({ ChargePeriodStart: "2026-11-02invalid" })]),
 					jsonl([charge({ ChargePeriodStart: "2026-11-02T00:00:00+02:00" })]),
+					// Days the calendar does not have: filed, they would land under no day or another one.
+					jsonl([charge({ ChargePeriodStart: "2026-02-31T00:00:00Z" })]),
+					jsonl([charge({ ChargePeriodStart: "2026-04-31T00:00:00Z" })]),
+					jsonl([charge({ ChargePeriodStart: "2026-02-29T00:00:00Z" })]),
+					jsonl([charge({ ChargePeriodStart: "2100-02-29T00:00:00Z" })]),
 					jsonl([{ BilledCost: 1, ChargePeriodStart: "2026-11-02T00:00:00Z" }]),
 				]
 				const reasons = yield* Effect.forEach(unreadable, (body) =>
@@ -182,7 +187,33 @@ describe("VercelCostProvider", () => {
 						return (yield* Effect.flip(pull(ORG, connectionRef))).reason
 					}),
 				)
-				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 6))
+				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 10))
+			}),
+		)
+	})
+
+	it.effect("reads a charge of a leap day, and of the last day of a long and of a short month", () => {
+		const testDb = createTestDb(trackedDbs)
+		const days = ["2028-02-29", "2028-01-31", "2028-04-30", "2028-12-31"]
+		const world = makeFakeVercel({
+			charges: Arr.map(days, (day) => charge({ ChargePeriodStart: `${day}T00:00:00.000Z` })),
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* connectFakeVercel({ orgId: ORG })
+				const pulled = yield* pull(ORG, connectionRef, {
+					startDay: "2028-01-01",
+					endDay: "2028-12-31",
+				})
+				assert.deepStrictEqual(
+					Arr.sort(
+						Arr.map(pulled.rows, (row) => row.day),
+						Order.String,
+					),
+					["2028-01-31", "2028-02-29", "2028-04-30", "2028-12-31"],
+				)
 			}),
 		)
 	})
