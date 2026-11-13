@@ -5,10 +5,15 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
 	OpenRouterCostKeyRemoved,
 	OpenRouterCostKeySaved,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import { CostSourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -70,10 +75,22 @@ export const Message = defineMessageUnion({
 	GotKeyDraftMessage: { message: Field.Message },
 	SubmittedKey: {},
 	CompletedSaveKey: { result: Schema.Result(OpenRouterCostKeySaved, LoadFailure) },
-	ClickedRemoveSource: {},
+	/** Opens the dialog on the org's GitHub installations, and reads them. */
+	ClickedAddGithub: {},
+	CompletedLoadGithubInstallations: {
+		request: Schema.Number,
+		result: Schema.Result(GithubCostInstallations, LoadFailure),
+	},
+	ClickedAddGithubInstallation: { installationId: VcsInstallationId },
+	CompletedAddGithubSource: {
+		installationId: VcsInstallationId,
+		result: Schema.Result(GithubCostSourceAdded, LoadFailure),
+	},
+	ClickedRemoveSource: { sourceId: CostSourceId },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveKey: { result: Schema.Result(OpenRouterCostKeyRemoved, LoadFailure) },
+	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

@@ -1,11 +1,13 @@
 import {
 	CostBreakdownResponse,
-	type CostSourceSummary,
+	CostSourceSummary,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -22,8 +24,8 @@ import * as TimeRangePicker from "../kit/time-range-picker"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's two faces: the providers, then the chosen one's form. */
-export const AddStep = Schema.Literals(["pick", "openrouter"])
+/** The add-source dialog's faces: the providers, then the chosen one's form or list. */
+export const AddStep = Schema.Literals(["pick", "openrouter", "github"])
 export type AddStep = typeof AddStep.Type
 
 export const Model = Schema.Struct({
@@ -51,7 +53,26 @@ export const Model = Schema.Struct({
 	keyDraft: Field.Model,
 	/** Why the last save was refused, shown under the field until the key changes. */
 	keyError: Schema.NullOr(Schema.String),
+	/** The org's GitHub installations, read when the dialog's GitHub step opens. */
+	githubInstallations: AsyncData.Schema(GithubCostInstallations, LoadFailure).schema,
+	/** The number of the installations read on show: an answer to an older read is dropped. */
+	githubRead: Schema.Number,
+	/** The installation an add is in flight for. */
+	githubAdding: Schema.NullOr(VcsInstallationId),
+	/**
+	 * The installation whose add failed, with the reason, shown in its row until the next try.
+	 * `needsPermission`: GitHub refused the billing read, which the organization fixes in GitHub.
+	 */
+	githubRefusal: Schema.NullOr(
+		Schema.Struct({
+			installationId: VcsInstallationId,
+			message: Schema.String,
+			needsPermission: Schema.Boolean,
+		}),
+	),
 	removeDialog: Dialog.Model,
+	/** The source the remove confirm is about, as it was when Remove was clicked. */
+	removeTarget: Schema.NullOr(CostSourceSummary),
 	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })

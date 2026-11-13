@@ -27,4 +27,10 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
+	github: {
+		name: PROVIDERS.github.name,
+		icon: PROVIDERS.github.icon,
+		iconClassName: PROVIDERS.github.iconClassName,
+		requestUsd: null,
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>

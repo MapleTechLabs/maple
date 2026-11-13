@@ -359,6 +359,58 @@ describe("planCostSync for a provider that serves 30 completed days", () => {
 	})
 })
 
+describe("planCostSync for a provider that serves a few months up to today", () => {
+	const GITHUB_NEW: CostSyncState = { ...NEW, provider: "github" }
+	const githubPulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({ ...pulled(now, backfillDate, ago), provider: "github" })
+
+	it("starts at the previous month and ends today", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(GITHUB_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-20",
+		})
+	})
+
+	it("walks history a month at a time down to the first day three months back, and no further", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const current = { head: HOUR_MS, settle: HOUR_MS }
+		assert.strictEqual(historyFloor("github", "2026-11-20"), "2026-08-01")
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-10-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-09-01",
+			endDay: "2026-09-30",
+		})
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-09-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-08-01",
+			endDay: "2026-08-31",
+		})
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-08-01", current), now), { mode: "idle" })
+	})
+
+	it("crosses a year's start with its floor", () => {
+		assert.strictEqual(historyFloor("github", "2027-02-14"), "2026-11-01")
+	})
+
+	it("resumes at the floor after a hold longer than its history", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const held = {
+			...githubPulled(now, "2026-01-01", { head: 200 * DAY_MS, settle: 200 * DAY_MS }),
+			watermarkDate: "2026-05-04",
+		}
+		assert.deepStrictEqual(planCostSync(held, now), {
+			mode: "settle",
+			startDay: "2026-08-01",
+			endDay: "2026-11-20",
+		})
+	})
+})
+
 describe("planCostSync request budgets", () => {
 	const now = at("2026-11-11T12:00:00Z")
 	const current = { head: HOUR_MS, settle: HOUR_MS }

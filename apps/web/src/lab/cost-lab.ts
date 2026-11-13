@@ -1,4 +1,11 @@
-import { OpenRouterCostKeyRemoved, OpenRouterCostKeySaved } from "@maple/domain/http"
+import {
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
+	OpenRouterCostKeyRemoved,
+	OpenRouterCostKeySaved,
+} from "@maple/domain/http"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
@@ -8,6 +15,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
+	AddGithubCostSource,
 	BreakdownInput,
 	FacetsInput,
 	FetchCostBreakdown,
@@ -15,7 +23,9 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchGithubCostInstallations,
 	ReadCostGrants,
+	RemoveGithubCostSource,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
@@ -34,7 +44,11 @@ import {
 	LAB_OPENROUTER_KEY,
 	LAB_SOURCES,
 	LAB_TODAY,
+	type LabSourceChanges,
 	labBreakdown,
+	labGithubInstallations,
+	labGithubLogin,
+	labRemovedProviders,
 	labSourcesWith,
 	labTimeseries,
 	labTotals,
@@ -60,6 +74,10 @@ export const LabState = Schema.Literals([
 	"key-refused",
 	"replace-key",
 	"remove-source",
+	"add-github",
+	"github-refused",
+	"github-none",
+	"remove-github",
 	"member",
 	"member-onramp",
 ])
@@ -79,6 +97,8 @@ export const Model = Schema.Struct({
 	state: LabState,
 	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
 	openRouter: Schema.NullOr(Schema.Boolean),
+	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
+	github: Schema.Record(Schema.String, Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -87,8 +107,8 @@ export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessa
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
-/** What the lab answers from: the state it loaded in, and what the reader did to OpenRouter since. */
-type World = Readonly<{ state: LabState; openRouter: boolean | null }>
+/** What the lab answers from: the state it loaded in, and what the reader added or removed since. */
+type World = Readonly<{ state: LabState }> & LabSourceChanges
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -104,7 +124,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "member-onramp" ||
 	state === "add-source" ||
 	state === "add-openrouter" ||
-	state === "key-refused"
+	state === "key-refused" ||
+	state === "github-none"
 
 /** What the reader did before the state's screenshot: the clicks that open its dialog. */
 const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
@@ -125,7 +146,24 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "replace-key":
 			return [CostMessage.ClickedReplaceKey()]
 		case "remove-source":
-			return [CostMessage.ClickedRemoveSource()]
+			return removalOf("openrouter")
+		case "add-github":
+		case "github-none":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGithub()]
+		case "github-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddGithub(),
+				...Arr.map(
+					Arr.filter(
+						labGithubInstallations(LAB_SOURCES.synced).installations,
+						(installation) => installation.state === "available",
+					),
+					({ installationId }) => CostMessage.ClickedAddGithubInstallation({ installationId }),
+				),
+			]
+		case "remove-github":
+			return removalOf("github")
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -133,6 +171,20 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		default:
 			return []
 	}
+}
+
+/** The click on Remove in the row of the lab's source of `provider`. */
+const removalOf = (provider: "openrouter" | "github"): ReadonlyArray<CostMessage> =>
+	Arr.map(
+		Arr.filter(LAB_SOURCES.synced.sources, (source) => source.provider === provider),
+		(source) => CostMessage.ClickedRemoveSource({ sourceId: source.id }),
+	)
+
+const refusedBilling = {
+	...toLoadFailure("refused"),
+	code: Cost.GITHUB_PERMISSION_MISSING_CODE,
+	message:
+		"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
 }
 
 const refusedKey = {
@@ -169,6 +221,8 @@ const keyArgs = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String })
 const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
+const installationArgs = Schema.decodeUnknownOption(Schema.Struct({ installationId: VcsInstallationId }))
+const readArgs = Schema.decodeUnknownOption(Schema.Struct({ request: Schema.Number }))
 const facetsArgs = argsOf(FacetsInput)
 
 /** A read's answer: the fixture's, or the outage in the `error` state. */
@@ -192,13 +246,13 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	const filtersOf = (filters: WindowInput["filters"]) =>
 		state === "empty-window" ? { account: ["000000000000"] } : filters
 	// A removed source's cost is not read any more, under any filter.
-	const withoutOpenRouter = world.openRouter === false
+	const without = labRemovedProviders(world)
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
 				CostMessage.CompletedLoadSources({
 					key,
-					result: Result.succeed(labSourcesWith(sourcesFor(state), world.openRouter)),
+					result: Result.succeed(labSourcesWith(sourcesFor(state), world)),
 				}),
 			)
 		case FetchCostTotals.name:
@@ -206,7 +260,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedLoadTotals({
 					key,
 					result: settled(state, () =>
-						labTotals({ days, filters: filtersOf(input.filters), withoutOpenRouter }),
+						labTotals({ days, filters: filtersOf(input.filters), without }),
 					),
 				}),
 			)
@@ -218,7 +272,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labTimeseries({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							without,
 							groupBy: input.groupBy,
 							limit: input.limit,
 						}),
@@ -233,7 +287,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labBreakdown({
 							days,
 							filters: filtersOf(input.filters),
-							withoutOpenRouter,
+							without,
 							groupBy: input.groupBy,
 							sortBy: input.sortBy,
 						}),
@@ -250,7 +304,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 								labBreakdown({
 									days,
 									filters: filtersOf(input.filters[groupBy]),
-									withoutOpenRouter,
+									without,
 									groupBy,
 									sortBy: "cost",
 								}).rows,
@@ -279,34 +333,88 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: Result.succeed(new OpenRouterCostKeyRemoved({ removed: true })),
 				}),
 			)
+		case FetchGithubCostInstallations.name:
+			return Option.map(readArgs(command.args), ({ request }) =>
+				CostMessage.CompletedLoadGithubInstallations({
+					request,
+					result: Result.succeed(
+						state === "github-none"
+							? new GithubCostInstallations({ installations: [] })
+							: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
+					),
+				}),
+			)
+		case AddGithubCostSource.name:
+			return Option.map(installationArgs(command.args), ({ installationId }) =>
+				CostMessage.CompletedAddGithubSource({
+					installationId,
+					result:
+						state === "github-refused"
+							? Result.fail(refusedBilling)
+							: Result.succeed(
+									new GithubCostSourceAdded({
+										accountLogin: labGithubLogin(installationId),
+									}),
+								),
+				}),
+			)
+		case RemoveGithubCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemoveGithubSource({
+					result: Result.succeed(new GithubCostSourceRemoved({ removed: true })),
+				}),
+			)
 		default:
 			return Option.none()
 	}
 }
 
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
-type Settled = Step & Pick<World, "openRouter">
+type Settled = Step & LabSourceChanges
 
-/** A saved key adds OpenRouter to the sources the lab answers with next, a removal takes it out. */
-const openRouterAfter = (openRouter: boolean | null, answers: ReadonlyArray<CostMessage>) =>
-	Arr.reduce(answers, openRouter, (current, answer) =>
-		answer._tag === "CompletedSaveKey" && Result.isSuccess(answer.result)
-			? true
-			: answer._tag === "CompletedRemoveKey" && Result.isSuccess(answer.result)
-				? false
-				: current,
-	)
+type Answered = Readonly<{ command: CostCommand; answer: CostMessage }>
+
+/** A successful add puts a source in what the lab answers with next, a removal takes it out. */
+const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answered>): LabSourceChanges =>
+	Arr.reduce(answered, changes, (current, { command, answer }): LabSourceChanges => {
+		const withGithub = (installationId: string, isSource: boolean): LabSourceChanges => ({
+			openRouter: current.openRouter,
+			github: { ...current.github, [installationId]: isSource },
+		})
+		switch (answer._tag) {
+			case "CompletedSaveKey":
+				return Result.isSuccess(answer.result) ? { ...current, openRouter: true } : current
+			case "CompletedRemoveKey":
+				return Result.isSuccess(answer.result) ? { ...current, openRouter: false } : current
+			case "CompletedAddGithubSource":
+				return Result.isSuccess(answer.result) ? withGithub(answer.installationId, true) : current
+			// The answer does not name the installation: the removal that was asked for does.
+			case "CompletedRemoveGithubSource":
+				return Option.match(installationArgs(command.args), {
+					onNone: () => current,
+					onSome: ({ installationId }) =>
+						Result.isSuccess(answer.result) ? withGithub(installationId, false) : current,
+				})
+			default:
+				return current
+		}
+	})
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the
  * sources' answer asks for the window's reads). Kit commands are kept for the runtime.
  */
 const settle = (world: World, step: Step): Settled => {
-	const answers = Arr.flatMap(step.commands, (command) =>
-		Option.toArray(answerOf(world, step.model.search, command)),
+	const answered = Arr.flatMap(step.commands, (command) =>
+		Option.toArray(
+			Option.map(answerOf(world, step.model.search, command), (answer) => ({ command, answer })),
+		),
 	)
+	const answers = Arr.map(answered, ({ answer }) => answer)
 	const kept = keepLocal(step.commands)
-	if (answers.length === 0) return { model: step.model, commands: kept, openRouter: world.openRouter }
+	if (answers.length === 0) {
+		return { model: step.model, commands: kept, openRouter: world.openRouter, github: world.github }
+	}
 	const next = Arr.reduce(
 		answers,
 		{ model: step.model, commands: Arr.empty<CostCommand>() },
@@ -315,7 +423,7 @@ const settle = (world: World, step: Step): Settled => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle({ ...world, openRouter: openRouterAfter(world.openRouter, answers) }, next)
+	const rest = settle({ ...world, ...changesAfter(world, answered) }, next)
 	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
@@ -334,18 +442,18 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, openRouter: null }
+	const world: World = { state: flags.state, openRouter: null, github: {} }
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
 		const settled = settle(
-			{ ...world, openRouter: step.openRouter },
+			{ ...world, openRouter: step.openRouter, github: step.github },
 			{ model: next.model, commands: next.commands ?? [] },
 		)
 		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
 	return {
-		model: { state: flags.state, openRouter: ready.openRouter, cost: ready.model },
+		model: { state: flags.state, openRouter: ready.openRouter, github: ready.github, cost: ready.model },
 		commands: lift(ready.commands),
 	}
 }
@@ -360,11 +468,11 @@ export const update = (model: Model, message: Message): Return =>
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
 			const ready = settle(
-				{ state: model.state, openRouter: model.openRouter },
+				{ state: model.state, openRouter: model.openRouter, github: model.github },
 				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
 			)
 			return {
-				model: { ...model, openRouter: ready.openRouter, cost: ready.model },
+				model: { ...model, openRouter: ready.openRouter, github: ready.github, cost: ready.model },
 				commands: lift(ready.commands),
 			}
 		},

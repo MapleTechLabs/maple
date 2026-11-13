@@ -31,6 +31,11 @@ export const HISTORY_MONTHS = 13
  * dropped comes back empty, and an empty day replaces the stored one.
  */
 const OPENROUTER_HISTORY_DAYS = 28
+/**
+ * GitHub's billing report served usage five months back when checked, and its retention is not
+ * documented. History stops at the first day of the month this many months back, well inside that.
+ */
+const GITHUB_HISTORY_MONTHS = 3
 // Through this day of the month the previous month's bill is still open; the first settle after
 // it takes the previous month once more, so its last pull is never from before it closed.
 export const PREVIOUS_MONTH_OPEN_DAYS = 10
@@ -66,6 +71,7 @@ interface CostSyncProfile {
 const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0 },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1 },
+	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0 },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */

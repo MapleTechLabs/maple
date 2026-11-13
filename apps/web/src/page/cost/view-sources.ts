@@ -30,10 +30,26 @@ const STATUS = {
 	Readonly<{ label: string; variant: "ok" | "info" | "muted" | "crit" }>
 >
 
-/** What a row offers: an AWS source is its connection's, an OpenRouter one is its key. */
-const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> =>
-	source.provider === "openrouter"
-		? [
+const removeButton = (h: H, source: CostSourceSummary, isBusy: boolean): Html =>
+	button(
+		h,
+		{
+			variant: "ghost",
+			size: "sm",
+			isDisabled: isBusy,
+			attributes: [h.OnClick(Message.ClickedRemoveSource({ sourceId: source.id }))],
+		},
+		["Remove"],
+	)
+
+/**
+ * What a row offers: an AWS source is its connection's, an OpenRouter one is its key, and a
+ * GitHub one only leaves, since it reads through the GitHub connection.
+ */
+const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
+	switch (source.provider) {
+		case "openrouter":
+			return [
 				button(
 					h,
 					{
@@ -44,18 +60,18 @@ const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArra
 					},
 					["Replace key"],
 				),
-				button(
-					h,
-					{
-						variant: "ghost",
-						size: "sm",
-						isDisabled: isBusy,
-						attributes: [h.OnClick(Message.ClickedRemoveSource())],
-					},
-					["Remove"],
-				),
+				removeButton(h, source, isBusy),
 			]
-		: [linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, ["Manage connection"])]
+		case "github":
+			return [removeButton(h, source, isBusy)]
+		case "aws":
+			return [
+				linkButton(h, { variant: "ghost", size: "sm", href: AWS_INTEGRATION_HREF }, [
+					"Manage connection",
+				]),
+			]
+	}
+}
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
 const requestsFact = (source: CostSourceSummary): ReadonlyArray<string> => {

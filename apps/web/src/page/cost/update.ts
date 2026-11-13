@@ -1,12 +1,14 @@
-import { CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import { type CostSourceSummary, CostSourcesResponse, OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Option, Result, String as Str } from "effect"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import type { CostSourceId } from "@maple/primitives"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
-import { failureMessage } from "@maple/views/data/load-failure"
+import { failureMessage, type LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -21,6 +23,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
+	AddGithubCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
 	FetchCostBreakdown,
@@ -29,7 +32,9 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
+	FetchGithubCostInstallations,
 	ReadCostGrants,
+	RemoveGithubCostSource,
 	RemoveOpenRouterCostKey,
 	ResolveWindow,
 	SaveOpenRouterCostKey,
@@ -53,6 +58,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import type { AddStep, Model, Search } from "./model"
+import { COST_PROVIDERS } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -173,7 +179,12 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addStep: "pick",
 		keyDraft: Field.init(),
 		keyError: null,
+		githubInstallations: AsyncData.Idle(),
+		githubRead: 0,
+		githubAdding: null,
+		githubRefusal: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
+		removeTarget: null,
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
@@ -210,12 +221,17 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 })
 
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedKey = (model: Model): Model => ({ ...model, keyDraft: Field.init(), keyError: null })
+const clearedDialog = (model: Model): Model => ({
+	...model,
+	keyDraft: Field.init(),
+	keyError: null,
+	githubRefusal: null,
+})
 
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedKey(model), addStep }, Dialog.open(model.addDialog))
+		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -229,10 +245,10 @@ const withReread = (step: Return, context: PageContext): Return =>
 	)
 
 /**
- * The list on show without the OpenRouter source, which a removal just deleted: its row is gone
- * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
+ * The list on show without the source a removal just deleted: its row is gone at once, so no
+ * refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutOpenRouterSource = (model: Model): Model => ({
+const withoutSource = (model: Model, sourceId: CostSourceId | undefined): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -240,11 +256,65 @@ const withoutOpenRouterSource = (model: Model): Model => ({
 			model.sources.data,
 			(response) =>
 				new CostSourcesResponse({
-					sources: Arr.filter(response.sources, (source) => source.provider !== "openrouter"),
+					sources: Arr.filter(response.sources, (source) => source.id !== sourceId),
 				}),
 		),
 	},
 })
+
+const sourceOf = (model: Model, sourceId: CostSourceId): CostSourceSummary | undefined =>
+	AsyncData.getData(model.sources.data).pipe(
+		Option.flatMap(({ sources }) => Arr.findFirst(sources, (source) => source.id === sourceId)),
+		Option.getOrUndefined,
+	)
+
+const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
+
+/** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
+export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
+
+/** The call that removes `source`: OpenRouter's key, or the GitHub source of its installation. */
+const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
+	switch (source.provider) {
+		case "openrouter":
+			return [RemoveOpenRouterCostKey()]
+		case "github":
+			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>
+				RemoveGithubCostSource({ installationId }),
+			)
+		// An AWS source leaves with its connection's Cost module, on the integration's page.
+		case "aws":
+			return []
+	}
+}
+
+/** A removal answered: the confirm closes, and on success the source's row and cost leave the page. */
+const removed = (model: Model, result: Result.Result<unknown, LoadFailure>, context: PageContext): Return => {
+	const target = model.removeTarget
+	const closed = liftRemoveDialog(
+		Result.isSuccess(result)
+			? withoutSource({ ...model, sourceWrite: "Settling" }, target?.id)
+			: { ...model, sourceWrite: "Idle" },
+		Dialog.close(model.removeDialog),
+	)
+	return Result.match(result, {
+		onFailure: (failure): Return => ({
+			...closed,
+			outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
+		}),
+		onSuccess: (): Return =>
+			withReread(
+				{
+					...closed,
+					outMessage: toast(
+						"success",
+						`${target === null ? "Source" : COST_PROVIDERS[target.provider].name} removed`,
+					),
+				},
+				context,
+			),
+	})
+}
 
 /** Whether the org has an OpenRouter source, which a saved key then replaces the key of. */
 const hasOpenRouterSource = (model: Model): boolean =>
@@ -384,9 +454,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		ClickedAddOpenRouter: () => ({ model: { ...clearedKey(model), addStep: "openrouter" } }),
+		ClickedAddOpenRouter: () => ({ model: { ...clearedDialog(model), addStep: "openrouter" } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle" ? { model: { ...clearedKey(model), addStep: "pick" } } : { model },
+			model.sourceWrite === "Idle"
+				? { model: { ...clearedDialog(model), addStep: "pick" } }
+				: { model },
 		ClickedReplaceKey: () => openAdd(model, "openrouter"),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
@@ -394,7 +466,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"
-				? { ...lifted, model: clearedKey(lifted.model) }
+				? { ...lifted, model: clearedDialog(lifted.model) }
 				: lifted
 		},
 		GotKeyDraftMessage: ({ message: inner }) =>
@@ -428,7 +500,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onSuccess: (): Return => {
 					const closed = liftAddDialog(
-						clearedKey({ ...model, sourceWrite: "Settling" }),
+						clearedDialog({ ...model, sourceWrite: "Settling" }),
 						Dialog.close(model.addDialog),
 					)
 					const outMessage = hasOpenRouterSource(model)
@@ -441,33 +513,88 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					return withReread({ ...closed, outMessage }, context)
 				},
 			}),
-		ClickedRemoveSource: () =>
+		ClickedAddGithub: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+				: {
+						model: {
+							...clearedDialog(model),
+							addStep: "github",
+							githubInstallations: AsyncData.Loading(),
+							githubRead: model.githubRead + 1,
+						},
+						commands: [FetchGithubCostInstallations({ request: model.githubRead + 1 })],
+					},
+		// An answer to a read the step has since replaced would show a list from before a later add.
+		CompletedLoadGithubInstallations: ({ request, result }) =>
+			request !== model.githubRead
+				? { model }
+				: {
+						model: {
+							...model,
+							githubInstallations: Result.match(result, {
+								onFailure: (failure) => AsyncData.fail(failure),
+								onSuccess: (installations) => AsyncData.succeed(installations),
+							}),
+						},
+					},
+		ClickedAddGithubInstallation: ({ installationId }) =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: {
+							...model,
+							sourceWrite: "Saving",
+							githubAdding: installationId,
+							githubRefusal: null,
+						},
+						commands: [AddGithubCostSource({ installationId })],
+					},
+		// A refused add keeps the dialog open with GitHub's reason in the installation's row.
+		CompletedAddGithubSource: ({ installationId, result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: {
+						...model,
+						sourceWrite: "Idle",
+						githubAdding: null,
+						githubRefusal: {
+							installationId,
+							message: failureMessage(failure),
+							needsPermission: failure.code === GITHUB_PERMISSION_MISSING_CODE,
+						},
+					},
+				}),
+				onSuccess: (added): Return => {
+					const closed = liftAddDialog(
+						clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
+						Dialog.close(model.addDialog),
+					)
+					const outMessage = toast(
+						"success",
+						"GitHub added",
+						`The first sync of ${added.accountLogin} runs within a few minutes.`,
+					)
+					return withReread({ ...closed, outMessage }, context)
+				},
+			}),
+		ClickedRemoveSource: ({ sourceId }) => {
+			const target = sourceOf(model, sourceId)
+			return model.sourceWrite !== "Idle" || target === undefined
+				? { model }
+				: liftRemoveDialog({ ...model, removeTarget: target }, Dialog.open(model.removeDialog))
+		},
 		GotRemoveDialogMessage: ({ message: inner }) =>
 			model.sourceWrite === "Removing"
 				? { model }
 				: liftRemoveDialog(model, Dialog.update(model.removeDialog, inner)),
-		ClickedConfirmRemove: () =>
-			model.sourceWrite !== "Idle"
+		ClickedConfirmRemove: () => {
+			const commands = model.removeTarget === null ? [] : removeCommand(model.removeTarget)
+			return model.sourceWrite !== "Idle" || commands.length === 0
 				? { model }
-				: { model: { ...model, sourceWrite: "Removing" }, commands: [RemoveOpenRouterCostKey()] },
-		CompletedRemoveKey: ({ result }) => {
-			const closed = liftRemoveDialog(
-				Result.isSuccess(result)
-					? withoutOpenRouterSource({ ...model, sourceWrite: "Settling" })
-					: { ...model, sourceWrite: "Idle" },
-				Dialog.close(model.removeDialog),
-			)
-			return Result.match(result, {
-				onFailure: (failure): Return => ({
-					...closed,
-					outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
-				}),
-				onSuccess: (): Return =>
-					withReread({ ...closed, outMessage: toast("success", "OpenRouter removed") }, context),
-			})
+				: { model: { ...model, sourceWrite: "Removing" }, commands }
 		},
+		CompletedRemoveKey: ({ result }) => removed(model, result, context),
+		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
 		...chartEnvHandlers(model),
 	})

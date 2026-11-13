@@ -1,7 +1,7 @@
 import { CostSourceSummary } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { facetFilters, keyLabel, onlyFilter, toggledFilter } from "./derive"
+import { drilledInto, facetFilters, keyLabel, onlyFilter, toggledFilter } from "./derive"
 import { keyDetail, keyMark } from "./marks"
 
 const source = (
@@ -12,6 +12,7 @@ const source = (
 	Schema.decodeSync(CostSourceSummary)({
 		id,
 		provider,
+		connectionRef: id,
 		accountId,
 		status: "ok",
 		watermarkDate: "2026-11-10",
@@ -49,6 +50,52 @@ describe("cost key marks", () => {
 		expect(keyMark("region", "eu-west-1", [])?.icon).toBe(aws)
 		expect(keyMark("cloud_service", "openai/gpt-5", [])?.icon).not.toBe(aws)
 		expect(keyMark("cloud_service", "", [])).toBeNull()
+	})
+
+	test("a GitHub account reads by its organization, with nothing beside it, and wears GitHub's mark", () => {
+		const github = keyMark("provider", "github", [])?.icon
+		const withGithub = [
+			...sources,
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		expect(keyLabel("account", "example-org", withGithub)).toBe("GitHub example-org")
+		expect(keyDetail("account", "example-org", withGithub)).toBeNull()
+		expect(keyMark("account", "example-org", withGithub)?.icon).toBe(github)
+		// A second organization reads the same way: the name already tells them apart.
+		const two = [...withGithub, source("github", "example-labs", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22")]
+		expect(keyLabel("account", "example-labs", two)).toBe("GitHub example-labs")
+	})
+
+	test("a GitHub product wears GitHub's mark, also beside AWS services; its category a glyph", () => {
+		const aws = keyMark("provider", "aws", [])?.icon
+		const github = keyMark("provider", "github", [])?.icon
+		const both = [...sources, source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")]
+		expect(keyMark("cloud_service", "Actions", both)?.icon).toBe(github)
+		expect(keyMark("cloud_service", "Git LFS", [])?.icon).toBe(github)
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", both)?.icon).toBe(aws)
+		// A product GitHub starts billing later: GitHub's when no AWS account could bill it.
+		const githubOnly = [source("github", "example-org"), source("openrouter", "user_one")]
+		expect(keyMark("cloud_service", "Models", githubOnly)?.icon).toBe(github)
+		expect(keyMark("cloud_service", "Models", both)?.icon).toBe(aws)
+		expect(keyMark("service_category", "Developer Tools", [])?.icon).toBe("CodeIcon")
+		// GitHub bills no region: its rows are `global`, which is the globe and not a logo.
+		expect(keyMark("region", "global", both)?.icon).toBe("GlobeIcon")
+	})
+
+	test("a GitHub row drills like any other: a provider to its services, a service to its accounts", () => {
+		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "github" })).toEqual({
+			groupBy: "cloud_service",
+			provider: ["github"],
+		})
+		expect(
+			drilledInto(
+				{ groupBy: "cloud_service", provider: ["github"], region: ["global"] },
+				{ dimension: "cloud_service", value: "Actions" },
+			),
+		).toMatchObject({ groupBy: "account", cloud_service: ["Actions"] })
+		expect(facetFilters({ provider: ["github"], account: ["example-org"] }, "account")).toEqual({
+			provider: ["github"],
+		})
 	})
 
 	test("an AWS region says where it is; an unknown one adds nothing", () => {
