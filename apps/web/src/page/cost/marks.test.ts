@@ -51,6 +51,33 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "", [])).toBeNull()
 	})
 
+	test("a Cloudflare product wears the Cloudflare mark, also beside an AWS source", () => {
+		const cloudflare = keyMark("provider", "cloudflare", [])?.icon
+		const both = [...sources, source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]
+		expect(keyMark("cloud_service", "Workers", both)?.icon).toBe(cloudflare)
+		expect(keyMark("cloud_service", "Durable Objects", [])?.icon).toBe(cloudflare)
+		// Plan fees are filed under one service name.
+		expect(keyMark("cloud_service", "Subscriptions", both)?.icon).toBe(cloudflare)
+		// An AWS service beside it keeps the AWS mark.
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", both)?.icon).toBe(
+			keyMark("provider", "aws", [])?.icon,
+		)
+		// A product Maple has no name for is Cloudflare's when no AWS source could bill it.
+		const alone = [source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]
+		expect(keyMark("cloud_service", "Something New", alone)?.icon).toBe(cloudflare)
+	})
+
+	test("a Cloudflare account reads by name with its id aside, and bills in no region of its own", () => {
+		const account = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+		const both = [...sources, source("cloudflare", account)]
+		expect(keyLabel("account", account, both)).toBe("Cloudflare")
+		expect(keyDetail("account", account, both)).toBe(account)
+		expect(keyMark("account", account, both)?.icon).toBe(keyMark("provider", "cloudflare", [])?.icon)
+		// An AWS account's id is already in its name.
+		expect(keyDetail("account", "465760687006", both)).toBeNull()
+		expect(keyMark("region", "global", both)?.icon).not.toBe(keyMark("provider", "aws", [])?.icon)
+	})
+
 	test("a PlanetScale account reads by its organization, and its databases wear its mark", () => {
 		const withPlanetScale = [
 			...sources,

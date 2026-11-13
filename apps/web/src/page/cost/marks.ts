@@ -23,8 +23,22 @@ const providerMark = (provider: CostProvider): KeyMark => {
 /** OpenRouter names a model `vendor/model`; an AWS service name never has a slash. */
 const isModelSlug = (key: string): boolean => Str.includes("/")(key)
 
-/** An AWS account id is twelve digits; an OpenRouter one is its user or org id. */
-const isAwsAccountId = (key: string): boolean => /^\d{12}$/u.test(key)
+/**
+ * What Cloudflare bills by: its product families, and the plan fees Maple files under one name. A
+ * family it adds later reads as Cloudflare's once the org has no AWS source to mistake it for.
+ */
+const CLOUDFLARE_SERVICES = new Set([
+	"Workers",
+	"Durable Objects",
+	"Containers",
+	"Queues",
+	"R2",
+	"D1",
+	"Workers KV",
+	"Workers AI",
+	"Email",
+	"Subscriptions",
+])
 
 /**
  * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and
@@ -35,6 +49,17 @@ const isDatabaseName = (key: string): boolean => /^[a-z0-9][a-z0-9_-]*$/u.test(k
 /** A database's name is anyone's word, so it reads as PlanetScale's only where the org has that source. */
 const isPlanetScaleDatabase = (key: string, sources: ReadonlyArray<CostSourceSummary>): boolean =>
 	isDatabaseName(key) && Arr.some(sources, (source) => source.provider === "planetscale")
+
+/** The provider a service that is not a model belongs to: AWS, unless it is Cloudflare's or a PlanetScale database. */
+const serviceProvider = (key: string, sources: ReadonlyArray<CostSourceSummary>): CostProvider => {
+	if (CLOUDFLARE_SERVICES.has(key)) return "cloudflare"
+	if (isPlanetScaleDatabase(key, sources)) return "planetscale"
+	const reads = (provider: CostProvider) => Arr.some(sources, (source) => source.provider === provider)
+	return reads("cloudflare") && !reads("aws") ? "cloudflare" : "aws"
+}
+
+/** An AWS account id is twelve digits; an OpenRouter one is its user or org id, a Cloudflare one 32 hex digits. */
+const isAwsAccountId = (key: string): boolean => /^\d{12}$/u.test(key)
 
 /** The provider whose source reads the account, from the org's sources, then by the id's shape. */
 export const accountProvider = (
@@ -80,8 +105,9 @@ export const keyMark = (
 			return Option.match(decodeProvider(key), { onNone: () => null, onSome: providerMark })
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
-			if (isPlanetScaleDatabase(key, sources)) return providerMark("planetscale")
-			return key === "AWS Lambda" ? { icon: "AwsLambdaIcon" } : providerMark("aws")
+			return key === "AWS Lambda"
+				? { icon: "AwsLambdaIcon" }
+				: providerMark(serviceProvider(key, sources))
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
 		case "region":
@@ -98,8 +124,8 @@ const NAMED_BY_ID = new Set<CostProvider>(["aws", "planetscale"])
 
 /**
  * An account by what reads it: an AWS one by its id, a PlanetScale one by its organization, an
- * OpenRouter one by name alone while it is the org's only one (its id means nothing to a reader).
- * Unknown ids read as they are.
+ * OpenRouter or Cloudflare one by name alone while it is the org's only one (its id means nothing
+ * to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
@@ -149,8 +175,8 @@ const isAwsRegion = (key: string): key is keyof typeof AWS_REGIONS =>
 	Rec.has<string, string>(AWS_REGIONS, key)
 
 /**
- * What the name leaves out: where an AWS region is, the id behind an OpenRouter account's name.
- * Null when the name says it all.
+ * What the name leaves out: where an AWS region is, the id behind an account that reads by its
+ * provider's name. Null when the name says it all.
  */
 export const keyDetail = (
 	dimension: CostGroupBy,
@@ -159,7 +185,9 @@ export const keyDetail = (
 ): string | null => {
 	if (dimension === "region") return isAwsRegion(key) ? AWS_REGIONS[key] : null
 	if (dimension === "account") {
-		return accountProvider(key, sources) === "openrouter" ? key : null
+		const provider = accountProvider(key, sources)
+		// A name that already holds the id has nothing to add.
+		return provider === undefined || NAMED_BY_ID.has(provider) ? null : key
 	}
 	return null
 }
