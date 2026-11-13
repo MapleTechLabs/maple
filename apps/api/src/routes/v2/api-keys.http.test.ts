@@ -713,6 +713,19 @@ describe("v2 api_keys over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses to create a device credential by name", async () => {
+		const harness = makeHarness()
+		const root = await harness.bootstrapKey()
+
+		const { status, body } = await harness.request("POST", "/v2/api_keys", {
+			token: root.secret,
+			body: { name: "Home Screen widgets", kind: "device" },
+		})
+		expect(status).toBe(400)
+		expect(body.error.type).toBe("invalid_request_error")
+		await harness.dispose()
+	})
+
 	it("rejects invalid scope strings on create with a 400 envelope", async () => {
 		const harness = makeHarness()
 		const root = await harness.bootstrapKey()

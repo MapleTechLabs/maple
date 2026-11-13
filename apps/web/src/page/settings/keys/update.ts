@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import type { ApiKeyKind } from "@maple/domain/http"
+import type { CreatableApiKeyKind } from "@maple/domain/http"
 import { Array, Option, Result } from "effect"
 import { Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -70,7 +70,7 @@ const liftRoll = (model: Model, step: ReturnType<typeof RollDialog.update>): Ret
 			: toast(step.outMessage.type, step.outMessage.title, step.outMessage.description),
 })
 
-export const openCreate = (model: Model, kind: ApiKeyKind): Return =>
+export const openCreate = (model: Model, kind: CreatableApiKeyKind): Return =>
 	liftCreate(model, CreateDialog.open(model.create, kind))
 
 /** A row menu's pick: roll or revoke the key it belongs to. */

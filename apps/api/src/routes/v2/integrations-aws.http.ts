@@ -5,7 +5,9 @@ import {
 	MapleApiV2,
 	isoTimestamp,
 	isoTimestampOrNull,
+	scopeAllows,
 	V2InsufficientPermissions,
+	V2InsufficientScope,
 } from "@maple/domain/http/v2"
 import { Effect, Array as Arr } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -105,6 +107,12 @@ export const HttpV2AwsIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "awsIn
 					yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 						V2InsufficientPermissions.make(denial.message),
 					)
+					// The rendered setup holds the metric stream's access key, which writes to ingest.
+					if (!scopeAllows(tenant.scopes, { family: "integrations", access: "write" })) {
+						return yield* V2InsufficientScope.make(
+							'A connection\'s setup contains its stream access key, so this API key needs "integrations:write".',
+						)
+					}
 					const setup = yield* aws.setup(tenant.orgId, params.id)
 					return {
 						object: "aws_connection.setup" as const,

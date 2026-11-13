@@ -389,6 +389,39 @@ const make = Effect.gen(function* () {
 		const summary = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
+					// An approval not yet redeemed froze the old role and would mint a credential at it.
+					const cliApprovals = yield* db.run(
+						PG.from(CliDeviceAuthorizations)
+							.select("deviceCodeHash", "approvedRoles")
+							.where(($) => [$.approvedOrgId.eq(orgId), $.approvedUserId.eq(userId)]),
+					)
+					const [firstCli, ...restCli] = Arr.map(
+						Arr.filter(cliApprovals, (row) => outlivesDemotion(row.approvedRoles ?? [])),
+						(row) => row.deviceCodeHash,
+					)
+					if (firstCli !== undefined) {
+						yield* db.run(
+							PG.deleteFrom(CliDeviceAuthorizations).where(($) => [
+								$.deviceCodeHash.in_(firstCli, ...restCli),
+							]),
+						)
+					}
+					const mcpApprovals = yield* db.run(
+						PG.from(McpOAuthAuthorizations)
+							.select("requestIdHash", "approvedRoles")
+							.where(($) => [$.approvedOrgId.eq(orgId), $.approvedUserId.eq(userId)]),
+					)
+					const [firstMcp, ...restMcp] = Arr.map(
+						Arr.filter(mcpApprovals, (row) => outlivesDemotion(row.approvedRoles ?? [])),
+						(row) => row.requestIdHash,
+					)
+					if (firstMcp !== undefined) {
+						yield* db.run(
+							PG.deleteFrom(McpOAuthAuthorizations).where(($) => [
+								$.requestIdHash.in_(firstMcp, ...restMcp),
+							]),
+						)
+					}
 					// Device credentials pin roles in a column rather than key metadata.
 					const liveDevices = yield* db.run(
 						PG.from(DeviceCredentials)

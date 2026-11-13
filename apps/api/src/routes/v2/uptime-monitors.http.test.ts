@@ -353,15 +353,24 @@ describe("v2 uptime monitors", () => {
 			const created = await harness.request("POST", "/v2/uptime_monitors", full, {
 				name: "API health",
 				kind: "http",
-				config: { type: "http", url: "https://api.example.com/health" },
+				config: {
+					type: "http",
+					url: "https://api.example.com/health",
+					headers: { Authorization: "Bearer s3cret" },
+				},
 			})
 			expect(created.status).toBe(200)
 			const path = `/v2/uptime_monitors/${created.body.id}`
 			const httpConfig = { type: "http", url: "https://api.example.com/health" }
 
+			// A key resolves with the default key role, so the read scope is what makes it a reader.
 			const { secret: reader } = await harness.bootstrapKey(undefined, ["uptime_monitors:read"])
-			expect((await harness.request("GET", "/v2/uptime_monitors", reader)).status).toBe(200)
-			expect((await harness.request("GET", path, reader)).status).toBe(200)
+			const listed = await harness.request("GET", "/v2/uptime_monitors", reader)
+			expect(listed.status).toBe(200)
+			expect(listed.body.data[0].config.headers).toEqual({ Authorization: "[redacted]" })
+			const read = await harness.request("GET", path, reader)
+			expect(read.status).toBe(200)
+			expect(read.body.config.headers).toEqual({ Authorization: "[redacted]" })
 			const denied = [
 				await harness.request("POST", "/v2/uptime_monitors", reader, {
 					name: "Denied",

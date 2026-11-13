@@ -3,7 +3,7 @@ import { HttpTaggedError } from "./error-policy"
 import { ApiKeyId, PostgresTransactionId, UserId } from "@maple/primitives"
 
 import { ApiKeyKind } from "../api-keys"
-export { ApiKeyKind } from "../api-keys"
+export { ApiKeyKind, CreatableApiKeyKind } from "../api-keys"
 
 export class ApiKeyResponse extends Schema.Class<ApiKeyResponse>("ApiKeyResponse")({
 	id: ApiKeyId,

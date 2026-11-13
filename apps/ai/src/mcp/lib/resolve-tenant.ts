@@ -222,6 +222,13 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 					reason: "invalid_target",
 				})
 			}
+			// A device credential is the mobile widgets' key; nothing issues one for the MCP server.
+			if (resolved.kind === "device") {
+				return yield* new McpAuthInvalidError({
+					message: "Device credentials cannot be used with the MCP server",
+					reason: "invalid_target",
+				})
+			}
 			const scopeAccess = isMcpOAuthToken ? "full" : mcpScopeAccess(resolved.scopes)
 			if (typeof scopeAccess !== "string") {
 				return yield* new McpAuthInvalidError({
