@@ -243,6 +243,27 @@ describe("investigation detail", () => {
 		expect(failed.model.busy).toBeNull()
 	})
 
+	test("an analyst follows a diagnosis without the controls that drive it", () => {
+		const ready = synced(entered(), investigationOf()).model
+		const analystView = withViewInputs(pageView, { context: { ...context, audience: "analyst" } })()
+		scene(
+			{ update: pageUpdate, view: analystView },
+			given(ready),
+			...canvas(),
+			expectView(text("payment-svc 3.5.0 exhausts its connection pool.")).toExist(),
+			expectView(role("button", { name: "Resolve" })).toBeAbsent(),
+			expectView(role("button", { name: /Ask a follow-up/ })).toBeAbsent(),
+		)
+		// The same diagnosis for a member keeps both.
+		scene(
+			{ update: pageUpdate, view },
+			given(ready),
+			...canvas(),
+			expectView(role("button", { name: "Resolve" })).toExist(),
+			expectView(role("button", { name: /Ask a follow-up/ })).toExist(),
+		)
+	})
+
 	test("a run still in flight offers no resolve, which the server would refuse", () => {
 		const ready = synced(
 			entered(),
