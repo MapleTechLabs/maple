@@ -35,6 +35,7 @@ import { GcpCloudSqlSettings } from "../gcp"
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
+import { AnalystAccess } from "./analyst-access"
 export {
 	SupabaseAdvisorKind,
 	SupabaseAdvisorLevel,
@@ -1735,7 +1736,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.post("infraSurfaces", "/infra-surfaces", {
 			payload: InfraPresenceRequest,
 			success: InfraSurfacesResponse,
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
@@ -1760,7 +1761,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.post("cloudflareStart", "/cloudflare/start", {

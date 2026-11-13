@@ -378,11 +378,17 @@ const makeHarness = (
 	const runtime = ManagedRuntime.make(servicesLive)
 	const org = Schema.decodeSync(OrgId)("org_telemetry_e2e")
 	const user = Schema.decodeSync(UserId)("user_telemetry_e2e")
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(org, user, { name: "telemetry-test", scopes })
+				return yield* service.create(org, user, {
+					name: "telemetry-test",
+					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+				})
 			}),
 		)
 	const request = async (method: string, path: string, token: string, body?: unknown) => {
@@ -563,6 +569,17 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect((await harness.request("GET", `/v2/service_map?${tooWide}`, key.secret)).status).toBe(400)
 
 		await harness.dispose()
+	})
+
+	it("lets an analyst search traces, a POST that only reads", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(undefined, ["org:analyst"])
+		const searched = await harness.request("POST", "/v2/traces/search", key.secret, {
+			start_time: START,
+			end_time: END,
+		})
+		expect(searched.status).toBe(200)
+		expect(searched.body.data[0]).toMatchObject({ object: "trace", id: TRACE_ID })
 	})
 
 	it("requires windows, validates log IDs, and treats telemetry POSTs as scoped reads", async () => {

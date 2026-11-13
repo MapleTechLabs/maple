@@ -92,6 +92,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/IntegrationsPlanRequiredError",
 	"@maple/http/errors/IntegrationsRevokedError",
 	"@maple/http/errors/IntegrationsValidationError",
+	"@maple/http/errors/LimitedRoleError",
 	"@maple/http/errors/McpConnectionNotFoundError",
 	"@maple/http/errors/McpOAuthAuthorizationConflictError",
 	"@maple/http/errors/McpOAuthAuthorizationExpiredError",

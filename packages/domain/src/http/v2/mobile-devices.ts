@@ -11,6 +11,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
 import { AlertIncidentPublicId, MobileDevicePublicId } from "./resource-ids"
+import { AnalystAccess } from "../analyst-access"
 
 // Code points, not UTF-16 units: identical for these ASCII values, and the only length the
 // JSON Schema `minLength` can state exactly (Effect halves a UTF-16 bound when it exports one).
@@ -194,28 +195,32 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			payload: V2MobileDeviceRegisterParams,
 			success: V2MobileDevice,
 			error: [persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "registerMobileDevice",
-				summary: "Register or refresh a device",
-				description:
-					"Upserts the device identified by its push token for the current user and organization, re-enabling it if the platform had marked it dead. Requires the `mobile_devices:write` scope.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "registerMobileDevice",
+					summary: "Register or refresh a device",
+					description:
+						"Upserts the device identified by its push token for the current user and organization, re-enabling it if the platform had marked it dead. Requires the `mobile_devices:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("unregister", "/:token", {
 			params: { token: DeviceToken },
 			success: V2MobileDeviceDeleteResponse,
 			error: [notFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "unregisterMobileDevice",
-				summary: "Unregister a device",
-				description:
-					"Removes the device from the current organization; the app calls this on sign-out. Requires the `mobile_devices:write` scope.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "unregisterMobileDevice",
+					summary: "Unregister a device",
+					description:
+						"Removes the device from the current organization; the app calls this on sign-out. Requires the `mobile_devices:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.put("registerLiveActivity", "/:token/live_activities/:incident_id", {
@@ -223,28 +228,32 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			payload: V2LiveActivityRegisterParams,
 			success: V2LiveActivity,
 			error: [notFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "registerLiveActivity",
-				summary: "Register a Live Activity update token",
-				description:
-					"Records the APNs update token for a Live Activity the device started for this incident, so Maple can update and end it. Requires the `mobile_devices:write` scope.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "registerLiveActivity",
+					summary: "Register a Live Activity update token",
+					description:
+						"Records the APNs update token for a Live Activity the device started for this incident, so Maple can update and end it. Requires the `mobile_devices:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("endLiveActivity", "/:token/live_activities/:incident_id", {
 			params: { token: DeviceToken, incident_id: AlertIncidentPublicId },
 			success: V2LiveActivityDeleteResponse,
 			error: [notFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "endLiveActivity",
-				summary: "Forget a Live Activity",
-				description:
-					"Called when the activity ended on the device — dismissed by the user or ended by the app — so Maple stops pushing to a dead token. Requires the `mobile_devices:write` scope.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "endLiveActivity",
+					summary: "Forget a Live Activity",
+					description:
+						"Called when the activity ended on the device — dismissed by the user or ended by the app — so Maple stops pushing to a dead token. Requires the `mobile_devices:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/mobile_devices")
 	.middleware(AuthorizationV2)
