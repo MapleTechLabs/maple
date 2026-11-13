@@ -43,7 +43,7 @@ export {
 	AuthorizationUnavailableError,
 	OrganizationAccessDeniedError,
 	OrganizationWrongRegionError,
-	ReadOnlyRoleError,
+	LimitedRoleError,
 	type TenantContext,
 } from "./current-tenant"
 export * from "./dashboard-sections"
