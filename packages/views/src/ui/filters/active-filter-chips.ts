@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
-import { icon } from "../icon"
+import { icon, type IconName } from "../icon"
 import { iconButton } from "../icon-button"
 import { Array as Arr } from "effect"
 
@@ -19,6 +19,8 @@ export type ActiveFilterChip<M> = Readonly<{
 	valueLabel?: (value: string) => string
 	/** The connector in place of is / is not (`contains`, `>`, `is set`); empty shows none. */
 	operator?: string
+	/** A mark before the label: the value's provider, vendor or kind. */
+	mark?: Readonly<{ icon: IconName; className?: string | undefined }> | undefined
 }>
 
 const summarize = <M>(chip: ActiveFilterChip<M>): string => {
@@ -58,6 +60,14 @@ export const activeFilterChips = <M>(
 						),
 					],
 					[
+						...(chip.mark === undefined
+							? []
+							: [
+									icon(h, chip.mark.icon, {
+										size: 12,
+										className: cn("shrink-0", chip.mark.className),
+									}),
+								]),
 						h.span(
 							[h.Class("truncate")],
 							[

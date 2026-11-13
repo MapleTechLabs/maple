@@ -21,7 +21,7 @@ export const LAB_NOW_MS = LAB_TODAY_MS + 14.5 * 3_600_000
 const ESTIMATED_DAYS = 2
 const DAY_MS = 86_400_000
 
-type Line = Readonly<Record<CostGroupBy, string> & { daily: number; drift: number }>
+type Line = Readonly<Record<CostGroupBy | "usage_type", string> & { daily: number; drift: number }>
 
 const line = (
 	cloud_service: string,

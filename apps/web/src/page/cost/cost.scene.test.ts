@@ -1109,7 +1109,7 @@ describe("cost page", () => {
 		)
 	})
 
-	test("a row links to the view filtered to it; the chip removes the filter again", () => {
+	test("a row breaks its key down by the next dimension; the chip removes the filter again", () => {
 		const model = populated()
 		scene(
 			{ update: pageUpdate, view },
@@ -1117,12 +1117,23 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(role("link", { name: "north-1" })).toHaveAttr(
 				"href",
-				"/cost?groupBy=region&region=%5B%22north-1%22%5D",
+				"/cost?groupBy=cloud_service&region=%5B%22north-1%22%5D",
 			),
 			// The empty key filters too: its placeholder is only how it reads.
 			expectView(role("link", { name: "No region" })).toHaveAttr(
 				"href",
-				"/cost?groupBy=region&region=%5B%22%22%5D",
+				"/cost?groupBy=cloud_service&region=%5B%22%22%5D",
+			),
+		)
+		// Grouped by service under a region filter, a service row moves on to accounts,
+		// not back to regions.
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(routeChanged(model, { search: { region: ["north-1"] } }, context).model)),
+			resolveTheme,
+			expectView(role("link", { name: "Unassigned" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=account&cloud_service=%5B%22%22%5D&region=%5B%22north-1%22%5D",
 			),
 		)
 		const filtered = routeChanged(model, { search: { groupBy: "region", region: ["north-1"] } }, context)
@@ -1156,18 +1167,18 @@ describe("cost page", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			resolveTheme,
-			click(role("button", { name: "Usage type" })),
+			click(role("button", { name: "Region" })),
 			expectOutMessage(
-				PageOutMessage.RequestedNavigation({ url: "/cost?groupBy=usage_type", isReplace: false }),
+				PageOutMessage.RequestedNavigation({ url: "/cost?groupBy=region", isReplace: false }),
 			),
 		)
-		const regrouped = routeChanged(model, { search: { groupBy: "usage_type" } }, context)
+		const regrouped = routeChanged(model, { search: { groupBy: "region" } }, context)
 		expect(names(regrouped.commands)).not.toContain("FetchCostTotals")
 		expect(inputOf(regrouped.commands, "FetchCostTimeseries")).toMatchObject({
-			groupBy: "usage_type",
+			groupBy: "region",
 			limit: 8,
 		})
-		expect(inputOf(regrouped.commands, "FetchCostBreakdown")).toMatchObject({ groupBy: "usage_type" })
+		expect(inputOf(regrouped.commands, "FetchCostBreakdown")).toMatchObject({ groupBy: "region" })
 	})
 
 	test("sorting by change moves the URL, and the breakdown alone is read again in that order", () => {
@@ -1372,7 +1383,7 @@ describe("cost page", () => {
 			estimatedFrom: "2026-11-09",
 			currency: "USD",
 		})
-		expect(chartRows(response, "usage_type")).toEqual([
+		expect(chartRows(response, "region")).toEqual([
 			{ bucket: "2026-11-09T00:00:00Z", "bucket (series)": 5, "partial (series)": 4, partial: true },
 		])
 	})

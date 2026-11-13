@@ -10,6 +10,7 @@ import { failureMessage } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
@@ -23,6 +24,8 @@ import {
 	type BreakdownInput,
 	CompleteReloadSpin,
 	FetchCostBreakdown,
+	FetchCostFacets,
+	type FacetsInput,
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
@@ -33,8 +36,12 @@ import {
 } from "./command"
 import {
 	DEFAULT_GROUP_BY,
+	facetFilters,
+	perDimension,
 	groupByOf,
 	hasSourceOf,
+	onlyFilter,
+	toggledFilter,
 	hasSynced,
 	isUnderADay,
 	requestFilters,
@@ -56,6 +63,8 @@ export const DEFAULT_PRESET: PresetValue = "30d"
 /** The keys that get their own series in the chart; the rest fold into "Other". */
 export const SERIES_LIMIT = 8
 const BREAKDOWN_LIMIT = 100
+/** The values each rail section can offer, by cost. */
+const FACET_LIMIT = 100
 
 const resolveCommand = (model: Model, context: PageContext, mode: Keyed.RequestMode): Cmd =>
 	ResolveWindow({
@@ -104,7 +113,20 @@ const requestData = (model: Model, context: PageContext, mode: Keyed.ReadMode): 
 		sortBy: sortOf(model.search),
 		limit: BREAKDOWN_LIMIT,
 	}
+	const facets: FacetsInput = {
+		startTime: model.window.startTime,
+		endTime: model.window.endTime,
+		filters: perDimension((dimension) => facetFilters(model.search, dimension)),
+		limit: FACET_LIMIT,
+	}
 	return applySteps<Model, Message>(model, [
+		keyed(
+			model.facets,
+			requestKey(context.orgId, "costFacets", { data: facets }),
+			mode,
+			(next) => ({ facets: next }),
+			(key) => FetchCostFacets({ key, input: facets }),
+		),
 		keyed(
 			model.totals,
 			requestKey(context.orgId, "costTotals", { data: window }),
@@ -138,6 +160,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		totals: Keyed.idle(),
 		timeseries: Keyed.idle(),
 		breakdown: Keyed.idle(),
+		facets: Keyed.idle(),
+		filterSections: FilterSections.init(),
 		timePicker: TimeRangePicker.init("cost-time-range"),
 		chart: Chart.init(),
 		themeColors: null,
@@ -161,6 +185,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			commands: [
 				resolveCommand(model, context, "Load"),
 				LoadChartRuntime(),
+				Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
+					Message.GotFilterSectionsMessage({ message }),
+				),
 				...(isClerkAuthEnabled ? [ReadCostGrants()] : []),
 			],
 		},
@@ -337,6 +364,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		ClickedSort: ({ sort }) =>
 			navigate(model, { ...model.search, sort: sort === "cost" ? undefined : sort }),
+		CompletedLoadFacets: ({ key, result }) => ({
+			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
+		}),
+		ToggledFacetValue: (filter) => navigate(model, toggledFilter(model.search, filter)),
+		ClickedOnlyFacetValue: (filter) => navigate(model, onlyFilter(model.search, filter)),
+		GotFilterSectionsMessage: ({ message: inner }) => {
+			const next = FilterSections.update(model.filterSections, inner)
+			return {
+				model: { ...model, filterSections: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (sections) =>
+					Message.GotFilterSectionsMessage({ message: sections }),
+				),
+			}
+		},
 		ClickedRemoveFilter: (filter) => navigate(model, withoutFilter(model.search, filter)),
 		ClickedClearFilters: () => navigate(model, withoutFilters(model.search)),
 		GotTimePickerMessage: ({ message: inner }) =>
