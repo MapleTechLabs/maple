@@ -9,8 +9,5 @@ export const initialGrants: ReadonlyArray<Policy.Permission> = isClerkAuthEnable
 /** The session is only read where there is one; self-hosted mode holds every permission. */
 export const readsSessionGrants = isClerkAuthEnabled
 
-/** The viewer may start an investigation or hand the issue to an agent (`investigations:run`). */
-export const canRunInvestigations = (model: Grants): boolean => Policy.has(model.grants, "investigations:run")
-
 /** The viewer may move, claim, rate, merge, link and comment on issues (`error_issues:triage`). */
 export const canTriageIssues = (model: Grants): boolean => Policy.has(model.grants, "error_issues:triage")

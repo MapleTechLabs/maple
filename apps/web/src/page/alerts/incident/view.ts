@@ -60,7 +60,7 @@ import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, canRespondToIncidents, canRunInvestigations } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -218,9 +218,15 @@ export const acknowledgeAction = <M>(
 	]
 }
 
-const investigateAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
-	investigation !== null
-		? linkButton(
+/** A link to the incident's investigation, or the button that starts one for who may run one. */
+const investigateAction = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation | null,
+): ReadonlyArray<Html> => {
+	if (investigation !== null)
+		return [
+			linkButton(
 				h,
 				{
 					variant: "outline",
@@ -228,20 +234,25 @@ const investigateAction = (h: H, model: Model, investigation: V2Investigation | 
 					href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })),
 				},
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
-			)
-		: button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isDisabled:
-						model.isStartingInvestigation ||
-						AsyncData.isLoading(model.investigation.data) ||
-						AsyncData.isIdle(model.investigation.data),
-					attributes: [h.OnClick(Message.ClickedInvestigate())],
-				},
-				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
-			)
+			),
+		]
+	if (!canRunInvestigations(model)) return []
+	return [
+		button(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				isDisabled:
+					model.isStartingInvestigation ||
+					AsyncData.isLoading(model.investigation.data) ||
+					AsyncData.isIdle(model.investigation.data),
+				attributes: [h.OnClick(Message.ClickedInvestigate())],
+			},
+			[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
+		),
+	]
+}
 
 /** What `incidentBody` renders: the page reads it off its Model, the lab off a fixture. */
 export type IncidentBodyInputs<M> = Readonly<{
@@ -500,15 +511,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						silenceBadges(h, model, view, timeZone),
 					),
 					actions: hstack(h, { gap: "2", wrap: true }, [
-						...acknowledgeAction(h, {
-							incident: view.incident,
-							isLoading: model.isUpdatingAcknowledgement,
-							onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
-						}),
+						...(canRespondToIncidents(model)
+							? acknowledgeAction(h, {
+									incident: view.incident,
+									isLoading: model.isUpdatingAcknowledgement,
+									onAcknowledge: (acknowledged) =>
+										Message.ClickedAcknowledge({ acknowledged }),
+								})
+							: []),
 						...(canManageAlerts(model) && isOpenIncident(model)
 							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
 							: []),
-						investigateAction(
+						...investigateAction(
 							h,
 							model,
 							AsyncData.getOrElse(model.investigation.data, () => null),

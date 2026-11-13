@@ -129,7 +129,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/anomaly-alerts",
 		title: "Anomaly alerts",
 		description:
-			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`).",
+			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`). The hub and the incident as an admin, a member or an observer, who gets no Acknowledge (`?role=member|observer`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -495,7 +495,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts",
 		title: "Alerts",
 		description:
-			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation. As an admin, a member or an observer, who gets no Acknowledge (`?role=member|observer`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -511,7 +511,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an observer, who gets no control that posts, edits or deletes an incident (`?role=member|observer`).",
 		kind: "lab",
 		session: "none",
 	},

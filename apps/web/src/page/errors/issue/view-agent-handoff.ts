@@ -15,7 +15,7 @@ import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-import { canRunInvestigations } from "../kit/grants"
+import { canRunInvestigations } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 

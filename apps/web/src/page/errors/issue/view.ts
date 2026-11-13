@@ -41,7 +41,8 @@ import { vstack } from "@maple/views/ui/stack"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
-import { canRunInvestigations, canTriageIssues } from "../kit/grants"
+import { canRunInvestigations } from "../../kit/session-grants"
+import { canTriageIssues } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 

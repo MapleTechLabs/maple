@@ -14,6 +14,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchAnomalySession,
 	FetchIncident,
 	FetchLinkedIssue,
 	FetchLinkIssues,
@@ -25,6 +26,9 @@ import {
 import { incidentOf, investigationPayload } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import * as Policy from "@maple/domain/policy"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -125,6 +129,8 @@ export const init = (route: AnomalyRoute, context: PageContext): Return => {
 	const model: Model = {
 		incidentId: route.incidentId,
 		nowMs: 0,
+		// None until the session answers; self-hosted mode has no session and holds every permission.
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		incident: Keyed.idle(),
 		timeseries: Keyed.idle(),
 		linkedIssue: Keyed.idle(),
@@ -141,7 +147,12 @@ export const init = (route: AnomalyRoute, context: PageContext): Return => {
 	const loaded = loadIncident(model, context, "Load")
 	return {
 		model: loaded.model,
-		commands: [ReadAnomalyClock(), ...(loaded.commands ?? []), LoadChartRuntime()],
+		commands: [
+			ReadAnomalyClock(),
+			...(isClerkAuthEnabled ? [FetchAnomalySession({ orgId: context.orgId })] : []),
+			...(loaded.commands ?? []),
+			LoadChartRuntime(),
+		],
 	}
 }
 
@@ -168,6 +179,7 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchIncident: ({ key, result }) =>
 			followIncident(
 				{ ...model, incident: Keyed.accept(model.incident, key, result) },

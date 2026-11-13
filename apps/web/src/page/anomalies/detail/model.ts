@@ -1,6 +1,7 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AnomalyIncidentId } from "@maple/domain/http"
 import { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2ErrorIssue } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
@@ -14,6 +15,8 @@ export type Busy = typeof Busy.Type
 export const Model = Schema.Struct({
 	incidentId: AnomalyIncidentId,
 	nowMs: Schema.Number,
+	/** What the viewer may do; an observer reads the anomaly and gets no resolve or link control. */
+	grants: Schema.Array(Policy.PermissionName),
 	incident: KeyedSchema(V2AnomalyIncident, LoadFailure),
 	timeseries: KeyedSchema(V2AnomalyIncidentTimeseries, LoadFailure),
 	/** Read once the incident names an issue. */
