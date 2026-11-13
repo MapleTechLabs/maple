@@ -1347,6 +1347,65 @@ describe("cost page", () => {
 		)
 	})
 
+	test("with several sources of one provider, a row's actions name the account they act on", () => {
+		const github = (id: string, connectionRef: string, accountId: string) =>
+			source({ id, provider: "github", connectionRef, accountId, requestsThisMonth: 0 })
+		const org = github(GITHUB_SOURCE, GITHUB_ORG, "example-org")
+		const labs = github(
+			"0190f2b3-0000-7000-8000-00000000c064",
+			"0190f2b3-0000-4000-8000-00000000e062",
+			"example-labs",
+		)
+		const secondAws = source({ id: "0190f2b3-0000-7000-8000-00000000c058", accountId: "210987654321" })
+		const openRouter = source({
+			id: OPENROUTER_SOURCE,
+			provider: "openrouter",
+			accountId: "user_2openrouterAccount",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(entered({}, [source(), secondAws, openRouter, org, labs]).model)),
+			resolveTheme,
+			// Two organizations: each Remove says which, and neither is the bare name.
+			expectView(role("button", { name: "Remove GitHub source example-org" })).toExist(),
+			expectView(role("button", { name: "Remove GitHub source example-labs" })).toExist(),
+			expectView(role("button", { name: "Remove GitHub source" })).not.toExist(),
+			// Two AWS accounts: each link says whose connection it opens.
+			expectView(role("link", { name: "Manage AWS connection 123456789012" })).toExist(),
+			expectView(role("link", { name: "Manage AWS connection 210987654321" })).toExist(),
+			expectView(role("link", { name: "Manage AWS connection" })).not.toExist(),
+			// The org's only OpenRouter source keeps the short names.
+			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+			expectView(role("button", { name: "Remove OpenRouter source" })).toExist(),
+		)
+		// One organization left: its Remove needs no account to tell it apart.
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(entered({}, [source(), org]).model)),
+			resolveTheme,
+			expectView(role("button", { name: "Remove GitHub source" })).toExist(),
+			expectView(role("link", { name: "Manage AWS connection" })).toExist(),
+		)
+		// A Vercel team is named by its slug, as its row shows it, not by its team id.
+		const team = (id: string, accountId: string, accountName: string) =>
+			source({ id, provider: "vercel", accountId, accountName })
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				answered(
+					entered({}, [
+						team(VERCEL_SOURCE, "team_1", "acme"),
+						team("0190f2b3-0000-7000-8000-00000000c065", "team_2", "beta"),
+					]).model,
+				),
+			),
+			resolveTheme,
+			expectView(role("button", { name: "Remove Vercel source acme" })).toExist(),
+			expectView(role("button", { name: "Remove Vercel source beta" })).toExist(),
+			expectView(role("link", { name: "Manage Vercel connection acme" })).toExist(),
+		)
+	})
+
 	test("a view filtered to a provider compares with the period before when that provider's history reaches it", () => {
 		const aws = Schema.decodeSync(CostSourcesResponse)({ sources: [source()] }).sources
 		const both = Schema.decodeSync(CostSourcesResponse)({
