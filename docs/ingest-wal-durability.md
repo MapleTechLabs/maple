@@ -160,7 +160,8 @@ Two limits close that gap:
   and releases its org bytes, or it would keep the backlog it was shed to cut. Frames recovered by
   WAL replay are stamped at replay time, so a restart's backlog gets a full window to export in
   rather than being shed on sight for having been written before the restart. Set to 0 to queue
-  without an age bound.
+  without an age bound. Audit trail frames are exempt: an audit event is a record, a late one is
+  still wanted, and its volume is bounded per org where it is accepted.
 - **An open ClickHouse target circuit breaker** defers the batch, with the lane cursor held, for
   one window: one breaker cooldown, at most 30s and at most a quarter of the max queue age. A
   target blip shorter than that is delivered without loss. Past the window that org's batch is

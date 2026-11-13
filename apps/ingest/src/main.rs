@@ -4306,7 +4306,11 @@ async fn handle_vercel_audit_trail_inner(
         warn!(org_id = %org_id, skipped, "Vercel audit drain events without an action were skipped");
     }
     let count = store_audit_trail_rows(pipeline, &org_id, rows).await?;
-    state.resolver.note_source_use(&resolved_key, false);
+    // The delivery is the integration's, not the key's default source: its health reads this.
+    let claimed: Vec<String> = sources::source_uuid_from_public_id(claim)
+        .into_iter()
+        .collect();
+    state.resolver.note_claimed_source_use(&claimed);
     Ok(count)
 }
 
@@ -13451,6 +13455,34 @@ mod tests {
                 row["Action"].as_str()
             ),
             (Some("org_audit"), Some("evt_1"), Some("project.created"))
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // The integration's health reads its own source's last use; the key's default
+    // source has nothing to say about whether the audit drain delivers.
+    #[tokio::test]
+    async fn vercel_audit_drain_records_use_of_the_integrations_source() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-source-use");
+        let (state, store, _imports) =
+            audit_trail_test_state("maple_sk_test_use", "org_use", queue_dir.clone()).await;
+
+        vercel_audit_delivery(
+            &state,
+            &vercel_drain_headers("maple_sk_test_use", AUDIT_SOURCE_ID),
+        )
+        .await
+        .expect("the drain's delivery should be accepted");
+
+        for _ in 0..50 {
+            if !store.source_uses.lock().unwrap().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            *store.source_uses.lock().unwrap(),
+            vec![AUDIT_SOURCE_UUID.to_owned()]
         );
         drop(std::fs::remove_dir_all(&queue_dir));
     }

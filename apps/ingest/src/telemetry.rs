@@ -3295,8 +3295,12 @@ impl ExportWorker {
         // Shed, not drop-and-forget: a shed frame still advances the cursor and
         // releases its org bytes below, because leaving it in the WAL would keep
         // the very backlog this is cutting.
+        // An audit event is a record, not a reading that ages out: a late one is still
+        // evidence, and its volume is bounded per org at the accept path.
         let is_stale = |frame: &QueuedFrame| {
-            !max_age.is_zero() && now.duration_since(frame.enqueued_at) > max_age
+            !max_age.is_zero()
+                && frame.signal != TelemetrySignal::AuditTrail
+                && now.duration_since(frame.enqueued_at) > max_age
         };
         let mut shed_frames = 0usize;
         let mut shed_rows = 0usize;
@@ -6802,6 +6806,56 @@ mod tests {
             "a shed frame must still advance the lane cursor, or it keeps the \
              backlog it was shed to cut"
         );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn an_audit_event_past_the_max_queue_age_is_still_exported() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+
+        let queue_dir = unique_test_dir("queue-age-audit-trail");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Any frame that survives a channel hop is already older than this.
+        cfg.queue_max_age = Duration::from_nanos(1);
+
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let event: serde_json::Map<String, Value> = serde_json::from_str(
+            r#"{"id":"evt_1","teamId":"team_1","action":"project.created","timestamp":1700000000000}"#,
+        )
+        .unwrap();
+        let row = crate::audit_trail::vercel_event(&event, 1_700_000_060_000)
+            .expect("an event with an action")
+            .to_row("org_late", 1_700_000_060_000);
+        pipeline
+            .accept_rows_to(
+                "org_late",
+                crate::audit_trail::DATASOURCE.to_owned(),
+                vec![row],
+                TelemetrySignal::AuditTrail,
+                ExportDestination::Tinybird,
+            )
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), primary_rx.recv())
+            .await
+            .expect("an audit event past the max queue age must still be exported")
+            .expect("fake Tinybird channel should stay open");
+        assert_eq!(pipeline.drain_wal(Duration::from_secs(5)).await, 0);
 
         drop(std::fs::remove_dir_all(queue_dir));
     }
