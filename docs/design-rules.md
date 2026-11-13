@@ -97,6 +97,8 @@ bordered box takes its parent's radius minus 1px: `before:rounded-lg-inset` insi
   step of the hue in light, where the fill itself is near 3:1 as type, and the fill in dark. Fills,
   borders and strokes keep the tone. Write the utility; never a fill token as `color` in a style
   object.
+- Selected text takes `primary-a4` as its highlight and reads in `foreground`, set once in
+  tokens.css. No `selection:` utility at a call site.
 - Washes are translucent and read the same on any surface: `surface-faint`, `surface-sunken`,
   `surface-strong`.
 - A see-through surface is a token, never `bg-background/NN` or `bg-card/NN`

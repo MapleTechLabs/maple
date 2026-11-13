@@ -7,7 +7,13 @@ import { Message } from "./message"
 import { type Model, Session } from "./model"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
-import { breadcrumbsOf, notFoundContent, placeholderContent, rendersShell } from "./page/chrome"
+import {
+	breadcrumbsOf,
+	documentTitleOf,
+	notFoundContent,
+	placeholderContent,
+	rendersShell,
+} from "./page/chrome"
 import type { PageContext, ShellInfraSurfaces } from "./page/contract"
 import {
 	isBarePageRoute,
@@ -282,8 +288,20 @@ const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 		],
 	)
 
+/** The tab names the open page; a route with no page up yet (or none at all) is just "Maple". */
+export const titleOf = (model: Model): string =>
+	documentTitleOf(
+		model.page !== null
+			? pageBreadcrumbs(model.page)
+			: AppRoute.matchOrElse<ReadonlyArray<Shell.BreadcrumbEntry>>(
+					model.route,
+					{ NotFound: () => breadcrumbsOf(model.route) },
+					() => [],
+				),
+	)
+
 // NOTE: Foldkit's first render replaces the container, so the view root is `div#app` itself.
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({
-	title: "Maple",
+	title: titleOf(model),
 	body: body(model, h),
 })
