@@ -37,6 +37,11 @@ import {
 	type PlanetScaleCostProviderApi,
 	PlanetScaleCostReadError,
 } from "./providers/planetscale/PlanetScaleCostProvider"
+import {
+	VercelCostProvider,
+	type VercelCostProviderApi,
+	VercelCostReadError,
+} from "./providers/vercel/VercelCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
@@ -57,6 +62,7 @@ const INSTALLATION_B = "0190f2b3-0000-4000-8000-0000000000e2"
 const INSTALLATION_C = "0190f2b3-0000-4000-8000-0000000000e3"
 const INSTALLATION_D = "0190f2b3-0000-4000-8000-0000000000e4"
 const PLANETSCALE_CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000f1"
+const VERCEL_CONNECTION_A = "0190f2b3-0000-7000-8000-0000000000e1"
 /** What every fake pull reports as billable. */
 const REQUESTS_PER_PULL = 2
 
@@ -211,6 +217,28 @@ const harness = (options: FakeProviderOptions = {}) => {
 				}
 			}),
 	})
+	// The sync only pulls; `read` and `check` are what an add asks with, answered the same way here.
+	const planetScalePull = adapterOf("planetscale")
+	const asReadError = ({ message, reason }: CostProviderError) =>
+		new PlanetScaleCostReadError({ message, reason, kind: "other" })
+	const planetScaleAdapter: PlanetScaleCostProviderApi = {
+		...planetScalePull,
+		read: (source, window) => Effect.mapError(planetScalePull.pull(source, window), asReadError),
+		check: () => Effect.succeed([]),
+	}
+	// The sync only pulls; `read` is what an add checks with, answered the same way here.
+	const vercelPull = adapterOf("vercel")
+	const vercelAdapter: VercelCostProviderApi = {
+		...vercelPull,
+		read: (source, window) =>
+			vercelPull
+				.pull(source, window)
+				.pipe(
+					Effect.mapError(
+						({ message, reason }) => new VercelCostReadError({ message, reason, kind: "other" }),
+					),
+				),
+	}
 	const writes: Array<ReadonlyArray<typeof WrittenRow.Type>> = []
 	const datasources: string[] = []
 	const tenants: string[] = []
@@ -249,15 +277,6 @@ const harness = (options: FakeProviderOptions = {}) => {
 				cloudCost: !outsideRollout.has(orgId),
 			})),
 	})
-	// The sync only pulls; `read` and `check` are what an add asks with, answered the same way here.
-	const planetScalePull = adapterOf("planetscale")
-	const asReadError = ({ message, reason }: CostProviderError) =>
-		new PlanetScaleCostReadError({ message, reason, kind: "other" })
-	const planetScaleAdapter: PlanetScaleCostProviderApi = {
-		...planetScalePull,
-		read: (source, window) => Effect.mapError(planetScalePull.pull(source, window), asReadError),
-		check: () => Effect.succeed([]),
-	}
 	const layer = Layer.effect(CostSyncService, CostSyncService.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -265,6 +284,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
 				Layer.succeed(CloudflareCostProvider, adapterOf("cloudflare")),
 				Layer.succeed(GithubCostProvider, adapterOf("github")),
+				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),
 				warehouse,
 				featureFlags,
@@ -362,8 +382,28 @@ const harness = (options: FakeProviderOptions = {}) => {
 			await executeSql(
 				testDb,
 				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
-				 VALUES ('0190f2b3-0000-7000-8000-0000000000f2', 'org_a', 'planetscale', $1, $2, now(), now())`,
+				 VALUES ('0190f2b3-0000-7000-8000-0000000000f4', 'org_a', 'planetscale', $1, $2, now(), now())`,
 				[connection.id, organization],
+			)
+		})
+	/** An org's Vercel connection, and with `asCostSource` the source the org added for it. */
+	const connectVercel = (connection: { readonly id: string; readonly asCostSource: boolean }) =>
+		Effect.promise(async () => {
+			const sourceId = await insertTestSource(testDb, { orgId: "org_a", platform: "vercel" })
+			await executeSql(
+				testDb,
+				`INSERT INTO vercel_connections
+				   (id, org_id, source_id, team_id, team_slug, team_name, token_ciphertext, token_iv, token_tag,
+				    connected_by_user_id, project_scope, created_at, updated_at)
+				 VALUES ($1, 'org_a', $2, 'team_1', 'acme', 'Acme', 'sealed', 'iv', 'tag', 'user_a', 'all', now(), now())`,
+				[connection.id, sourceId],
+			)
+			if (!connection.asCostSource) return
+			await executeSql(
+				testDb,
+				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+				 VALUES ('0190f2b3-0000-7000-8000-0000000000f1', 'org_a', 'vercel', $1, 'team_1', now(), now())`,
+				[connection.id],
 			)
 		})
 	const sourceRefs = Effect.promise(() =>
@@ -407,8 +447,9 @@ const harness = (options: FakeProviderOptions = {}) => {
 		connect,
 		saveOpenRouterKey,
 		saveCostConnection,
-		installGithub,
+		connectVercel,
 		connectPlanetScale,
+		installGithub,
 		sourceRefs,
 		sourceState,
 		sourceStateOf,
@@ -676,6 +717,106 @@ describe("CostSyncService GitHub sources", () => {
 			assert.deepStrictEqual(h.pulls, [])
 		}).pipe(Effect.provide(h.layer))
 	})
+})
+
+describe("CostSyncService Vercel sources", () => {
+	it.effect("makes no source for a Vercel connection the org did not add as one", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: false })
+			const summary = yield* poll
+			assert.deepStrictEqual([yield* h.sourceRefs, summary.due, h.pulls.length], [[], 0, 0])
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("pulls an added source from the previous month through today, then a month of history", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+			const summary = yield* poll
+			assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+			// Today is served, and each window is one request far under Vercel's year.
+			assert.deepStrictEqual(h.windows(), [
+				["2026-10-01", "2026-11-11"],
+				["2026-09-01", "2026-09-30"],
+				["2026-08-01", "2026-08-31"],
+			])
+			const state = yield* h.sourceStateOf("org_a", VERCEL_CONNECTION_A)
+			assert.deepStrictEqual(
+				[state?.watermark, state?.backfill, state?.error],
+				["2026-11-11", "2026-08-01", null],
+			)
+			assert.isTrue(Arr.every(h.writtenRows(), (row) => row.Provider === "vercel"))
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect("walks history down to eleven months before this one, and no further", () => {
+		const h = harness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+			yield* h.sql(
+				`UPDATE cost_sources SET watermark_date = '2026-11-11', backfill_date = '2026-01-01',
+				        last_synced_at = now(), last_settled_at = now()`,
+			)
+			yield* poll
+			assert.deepStrictEqual(h.windows(), [["2025-12-01", "2025-12-31"]])
+			// The floor is reached: a year back from today would start a day past what one request serves.
+			yield* TestClock.adjust("5 minutes")
+			assert.strictEqual((yield* poll).due, 0)
+		}).pipe(Effect.provide(h.layer))
+	})
+
+	it.effect(
+		"pulls a source whose token was replaced at the next tick, though it synced minutes ago",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+				// History walked to the floor and the head pulled just now: nothing is due for a day.
+				yield* h.sql(
+					`UPDATE cost_sources SET watermark_date = '2026-11-11', backfill_date = '2025-12-01',
+				        last_synced_at = now(), last_settled_at = now()`,
+				)
+				assert.strictEqual((yield* poll).due, 0)
+				// What a new token for the team writes to the source (`releaseVercelCostSources`).
+				yield* h.sql(
+					`UPDATE cost_sources SET last_synced_at = NULL, next_attempt_at = NULL, lease_until = NULL,
+				        last_error = NULL, last_error_reason = NULL, consecutive_failures = 0`,
+				)
+				yield* TestClock.adjust("5 minutes")
+				const summary = yield* poll
+				assert.deepStrictEqual([summary.due, summary.synced], [1, 1])
+				// The trailing days again, read with the new token; history is not walked twice.
+				assert.deepStrictEqual(h.windows(), [["2026-11-08", "2026-11-11"]])
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
+
+	it.effect(
+		"removes the source of a connection that is gone, and leaves the org's AWS source alone",
+		() => {
+			const h = harness()
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(NOW)
+				yield* h.connectVercel({ id: VERCEL_CONNECTION_A, asCostSource: true })
+				yield* h.connect({ id: CONNECTION_A })
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [
+					["org_a", CONNECTION_A, "123456789012"],
+					["org_a", VERCEL_CONNECTION_A, "team_1"],
+				])
+
+				yield* h.sql("DELETE FROM vercel_connections")
+				yield* TestClock.adjust("1 hour")
+				yield* poll
+				assert.deepStrictEqual(yield* h.sourceRefs, [["org_a", CONNECTION_A, "123456789012"]])
+			}).pipe(Effect.provide(h.layer))
+		},
+	)
 })
 
 describe("CostSyncService PlanetScale sources", () => {

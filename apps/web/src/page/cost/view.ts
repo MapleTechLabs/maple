@@ -66,7 +66,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product, a Cloudflare account by product, a PlanetScale organization by database.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -120,6 +120,10 @@ const FIRST_SYNC = {
 	github: {
 		alone: "It brings in this month and the last, then the two months before.",
 		named: "GitHub brings in this month and the last, then the two months before.",
+	},
+	vercel: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "Vercel brings in this month and the last, and older months fill in after that.",
 	},
 	cloudflare: {
 		alone: "It brings in this month and the last, and older months fill in after that.",
@@ -209,11 +213,13 @@ const toolbar = (h: H, model: Model): Html => {
 		className: "mb-0",
 	})
 	return hstack(h, { gap: "4", wrap: true, className: "gap-y-2" }, [
-		hstack(h, { gap: "2" }, [
-			typography(h, { size: "xs", tone: "muted" }, ["Group by"]),
+		hstack(h, { gap: "2", className: "min-w-0 max-w-full" }, [
+			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group by"]),
 			segmentedSelect(h, {
 				ariaLabel: "Group by",
 				size: "sm",
+				// Six options outgrow a narrow page beside the rail: the group scrolls, not the page.
+				className: "min-w-0 overflow-x-auto",
 				value: groupByOf(model.search),
 				options: Arr.map(COST_GROUP_BYS, (dimension) => ({
 					value: dimension,

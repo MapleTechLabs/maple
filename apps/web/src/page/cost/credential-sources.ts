@@ -99,7 +99,7 @@ export const CREDENTIAL_SOURCES = {
 				before: "",
 				link: "Create a token with only Billing: Read",
 				href: CLOUDFLARE_BILLING_TOKEN_URL,
-				after: " in Cloudflare. Under Account Resources pick the one account, set an expiry if you want one, then create it and paste it here. Maple checks that it reads billing and nothing more, then stores it encrypted.",
+				after: " in Cloudflare. Under Account Resources pick the one account, set an expiry if you want one, then create it and paste it here. Maple refuses a token it finds can read more than billing, then stores it encrypted.",
 			},
 		},
 		add: {

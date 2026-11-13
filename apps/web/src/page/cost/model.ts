@@ -6,6 +6,8 @@ import {
 	CostTotalsResponse,
 	GithubCostInstallations,
 	PlanetScaleCostStatus,
+	VercelCostStatus,
+	type VercelCostTeam,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -26,9 +28,28 @@ import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form or list. */
-export const AddStep = Schema.Union([Schema.Literals(["pick", "github", "planetscale"]), CredentialProvider])
+/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+export const AddStep = Schema.Union([
+	Schema.Literals(["pick", "github", "vercel", "planetscale"]),
+	CredentialProvider,
+])
 export type AddStep = typeof AddStep.Type
+
+/**
+ * What the Vercel step can do with the connection it read: only a `Ready` team can be added. A
+ * team that is a source already can still have lost its token, which stops its sync.
+ */
+export type VercelStep =
+	| Readonly<{ _tag: "NotConnected" }>
+	| Readonly<{ _tag: "TokenRejected" | "Ready"; team: VercelCostTeam }>
+	| Readonly<{ _tag: "Added"; team: VercelCostTeam; isTokenRejected: boolean }>
+
+export const vercelStepOf = (status: VercelCostStatus): VercelStep => {
+	if (status.team === null) return { _tag: "NotConnected" }
+	return status.added
+		? { _tag: "Added", team: status.team, isTokenRejected: status.authFailed }
+		: { _tag: status.authFailed ? "TokenRejected" : "Ready", team: status.team }
+}
 
 /** Why PlanetScale refused an add, and whether only connecting it again fixes that. */
 export const PlanetScaleAddError = Schema.Struct({ message: Schema.String, needsReconnect: Schema.Boolean })
@@ -93,6 +114,10 @@ export const Model = Schema.Struct({
 			needsPermission: Schema.Boolean,
 		}),
 	),
+	/** The org's Vercel connection, read when the dialog turns to Vercel. */
+	vercel: KeyedSchema(VercelCostStatus, LoadFailure),
+	/** Why Vercel refused the last add, shown in the step until it is left. */
+	vercelError: Schema.NullOr(Schema.String),
 	/** The org's PlanetScale connection, read when the dialog turns to PlanetScale. */
 	planetscale: KeyedSchema(PlanetScaleCostStatus, LoadFailure),
 	/** Why the last add of the organization was refused, shown in the step until it is left. */

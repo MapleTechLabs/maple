@@ -1,6 +1,6 @@
 import type { CostProvider } from "@maple/domain/cost"
 import type { IconName } from "@maple/views/ui/icon"
-import { Array as Arr, Option, Schema } from "effect"
+import { Schema } from "effect"
 import { PROVIDERS } from "../kit/providers"
 
 /**
@@ -18,6 +18,7 @@ export type CostProviderEntry = Readonly<{
 
 // Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
 // Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
+// Vercel's requests are free, like OpenRouter's.
 // PlanetScale's source reads through its integration's connection, and is added and removed here.
 export const COST_PROVIDERS = {
 	aws: {
@@ -43,6 +44,12 @@ export const COST_PROVIDERS = {
 		iconClassName: PROVIDERS.github.iconClassName,
 		requestUsd: null,
 	},
+	vercel: {
+		name: PROVIDERS.vercel.name,
+		icon: PROVIDERS.vercel.icon,
+		iconClassName: PROVIDERS.vercel.iconClassName,
+		requestUsd: null,
+	},
 	planetscale: {
 		name: PROVIDERS.planetscale.name,
 		icon: PROVIDERS.planetscale.icon,
@@ -60,14 +67,5 @@ export const COST_PROVIDERS = {
 export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
 export type CredentialProvider = typeof CredentialProvider.Type
 
-const decodeCredentialProvider = Schema.decodeUnknownOption(CredentialProvider)
-
-/** `provider` as one whose source is its pasted credential, or null for a connection's source. */
-export const credentialProviderOf = (provider: CostProvider): CredentialProvider | null =>
-	Option.getOrNull(decodeCredentialProvider(provider))
-
-const names = new Intl.ListFormat("en", { type: "conjunction" })
-
-/** Providers by name as one list in a sentence: "OpenRouter, Cloudflare, and GitHub". */
-export const providerNames = (providers: ReadonlyArray<CostProvider>): string =>
-	names.format(Arr.map(providers, (provider) => COST_PROVIDERS[provider].name))
+/** Whether a dialog step or a provider is one added by pasting a credential. */
+export const isCredentialProvider = Schema.is(CredentialProvider)

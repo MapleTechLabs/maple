@@ -26,6 +26,7 @@ export const perDimension = <A>(of: (dimension: CostGroupBy) => A): Readonly<Rec
 	provider: of("provider"),
 	service_category: of("service_category"),
 	region: of("region"),
+	resource: of("resource"),
 	account: of("account"),
 })
 
@@ -37,6 +38,8 @@ export const DIMENSIONS = {
 	provider: { label: "Provider", noun: "provider", empty: "No provider" },
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
+	// What a charge is billed for, where the provider says: a Vercel project.
+	resource: { label: "Resource", noun: "resource", empty: "No resource" },
 	// The account the connection reads, which for a management account bills its members' cost too.
 	account: { label: "Connected account", noun: "connected account", empty: "No account" },
 } as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>
@@ -105,23 +108,48 @@ export const withFilter = (search: Search, filter: ActiveFilter): Search => {
  * narrowed. Grouped by service it moves to region, by anything else to service.
  */
 const DRILL_ORDER = {
-	cloud_service: ["region", "account"],
-	provider: ["cloud_service", "account", "region"],
-	service_category: ["cloud_service", "region"],
-	region: ["cloud_service", "account"],
-	account: ["cloud_service", "region"],
+	cloud_service: ["region", "resource", "account"],
+	provider: ["cloud_service", "account", "region", "resource"],
+	service_category: ["cloud_service", "region", "resource"],
+	region: ["cloud_service", "resource", "account"],
+	resource: ["cloud_service", "region", "account"],
+	account: ["cloud_service", "region", "resource"],
 } as const satisfies Record<CostGroupBy, ReadonlyArray<CostGroupBy>>
 
-/** The grouping a row's click switches to, or the current one when every next step is narrowed. */
-export const drillTarget = (search: Search, dimension: CostGroupBy): CostGroupBy =>
-	Arr.findFirst(DRILL_ORDER[dimension], (next) => (search[next] ?? []).length === 0).pipe(
-		Option.getOrElse(() => dimension),
-	)
+/**
+ * The dimensions the cost on the page does not split by, which the rail and a drill-down leave
+ * out. Only resources can be missing: no provider names one for every charge, and some for none.
+ */
+export const unsplitDimensions = (
+	facets: Readonly<Record<CostGroupBy, ReadonlyArray<Readonly<{ key: string }>>>> | undefined,
+): ReadonlyArray<CostGroupBy> =>
+	facets !== undefined && Arr.some(facets.resource, (row) => row.key !== "") ? [] : ["resource"]
+
+/**
+ * The grouping a row's click switches to, or the current one when every next step is narrowed.
+ * `unsplit` are the dimensions with nothing to split by, which it passes over: resources, until
+ * the rail's read says some cost names one.
+ */
+export const drillTarget = (
+	search: Search,
+	dimension: CostGroupBy,
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
+): CostGroupBy =>
+	Arr.findFirst(
+		DRILL_ORDER[dimension],
+		(next) => (search[next] ?? []).length === 0 && !Arr.contains(unsplit, next),
+	).pipe(Option.getOrElse(() => dimension))
 
 /** A row's click: the page narrowed to the row's key, then split by the next dimension. */
-export const drilledInto = (search: Search, filter: ActiveFilter): Search => {
+export const drilledInto = (
+	search: Search,
+	filter: ActiveFilter,
+	unsplit: ReadonlyArray<CostGroupBy> = unsplitDimensions(undefined),
+): Search => {
 	const narrowed = withFilter(search, filter)
-	return narrowed === search ? search : { ...narrowed, groupBy: drillTarget(narrowed, filter.dimension) }
+	return narrowed === search
+		? search
+		: { ...narrowed, groupBy: drillTarget(narrowed, filter.dimension, unsplit) }
 }
 
 /** A rail checkbox: the value leaves the dimension's filter when it is in it, else joins it. */
@@ -350,7 +378,3 @@ export const requestsCost = (provider: CostProvider, requests: number): string |
 	const { requestUsd } = COST_PROVIDERS[provider]
 	return requestUsd === null ? null : `USD ${(requests * requestUsd).toFixed(2)}`
 }
-
-/** Whether the org has a source of `provider`: a pasted-credential provider has one at most. */
-export const hasSourceOf = (sources: ReadonlyArray<CostSourceSummary>, provider: CostProvider): boolean =>
-	Arr.some(sources, (source) => source.provider === provider)

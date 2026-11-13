@@ -37,6 +37,7 @@ const line = (
 	service_category,
 	region,
 	usage_type,
+	resource: "",
 	account: LAB_ACCOUNT,
 	daily,
 	drift,
@@ -51,27 +52,8 @@ const modelLine = (model: string, servedBy: string, daily: number, drift: number
 	service_category: "AI and Machine Learning",
 	region: "global",
 	usage_type: servedBy,
+	resource: "",
 	account: LAB_OPENROUTER_ACCOUNT,
-	daily,
-	drift,
-})
-
-/** The Cloudflare account the lab's source reads. */
-const LAB_CLOUDFLARE_ACCOUNT = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
-
-const productLine = (
-	product: string,
-	category: string,
-	metric: string,
-	daily: number,
-	drift: number,
-): Line => ({
-	cloud_service: product,
-	provider: "cloudflare",
-	service_category: category,
-	region: "global",
-	usage_type: metric,
-	account: LAB_CLOUDFLARE_ACCOUNT,
 	daily,
 	drift,
 })
@@ -83,13 +65,69 @@ const LAB_GITHUB_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e061"
 const LAB_GITHUB_OTHER_ORG = "example-labs"
 const LAB_GITHUB_OTHER_INSTALLATION = "0190f2b3-0000-4000-8000-00000000e062"
 
-const githubLine = (product: string, sku: string, daily: number, drift: number): Line => ({
+/** `repository` is the row's resource; a seat product names none. */
+const githubLine = (
+	product: string,
+	sku: string,
+	repository: string,
+	daily: number,
+	drift: number,
+): Line => ({
 	cloud_service: product,
 	provider: "github",
 	service_category: "Developer Tools",
 	region: "global",
 	usage_type: sku,
+	resource: repository,
 	account: LAB_GITHUB_ORG,
+	daily,
+	drift,
+})
+
+/** The Vercel team the lab's source reads: its id is the account, its slug what the page shows. */
+export const LAB_VERCEL_TEAM = {
+	id: "team_labExample000000000000",
+	name: "Example Team",
+	slug: "example-team",
+}
+
+const productLine = (
+	product: string,
+	category: string,
+	region: string,
+	sku: string,
+	project: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "vercel",
+	service_category: category,
+	region,
+	usage_type: sku,
+	resource: project,
+	account: LAB_VERCEL_TEAM.id,
+	daily,
+	drift,
+})
+
+/** The Cloudflare account the lab's source reads: rows carry its id, the page shows its name. */
+const LAB_CLOUDFLARE_ACCOUNT = { id: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", name: "Example Account" }
+
+const cloudflareLine = (
+	product: string,
+	category: string,
+	metric: string,
+	daily: number,
+	drift: number,
+): Line => ({
+	cloud_service: product,
+	provider: "cloudflare",
+	service_category: category,
+	region: "global",
+	usage_type: metric,
+	resource: "",
+	account: LAB_CLOUDFLARE_ACCOUNT.id,
 	daily,
 	drift,
 })
@@ -97,13 +135,17 @@ const githubLine = (product: string, sku: string, daily: number, drift: number):
 /** The PlanetScale organization the lab's source reads. */
 export const LAB_PLANETSCALE_ORGANIZATION = "example-data"
 
-/** A day's share of a branch's monthly invoice line: the database is the service, the SKU the usage type. */
-const branchLine = (database: string, sku: string, daily: number, drift: number): Line => ({
+/**
+ * A day's share of a branch's monthly invoice line: the database is the service, the SKU the
+ * usage type, the database's branch the resource.
+ */
+const branchLine = (database: string, branch: string, sku: string, daily: number, drift: number): Line => ({
 	cloud_service: database,
 	provider: "planetscale",
 	service_category: "Databases",
 	region: "global",
 	usage_type: sku,
+	resource: `${database}/${branch}`,
 	account: LAB_PLANETSCALE_ORGANIZATION,
 	daily,
 	drift,
@@ -132,17 +174,40 @@ const LINES: ReadonlyArray<Line> = [
 	modelLine("example/large-model", "Example Cloud", 6.2, 0.1),
 	modelLine("example/fast-model", "Example Inference", 12.9, -0.15),
 	modelLine("example/embedding-model", "Example Labs", 1.8, 0.0),
-	productLine("Workers", "Compute", "Workers Requests", 9.4, 0.25),
-	productLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
-	productLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
-	productLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
-	githubLine("Actions", "Actions Linux", 9.4, 0.25),
-	githubLine("Actions", "Actions storage", 0.7, 0.05),
-	githubLine("Copilot", "Copilot Business", 6.3, 0.0),
-	githubLine("Packages", "Packages storage", 0.4, -0.1),
-	branchLine("example-orders", "PS_20_AWS_ARM", 9.7, 0.0),
-	branchLine("example-orders", "egress", 0.6, 0.2),
-	branchLine("example-search", "PS_10_AWS_ARM", 1.3, 0.0),
+	githubLine("Actions", "Actions Linux", "example-api", 9.4, 0.25),
+	githubLine("Actions", "Actions storage", "example-site", 0.7, 0.05),
+	githubLine("Copilot", "Copilot Business", "", 6.3, 0.0),
+	githubLine("Packages", "Packages storage", "example-api", 0.4, -0.1),
+	cloudflareLine("Workers", "Compute", "Workers Requests", 9.4, 0.25),
+	cloudflareLine("Durable Objects", "Compute", "Durable Objects Compute Duration", 5.1, 0.12),
+	cloudflareLine("R2", "Storage", "R2 Storage", 3.6, 0.05),
+	cloudflareLine("D1", "Databases", "D1 Rows Read", 1.2, -0.08),
+	productLine("Example Function Duration", "Compute", "iad1", "function-duration", "example-web", 9.4, 0.2),
+	productLine(
+		"Example Function Duration",
+		"Compute",
+		"fra1",
+		"function-duration",
+		"example-docs",
+		3.1,
+		0.05,
+	),
+	productLine("Example Data Transfer", "Networking", "global", "data-transfer", "example-web", 6.7, 0.12),
+	productLine(
+		"Example Image Optimization",
+		"Web",
+		"global",
+		"image-optimization",
+		"example-docs",
+		2.2,
+		-0.08,
+	),
+	// The plan's monthly fee, as Vercel spreads it over the days: it belongs to no project.
+	productLine("Example Pro Plan", "Other", "global", "", "", 0.67, 0.0),
+	branchLine("example-orders", "main", "PS_20_AWS_ARM", 9.7, 0.0),
+	branchLine("example-orders", "main", "egress", 0.6, 0.2),
+	branchLine("example-orders", "staging", "PS_10_AWS_ARM", 1.1, 0.0),
+	branchLine("example-search", "main", "PS_10_AWS_ARM", 1.3, 0.0),
 ]
 
 /** The day `offset` days before the lab's today, as `YYYY-MM-DD`. */
@@ -158,7 +223,15 @@ const chargeAt = (entry: Line, index: number, offset: number): number => {
 
 const matches = (entry: Line, filters: CostFilters | undefined): boolean =>
 	Arr.every(
-		["cloud_service", "provider", "service_category", "region", "usage_type", "account"] as const,
+		[
+			"cloud_service",
+			"provider",
+			"service_category",
+			"region",
+			"usage_type",
+			"resource",
+			"account",
+		] as const,
 		(dimension) => {
 			const values = filters?.[dimension] ?? []
 			return values.length === 0 || Arr.contains(values, entry[dimension])
@@ -313,17 +386,6 @@ const openRouterSource = source({
 	requestsThisMonth: 0,
 })
 
-/** The Cloudflare source: history back to the eleventh month before this one, and no billed requests. */
-const cloudflareSource = source({
-	id: "0190f2b3-0000-7000-8000-00000000c063",
-	provider: "cloudflare",
-	connectionRef: "0190f2b3-0000-7000-8000-00000000a063",
-	accountId: LAB_CLOUDFLARE_ACCOUNT,
-	backfillDate: "2025-12-01",
-	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
-	requestsThisMonth: 0,
-})
-
 /** The GitHub source: this month and the three before it, and no billed requests. */
 const githubSource = source({
 	id: "0190f2b3-0000-7000-8000-00000000c061",
@@ -335,11 +397,35 @@ const githubSource = source({
 	requestsThisMonth: 0,
 })
 
+/** The Vercel source: eleven months of history, all one request serves, and no billed requests. */
+const vercelSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c063",
+	provider: "vercel",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a063",
+	accountId: LAB_VERCEL_TEAM.id,
+	accountName: LAB_VERCEL_TEAM.slug,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
+/** The Cloudflare source: history back to the eleventh month before this one, and no billed requests. */
+const cloudflareSource = source({
+	id: "0190f2b3-0000-7000-8000-00000000c064",
+	provider: "cloudflare",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a064",
+	accountId: LAB_CLOUDFLARE_ACCOUNT.id,
+	accountName: LAB_CLOUDFLARE_ACCOUNT.name,
+	backfillDate: "2025-12-01",
+	lastSyncedAt: LAB_NOW_MS - 2 * 3_600_000,
+	requestsThisMonth: 0,
+})
+
 /** The PlanetScale source: invoices back to the twelfth month before this one, and no billed requests. */
 const planetScaleSource = source({
-	id: "0190f2b3-0000-7000-8000-00000000c064",
+	id: "0190f2b3-0000-7000-8000-00000000c065",
 	provider: "planetscale",
-	connectionRef: "0190f2b3-0000-7000-8000-00000000a064",
+	connectionRef: "0190f2b3-0000-7000-8000-00000000a065",
 	accountId: LAB_PLANETSCALE_ORGANIZATION,
 	backfillDate: "2025-11-01",
 	lastSyncedAt: LAB_NOW_MS - 90 * 60_000,
@@ -373,15 +459,16 @@ export const labGithubLogin = (installationId: string): string =>
 	)
 
 /**
- * What the lab's reader did since the state loaded. `openRouter`, `cloudflare` and `planetScale`:
- * added (true), removed (false) or neither (null). `github`: an installation's id to whether it is
- * a source now.
+ * What the lab's reader did since the state loaded. `openRouter`, `cloudflare`, `vercel` and
+ * `planetScale`: added (true), removed (false) or neither (null). `github`: an installation's id
+ * to whether it is a source now.
  */
 export type LabSourceChanges = Readonly<{
 	openRouter: boolean | null
 	cloudflare: boolean | null
-	planetScale: boolean | null
 	github: Readonly<Record<string, boolean>>
+	vercel: boolean | null
+	planetScale: boolean | null
 }>
 
 /**
@@ -394,8 +481,11 @@ export const labRemovedProviders = (changes: LabSourceChanges): ReadonlyArray<Co
 		(provider) =>
 			(provider === "openrouter" && changes.openRouter === false) ||
 			(provider === "cloudflare" && changes.cloudflare === false) ||
-			(provider === "planetscale" && changes.planetScale === false) ||
-			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)),
+			(provider === "github" && Rec.has(changes.github, LAB_GITHUB_INSTALLATION)) ||
+			// A team added again is a new source: it has no cost until a sync the lab does not model.
+			(provider === "vercel" && changes.vercel !== null) ||
+			// The same holds for a PlanetScale organization added again.
+			(provider === "planetscale" && changes.planetScale !== null),
 	)
 
 /**
@@ -411,9 +501,11 @@ export const labSourcesWith = (
 			? changes.openRouter !== false
 			: entry.provider === "cloudflare"
 				? changes.cloudflare !== false
-				: entry.provider === "planetscale"
-					? changes.planetScale !== false
-					: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
+				: entry.provider === "vercel"
+					? changes.vercel === null
+					: entry.provider === "planetscale"
+						? changes.planetScale === null
+						: entry.provider !== "github" || !Rec.has(changes.github, entry.connectionRef),
 	)
 	const has = (provider: CostProvider) => Arr.some(kept, (entry) => entry.provider === provider)
 	return decodeSources({
@@ -421,7 +513,8 @@ export const labSourcesWith = (
 			...kept,
 			...(changes.openRouter === true && !has("openrouter") ? [justAdded(openRouterSource)] : []),
 			...(changes.cloudflare === true && !has("cloudflare") ? [justAdded(cloudflareSource)] : []),
-			...(changes.planetScale === true && !has("planetscale") ? [justAdded(planetScaleSource)] : []),
+			...(changes.vercel === true ? [justAdded(vercelSource)] : []),
+			...(changes.planetScale === true ? [justAdded(planetScaleSource)] : []),
 			...Arr.map(
 				Arr.filter(LAB_GITHUB_ORGS, (org) => changes.github[org.installationId] === true),
 				(org) =>
@@ -473,7 +566,14 @@ export const labGithubInstallations = (sources: CostSourcesResponse): GithubCost
 
 export const LAB_SOURCES = {
 	synced: decodeSources({
-		sources: [source({}), openRouterSource, githubSource, cloudflareSource, planetScaleSource],
+		sources: [
+			source({}),
+			openRouterSource,
+			githubSource,
+			vercelSource,
+			cloudflareSource,
+			planetScaleSource,
+		],
 	}),
 	none: decodeSources({ sources: [] }),
 	pending: decodeSources({
@@ -512,6 +612,7 @@ export const LAB_SOURCES = {
 				requestsThisMonth: 0,
 			}),
 			openRouterSource,
+			vercelSource,
 		],
 	}),
 } as const

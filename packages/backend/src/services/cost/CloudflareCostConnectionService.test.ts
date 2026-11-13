@@ -91,11 +91,10 @@ describe("CloudflareCostConnectionService", () => {
 				assert.deepStrictEqual(Arr.sort(world.urls.slice(3), Order.String), [
 					`${ACCOUNT_PATH}/audit_logs?per_page=1`,
 					`${ACCOUNT_PATH}/members?per_page=1`,
-					`${ACCOUNT_PATH}/workers/scripts`,
 					`${ACCOUNT_PATH}/workers/subdomain`,
 					"/client/v4/zones?per_page=1",
 				])
-				assert.deepStrictEqual(world.authorizations, Arr.replicate(`Bearer ${TOKEN}`, 8))
+				assert.deepStrictEqual(world.authorizations, Arr.replicate(`Bearer ${TOKEN}`, 7))
 
 				const stored = yield* storedToken(testDb)
 				assert.isFalse(Str.includes(TOKEN)(stored?.secret_ciphertext ?? TOKEN))
@@ -185,17 +184,16 @@ describe("CloudflareCostConnectionService", () => {
 				assert.strictEqual(yield* found(["members"]), refusal("account members"))
 				assert.strictEqual(yield* found(["audit_logs"]), refusal("audit logs"))
 				assert.strictEqual(yield* found(["zones"]), refusal("zones"))
-				// Either Workers read means the Workers Scripts permission.
+				// The Workers subdomain answers a token with the Workers Scripts permission.
 				assert.strictEqual(yield* found(["workers_subdomain"]), refusal("Workers scripts"))
-				assert.strictEqual(yield* found(["workers_scripts"]), refusal("Workers scripts"))
-				// Every hit is named, each once.
+				// Every hit is named.
 				assert.strictEqual(
-					yield* found(["members", "workers_subdomain", "workers_scripts"]),
+					yield* found(["members", "workers_subdomain"]),
 					refusal("account members and Workers scripts"),
 				)
 				assert.strictEqual(
-					yield* found(["members", "workers_scripts", "audit_logs", "zones"]),
-					refusal("account members, audit logs, zones, and Workers scripts"),
+					yield* found(["members", "workers_subdomain", "audit_logs", "zones"]),
+					refusal("account members, Workers scripts, audit logs, and zones"),
 				)
 				assert.isUndefined(yield* storedToken(testDb))
 				assert.isUndefined(yield* source(testDb))
@@ -237,7 +235,7 @@ describe("CloudflareCostConnectionService", () => {
 				const first = yield* storedToken(testDb)
 				const firstSource = yield* source(testDb)
 
-				world.canRead = ["members", "workers_subdomain", "workers_scripts"]
+				world.canRead = ["members", "workers_subdomain"]
 				const refused = yield* Effect.flip(set(OTHER_TOKEN))
 				assert.strictEqual(refused._tag, VALIDATION)
 				assert.include(refused.message, "account members and Workers scripts")

@@ -4,6 +4,7 @@ import {
 	CostFilters,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,
+	VercelCostAddRequest,
 } from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
 import { reloadSpin } from "@maple/views/data/timing"
@@ -206,6 +207,34 @@ export const RemoveGithubCostSource = Command.define("RemoveGithubCostSource", {
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.githubCost.remove({ params: { installationId } }),
 		).pipe(settleTo((result) => Message.CompletedRemoveGithubSource({ result }))),
+})
+
+/** Whether the org has a Vercel team connected, and whether it is a cost source already. */
+export const FetchVercelCostStatus = Command.define("FetchVercelCostStatus", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedLoadVercelStatus],
+	execute: ({ key }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.status()).pipe(
+			settleTo((result) => Message.CompletedLoadVercelStatus({ key, result })),
+		),
+})
+
+/** Makes the connected Vercel team a cost source, once Vercel let its token read the billing. */
+export const AddVercelCostSource = Command.define("AddVercelCostSource", {
+	// The team the dialog showed: the API refuses the add when another one is connected by now.
+	args: { teamId: Schema.String },
+	messages: [Message.CompletedAddVercel],
+	execute: ({ teamId }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.vercelCost.add({ payload: new VercelCostAddRequest({ teamId }) }),
+		).pipe(settleTo((result) => Message.CompletedAddVercel({ result }))),
+})
+
+export const RemoveVercelCostSource = Command.define("RemoveVercelCostSource", {
+	messages: [Message.CompletedRemoveVercel],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.vercelCost.remove()).pipe(
+		settleTo((result) => Message.CompletedRemoveVercel({ result })),
+	),
 })
 
 // PlanetScale's source reads through the integration's connection: no command of it carries a secret.

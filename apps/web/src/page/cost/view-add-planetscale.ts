@@ -1,4 +1,3 @@
-import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
@@ -6,7 +5,6 @@ import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
-import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
 import { spinner } from "@maple/views/ui/spinner"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -16,6 +14,7 @@ import { AppRoute, hrefOf } from "../../route"
 import { Message } from "./message"
 import { type Model, type PlanetScaleStep, planetScaleStepOf } from "./model"
 import { COST_PROVIDERS } from "./providers"
+import { providerMark } from "./view-add-vercel"
 
 type H = HtmlBuilder<Message>
 
@@ -39,10 +38,7 @@ const RECONNECT = "Reconnect PlanetScale"
 /** The connected organization as the row the step is about. */
 const organizationRow = (h: H, organization: string, isAdded: boolean): Html =>
 	listRow(h, {
-		leading: icon(h, COST_PROVIDERS.planetscale.icon, {
-			size: 18,
-			className: cn("shrink-0", COST_PROVIDERS.planetscale.iconClassName),
-		}),
+		leading: providerMark(h, COST_PROVIDERS.planetscale),
 		title: organization,
 		meta: "PlanetScale organization",
 		...(isAdded

@@ -41,6 +41,11 @@ const CLOUDFLARE_HISTORY_MONTHS = 11
  * documented. History stops at the first day of the month this many months back, well inside that.
  */
 const GITHUB_HISTORY_MONTHS = 3
+/**
+ * Vercel serves a year at most in one request, so its history starts at the first day of the month
+ * this many months before the current one: a window from there to today is never over a year.
+ */
+const VERCEL_HISTORY_MONTHS = 11
 /** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
 const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
@@ -85,6 +90,7 @@ const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0, head: "days" },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1, head: "days" },
 	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0, head: "days" },
+	vercel: { floor: (today) => monthStart(today, -VERCEL_HISTORY_MONTHS), lagDays: 0, head: "days" },
 	cloudflare: {
 		floor: (today) => monthStart(today, -CLOUDFLARE_HISTORY_MONTHS),
 		lagDays: 1,

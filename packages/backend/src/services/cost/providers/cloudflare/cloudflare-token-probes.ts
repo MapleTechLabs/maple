@@ -18,12 +18,13 @@ interface Probe {
 
 const account = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}`
 
+// The Workers subdomain alone tells a Workers-reading token apart. Listing the scripts told the
+// same and took seconds on an account with many, which every save waited for.
 const PROBES: ReadonlyArray<Probe> = [
 	{ finds: "account members", kind: "status", path: (id) => `${account(id)}/members?per_page=1` },
 	{ finds: "Workers scripts", kind: "status", path: (id) => `${account(id)}/workers/subdomain` },
 	{ finds: "audit logs", kind: "status", path: (id) => `${account(id)}/audit_logs?per_page=1` },
 	{ finds: "zones", kind: "list", path: () => "/zones?per_page=1" },
-	{ finds: "Workers scripts", kind: "list", path: (id) => `${account(id)}/workers/scripts` },
 ]
 
 const Listing = Schema.Struct({ result: Schema.Array(Schema.Unknown) })
@@ -69,7 +70,7 @@ const hits = (
 
 /**
  * What the token can read beyond billing, by the probes that hit; none for a billing-only token.
- * The probes run side by side: they are five small requests and the save waits for them.
+ * The probes run side by side: they are four small requests and the save waits for them.
  */
 export const readsBeyondBilling = (
 	httpClient: HttpClient.HttpClient,
@@ -81,7 +82,7 @@ export const readsBeyondBilling = (
 		(probe) => Effect.map(hits(httpClient, token, accountId, probe), (hit) => (hit ? [probe.finds] : [])),
 		{ concurrency: "unbounded" },
 	).pipe(
-		Effect.map((found) => Arr.dedupe(Arr.flatten(found))),
+		Effect.map(Arr.flatten),
 		Effect.tap((found) =>
 			Effect.annotateCurrentSpan("maple.cost.cloudflare.excess_probes", found.length),
 		),

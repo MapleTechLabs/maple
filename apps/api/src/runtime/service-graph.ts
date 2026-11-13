@@ -70,6 +70,7 @@ import { CloudflareCostConnectionService } from "@maple/backend/services/cost/Cl
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
+import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 import { ServiceMapWorldService } from "@maple/backend/services/service-map/ServiceMapWorldService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
@@ -194,6 +195,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	CloudflareCostConnectionService.layer,
 	GithubCostSourceService.layer,
 	PlanetScaleCostSourceService.layer,
+	VercelCostSourceService.layer,
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	WarehouseQueryService.layer,

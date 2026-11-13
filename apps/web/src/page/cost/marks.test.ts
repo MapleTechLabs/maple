@@ -1,7 +1,16 @@
 import { CostSourceSummary } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { drilledInto, facetFilters, keyLabel, onlyFilter, toggledFilter } from "./derive"
+import {
+	type ActiveFilter,
+	drilledInto,
+	facetFilters,
+	keyLabel,
+	onlyFilter,
+	perDimension,
+	toggledFilter,
+	unsplitDimensions,
+} from "./derive"
 import { keyDetail, keyMark } from "./marks"
 
 const source = (
@@ -68,15 +77,22 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "Something New", alone)?.icon).toBe(cloudflare)
 	})
 
-	test("a Cloudflare account reads by name with its id aside, and bills in no region of its own", () => {
+	test("a Cloudflare account reads by its account's name, and by the provider alone without one", () => {
 		const account = "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
-		const both = [...sources, source("cloudflare", account)]
-		expect(keyLabel("account", account, both)).toBe("Cloudflare")
-		expect(keyDetail("account", account, both)).toBe(account)
-		expect(keyMark("account", account, both)?.icon).toBe(keyMark("provider", "cloudflare", [])?.icon)
-		// An AWS account's id is already in its name.
-		expect(keyDetail("account", "465760687006", both)).toBeNull()
-		expect(keyMark("region", "global", both)?.icon).not.toBe(keyMark("provider", "aws", [])?.icon)
+		const named = [
+			...sources,
+			Schema.decodeSync(CostSourceSummary)({
+				...Schema.encodeSync(CostSourceSummary)(source("cloudflare", account)),
+				accountName: "Example Account",
+			}),
+		]
+		expect(keyLabel("account", account, named)).toBe("Cloudflare Example Account")
+		expect(keyMark("account", account, named)?.icon).toBe(keyMark("provider", "cloudflare", [])?.icon)
+		// A source read before its name was known reads by the provider: the id says nothing.
+		const unnamed = [...sources, source("cloudflare", account)]
+		expect(keyLabel("account", account, unnamed)).toBe("Cloudflare")
+		// Cloudflare bills in no region of its own: its rows are `global`, the globe and not a logo.
+		expect(keyMark("region", "global", named)?.icon).toBe("GlobeIcon")
 	})
 
 	test("a GitHub account reads by its organization, with nothing beside it, and wears GitHub's mark", () => {
@@ -103,8 +119,9 @@ describe("cost key marks", () => {
 		// A product GitHub starts billing later: GitHub's when no AWS account could bill it.
 		const githubOnly = [source("github", "example-org"), source("openrouter", "user_one")]
 		expect(keyMark("cloud_service", "Models", githubOnly)?.icon).toBe(github)
-		// Beside AWS either could bill it: no logo is better than a wrong one.
-		expect(keyMark("cloud_service", "Models", both)?.icon).toBe("CubeIcon")
+		// Beside an AWS account its name says neither: a neutral glyph, never a logo that is a guess.
+		const unknown = keyMark("cloud_service", "Models", both)?.icon
+		expect([unknown === aws, unknown === github]).toEqual([false, false])
 		expect(keyMark("service_category", "Developer Tools", [])?.icon).toBe("CodeIcon")
 		// GitHub bills no region: its rows are `global`, which is the globe and not a logo.
 		expect(keyMark("region", "global", both)?.icon).toBe("GlobeIcon")
@@ -124,12 +141,10 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "Elastic Load Balancing", all)?.icon).toBe(markOf("aws"))
 		// A name none of the three is known by gets the service glyph, never a guessed logo.
 		expect(keyMark("cloud_service", "Something New", all)?.icon).toBe("CubeIcon")
-		// Only AWS bills by region: a region that is not `global` is AWS's, also an unlisted one.
-		expect(keyMark("region", "mx-central-1", all)?.icon).toBe(markOf("aws"))
+		// A region AWS lists is AWS's. One nobody is known by is the globe, with several platforms.
+		expect(keyMark("region", "eu-west-1", all)?.icon).toBe(markOf("aws"))
+		expect(keyMark("region", "somewhere", all)?.icon).toBe("GlobeIcon")
 		expect(keyMark("region", "global", all)?.icon).toBe("GlobeIcon")
-		// Without an AWS source a region that is no AWS code is nobody's.
-		const noAws = [source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]
-		expect(keyMark("region", "somewhere", noAws)?.icon).toBe("GlobeIcon")
 		// Each account wears its own provider's mark.
 		expect(keyMark("account", "example-org", all)?.icon).toBe(markOf("github"))
 		expect(keyMark("account", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d", all)?.icon).toBe(markOf("cloudflare"))
@@ -181,6 +196,32 @@ describe("cost key marks", () => {
 		expect(keyLabel("account", "example-org", org)).toBe("GitHub example-org")
 	})
 
+	test("beside Vercel a lowercase name could be either platform's, so it gets a glyph", () => {
+		const org = [
+			source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e23"),
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		const markOf = (key: string) => keyMark("cloud_service", key, org)?.icon
+		// Vercel bills a product named in one lowercase word: a database's shape proves nothing here.
+		expect(markOf("v0")).toBe("CubeIcon")
+		expect(markOf("orders-prod")).toBe("CubeIcon")
+		// The provider's own name still says whose the charge is.
+		expect(markOf("PlanetScale")).toBe(keyMark("provider", "planetscale", [])?.icon)
+	})
+
+	test("a PlanetScale resource is a database's branch: it reads whole, under the resource glyph", () => {
+		const org = [
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22"),
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		// The database is in the key: two databases' `main` branches are two resources.
+		expect(keyLabel("resource", "orders-prod/main", org)).toBe("orders-prod/main")
+		expect(keyDetail("resource", "orders-prod/main", org)).toBeNull()
+		expect(keyMark("resource", "orders-prod/main", org)).toEqual(keyMark("resource", "example-api", org))
+		// A plan or support line names no branch.
+		expect(keyLabel("resource", "", org)).toBe("No resource")
+	})
+
 	test("a PlanetScale row filters and drills like any other: provider to its databases, a database on", () => {
 		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "planetscale" })).toEqual(
 			{
@@ -212,6 +253,96 @@ describe("cost key marks", () => {
 		})
 	})
 
+	test("a Vercel account reads as the team it is, with the Vercel mark and nothing aside", () => {
+		// The account is the team's id, which a rename leaves alone; the slug is how it is known.
+		const team = source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")
+		const vercel = [...sources, { ...team, accountName: "acme" }]
+		expect(keyLabel("account", "team_1", vercel)).toBe("Vercel acme")
+		expect(keyDetail("account", "team_1", vercel)).toBeNull()
+		expect(keyMark("account", "team_1", vercel)?.icon).toBe(keyMark("provider", "vercel", [])?.icon)
+		expect(keyLabel("provider", "vercel")).toBe("Vercel")
+		// A team whose name was not read is still Vercel's, never a bare team id.
+		expect(keyLabel("account", "team_1", [...sources, team])).toBe("Vercel")
+	})
+
+	test("a service and a region wear the mark of the only platform that could have billed them", () => {
+		const aws = keyMark("provider", "aws", [])?.icon
+		const vercel = keyMark("provider", "vercel", [])?.icon
+		const team = source("vercel", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21")
+		// Vercel beside OpenRouter, whose services are model slugs: every other service is Vercel's.
+		const vercelOnly = [team, source("openrouter", "user_2zZ0ZRlIh83bwUonpAHz1xTcuG6")]
+		expect(keyMark("cloud_service", "Function Duration", vercelOnly)?.icon).toBe(vercel)
+		expect(keyMark("region", "iad1", vercelOnly)?.icon).toBe(vercel)
+		expect(keyMark("cloud_service", "openai/gpt-5", vercelOnly)?.icon).not.toBe(vercel)
+
+		// With AWS too, a name says whose it is or it wears neither logo: never the wrong one.
+		const both = [source("aws", "465760687006"), team]
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", both)?.icon).toBe(aws)
+		expect(keyMark("cloud_service", "AWS Lambda", both)?.icon).not.toBe(vercel)
+		const unnamed = keyMark("cloud_service", "Function Duration", both)?.icon
+		expect([unnamed === aws, unnamed === vercel]).toEqual([false, false])
+		expect(keyMark("region", "eu-west-1", both)?.icon).toBe(aws)
+		expect(keyMark("region", "fra1", both)?.icon).toBe(vercel)
+		// An airport code is Vercel's only for an org that reads Vercel.
+		expect(keyMark("region", "fra1", sources)?.icon).toBe(aws)
+		expect(keyMark("region", "global", both)?.icon).toBe(keyMark("region", "global", [])?.icon)
+	})
+
+	test("an org with AWS, GitHub and Vercel: each key wears its own platform's mark, or none", () => {
+		const aws = keyMark("provider", "aws", [])?.icon
+		const github = keyMark("provider", "github", [])?.icon
+		const vercel = keyMark("provider", "vercel", [])?.icon
+		const all = [
+			source("aws", "465760687006"),
+			source("github", "example-org", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+			{ ...source("vercel", "team_1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e22"), accountName: "acme" },
+		]
+		// Services: a name that says whose it is, else no logo.
+		expect(keyMark("cloud_service", "Amazon Simple Storage Service", all)?.icon).toBe(aws)
+		expect(keyMark("cloud_service", "Actions", all)?.icon).toBe(github)
+		const unnamed = keyMark("cloud_service", "Function Duration", all)?.icon
+		expect([unnamed === aws, unnamed === github, unnamed === vercel]).toEqual([false, false, false])
+		// Regions: AWS's codes, Vercel's ids, and the globe for what bills none.
+		expect(keyMark("region", "eu-west-1", all)?.icon).toBe(aws)
+		expect(keyMark("region", "iad1", all)?.icon).toBe(vercel)
+		expect(keyMark("region", "global", all)?.icon).toBe("GlobeIcon")
+		const elsewhere = keyMark("region", "north-1", all)?.icon
+		expect([elsewhere === aws, elsewhere === vercel]).toEqual([false, false])
+		// Accounts read as what they are.
+		expect([
+			keyLabel("account", "465760687006", all),
+			keyLabel("account", "example-org", all),
+			keyLabel("account", "team_1", all),
+		]).toEqual(["AWS 465760687006", "GitHub example-org", "Vercel acme"])
+		expect(keyMark("account", "example-org", all)?.icon).toBe(github)
+		expect(keyMark("account", "team_1", all)?.icon).toBe(vercel)
+	})
+
+	test("a resource is a GitHub repository or a Vercel project: it reads by its name under one glyph", () => {
+		const sources = [source("github", "example-org"), source("vercel", "team_1")]
+		// The key does not say who bills it, so a repository and a project wear the same mark.
+		const repository = keyMark("resource", "example-api", sources)
+		expect(repository?.icon).toBe("FolderIcon")
+		expect(keyMark("resource", "web", sources)).toEqual(repository)
+		expect(keyLabel("resource", "example-api", sources)).toBe("example-api")
+		expect(keyDetail("resource", "example-api", sources)).toBeNull()
+		// A seat product names no repository, a plan fee no project.
+		expect(keyLabel("resource", "", sources)).toBe("No resource")
+		expect(keyMark("resource", "", sources)).toBeNull()
+	})
+
+	test("a resource wears its own glyph, since its key does not say who bills it", () => {
+		const both = [source("aws", "465760687006"), source("vercel", "acme")]
+		const mark = keyMark("resource", "web", both)?.icon
+		expect(mark).toBeDefined()
+		expect([
+			mark === keyMark("provider", "aws", [])?.icon,
+			mark === keyMark("provider", "vercel", [])?.icon,
+		]).toEqual([false, false])
+		expect(keyMark("resource", "", both)).toBeNull()
+		expect(keyLabel("resource", "", both)).toBe("No resource")
+	})
+
 	test("an AWS region says where it is; an unknown one adds nothing", () => {
 		expect(keyDetail("region", "eu-central-1", [])).toBe("Frankfurt")
 		expect(keyDetail("region", "mars-north-1", [])).toBeNull()
@@ -223,6 +354,48 @@ describe("cost filter rail", () => {
 		const search = { provider: ["aws"], region: ["eu-west-1"] }
 		expect(facetFilters(search, "provider")).toEqual({ region: ["eu-west-1"] })
 		expect(facetFilters(search, "cloud_service")).toEqual({ provider: ["aws"], region: ["eu-west-1"] })
+	})
+
+	test("resources are a dimension of their own in the rail's reads", () => {
+		const search = { provider: ["vercel"], resource: ["web"] }
+		expect(facetFilters(search, "resource")).toEqual({ provider: ["vercel"] })
+		expect(facetFilters(search, "cloud_service")).toEqual({ provider: ["vercel"], resource: ["web"] })
+	})
+
+	test("a drill-down reaches resources after regions, and passes over them where no cost has one", () => {
+		const row = (key: string) => ({ key })
+		const withProjects = unsplitDimensions(
+			perDimension((dimension) => (dimension === "resource" ? [row(""), row("web")] : [row("x")])),
+		)
+		// Only charges with no resource: nothing to split by.
+		const without = unsplitDimensions(
+			perDimension((dimension) => (dimension === "resource" ? [row("")] : [row("x")])),
+		)
+		expect([withProjects, without, unsplitDimensions(undefined)]).toEqual([
+			[],
+			["resource"],
+			["resource"],
+		])
+
+		const service: ActiveFilter = { dimension: "cloud_service", value: "Function Duration" }
+		// A service splits by region first, as it did before resources were a dimension.
+		expect(drilledInto({}, service, withProjects).groupBy).toBe("region")
+		// Under a region it moves on to the projects, where the org has any, else to accounts.
+		expect(drilledInto({ region: ["iad1"] }, service, withProjects).groupBy).toBe("resource")
+		// A GitHub product goes on to its repositories the same way.
+		expect(
+			drilledInto(
+				{ provider: ["github"], region: ["global"] },
+				{ dimension: "cloud_service", value: "Actions" },
+				withProjects,
+			).groupBy,
+		).toBe("resource")
+		expect(drilledInto({ region: ["iad1"] }, service, without).groupBy).toBe("account")
+		// A project splits by its services.
+		expect(drilledInto({}, { dimension: "resource", value: "web" }, withProjects)).toEqual({
+			resource: ["web"],
+			groupBy: "cloud_service",
+		})
 	})
 
 	test("a checkbox adds the value or takes it out; Only leaves it alone in its dimension", () => {
