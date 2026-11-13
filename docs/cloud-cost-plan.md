@@ -417,7 +417,8 @@ adds one:
 The billing API facts, which hold for either credential:
 
 - Live: `GET /accounts` lists the accounts the token reads. A token for one account lists one,
-  and its id is the source's account. A token that lists none or several is refused. A
+  and its id is the source's account. Its name is stored beside the token and is the source's
+  `accountName`, so the page reads "Cloudflare <account name>" and not the 32 character id. A token that lists none or several is refused. A
   replacement token must read the same account, since another account's charges would overwrite
   the source's days. Live: a token Cloudflare does not know answers 403 on this call, and 401 on
   the billing calls.
