@@ -4,7 +4,7 @@ import type { ChartValue } from "@tanstack/charts"
 import type { PlotChromeColors } from "./theme"
 
 /**
- * The dashed vertical cursor.
+ * The vertical cursor: a solid hairline, so it reads as a ruler and not as another series.
  *
  * `crosshair()` is a single mark painted from the chart's existing focus state,
  * so the rule itself costs nothing per datum. The horizontal guide is off
@@ -15,7 +15,6 @@ export function focusCrosshair(chromeColors: PlotChromeColors) {
 		x: {
 			stroke: chromeColors.border,
 			strokeWidth: 1,
-			strokeDasharray: "3 3",
 			// The default is 0.35, which over an already-dark `--border` renders as
 			// nothing on Maple's background.
 			strokeOpacity: 1,

@@ -27,6 +27,7 @@ type BarSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderBar" }>
 /** Matches the Recharts `maxBarSize={48}`. */
 const MAX_BAR_THICKNESS = 48
 const BAR_RADIUS = 2
+const STACK_TOP_RADIUS = [BAR_RADIUS, BAR_RADIUS, 0, 0] as const
 const PARTIAL_FILL_OPACITY = 0.45
 const DIMMED_FILL_OPACITY = 0.3
 const DIMMED_PARTIAL_FILL_OPACITY = 0.15
@@ -40,6 +41,8 @@ interface BarCell {
 	/** The running total beneath it in a stack; 0 otherwise. */
 	readonly base: number
 	readonly partial: boolean
+	/** The last non-empty cell of its bucket's stack: the one whose top is the column's. */
+	readonly top: boolean
 }
 
 // `bucketBandDomain` and `timeseriesBandXAxis`.
@@ -82,7 +85,7 @@ interface Series {
 }
 
 /** The cells of every visible series per bucket, in `visible` order (the stack is bottom-up). */
-const cellsOf = (
+export const cellsOf = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	visible: ReadonlyArray<Series>,
 	first: number,
@@ -90,6 +93,10 @@ const cellsOf = (
 ): ReadonlyArray<BarCell> =>
 	Arr.flatMap(rows, (row, index) => {
 		const partial = first !== -1 && index >= first
+		const topIndex = Option.getOrElse(
+			Arr.findLastIndex(visible, (entry) => asFiniteNumber(row[entry.key]) > 0),
+			() => -1,
+		)
 		return Arr.map(visible, (entry, entryIndex) => ({
 			row,
 			key: entry.key,
@@ -103,6 +110,7 @@ const cellsOf = (
 					)
 				: 0,
 			partial,
+			top: topIndex === entryIndex,
 		}))
 	})
 
@@ -159,7 +167,10 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 			fill: (cell: BarCell) => cell.color,
 			fillOpacity: partialLane ? PARTIAL_FILL_OPACITY : undefined,
 			maxThickness: MAX_BAR_THICKNESS,
-			radius: spec.stacked ? 0 : BAR_RADIUS,
+			// Only the column's top is rounded: a bar stands on the baseline, a segment on the one under it.
+			radius: spec.stacked
+				? (cell: BarCell) => (cell.top ? STACK_TOP_RADIUS : 0)
+				: { end: BAR_RADIUS, stack: "each" },
 			layout: spec.stacked ? undefined : group(),
 			states: [
 				{

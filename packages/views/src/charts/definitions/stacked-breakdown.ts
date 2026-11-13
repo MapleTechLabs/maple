@@ -2,7 +2,7 @@ import { areaY, d3Curve, defineChart, lineY, type ChartPoint, type ChartValue } 
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { bucketDate, makeBucketAxis, pinnedTimeXAxis } from "../plot/bucket-axis"
 import { focusCrosshair } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { formatValueByUnit } from "@maple/ui/lib/format"
 import { curveMonotoneX } from "d3-shape"
@@ -97,7 +97,7 @@ export const buildStackedBreakdown = (
 		scales: {
 			x: spec.xDomainMs === undefined ? axis.x : pinnedTimeXAxis(axis.context, spec.xDomainMs),
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,

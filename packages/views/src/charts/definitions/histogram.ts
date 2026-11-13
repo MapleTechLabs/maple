@@ -1,5 +1,5 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { integerTickValues, logYScale, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { barY, defineChart, rect, type ChartPoint } from "@tanstack/charts"
 import { binX } from "@tanstack/charts/transform/bin"
@@ -28,7 +28,7 @@ const countAxis = (maxCount: number, useLogY: boolean) => {
 			baseline: 1,
 			liftCount: (value: number) => value,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: logYScale(maxCount),
 				axis: { line: false, ticks: { size: 0, padding: 6, format: formatNumber } },
 			},
@@ -41,7 +41,7 @@ const countAxis = (maxCount: number, useLogY: boolean) => {
 		baseline: 0,
 		liftCount: (value: number) => lift(value) ?? value,
 		y: {
-			grid: DASHED_Y_GRID,
+			grid: Y_GRID,
 			scale: scaleLinear().domain(domain),
 			axis: { line: false, ticks: { size: 0, padding: 6, values: ticks, format: formatNumber } },
 		},

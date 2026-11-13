@@ -37,7 +37,7 @@ const headerLegend = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<FixedMetricSeri
 							align: "center",
 							shrink: true,
 							as: "span",
-							className: "shrink text-xs text-foreground",
+							className: "shrink text-xs text-muted-foreground",
 							attributes: [h.Key(item.key)],
 						},
 						[

@@ -1,6 +1,6 @@
 import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { focusCrosshair, focusDot } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { formatSignalValue } from "@maple/web-data/anomalies/format"
 import { areaY, type ChartValue, d3Curve, defineChart, lineY, rect } from "@tanstack/charts"
@@ -116,7 +116,7 @@ export const buildAnomalySignal = (spec: AnomalySignalSpec): BuiltChart<SignalPo
 			scales: {
 				x: axis.x,
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

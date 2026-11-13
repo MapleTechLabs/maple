@@ -2,7 +2,7 @@ import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { ANALYTICS_METRICS, findMetric } from "../../lib/analytics-metrics"
 import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { focusCrosshair, focusDot } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -113,7 +113,7 @@ export const buildAnalyticsTraffic = (spec: TrafficSpec): BuiltChart<TrafficPoin
 		scales: {
 			x: axis.x,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear,
 				axis: {
 					line: false,

@@ -1,16 +1,14 @@
 import type { ChartGuideLineStyle } from "@tanstack/charts"
 
 /**
- * Horizontal grid lines at the y axis' ticks, dashed.
+ * Horizontal grid lines at the y axis' ticks: solid hairlines, quieter than the theme's own.
  *
- * The dash is the Recharts `CartesianGrid` one (`vertical={false}`,
- * `strokeDasharray="3 3"`), and it is all this carries: `grid` took a
- * `ChartGuideLineStyle` in 0.18, and an omitted field keeps the theme's own grid
- * paint.
+ * Solid because a dashed rule is the busiest thing in a plot that holds one line; the opacity is
+ * under the theme's 0.11, which was tuned for dashes that paint half the ink.
  *
- * The style lands on each RULE, not on the `.ts-chart__grid` group — the group
- * keeps the theme defaults, which is the opposite of where the mark put it.
+ * The style lands on each RULE, not on the `.ts-chart__grid` group, which keeps the
+ * theme defaults.
  */
-export const DASHED_Y_GRID: ChartGuideLineStyle = {
-	strokeDasharray: "3 3",
+export const Y_GRID: ChartGuideLineStyle = {
+	strokeOpacity: 0.075,
 }

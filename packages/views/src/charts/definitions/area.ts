@@ -34,9 +34,11 @@ import { gradientId, gradientUrl } from "./gradient-id"
 type AreaSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderArea" }>
 
 const STROKE_WIDTH = SERIES_STROKE_WIDTH
-const STACKED_STROKE_WIDTH = 1
-const STACKED_FILL_OPACITY = 0.55
-const PARTIAL_STACKED_FILL_OPACITY = 0.2
+/** A band's top edge: thinner than a lone line, since a stack draws one per series. */
+const STACKED_STROKE_WIDTH = 1.25
+/** Light enough that the edges carry the shape and the grid reads through the stack. */
+const STACKED_FILL_OPACITY = 0.3
+const PARTIAL_STACKED_FILL_OPACITY = 0.12
 const PARTIAL_FILL_GRADIENT = [AREA_FILL_PARTIAL, AREA_FILL_END] as const
 
 interface Series {
@@ -170,6 +172,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 						: []),
 				]
 
+	// A stack's edges paint top band first: a band at 0 leaves the edge of the one under it visible.
+	const edgeOrder = isStacked ? Arr.reverse(visible) : visible
 	const paths = isLine
 		? [
 				...Arr.map(visible, (entry) => edge(solid, entry, false)),
@@ -178,8 +182,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		: [
 				...Arr.map(visible, (entry) => band(solid, entry, false)),
 				...(hasDashed ? Arr.map(visible, (entry) => band(dashed, entry, true)) : []),
-				...(isStacked ? [] : Arr.map(visible, (entry) => edge(solid, entry, false))),
-				...(hasDashed ? Arr.map(visible, (entry) => edge(dashed, entry, true)) : []),
+				...Arr.map(edgeOrder, (entry) => edge(solid, entry, false)),
+				...(hasDashed ? Arr.map(edgeOrder, (entry) => edge(dashed, entry, true)) : []),
 			]
 
 	const definition = defineChart({

@@ -1,7 +1,7 @@
 import { formatCurrency } from "@maple/domain/format"
 import { makeBucketAxis } from "../plot/bucket-axis"
 import { focusCrosshair } from "../plot/plot-focus"
-import { DASHED_Y_GRID } from "../plot/plot-grid"
+import { Y_GRID } from "../plot/plot-grid"
 import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { areaY, d3Curve, defineChart, dot, lineY, ruleX, stack } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
@@ -119,7 +119,7 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 		scales: {
 			x: axis.x,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain([0, spec.yMax]),
 				axis: {
 					line: false,

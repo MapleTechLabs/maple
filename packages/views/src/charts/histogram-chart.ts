@@ -3,14 +3,13 @@ import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { bucketTooltipBody } from "./bucket-tooltip"
 import type { Message, Model } from "./chart"
 import { type CategoricalBin, ChartSpec, ChartTooltip, type NumericBin } from "./chart-spec"
 import { formatBound } from "./histogram-format"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { hstack } from "../ui/stack"
 import { chartNoData } from "../ui/chart-frame"
-import { typography } from "../ui/typography"
 
 // The query-builder histogram's view. Definitions are in ./definitions/histogram.ts.
 
@@ -80,7 +79,7 @@ const numericBins = (
 	})
 }
 
-/** A count tooltip body, shared with the lab histogram. */
+/** A count tooltip body, shared with the lab histogram: the bucket tooltip with one "Count" row. */
 export const countTooltipBody = (
 	h: HtmlBuilder<Message>,
 	heading: string,
@@ -88,31 +87,14 @@ export const countTooltipBody = (
 	color: string,
 	portal: Attribute<Message>,
 ): Html =>
-	h.div(
-		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
-		[
-			h.div(
-				[
-					h.Class(
-						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
-					),
-				],
-				[heading],
-			),
-			hstack(h, { gap: "2", className: "w-full" }, [
-				h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
-				hstack(
-					h,
-					{ gap: "3", align: "center", justify: "between", grow: true, className: "leading-none" },
-					[
-						typography(h, { tone: "muted" }, ["Count"]),
-						typography(h, { tone: "foreground", weight: "semibold", mono: true, numeric: true }, [
-							formatNumber(count),
-						]),
-					],
-				),
-			]),
-		],
+	bucketTooltipBody(
+		h,
+		{
+			_tag: "Bucket",
+			heading,
+			rows: [{ label: "Count", color, dashed: false, value: formatNumber(count) }],
+		},
+		portal,
 	)
 
 const histogramTooltipBody = (
