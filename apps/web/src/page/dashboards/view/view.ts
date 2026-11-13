@@ -287,8 +287,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				model.document === null
-					? {}
+					? { width: "full" }
 					: {
+							width: "full",
 							titleContent: title(h, model, model.document.name),
 							actions: toolbar(h, model, inputs.context),
 							...(model.history.isOpen

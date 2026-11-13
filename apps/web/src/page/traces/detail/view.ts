@@ -255,6 +255,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			width: "full",
 			// A failed load still gets a header naming the trace, so the error sits under a title.
 			titleContent:
 				trace !== undefined

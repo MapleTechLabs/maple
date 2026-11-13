@@ -174,7 +174,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
-			dashboardPage(h, {}, [
+			dashboardPage(h, { width: "full" }, [
 				model.status === "Ready" && model.state !== null
 					? editor(h, model, inputs.context.timeZone)
 					: model.status === "Missing"
