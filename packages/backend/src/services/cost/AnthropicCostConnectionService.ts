@@ -33,7 +33,8 @@ const toKeyError =
 		if (step === "organization" && rejected) {
 			return refused("Anthropic rejected this key. Use an Admin API key from the Claude Console.")
 		}
-		if (step === "costs" && error.kind === "forbidden") {
+		// A key that read the organization and is then refused its costs is not an admin key's access.
+		if (step === "costs" && (error.kind === "forbidden" || error.kind === "unauthorized")) {
 			return refused("This key cannot read the organization's costs. Use an Admin API key.")
 		}
 		return new CostConnectionPersistenceError({ message: UNCHECKED })

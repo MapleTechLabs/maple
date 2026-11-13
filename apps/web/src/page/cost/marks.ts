@@ -221,7 +221,8 @@ export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSumma
 		Option.flatMapNullishOr((source) => source.accountName),
 		Option.getOrUndefined,
 	)
-	if (accountName !== undefined) return `${name} ${accountName}`
+	// OpenAI names an organization by its id alone, which is no name to add.
+	if (accountName !== undefined && accountName !== key) return `${name} ${accountName}`
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }
 

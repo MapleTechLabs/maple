@@ -32,6 +32,10 @@ const CLOUDFLARE_BILLING_TOKEN_URL =
  * A cost source added by pasting a credential: everything its dialog steps, its Sources row and
  * its toasts say, and the commands that save and remove it. The form itself is shared.
  */
+/** What adding a provider read back three months brings in, as the sync profile serves it. */
+const THREE_MONTHS_ADD =
+	"Maple reads this month and the last at once, then the two months before, and every day from here on."
+
 export type CredentialSource = Readonly<{
 	/** The line under the provider's name in the list, and once its source exists. */
 	pick: Readonly<{ meta: string; addedMeta: string }>
@@ -151,8 +155,7 @@ export const CREDENTIAL_SOURCES = {
 		},
 		add: {
 			title: "Add Anthropic",
-			description:
-				"Maple reads this month and the last at once, then the two months before, and every day from here on.",
+			description: THREE_MONTHS_ADD,
 			toast: "Anthropic added",
 		},
 		replace: {
@@ -188,8 +191,7 @@ export const CREDENTIAL_SOURCES = {
 		},
 		add: {
 			title: "Add OpenAI",
-			description:
-				"Maple reads this month and the last at once, then the two months before, and every day from here on.",
+			description: THREE_MONTHS_ADD,
 			toast: "OpenAI added",
 		},
 		replace: {

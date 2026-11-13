@@ -71,7 +71,13 @@ export const toCostRows = (
 	}
 	// A day's rows are replaced whole and read per key, so two rows of one key would count once.
 	const groups = Arr.groupBy(charges, (charge) =>
-		keyOf([charge.day, serviceOf(charge.lineItem), charge.lineItem ?? "", charge.projectId ?? ""]),
+		keyOf([
+			charge.day,
+			serviceOf(charge.lineItem),
+			charge.lineItem ?? "",
+			charge.projectId ?? "",
+			charge.currency,
+		]),
 	)
 	return Result.succeed(
 		Arr.map(Rec.values(groups), (group): CostPullRow => {

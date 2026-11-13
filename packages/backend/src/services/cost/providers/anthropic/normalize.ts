@@ -13,7 +13,7 @@ const TOOL_SERVICES = new Map([
 ])
 
 /** Fields that tell cost lines of one key apart without being part of it, kept as tags. */
-const TAG_FIELDS = ["service_tier", "token_type", "context_window", "speed"] as const
+const TAG_FIELDS = ["service_tier", "token_type", "context_window", "speed", "inference_geo"] as const
 
 const dayOf = (timestamp: string): string => Str.slice(0, 10)(timestamp)
 
@@ -47,7 +47,7 @@ const isAmount = (amount: string): boolean => Str.trim(amount) !== "" && Number.
 
 /**
  * The window's rows, or the first amount that is not a number. Lines of one key (day, service,
- * usage type, region, workspace) are summed: the warehouse reads by that key, so two rows would
+ * usage type, region, workspace, currency) are summed: the warehouse reads by that key, so two rows would
  * count once. Days from `openDay` on can still change.
  */
 export const toCostRows = (
@@ -73,7 +73,8 @@ export const toCostRows = (
 			cloudService: serviceOf(result),
 			serviceCategory: CATEGORY,
 			usageType: result.description ?? result.cost_type ?? "",
-			region: result.inference_geo ?? "global",
+			// The inference geography is a price tier, not a place the Cost page can name: it is a tag.
+			region: "global",
 			resourceId: result.workspace_id ?? "default",
 			resourceType: "workspace",
 			serviceName: "",
@@ -90,7 +91,15 @@ export const toCostRows = (
 		}
 	})
 	const groups = Arr.groupBy(rows, (row) =>
-		keyOf([row.day, row.cloudService, row.usageType, row.region, row.resourceId, row.chargeCategory]),
+		keyOf([
+			row.day,
+			row.cloudService,
+			row.usageType,
+			row.region,
+			row.resourceId,
+			row.chargeCategory,
+			row.currency,
+		]),
 	)
 	return Result.succeed(
 		Arr.map(Rec.values(groups), (group): CostPullRow => {

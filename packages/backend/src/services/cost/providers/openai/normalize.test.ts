@@ -111,7 +111,7 @@ describe("toCostRows", () => {
 		])
 	})
 
-	it("keeps only the window's days, and marks the newest two as estimated", () => {
+	it("keeps only the window's days, and marks the days from the open day on as estimated", () => {
 		const mapped = okRows([
 			bucket("2026-09-30", [charge("gpt-4o, input", 9)]),
 			bucket("2026-10-01", [charge("gpt-4o, input", 1)]),

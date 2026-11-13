@@ -51,7 +51,7 @@ import {
 } from "../page/cost/command"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
-import type { CredentialProvider } from "../page/cost/providers"
+import { CredentialProvider } from "../page/cost/providers"
 import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
@@ -137,7 +137,7 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 export const Model = Schema.Struct({
 	state: LabState,
 	/** Pasted-credential providers added (true) or removed (false) since the state loaded. */
-	credentials: Schema.Record(Schema.String, Schema.Boolean),
+	credentials: Schema.Record(CredentialProvider, Schema.optionalKey(Schema.Boolean)),
 	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
 	github: Schema.Record(Schema.String, Schema.Boolean),
 	/** Vercel added (true) or removed (false) since the state loaded; null before either. */

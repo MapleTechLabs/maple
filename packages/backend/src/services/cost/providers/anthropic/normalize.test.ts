@@ -72,16 +72,18 @@ describe("toCostRows", () => {
 		])
 	})
 
-	it("puts the default workspace's lines on `default`, and a geography's on its region", () => {
+	it("puts the default workspace's lines on `default`, and a geography in a tag, not the region", () => {
 		const rows = rowsOf([
 			costBucket("2026-11-03", [
 				costResult("100", { workspace_id: null }),
 				costResult("100", { inference_geo: "us", currency: "usd" }),
 			]),
 		])
-		expect(Arr.map(rows, (row) => [row.resourceId, row.region, row.currency])).toEqual([
-			["default", "global", "USD"],
-			["wrkspc_01", "us", "USD"],
+		expect(
+			Arr.map(rows, (row) => [row.resourceId, row.region, row.currency, row.tags.inference_geo]),
+		).toEqual([
+			["default", "global", "USD", undefined],
+			["wrkspc_01", "global", "USD", "us"],
 		])
 	})
 

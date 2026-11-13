@@ -176,6 +176,12 @@ describe("AnthropicCostConnectionService", () => {
 					[noCosts._tag, noCosts.message],
 					[VALIDATION, "This key cannot read the organization's costs. Use an Admin API key."],
 				)
+				// Refused its costs after it read the organization: a retry would not change that.
+				world.costStatus = 401
+				assert.deepStrictEqual(
+					(yield* Effect.flip(set(KEY))).message,
+					"This key cannot read the organization's costs. Use an Admin API key.",
+				)
 				assert.isUndefined(yield* storedKey(testDb))
 			}),
 		)
