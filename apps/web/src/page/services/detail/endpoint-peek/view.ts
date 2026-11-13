@@ -342,7 +342,7 @@ const clientsCard = (h: H, detail: EndpointDetail, spanCount: number): Html => {
 			? typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No requests carried a user agent"])
 			: vstack(
 					h,
-					{ gap: "1.5", className: typographyClass({ size: "2xs", numeric: true }) },
+					{ gap: "1.5", className: typographyClass({ size: "2xs", mono: true, numeric: true }) },
 					Arr.map(detail.userAgents.slice(0, 5), (agent) =>
 						hstack(h, { gap: "2", attributes: [h.Key(agent.value)] }, [
 							typography(

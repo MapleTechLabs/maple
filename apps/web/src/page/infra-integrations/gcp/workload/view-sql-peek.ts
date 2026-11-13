@@ -72,7 +72,7 @@ const header = (h: H, model: Model, peek: QueryPeek, inputs: QueryPeekInputs): H
 		[
 			eyebrow(h, { as: "div", className: hstackClass({ gap: "2" }) }, [
 				"Statement",
-				h.span([h.Class("normal-case tracking-normal")], [`· ${where}`]),
+				h.span([], [`· ${where}`]),
 			]),
 			DialogView.dialogTitle(h, "sheet", id, `Statement on ${where}`, "sr-only"),
 			DialogView.dialogDescription(

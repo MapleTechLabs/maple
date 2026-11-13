@@ -532,8 +532,8 @@
 	--text-figure: 1.625rem;
 	/* Inline code inside prose: a touch under the surrounding text, whatever its size. */
 	--text-code: 0.9em;
-	/* Tracking: `overline` for eyebrows and column labels, `caption` for the larger stat-tile
-	   caption, `figure` pulls a large stat figure in a touch. */
+	/* Tracking: `overline` and `caption` space the uppercase tags that remain (badges, log
+	   levels, the mono eyebrow); `figure` pulls a large stat figure in a touch. */
 	--tracking-overline: 0.12em;
 	--tracking-caption: 0.08em;
 	--tracking-figure: -0.01em;
@@ -816,14 +816,6 @@
 		@apply font-sans bg-background text-foreground;
 	}
 	html {
-		@apply font-sans;
-	}
-	/* Chrome reads in Geist; numbers that line up in a column stay in the mono face, except the
-	   large stat figure. A `font-sans` utility on the element still wins. */
-	.tabular-nums {
-		@apply font-mono;
-	}
-	.text-figure {
 		@apply font-sans;
 	}
 }

@@ -11,6 +11,7 @@ import {
 	virtualizerStream,
 	whileLive,
 } from "../../lib/virtualizer"
+import { bindFindable } from "../../lib/findable"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { Message, type VirtualRow } from "./logs-stream-message"
 
@@ -49,7 +50,11 @@ const rowsOf = (scroller: HTMLElement): ReadonlyArray<HTMLElement> =>
  * of every mounted row. The window
  * reaches the Model only when it changes, not on every scroll event.
  */
-const VirtualizeMessage = Schema.Union([Message.ChangedVirtualWindow, Message.ChangedScrolledAway])
+const VirtualizeMessage = Schema.Union([
+	Message.ChangedVirtualWindow,
+	Message.ChangedScrolledAway,
+	Message.FoundRow,
+])
 type VirtualizeMessage = typeof VirtualizeMessage.Type
 
 type VirtualizerState = {
@@ -166,6 +171,10 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 		}
 		scroller.addEventListener(SCROLL_EVENT, onScrollRequest)
 
+		const unbindFindable = bindFindable(scroller, virtualizer, (match) =>
+			offer(Message.FoundRow({ match })),
+		)
+
 		observeLog()
 		Arr.forEach(rowsOf(scroller), measure)
 		const unmount = virtualizer._didMount()
@@ -173,6 +182,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 		emitWindow(virtualizer)
 
 		return () => {
+			unbindFindable()
 			scroller.removeEventListener(SCROLL_EVENT, onScrollRequest)
 			scroller.removeEventListener("scroll", onScroll)
 			layoutObserver.disconnect()
@@ -182,7 +192,7 @@ const virtualize = (scroller: HTMLElement): Stream.Stream<VirtualizeMessage> =>
 	})
 
 export const VirtualizeLogStream = Mount.defineStream("VirtualizeLogStream", {
-	messages: [Message.ChangedVirtualWindow, Message.ChangedScrolledAway],
+	messages: [Message.ChangedVirtualWindow, Message.ChangedScrolledAway, Message.FoundRow],
 	execute: ({ element, viewStateChanges }) => whileLive(element, viewStateChanges, virtualize),
 })
 

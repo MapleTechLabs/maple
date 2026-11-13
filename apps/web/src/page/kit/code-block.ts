@@ -33,7 +33,7 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 				h,
 				{ align: "center", justify: "between", className: "px-3 py-1.5 text-muted-foreground" },
 				[
-					...(options.language === undefined ? [] : [eyebrow(h, {}, [options.language])]),
+					...(options.language === undefined ? [] : [eyebrow(h, { variant: "mono" }, [options.language])]),
 					CopyButton.view(h, {
 						model: options.copy,
 						toParentMessage: options.toCopyMessage,

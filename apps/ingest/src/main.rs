@@ -4198,6 +4198,11 @@ const AUDIT_TRAIL_GCP_ORG_RPS: u32 = 100;
 /// events is kilobytes; the telemetry ceiling is for bodies that are metered.
 const AUDIT_TRAIL_MAX_DECODED_BYTES: usize = 4 * 1024 * 1024;
 
+/// The most events one Vercel audit delivery may carry. Every event becomes a
+/// row of fixed columns however short it is, so the byte ceiling alone does not
+/// bound what a delivery stores or holds in memory.
+const AUDIT_TRAIL_MAX_EVENTS: usize = 10_000;
+
 /// Refuses an org's audit delivery past `rps`. The rows are not metered, so
 /// this is what bounds how many a sender can store.
 async fn audit_trail_rate_gate(
@@ -4372,6 +4377,9 @@ async fn decode_vercel_audit_drain(
         let parsed = vercel_logs::parse(&payload).map_err(|e| {
             ApiError::bad_request(format!("Invalid Vercel Audit Log drain payload: {e}"))
         })?;
+        if parsed.entries.len() > AUDIT_TRAIL_MAX_EVENTS {
+            return Err(too_large());
+        }
         let now_ms = audit_trail::now_ms();
         let rows: Vec<Vec<u8>> = parsed
             .entries
@@ -5515,14 +5523,52 @@ async fn handle_replay_blob_inner(
         GunzipError::Invalid(e) => replay_gunzip_rejection(headers, &body, &e),
         GunzipError::TooLarge => ApiError::payload_too_large("decompressed replay chunk too large"),
     };
-    let (events_json, byte_size) = if state.replay_blob_store.is_some() {
-        let byte_size = gunzip_len_bounded(&body, max_decoded).map_err(gunzip_rejection)?;
-        (None, byte_size)
-    } else {
-        let events_json = gunzip_replay_text(&body, max_decoded).map_err(gunzip_rejection)?;
-        let byte_size = events_json.len() as u64;
-        (Some(events_json), byte_size)
-    };
+    // Inflating is CPU work bounded only by that ceiling, so it runs on the
+    // blocking pool: on a one-core host the async workers are a single thread.
+    // It reserves what it inflates from the shared decode memory, like an OTLP
+    // body, so a burst of chunks is shed and not inflated all at once.
+    let stored_as_blob = state.replay_blob_store.is_some();
+    let compressed = body.clone();
+    let mut reservation = state.decode_memory.reservation();
+    let decoded = tokio::task::spawn_blocking(move || {
+        // The size the chunk declares is what gets reserved, so it is also where
+        // the inflate stops: a trailer that understates the stream buys nothing.
+        let declared = decode_budget::gzip_declared_len(&compressed)
+            .map_or(0, |declared| usize::try_from(declared).unwrap_or(usize::MAX))
+            .min(max_decoded);
+        if !reservation.try_add((compressed.len() + declared) as u64) {
+            return Err(None);
+        }
+        if stored_as_blob {
+            // Nothing of a blob chunk outlives the count.
+            gunzip_len_bounded(&compressed, declared)
+                .map(|byte_size| (None, byte_size, None))
+                .map_err(Some)
+        } else {
+            gunzip_replay_text(&compressed, declared)
+                .map(|events_json| {
+                    let byte_size = events_json.len() as u64;
+                    reservation.shrink_to(byte_size);
+                    (Some(events_json), byte_size, Some(reservation))
+                })
+                .map_err(Some)
+        }
+    })
+    .await
+    .map_err(|join_error| {
+        error!(error = %join_error, "Replay chunk decode task failed");
+        ApiError::service_unavailable("Ingest gateway failed to decode the request")
+    })?;
+    // An inline chunk's text stays reserved until this handler has stored it.
+    let (events_json, byte_size, _inline_text_reservation) =
+        decoded.map_err(|rejection| match rejection {
+            Some(error) => gunzip_rejection(error),
+            None => ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            ),
+        })?;
 
     // Accept the chunk that crosses the ceiling so the recording truncates on a
     // chunk boundary; `is_exhausted` rejects everything after it.
@@ -7484,6 +7530,10 @@ fn json_value_to_attribute(key: &str, value: &JsonValue) -> Option<KeyValue> {
     Some(string_attribute(key, &string_value))
 }
 
+/// Longer than any key Maple issues. A longer value is not a key, and is
+/// refused here so it is never hashed, looked up or held in the unknown-key cache.
+const MAX_INGEST_KEY_LEN: usize = 256;
+
 fn extract_ingest_key(headers: &HeaderMap) -> Option<String> {
     if let Some(value) = headers
         .get(AUTHORIZATION)
@@ -7492,7 +7542,7 @@ fn extract_ingest_key(headers: &HeaderMap) -> Option<String> {
         if value.len() > 7 && value[..7].eq_ignore_ascii_case("Bearer ") {
             let token = value[7..].trim();
             if !token.is_empty() {
-                return Some(token.to_owned());
+                return (token.len() <= MAX_INGEST_KEY_LEN).then(|| token.to_owned());
             }
         }
     }
@@ -7501,7 +7551,7 @@ fn extract_ingest_key(headers: &HeaderMap) -> Option<String> {
         .get("x-maple-ingest-key")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.is_empty() && value.len() <= MAX_INGEST_KEY_LEN)
         .map(str::to_owned)
 }
 
@@ -11536,6 +11586,22 @@ mod tests {
     }
 
     #[test]
+    fn extract_ingest_key_ignores_a_value_longer_than_any_key() {
+        let oversized = format!("maple_pk_{}", "a".repeat(MAX_INGEST_KEY_LEN));
+        let mut bearer = HeaderMap::new();
+        bearer.insert(AUTHORIZATION, format!("Bearer {oversized}").parse().unwrap());
+        assert_eq!(extract_ingest_key(&bearer), None);
+        let mut named = HeaderMap::new();
+        named.insert("x-maple-ingest-key", oversized.parse().unwrap());
+        assert_eq!(extract_ingest_key(&named), None);
+
+        let longest = "k".repeat(MAX_INGEST_KEY_LEN);
+        let mut accepted = HeaderMap::new();
+        accepted.insert("x-maple-ingest-key", longest.parse().unwrap());
+        assert_eq!(extract_ingest_key(&accepted), Some(longest));
+    }
+
+    #[test]
     fn extract_ingest_key_returns_sentinel_literal_unchanged() {
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, "Bearer MAPLE_TEST".parse().unwrap());
@@ -13606,6 +13672,26 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    // Every event is a stored row whatever its size, so a small body of many
+    // events is refused on its count.
+    #[tokio::test]
+    async fn vercel_audit_drain_refuses_a_delivery_of_more_events_than_any_drain_sends() {
+        let queue_dir = unique_main_test_dir("vercel-audit-trail-count");
+        let (state, _store, mut imports) =
+            audit_trail_test_state("maple_sk_test_count", "org_count", queue_dir.clone()).await;
+        let headers = vercel_drain_headers("maple_sk_test_count", AUDIT_SOURCE_ID);
+        let body = Bytes::from("{\"action\":\"a\"}\n".repeat(AUDIT_TRAIL_MAX_EVENTS + 1));
+        assert!(body.len() < AUDIT_TRAIL_MAX_DECODED_BYTES);
+
+        let refused = handle_vercel_audit_trail_inner(&state, &headers, &body)
+            .await
+            .expect_err("a delivery past the event limit must be refused");
+
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(nothing_reaches_the_audit_trail(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     // Audit rows are not metered, so the rate is what bounds a sender.
     #[tokio::test]
     async fn an_orgs_audit_deliveries_are_refused_past_their_rate() {
@@ -13816,6 +13902,33 @@ mod tests {
         )
         .await
         .expect("a normal chunk is still accepted");
+
+        // A trailer that understates the stream does not get more inflated than it reserved.
+        let mut understated = gzip_bytes(&"a".repeat(64 * 1024)).to_vec();
+        let trailer = understated.len() - 4;
+        understated[trailer..].copy_from_slice(&8_u32.to_le_bytes());
+        let error = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 3),
+            Bytes::from(understated),
+        )
+        .await
+        .expect_err("a chunk inflating past its declared size must be refused");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+        // A chunk the shared decode memory cannot hold right now is shed, not inflated.
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(state.decode_memory.total_bytes()));
+        let shed = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 2),
+            gzip_bytes(r#"[{"type":2,"timestamp":2}]"#),
+        )
+        .await
+        .expect_err("a chunk must be shed while decode memory is full");
+        assert_eq!(shed.status, StatusCode::SERVICE_UNAVAILABLE);
+        drop(others);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
         assert!(rx.recv().await.is_some(), "the normal chunk is stored");
 
         drop(std::fs::remove_dir_all(&queue_dir));

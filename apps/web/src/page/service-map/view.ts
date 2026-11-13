@@ -248,7 +248,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							[
 								...dbEdgesTimedOutNotice(h, model),
 								h.div(
-									[h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")],
+									[h.Class("-mx-4 -mb-4 h-[calc(100vh-9rem)]")],
 									[mapArea(h, model, inputs)],
 								),
 							],

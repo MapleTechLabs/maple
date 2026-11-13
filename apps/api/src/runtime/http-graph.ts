@@ -125,12 +125,15 @@ const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", Htt
 // script out of the deployed bundle (guards the 3 MB worker size limit, error
 // 10027). The reference pages depend on jsDelivr being reachable from the browser.
 // `/docs` and `/v2/docs` serve the same public v2 reference.
+// Pinned: an unpinned tag would run whatever the package publishes next on this origin.
+const SCALAR_VERSION = "1.76.4"
 const apiReferenceRoute = (path: `/${string}`) =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const env = yield* Env
 			return HttpApiScalar.layerCdn(instanceApiV2(Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)), {
 				path,
+				version: SCALAR_VERSION,
 			})
 		}),
 	)

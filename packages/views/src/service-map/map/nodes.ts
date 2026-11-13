@@ -48,7 +48,7 @@ const tintedCard = (color: string, tint: number, border: number, selected: boole
 
 const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 	vstack(h, { align: "end", className: "ml-auto gap-px" }, [
-		eyebrow(h, { className: "text-4xs text-foreground-subtle" }, ["pods"]),
+		eyebrow(h, { variant: "mono", className: "text-4xs" }, ["pods"]),
 		data.infra
 			? tooltipTrigger(h, [
 					hstack(
@@ -123,7 +123,8 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 										? eyebrow(
 												h,
 												{
-													className: "shrink-0 text-4xs text-foreground-subtle",
+													variant: "mono",
+													className: "shrink-0 text-4xs",
 												},
 												[runtimeInfo.short],
 											)

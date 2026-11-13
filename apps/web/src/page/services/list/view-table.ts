@@ -680,7 +680,7 @@ const mobileList = (
 																	className: "block",
 																}),
 															}),
-															eyebrow(h, { as: "div" }, ["err"]),
+															eyebrow(h, { as: "div" }, ["Errors"]),
 														],
 													),
 												],

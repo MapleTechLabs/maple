@@ -11,6 +11,8 @@ import { Message } from "./logs-stream-message"
 import { eyebrow } from "../eyebrow"
 import type * as AttributesPanel from "../attributes/attributes-panel"
 import type { CopyStatus } from "../copy-button"
+import { findableLayers } from "../../lib/findable"
+import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { COUNT_ATTRIBUTE, LAYOUT_ATTRIBUTE, STREAM_ATTRIBUTE, VirtualizeLogStream } from "./virtualize"
 
 export interface ViewInputs {
@@ -143,6 +145,16 @@ const rowView = (
 		canFilter,
 	})
 
+/** What find in page searches in a row that is not rendered: the text the row shows. */
+const findableText = (row: LogRowView, variant: string): ReadonlyArray<string> => [
+	row.severity,
+	row.serviceName,
+	...Arr.flatMap(row.pinned, (cell) => (cell.isEmpty ? [] : [cell.value])),
+	variant === "wrap"
+		? textWindow(row.body, undefined, ROW_WRAPPED_CHARS)
+		: textWindow(row.firstLine, undefined, ROW_LINE_CHARS),
+]
+
 // Rows are keyed by index; the slot is `index % 256` so the cache stays bounded
 // (a window never holds 256 rows) while each slot still renders at one position.
 const lazyRow = createKeyedLazy()
@@ -172,6 +184,13 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 						index === inputs.selectedIndex,
 					]),
 				]
+	})
+	const findable = findableLayers(h, {
+		items: model.rows,
+		textOf: findableText,
+		variant: inputs.wrap ? "wrap" : "nowrap",
+		rendered: Arr.map(model.window, (row) => row.index),
+		found: model.found,
 	})
 	return h.div(
 		inputs.isBare === true
@@ -213,7 +232,7 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 									h.Style({ height: `${model.totalSize}px`, position: "relative" }),
 									h.Role("log"),
 								],
-								rows,
+								[findable.before, ...rows, findable.after],
 							),
 						],
 					),

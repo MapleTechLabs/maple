@@ -74,7 +74,7 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 				],
 			),
 			vstack(h, { align: "end", className: "gap-px shrink-0" }, [
-				eyebrow(h, {}, ["pods"]),
+				eyebrow(h, {}, ["Pods"]),
 				typography(
 					h,
 					{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },

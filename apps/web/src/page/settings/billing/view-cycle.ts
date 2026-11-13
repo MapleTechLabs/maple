@@ -65,7 +65,7 @@ const figure = (
 	}>,
 ): Html =>
 	vstack(h, { gap: "2", shrink: true, className: "p-4" }, [
-		// The uppercase overline every KPI tile uses (Overview's usage cards, the Stat widget).
+		// The label every KPI tile uses (Overview's usage cards, the Stat widget).
 		eyebrow(h, {}, [options.label]),
 		statFigure(h, { size: "lg", value: options.value, valueClassName: options.valueClassName }),
 		h.span([h.Class("font-prose text-2xs text-muted-foreground")], options.note),

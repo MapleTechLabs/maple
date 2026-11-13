@@ -56,7 +56,7 @@ export const suggestionListbox = <M>(
 						[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],
 						[suggestion.label],
 					),
-					eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
+					eyebrow(h, { variant: "mono", className: "shrink-0" }, [suggestion.kind]),
 				],
 			),
 		),
