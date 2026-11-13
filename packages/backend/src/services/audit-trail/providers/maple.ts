@@ -44,6 +44,8 @@ const CATEGORY_BY_RESOURCE = {
 	onboarding_reward: "billing",
 	planetscale_integration: "configuration",
 	cloudflare_integration: "configuration",
+	cost_source: "configuration",
+	cost_source_key: "credential",
 	member: "membership",
 	organization: "configuration",
 	scrape_target: "configuration",
