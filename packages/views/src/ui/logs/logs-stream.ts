@@ -2,6 +2,7 @@ import { Array, Duration, Effect, Option, Record, Schema, Stream } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
+import { Found, foundAfterWindow, foundOf } from "../../lib/findable"
 import * as AttributesPanel from "../attributes/attributes-panel"
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { afterCopyStatusHold } from "../copy-button"
@@ -27,6 +28,8 @@ export const Model = Schema.Struct({
 	window: Schema.Array(VirtualRow),
 	totalSize: Schema.Number,
 	focusedIndex: Schema.Option(Schema.Number),
+	/** The row find in page matched, whose stand-in holds the browser's active match. */
+	found: Schema.Option(Found),
 	expandedRows: Schema.Array(Schema.Number),
 	isHovering: Schema.Boolean,
 	isScrolledAway: Schema.Boolean,
@@ -48,6 +51,7 @@ export const init = (id: string, rows: ReadonlyArray<LogRowView>): Model => ({
 	window: [],
 	totalSize: 0,
 	focusedIndex: Option.none(),
+	found: Option.none(),
 	expandedRows: [],
 	isHovering: false,
 	isScrolledAway: false,
@@ -250,11 +254,23 @@ const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message)
 				model: modifyFields(model, {
 					window: () => rendered,
 					totalSize: () => totalSize,
+					found: (found) =>
+						foundAfterWindow(
+							found,
+							Array.map(rendered, (row) => row.index),
+						),
 					visibleChip: (visible) => Option.filter(visible, isRendered),
 					pendingOpen: (pending) => Option.filter(pending, (p) => isRendered(p.chip)),
 				}),
 			}
 		},
+		// The found row takes the keyboard focus, so it is marked and j/k carry on from it.
+		FoundRow: ({ match }) => ({
+			model: modifyFields(model, {
+				found: () => Option.some(foundOf(match)),
+				focusedIndex: () => Option.some(match.index),
+			}),
+		}),
 		ChangedScrolledAway: ({ isScrolledAway }) => ({
 			model: modifyFields(model, { isScrolledAway: () => isScrolledAway }),
 		}),
@@ -398,7 +414,12 @@ export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateRe
 /** New data (a reload that prepends rows, a filter): expansion was made on the old rows, so it goes. */
 export const replaceRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn =>
 	reportingInspect(model, {
-		model: modifyFields(model, { rows: () => rows, expandedRows: () => [], panels: () => ({}) }),
+		model: modifyFields(model, {
+			rows: () => rows,
+			expandedRows: () => [],
+			panels: () => ({}),
+			found: () => Option.none(),
+		}),
 	})
 
 /** "Jump to latest": back to the newest rows, every row collapsed. */

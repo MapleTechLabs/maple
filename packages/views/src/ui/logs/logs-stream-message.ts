@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import { FindableMatch } from "../../lib/findable"
 import * as AttributesPanel from "../attributes/attributes-panel"
 
 /** A rendered row of the virtual window: which log, and where it sits in the list. */
@@ -12,6 +13,8 @@ export type NavigationKey = typeof NavigationKey.Type
 export const Message = defineMessageUnion({
 	/** The virtualizer's window moved or a row was measured. */
 	ChangedVirtualWindow: { rows: Schema.Array(VirtualRow), totalSize: Schema.Number },
+	/** The browser's find in page matched a row that was not rendered. */
+	FoundRow: { match: FindableMatch },
 	/** The scroller left the newest rows, or came back to them. */
 	ChangedScrolledAway: { isScrolledAway: Schema.Boolean },
 	EnteredStream: {},
