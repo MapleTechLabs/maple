@@ -7,7 +7,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
 import { ListDashboard, Scope } from "./model"
 import { WriteSync } from "../kit/store"
-import { SessionGrants } from "../../kit/session-grants"
 
 /** A created dashboard: its id to open and its name for the toast. */
 const Created = Schema.Struct({
@@ -28,7 +27,6 @@ export const Message = defineMessageUnion({
 	/** The clock and the browser's locale, read together before the list renders. */
 	CompletedReadClock: { nowMs: Schema.Number, locale: Schema.String },
 	CompletedLoadPreferences: { favorites: Schema.Array(Schema.String), sort: Schema.String },
-	CompletedFetchSession: SessionGrants,
 	UpdatedDashboards: { orgId: Schema.String, dashboards: Schema.Array(ListDashboard) },
 	/** The live list sat loading past the timeout. */
 	TimedOutLiveDashboards: { orgId: Schema.String },

@@ -1,6 +1,5 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import { V2DashboardTemplate, V2DashboardTemplatePreview } from "@maple/domain/http/v2"
-import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -21,8 +20,6 @@ export type MetricSeen = typeof MetricSeen.Type
 
 export const Model = Schema.Struct({
 	search: DashboardsTemplatesSearch,
-	/** What the viewer may do; an analyst previews templates and gets no create control. */
-	grants: Schema.Array(Policy.PermissionName),
 	nowMs: Schema.NullOr(Schema.Number),
 	templates: KeyedSchema(Schema.Array(V2DashboardTemplate), LoadFailure),
 	/** Readiness fails open until it answers. */

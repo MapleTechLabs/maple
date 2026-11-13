@@ -6,7 +6,8 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { CurrentMcpTenant } from "../../tenant"
-import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { executeRegisteredMcpToolUnscoped, mapleToolCatalog } from "../registry"
+import { DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL, refusalFor } from "../types"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -93,6 +94,28 @@ describe("an analyst over MCP", () => {
 			}
 		}).pipe(Effect.provide(analyst())),
 	)
+})
+
+describe("what an analyst may change over MCP", () => {
+	const changing = Arr.filter(mapleToolCatalog, (definition) => !definition.hints.readOnly)
+	const openTo = (caller: Parameters<typeof refusalFor>[0]) =>
+		Arr.filter(
+			Arr.map(changing, (definition) => definition.name),
+			(name) => refusalFor(caller, name, false) === undefined,
+		).sort()
+
+	it("is the dashboard tools and Maple's feedback channel, out of every tool that changes data", () => {
+		expect(openTo({ roles: ["org:analyst"] })).toEqual(
+			[...DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL].sort(),
+		)
+	})
+
+	it("is only the feedback channel when their key is read-only", () => {
+		expect(openTo({ roles: ["org:analyst"], readOnly: true })).toEqual([FEEDBACK_TOOL])
+		expect(refusalFor({ roles: ["org:analyst"], readOnly: true }, "create_dashboard", false)).toBe(
+			"read_only_key",
+		)
+	})
 })
 
 describe("a scoped key without users:read over MCP", () => {

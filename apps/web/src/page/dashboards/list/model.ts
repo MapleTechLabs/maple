@@ -1,4 +1,3 @@
-import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { DashboardsSearch } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -47,8 +46,6 @@ export type Scope = typeof Scope.Type
 
 export const Model = Schema.Struct({
 	search: DashboardsSearch,
-	/** What the viewer may do; an analyst reads the list and gets no write control. */
-	grants: Schema.Array(Policy.PermissionName),
 	/** `null` until the collection is ready. */
 	dashboards: Schema.NullOr(Schema.Array(ListDashboard)),
 	nowMs: Schema.NullOr(Schema.Number),

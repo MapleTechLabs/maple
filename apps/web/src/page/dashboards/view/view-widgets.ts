@@ -21,7 +21,6 @@ import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/widgets/dashboard"
-import { canShareDashboards } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
@@ -70,9 +69,7 @@ const tileInputsOf = (model: Model, widget: Widget): TileInputs => {
 		isEdit,
 		sections: isEdit ? model.document?.sections : undefined,
 		// A previewed version's widgets may not exist on the live board, so they are not embeddable.
-		// Embedding shares the widget outside the org, so it is offered only with `dashboards:share`.
-		isSharesLoaded:
-			model.shares === "Loaded" && model.history.previewed === null && canShareDashboards(model),
+		isSharesLoaded: model.shares === "Loaded" && model.history.previewed === null,
 		menu: model.widgetMenuId === widget.id ? model.widgetMenu : null,
 		chart: model.charts[widget.id],
 		sparklineChart: model.charts[`${widget.id}:spark`],

@@ -17,7 +17,6 @@ import { sectionHeading } from "../../kit/section-heading"
 import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
 import { Message } from "./message"
 import { isWriteBlocked } from "./mode"
-import { canEditDashboards } from "../kit/grants"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -222,28 +221,9 @@ export const historyPanel = (h: H, model: Model, clock: Clock): Html => {
 
 const RESTORE_BLOCKED_ID = "dashboard-restore-blocked"
 
-const restoreButton = (h: H, isRestoreBlocked: boolean): Html =>
-	button(
-		h,
-		{
-			variant: "default",
-			size: "sm",
-			isDisabled: isRestoreBlocked,
-			attributes: [
-				h.OnClick(Message.ClickedRestoreVersion()),
-				...(isRestoreBlocked ? [h.AriaDescribedBy(RESTORE_BLOCKED_ID)] : []),
-			],
-		},
-		[
-			icon(h, "ArrowPathIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
-			"Restore this version",
-		],
-	)
-
-/** Restore is a write, so it is off when writes are, and not offered without `dashboards:edit`. */
+/** Restore is a write, so it is off when writes are. */
 export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Clock): ReadonlyArray<Html> => {
-	const canRestore = canEditDashboards(model)
-	const isRestoreBlocked = canRestore && isWriteBlocked(model)
+	const isRestoreBlocked = isWriteBlocked(model)
 	return [
 		hstack(
 			h,
@@ -290,7 +270,24 @@ export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Cl
 						},
 						["Cancel"],
 					),
-					...(canRestore ? [restoreButton(h, isRestoreBlocked)] : []),
+					button(
+						h,
+						{
+							variant: "default",
+							size: "sm",
+							isDisabled: isRestoreBlocked,
+							attributes: [
+								h.OnClick(Message.ClickedRestoreVersion()),
+								...(isRestoreBlocked ? [h.AriaDescribedBy(RESTORE_BLOCKED_ID)] : []),
+							],
+						},
+						[
+							icon(h, "ArrowPathIcon", {
+								attributes: [h.DataAttribute("icon", "inline-start")],
+							}),
+							"Restore this version",
+						],
+					),
 				]),
 			],
 		),

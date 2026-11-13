@@ -11,10 +11,9 @@ export const permissions = {
 	// The public ingest key ships in browser bundles, so every member may read it to set up an app.
 	"ingest_keys:view_public": { min: "member", action: "view the public ingest key" },
 
-	// Shared work on what the telemetry shows: members and above. Analysts read it. The API refuses
-	// an analyst every change in one place (`AnalystAccess`); these name them for the dashboard.
-	"dashboards:edit": { min: "member", action: "create and edit dashboards" },
-	"dashboards:share": { min: "member", action: "share dashboards outside the organization" },
+	// Running the product day to day: members and above. Analysts read it and build dashboards, which
+	// every role may. The API refuses an analyst the rest in one place (`AnalystAccess`); these name
+	// it for the dashboard.
 	"error_issues:triage": { min: "member", action: "triage error issues" },
 	"incidents:respond": { min: "member", action: "acknowledge and resolve incidents" },
 	"investigations:run": { min: "member", action: "start investigations" },
