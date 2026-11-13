@@ -479,7 +479,8 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
-		scopeFamily: "status_pages",
+		// One page's detail lists its incidents, drafts included.
+		scopeFamily: ["status_pages", "status_page_incidents"],
 		phrases: ["Reading status pages"],
 		handler: Effect.fn("McpTool.getStatusPage")(function* (params) {
 			const tool = "get_status_page"

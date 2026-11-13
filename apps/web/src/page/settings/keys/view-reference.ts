@@ -35,6 +35,24 @@ const SCOPE_FAMILY_ROWS = [
 		label: "Scrape targets",
 		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
 	},
+	{ id: "slos", label: "SLOs", description: "Service level objectives and their error budgets" },
+	{
+		id: "uptime_monitors",
+		label: "Uptime monitors",
+		description: "Uptime monitors, their checks and test runs",
+	},
+	{ id: "ingest_rules", label: "Ingest rules", description: "Ingest-time drop, sample and redact rules" },
+	{
+		id: "data_sources",
+		label: "Data sources",
+		description: "Connected external databases and queries against them",
+	},
+	{ id: "status_pages", label: "Status pages", description: "Status pages and their configuration" },
+	{
+		id: "status_page_incidents",
+		label: "Status page incidents",
+		description: "Incidents and maintenance posted to a status page",
+	},
 	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
 	{
 		id: "investigations",

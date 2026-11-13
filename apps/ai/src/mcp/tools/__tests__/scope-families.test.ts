@@ -68,6 +68,14 @@ describe("MCP tools outside the baseline scope families", () => {
 		})
 	})
 
+	it("ask for every family a tool reads", async () => {
+		const result = await call("get_status_page", [...BASELINE, "status_pages:read"])
+		expect(result._tag).toBe("Failure")
+		if (result._tag === "Failure") {
+			expect(result.failure.message).toContain("`status_page_incidents:read`")
+		}
+	})
+
 	it("refuse a read scope on a tool that changes data", async () => {
 		const result = await call("create_slo", [...BASELINE, "slos:read"])
 		expect(result._tag).toBe("Failure")
