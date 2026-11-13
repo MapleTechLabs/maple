@@ -8,7 +8,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { TimeWindow } from "../../../data/time-range"
 
-// The observer's Overview: is the product working, and what is worth knowing, read-only.
+// The analyst's Overview: is the product working, and what is worth knowing, read-only.
 
 /** The synced alert incidents; `Unavailable` when the live sync failed or stalled. */
 export const IncidentsData = AsyncData.Schema(

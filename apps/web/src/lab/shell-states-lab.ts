@@ -25,7 +25,7 @@ import { Message as ShellMessage, Theme } from "../shell/message"
 import { init as initShell, Model as ShellModel, OnCallData } from "../shell/model"
 import { NavAudience } from "../shell/nav"
 import type { OnCallSnapshot } from "../shell/oncall"
-import { foldLabShell, labShellView, OBSERVER_CLERK } from "./shell-frame"
+import { foldLabShell, labShellView, ANALYST_CLERK } from "./shell-frame"
 
 // `/lab/shell`: the real sidebar with fixture on-call states and a page to stand on, and the side
 // panel held in `?sheet=` (Back closes it, the link reopens it) in both of its sizes.
@@ -355,7 +355,7 @@ const page = (h: HtmlBuilder<Message>, model: Model): Html =>
 						onChange: (viewer) => Message.ClickedViewer({ viewer }),
 						options: [
 							{ value: "operator", label: "Member and above" },
-							{ value: "observer", label: "Observer" },
+							{ value: "analyst", label: "Analyst" },
 						],
 					}),
 				),
@@ -386,7 +386,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			TooltipHost.view(h, model.tooltip, toTooltip),
 			...labShellView(h, model.shell, toShell, {
 				currentPath: STAND_ON_PATH[model.standOn],
-				clerk: model.viewer === "observer" ? OBSERVER_CLERK : null,
+				clerk: model.viewer === "analyst" ? ANALYST_CLERK : null,
 				breadcrumbs: [{ label: "Lab" }, { label: "Shell states" }],
 				page: () => page(h, model),
 			}),

@@ -18,7 +18,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the issue; state, severity, the lease, merges, pull request links and
+// An analyst reads the issue; state, severity, the lease, merges, pull request links and
 // comments need `error_issues:triage`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -30,7 +30,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 const holder = {
 	id: encodePublicId("actor", "0199a005-0000-7000-8000-000000000001"),
@@ -179,11 +179,11 @@ const mounted = [
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
 ] as const
 
-describe("error issue for an observer", () => {
+describe("error issue for an analyst", () => {
 	test("the rail reads state and severity and offers no pick, claim or attach", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER })),
+			given(loaded({ grants: ANALYST })),
 			...mounted,
 			expectView(text("In progress")).toExist(),
 			expectView(text("High")).toExist(),
@@ -211,7 +211,7 @@ describe("error issue for an observer", () => {
 	test("a held lease shows its countdown without Extend or Release", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, detail: HELD })),
+			given(loaded({ grants: ANALYST, detail: HELD })),
 			...mounted,
 			expectView(text("Active lease")).toExist(),
 			expectView(text("5:00")).toExist(),
@@ -233,7 +233,7 @@ describe("error issue for an observer", () => {
 	test("a merged issue says where it went and offers no Unmerge", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, detail: MERGED })),
+			given(loaded({ grants: ANALYST, detail: MERGED })),
 			...mounted,
 			expectView(text("Merged into another issue")).toExist(),
 			expectView(role("link", { name: "the issue it was merged into" })).toExist(),
@@ -253,7 +253,7 @@ describe("error issue for an observer", () => {
 	test("a linked pull request is a link with no detach", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, hasPullRequest: true })),
+			given(loaded({ grants: ANALYST, hasPullRequest: true })),
 			...mounted,
 			expectView(role("link", { name: "acme/payments#412" })).toExist(),
 			expectView(role("button", { name: "Detach acme/payments#412" })).toBeAbsent(),
@@ -272,7 +272,7 @@ describe("error issue for an observer", () => {
 	test("the activity tab keeps the timeline and has no comment box", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER, tab: "activity" })),
+			given(loaded({ grants: ANALYST, tab: "activity" })),
 			...mounted,
 			expectView(text("triage → in_progress")).toExist(),
 			expectView(role("textbox")).toBeAbsent(),
@@ -290,10 +290,10 @@ describe("error issue for an observer", () => {
 		)
 	})
 
-	test("an observer is not offered an investigation or the agent prompt, and a member is", () => {
+	test("an analyst is not offered an investigation or the agent prompt, and a member is", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded({ grants: OBSERVER })),
+			given(loaded({ grants: ANALYST })),
 			...mounted,
 			expectView(role("button", { name: "Start investigation" })).toBeAbsent(),
 			expectView(role("button", { name: "Copy agent prompt" })).toBeAbsent(),
@@ -311,7 +311,7 @@ describe("error issue for an observer", () => {
 		const other = Schema.decodeSync(OrgId)("org_other")
 		const model = pageUpdate(
 			loaded({ grants: MEMBER }),
-			Message.CompletedFetchSession({ orgId: other, grants: OBSERVER }),
+			Message.CompletedFetchSession({ orgId: other, grants: ANALYST }),
 		).model
 		scene(
 			{ update: pageUpdate, view },

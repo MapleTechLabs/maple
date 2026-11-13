@@ -56,7 +56,7 @@ import { labGrants, LabRole, readLabRole } from "./viewer-role"
 // `/lab/anomaly-alerts`: anomalies paging through alert rules, over fixtures. `?state=` picks one:
 // editor-new, editor-blank, editor-scoped, editor-default, editor-critical-destination, incident-warning, incident-critical, incident-spike,
 // hub-anomalies, hub-anomalies-resolved, hub-anomalies-empty, hub-rules, rule-anomaly, overview-banner.
-// `?role=member|observer` reads the hub and the incident as that viewer: an observer gets no acknowledge.
+// `?role=member|analyst` reads the hub and the incident as that viewer: an analyst gets no acknowledge.
 
 export const LabState = Schema.Literals([
 	"editor-new",

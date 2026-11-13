@@ -21,7 +21,7 @@ export type MetricSeen = typeof MetricSeen.Type
 
 export const Model = Schema.Struct({
 	search: DashboardsTemplatesSearch,
-	/** What the viewer may do; an observer previews templates and gets no create control. */
+	/** What the viewer may do; an analyst previews templates and gets no create control. */
 	grants: Schema.Array(Policy.PermissionName),
 	nowMs: Schema.NullOr(Schema.Number),
 	templates: KeyedSchema(Schema.Array(V2DashboardTemplate), LoadFailure),

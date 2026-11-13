@@ -151,11 +151,11 @@ describe("command palette", () => {
 		expect(titles).toEqual(expect.arrayContaining(["Connect Slack", "Connect Discord"]))
 	})
 
-	test("an observer finds their own pages and dashboards, not setup or the explorers", () => {
+	test("an analyst finds their own pages and dashboards, not setup or the explorers", () => {
 		const model = loadedWith(["storefront"])
 		const shown = (query: string) =>
 			Arr.map(
-				shownEntries(typed(model, query).model, context, ["/releases", "/cost"], "observer").entries,
+				shownEntries(typed(model, query).model, context, ["/releases", "/cost"], "analyst").entries,
 				(entry) => entry.title,
 			)
 		expect(shown("analytics")).toContain("Web analytics")
@@ -175,11 +175,11 @@ describe("command palette", () => {
 		expect(operator).toContain("Traces")
 	})
 
-	test("Enter opens the page an observer sees highlighted, not the full list's", () => {
+	test("Enter opens the page an analyst sees highlighted, not the full list's", () => {
 		const model = typed(loadedWith([]), "uptime").model
 		const result = update(
 			model,
-			Message.PressedEnter({ visibleFlagged: [], audience: "observer" }),
+			Message.PressedEnter({ visibleFlagged: [], audience: "analyst" }),
 			context,
 		)
 		expect(result.outMessage).toEqual(OutMessage.Navigated({ href: "/alerts/uptime" }))

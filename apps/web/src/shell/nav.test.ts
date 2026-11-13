@@ -62,12 +62,12 @@ describe("isNavItemActive", () => {
 	})
 })
 
-describe("navGroups for an observer", () => {
+describe("navGroups for an analyst", () => {
 	const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
-	/** Every page the observer's sidebar links to: rows, then their sub-rows. */
+	/** Every page the analyst's sidebar links to: rows, then their sub-rows. */
 	const hrefs = (flags: NavFlags) =>
 		Arr.dedupe(
-			Arr.flatMap(navGroups(flags, "observer"), (group) =>
+			Arr.flatMap(navGroups(flags, "analyst"), (group) =>
 				Arr.flatMap(group.items, (item) => [
 					item.href,
 					...Arr.map(item.subItems ?? [], (sub) => sub.href),
@@ -98,7 +98,7 @@ describe("navGroups for an observer", () => {
 	})
 
 	test("marks only Incidents on an uptime page, with its Uptime row", () => {
-		const items = Arr.flatMap(navGroups(off, "observer"), (group) => group.items)
+		const items = Arr.flatMap(navGroups(off, "analyst"), (group) => group.items)
 		const active = Arr.filter(items, (item) => isNavItemActive("/alerts/uptime", item))
 		expect(Arr.map(active, (item) => item.title)).toEqual(["Incidents"])
 	})

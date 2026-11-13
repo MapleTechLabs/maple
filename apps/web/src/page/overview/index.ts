@@ -18,7 +18,7 @@ export const page = definePage(
 		contextChanged,
 		view,
 		subscriptions,
-		// An observer's `<h1>` is the status line, so the crumb is what names the page.
-		breadcrumbs: (model) => [{ label: "Overview", isPageHeading: model.observer === null }],
+		// An analyst's `<h1>` is the status line, so the crumb is what names the page.
+		breadcrumbs: (model) => [{ label: "Overview", isPageHeading: model.analyst === null }],
 	},
 )

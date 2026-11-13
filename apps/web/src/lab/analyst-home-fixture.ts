@@ -8,22 +8,22 @@ import { checkoutSlo, searchSlo, sloStatus, sloUuid } from "../page/alerts/share
 import type { PageContext } from "../page/contract"
 import { incidentRow, NOW, ORG, ruleId } from "../page/kit/alert-test-rows"
 import { downMonitor, httpMonitor, monitorId } from "../page/kit/uptime/test-monitors"
-import { topErrorsOf } from "../page/overview/observer/derive"
-import { Message } from "../page/overview/observer/message"
-import type { Model, SloRow, TopError } from "../page/overview/observer/model"
-import { init, update } from "../page/overview/observer/update"
+import { topErrorsOf } from "../page/overview/analyst/derive"
+import { Message } from "../page/overview/analyst/message"
+import type { Model, SloRow, TopError } from "../page/overview/analyst/model"
+import { init, update } from "../page/overview/analyst/update"
 import { buildErrorsLabFixture } from "./errors-fixture"
 
-// The observer Overview's fixtures, shared by `/lab/observer-home` and its scene tests.
+// The analyst Overview's fixtures, shared by `/lab/analyst-home` and its scene tests.
 
 export const STATES = ["clear", "attention", "empty", "loading", "failed"] as const
-export type ObserverHomeState = (typeof STATES)[number]
+export type AnalystHomeState = (typeof STATES)[number]
 
-export const OBSERVER_CONTEXT: PageContext = {
+export const ANALYST_CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)(ORG),
 	pinnedNamespace: null,
 	timeZone: "UTC",
-	audience: "observer",
+	audience: "analyst",
 }
 
 const MINUTE = 60_000
@@ -114,17 +114,17 @@ const DATA = {
 	},
 	empty: { rules: 0, incidents: [], monitors: [], slos: [], errors: [], traces: "absent" },
 	failed: { ...CLEAR, monitors: null },
-} as const satisfies Record<Exclude<ObserverHomeState, "loading">, Data>
+} as const satisfies Record<Exclude<AnalystHomeState, "loading">, Data>
 
 const presences = (traces: Data["traces"]): SignalPresences => ({
 	traces: { status: traces, lastSeenMs: traces === "present" ? NOW - MINUTE : null },
 })
 
-const step = (model: Model, message: Message): Model => update(model, message, OBSERVER_CONTEXT).model
+const step = (model: Model, message: Message): Model => update(model, message, ANALYST_CONTEXT).model
 
 /** The page as its reads leave it in `state`, on the fixtures' fixed clock. */
-export const observerHomeModel = (state: ObserverHomeState): Model => {
-	const entered = step(init(OBSERVER_CONTEXT).model, Message.CompletedReadClock({ nowMs: NOW }))
+export const analystHomeModel = (state: AnalystHomeState): Model => {
+	const entered = step(init(ANALYST_CONTEXT).model, Message.CompletedReadClock({ nowMs: NOW }))
 	if (state === "loading") return entered
 	const data: Data = DATA[state]
 	const answers: ReadonlyArray<(model: Model) => Message> = [

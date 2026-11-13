@@ -2,9 +2,9 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Effect, Exit } from "effect"
-import { refuseObserverWrites, refuseObserverWritesV2 } from "./observer-gate"
+import { refuseAnalystWrites, refuseAnalystWritesV2 } from "./analyst-gate"
 
-const OBSERVER = ["org:observer"]
+const ANALYST = ["org:analyst"]
 const MEMBER = ["org:member"]
 
 const errors = MapleInternalApi.groups.errors
@@ -16,10 +16,10 @@ const dashboards = MapleApiV2.groups.dashboards
 /** Whether the gate let the call through. */
 const allowed = <E>(gate: Effect.Effect<void, E>) => Effect.map(Effect.exit(gate), Exit.isSuccess)
 
-describe("refuseObserverWrites", () => {
-	it.effect("refuses an observer an issue transition and says how to get it", () =>
+describe("refuseAnalystWrites", () => {
+	it.effect("refuses an analyst an issue transition and says how to get it", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(refuseObserverWrites(OBSERVER, transition))
+			const error = yield* Effect.flip(refuseAnalystWrites(ANALYST, transition))
 			assert.instanceOf(error, CurrentTenant.ReadOnlyRoleError)
 			expect(error.message).toContain("Ask an org admin for the Member role")
 		}),
@@ -27,34 +27,34 @@ describe("refuseObserverWrites", () => {
 
 	it.effect("lets a member, and Maple's own agents with no roles, make the same change", () =>
 		Effect.gen(function* () {
-			expect(yield* allowed(refuseObserverWrites(MEMBER, transition))).toBe(true)
-			expect(yield* allowed(refuseObserverWrites([], transition))).toBe(true)
+			expect(yield* allowed(refuseAnalystWrites(MEMBER, transition))).toBe(true)
+			expect(yield* allowed(refuseAnalystWrites([], transition))).toBe(true)
 		}),
 	)
 
-	it.effect("lets an observer run a dashboard query", () =>
+	it.effect("lets an analyst run a dashboard query", () =>
 		Effect.gen(function* () {
 			const query = { group: queries, endpoint: queries.endpoints.executeBatch }
-			expect(yield* allowed(refuseObserverWrites(OBSERVER, query))).toBe(true)
+			expect(yield* allowed(refuseAnalystWrites(ANALYST, query))).toBe(true)
 		}),
 	)
 })
 
-describe("refuseObserverWritesV2", () => {
+describe("refuseAnalystWritesV2", () => {
 	const create = { group: dashboards, endpoint: dashboards.endpoints.create }
 
-	it.effect("lets an observer search traces, which the scope registry names as a read", () =>
+	it.effect("lets an analyst search traces, which the scope registry names as a read", () =>
 		Effect.gen(function* () {
 			const search = { group: traces, endpoint: traces.endpoints.search }
-			expect(yield* allowed(refuseObserverWritesV2(OBSERVER, search, "/v2/traces/search"))).toBe(true)
+			expect(yield* allowed(refuseAnalystWritesV2(ANALYST, search, "/v2/traces/search"))).toBe(true)
 		}),
 	)
 
-	it.effect("refuses an observer a new dashboard and lets a member create one", () =>
+	it.effect("refuses an analyst a new dashboard and lets a member create one", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(refuseObserverWritesV2(OBSERVER, create, "/v2/dashboards"))
-			expect(error.message).toContain("Observers can read Maple")
-			expect(yield* allowed(refuseObserverWritesV2(MEMBER, create, "/v2/dashboards"))).toBe(true)
+			const error = yield* Effect.flip(refuseAnalystWritesV2(ANALYST, create, "/v2/dashboards"))
+			expect(error.message).toContain("Analysts can read Maple")
+			expect(yield* allowed(refuseAnalystWritesV2(MEMBER, create, "/v2/dashboards"))).toBe(true)
 		}),
 	)
 })

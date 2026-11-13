@@ -132,7 +132,7 @@ const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue
 						),
 						canTriageIssues(model) ? ". Unmerge it to track it on its own again." : ".",
 					]),
-					// Unmerging is triage: an observer reads where the occurrences go.
+					// Unmerging is triage: an analyst reads where the occurrences go.
 					...(canTriageIssues(model)
 						? [
 								alertAction(h, [
@@ -192,7 +192,7 @@ const overview = (
 		surge: signal?.surge ?? null,
 		...clock,
 	})
-	// Getting it fixed is a member's job: an observer only reads an investigation that already ran.
+	// Getting it fixed is a member's job: an analyst only reads an investigation that already ran.
 	const investigation = linkedInvestigationOf(model)
 	const fix =
 		canRunInvestigations(model) || investigation !== null

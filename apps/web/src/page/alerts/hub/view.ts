@@ -203,8 +203,8 @@ const headerActions = (
 	overview: Option.Option<AlertsOverviewReady>,
 	audience: PageViewInputs["context"]["audience"],
 ): Html | undefined => {
-	// An observer follows incidents and sets nothing up.
-	if (audience === "observer") return undefined
+	// An analyst follows incidents and sets nothing up.
+	if (audience === "analyst") return undefined
 	if (tab === "inbox" || tab === "rules")
 		// The first-run empty state offers the templates and "Start from scratch" to who can create.
 		return canManageAlerts(model) && Option.exists(overview, (data) => isFirstRun(model, data, tab))

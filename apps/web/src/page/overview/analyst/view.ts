@@ -35,7 +35,7 @@ import { severityIcon } from "../../kit/issue-severity"
 import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
 import { targetLine, type UptimeMonitor } from "../../kit/uptime/derive"
 import { uptimeStatusChip, uptimeStatusSquare } from "../../kit/uptime/view"
-import { MountObserverHome } from "./command"
+import { MountAnalystHome } from "./command"
 import {
 	incidentsOf,
 	SECTION_ROWS,
@@ -50,7 +50,7 @@ import type { Model, TopError } from "./model"
 
 type H = HtmlBuilder<Message>
 
-/** What an observer cannot do themselves, said once per empty section. */
+/** What an analyst cannot do themselves, said once per empty section. */
 const ASK_AN_ENGINEER = "An engineer on your team can set them up."
 
 const SKELETON_WIDTHS = ["48", "40", "44"] as const
@@ -351,7 +351,7 @@ const weeklySummary = (h: H): Html =>
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	h.div(
-		[h.Class("contents"), h.OnMount(MountObserverHome())],
+		[h.Class("contents"), h.OnMount(MountAnalystHome())],
 		[
 			dashboardPage(
 				h,

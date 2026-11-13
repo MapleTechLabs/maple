@@ -2,15 +2,15 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import { Message as PageMessage } from "../../page/overview/observer/message"
-import { Model as PageModel } from "../../page/overview/observer/model"
-import { update as pageUpdate } from "../../page/overview/observer/update"
-import { view as pageView } from "../../page/overview/observer/view"
-import { OBSERVER_CONTEXT, type ObserverHomeState, observerHomeModel, STATES } from "../observer-home-fixture"
-import { OBSERVER_CLERK } from "../shell-frame"
+import { Message as PageMessage } from "../../page/overview/analyst/message"
+import { Model as PageModel } from "../../page/overview/analyst/model"
+import { update as pageUpdate } from "../../page/overview/analyst/update"
+import { view as pageView } from "../../page/overview/analyst/view"
+import { ANALYST_CONTEXT, type AnalystHomeState, analystHomeModel, STATES } from "../analyst-home-fixture"
+import { ANALYST_CLERK } from "../shell-frame"
 import { defineShellLab } from "../shell-lab"
 
-// `/lab/observer-home`: the Overview an observer gets, inside the observer's shell, with nothing
+// `/lab/analyst-home`: the Overview an analyst gets, inside the analyst's shell, with nothing
 // wrong, with incidents and failing checks, with nothing set up, loading and with one read failing
 // (`?state=clear|attention|empty|loading|failed`).
 
@@ -29,7 +29,7 @@ const decodeState = Schema.decodeUnknownOption(Schema.Literals(STATES))
 const REMOTE = /^(Fetch|Load|Read|Resolve)/
 
 const update = (model: Model, message: Message) => {
-	const next = pageUpdate(model.page, message.message, OBSERVER_CONTEXT)
+	const next = pageUpdate(model.page, message.message, ANALYST_CONTEXT)
 	return {
 		model: { page: next.model },
 		commands: Command.mapMessages(
@@ -41,27 +41,27 @@ const update = (model: Model, message: Message) => {
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.submodel({
-		slotId: "observer-home-lab",
+		slotId: "analyst-home-lab",
 		model: model.page,
 		view: pageView,
-		viewInputs: { context: OBSERVER_CONTEXT },
+		viewInputs: { context: ANALYST_CONTEXT },
 		toParentMessage: (message) => Message.GotPageMessage({ message }),
 	})
 
-export const lab = defineShellLab("Observer overview", {
+export const lab = defineShellLab("Analyst overview", {
 	Model,
 	Message,
 	Flags,
 	flags: Effect.sync(() => ({
 		state: Option.getOrElse(
 			decodeState(new URLSearchParams(window.location.search).get("state")),
-			(): ObserverHomeState => "clear",
+			(): AnalystHomeState => "clear",
 		),
 	})),
-	init: (flags: Flags) => ({ model: { page: observerHomeModel(flags.state) } }),
+	init: (flags: Flags) => ({ model: { page: analystHomeModel(flags.state) } }),
 	update,
 	view,
-	clerk: OBSERVER_CLERK,
+	clerk: ANALYST_CLERK,
 	currentPath: "/",
 	breadcrumbs: [{ label: "Overview" }],
 })

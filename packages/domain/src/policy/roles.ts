@@ -5,11 +5,11 @@ import { Array as Arr, Option, Order, Schema } from "effect"
  * permission names only its lowest role. `root` is Maple's own operator access and self-hosted
  * mode; it is never assigned in Clerk.
  */
-export const Role = Schema.Literals(["observer", "member", "engineer", "admin", "root"])
+export const Role = Schema.Literals(["analyst", "member", "engineer", "admin", "root"])
 export type Role = typeof Role.Type
 
 const RANK = {
-	observer: 0,
+	analyst: 0,
 	member: 1,
 	engineer: 2,
 	admin: 3,
@@ -21,9 +21,9 @@ const byRank: Order.Order<Role> = Order.mapInput(Order.Number, (role) => RANK[ro
 /** What the Members page shows for a role a person can be given in Clerk. */
 export const assignableRoles = [
 	{
-		role: "observer",
-		clerkKey: "org:observer",
-		label: "Observer",
+		role: "analyst",
+		clerkKey: "org:analyst",
+		label: "Analyst",
 		summary: "Follows incidents, reliability, product analytics and cost, without changing anything.",
 	},
 	{
@@ -51,7 +51,7 @@ export type ClerkRoleKey = AssignableRole["clerkKey"]
 
 /**
  * A Clerk or session role string as a {@link Role}. A role this code does not know reads as
- * observer, the least it can hold.
+ * analyst, the least it can hold.
  */
 export const roleOf = (name: string): Role => {
 	if (name === "root") return "root"
@@ -60,7 +60,7 @@ export const roleOf = (name: string): Role => {
 			Arr.findFirst(assignableRoles, (entry) => entry.clerkKey === name),
 			(entry): Role => entry.role,
 		),
-		(): Role => "observer",
+		(): Role => "analyst",
 	)
 }
 
@@ -82,7 +82,7 @@ export const outranks = (role: Role, other: Role): boolean => RANK[role] > RANK[
 /** "org admins and engineers": who holds a permission whose lowest role is `min`, for messages. */
 export const holdersPhrase = (min: Role): string => {
 	switch (min) {
-		case "observer":
+		case "analyst":
 			return "people in the organization"
 		case "member":
 			return "org admins, engineers and members"

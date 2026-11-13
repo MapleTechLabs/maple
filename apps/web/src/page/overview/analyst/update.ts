@@ -73,7 +73,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 					(current: Model): Step =>
 						keyedStep(
 							current.errors,
-							requestKey(context.orgId, "observerHome.topErrors", window),
+							requestKey(context.orgId, "analystHome.topErrors", window),
 							mode,
 							(errors) => ({ errors }),
 							(key) => FetchTopErrors({ key, window }),
@@ -84,7 +84,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	return runSteps(model, steps)
 }
 
-/** Starts the reads once: `init` for a known observer, else the page's Mount. */
+/** Starts the reads once: `init` for a known analyst, else the page's Mount. */
 export const enter = (model: Model, context: PageContext): Return => {
 	if (model.isEntered) return { model }
 	const synced = sync({ ...model, isEntered: true }, context, "Load")

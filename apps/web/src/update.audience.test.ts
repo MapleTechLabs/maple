@@ -21,8 +21,8 @@ import type { HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, scene, text } from "foldkit/scene"
 import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
-import { MountObserverHome } from "./page/overview/observer/command"
-import { Message as ObserverMessage } from "./page/overview/observer/message"
+import { MountAnalystHome } from "./page/overview/analyst/command"
+import { Message as AnalystMessage } from "./page/overview/analyst/message"
 import { MeasureSidebarOverflow } from "./shell/mounts"
 import { Message as ShellMessage } from "./shell/message"
 import type { Message } from "./message"
@@ -67,10 +67,10 @@ const signedIn = (role: string | null): Model => ({
 const audienceOf = (model: Model) => Option.getOrThrow(pageContextOf(model)).audience
 
 describe("page context audience", () => {
-	test("an observer's pages are told so, as their shell is", () => {
-		const model = signedIn("org:observer")
-		expect(audienceOf(model)).toBe("observer")
-		expect(Shell.shellAudience(shellClerkOf(model))).toBe("observer")
+	test("an analyst's pages are told so, as their shell is", () => {
+		const model = signedIn("org:analyst")
+		expect(audienceOf(model)).toBe("analyst")
+		expect(Shell.shellAudience(shellClerkOf(model))).toBe("analyst")
 	})
 
 	test("any other role, and a role Clerk has not read yet, is an operator", () => {
@@ -92,12 +92,12 @@ describe("the Overview the root draws", () => {
 		Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
 	]
 
-	test("an observer gets their own page, not the engineers'", () => {
+	test("an analyst gets their own page, not the engineers'", () => {
 		scene(
 			{ update, view: body },
-			entered("org:observer"),
+			entered("org:analyst"),
 			...shellMounted,
-			Mount.resolve(MountObserverHome, ObserverMessage.Entered()),
+			Mount.resolve(MountAnalystHome, AnalystMessage.Entered()),
 			expectView(text("Open incidents")).toExist(),
 			expectView(text("Top errors")).toExist(),
 		)

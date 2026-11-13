@@ -121,7 +121,7 @@ const memoRow = (h: H, signal: ErrorSignal, index: number, state: RowState): Htm
 /** The rows, or the empty state, under the column header. */
 const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> => {
 	const { signals } = inputs
-	// Selection and the bulk bar are triage: an observer gets neither.
+	// Selection and the bulk bar are triage: an analyst gets neither.
 	const canTriage = canTriageIssues(model)
 	if (signals.length === 0) {
 		return [

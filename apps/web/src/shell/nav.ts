@@ -182,8 +182,8 @@ const alertsItem: NavItem = {
 	],
 }
 
-/** The observer's Alerts: what is wrong now and how reliable things are, without the setup pages. */
-const observerIncidentsItem: NavItem = {
+/** The analyst's Alerts: what is wrong now and how reliable things are, without the setup pages. */
+const analystIncidentsItem: NavItem = {
 	title: "Incidents",
 	href: "/alerts",
 	icon: "BellIcon",
@@ -203,10 +203,10 @@ const observerIncidentsItem: NavItem = {
 }
 
 /**
- * Who the sidebar is drawn for. An observer follows the product without operating it, so they get
+ * Who the sidebar is drawn for. An analyst follows the product without operating it, so they get
  * the pages that answer "is it working and how is it doing", not the ones for digging or setup.
  */
-export const NavAudience = Schema.Literals(["operator", "observer"])
+export const NavAudience = Schema.Literals(["operator", "analyst"])
 export type NavAudience = typeof NavAudience.Type
 
 /** The org rollout flags that gate a nav row each. */
@@ -217,13 +217,13 @@ export type NavFlags = Readonly<{
 	statusPages: boolean
 }>
 
-const observerNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "reliability",
 		label: "Reliability",
 		items: [
-			observerIncidentsItem,
+			analystIncidentsItem,
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
 			...(flags.statusPages
 				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
@@ -304,10 +304,10 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 
 /**
  * `navGroups(flags, audience)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a
- * row each, and an observer gets {@link observerNavGroups}.
+ * row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
-	audience === "observer" ? observerNavGroups(flags) : operatorNavGroups(flags)
+	audience === "analyst" ? analystNavGroups(flags) : operatorNavGroups(flags)
 
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>

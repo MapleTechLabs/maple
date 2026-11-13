@@ -12,7 +12,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer previews templates; creating a dashboard from one needs `dashboards:edit`.
+// An analyst previews templates; creating a dashboard from one needs `dashboards:edit`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -36,7 +36,7 @@ const template = Schema.decodeUnknownSync(Schema.toType(V2DashboardTemplate))({
 })
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 /** The gallery with its one template selected and the session's grants answered. */
 const selected = (grants: ReadonlyArray<Policy.Permission>): Model => {
@@ -54,9 +54,9 @@ const selected = (grants: ReadonlyArray<Policy.Permission>): Model => {
 	)
 }
 
-describe("dashboard templates for an observer", () => {
+describe("dashboard templates for an analyst", () => {
 	test("the template previews with no way to create from it", () => {
-		const model = selected(OBSERVER)
+		const model = selected(ANALYST)
 		expect(names(pageUpdate(model, Message.ClickedCreate({ templateId: template.id })).commands)).toEqual(
 			[],
 		)

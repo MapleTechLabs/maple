@@ -22,21 +22,21 @@ describe("leaveEligibility", () => {
 })
 
 describe("toOrgRole", () => {
-	it("reads unknown Clerk roles as observer, the least a person can hold", () => {
+	it("reads unknown Clerk roles as analyst, the least a person can hold", () => {
 		expect(toOrgRole("org:admin")).toBe("org:admin")
-		expect(toOrgRole("org:billing")).toBe("org:observer")
-		expect(orgRoleLabel("org:viewer")).toBe("Observer")
+		expect(toOrgRole("org:billing")).toBe("org:analyst")
+		expect(orgRoleLabel("org:viewer")).toBe("Analyst")
 	})
 
 	it("shows root, which has no entry of its own, as a member", () => {
 		expect(orgRoleLabel("root")).toBe("Member")
 	})
 
-	it("names the observer role in a role change prompt", () => {
-		expect(roleChangePrompt("Ada", "org:observer")).toEqual({
+	it("names the analyst role in a role change prompt", () => {
+		expect(roleChangePrompt("Ada", "org:analyst")).toEqual({
 			question:
-				"Make Ada an observer? Follows incidents, reliability, product analytics and cost, without changing anything.",
-			confirmLabel: "Make observer",
+				"Make Ada an analyst? Follows incidents, reliability, product analytics and cost, without changing anything.",
+			confirmLabel: "Make analyst",
 		})
 	})
 })

@@ -46,7 +46,7 @@ export const toggledSelection = (model: Model, id: string, isShift: boolean): Mo
 
 const cleared = (model: Model): Model => ({ ...model, selectedIds: [], selectionAnchor: null })
 
-/** `x` selects for the bulk bar and `s`/`p` open the pickers: triage, so nothing for an observer. */
+/** `x` selects for the bulk bar and `s`/`p` open the pickers: triage, so nothing for an analyst. */
 const TRIAGE_KEYS = new Set(["x", "X", "s", "S", "p", "P"])
 
 /** `j`/`k`/arrows move the focus, Enter opens, `x` selects, Escape clears; `s`/`p` open its pickers. */

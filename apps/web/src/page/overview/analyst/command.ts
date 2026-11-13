@@ -13,20 +13,20 @@ import { RANK_LIMIT, topErrorsOf } from "./derive"
 import { Message } from "./message"
 
 /** The page is in the DOM: the reads it has not started yet start now. */
-export const MountObserverHome = Mount.define("MountObserverHome", {
+export const MountAnalystHome = Mount.define("MountAnalystHome", {
 	messages: [Message.Entered],
 	execute: () => Effect.succeed(Message.Entered()),
 })
 
-export const ReadClock = readClock("ReadObserverHomeClock", Message.CompletedReadClock)
+export const ReadClock = readClock("ReadAnalystHomeClock", Message.CompletedReadClock)
 
 /** Reload and a return to the page: the real clock, so every read is asked again. */
-export const ResolveClock = readClock("ResolveObserverHomeClock", Message.CompletedResolveClock)
+export const ResolveClock = readClock("ResolveAnalystHomeClock", Message.CompletedResolveClock)
 
-export const CompleteReloadSpin = reloadSpin("CompleteObserverHomeReloadSpin", Message.CompletedReloadSpin)
+export const CompleteReloadSpin = reloadSpin("CompleteAnalystHomeReloadSpin", Message.CompletedReloadSpin)
 
 /** `uptimeMonitors.list`, the read the Uptime tab makes. */
-export const FetchMonitors = Command.define("FetchObserverHomeMonitors", {
+export const FetchMonitors = Command.define("FetchAnalystHomeMonitors", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchMonitors],
 	execute: ({ key }) =>
@@ -37,7 +37,7 @@ export const FetchMonitors = Command.define("FetchObserverHomeMonitors", {
 })
 
 /** `slos.list` with every status, the read the SLOs tab makes. */
-export const FetchSlos = Command.define("FetchObserverHomeSlos", {
+export const FetchSlos = Command.define("FetchAnalystHomeSlos", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchSlos],
 	execute: ({ key }) =>
@@ -51,7 +51,7 @@ export const FetchSlos = Command.define("FetchObserverHomeSlos", {
  * The Errors page's volume sort: `getErrorsByType` ranks the window's fingerprints, then
  * `errorIssues.list` reads exactly those open issues.
  */
-export const FetchTopErrors = Command.define("FetchObserverHomeTopErrors", {
+export const FetchTopErrors = Command.define("FetchAnalystHomeTopErrors", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchErrors],
 	execute: ({ key, window }) =>
@@ -75,7 +75,7 @@ export const FetchTopErrors = Command.define("FetchObserverHomeTopErrors", {
 		}).pipe(settleTo((result) => Message.CompletedFetchErrors({ key, result }))),
 })
 
-export const LoadSignalPresence = Command.define("LoadObserverHomeSignalPresence", {
+export const LoadSignalPresence = Command.define("LoadAnalystHomeSignalPresence", {
 	args: { orgId: Schema.String },
 	messages: [Message.CompletedLoadSignalPresence],
 	execute: ({ orgId }) =>

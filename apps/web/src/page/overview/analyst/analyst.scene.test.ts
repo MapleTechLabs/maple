@@ -17,12 +17,12 @@ import { buildErrorsLabFixture } from "../../../lab/errors-fixture"
 import {
 	CRITICAL_INCIDENT,
 	DOWN_MONITOR,
-	OBSERVER_CONTEXT,
-	type ObserverHomeState,
-	observerHomeModel,
+	ANALYST_CONTEXT,
+	type AnalystHomeState,
+	analystHomeModel,
 	TOP_ERRORS,
 	WARNING_INCIDENT,
-} from "../../../lab/observer-home-fixture"
+} from "../../../lab/analyst-home-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import { sloHref } from "../../alerts/shared/slo-commands"
 import { checkoutSlo, searchSlo } from "../../alerts/shared/slo-test-fixtures"
@@ -40,36 +40,36 @@ import {
 	FetchSlos,
 	FetchTopErrors,
 	LoadSignalPresence,
-	MountObserverHome,
+	MountAnalystHome,
 	ReadClock,
 } from "./command"
 import { topErrorsOf } from "./derive"
-import { Message as ObserverMessage } from "./message"
-import type { Model as ObserverModel } from "./model"
+import { Message as AnalystMessage } from "./message"
+import type { Model as AnalystModel } from "./model"
 import { subscriptions } from "../subscription"
 
-// The Overview an observer gets: a verdict, what backs it, and no control that sets anything up.
+// The Overview an analyst gets: a verdict, what backs it, and no control that sets anything up.
 
-const OPERATOR_CONTEXT: PageContext = { ...OBSERVER_CONTEXT, audience: "operator" }
+const OPERATOR_CONTEXT: PageContext = { ...ANALYST_CONTEXT, audience: "operator" }
 
-const pageUpdate = (model: Model, message: Message) => update(model, message, OBSERVER_CONTEXT)
-const view = withViewInputs(pageView, { context: OBSERVER_CONTEXT })()
+const pageUpdate = (model: Model, message: Message) => update(model, message, ANALYST_CONTEXT)
+const view = withViewInputs(pageView, { context: ANALYST_CONTEXT })()
 
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-/** The Overview page holding the observer page as its reads left it in `state`. */
-const at = (state: ObserverHomeState): Model => ({
-	...init({ search: {} }, OBSERVER_CONTEXT).model,
-	observer: observerHomeModel(state),
+/** The Overview page holding the analyst page as its reads left it in `state`. */
+const at = (state: AnalystHomeState): Model => ({
+	...init({ search: {} }, ANALYST_CONTEXT).model,
+	analyst: analystHomeModel(state),
 })
 
 const verdict = (name: string | RegExp) => role("heading", { level: 1, name })
 
 /** The page's Mount: a no-op once `init` started the reads. */
-const mounted = Mount.resolve(MountObserverHome, ObserverMessage.Entered())
+const mounted = Mount.resolve(MountAnalystHome, AnalystMessage.Entered())
 
-describe("overview, observer", () => {
+describe("overview, analyst", () => {
 	test("with nothing open or failing the verdict says so, backed by the counts", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -179,8 +179,8 @@ describe("overview, observer", () => {
 			click(role("button", { name: "Try again" })),
 			Command.resolve(
 				FetchMonitors,
-				ObserverMessage.CompletedFetchMonitors({
-					key: failed.observer?.monitors.key ?? "",
+				AnalystMessage.CompletedFetchMonitors({
+					key: failed.analyst?.monitors.key ?? "",
 					result: Result.succeed([httpMonitor()]),
 				}),
 			),
@@ -189,17 +189,17 @@ describe("overview, observer", () => {
 		)
 	})
 
-	/** `state` after one more answer from the observer page's reads. */
-	const after = (state: ObserverHomeState, answer: (observer: ObserverModel) => ObserverMessage): Model => {
+	/** `state` after one more answer from the analyst page's reads. */
+	const after = (state: AnalystHomeState, answer: (analyst: AnalystModel) => AnalystMessage): Model => {
 		const model = at(state)
-		if (model.observer === null) return model
-		return pageUpdate(model, Message.GotObserverMessage({ message: answer(model.observer) })).model
+		if (model.analyst === null) return model
+		return pageUpdate(model, Message.GotAnalystMessage({ message: answer(model.analyst) })).model
 	}
 
 	test("checks that are all paused do not count as everything working", () => {
-		const paused = after("clear", (observer) =>
-			ObserverMessage.CompletedFetchMonitors({
-				key: observer.monitors.key ?? "",
+		const paused = after("clear", (analyst) =>
+			AnalystMessage.CompletedFetchMonitors({
+				key: analyst.monitors.key ?? "",
 				result: Result.succeed([httpMonitor({ enabled: false })]),
 			}),
 		)
@@ -213,9 +213,9 @@ describe("overview, observer", () => {
 	})
 
 	test("an empty error list is only called a clean day when the app is known to send data", () => {
-		const noErrors = (observer: ObserverModel) =>
-			ObserverMessage.CompletedFetchErrors({
-				key: observer.errors.key ?? "",
+		const noErrors = (analyst: AnalystModel) =>
+			AnalystMessage.CompletedFetchErrors({
+				key: analyst.errors.key ?? "",
 				result: Result.succeed([]),
 			})
 		scene(
@@ -234,58 +234,58 @@ describe("overview, observer", () => {
 		)
 	})
 
-	test("the engineers' live rows are not read while an observer's page is drawn", () => {
+	test("the engineers' live rows are not read while an analyst's page is drawn", () => {
 		const drawn = (model: Model) =>
-			subscriptions.incidents.modelToDependencies({ model, context: OBSERVER_CONTEXT }).isDrawn
+			subscriptions.incidents.modelToDependencies({ model, context: ANALYST_CONTEXT }).isDrawn
 		expect(drawn(at("clear"))).toBe(false)
 		expect(drawn(init({ search: {} }, OPERATOR_CONTEXT).model)).toBe(true)
 	})
 
-	test("an observer's entry starts their reads and none of the engineers'", () => {
-		const entered = init({ search: {} }, OBSERVER_CONTEXT)
+	test("an analyst's entry starts their reads and none of the engineers'", () => {
+		const entered = init({ search: {} }, ANALYST_CONTEXT)
 		expect(names(entered.commands)).toEqual(
 			expect.arrayContaining([
-				"ReadObserverHomeClock",
-				"FetchObserverHomeMonitors",
-				"FetchObserverHomeSlos",
-				"LoadObserverHomeSignalPresence",
+				"ReadAnalystHomeClock",
+				"FetchAnalystHomeMonitors",
+				"FetchAnalystHomeSlos",
+				"LoadAnalystHomeSignalPresence",
 			]),
 		)
 		expect(names(entered.commands)).not.toContain("ReadOverviewEntry")
 		expect(entered.model.setup).toBeNull()
 	})
 
-	test("a role that arrives after entry draws the observer page, and its mount starts the reads once", () => {
+	test("a role that arrives after entry draws the analyst page, and its mount starts the reads once", () => {
 		const asOperator = init({ search: {} }, OPERATOR_CONTEXT).model
-		const loading = observerHomeModel("loading")
+		const loading = analystHomeModel("loading")
 		scene(
 			{ update: pageUpdate, view },
 			given(asOperator),
 			expectView(role("heading", { level: 1, name: "Overview" })).toBeAbsent(),
 			expectView(text("Open incidents")).toExist(),
 			mounted,
-			Command.resolve(ReadClock, ObserverMessage.CompletedReadClock({ nowMs: NOW })),
+			Command.resolve(ReadClock, AnalystMessage.CompletedReadClock({ nowMs: NOW })),
 			Command.resolve(
 				LoadSignalPresence,
-				ObserverMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+				AnalystMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
 			),
 			Command.resolve(
 				FetchMonitors,
-				ObserverMessage.CompletedFetchMonitors({
+				AnalystMessage.CompletedFetchMonitors({
 					key: loading.monitors.key ?? "",
 					result: Result.succeed([]),
 				}),
 			),
 			Command.resolve(
 				FetchSlos,
-				ObserverMessage.CompletedFetchSlos({
+				AnalystMessage.CompletedFetchSlos({
 					key: loading.slos.key ?? "",
 					result: Result.succeed([]),
 				}),
 			),
 			Command.resolve(
 				FetchTopErrors,
-				ObserverMessage.CompletedFetchErrors({
+				AnalystMessage.CompletedFetchErrors({
 					key: loading.errors.key ?? "",
 					result: Result.succeed([]),
 				}),
@@ -294,24 +294,24 @@ describe("overview, observer", () => {
 		)
 		const entered = pageUpdate(
 			asOperator,
-			Message.GotObserverMessage({ message: ObserverMessage.Entered() }),
+			Message.GotAnalystMessage({ message: AnalystMessage.Entered() }),
 		)
 		const again = pageUpdate(
 			entered.model,
-			Message.GotObserverMessage({ message: ObserverMessage.Entered() }),
+			Message.GotAnalystMessage({ message: AnalystMessage.Entered() }),
 		)
 		expect(names(again.commands)).toEqual([])
 	})
 
 	test("the top errors wait for the clock, then are asked for over the last 24 hours", () => {
-		const entered = init({ search: {} }, OBSERVER_CONTEXT)
-		expect(names(entered.commands)).not.toContain("FetchObserverHomeTopErrors")
+		const entered = init({ search: {} }, ANALYST_CONTEXT)
+		expect(names(entered.commands)).not.toContain("FetchAnalystHomeTopErrors")
 		const clocked = pageUpdate(
 			entered.model,
-			Message.GotObserverMessage({ message: ObserverMessage.CompletedReadClock({ nowMs: NOW }) }),
+			Message.GotAnalystMessage({ message: AnalystMessage.CompletedReadClock({ nowMs: NOW }) }),
 		)
-		expect(names(clocked.commands)).toEqual(["FetchObserverHomeTopErrors"])
-		expect(clocked.model.observer?.window).toEqual({
+		expect(names(clocked.commands)).toEqual(["FetchAnalystHomeTopErrors"])
+		expect(clocked.model.analyst?.window).toEqual({
 			startTime: "2026-09-30 12:00:00",
 			endTime: "2026-10-01 12:00:00",
 		})
@@ -319,11 +319,11 @@ describe("overview, observer", () => {
 
 	test("an operator still gets the engineers' overview and its reads", () => {
 		const entered = init({ search: {} }, OPERATOR_CONTEXT)
-		expect(entered.model.observer).toBeNull()
+		expect(entered.model.analyst).toBeNull()
 		expect(names(entered.commands)).toEqual(
 			expect.arrayContaining(["ReadOverviewEntry", "LoadOverviewSignalPresence"]),
 		)
-		expect(names(entered.commands)).not.toContain("FetchObserverHomeMonitors")
+		expect(names(entered.commands)).not.toContain("FetchAnalystHomeMonitors")
 		scene(
 			{
 				update: (model: Model, message: Message) => update(model, message, OPERATOR_CONTEXT),

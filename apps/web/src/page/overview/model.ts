@@ -12,7 +12,7 @@ import * as Select from "@maple/views/ui/select"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as SetupChecklist from "./setup-checklist"
-import * as Observer from "./observer/model"
+import * as Analyst from "./analyst/model"
 import { IncidentsData } from "../kit/service-health"
 
 /** The facets hint, persisted per org. */
@@ -104,7 +104,7 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 	/** `SetupChecklist`, Clerk mode only (`null` self-hosted). */
 	setup: Schema.NullOr(SetupChecklist.Model),
-	/** The observer's Overview, once the viewer is known to be one; `null` for an operator. */
-	observer: Schema.NullOr(Observer.Model),
+	/** The analyst's Overview, once the viewer is known to be one; `null` for an operator. */
+	analyst: Schema.NullOr(Analyst.Model),
 })
 export type Model = typeof Model.Type

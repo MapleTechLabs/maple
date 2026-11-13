@@ -17,12 +17,12 @@ const waiting = { orgId: Schema.String, isWaiting: Schema.Boolean }
 
 /** The synced alert incidents and rules the alerts pages read, with an end state for a stalled sync. */
 export const subscriptions = Subscription.make<Input, Message, Resources>()((entry) => ({
-	observerIncidents: entry(byOrg, {
+	analystIncidents: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 		dependenciesToStream: ({ orgId }) =>
 			incidentRows(orgId, (rows) => Message.UpdatedIncidents({ orgId, rows })),
 	}),
-	observerIncidentsLoadFailed: entry(waiting, {
+	analystIncidentsLoadFailed: entry(waiting, {
 		modelToDependencies: ({ model, context }) => ({
 			orgId: context.orgId,
 			isWaiting: AsyncData.isLoading(model.incidents),
@@ -36,12 +36,12 @@ export const subscriptions = Subscription.make<Input, Message, Resources>()((ent
 					)
 				: Stream.empty,
 	}),
-	observerRules: entry(byOrg, {
+	analystRules: entry(byOrg, {
 		modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 		dependenciesToStream: ({ orgId }) =>
 			ruleRows(orgId, (rows) => Message.UpdatedRules({ orgId, count: rows.length })),
 	}),
-	observerRulesLoadFailed: entry(waiting, {
+	analystRulesLoadFailed: entry(waiting, {
 		modelToDependencies: ({ model, context }) => ({
 			orgId: context.orgId,
 			isWaiting: AsyncData.isLoading(model.ruleCount),

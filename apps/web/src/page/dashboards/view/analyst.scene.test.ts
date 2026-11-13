@@ -14,7 +14,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads a board; editing needs `dashboards:edit` and sharing `dashboards:share`.
+// An analyst reads a board; editing needs `dashboards:edit` and sharing `dashboards:share`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -62,7 +62,7 @@ const version = {
 }
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 type Grants = ReadonlyArray<Policy.Permission>
 
 /** Entered, clocked, holding the session's grants and the document. */
@@ -93,11 +93,11 @@ const previewV2 = (model: Model): Model =>
 		Message.CompletedFetchSnapshot({ versionId: version.id, result: Result.succeed(board([note])) }),
 	])
 
-describe("a dashboard for an observer", () => {
+describe("a dashboard for an analyst", () => {
 	test("the board and its widgets render without an Edit control", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(ready(OBSERVER)),
+			given(ready(ANALYST)),
 			...mounted(),
 			expectView(text("Page the platform on-call first.")).toExist(),
 			expectView(role("button", { name: "Reload" })).toExist(),
@@ -115,7 +115,7 @@ describe("a dashboard for an observer", () => {
 	})
 
 	test("?mode=edit lands on the read view", () => {
-		const model = ready(OBSERVER, { mode: "edit" })
+		const model = ready(ANALYST, { mode: "edit" })
 		expect(isEditing(model)).toBe(false)
 		scene(
 			{ update: pageUpdate, view },
@@ -141,7 +141,7 @@ describe("a dashboard for an observer", () => {
 	})
 
 	test("the name is a heading, not a rename control", () => {
-		const model = ready(OBSERVER)
+		const model = ready(ANALYST)
 		expect(pageUpdate(model, Message.ClickedTitle()).model.titleDraft).toBeNull()
 		scene(
 			{ update: pageUpdate, view },
@@ -166,7 +166,7 @@ describe("a dashboard for an observer", () => {
 	test("the more menu keeps history and export and drops Share", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withMoreMenuOpen(ready(OBSERVER))),
+			given(withMoreMenuOpen(ready(ANALYST))),
 			...mounted(),
 			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
 			expectView(role("menuitem", { name: "Version history" })).toExist(),
@@ -186,7 +186,7 @@ describe("a dashboard for an observer", () => {
 	})
 
 	test("a previewed version can be left but not restored", () => {
-		const previewed = previewV2(ready(OBSERVER))
+		const previewed = previewV2(ready(ANALYST))
 		expect(previewed.history.previewed?.id).toBe(version.id)
 		expect(pageUpdate(previewed, Message.ClickedRestoreVersion()).model.history.restoreDialog).toEqual(
 			previewed.history.restoreDialog,
@@ -212,7 +212,7 @@ describe("a dashboard for an observer", () => {
 	test("an empty board offers nothing to add", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(ready(OBSERVER, {}, board([]))),
+			given(ready(ANALYST, {}, board([]))),
 			themed(),
 			expectView(text("Nothing on this board yet")).toExist(),
 			expectView(role("button", { name: "Add your first widget" })).toBeAbsent(),

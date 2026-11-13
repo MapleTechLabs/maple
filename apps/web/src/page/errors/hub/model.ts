@@ -57,7 +57,7 @@ export type PageSlot = typeof PageSlot.Type
 
 export const Model = Schema.Struct({
 	search: ErrorsSearch,
-	/** What the viewer may do; an observer reads the list and gets no triage control. */
+	/** What the viewer may do; an analyst reads the list and gets no triage control. */
 	grants: Schema.Array(Policy.PermissionName),
 	/** The trend window (`ERRORS_WINDOW`) and the clock it was resolved at. */
 	window: Schema.NullOr(TimeWindow),

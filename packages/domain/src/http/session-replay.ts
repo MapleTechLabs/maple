@@ -6,7 +6,7 @@ import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { QueryEngineExecutionError, QueryEngineTimeoutError } from "./query-engine"
 import { warehouseHttpErrors } from "./warehouse"
-import { ObserverAccess } from "./observer-access"
+import { AnalystAccess } from "./analyst-access"
 
 // Session replay schemas shared by the v2 contract and the internal replay group.
 
@@ -170,6 +170,6 @@ export class SessionReplaysInternalApiGroup extends HttpApiGroup.make("sessionRe
 	)
 	.prefix("/internal/session-replays")
 	.middleware(SessionAuthorization)
-	// Every endpoint here only reads, so an observer may call it.
-	.annotate(ObserverAccess, "read")
+	// Every endpoint here only reads, so an analyst may call it.
+	.annotate(AnalystAccess, "read")
 	.annotate(AuditedRead, "session_replay.read") {}

@@ -13,7 +13,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads a status page and its incidents; posting, updating, editing and deleting an
+// An analyst reads a status page and its incidents; posting, updating, editing and deleting an
 // incident or maintenance need `status_page_incidents:post`.
 
 const context: PageContext = { orgId: Schema.decodeSync(OrgId)(ORG), pinnedNamespace: null, timeZone: "UTC" }
@@ -21,7 +21,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 /** The editor's Page tab over `incidents`, read by a session holding `grants`. */
 const loaded = (
@@ -61,11 +61,11 @@ const MAINTENANCE = incident(2, { kind: "maintenance", title: "Database upgrade"
 const opened = (grants: ReadonlyArray<Policy.Permission>, row: ReturnType<typeof incident>, n: number) =>
 	pageUpdate(loaded(grants, [row]), Message.ClickedIncident({ incidentId: incidentId(n) })).model
 
-describe("status page editor, observer", () => {
-	test("Post incident is offered to a member and not to an observer", () => {
+describe("status page editor, analyst", () => {
+	test("Post incident is offered to a member and not to an analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER, [])),
+			given(loaded(ANALYST, [])),
 			expectView(text("Nothing posted.")).toExist(),
 			expectView(role("button", { name: "Post incident" })).toBeAbsent(),
 		)
@@ -77,10 +77,10 @@ describe("status page editor, observer", () => {
 		)
 	})
 
-	test("an observer reads an open incident's updates and gets none of its actions", () => {
+	test("an analyst reads an open incident's updates and gets none of its actions", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(opened(OBSERVER, DRAFT, 1)),
+			given(opened(ANALYST, DRAFT, 1)),
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("region", { name: "Updates" })).toExist(),
 			expectView(role("button", { name: "Publish" })).toBeAbsent(),
@@ -103,10 +103,10 @@ describe("status page editor, observer", () => {
 		)
 	})
 
-	test("a maintenance notice is the same: a member completes or deletes it, an observer reads it", () => {
+	test("a maintenance notice is the same: a member completes or deletes it, an analyst reads it", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(opened(OBSERVER, MAINTENANCE, 2)),
+			given(opened(ANALYST, MAINTENANCE, 2)),
 			expectView(role("button", { name: "Complete" })).toBeAbsent(),
 			expectView(role("button", { name: "Delete maintenance" })).toBeAbsent(),
 		)

@@ -11,7 +11,7 @@ import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { isPolling as isSetupPolling } from "./setup-checklist-update"
 import { backoffPollTicks } from "../../data/poll"
-import { subscriptions as observerSubscriptions } from "./observer/subscription"
+import { subscriptions as analystSubscriptions } from "./analyst/subscription"
 
 /** Five minutes of 15 s polls before the setup card slows to one a minute. */
 const SETUP_FAST_POLLS = 20
@@ -49,17 +49,17 @@ const WhileDrawn = { orgId: Schema.String, isDrawn: Schema.Boolean }
 const byOrg = (stream: (orgId: string) => Stream.Stream<Message, never, OrgCollections>) => ({
 	modelToDependencies: ({ model, context }: PageSubscriptionInput<Model>) => ({
 		orgId: context.orgId,
-		isDrawn: model.observer === null,
+		isDrawn: model.analyst === null,
 	}),
 	dependenciesToStream: ({ orgId, isDrawn }: { readonly orgId: string; readonly isDrawn: boolean }) =>
 		isDrawn ? stream(orgId) : Stream.empty,
 })
 
-/** The observer page's live alert rows, only while there is an observer page. */
-const observer = Subscription.lift(observerSubscriptions)<PageSubscriptionInput<Model>, Message>({
+/** The analyst page's live alert rows, only while there is an analyst page. */
+const analyst = Subscription.lift(analystSubscriptions)<PageSubscriptionInput<Model>, Message>({
 	read: ({ model, context }) =>
-		model.observer === null ? Option.none() : Option.some({ model: model.observer, context }),
-	toParentMessage: (message) => Message.GotObserverMessage({ message }),
+		model.analyst === null ? Option.none() : Option.some({ model: model.analyst, context }),
+	toParentMessage: (message) => Message.GotAnalystMessage({ message }),
 })
 
 const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
@@ -70,7 +70,7 @@ const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resour
 		{
 			modelToDependencies: ({ model, context }) => ({
 				orgId: context.orgId,
-				isWaiting: model.observer === null && AsyncData.isLoading(model.incidents),
+				isWaiting: model.analyst === null && AsyncData.isLoading(model.incidents),
 			}),
 			dependenciesToStream: ({ orgId, isWaiting }) =>
 				incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
@@ -82,7 +82,7 @@ const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resour
 		{
 			modelToDependencies: ({ model, context }) => ({
 				orgId: context.orgId,
-				isWaiting: model.observer === null && AsyncData.isLoading(model.rules),
+				isWaiting: model.analyst === null && AsyncData.isLoading(model.rules),
 			}),
 			dependenciesToStream: ({ orgId, isWaiting }) =>
 				isWaiting
@@ -113,4 +113,4 @@ const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resour
 	),
 }))
 
-export const subscriptions = Subscription.aggregate(operator, observer)
+export const subscriptions = Subscription.aggregate(operator, analyst)

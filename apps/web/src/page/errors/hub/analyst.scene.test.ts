@@ -13,7 +13,7 @@ import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
-// An observer reads the list; selection, the row pickers, the bulk bar and the row menu's
+// An analyst reads the list; selection, the row pickers, the bulk bar and the row menu's
 // status and lease entries need `error_issues:triage`.
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -25,7 +25,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 
 const MEMBER = Policy.grantsOf(["org:member"])
-const OBSERVER = Policy.grantsOf(["org:observer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
 
 const RECT = { left: 2, right: 115, top: 2, bottom: 2, width: 51, height: 28 }
 const mounted = [
@@ -106,11 +106,11 @@ const pickedFromRowMenu = (model: Model, index: number) => {
 	)
 }
 
-describe("errors list for an observer", () => {
+describe("errors list for an analyst", () => {
 	test("a row reads its severity and status with no checkbox or picker", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(OBSERVER)),
+			given(loaded(ANALYST)),
 			...mounted,
 			expectView(role("link", { name: /ConnectionTimeout/ })).toHaveAttr(
 				"href",
@@ -136,7 +136,7 @@ describe("errors list for an observer", () => {
 		)
 	})
 
-	test("a selection brings a member the bulk bar and an observer nothing", () => {
+	test("a selection brings a member the bulk bar and an analyst nothing", () => {
 		const bulkBar = role("region", { name: "Bulk actions" })
 		scene(
 			{ update: pageUpdate, view },
@@ -147,7 +147,7 @@ describe("errors list for an observer", () => {
 		)
 		scene(
 			{ update: pageUpdate, view },
-			given({ ...loaded(OBSERVER), selectedIds: [ISSUE_ID] }),
+			given({ ...loaded(ANALYST), selectedIds: [ISSUE_ID] }),
 			...mounted,
 			expectView(bulkBar).toBeAbsent(),
 			expectView(role("button", { name: "Claim" })).toBeAbsent(),
@@ -155,7 +155,7 @@ describe("errors list for an observer", () => {
 	})
 
 	test("x, s and p do nothing; j still moves the focus and Enter opens the issue", () => {
-		const focused = press(loaded(OBSERVER), "j")
+		const focused = press(loaded(ANALYST), "j")
 		expect(focused.focusedId).toBe(ISSUE_ID)
 		expect(press(focused, "x").selectedIds).toEqual([])
 		expect(press(focused, "s").picker).toBeNull()
@@ -173,9 +173,9 @@ describe("errors list for an observer", () => {
 	})
 
 	test("the row menu starts at Open in new tab and writes nothing", () => {
-		expect(names(pickedFromRowMenu(loaded(OBSERVER), 0).commands)).toContain("OpenErrorsRowInNewTab")
-		// Where a member's menu has Claim, an observer's has Copy link.
-		const second = names(pickedFromRowMenu(loaded(OBSERVER), 1).commands)
+		expect(names(pickedFromRowMenu(loaded(ANALYST), 0).commands)).toContain("OpenErrorsRowInNewTab")
+		// Where a member's menu has Claim, an analyst's has Copy link.
+		const second = names(pickedFromRowMenu(loaded(ANALYST), 1).commands)
 		expect(second).toContain("CopyErrorsRowText")
 		expect(second).not.toContain("RunErrorsHubWrite")
 	})
@@ -188,7 +188,7 @@ describe("errors list for an observer", () => {
 		const other = Schema.decodeSync(OrgId)("org_other")
 		const model = pageUpdate(
 			loaded(MEMBER),
-			Message.CompletedFetchSession({ orgId: other, grants: OBSERVER }),
+			Message.CompletedFetchSession({ orgId: other, grants: ANALYST }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
