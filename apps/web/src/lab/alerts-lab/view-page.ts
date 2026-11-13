@@ -19,6 +19,7 @@ import { Message, type Model } from "./model"
 import { Message as HubMessage } from "../../page/alerts/hub/message"
 import { FRAME_CLASS, hubSections, section } from "./view"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { canRespondToIncidents } from "../../page/kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -79,17 +80,19 @@ const incidentFrame = (h: H, model: Model, fixture: AlertsLabFixture, isAcknowle
 						headerTitle(h, incident, rule, model.nowMs, model.timeZone),
 						hstack(h, { gap: "2", wrap: true }, [
 							// The lab hub drops this message, as it does the inbox buttons': the lab has no API.
-							...acknowledgeAction(h, {
-								incident,
-								isLoading: false,
-								onAcknowledge: (acknowledged) =>
-									Message.GotHubMessage({
-										message: HubMessage.ClickedAcknowledgeIncident({
-											incidentId: incident.id,
-											acknowledged,
-										}),
-									}),
-							}),
+							...(canRespondToIncidents(model.hub)
+								? acknowledgeAction(h, {
+										incident,
+										isLoading: false,
+										onAcknowledge: (acknowledged) =>
+											Message.GotHubMessage({
+												message: HubMessage.ClickedAcknowledgeIncident({
+													incidentId: incident.id,
+													acknowledged,
+												}),
+											}),
+									})
+								: []),
 							linkButton(
 								h,
 								{

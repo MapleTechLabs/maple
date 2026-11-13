@@ -1,24 +1,37 @@
-import { Clock, Effect, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Resources } from "../../platform/resources"
-import { hubStep, initHub, labSignals } from "./hub-step"
-import { Message, type Model } from "./model"
+import { grantsOf, hubStep, initHub, labSignals } from "./hub-step"
+import { LabRole, Message, type Model } from "./model"
 
 export type Return = Update.Return<Model, Message, Resources>
 
-export const ErrorsLabFlags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
+export const ErrorsLabFlags = Schema.Struct({
+	nowMs: Schema.Number,
+	timeZone: Schema.String,
+	role: LabRole,
+})
 export type ErrorsLabFlags = typeof ErrorsLabFlags.Type
 
-/** The boot clock (read once) and the browser's zone. */
+const decodeRole = Schema.decodeUnknownOption(LabRole)
+
+/** The boot clock (read once), the browser's zone and the `?role=` the list is read as. */
 export const errorsLabFlags: Effect.Effect<ErrorsLabFlags> = Effect.all({
 	nowMs: Clock.currentTimeMillis,
 	timeZone: Effect.sync(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+	role: Effect.sync(() =>
+		Option.getOrElse(
+			decodeRole(new URLSearchParams(window.location.search).get("role")),
+			(): LabRole => "member",
+		),
+	),
 })
 
 export const init = (flags: ErrorsLabFlags): Model => ({
 	timeZone: flags.timeZone,
-	hub: initHub(flags.nowMs),
+	hub: initHub(flags.nowMs, flags.role),
 	state: "ready",
+	role: flags.role,
 	width: null,
 })
 
@@ -36,5 +49,13 @@ export const update = (model: Model, message: Message): Return =>
 			}
 		},
 		ClickedState: ({ state }) => ({ model: { ...model, state } }),
+		// A new role is a new session: its grants, and nothing left selected or open.
+		ClickedRole: ({ role }) => ({
+			model: {
+				...model,
+				role,
+				hub: { ...model.hub, grants: grantsOf(role), selectedIds: [], picker: null },
+			},
+		}),
 		ClickedWidth: ({ width }) => ({ model: { ...model, width } }),
 	})
