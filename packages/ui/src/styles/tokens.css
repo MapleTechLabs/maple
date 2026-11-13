@@ -10,34 +10,34 @@
 
 :root {
 	--background: oklch(1 0 0);
-	--foreground: oklch(0.141 0.005 285.823);
+	--foreground: oklch(0.18 0.006 70);
 	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.141 0.005 285.823);
+	--card-foreground: oklch(0.18 0.006 70);
 	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.141 0.005 285.823);
+	--popover-foreground: oklch(0.18 0.006 70);
 	/* Maple's brand is the warm amber (hue ~59) used across the dark theme, not
 	   the stale shadcn blue these light tokens shipped with. Mirror the dark
 	   theme's amber-with-dark-text relationship, tuned a touch deeper so it
 	   reads on a white canvas. */
-	--primary: oklch(0.66 0.16 59);
-	--primary-foreground: oklch(0.21 0.008 67);
+	--primary: oklch(0.7 0.155 60);
+	--primary-foreground: oklch(0.2 0.01 60);
 	/* Ink: a tone as text. The fills above are tuned to be seen, and on a white canvas that
 	   leaves them near 3:1 as type, so `text-primary` and `text-severity-*` read these deeper
 	   steps of the same hue (the `--text-color-*` block below). Each clears 4.5:1 on white and
 	   on its own `-a2` wash. In dark the fills read as type already, so the inks there are the
 	   fills (trace and fatal aside). */
 	--primary-ink: oklch(0.52 0.14 55);
-	--secondary: oklch(0.967 0.001 286.375);
-	--secondary-foreground: oklch(0.21 0.006 285.885);
-	--muted: oklch(0.967 0.001 286.375);
+	--secondary: oklch(0.96 0.002 80);
+	--secondary-foreground: oklch(0.18 0.006 70);
+	--muted: oklch(0.96 0.002 80);
 	/* Deeper than zinc-500, so the subtle step mixed from it still clears 4.5:1 on white. */
-	--muted-foreground: oklch(0.5 0.016 286);
-	--accent: oklch(0.955 0.025 75);
-	--accent-foreground: oklch(0.21 0.006 285.885);
+	--muted-foreground: oklch(0.5 0.01 70);
+	--accent: oklch(0.955 0.004 80);
+	--accent-foreground: oklch(0.18 0.006 70);
 	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.92 0.004 286.32);
-	--input: oklch(0.92 0.004 286.32);
-	--ring: oklch(0.705 0.015 286.067);
+	--border: oklch(0.915 0.003 80);
+	--input: oklch(0.9 0.004 80);
+	--ring: oklch(0.705 0.01 75);
 	--chart-1: oklch(0.6 0.16 250);
 	--chart-2: oklch(0.62 0.14 185);
 	--chart-3: oklch(0.65 0.16 85);
@@ -75,14 +75,14 @@
 	--chart-tok-output: oklch(0.6 0.18 30);
 	--chart-tok-reasoning: oklch(0.6 0.19 318);
 	--radius: 8px;
-	--sidebar: oklch(0.985 0 0);
-	--sidebar-foreground: oklch(0.141 0.005 285.823);
-	--sidebar-primary: oklch(0.66 0.16 59);
-	--sidebar-primary-foreground: oklch(0.21 0.008 67);
-	--sidebar-accent: oklch(0.955 0.025 75);
-	--sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-	--sidebar-border: oklch(0.92 0.004 286.32);
-	--sidebar-ring: oklch(0.705 0.015 286.067);
+	--sidebar: oklch(0.975 0.002 80);
+	--sidebar-foreground: oklch(0.18 0.006 70);
+	--sidebar-primary: oklch(0.7 0.155 60);
+	--sidebar-primary-foreground: oklch(0.2 0.01 60);
+	--sidebar-accent: oklch(0.94 0.003 80);
+	--sidebar-accent-foreground: oklch(0.18 0.006 70);
+	--sidebar-border: oklch(0.915 0.003 80);
+	--sidebar-ring: oklch(0.705 0.01 75);
 	/* Service-map edge "tube" hollow-interior core. Matches the canvas
 	   background so tubes read as hollow pipes in either theme (light here,
 	   the dark-canvas value lives in .dark). */
@@ -245,6 +245,8 @@
 	--surface-recessed: oklch(0 0 0 / 4%);
 	/* The edge of a pill raised out of a recessed track: the subtle hairline, a line of light in dark. */
 	--border-raised: color-mix(in oklab, var(--border) 60%, transparent);
+	/* The shade under a raised control or card: faint on white, deeper on a dark surface. */
+	--raised-shade: oklch(0 0 0 / 5%);
 }
 
 @media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
@@ -254,32 +256,32 @@
 }
 
 .dark {
-	--background: oklch(0.207 0.008 67);
-	--foreground: oklch(0.91 0.016 74);
-	--card: oklch(0.224 0.009 75);
-	--card-foreground: oklch(0.91 0.016 74);
-	--popover: oklch(0.224 0.009 75);
-	--popover-foreground: oklch(0.91 0.016 74);
-	--primary: oklch(0.714 0.154 59);
-	--primary-foreground: oklch(0.207 0.008 67);
+	--background: oklch(0.19 0.005 70);
+	--foreground: oklch(0.955 0.005 80);
+	--card: oklch(0.21 0.005 70);
+	--card-foreground: oklch(0.955 0.005 80);
+	--popover: oklch(0.215 0.005 70);
+	--popover-foreground: oklch(0.955 0.005 80);
+	--primary: oklch(0.74 0.15 62);
+	--primary-foreground: oklch(0.18 0.01 62);
 	--primary-ink: var(--primary);
-	--secondary: oklch(0.26 0.012 67);
-	--secondary-foreground: oklch(0.91 0.016 74);
-	--muted: oklch(0.26 0.012 67);
-	--muted-foreground: oklch(0.66 0.022 72);
-	--accent: oklch(0.26 0.012 67);
-	--accent-foreground: oklch(0.91 0.016 74);
+	--secondary: oklch(0.245 0.005 70);
+	--secondary-foreground: oklch(0.955 0.005 80);
+	--muted: oklch(0.245 0.005 70);
+	--muted-foreground: oklch(0.7 0.009 75);
+	--accent: oklch(0.245 0.005 70);
+	--accent-foreground: oklch(0.955 0.005 80);
 	--destructive: oklch(0.654 0.176 30);
-	--border: oklch(0.268 0.012 67);
-	--input: oklch(0.33 0.015 72);
-	--ring: oklch(0.58 0.02 65);
-	--chart-1: oklch(0.714 0.154 59);
+	--border: oklch(0.26 0.005 70);
+	--input: oklch(0.3 0.006 70);
+	--ring: oklch(0.6 0.01 70);
+	--chart-1: oklch(0.74 0.15 62);
 	--chart-2: oklch(0.693 0.165 254);
 	--chart-3: oklch(0.658 0.134 151);
 	--chart-4: oklch(0.65 0.14 185);
 	--chart-5: oklch(0.7 0.12 310);
 	--chart-p99: oklch(0.654 0.176 30);
-	--chart-p95: oklch(0.714 0.154 59);
+	--chart-p95: oklch(0.74 0.15 62);
 	--chart-p50: oklch(0.693 0.165 254);
 	/* chart-error sits in the same warm zone as chart-p99 by design, but must
 	   stay distinguishable from it: shift toward pure red (hue 22 vs 30) and
@@ -296,20 +298,20 @@
 	--chart-ai-ttft: oklch(0.73 0.15 65);
 	--chart-ai-tool: oklch(0.7 0.14 155);
 	--chart-ai-inference: oklch(0.69 0.15 250);
-	--chart-ai-agent: oklch(0.714 0.154 59);
+	--chart-ai-agent: oklch(0.74 0.15 62);
 	--chart-tok-input: oklch(0.69 0.15 246);
 	--chart-tok-cache-read: oklch(0.72 0.12 174);
 	--chart-tok-cache-write: oklch(0.73 0.15 102);
 	--chart-tok-output: oklch(0.7 0.16 30);
 	--chart-tok-reasoning: oklch(0.7 0.17 318);
-	--sidebar: oklch(0.185 0.007 56);
-	--sidebar-foreground: oklch(0.91 0.016 74);
-	--sidebar-primary: oklch(0.714 0.154 59);
-	--sidebar-primary-foreground: oklch(0.207 0.008 67);
-	--sidebar-accent: oklch(0.26 0.012 67);
-	--sidebar-accent-foreground: oklch(0.91 0.016 74);
-	--sidebar-border: oklch(0.268 0.012 67);
-	--sidebar-ring: oklch(0.58 0.02 65);
+	--sidebar: oklch(0.155 0.004 70);
+	--sidebar-foreground: oklch(0.955 0.005 80);
+	--sidebar-primary: oklch(0.74 0.15 62);
+	--sidebar-primary-foreground: oklch(0.18 0.01 62);
+	--sidebar-accent: oklch(0.225 0.005 70);
+	--sidebar-accent-foreground: oklch(0.955 0.005 80);
+	--sidebar-border: oklch(0.26 0.005 70);
+	--sidebar-ring: oklch(0.6 0.01 70);
 	/* Preserves the original dark-canvas core (slightly darker than --background
 	   for a recessed "depth" groove). */
 	--service-map-edge-core: oklch(0.141 0.005 285.823);
@@ -347,7 +349,7 @@
 	--service-15: oklch(0.65 0.13 210); /* Cyan */
 	--service-16: oklch(0.6 0.1 230); /* Slate */
 
-	/* Heatmap ramps, dark. Card is oklch(0.224 0.009 75) and the grout sits below
+	/* Heatmap ramps, dark. Card is oklch(0.21 0.005 70) and the grout sits below
 	   it at 0.175, so every stop 0 clears its own backing by ΔL 0.145 — the gap
 	   between cells reads as a drawn line rather than a rounding error.
 	   See the :root block for the rules. */
@@ -391,15 +393,16 @@
 	--success-foreground: var(--color-emerald-400);
 	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-400);
-	--control-highlight: 0 -1px oklch(1 0 0 / 6%);
+	--control-highlight: 0 -1px oklch(1 0 0 / 7%);
 	--surface-recessed: oklch(0 0 0 / 25%);
 	/* A dark page needs more black to read as set back; still far lighter than the dialog's. */
 	--scrim-panel: oklch(0 0 0 / 24%);
 	--border-raised: oklch(1 0 0 / 10%);
+	--raised-shade: oklch(0 0 0 / 35%);
 }
 
 @theme inline {
-	--font-sans: "Geist Mono Variable", ui-monospace, monospace;
+	--font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-mono: "Geist Mono Variable", ui-monospace, monospace;
 	--font-display: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 	/* Sentences (descriptions, empty and error copy) read in the proportional face; data stays mono. */
@@ -507,7 +510,7 @@
 	   control or card off its surface, `popup` floats menus, popovers, dialogs and toasts,
 	   `control` is a control's 1px highlight (swaps per theme), `accent-start` marks the current
 	   row's leading edge. Tailwind's sizes and raw `shadow-[…]` are lint errors. */
-	--shadow-raised: 0 1px 2px 0 oklch(0 0 0 / 5%);
+	--shadow-raised: 0 1px 2px 0 var(--raised-shade);
 	--shadow-popup: 0 10px 15px -3px oklch(0 0 0 / 5%), 0 4px 6px -4px oklch(0 0 0 / 5%);
 	--shadow-control: var(--control-highlight);
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
@@ -813,6 +816,14 @@
 		@apply font-sans bg-background text-foreground;
 	}
 	html {
+		@apply font-sans;
+	}
+	/* Chrome reads in Geist; numbers that line up in a column stay in the mono face, except the
+	   large stat figure. A `font-sans` utility on the element still wins. */
+	.tabular-nums {
+		@apply font-mono;
+	}
+	.text-figure {
 		@apply font-sans;
 	}
 }

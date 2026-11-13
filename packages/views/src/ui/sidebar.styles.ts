@@ -52,7 +52,7 @@ export const sidebarContainerLeftStyles =
 	"left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
 
 export const sidebarContainerDefaultStyles =
-	"group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l"
+	"group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[variant=sidebar]:group-data-[side=left]:border-r group-data-[variant=sidebar]:group-data-[side=right]:border-l"
 
 export const sidebarInnerStyles =
 	"flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow-raised"
@@ -72,7 +72,7 @@ export const sidebarRailStyles = [
 
 export const sidebarInsetStyles = [
 	"relative flex h-svh w-full min-h-0 min-w-0 flex-1 flex-col bg-background",
-	"md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-raised",
+	"md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:h-[calc(100svh-(--spacing(4)))] md:peer-data-[variant=inset]:overflow-hidden md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:border md:peer-data-[variant=inset]:shadow-raised",
 ] as const
 
 export const sidebarHeaderStyles = "flex flex-col gap-2 p-2"
