@@ -42,6 +42,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: "Traces",
+			width: "full",
 			filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 			actions: hstack(h, { gap: "2", wrap: true }, [
 				advancedFilterButton(h, {

@@ -37,7 +37,10 @@ export type DashboardPageOptions = Readonly<{
 	/** Page tabs pinned under the header. */
 	tabs?: Html
 	scrollClassName?: string
-	/** A centred capped column (`page-column`). */
+	/**
+	 * The body's column (`page-column`). Defaults to `wide`, a 1536px cap; `full` is for a
+	 * page whose content is the canvas (traces, the service map, a dashboard grid).
+	 */
 	width?: PageWidth
 	/** The gap between the body's top-level blocks. */
 	gap?: PageGap
@@ -106,23 +109,31 @@ export const pageHeader = <M>(
 		actions === undefined ? [] : [pageHeaderActions(h, [actions])],
 	)
 
-const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrolled = false): Html =>
+const stickyArea = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	isScrolled: boolean,
+	width: PageWidth,
+): Html =>
 	h.div(
 		[
 			h.DataAttribute("slot", "page-sticky-area"),
 			h.Class(cn(pageStickyAreaStyles, isScrolled && pageStickyAreaScrolledStyles)),
 		],
-		children,
+		// The header caps at the body's width, so the title sits over the column it heads.
+		PAGE_WIDTH[width] === null
+			? children
+			: [h.div([h.Class(cn("w-full space-y-4", PAGE_WIDTH[width]))], children)],
 	)
 
 const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
-// `settings` caps the header and the column at the same left-aligned width (settings, integrations, account).
+// Every capped width is left-aligned on the page gutter, so the header, body and top bar share one edge.
 const PAGE_WIDTH = {
 	full: null,
-	reading: "mx-auto max-w-4xl",
-	narrow: "mx-auto max-w-3xl",
+	wide: "max-w-(--breakpoint-2xl)",
+	narrow: "max-w-3xl",
 	settings: "max-w-4xl",
 } as const
 const PAGE_GAP = { none: null, sm: "gap-3", md: "gap-4", lg: "gap-6" } as const
@@ -133,7 +144,7 @@ const scrollArea = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	className?: string,
-	width: PageWidth = "full",
+	width: PageWidth = "wide",
 	gap: PageGap = "none",
 ): Html =>
 	width === "full"
@@ -183,9 +194,9 @@ export const dashboardPage = <M>(
 					[heading, pageDescription(h, [options.description], "text-sm")],
 				))
 	const hasHeader = titleContent !== undefined || options.actions !== undefined
-	const headerWidth = options.width === "settings" ? PAGE_WIDTH.settings : undefined
-	const header =
-		options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions, headerWidth) : undefined)
+	// A page that owns its scrolling is a canvas: its header spans the full width with it.
+	const width = options.width ?? (options.fill === true ? "full" : "wide")
+	const header = options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions) : undefined)
 	const sticky = [
 		...(header === undefined ? [] : [header]),
 		...(options.tabs === undefined
@@ -198,10 +209,10 @@ export const dashboardPage = <M>(
 			? []
 			: [filterRail(h, options.filters, options.filtersWidth, options.filtersLabel)]),
 		pageContent(h, [
-			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
+			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled ?? false, width)] : []),
 			options.fill === true
 				? fillArea(h, children)
-				: scrollArea(h, children, options.scrollClassName, options.width, options.gap),
+				: scrollArea(h, children, options.scrollClassName, width, options.gap),
 		]),
 		...(options.rightPanel === undefined
 			? []

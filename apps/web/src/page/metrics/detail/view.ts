@@ -121,6 +121,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					width: "full",
 					// A metric name is an identifier, so it is set in mono like elsewhere.
 					titleContent: detailTitle(h, {
 						kind: ["Metric", typeLabelOf(model)],
