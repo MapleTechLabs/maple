@@ -189,9 +189,9 @@ export const keyMark = (
 
 /**
  * An account by what reads it: an AWS one by its id, a GitHub or PlanetScale one by its
- * organization, a Vercel one by its team's slug (its id is a team id, kept stable through a rename), a Cloudflare one by
- * its account's name, an OpenRouter one by name alone while it is the org's only one (its id
- * means nothing to a reader). Unknown ids read as they are.
+ * organization, a Vercel one by its team's slug (its id is a team id, kept stable through a
+ * rename), a Cloudflare one by its account's name, an OpenRouter one by name alone while it is the
+ * org's only one (its id means nothing to a reader). Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
