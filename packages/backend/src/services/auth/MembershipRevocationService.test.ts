@@ -139,7 +139,8 @@ const seedChatIdentity = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 		),
 	)
 
-const issueMcpGrant = Effect.fnUntraced(function* (
+/** An MCP authorization the user approved and the client has not exchanged yet. */
+const approveMcpAuthorization = Effect.fnUntraced(function* (
 	oauth: McpOAuthService,
 	user: UserId,
 	org: OrgId,
@@ -168,17 +169,30 @@ const issueMcpGrant = Effect.fnUntraced(function* (
 		roles,
 		userEmail: null,
 	})
-	const tokens = yield* oauth.exchangeAuthorizationCode(
+	return { clientId: client.client_id, code: new URL(approved.redirectUri).searchParams.get("code")! }
+})
+
+const exchangeMcpCode = (oauth: McpOAuthService, approval: { clientId: string; code: string }) =>
+	oauth.exchangeAuthorizationCode(
 		{
-			code: new URL(approved.redirectUri).searchParams.get("code")!,
-			clientId: client.client_id,
+			code: approval.code,
+			clientId: approval.clientId,
 			redirectUri,
 			codeVerifier: verifier,
 			resource,
 		},
 		"127.0.0.1",
 	)
-	return { clientId: client.client_id, tokens }
+
+const issueMcpGrant = Effect.fnUntraced(function* (
+	oauth: McpOAuthService,
+	user: UserId,
+	org: OrgId,
+	roles: ReadonlyArray<RoleName> = [memberRole],
+) {
+	const approval = yield* approveMcpAuthorization(oauth, user, org, roles)
+	const tokens = yield* exchangeMcpCode(oauth, approval)
+	return { clientId: approval.clientId, tokens }
 })
 
 /** A digest subscriber row; `optedOut` stamps the member's own opt-out. */
@@ -527,6 +541,25 @@ describe("MembershipRevocationService", () => {
 					"select count(*)::int as count from mcp_oauth_refresh_tokens where revoked_at is null",
 				),
 			).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("leaves nothing to exchange from an MCP approval made above the new role", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const oauth = yield* McpOAuthService
+
+			const pending = yield* approveMcpAuthorization(oauth, stayerId, orgId, [engineerRole])
+			const kept = yield* approveMcpAuthorization(oauth, stayerId, orgId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+
+			const refused = yield* Effect.result(exchangeMcpCode(oauth, pending))
+			expect(refused._tag).toBe("Failure")
+			if (refused._tag === "Failure") expect(refused.failure).toMatchObject({ error: "invalid_grant" })
+			// One approved at the role the member keeps is still good.
+			expect((yield* exchangeMcpCode(oauth, kept)).token_type).toBe("Bearer")
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 
