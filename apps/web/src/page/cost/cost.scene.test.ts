@@ -800,6 +800,9 @@ describe("cost page", () => {
 			expectView(text("PlanetScale")).toExist(),
 			expectView(text("acme")).toExist(),
 			expectView(text(/provider requests/)).not.toExist(),
+			// The row's actions are named by their provider: the Cloudflare row offers the same two.
+			expectView(role("button", { name: "Replace PlanetScale token" })).toExist(),
+			expectView(role("button", { name: "Remove PlanetScale source" })).toExist(),
 			// Beside the figures, the row says its days are shares of a monthly invoice.
 			expectView(
 				text(
