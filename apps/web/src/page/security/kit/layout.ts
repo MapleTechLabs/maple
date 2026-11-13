@@ -10,7 +10,7 @@ import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
-export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure" | "auditLog"
+export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure" | "auditLog" | "detections"
 export type CodeTab = "overview" | "findings" | "runs"
 
 const SOURCE_LABEL = {
@@ -19,6 +19,7 @@ const SOURCE_LABEL = {
 	runtimes: "Runtimes",
 	exposure: "Exposure",
 	auditLog: "Audit log",
+	detections: "Detections",
 } satisfies Record<SecuritySource, string>
 
 const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
@@ -66,6 +67,13 @@ const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
 				label: SOURCE_LABEL.auditLog,
 				icon: "HistoryIcon",
 				href: hrefOf(AppRoute.SecurityAuditLog({ search: {} })),
+			},
+			{
+				kind: "link",
+				id: "detections",
+				label: SOURCE_LABEL.detections,
+				icon: "RadarIcon",
+				href: hrefOf(AppRoute.SecurityDetections()),
 			},
 		],
 	},
@@ -125,6 +133,12 @@ export const codeCrumbs = (back: BreadcrumbEntry): ReadonlyArray<BreadcrumbEntry
 	back,
 ]
 
+/** The crumbs above the detection editor: the list it leads back to. */
+export const detectionFormCrumbs = (): ReadonlyArray<BreadcrumbEntry> => [
+	SECURITY_CRUMB,
+	{ label: SOURCE_LABEL.detections, href: hrefOf(AppRoute.SecurityDetections()) },
+]
+
 const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	linkTabStrip(
 		h,
@@ -148,6 +162,8 @@ const DESCRIPTION = {
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
 	auditLog:
 		"Who changed what, and what was refused, in Maple and your connected platforms. Visible to org admins.",
+	detections:
+		"A detection opens an alert incident when enough matching audit events arrive within its window.",
 } satisfies Record<SecuritySource, string>
 
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
@@ -186,6 +202,14 @@ export const NARROW_TWO_COLUMNS = "md:grid-cols-2 xl:grid-cols-4 md:divide-y xl:
 
 /** A table column phones drop; what they still need from it rides in the row's first cell. */
 export const WIDE_COLUMN = "hidden sm:table-cell"
+
+/**
+ * A column a laptop screen has room for beside the sidebar and the rail. Below that, what it
+ * says rides in the row's first cell, so the row's controls stay on screen.
+ */
+export const LAPTOP_COLUMN = "hidden min-[1360px]:table-cell"
+/** The first cell's stand-in for the `LAPTOP_COLUMN`s, shown wherever they are not. */
+export const BELOW_LAPTOP = "min-[1360px]:hidden"
 
 /** A column only a wide screen has room for beside the rail. */
 export const ROOMY_COLUMN = "hidden min-[1680px]:table-cell"

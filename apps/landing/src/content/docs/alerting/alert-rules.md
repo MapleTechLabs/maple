@@ -203,6 +203,32 @@ The response lists the value and status of each window per group in `series`, an
 
 `POST /v2/alerts/rules/test` evaluates a rule once against current data. Set `send_notification` to `true` to also deliver a test notification. See the [API reference](/docs/reference/api) for every endpoint and field.
 
+## Audit log detections
+
+A **detection** is an alert rule that counts audit events. It fires when a set number of matching events arrive within a window, for example 5 or more failed sign-ins in 10 minutes. It is not one of the query modes above: organization admins create, edit and delete detections under **Security → Detections**, and the alert rules API does not create or change them.
+
+A detection matches events by **Platform**, **Category** and **Outcome**, each of which can stay on **Any**, and optionally by one exact **Action**, written as the platform names it, such as `team.member.role.updated`. With no filters it counts every audit event. It cannot match on who acted: a detection never names a person.
+
+| Field    | Values                                      |
+| -------- | ------------------------------------------- |
+| Count    | 1 to 100,000 events                         |
+| Window   | 5 minutes to 24 hours                       |
+| Severity | Warning or Critical                         |
+| Notify   | Up to 20 notification destinations, or none |
+
+An organization can have up to 50 detections. Each one is checked every minute.
+
+There are two ways to start one:
+
+- Open **Security → Detections** and click **New detection**. While the organization has no detections, the page lists five ready-made ones: a member added or removed, a permission or role changed, a credential created, rotated or revoked, a burst of refused requests, and repeated sign-in failures. Picking one fills in the editor. Nothing is created until you save.
+- Filter the audit log under **Security → Audit log** and click **Alert on these events**. The editor opens with the platform, category and outcome you filtered by. An actor filter is not carried over.
+
+When a detection fires it opens an [incident](/docs/alerting/incidents) and notifies its [destinations](/docs/alerting/notification-destinations). The notification carries the number of matching events, never an event or who caused it. A detection with no destination still opens the incident, and nobody is notified.
+
+Every member of the organization can see a detection's name and that it fired. The events it counted are in the audit log, which only organization admins can read.
+
+Deleting a detection also deletes the incidents it opened, open ones included.
+
 ## Troubleshooting
 
 - **The rule never fires.** Open the rule and look at its **Checks**. **Skipped** checks mean the window had no data or fewer samples than **Minimum samples**. In the editor, the chart says how many windows would be skipped and why. Check the service names and environments against what is arriving.

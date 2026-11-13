@@ -214,6 +214,12 @@ const routers = {
 		search(Search.SecurityAuditLogSearch),
 		Route.mapTo(AppRoute.SecurityAuditLog),
 	),
+	SecurityDetections: pipe(path("security", "detections"), Route.mapTo(AppRoute.SecurityDetections)),
+	SecurityDetectionNew: pipe(
+		path("security", "detections", "new"),
+		search(Search.SecurityDetectionNewSearch),
+		Route.mapTo(AppRoute.SecurityDetectionNew),
+	),
 	SecurityRun: pipe(
 		path("security", "code", "runs"),
 		slash(schemaSegment("runId", SecurityAuditRunId)),

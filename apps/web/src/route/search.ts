@@ -1096,6 +1096,21 @@ export const SecurityAuditLogSearch = Schema.Struct({
 })
 export type SecurityAuditLogSearch = typeof SecurityAuditLogSearch.Type
 
+/**
+ * `/security/detections/new`: `detectionId` edits that detection. The rest prefill a new one: a
+ * ready-made `template`, or the audit log's filters. The form drops a value it has no name for.
+ */
+export const SecurityDetectionNewSearch = Schema.Struct({
+	detectionId: StringParam,
+	template: StringParam,
+	provider: StringParam,
+	category: StringParam,
+	outcome: StringParam,
+	/** The platform's own action name, matched exactly. */
+	action: StringParam,
+})
+export type SecurityDetectionNewSearch = typeof SecurityDetectionNewSearch.Type
+
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
 export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
 export type SecurityDependenciesSearch = typeof SecurityDependenciesSearch.Type

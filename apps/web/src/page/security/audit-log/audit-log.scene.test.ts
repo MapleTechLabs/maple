@@ -342,6 +342,49 @@ describe("security audit log", () => {
 		)
 	})
 
+	const alertLink = role("link", { name: "Alert on these events" })
+
+	test("the filters on screen open the detection editor prefilled with them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(PAGE, { provider: "vercel", category: "credential", outcome: "denied" })),
+			expectView(alertLink).toHaveAttr(
+				"href",
+				"/security/detections/new?provider=vercel&category=credential&outcome=denied",
+			),
+		)
+	})
+
+	// A detection cannot name a person: the actor is left out, and the control says it counts everyone.
+	test("an actor filter is not carried into a detection, and the control says so", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(PAGE, { outcome: "denied", actor: "ada@acme.test" })),
+			expectView(alertLink).toBeAbsent(),
+			expectView(role("link", { name: "Alert on these events, from any actor" })).toHaveAttr(
+				"href",
+				"/security/detections/new?outcome=denied",
+			),
+		)
+	})
+
+	test("with no filter a detection can hold, there is nothing to alert on from here", () => {
+		const anyAlertLink = role("link", { name: /Alert on these events/u })
+
+		scene({ update: pageUpdate, view }, given(loaded()), expectView(anyAlertLink).toBeAbsent())
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(PAGE, { actor: "ada@acme.test" })),
+			expectView(anyAlertLink).toBeAbsent(),
+		)
+		// A value the detection schema has no name for cannot be counted either.
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(PAGE, { provider: "github" })),
+			expectView(anyAlertLink).toBeAbsent(),
+		)
+	})
+
 	test("a Maple event's id opens the same entry in the Settings audit log", () => {
 		const { event, opened } = openedFrom("maple")
 

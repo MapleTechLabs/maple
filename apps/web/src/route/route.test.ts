@@ -351,6 +351,15 @@ describe("routes", () => {
 			_tag: "SecurityAuditLog",
 			search: { category: "credential", outcome: "denied" },
 		})
+		expect(parse("/security/detections")._tag).toBe("SecurityDetections")
+		const prefilled = parse("/security/detections/new?provider=vercel&action=team.member.role.updated")
+		expect(prefilled).toMatchObject({
+			_tag: "SecurityDetectionNew",
+			search: { provider: "vercel", action: "team.member.role.updated" },
+		})
+		expect(hrefOf(prefilled)).toBe(
+			"/security/detections/new?provider=vercel&action=team.member.role.updated",
+		)
 		expect(parse("/security/code/runs/run_9f3c2a1e7b")).toMatchObject({
 			_tag: "SecurityRun",
 			runId: "run_9f3c2a1e7b",

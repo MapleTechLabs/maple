@@ -43,16 +43,7 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
-/**
- * What the session says: `denied` only when it answered and the permission is missing. A session
- * that answered with nothing failed to read, so the API is asked and gets the last word.
- */
-export const accessOf = (model: Pick<Model, "grants" | "isGrantsRead">): "unknown" | "ask" | "denied" =>
-	!model.isGrantsRead
-		? "unknown"
-		: model.grants.length === 0 || Policy.has(model.grants, "audit_log:read")
-			? "ask"
-			: "denied"
+export { auditAccessOf as accessOf } from "../kit/audit-access"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },

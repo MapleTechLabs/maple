@@ -1,44 +1,14 @@
-import type { AuditTrailCategory, AuditTrailOutcome, AuditTrailProvider } from "@maple/domain/audit-trail"
+import { AuditTrailCategory, AuditTrailOutcome, AuditTrailProvider } from "@maple/domain/audit-trail"
 import type { AuditTrailEntry } from "@maple/domain/http"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { Array as Arr, Option, Record as Rec } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import { labelIn } from "../kit/audit-labels"
+import { detectionFormHref } from "../kit/detection-format"
 import type { Model, Search } from "./model"
 
-// What the audit log shows of an event: the names of platforms, categories and outcomes, who acted
-// and on what. A value this build does not know shows as itself.
-
-export const PROVIDER_LABEL = {
-	maple: "Maple",
-	vercel: "Vercel",
-	gcp: "Google Cloud",
-} satisfies Record<AuditTrailProvider, string>
-
-export const CATEGORY_LABEL = {
-	authentication: "Authentication",
-	membership: "Membership",
-	permission: "Permissions",
-	credential: "Credentials",
-	configuration: "Configuration",
-	resource: "Resources",
-	data_access: "Data access",
-	billing: "Billing",
-	other: "Other",
-} satisfies Record<AuditTrailCategory, string>
-
-export const OUTCOME_LABEL = {
-	success: "Succeeded",
-	failure: "Failed",
-	denied: "Denied",
-	unknown: "Unknown",
-} satisfies Record<AuditTrailOutcome, string>
-
-/** The outcomes worth filtering by. `unknown` is a platform that did not say, not something to look for. */
-export const OUTCOME_FILTERS = [
-	"success",
-	"failure",
-	"denied",
-] as const satisfies ReadonlyArray<AuditTrailOutcome>
+// What the audit log shows of an event: who acted and on what. The names of platforms, categories
+// and outcomes are in `../kit/audit-labels`.
 
 const ACTOR_TYPE_LABEL = {
 	user: "User",
@@ -47,13 +17,6 @@ const ACTOR_TYPE_LABEL = {
 	unknown: "Unknown actor",
 } as const
 
-/** The label for `value`, or the value itself when this build has no name for it. */
-export const labelIn = (labels: Readonly<Record<string, string>>, value: string): string =>
-	Option.getOrElse(Rec.get(labels, value), () => value)
-
-export const providerLabel = (provider: string): string => labelIn(PROVIDER_LABEL, provider)
-export const categoryLabel = (category: string): string => labelIn(CATEGORY_LABEL, category)
-export const outcomeLabel = (outcome: string): string => labelIn(OUTCOME_LABEL, outcome)
 export const actorTypeLabel = (type: string): string => labelIn(ACTOR_TYPE_LABEL, type)
 
 /** Who acted: their name, else email, else id, else what kind of actor it was. */
@@ -75,6 +38,23 @@ export const isFiltered = (search: Search): boolean =>
 	search.category !== undefined ||
 	search.outcome !== undefined ||
 	search.actor !== undefined
+
+const isProvider = Schema.is(AuditTrailProvider)
+const isCategory = Schema.is(AuditTrailCategory)
+const isOutcome = Schema.is(AuditTrailOutcome)
+
+/**
+ * The detection editor prefilled with the filters a detection can hold: the platform, category
+ * and outcome. Never the actor: a detection cannot name a person. Null when none of them is set.
+ */
+export const alertHref = (search: Search): string | null => {
+	const provider = isProvider(search.provider) ? search.provider : undefined
+	const category = isCategory(search.category) ? search.category : undefined
+	const outcome = isOutcome(search.outcome) ? search.outcome : undefined
+	return provider === undefined && category === undefined && outcome === undefined
+		? null
+		: detectionFormHref({ provider, category, outcome })
+}
 
 /** The API refused the viewer: the same thing the session says for a member without the permission. */
 export const isForbidden = (failure: LoadFailure): boolean => failure.code === "audit_trail_forbidden"
