@@ -15,7 +15,6 @@ import {
 	type FeatureUsagePricing,
 	type PlanLike,
 } from "@maple/domain/billing"
-import { formatCurrency } from "@maple/domain/format"
 import { spendLimitFor } from "./controls"
 import { sentenceCasePlanName } from "../../kit/billing/plans"
 import { formatQuoteUnits, quoteUnits } from "../../kit/billing/usage"
@@ -83,10 +82,6 @@ const COUNT_UNITS = {
 type CountFeatureId = keyof typeof COUNT_UNITS
 const isCountFeature = (featureId: string): featureId is CountFeatureId => featureId in COUNT_UNITS
 const countUnitOf = (featureId: string) => (isCountFeature(featureId) ? COUNT_UNITS[featureId] : undefined)
-
-/** AI credits as dollars, one credit each: "$4.20", and "<$0.01" for a real sub-cent amount. */
-export const formatCredits = (credits: number): string =>
-	credits > 0 && credits < 0.005 ? "<$0.01" : formatCurrency(credits, "usd")
 
 /** `browser_sessions` is metered per session, `product_events` per event, `ai_credits` per credit; the rest per GB. */
 export const featureUnit = (featureId: string): "GB" | "sessions" | "events" | "credits" => {

@@ -139,6 +139,8 @@ const SandboxRun = {
 export const SandboxGrepOutput = Schema.Struct({
 	...SandboxRun,
 	pattern: Schema.String,
+	/** The pattern git grep ran, when it is not `pattern`: unpaired parentheses escaped to literals. */
+	searchedPattern: Schema.optionalKey(Schema.String),
 	path: Schema.optionalKey(Schema.String),
 	glob: Schema.optionalKey(Schema.String),
 	caseSensitive: Schema.Boolean,

@@ -568,9 +568,10 @@ export const CodeReviewSearch = Schema.Struct(CodeReviewSearchFields)
 /** The dimensions `/cost` groups by and filters on (a subset of `CostDimension`). */
 export const COST_GROUP_BYS = [
 	"cloud_service",
+	"provider",
 	"service_category",
 	"region",
-	"usage_type",
+	"resource",
 	"account",
 ] as const
 
@@ -583,9 +584,10 @@ export const CostSearch = Schema.Struct({
 	groupBy: Schema.optional(Schema.Literals(COST_GROUP_BYS)),
 	sort: Schema.optional(Schema.Literals(["cost", "change"])),
 	cloud_service: OptionalStringArrayParam,
+	provider: OptionalStringArrayParam,
 	service_category: OptionalStringArrayParam,
 	region: OptionalStringArrayParam,
-	usage_type: OptionalStringArrayParam,
+	resource: OptionalStringArrayParam,
 	account: OptionalStringArrayParam,
 })
 

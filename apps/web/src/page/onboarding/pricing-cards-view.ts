@@ -3,7 +3,7 @@ import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../kit
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
 import { badge, separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
@@ -13,7 +13,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
 import { compliance } from "../kit/compliance-line"
-import { Message, type Model } from "./pricing-cards"
+import { ENTERPRISE_CONTACT_URL, Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
 	FEATURE_ICONS,
@@ -30,6 +30,15 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
+
+// Below `sm` the cards stack, so a card's action sits under its price, above the feature lists
+// (a phone showed only features before the button), and is 44px tall.
+const CARD_PANEL_CLASS = "flex flex-col gap-5 flex-1 max-sm:order-last max-sm:pb-4"
+const CARD_FOOTER_CLASS = "mt-auto flex-col gap-2 items-stretch"
+const CARD_ACTION_CLASS = "w-full max-sm:h-11"
+/** Two lines from `sm` up, so side-by-side cards line up; stacked cards need no filler. */
+const CARD_DESCRIPTION_CLASS =
+	"mt-2 sm:min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground"
 
 const loadingCard = (h: H): Html =>
 	card(h, [
@@ -141,7 +150,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 				cardDescription(
 					h,
 					[plan.description ?? getPlanDescription(getPlanSlug(plan))],
-					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
+					CARD_DESCRIPTION_CLASS,
 				),
 			]),
 			cardPanel(
@@ -151,7 +160,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, getPlanSlug(plan)),
 				],
-				"flex flex-col gap-5 flex-1",
+				CARD_PANEL_CLASS,
 			),
 			cardFooter(
 				h,
@@ -162,7 +171,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 							variant: isTrial ? "default" : config.variant,
 							isLoading: loadingPlanId === plan.id,
 							isDisabled: config.isDisabled,
-							className: "w-full font-medium",
+							className: CARD_ACTION_CLASS,
 							attributes: [h.OnClick(Message.ClickedPlan({ planId: plan.id }))],
 						},
 						[
@@ -180,7 +189,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 							]
 						: []),
 				],
-				"mt-auto flex-col gap-2 items-stretch",
+				CARD_FOOTER_CLASS,
 			),
 		],
 		cn(
@@ -209,7 +218,7 @@ const enterpriseCard = (h: H): Html =>
 				cardDescription(
 					h,
 					["For high-volume teams with custom retention, compliance, and dedicated support."],
-					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
+					CARD_DESCRIPTION_CLASS,
 				),
 			]),
 			cardPanel(
@@ -219,22 +228,28 @@ const enterpriseCard = (h: H): Html =>
 					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, "enterprise"),
 				],
-				"flex flex-col gap-5 flex-1",
+				CARD_PANEL_CLASS,
 			),
 			cardFooter(
 				h,
 				[
-					button(
+					// A real link: a tab opened from a Command can be blocked, and the page cannot tell.
+					linkButton(
 						h,
 						{
+							href: ENTERPRISE_CONTACT_URL,
 							variant: "outline",
-							className: "w-full font-medium",
-							attributes: [h.OnClick(Message.ClickedEnterpriseContact())],
+							className: CARD_ACTION_CLASS,
+							attributes: [
+								h.Target("_blank"),
+								h.Rel("noopener noreferrer"),
+								h.AriaLabel("Talk to founder (opens a new tab)"),
+							],
 						},
-						["Talk to founder"],
+						["Talk to founder", icon(h, "ExternalLinkIcon", { size: 12 })],
 					),
 				],
-				"mt-auto flex-col gap-2 items-stretch",
+				CARD_FOOTER_CLASS,
 			),
 		],
 		"flex flex-col",

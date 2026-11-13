@@ -308,7 +308,7 @@ export function startEventSink(config: IngestConfig, sessionId: string): Session
 	// Errors and clicks are counted on the same terms, and for the same reason —
 	// see `startBaselineCapture`. Console and network capture stay on the sampled
 	// replay path.
-	const stopBaselineCapture = startBaselineCapture(emit, config.maskAllText)
+	const stopBaselineCapture = startBaselineCapture(emit, config.maskAllText, config.isErrorNoise)
 
 	const flushTimer = setInterval(() => void flush(), FLUSH_INTERVAL_MS)
 

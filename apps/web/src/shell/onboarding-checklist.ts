@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { V2OnboardingChecklist } from "@maple/domain/http/v2"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { trackProduct } from "../data/analytics"
@@ -29,6 +29,12 @@ export const Model = Schema.Struct({
 	claimError: Schema.NullOr(Schema.String),
 	/** The countdown's clock, ticking each second while one is shown. */
 	nowMs: Schema.Number,
+	/** The clock the last read landed at: a navigation re-reads only an answer older than `STALE_AFTER`. */
+	readAtMs: Schema.Number,
+	/** A read is in flight: no second one starts beside it. */
+	isLoading: Schema.Boolean,
+	/** A read asked for mid-flight that must see newer state (a claim, another org) runs next. */
+	isReadQueued: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -45,6 +51,9 @@ export const init = (): Model => ({
 	isClaimPending: false,
 	claimError: null,
 	nowMs: 0,
+	readAtMs: 0,
+	isLoading: false,
+	isReadQueued: false,
 })
 
 export const Message = defineMessageUnion({
@@ -106,6 +115,25 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const toPopover = (message: Popover.Message) => Message.GotPopoverMessage({ message })
 
+/**
+ * One read at a time. A read asked for while one is in flight is dropped, or queued when the
+ * answer in flight may predate what it must see.
+ */
+const read = (model: Model, isQueued = false): UpdateReturn =>
+	model.isLoading
+		? { model: { ...model, isReadQueued: model.isReadQueued || isQueued } }
+		: { model: { ...model, isLoading: true, isReadQueued: false }, commands: [LoadChecklist()] }
+
+/** The read landed (or failed): a queued one starts now. */
+const settle = (model: Model): UpdateReturn =>
+	model.isReadQueued ? read({ ...model, isLoading: false }) : { model: { ...model, isLoading: false } }
+
+/** The org's first read: once per session and org, queued behind a read still out for another org. */
+export const enter = (model: Model): UpdateReturn => {
+	const first = read(model, true)
+	return { model: first.model, commands: [...(first.commands ?? []), LoadViewer()] }
+}
+
 /** Opening re-reads the checklist and retires the pointer; closing ends the claimed beat. */
 const popoverStep = (model: Model, message: Popover.Message): UpdateReturn => {
 	const next = Popover.update(model.popover, message)
@@ -114,9 +142,10 @@ const popoverStep = (model: Model, message: Popover.Message): UpdateReturn => {
 	const isClosing = model.popover.isOpen && !next.model.isOpen
 	if (isOpening) {
 		const seen = markSeen(model)
+		const reread = read({ ...seen.model, popover: next.model })
 		return {
-			model: { ...seen.model, popover: next.model },
-			commands: [...commands, LoadChecklist(), ...(seen.commands ?? [])],
+			model: reread.model,
+			commands: [...commands, ...(reread.commands ?? []), ...(seen.commands ?? [])],
 		}
 	}
 	return {
@@ -132,8 +161,9 @@ const markSeen = (model: Model): UpdateReturn =>
 
 export const update = (model: Model, message: Message): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
-		SucceededLoadChecklist: ({ checklist, nowMs }) => ({ model: { ...model, checklist, nowMs } }),
-		FailedLoadChecklist: () => ({ model }),
+		SucceededLoadChecklist: ({ checklist, nowMs }) =>
+			settle({ ...model, checklist, nowMs, readAtMs: nowMs }),
+		FailedLoadChecklist: () => settle(model),
 		LoadedViewer: ({ grants, seenKey, isSeen }) => ({
 			model: { ...model, grants, seenKey: seenKey === "" ? null : seenKey, isSeen },
 		}),
@@ -147,10 +177,8 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			model.isClaimPending
 				? { model }
 				: { model: { ...model, isClaimPending: true, claimError: null }, commands: [ClaimReward()] },
-		SucceededClaim: () => ({
-			model: { ...model, isClaimPending: false, isJustClaimed: true },
-			commands: [LoadChecklist()],
-		}),
+		// A read already out may have left before the credit landed: the claim's own read follows it.
+		SucceededClaim: () => read({ ...model, isClaimPending: false, isJustClaimed: true }, true),
 		FailedClaim: ({ message: failure }) => ({
 			model: { ...model, isClaimPending: false, claimError: failure },
 		}),
@@ -158,8 +186,20 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedSaveSeen: () => ({ model }),
 	})
 
+/** How old an in-progress answer must be before a navigation reads it again. */
+const STALE_AFTER = Duration.seconds(30)
+
 /** The pill counts down each second while the checklist is in progress. */
 export const isCounting = (model: Model): boolean => model.checklist?.status === "in_progress"
+
+/**
+ * Moving to another page: an in-progress checklist's steps are finished on other pages, so a stale
+ * answer is read again. A burst of navigations costs one read, and an idle tab none.
+ */
+export const navigated = (model: Model): UpdateReturn =>
+	isCounting(model) && model.nowMs - model.readAtMs >= Duration.toMillis(STALE_AFTER)
+		? read(model)
+		: { model }
 
 /** `POST /v2/onboarding/checklist/claim`. */
 export const ClaimReward = Command.define("ClaimOnboardingReward", {

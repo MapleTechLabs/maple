@@ -380,7 +380,7 @@ describe("/api/security-audit targets", () => {
 						{ ...TARGET, scopePaths: ["../secrets"] },
 						{ ...TARGET, scopePaths: ["/etc/passwd"] },
 						{ ...TARGET, discoveryModel: "acme/unlisted-model" },
-						// It refused verifier prompts in the eval, so it never verifies.
+						// Delisted: its cybersecurity filter refused audit prompts.
 						{ ...TARGET, validationModel: "openai/gpt-6.1-sol" },
 					],
 					(body) => harness.call("POST", "/targets", { body }).then((r) => r.status),

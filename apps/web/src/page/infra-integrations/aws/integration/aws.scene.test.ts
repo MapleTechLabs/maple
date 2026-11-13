@@ -439,6 +439,53 @@ describe("aws card", () => {
 		)
 	})
 
+	test("deliveries are one step: the first until something arrived, the latest after", () => {
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		const at = (connections: ReadonlyArray<V2AwsConnection>) =>
+			pageUpdate(
+				withStatus(entered(), connections),
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-23T09:00:00.000Z") }),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(at([connection({ verified_at, metric_stream: stream })])),
+			expectView(text("First delivery", { exact: false })).toExist(),
+			expectView(text("Latest delivery", { exact: false })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				at([
+					connection({
+						verified_at,
+						metric_stream: stream,
+						metrics_last_received_at: Schema.decodeSync(Timestamp)("2026-10-23T08:59:00.000Z"),
+					}),
+				]),
+			),
+			expectView(text("Latest delivery", { exact: false })).toExist(),
+			expectView(text("First delivery", { exact: false })).not.toExist(),
+		)
+	})
+
+	test("a connection whose stack was never deployed leads with Finish setup; a verified one offers Reconnect", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection()])),
+			expectView(role("button", { name: "Finish setup" })).toExist(),
+			expectView(role("button", { name: "Reconnect" })).not.toExist(),
+			// Nothing to edit before Maple sees the account.
+			expectView(role("button", { name: "Edit data" })).not.toExist(),
+		)
+		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(entered(), [connection({ verified_at })])),
+			expectView(role("button", { name: "Reconnect" })).toExist(),
+			expectView(role("button", { name: "Finish setup" })).not.toExist(),
+		)
+	})
+
 	test("a streaming connection's ingest is read with its status and shown by namespace and region", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-23T08:00:00.000Z")
 		const delivering = connection({
@@ -638,7 +685,9 @@ describe("aws card", () => {
 				given(model),
 				expectView(costSwitch).not.toBeChecked(),
 				expectView(text(COST_MODULE.summary)).toExist(),
-				expectView(text("Off. Maple does not read this account's cost.")).toExist(),
+				// Off carries no status: the switch says it.
+				expectView(text("Reading")).not.toExist(),
+				expectView(text("Needs a stack update")).not.toExist(),
 			)
 			const sent = pageUpdate(model, Message.ToggledAwsModule({ id: connectionId, module: "cost" }))
 			expect(Arr.map(sent.commands ?? [], ({ name, args }) => ({ name, args }))).toEqual([
@@ -682,7 +731,10 @@ describe("aws card", () => {
 				given(saved.model),
 				expectView(costSwitch).toBeChecked(),
 				expectView(costSwitch).toBeEnabled(),
-				expectView(text("Update the stack for Maple to read cost", { exact: false })).toExist(),
+				expectView(text("Needs a stack update")).toExist(),
+				expectView(
+					text("Update the stack to add read-only billing access", { exact: false }),
+				).toExist(),
 				expectView(text("Deploy the stack again")).toExist(),
 			)
 		})
@@ -693,7 +745,10 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(waiting),
 				expectView(costSwitch).toBeChecked(),
-				expectView(text("Update the stack for Maple to read cost", { exact: false })).toExist(),
+				expectView(text("Needs a stack update")).toExist(),
+				expectView(
+					text("Update the stack to add read-only billing access", { exact: false }),
+				).toExist(),
 				expectView(role("link", { name: "Open Cost" })).not.toExist(),
 				expectView(text("Deploy the stack again")).not.toExist(),
 				click(role("button", { name: "Update the stack" })),
@@ -727,7 +782,8 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(granted),
 				expectView(costSwitch).toBeChecked(),
-				expectView(text("Maple reads this account's cost", { exact: false })).toExist(),
+				expectView(text("Reading")).toExist(),
+				expectView(text("Maple reads this account's daily spend", { exact: false })).toExist(),
 				expectView(role("link", { name: "Open Cost" })).toHaveAttr("href", "/cost"),
 				expectView(role("button", { name: "Update the stack" })).not.toExist(),
 			)
@@ -738,7 +794,8 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(withCost(entered(), [connection({ modules: ["cost"] })])),
 				expectView(costSwitch).toBeChecked(),
-				expectView(text("Maple reads cost once the stack is deployed", { exact: false })).toExist(),
+				expectView(text("Waiting for the stack")).toExist(),
+				expectView(text("once the stack is deployed", { exact: false })).toExist(),
 				expectView(role("button", { name: "Update the stack" })).not.toExist(),
 			)
 		})
@@ -768,7 +825,7 @@ describe("aws card", () => {
 				{ update: pageUpdate, view },
 				given(saved.model),
 				expectView(costSwitch).not.toBeChecked(),
-				expectView(text("Off. Maple does not read this account's cost.")).toExist(),
+				expectView(text("Reading")).not.toExist(),
 			)
 		})
 

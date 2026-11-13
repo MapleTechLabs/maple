@@ -453,6 +453,29 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { checks })))
 	})
 
+	it.effect("adds each turn's cost to the review, a failed one included", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			const reviewId = outcome.reviewId!
+			yield* reviews.addCost(orgId, reviewId, 1_200)
+			yield* reviews.failReview(orgId, reviewId, "no review")
+			yield* reviews.addCost(orgId, reviewId, 300)
+			// Another org cannot add to it.
+			yield* reviews.addCost(asOrgId("org_someone_else"), reviewId, 9_999)
+			const rows = yield* (yield* Database).execute((db) =>
+				db.run(
+					PG.from(PrReviews)
+						.select(($) => ({ cost: $.costMicrousd }))
+						.where(($) => [$.id.eq(reviewId)]),
+				),
+			)
+			assert.deepEqual(rows, [{ cost: 1_500 }])
+		}).pipe(Effect.provide(layerFor(testDb, {})))
+	})
+
 	it.effect("says so when the turn ends without a review", () => {
 		const testDb = createTestDb(trackedDbs)
 		const comments: Array<string> = []

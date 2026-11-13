@@ -17,13 +17,22 @@ import { Message, Model } from "../page/settings/billing/model"
 import { init as billingInit, update as billingUpdate } from "../page/settings/billing/update"
 import { view as billingView } from "../page/settings/billing/view"
 import type { Resources } from "../platform/resources"
+import { aiCreditUsageFixture } from "./ai-credits-fixture"
 
 // `/lab/billing-orgs`: the Billing tab per billing role over fixtures. `?state=` picks one:
-// member, member-viewer, billing-org, standalone, rejected.
+// member, member-viewer, billing-org, standalone, rejected, and ai-credits (the AI credits row with
+// its link to the details page).
 
 export { Message, Model }
 
-export const LabState = Schema.Literals(["member", "member-viewer", "billing-org", "standalone", "rejected"])
+export const LabState = Schema.Literals([
+	"member",
+	"member-viewer",
+	"billing-org",
+	"standalone",
+	"rejected",
+	"ai-credits",
+])
 export type LabState = typeof LabState.Type
 
 export const Flags = Schema.Struct({ state: LabState, timeZone: Schema.String })
@@ -56,6 +65,7 @@ const plans = Schema.decodeSync(Schema.Array(CatalogPlan))([
 				included: 1_000_000,
 				price: { amount: 0.005, billingUnits: 1_000 },
 			},
+			{ featureId: "ai_credits", included: 10, price: { amount: 1 } },
 		],
 	},
 ])
@@ -77,18 +87,22 @@ const customer = Schema.decodeSync(BillingCustomer)({
 		metrics: { granted: 100 },
 		browser_sessions: { granted: 5_000 },
 		product_events: { granted: 1_000_000 },
+		ai_credits: { granted: 10 },
 	},
 })
 
-const usage = Schema.decodeSync(BillingUsage)({
-	total: {
-		logs: { sum: 142.6 },
-		traces: { sum: 61.2 },
-		metrics: { sum: 18.4 },
-		browser_sessions: { sum: 3_120 },
-		product_events: { sum: 0 },
-	},
-})
+/** Usage per lab state: the AI credits spent match the state's AI credits section. */
+const usage = (state: LabState) =>
+	Schema.decodeSync(BillingUsage)({
+		total: {
+			logs: { sum: 142.6 },
+			traces: { sum: 61.2 },
+			metrics: { sum: 18.4 },
+			browser_sessions: { sum: 3_120 },
+			product_events: { sum: 0 },
+			ai_credits: { sum: state === "ai-credits" ? 16.11 : 0 },
+		},
+	})
 
 const daily = Schema.decodeSync(DailySpendResponse)({
 	days: [],
@@ -190,8 +204,11 @@ export const init = (flags: Flags): Return => {
 		model: {
 			...base,
 			plans: AsyncData.Success({ data: plans }),
-			usage: AsyncData.Success({ data: usage }),
+			usage: AsyncData.Success({ data: usage(flags.state) }),
 			daily: AsyncData.Success({ data: daily }),
+			aiUsage: AsyncData.Success({
+				data: aiCreditUsageFixture(flags.state === "ai-credits" ? "code-review" : "empty"),
+			}),
 			account: AsyncData.Success({ data: account(flags.state) }),
 			...(role !== "member" && {
 				invoices: AsyncData.Success({ data: invoices }),

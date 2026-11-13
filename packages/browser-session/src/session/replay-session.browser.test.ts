@@ -24,9 +24,11 @@ vi.mock("../replay/record", () => ({
 		}
 	},
 }))
+const captureConfigs: Array<import("../platform/transport").IngestConfig> = []
 vi.mock("../replay/events", () => ({
-	startEventCapture: () => {
+	startEventCapture: (config: import("../platform/transport").IngestConfig) => {
 		calls.push("events")
+		captureConfigs.push(config)
 		return { flush: async () => {}, stop: () => {} }
 	},
 }))
@@ -54,6 +56,7 @@ const trigger = (row: Record<string, unknown> | undefined) =>
 
 afterEach(() => {
 	calls.length = 0
+	captureConfigs.length = 0
 	rows.length = 0
 	sessionStorage.clear()
 	// A cleared sessionStorage alone is a host app's logout, which keeps the session.
@@ -99,6 +102,25 @@ describe("startReplaySession in buffer mode", () => {
 		expect(calls).toEqual(["stream", "events"])
 		expect(recorded(rows.at(-1))).toBe("true")
 		expect(trigger(rows.at(-1))).toBeUndefined()
+		await handle?.shutdown()
+	})
+})
+
+describe("startReplaySession session errors", () => {
+	it("starts its event capture with the SDK's noise filter, so a rotated session skips noise too", async () => {
+		getSession()
+		const notice = "ResizeObserver loop completed with undelivered notifications."
+		const handle = startReplaySession({
+			endpoint: "https://ingest.test",
+			sdk: "maple-test/0.0.0",
+			serviceName: "web",
+			maskAllInputs: true,
+			maskAllText: false,
+			isErrorNoise: (error) => error === notice,
+		})
+		const filter = captureConfigs[0]?.isErrorNoise
+		expect(filter?.(notice, "window.onerror")).toBe(true)
+		expect(filter?.("boom", "window.onerror")).toBe(false)
 		await handle?.shutdown()
 	})
 })

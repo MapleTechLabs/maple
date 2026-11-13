@@ -38,10 +38,11 @@ const {
 
 		<div class="mt-12 overflow-hidden rounded-xl border border-border bg-bg-elevated">
 			<div class="overflow-x-auto">
-				<table class="w-full text-[12.5px] tabular-nums">
+				<!-- border-separate: a sticky cell keeps its rule while the row scrolls under it. -->
+				<table class="w-full border-separate border-spacing-0 text-[12.5px] tabular-nums">
 					<thead>
 						<tr class="text-[10px] uppercase tracking-wider text-fg-muted">
-							<th class="text-left font-medium px-4 py-3 border-b border-border">{m.bill_col_metric()}</th>
+							<th class="sticky left-0 z-10 bg-bg-elevated text-left font-medium px-4 py-3 border-b border-border">{m.bill_col_metric()}</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border bg-primary/12 text-primary">Maple</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Datadog</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">New Relic</th>
@@ -55,7 +56,31 @@ const {
 					</thead>
 					<tbody>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_host()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_base()}</td>
+							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_base_maple()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$19 / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$49 / mo, incl. $49 usage</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$25 / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">None · bundles from $30</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$150 / mo (Pro)</td>
+						</tr>
+						<tr>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_free()}</td>
+							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_free_maple()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">5 hosts, 1-day metrics</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">100 GB / mo, 1 full user</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">50 GB logs/traces, 10k series</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">No · 14-day trial</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">500 GB / mo, 25 GB stored</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">3 GB logs, 3 GB traces</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">20M events / mo</td>
+						</tr>
+						<tr>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_host()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$15+ / host / mo</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
@@ -67,7 +92,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_seat()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_seat()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$10 first, then $99–349 / full-platform user / mo</td>
@@ -79,7 +104,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_ingest()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_ingest()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_usage()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.10 / GB + $1.70 / M indexed</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$0.40 / GB</td>
@@ -91,9 +116,9 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">$3.00 / M events (spans, logs)</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_retention()}</td>
-							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">30d default · custom</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">15d indexed logs (option shown)</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_retention()}</td>
+							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">30d logs/traces · 90d metrics</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">15d indexed logs</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">30d logs · 8d traces</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">30d logs/traces · 13mo metrics</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">30d spans/logs · 13mo metrics</td>
@@ -103,7 +128,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">60d events and metrics</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_otel()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_otel()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_native()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
@@ -115,7 +140,7 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_oss()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_oss()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_apache()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
@@ -127,28 +152,16 @@ const {
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 						</tr>
 						<tr>
-							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_selfhost()}</td>
-							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_supported()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_oss_only()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_supported()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">Enterprise, own AWS account</td>
-						</tr>
-						<tr>
-							<td class="px-4 py-3 text-fg-muted">{m.bill_row_mcp()}</td>
-							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_hosted()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
-							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
+							<td class="sticky left-0 z-10 bg-bg-elevated px-4 py-3 text-fg-muted">{m.bill_row_selfhost()}</td>
+							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_selfhost_maple()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_oss_only()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_supported()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 text-foreground">Enterprise, own AWS account</td>
 						</tr>
 					</tbody>
 				</table>

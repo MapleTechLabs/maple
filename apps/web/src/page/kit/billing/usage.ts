@@ -1,3 +1,4 @@
+import { formatCurrency } from "@maple/domain/format"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 
 const usageFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -52,3 +53,7 @@ export function quoteUnits(featureId: string, billingUnits: number): number {
 export function formatQuoteUnits(units: number): string {
 	return units >= 1_000_000 && units % 1_000_000 === 0 ? `${units / 1_000_000}M` : formatCount(units)
 }
+
+/** AI credits as dollars, one credit each: "$4.20", and "<$0.01" for a real sub-cent amount. */
+export const formatCredits = (credits: number): string =>
+	credits > 0 && credits < 0.005 ? "<$0.01" : formatCurrency(credits, "usd")

@@ -13,6 +13,7 @@ const window = {
 	startTime: "2026-10-01 09:15:00",
 	endTime: "2026-10-30 18:45:00",
 	sourceIds: ["source-a", "source-b"],
+	written: 0,
 }
 
 const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)

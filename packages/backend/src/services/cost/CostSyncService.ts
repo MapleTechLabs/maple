@@ -2,13 +2,12 @@
 // then claims due sources and runs a few plan steps each: HEAD (the trailing days), SETTLE (the open
 // months) or BACKFILL (a month toward the floor). A step pulls its window through the provider's
 // adapter and writes it whole under one `IngestedAt`; a failure backs the source off.
-import { randomUUID } from "node:crypto"
-import type { CostProvider } from "@maple/domain/cost"
+import { CostProvider } from "@maple/domain/cost"
 import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import type { CostDailyRow } from "@maple/domain/tinybird"
 import { CostSourceId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { AwsConnections, CostSources, type CostSourceRow } from "@maple/db/tables"
+import { CostSources, type CostSourceRow } from "@maple/db/tables"
 import {
 	Clock,
 	Context,
@@ -29,7 +28,14 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { leaseClaimable, leaseStillOurs } from "../integrations/lease"
 import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
+import { reconcileAwsCostSources } from "./aws-cost-sources"
+import { reconcileGithubCostSources } from "./github-cost-sources"
+import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
+import { reconcileVercelCostSources } from "./vercel-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { GithubCostProvider } from "./providers/github/GithubCostProvider"
+import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
+import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import {
 	advanceCostSync,
 	batchWholeDays,
@@ -49,7 +55,7 @@ import {
 	ROLLOUT_REASON,
 } from "./sync-plan"
 
-/** Longer than the lane's 15-minute deadline, so a live tick never loses its claim. */
+/** Longer than the lane's 270-second deadline, so a live tick never loses its claim. */
 const LEASE_MS = 20 * 60_000
 /** Backoff after a claim: doubles per consecutive failure, up to a day. */
 const BACKOFF_BASE_MS = 15 * 60_000
@@ -63,18 +69,17 @@ const TOO_LARGE_HOLD_MS = 24 * 60 * 60_000
 /** A source whose history waits on the month's request budget is looked at again this much later at most. */
 const BACKFILL_BUDGET_HOLD_MS = 24 * 60 * 60_000
 const BUDGET_MESSAGE = "This month's provider request budget is spent; pulls resume next month."
-// Under the lane's hourly tick, so a flag that reads off is asked again on the next one: a failed
-// lookup reads as off too, and so costs one tick. No pull is made until the flag reads on.
+// A flag that reads off is asked again within the hour: a failed lookup reads as off too, and so
+// costs under an hour. No pull is made until the flag reads on.
 const ROLLOUT_HOLD_MS = 50 * 60_000
 const ROLLOUT_MESSAGE = "Cloud cost is not enabled for this organization."
 /** A tick that starts a little early still picks up a backoff that ends on its schedule. */
 const TICK_SLACK_MS = 60_000
-const MAX_SOURCES_PER_TICK = 20
+/** At about a minute per claim (up to three steps) and two at a time, this fits the 270-second lane. */
+const MAX_SOURCES_PER_TICK = 6
 const SOURCE_CONCURRENCY = 2
 /** Plan steps one claim runs, so a new source gets its open months and two months of history at once. */
 const MAX_STEPS_PER_CLAIM = 3
-/** Sources one tick creates, turns on, turns off and removes, each, per provider. */
-const RECONCILE_LIMIT = 200
 /** Rows per `ingest` request, so a large window splits into bounded Events API bodies. */
 const INGEST_BATCH_ROWS = 10_000
 /** 3 attempts per batch, 500ms then 1s apart. Rows are idempotent under the sorting key. */
@@ -136,8 +141,6 @@ interface SyncProgress {
 	readonly leaseLost: boolean
 }
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 /** The backoff a claim sets: 15 minutes doubled per consecutive failure, capped at a day. */
 const nextBackoffMs = (consecutiveFailures: number): number =>
 	Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.min(consecutiveFailures, 16))
@@ -165,6 +168,9 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			// One adapter per provider literal: a new provider does not compile until it has one.
 			const adapters = {
 				aws: yield* AwsCostProvider,
+				openrouter: yield* OpenRouterCostProvider,
+				github: yield* GithubCostProvider,
+				vercel: yield* VercelCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -180,147 +186,60 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const attemptDue = ($: PG.ColumnAccessor<typeof CostSources.columns>, now: number) =>
 				PG.or($.nextAttemptAt.isNull(), $.nextAttemptAt.lte(now + TICK_SLACK_MS))
 
-			type AwsConnectionColumns = PG.ColumnAccessor<typeof AwsConnections.columns>
-
-			/** The org asked for cost and the deployed role grants it. Never NULL, so it can be negated. */
-			const awsSuppliesCost = (
-				connection: Pick<AwsConnectionColumns, "verifiedAt" | "modules" | "grantedModules">,
-			) => {
-				const cost = encodeJson(["cost"])
-				return PG.and(
-					connection.verifiedAt.isNotNull(),
-					PG.sql.cond`${connection.modules} @> ${cost}::jsonb`,
-					PG.sql.cond`coalesce(${connection.grantedModules} @> ${cost}::jsonb, false)`,
-				)
-			}
-
-			/** AWS sources whose `enabled` is not what their connection supplies, set to it. */
-			const setAwsEnabled = (enabled: boolean, now: number) =>
-				dbExecute((db) =>
-					db.run(
-						PG.from(CostSources, "s")
-							.innerJoin(AwsConnections, "c", (source, connection) =>
-								source.orgId.eq(connection.orgId).and(source.connectionRef.eq(connection.id)),
-							)
-							.select(($) => ({ id: $.id }))
-							.where(($) => [
-								$.provider.eq("aws"),
-								$.enabled.eq(!enabled),
-								enabled ? awsSuppliesCost($.c) : PG.not(awsSuppliesCost($.c)),
-							])
-							.orderBy(["id", "asc"])
-							.limit(RECONCILE_LIMIT),
-					),
-				).pipe(
-					Effect.flatMap((sources) =>
-						Arr.isReadonlyArrayNonEmpty(sources)
-							? dbExecute((db) =>
-									db.run(
-										PG.update(CostSources)
-											.set({ enabled, updatedAt: now })
-											.where(($) => [
-												$.provider.eq("aws"),
-												PG.inList(
-													$.id,
-													Arr.map(sources, (source) => source.id),
-												),
-											])
-											.returning(($) => ({ id: $.id })),
-									),
-								)
-							: Effect.succeed([]),
-					),
-					Effect.map((changed) => changed.length),
-				)
-
-			/**
-			 * AWS: a source for every connection that supplies cost, off while it does not (so a grant
-			 * lost for a tick keeps its id, state and history), gone only with the connection. Joined by
-			 * org, so a ref never crosses orgs.
-			 */
+			/** AWS sources in step with every org's connections (see `reconcileAwsCostSources`). */
 			const reconcileAws = Effect.fn("CostSyncService.reconcileAws")(function* (now: number) {
-				const missing = yield* dbExecute((db) =>
-					db.run(
-						PG.from(AwsConnections, "c")
-							.leftJoin(CostSources, "s", (connection, source) =>
-								source.orgId
-									.eq(connection.orgId)
-									.and(source.provider.eq("aws"))
-									.and(source.connectionRef.eq(connection.id)),
-							)
-							.select(($) => ({ id: $.id, orgId: $.orgId, accountId: $.accountId }))
-							.where(($) => [awsSuppliesCost($), $.s.id.isNull()])
-							.orderBy(["id", "asc"])
-							.limit(RECONCILE_LIMIT),
-					),
-				)
-				const created = yield* Effect.forEach(missing, (connection) =>
-					Effect.sync(() => CostSourceId.make(randomUUID())).pipe(
-						Effect.flatMap((id) =>
-							dbExecute((db) =>
-								db.run(
-									PG.insertInto(CostSources)
-										.values({
-											id,
-											orgId: connection.orgId,
-											provider: "aws",
-											connectionRef: connection.id,
-											accountId: connection.accountId,
-											createdAt: now,
-											updatedAt: now,
-										})
-										// Another tick made it first.
-										.onConflictDoNothing()
-										.returning(($) => ({ id: $.id })),
-								),
-							),
-						),
-					),
-				)
-				const disabled = yield* setAwsEnabled(false, now)
-				const enabled = yield* setAwsEnabled(true, now)
-				const orphaned = yield* dbExecute((db) =>
-					db.run(
-						PG.from(CostSources, "s")
-							.leftJoin(AwsConnections, "c", (source, connection) =>
-								source.orgId.eq(connection.orgId).and(source.connectionRef.eq(connection.id)),
-							)
-							.select(($) => ({ id: $.id }))
-							.where(($) => [$.provider.eq("aws"), $.c.id.isNull()])
-							.orderBy(["id", "asc"])
-							.limit(RECONCILE_LIMIT),
-					),
-				)
-				const removed = Arr.isReadonlyArrayNonEmpty(orphaned)
-					? yield* dbExecute((db) =>
-							db.run(
-								PG.deleteFrom(CostSources)
-									.where(($) => [
-										$.provider.eq("aws"),
-										PG.inList(
-											$.id,
-											Arr.map(orphaned, (source) => source.id),
-										),
-									])
-									.returning(($) => ({ id: $.id })),
-							),
-						)
-					: []
+				const reconciled = yield* dbExecute((db) => reconcileAwsCostSources(db, now))
 				yield* Effect.annotateCurrentSpan({
 					"maple.cost.provider": "aws",
-					"maple.cost.sources_created": Arr.flatten(created).length,
-					"maple.cost.sources_disabled": disabled,
-					"maple.cost.sources_enabled": enabled,
-					"maple.cost.sources_removed": removed.length,
+					"maple.cost.sources_created": reconciled.created,
+					"maple.cost.sources_disabled": reconciled.disabled,
+					"maple.cost.sources_enabled": reconciled.enabled,
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
+			/** OpenRouter sources in step with every org's saved key (see `reconcileOpenRouterCostSources`). */
+			const reconcileOpenRouter = Effect.fn("CostSyncService.reconcileOpenRouter")(function* (
+				now: number,
+			) {
+				const reconciled = yield* dbExecute((db) => reconcileOpenRouterCostSources(db, now))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "openrouter",
+					"maple.cost.sources_created": reconciled.created,
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
+			/** GitHub sources whose installation can no longer be read (see `reconcileGithubCostSources`). */
+			const reconcileGithub = Effect.fn("CostSyncService.reconcileGithub")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileGithubCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "github",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
+			/** Vercel sources whose connection is gone are removed (see `reconcileVercelCostSources`). */
+			const reconcileVercel = Effect.fn("CostSyncService.reconcileVercel")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileVercelCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "vercel",
+					"maple.cost.sources_removed": reconciled.removed,
 				})
 			})
 
 			/** One function per provider; each owns the sources of its own connection table. */
-			const reconcile = (now: number) => Effect.all([reconcileAws(now)], { discard: true })
+			const reconcile = (now: number) =>
+				Effect.all(
+					[reconcileAws(now), reconcileOpenRouter(now), reconcileGithub(), reconcileVercel()],
+					{
+						discard: true,
+					},
+				)
 
 			/** Enabled sources with a pull due and no backoff, healthy ones first. */
 			const loadDue = (now: number) => {
-				const floor = historyFloor(utcToday(now))
+				const today = utcToday(now)
 				return dbExecute((db) =>
 					db.run(
 						PG.from(CostSources)
@@ -337,7 +256,13 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
 									$.lastSyncedAt.lte(now - HEAD_INTERVAL_MS),
-									$.backfillDate.gt(floor),
+									// History left to walk, down to each provider's own floor.
+									...Arr.map(CostProvider.literals, (provider) =>
+										PG.and(
+											$.provider.eq(provider),
+											$.backfillDate.gt(historyFloor(provider, today)),
+										),
+									),
 									// A budget hold that ran out is claimed once more, if only to clear it.
 									$.lastErrorReason.eq(BUDGET_REASON),
 								),
@@ -771,6 +696,9 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 		Layer.provide(
 			Layer.mergeAll(
 				AwsCostProvider.layer,
+				OpenRouterCostProvider.layer,
+				GithubCostProvider.layer,
+				VercelCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

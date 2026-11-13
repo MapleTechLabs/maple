@@ -44,7 +44,7 @@ import {
 	guardFlush,
 	type Resolved,
 	runFlush,
-	type SignalState,
+	makeSignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
@@ -142,8 +142,8 @@ export interface Telemetry {
 	 * - No-op when no ingest key is configured and the endpoint is Maple's
 	 *   hosted ingest (drains buffers, never POSTs; logs one info line on first
 	 *   call so devs know telemetry is disabled).
-	 * - Errors are caught and logged to `console.error`; cooldown of 60s
-	 *   per signal before next attempt after a failure.
+	 * - Errors are caught; cooldown of 60s per signal before the next attempt.
+	 *   `console.error` gets the first failure of an outage, not its retries.
 	 */
 	flush(env: Record<string, unknown>): Promise<void>
 }
@@ -169,9 +169,9 @@ export const make = (config: Config = {}): Telemetry => {
 		"[MapleCloudflareSDK]",
 		"set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector",
 	)
-	const tracesState: SignalState = { disabledUntil: 0 }
-	const logsState: SignalState = { disabledUntil: 0 }
-	const metricsState: SignalState = { disabledUntil: 0 }
+	const tracesState = makeSignalState()
+	const logsState = makeSignalState()
+	const metricsState = makeSignalState()
 
 	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)
 

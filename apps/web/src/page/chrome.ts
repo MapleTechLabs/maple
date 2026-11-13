@@ -1,11 +1,9 @@
-import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, isPublicRoute } from "../route"
 import type { BreadcrumbEntry } from "../shell"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { dashboardPage, pageBody, pageContent } from "./kit/dashboard-page"
 import { resourceNotFound } from "./kit/resource-not-found"
-import { resolveLegacySettingsTab } from "./settings/nav"
 import { vstack } from "@maple/views/ui/stack"
 
 /**
@@ -15,13 +13,6 @@ import { vstack } from "@maple/views/ui/stack"
 const isBareRoute = AppRoute.isAnyOf(["CliLogin", "McpAuthorize", "QuickStart", "SelectPlan"])
 
 export const rendersShell = (route: AppRoute): boolean => !isPublicRoute(route) && !isBareRoute(route)
-
-/**
- * A retired settings tab only redirects, with no dashboard shell, so the top bar's pill is not
- * mounted and the redirect re-reads nothing.
- */
-export const isRedirectOnlyRoute = (route: AppRoute): boolean =>
-	route._tag === "Settings" && Option.isSome(resolveLegacySettingsTab(route.search.tab))
 
 /** The trail each page passes to the shell; pages without one show their route tag. */
 export const breadcrumbsOf = (route: AppRoute): ReadonlyArray<BreadcrumbEntry> =>

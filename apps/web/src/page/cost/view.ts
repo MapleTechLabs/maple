@@ -1,3 +1,4 @@
+import { CostProvider } from "@maple/domain/cost"
 import type { CostSourceSummary } from "@maple/domain/http"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -7,8 +8,7 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { failureKey } from "@maple/views/data/load-failure"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { AppRoute, hrefOf } from "../../route"
-import { linkButton } from "@maple/views/ui/button"
+import { button } from "@maple/views/ui/button"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import {
 	empty,
@@ -28,7 +28,6 @@ import { grid } from "@maple/views/ui/grid"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
-import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { PageViewInputs } from "../contract"
@@ -39,9 +38,12 @@ import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
-import type { Model } from "./model"
+import { keyMark } from "./marks"
+import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
+import { filtersRail } from "./view-filters"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
@@ -50,13 +52,11 @@ const DAY_SECONDS = 24 * 60 * 60
 
 type H = HtmlBuilder<Message>
 
-const CONNECT_AWS_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
-
-/** Where a connected account's Cost module is turned on. */
-const AWS_INTEGRATION_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "aws" } }))
-
 /** No cost source: how to get one. Never a sample of what the page would show. */
-const onRamp = (h: H): Html =>
+const onRamp = (
+	h: H,
+	options: Readonly<{ canManage: boolean; cannotManage: boolean; isBusy: boolean }>,
+): Html =>
 	empty(
 		h,
 		[
@@ -66,35 +66,82 @@ const onRamp = (h: H): Html =>
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Connect an AWS account and turn on its Cost module. Maple then reads what the account spends each day, by service, region and usage type.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project.",
 					]),
-					emptyDescription(
-						h,
-						[
-							"AWS bills Cost Explorer requests at USD\u00a00.01 each. Maple makes a few a day for each account, which comes to a few dollars a month.",
-						],
-						"mt-3",
-					),
+					// A member's save would be refused: say who can, and offer no form.
+					...(!options.cannotManage
+						? []
+						: [
+								emptyDescription(
+									h,
+									["Only organization admins and engineers can add a cost source."],
+									"mt-3",
+								),
+							]),
 				],
 				"max-w-md",
 			),
-			emptyContent(
-				h,
-				[
-					emptyActions(h, [
-						linkButton(h, { variant: "default", size: "sm", href: CONNECT_AWS_HREF }, [
-							"Connect AWS",
-						]),
-						textLink(h, { href: AWS_INTEGRATION_HREF, tone: "muted" }, [
-							"Turn on Cost for a connected account",
-						]),
-					]),
-				],
-				"max-w-md",
-			),
+			...(options.canManage
+				? [
+						emptyContent(
+							h,
+							[
+								emptyActions(h, [
+									button(
+										h,
+										{
+											variant: "default",
+											size: "sm",
+											isDisabled: options.isBusy,
+											attributes: [h.OnClick(Message.ClickedAddSource())],
+										},
+										["Add a cost source"],
+									),
+								]),
+							],
+							"max-w-md",
+						),
+					]
+				: []),
 		],
 		emptyFrameClass("dashed"),
 	)
+
+/** What a provider's first sync brings in: said on its own, and named beside other providers. */
+const FIRST_SYNC = {
+	aws: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "AWS brings in this month and the last, and older months fill in after that.",
+	},
+	openrouter: {
+		alone: "It brings in the last four weeks, which is all OpenRouter keeps.",
+		named: "OpenRouter brings in its last four weeks.",
+	},
+	github: {
+		alone: "It brings in this month and the last, then the two months before.",
+		named: "GitHub brings in this month and the last, then the two months before.",
+	},
+	vercel: {
+		alone: "It brings in this month and the last, and older months fill in after that.",
+		named: "Vercel brings in this month and the last, and older months fill in after that.",
+	},
+} as const satisfies Record<CostProvider, Readonly<{ alone: string; named: string }>>
+
+/** What the first syncs bring in, by the providers that have no cost yet (waiting or failing alike). */
+const firstSyncScope = (sources: ReadonlyArray<CostSourceSummary>): string => {
+	const unsynced = Arr.filter(sources, (source) => source.watermarkDate === null)
+	const providers = Arr.filter(CostProvider.literals, (provider) =>
+		Arr.some(unsynced, (source) => source.provider === provider),
+	)
+	const [only, ...others] = providers
+	if (only === undefined) return FIRST_SYNC.aws.alone
+	return others.length === 0
+		? FIRST_SYNC[only].alone
+		: Arr.join(
+				Arr.map(providers, (provider) => FIRST_SYNC[provider].named),
+				" ",
+			)
+}
 
 /** Sources exist and none has cost yet: what the reader is waiting for. */
 const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
@@ -122,12 +169,12 @@ const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 					]),
 					emptyDescription(h, [
 						isWaiting
-							? "The first sync runs within the hour. It brings in this month and the last, and older months fill in after that."
+							? `The first sync runs within a few minutes. ${firstSyncScope(sources)}`
 							: isFailing
 								? "Maple tries again within the hour. The source below shows what went wrong."
 								: isHeld
 									? "The sync is on hold. The source below says why."
-									: "Each source below is paused. Turn the Cost module back on for a connection to read its cost.",
+									: "Each source below is paused. Turn the Cost module back on for its connection to read its cost.",
 					]),
 				],
 				"max-w-md",
@@ -150,18 +197,21 @@ const toolbar = (h: H, model: Model): Html => {
 		chips: Arr.map(activeFilters(model.search), (filter) => ({
 			id: `${filter.dimension}:${filter.value}`,
 			label: DIMENSIONS[filter.dimension].label,
-			values: [keyLabel(filter.dimension, filter.value)],
+			values: [keyLabel(filter.dimension, filter.value, sourcesOf(model))],
+			mark: keyMark(filter.dimension, filter.value, sourcesOf(model)) ?? undefined,
 			onRemove: Message.ClickedRemoveFilter(filter),
 		})),
 		onClearAll: Message.ClickedClearFilters(),
 		className: "mb-0",
 	})
 	return hstack(h, { gap: "4", wrap: true, className: "gap-y-2" }, [
-		hstack(h, { gap: "2" }, [
-			typography(h, { size: "xs", tone: "muted" }, ["Group by"]),
+		hstack(h, { gap: "2", className: "min-w-0 max-w-full" }, [
+			typography(h, { size: "xs", tone: "muted", className: "shrink-0" }, ["Group by"]),
 			segmentedSelect(h, {
 				ariaLabel: "Group by",
 				size: "sm",
+				// Six options outgrow a narrow page beside the rail: the group scrolls, not the page.
+				className: "min-w-0 overflow-x-auto",
 				value: groupByOf(model.search),
 				options: Arr.map(COST_GROUP_BYS, (dimension) => ({
 					value: dimension,
@@ -217,8 +267,12 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 			errorState(h, { failure, title: "Couldn't load cost", onRetry: Message.ClickedRetry() }),
 		],
 		onData: ({ sources }) => {
-			if (sources.length === 0) return [onRamp(h)]
-			const section = sourcesSection(h, sources, model.nowMs, timeZone)
+			const isBusy = model.sourceWrite !== "Idle"
+			const canManage = canManageSources(model)
+			if (sources.length === 0) {
+				return [onRamp(h, { canManage, cannotManage: cannotManageSources(model), isBusy })]
+			}
+			const section = sourcesSection(h, sources, model.nowMs, timeZone, { isBusy, canManage })
 			return hasSynced(sources) ? [...content(h, model), section] : [firstSync(h, sources), section]
 		},
 	})
@@ -231,6 +285,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: "Cost",
+					// The rail filters the window's reads: it shows once there is cost to read.
+					filters: showsData(model) ? filtersRail(h, model) : undefined,
 					actions: showsData(model)
 						? pageTime(h, {
 								search: model.search,
@@ -263,6 +319,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						{ cols: 1, gap: "6", className: "shrink-0" },
 						body(h, model, inputs.context.timeZone),
 					),
+					addSourceDialog(h, model, sourcesOf(model)),
+					removeSourceDialog(h, model),
 				],
 			),
 		],

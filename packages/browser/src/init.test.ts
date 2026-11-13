@@ -87,6 +87,12 @@ describe("lazy replay chunk", () => {
 		expect(handle.sessionId).not.toBe("")
 		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
 		expect(handle.sessionId).toBe("replay-session")
+		// The sink the replay session starts after a rotation skips the same noise.
+		const { isErrorNoise: filter } = replay.start.mock.calls[0]?.[0] ?? {}
+		expect(
+			filter("ResizeObserver loop completed with undelivered notifications.", "window.onerror"),
+		).toBe(true)
+		expect(filter(new Error("boom"), "window.onerror", "https://app.example.com/app.js")).toBe(false)
 
 		await handle.shutdown()
 		expect(replay.shutdown).toHaveBeenCalledWith({ flush: true })

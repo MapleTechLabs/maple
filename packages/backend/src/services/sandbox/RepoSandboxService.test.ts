@@ -11,7 +11,7 @@ import {
 	SandboxResourceUse,
 } from "@maple/backend/services/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
-import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
+import { gitPathspec, missedFile, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
 const ORG = Schema.decodeSync(OrgId)("org_git_test")
@@ -42,6 +42,9 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/README.md`, "# shop\n")
 	// git prints this name quoted in its index listing.
 	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
+	// A directory name holding a newline: one line of a listing cannot name what is under it.
+	mkdirSync(`${dir}/odd\nsrc`)
+	writeFileSync(`${dir}/odd\nsrc/lonely.ts`, "export const lonely = 1\n")
 	// A committed symlink out of the checkout: tracked, so a tracked-file check alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
@@ -287,6 +290,69 @@ describe("the git commands the tools build, against a real repository", () => {
 			)
 			assert.strictEqual(result.exitCode, 1)
 			assert.notInclude(result.stdout, "export const checkout")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("says where a missed path went wrong: same-named files, and the deepest real directory", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const miss = (path: string) =>
+				service
+					.readFile(ORG, { repository: "octo/shop" }, { path, startLine: 1, endLine: 10 })
+					.pipe(
+						Effect.map((result) => ({ exitCode: result.exitCode, ...missedFile(result.stdout) })),
+					)
+			// The name is right and the directory is not; the case of the name does not matter.
+			assert.deepStrictEqual(yield* miss("src/deep/gone/further/Nested.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ["src/deep/nested.ts"],
+				sameNameTotal: 1,
+				nearestDirectory: "src/deep",
+			})
+			assert.deepStrictEqual(yield* miss("docs/readme.md"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ["README.md"],
+				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
+			// The directory is right and no file has the name.
+			assert.deepStrictEqual(yield* miss("src/AGENTS.md"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+			})
+			// A name git would quote in its listing is still found as written.
+			assert.deepStrictEqual(yield* miss('docs/a"b.ts'), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ['src/a"b.ts'],
+				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
+			// A namesake under a directory whose name holds a newline is left out, not half-named.
+			assert.deepStrictEqual(yield* miss("docs/lonely.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+				nearestDirectory: ".",
+			})
+			// A name with pattern characters is compared as text, not matched.
+			assert.deepStrictEqual(yield* miss("src/*.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+			})
+			assert.deepStrictEqual(yield* miss("src"), {
+				exitCode: 1,
+				isDirectory: true,
+				sameName: [],
+				sameNameTotal: 0,
+			})
 		}).pipe(Effect.provide(overRepo())),
 	)
 

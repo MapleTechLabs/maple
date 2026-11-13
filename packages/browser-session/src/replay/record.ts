@@ -16,6 +16,7 @@ import {
 	type ChunkMeta,
 } from "../platform/transport"
 import { scrubUrl } from "../platform/url-privacy"
+import { isPageThrow, watchPageThrows } from "./page-throws"
 
 // rrweb event shape, read through a guard rather than typed against
 // @rrweb/types across alpha releases. Only `type`, `timestamp` and `data` matter.
@@ -193,6 +194,9 @@ function recordOptions(config: IngestConfig) {
 		...(config.maskAllText ? { maskTextSelector: "*" } : undefined),
 		// An rrweb observer that throws would surface as the host app's uncaught error.
 		errorHandler: (error: unknown): boolean => {
+			// The page's own exception from a method rrweb proxies: `false` has rrweb
+			// rethrow it to the page, which may depend on catching it. Not a recorder failure.
+			if (isPageThrow(error)) return false
 			warnDropped("replay recording", error)
 			return true
 		},
@@ -611,6 +615,8 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		teardown()
 	}
 	const belongs = sessionGate(sessionId)
+	// Before `record()`: rrweb proxies whatever is on the prototypes when it starts.
+	const unwatchPageThrows = watchPageThrows()
 
 	const stopRecord = record({
 		emit: (event: unknown) => {
@@ -695,6 +701,7 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 		// and on a revoke it is dead weight holding recorded user data.
 		buffer = emptyBuffer()
 		stopRecord?.()
+		unwatchPageThrows()
 	}
 
 	return {
@@ -760,6 +767,8 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 	const belongs = sessionGate(sessionId)
 	// Assigned once rrweb has started; an oversized first snapshot cannot reach the limit alone.
 	let stopRecord: (() => void) | undefined
+	// Before `record()`: rrweb proxies whatever is on the prototypes when it starts.
+	const unwatchPageThrows = watchPageThrows()
 
 	const stop = (): void => {
 		stopped = true
@@ -767,6 +776,7 @@ export function startBufferedRecording(config: IngestConfig, sessionId: string):
 		segments = []
 		bytes = 0
 		stopRecord?.()
+		unwatchPageThrows()
 	}
 
 	stopRecord = record({

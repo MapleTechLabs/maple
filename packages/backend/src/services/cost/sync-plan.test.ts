@@ -24,6 +24,7 @@ const HOUR_MS = 60 * 60_000
 const DAY_MS = 24 * HOUR_MS
 
 const NEW: CostSyncState = {
+	provider: "aws",
 	watermarkDate: null,
 	backfillDate: null,
 	lastSyncedAt: null,
@@ -41,6 +42,7 @@ const pulled = (
 	backfillDate: string,
 	ago: { readonly head: number; readonly settle: number },
 ): CostSyncState => ({
+	provider: "aws",
 	watermarkDate: utcToday(now - ago.head),
 	backfillDate,
 	lastSyncedAt: now - ago.head,
@@ -202,13 +204,13 @@ describe("planCostSync", () => {
 		const ancient = { ...held, watermarkDate: "2024-01-01" }
 		assert.deepStrictEqual(planCostSync(ancient, now), {
 			mode: "settle",
-			startDay: historyFloor("2026-11-20"),
+			startDay: historyFloor("aws", "2026-11-20"),
 			endDay: "2026-11-20",
 		})
 		// A month before the watermark's that reaches under the floor starts at the floor.
 		const nearFloor = { ...held, watermarkDate: "2025-10-15" }
 		assert.deepStrictEqual(
-			[historyFloor("2026-11-20"), planCostSync(nearFloor, now)],
+			[historyFloor("aws", "2026-11-20"), planCostSync(nearFloor, now)],
 			["2025-10-01", { mode: "settle", startDay: "2025-10-01", endDay: "2026-11-20" }],
 		)
 	})
@@ -298,6 +300,167 @@ describe("planCostSync", () => {
 	})
 })
 
+describe("planCostSync for a provider that serves 30 completed days", () => {
+	const OPENROUTER_NEW: CostSyncState = { ...NEW, provider: "openrouter" }
+	const openRouterPulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({
+		...pulled(now, backfillDate, ago),
+		provider: "openrouter",
+		// The newest day it serves is the day before the pull.
+		watermarkDate: utcToday(now - ago.head - DAY_MS),
+	})
+
+	it("starts 28 days back and ends yesterday, not at the previous month's start and today", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(OPENROUTER_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-23",
+			endDay: "2026-11-19",
+		})
+	})
+
+	it("takes the four newest served days as its head", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const state = openRouterPulled(now, "2026-10-22", { head: DAY_MS, settle: 2 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "head",
+			startDay: "2026-11-16",
+			endDay: "2026-11-19",
+		})
+	})
+
+	it("never settles below its floor, though the open month starts before it", () => {
+		const now = at("2026-12-05T12:00:00Z")
+		const state = openRouterPulled(now, "2026-10-22", { head: DAY_MS, settle: 8 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "settle",
+			startDay: "2026-11-07",
+			endDay: "2026-12-04",
+		})
+	})
+
+	it("has no history to walk once its first pull reached the floor", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const state = openRouterPulled(now, "2026-10-23", { head: HOUR_MS, settle: HOUR_MS })
+		assert.deepStrictEqual(planCostSync(state, now), { mode: "idle" })
+	})
+
+	it("resumes at the floor after a hold longer than what the provider serves", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const state = openRouterPulled(now, "2026-08-01", { head: 40 * DAY_MS, settle: 40 * DAY_MS })
+		assert.deepStrictEqual(planCostSync(state, now), {
+			mode: "settle",
+			startDay: "2026-10-23",
+			endDay: "2026-11-19",
+		})
+	})
+})
+
+describe("planCostSync for a provider that serves a few months up to today", () => {
+	const GITHUB_NEW: CostSyncState = { ...NEW, provider: "github" }
+	const githubPulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({ ...pulled(now, backfillDate, ago), provider: "github" })
+
+	it("starts at the previous month and ends today", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(GITHUB_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-20",
+		})
+	})
+
+	it("walks history a month at a time down to the first day three months back, and no further", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const current = { head: HOUR_MS, settle: HOUR_MS }
+		assert.strictEqual(historyFloor("github", "2026-11-20"), "2026-08-01")
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-10-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-09-01",
+			endDay: "2026-09-30",
+		})
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-09-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-08-01",
+			endDay: "2026-08-31",
+		})
+		assert.deepStrictEqual(planCostSync(githubPulled(now, "2026-08-01", current), now), { mode: "idle" })
+	})
+
+	it("crosses a year's start with its floor", () => {
+		assert.strictEqual(historyFloor("github", "2027-02-14"), "2026-11-01")
+	})
+
+	it("resumes at the floor after a hold longer than its history", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const held = {
+			...githubPulled(now, "2026-01-01", { head: 200 * DAY_MS, settle: 200 * DAY_MS }),
+			watermarkDate: "2026-05-04",
+		}
+		assert.deepStrictEqual(planCostSync(held, now), {
+			mode: "settle",
+			startDay: "2026-08-01",
+			endDay: "2026-11-20",
+		})
+	})
+})
+
+describe("planCostSync for a provider that serves a year in one request", () => {
+	const VERCEL_NEW: CostSyncState = { ...NEW, provider: "vercel" }
+	const vercelPulled = (
+		now: number,
+		backfillDate: string,
+		ago: { readonly head: number; readonly settle: number },
+	): CostSyncState => ({ ...pulled(now, backfillDate, ago), provider: "vercel" })
+
+	it("starts with the previous month through today, like a provider with a longer history", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		assert.deepStrictEqual(planCostSync(VERCEL_NEW, now), {
+			mode: "settle",
+			startDay: "2026-10-01",
+			endDay: "2026-11-20",
+		})
+	})
+
+	it("keeps its history floor at the first day of the month eleven months back", () => {
+		assert.deepStrictEqual(
+			[historyFloor("vercel", "2026-11-20"), historyFloor("vercel", "2024-12-31")],
+			["2025-12-01", "2024-01-01"],
+		)
+	})
+
+	it("never asks for more than a year, whatever day and however long it was held", () => {
+		// The longest window there is: a source held since before the floor, on a leap year's last day.
+		const now = at("2024-12-31T12:00:00Z")
+		const held = vercelPulled(now, "2023-06-01", { head: 400 * DAY_MS, settle: 400 * DAY_MS })
+		const plan = planCostSync(held, now)
+		assert.deepStrictEqual(plan, { mode: "settle", startDay: "2024-01-01", endDay: "2024-12-31" })
+		assert.strictEqual(plan.mode === "idle" ? 0 : daysOfWindow(plan).length, 366)
+	})
+
+	it("walks history a month per step and stops at the floor", () => {
+		const now = at("2026-11-20T12:00:00Z")
+		const current = { head: HOUR_MS, settle: HOUR_MS }
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2026-02-01", current), now), {
+			mode: "backfill",
+			startDay: "2026-01-01",
+			endDay: "2026-01-31",
+		})
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2026-01-01", current), now), {
+			mode: "backfill",
+			startDay: "2025-12-01",
+			endDay: "2025-12-31",
+		})
+		assert.deepStrictEqual(planCostSync(vercelPulled(now, "2025-12-01", current), now), { mode: "idle" })
+	})
+})
+
 describe("planCostSync request budgets", () => {
 	const now = at("2026-11-11T12:00:00Z")
 	const current = { head: HOUR_MS, settle: HOUR_MS }
@@ -324,7 +487,7 @@ describe("planCostSync request budgets", () => {
 	})
 
 	it("names no budget when history is done anyway", () => {
-		const done = pulled(now, historyFloor("2026-11-11"), current)
+		const done = pulled(now, historyFloor("aws", "2026-11-11"), current)
 		assert.deepStrictEqual(planCostSync(billed(done, now, BACKFILL_REQUEST_BUDGET), now), {
 			mode: "idle",
 		})
