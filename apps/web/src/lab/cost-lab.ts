@@ -8,7 +8,9 @@ import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
 	BreakdownInput,
+	FacetsInput,
 	FetchCostBreakdown,
+	FetchCostFacets,
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
@@ -28,6 +30,7 @@ import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
 import { urlToAppRoute } from "../route"
+import { perDimension } from "../page/cost/derive"
 import {
 	LAB_NOW_MS,
 	LAB_SOURCES,
@@ -199,6 +202,7 @@ const keyArgs = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String })
 const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
+const facetsArgs = argsOf(FacetsInput)
 
 const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
@@ -271,6 +275,24 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 							groupBy: input.groupBy,
 							sortBy: input.sortBy,
 						}),
+					),
+				}),
+			)
+		case FetchCostFacets.name:
+			return Option.map(facetsArgs(command.args), ({ key, input }) =>
+				CostMessage.CompletedLoadFacets({
+					key,
+					result: settled(state, () =>
+						perDimension(
+							(groupBy) =>
+								labBreakdown({
+									days,
+									filters: filtersOf(input.filters[groupBy]),
+									removed,
+									groupBy,
+									sortBy: "cost",
+								}).rows,
+						),
 					),
 				}),
 			)

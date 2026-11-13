@@ -1,5 +1,6 @@
 import type { CostBreakdownResponse, CostBreakdownRow, CostBreakdownSortBy } from "@maple/domain/http"
 import { EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { Option, Array as Arr } from "effect"
@@ -10,6 +11,7 @@ import { delta } from "@maple/views/ui/delta"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { panel, panelHeader } from "@maple/views/ui/panel"
+import { icon } from "@maple/views/ui/icon"
 import { hstack } from "@maple/views/ui/stack"
 import { swatch } from "@maple/views/ui/swatch"
 import {
@@ -29,6 +31,7 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography } from "@maple/views/ui/typography"
 import {
 	DIMENSIONS,
+	drilledInto,
 	formatMoney,
 	formatMoneyChange,
 	groupByOf,
@@ -38,10 +41,10 @@ import {
 	seriesLabels,
 	sortOf,
 	type CostGroupBy,
-	withFilter,
 } from "./derive"
+import { keyDetail, keyMark } from "./marks"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { sourcesOf, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
@@ -85,7 +88,7 @@ const head = (h: H, dimension: CostGroupBy, sort: CostBreakdownSortBy): Html => 
 const seriesColors = (model: Model, dimension: CostGroupBy): ReadonlyMap<string, string> => {
 	const series = Option.getOrUndefined(AsyncData.getData(model.timeseries.data))?.series ?? []
 	// The same name set the bar chart resolves, "Other" included: a colour depends on the whole set.
-	const labels = seriesLabels(dimension, series)
+	const labels = seriesLabels(dimension, series, sourcesOf(model))
 	const colors = resolveSeriesColors(labels)
 	return new Map(
 		Arr.flatMap(series, (entry, index) => {
@@ -118,10 +121,26 @@ const row = (
 			totals.days,
 			model.search,
 		) === "synced"
-	const label = keyLabel(dimension, entry.key)
+	const sources = sourcesOf(model)
+	const label = keyLabel(dimension, entry.key, sources)
 	const filter = { dimension, value: entry.key }
 	const color = colors.get(entry.key)
-	const name = truncatedText(h, { text: label, className: "text-xs" })
+	const mark = keyMark(dimension, entry.key, sources)
+	const detail = keyDetail(dimension, entry.key, sources)
+	const next = drilledInto(model.search, filter)
+	const name = hstack(h, { gap: "2", shrink: true }, [
+		...(mark === null
+			? []
+			: [icon(h, mark.icon, { size: 14, className: cn("shrink-0", mark.className) })]),
+		truncatedText(h, { text: label, className: "text-xs" }),
+		...(detail === null
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", truncate: true, className: "shrink-[2]" }, [
+						detail,
+					]),
+				]),
+	])
 	return tableRow(
 		h,
 		[
@@ -138,12 +157,14 @@ const row = (
 							: rowLink(
 									h,
 									{
-										href: hrefOf(
-											AppRoute.Cost({ search: withFilter(model.search, filter) }),
-										),
+										href: hrefOf(AppRoute.Cost({ search: next })),
 										className: "block min-w-0",
 										attributes: [
-											h.Title(`Filter to ${DIMENSIONS[dimension].label}: ${label}`),
+											h.Title(
+												next.groupBy === dimension
+													? `Filter to ${DIMENSIONS[dimension].label}: ${label}`
+													: `${label} by ${DIMENSIONS[next.groupBy ?? dimension].noun}`,
+											),
 										],
 									},
 									[name],
@@ -230,7 +251,7 @@ export const breakdownTable = (h: H, model: Model): Html => {
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: `Cost by ${DIMENSIONS[dimension].noun}`,
-			action: typography(h, { size: "2xs", tone: "subtle" }, ["Select a row to filter to it"]),
+			action: typography(h, { size: "2xs", tone: "subtle" }, ["Select a row to break it down"]),
 		}),
 		AsyncData.matchData(model.breakdown.data, {
 			onEmpty: () => loading(h, dimension),

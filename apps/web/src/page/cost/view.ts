@@ -38,11 +38,13 @@ import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
-import { canManageSources, cannotManageSources, type Model } from "./model"
+import { keyMark } from "./marks"
+import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
 import { COST_PROVIDERS } from "./providers"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
+import { filtersRail } from "./view-filters"
 import { figuresRow } from "./view-figures"
 import { sourcesSection } from "./view-sources"
 import { breakdownTable } from "./view-table"
@@ -65,7 +67,7 @@ const onRamp = (
 					emptyMedia(h, { variant: "icon" }, [icon(h, "CircleDollarIcon")]),
 					emptyTitle(h, ["No cost source yet"]),
 					emptyDescription(h, [
-						"Add a source and Maple reads what it bills each day: an AWS account by service, region and usage type, an OpenRouter account by model, a Cloudflare account by product.",
+						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a Cloudflare account by product.",
 					]),
 					// A member's save would be refused: say who can, and offer no form.
 					...(!options.cannotManage
@@ -189,7 +191,8 @@ const toolbar = (h: H, model: Model): Html => {
 		chips: Arr.map(activeFilters(model.search), (filter) => ({
 			id: `${filter.dimension}:${filter.value}`,
 			label: DIMENSIONS[filter.dimension].label,
-			values: [keyLabel(filter.dimension, filter.value)],
+			values: [keyLabel(filter.dimension, filter.value, sourcesOf(model))],
+			mark: keyMark(filter.dimension, filter.value, sourcesOf(model)) ?? undefined,
 			onRemove: Message.ClickedRemoveFilter(filter),
 		})),
 		onClearAll: Message.ClickedClearFilters(),
@@ -238,9 +241,6 @@ const content = (h: H, model: Model): ReadonlyArray<Html> => {
 			]
 }
 
-const sourcesOf = (model: Model): ReadonlyArray<CostSourceSummary> =>
-	Option.getOrUndefined(AsyncData.getData(model.sources.data))?.sources ?? []
-
 /** Whether the window's reads are on the page: only then does the header offer a day range. */
 const showsData = (model: Model): boolean =>
 	Option.exists(AsyncData.getData(model.sources.data), (response) => hasSynced(response.sources))
@@ -277,6 +277,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				h,
 				{
 					title: "Cost",
+					// The rail filters the window's reads: it shows once there is cost to read.
+					filters: showsData(model) ? filtersRail(h, model) : undefined,
 					actions: showsData(model)
 						? pageTime(h, {
 								search: model.search,
