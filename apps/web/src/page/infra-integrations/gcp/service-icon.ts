@@ -4,16 +4,16 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { String as Str, Option, Array as Arr } from "effect"
 
-// The service glyph as a tile, or a Cloud SQL instance's engine logo once the inventory knows it.
+// Google Cloud's own product icon as a tile, or a Cloud SQL instance's engine logo once the inventory knows it.
 
 const SERVICE_ICON = {
 	cloudRun: "CloudRunIcon",
-	cloudFunctions: "ParenthesesDotsIcon",
+	cloudFunctions: "CloudFunctionsIcon",
 	gke: "GkeIcon",
-	computeEngine: "MicrochipIcon",
-	cloudSql: "DatabaseIcon",
+	computeEngine: "ComputeEngineIcon",
+	cloudSql: "CloudSqlIcon",
 	pubsub: "GooglePubSubIcon",
-	loadBalancing: "SitemapIcon",
+	loadBalancing: "CloudLoadBalancingIcon",
 } as const satisfies Record<GcpInfraServiceId, IconName>
 
 const ENGINE_ICON: ReadonlyArray<readonly [prefix: string, icon: IconName]> = [
