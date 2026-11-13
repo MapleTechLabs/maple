@@ -43,9 +43,16 @@ const ruleStates = (orgId: string) =>
 		),
 	)
 
+/** An org's live rows, read only while the engineers' page is the one drawn. */
+const WhileDrawn = { orgId: Schema.String, isDrawn: Schema.Boolean }
+
 const byOrg = (stream: (orgId: string) => Stream.Stream<Message, never, OrgCollections>) => ({
-	modelToDependencies: ({ context }: PageSubscriptionInput<Model>) => ({ orgId: context.orgId }),
-	dependenciesToStream: ({ orgId }: { readonly orgId: string }) => stream(orgId),
+	modelToDependencies: ({ model, context }: PageSubscriptionInput<Model>) => ({
+		orgId: context.orgId,
+		isDrawn: model.observer === null,
+	}),
+	dependenciesToStream: ({ orgId, isDrawn }: { readonly orgId: string; readonly isDrawn: boolean }) =>
+		isDrawn ? stream(orgId) : Stream.empty,
 })
 
 /** The observer page's live alert rows, only while there is an observer page. */
@@ -56,14 +63,14 @@ const observer = Subscription.lift(observerSubscriptions)<PageSubscriptionInput<
 })
 
 const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
-	incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
+	incidents: entry(WhileDrawn, byOrg(incidents)),
 	/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
 	incidentsLoadFailed: entry(
 		{ orgId: Schema.String, isWaiting: Schema.Boolean },
 		{
 			modelToDependencies: ({ model, context }) => ({
 				orgId: context.orgId,
-				isWaiting: AsyncData.isLoading(model.incidents),
+				isWaiting: model.observer === null && AsyncData.isLoading(model.incidents),
 			}),
 			dependenciesToStream: ({ orgId, isWaiting }) =>
 				incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
@@ -75,7 +82,7 @@ const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resour
 		{
 			modelToDependencies: ({ model, context }) => ({
 				orgId: context.orgId,
-				isWaiting: AsyncData.isLoading(model.rules),
+				isWaiting: model.observer === null && AsyncData.isLoading(model.rules),
 			}),
 			dependenciesToStream: ({ orgId, isWaiting }) =>
 				isWaiting
@@ -87,8 +94,8 @@ const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resour
 					: Stream.empty,
 		},
 	),
-	rules: entry({ orgId: Schema.String }, byOrg(rules)),
-	ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
+	rules: entry(WhileDrawn, byOrg(rules)),
+	ruleStates: entry(WhileDrawn, byOrg(ruleStates)),
 	/** Waits for the first real service: every 15 s for five minutes, then every minute. */
 	setupPoll: entry(
 		{ isPolling: Schema.Boolean },

@@ -69,6 +69,9 @@ export type UptimeSummary = Readonly<{
 	isSetUp: boolean
 }>
 
+/** Checks exist but none is running and reporting. */
+const isIdle = (uptime: UptimeSummary): boolean => uptime.isSetUp && uptime.total === 0
+
 export const uptimeOf = (model: Model): Part<UptimeSummary> =>
 	partOf(model.monitors.data, (monitors) => {
 		const withStatus = (status: ReturnType<typeof displayStatus>) =>
@@ -193,7 +196,8 @@ export const verdictOf = (model: Model): Verdict => {
 		return { _tag: "Ready", tone: "crit", sentence: Arr.join(problems, " "), support }
 	const unchecked = [
 		...(incidents._tag === "Failed" ? ["incidents"] : []),
-		...(uptime._tag === "Failed" ? ["uptime"] : []),
+		// Checks that are all paused or yet to report say nothing about whether the product is up.
+		...(uptime._tag === "Failed" || (uptime._tag === "Ready" && isIdle(uptime.value)) ? ["uptime"] : []),
 		...(slos._tag === "Failed" ? ["SLOs"] : []),
 	]
 	if (unchecked.length === 3)

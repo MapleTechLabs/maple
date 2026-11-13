@@ -166,7 +166,7 @@ const incidentRow = (h: H, incident: AlertIncidentDocument, nowMs: number): Html
 const incidentsSection = (h: H, model: Model, nowMs: number | null): Html => {
 	const part = incidentsOf(model)
 	const body = (): ReadonlyArray<Html> => {
-		if (part._tag === "Failed") return [note(h, "Couldn't check incidents. Reload to try again.")]
+		if (part._tag === "Failed") return [note(h, "Couldn't check incidents")]
 		if (part._tag === "Loading" || nowMs === null) return [loadingRows(h, "Loading incidents")]
 		const { open, isSetUp } = part.value
 		return rowsOr(
@@ -295,16 +295,24 @@ const errorRow = (h: H, error: TopError, nowMs: number): Html =>
 		leading: severityIcon(h, error.severity, 16),
 		title: error.title,
 		meta: `${error.serviceName} · last seen ${formatRelativeTime(error.lastSeenAt, nowMs)}`,
-		// The noun gives way on a narrow page, so the title keeps its room.
+		// The noun gives way on a narrow page, so the title keeps its room; a screen reader still gets it.
 		trailing: typography(
 			h,
 			{ size: "xs", tone: "muted", numeric: true, className: "whitespace-nowrap" },
 			[
 				error.count.toLocaleString(),
-				h.span([h.Class("hidden @md/page:inline")], [` ${pluralize(error.count, "event")}`]),
+				h.span([h.Class("sr-only @md/page:not-sr-only")], [` ${pluralize(error.count, "event")}`]),
 			],
 		),
 	})
+
+/** An empty list only means a clean window when the app is known to be sending data. */
+const errorsNote = (presence: ReturnType<typeof presenceOf>["status"]): string => {
+	if (presence === "present") return "No open errors in the last 24 hours"
+	return presence === "absent"
+		? "No error data yet. An engineer on your team can connect your app."
+		: "No open errors found"
+}
 
 const errorsSection = (h: H, model: Model, nowMs: number | null): Html => {
 	const data = model.errors.data
@@ -316,13 +324,7 @@ const errorsSection = (h: H, model: Model, nowMs: number | null): Html => {
 				rowsOr(
 					errors,
 					(error) => errorRow(h, error, nowMs ?? 0),
-					() =>
-						note(
-							h,
-							presenceOf(model.presence, "traces").status === "absent"
-								? "No error data yet. An engineer on your team can connect your app."
-								: "No open errors in the last 24 hours",
-						),
+					() => note(h, errorsNote(presenceOf(model.presence, "traces").status)),
 				),
 		})
 	}

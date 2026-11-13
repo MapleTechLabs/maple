@@ -45,6 +45,8 @@ import {
 } from "./command"
 import { topErrorsOf } from "./derive"
 import { Message as ObserverMessage } from "./message"
+import type { Model as ObserverModel } from "./model"
+import { subscriptions } from "../subscription"
 
 // The Overview an observer gets: a verdict, what backs it, and no control that sets anything up.
 
@@ -185,6 +187,58 @@ describe("overview, observer", () => {
 			expectView(verdict("Everything is working.")).toExist(),
 			expectView(text("The 1 check is passing")).toExist(),
 		)
+	})
+
+	/** `state` after one more answer from the observer page's reads. */
+	const after = (state: ObserverHomeState, answer: (observer: ObserverModel) => ObserverMessage): Model => {
+		const model = at(state)
+		if (model.observer === null) return model
+		return pageUpdate(model, Message.GotObserverMessage({ message: answer(model.observer) })).model
+	}
+
+	test("checks that are all paused do not count as everything working", () => {
+		const paused = after("clear", (observer) =>
+			ObserverMessage.CompletedFetchMonitors({
+				key: observer.monitors.key ?? "",
+				result: Result.succeed([httpMonitor({ enabled: false })]),
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(paused),
+			mounted,
+			expectView(verdict("No problems found, but uptime couldn't be checked.")).toExist(),
+			expectView(verdict("Everything is working.")).toBeAbsent(),
+		)
+	})
+
+	test("an empty error list is only called a clean day when the app is known to send data", () => {
+		const noErrors = (observer: ObserverModel) =>
+			ObserverMessage.CompletedFetchErrors({
+				key: observer.errors.key ?? "",
+				result: Result.succeed([]),
+			})
+		scene(
+			{ update: pageUpdate, view },
+			given(after("clear", noErrors)),
+			mounted,
+			expectView(text("No open errors in the last 24 hours")).toExist(),
+		)
+		// The presence read has not answered: nothing says the app was watched.
+		scene(
+			{ update: pageUpdate, view },
+			given(after("loading", noErrors)),
+			mounted,
+			expectView(text("No open errors in the last 24 hours")).toBeAbsent(),
+			expectView(text("No open errors found")).toExist(),
+		)
+	})
+
+	test("the engineers' live rows are not read while an observer's page is drawn", () => {
+		const drawn = (model: Model) =>
+			subscriptions.incidents.modelToDependencies({ model, context: OBSERVER_CONTEXT }).isDrawn
+		expect(drawn(at("clear"))).toBe(false)
+		expect(drawn(init({ search: {} }, OPERATOR_CONTEXT).model)).toBe(true)
 	})
 
 	test("an observer's entry starts their reads and none of the engineers'", () => {
