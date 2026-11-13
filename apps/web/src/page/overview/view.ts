@@ -33,6 +33,8 @@ import { usageCards } from "./view-usage"
 
 import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
+import { EMPTY as ANALYST_EMPTY } from "./analyst/update"
+import * as AnalystView from "./analyst/view"
 import { hstack } from "@maple/views/ui/stack"
 
 const EMPTY_COLORS = {}
@@ -115,6 +117,15 @@ const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	// The role can arrive after `init`: until the page's Mount starts its reads, it draws its skeletons.
+	if (inputs.context.audience === "analyst")
+		return h.submodel({
+			slotId: "analyst-home",
+			model: model.analyst ?? ANALYST_EMPTY,
+			view: AnalystView.view,
+			viewInputs: inputs,
+			toParentMessage: (message) => Message.GotAnalystMessage({ message }),
+		})
 	const slice: SliceSearch = {
 		startTime: model.window?.startTime,
 		endTime: model.window?.endTime,

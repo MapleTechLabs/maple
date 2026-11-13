@@ -24,6 +24,7 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DestinationName } from "./model"
+import { SessionGrants } from "../../kit/session-grants"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -54,6 +55,7 @@ export const EscalationPreview = Schema.Struct({
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedFetchSession: SessionGrants,
 	CompletedFetchDetail: result(V2ErrorIssueDetail),
 	CompletedFetchEvents: result(ErrorIssueEventsResponse),
 	CompletedFetchAffectedUsers: result(ErrorIssueAffectedUsersResponse),

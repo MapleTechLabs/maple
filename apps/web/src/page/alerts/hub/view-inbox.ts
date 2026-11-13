@@ -55,11 +55,14 @@ const SECTIONS_GRID = "grid gap-8 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
 
 type Range = Readonly<{ min: number; max: number }>
 
-/** The inbox rows' acknowledge button: the message it sends, and the rows with a request in flight. */
+/**
+ * The inbox rows' acknowledge button: the message it sends, and the rows with a request in flight.
+ * `null` for a viewer who may not respond to incidents: the rows carry no button.
+ */
 export type InboxAcknowledge<M> = Readonly<{
 	onAcknowledge: (incidentId: AlertIncidentId, acknowledged: boolean) => M
 	pendingIds: ReadonlyArray<AlertIncidentId>
-}>
+}> | null
 
 const isAcknowledged = (incident: AlertIncidentDocument) => incident.acknowledgedAt !== null
 
@@ -185,7 +188,7 @@ const openIncidentsList = <M>(
 						h.span([], ["Open · ", String(incidents.length)]),
 						h.span([], ["Now / threshold"]),
 						h.span([], ["Open for"]),
-						h.span([h.Class("sr-only")], ["Acknowledge"]),
+						...(acknowledge === null ? [] : [h.span([h.Class("sr-only")], ["Acknowledge"])]),
 					],
 				),
 				dividedList(
@@ -253,27 +256,35 @@ const openIncidentRow = <M>(
 		typography(h, { size: "xs", mono: true, numeric: true }, [
 			formatAlertDuration(incident.firstTriggeredAt, msIso(now)),
 		]),
-		// Lifted above the row's stretched link, so the click acknowledges instead of navigating.
-		hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
-			button(
-				h,
-				{
-					// Both states are the same small outline button: one row never reads as bare text.
-					variant: "outline",
-					size: "sm",
-					isLoading: acknowledge.pendingIds.includes(incident.id),
-					attributes: [
-						h.OnClick(acknowledge.onAcknowledge(incident.id, acked === null)),
-						h.AriaLabel(
-							`${acked === null ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
-						),
-					],
-				},
-				acked === null ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
-			),
-		]),
+		...(acknowledge === null ? [] : [acknowledgeCell(h, incident, acknowledge, acked === null)]),
 	])
 }
+
+/** Lifted above the row's stretched link, so the click acknowledges instead of navigating. */
+const acknowledgeCell = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	acknowledge: NonNullable<InboxAcknowledge<M>>,
+	isUnacknowledged: boolean,
+): Html =>
+	hstack(h, { justify: "end", className: ROW_LINK_LIFT }, [
+		button(
+			h,
+			{
+				// Both states are the same small outline button: one row never reads as bare text.
+				variant: "outline",
+				size: "sm",
+				isLoading: acknowledge.pendingIds.includes(incident.id),
+				attributes: [
+					h.OnClick(acknowledge.onAcknowledge(incident.id, isUnacknowledged)),
+					h.AriaLabel(
+						`${isUnacknowledged ? "Acknowledge" : "Unacknowledge"} ${incidentTitle(incident)}`,
+					),
+				],
+			},
+			isUnacknowledged ? [icon(h, "CheckIcon"), "Acknowledge"] : ["Unacknowledge"],
+		),
+	])
 
 const fireStrip = <M>(
 	h: HtmlBuilder<M>,
