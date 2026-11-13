@@ -251,10 +251,11 @@ const formatTickClock = (
 		minute: "2-digit",
 		second: options.withSeconds ? "2-digit" : undefined,
 	})
+	// Read off a Latin-digit formatter: the label's own parts print in the locale's digits.
 	const onTheHour =
 		twelveHour &&
 		!options.withSeconds &&
-		Arr.some(full.formatToParts(date), (part) => part.type === "minute" && part.value === "00")
+		tickFormatter("en-US", options.timeZone, { minute: "numeric" }).format(date) === "0"
 	const formatter = onTheHour
 		? tickFormatter(options.locale, options.timeZone, { ...day, hour: "numeric" })
 		: full

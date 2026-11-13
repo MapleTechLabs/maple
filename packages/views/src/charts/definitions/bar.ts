@@ -85,7 +85,7 @@ interface Series {
 }
 
 /** The cells of every visible series per bucket, in `visible` order (the stack is bottom-up). */
-const cellsOf = (
+export const cellsOf = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	visible: ReadonlyArray<Series>,
 	first: number,

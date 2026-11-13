@@ -224,6 +224,13 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 		)
 	})
 
+	it("formatBucketLabel finds a tick on the hour in a locale that prints its own digits", () => {
+		const context = { rangeMs: 6 * 3600 * 1000, bucketSeconds: 300, timeZone: "UTC" }
+		const arabic = { ...context, locale: "en-US-u-nu-arab" }
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", arabic, "tick")).toBe("\u0666 AM")
+		expect(formatBucketLabel("2026-10-20T06:30:00Z", arabic, "tick")).toMatch(/^\u0666:\u0663\u0660\sAM$/)
+	})
+
 	it("formatBucketLabel keeps the seconds of a tick on a window of minutes", () => {
 		const context = { rangeMs: 10 * 60 * 1000, bucketSeconds: 10, timeZone: "UTC", locale: "en-US" }
 		expect(formatBucketLabel("2026-10-20T06:00:00Z", context, "tick")).toMatch(/^6:00:00\sAM$/)
