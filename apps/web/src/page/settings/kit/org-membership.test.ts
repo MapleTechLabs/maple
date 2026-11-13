@@ -33,11 +33,10 @@ describe("toOrgRole", () => {
 	})
 
 	it("names the analyst role in a role change prompt", () => {
-		expect(roleChangePrompt("Ada", "org:analyst")).toEqual({
-			question:
-				"Make Ada an analyst? Follows incidents, reliability, product analytics and cost, without changing anything.",
-			confirmLabel: "Make analyst",
-		})
+		const prompt = roleChangePrompt("Ada", "org:analyst")
+		expect(prompt.confirmLabel).toBe("Make analyst")
+		expect(prompt.question).toContain("Make Ada an analyst?")
+		expect(prompt.question).toContain("builds dashboards")
 	})
 })
 

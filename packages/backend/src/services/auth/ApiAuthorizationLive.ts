@@ -11,7 +11,7 @@ import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
-import { refuseAnalystWrites } from "./analyst-gate"
+import { checkAnalystAccess } from "./analyst-gate"
 
 export const ApiAuthorizationLive = Layer.effect(
 	CurrentTenant.Authorization,
@@ -75,7 +75,7 @@ export const ApiAuthorizationLive = Layer.effect(
 							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 						})
-						yield* refuseAnalystWrites(tenant.roles, options).pipe(
+						yield* checkAnalystAccess(tenant.roles, options).pipe(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
@@ -103,7 +103,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
-					yield* refuseAnalystWrites(tenant.roles, options)
+					yield* checkAnalystAccess(tenant.roles, options)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
