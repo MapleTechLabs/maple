@@ -100,7 +100,7 @@ export const sidebarDesktop = <Message>(
 			h.DataAttribute("side", "left"),
 			h.DataAttribute("slot", "sidebar"),
 			h.DataAttribute("state", state),
-			h.DataAttribute("variant", "sidebar"),
+			h.DataAttribute("variant", "inset"),
 		],
 		[
 			h.div(
