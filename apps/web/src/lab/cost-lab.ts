@@ -35,19 +35,23 @@ import {
 	FetchVercelCostStatus,
 	ReadCostGrants,
 	RemoveGithubCostSource,
+	RemoveAnthropicCostKey,
 	RemoveCloudflareCostToken,
+	RemoveOpenAiCostKey,
 	RemoveOpenRouterCostKey,
 	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
 	ResolveWindow,
+	SaveAnthropicCostKey,
 	SaveCloudflareCostToken,
+	SaveOpenAiCostKey,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
-import type { CredentialProvider } from "../page/cost/providers"
+import { CredentialProvider } from "../page/cost/providers"
 import * as Cost from "../page/cost/update"
 import { view as costView } from "../page/cost/view"
 import type { Resources } from "../platform/resources"
@@ -59,7 +63,9 @@ import {
 	LAB_TODAY,
 	LAB_PLANETSCALE_ORGANIZATION,
 	LAB_VERCEL_TEAM,
+	LabCredentialChange,
 	type LabSourceChanges,
+	credentialChangeAfter,
 	labBreakdown,
 	labGithubInstallations,
 	labGithubLogin,
@@ -96,6 +102,10 @@ export const LabState = Schema.Literals([
 	"token-too-broad",
 	"replace-token",
 	"remove-cloudflare",
+	"model-vendors",
+	"add-anthropic",
+	"add-openai",
+	"openai-no-spend",
 	"add-github",
 	"github-refused",
 	"github-none",
@@ -128,10 +138,8 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 
 export const Model = Schema.Struct({
 	state: LabState,
-	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
-	openRouter: Schema.NullOr(Schema.Boolean),
-	/** The same for Cloudflare. */
-	cloudflare: Schema.NullOr(Schema.Boolean),
+	/** Pasted-credential providers added (true) or removed (false) since the state loaded. */
+	credentials: Schema.Record(CredentialProvider, Schema.optionalKey(LabCredentialChange)),
 	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
 	github: Schema.Record(Schema.String, Schema.Boolean),
 	/** Vercel added (true) or removed (false) since the state loaded; null before either. */
@@ -159,7 +167,9 @@ const searchFor = (state: LabState): Search =>
 				? { groupBy: "resource" }
 				: state === "cloudflare"
 					? { provider: ["cloudflare"] }
-					: {}
+					: state === "model-vendors"
+						? { provider: ["anthropic", "openai"], groupBy: "cloud_service" }
+						: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
@@ -171,6 +181,9 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-cloudflare" ||
 	state === "token-refused" ||
 	state === "token-too-broad" ||
+	state === "add-anthropic" ||
+	state === "add-openai" ||
+	state === "openai-no-spend" ||
 	state === "github-none" ||
 	state === "github-reading" ||
 	state === "github-unread" ||
@@ -204,6 +217,12 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
 		case "remove-cloudflare":
 			return removalOf("cloudflare")
+		case "add-anthropic":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "anthropic" })]
+		case "add-openai":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openai" })]
+		case "openai-no-spend":
+			return submissionOf("openai", "sk-admin-0123456789abcdefghij0123456789")
 		case "add-github":
 		case "github-none":
 		case "github-reading":
@@ -306,6 +325,12 @@ const tooBroadToken = {
 	...toLoadFailure("refused"),
 	message:
 		"This token can do more than read billing: it can also read account members and Workers scripts. Create one with only the Billing: Read permission.",
+}
+
+const noSpendKey = {
+	...toLoadFailure("refused"),
+	message:
+		"This OpenAI organization has no API spend in the last 180 days, so there is nothing to read yet.",
 }
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -485,6 +510,24 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 								: Result.succeed(undefined),
 				}),
 			)
+		case SaveAnthropicCostKey.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "anthropic",
+					result: Result.succeed(undefined),
+				}),
+			)
+		case SaveOpenAiCostKey.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "openai",
+					result: state === "openai-no-spend" ? Result.fail(noSpendKey) : Result.succeed(undefined),
+				}),
+			)
+		case RemoveAnthropicCostKey.name:
+			return Option.some(removedAnswer("anthropic"))
+		case RemoveOpenAiCostKey.name:
+			return Option.some(removedAnswer("openai"))
 		case RemoveOpenRouterCostKey.name:
 			return Option.some(removedAnswer("openrouter"))
 		case RemoveCloudflareCostToken.name:
@@ -579,15 +622,8 @@ const removedAnswer = (provider: CredentialProvider) =>
 	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
 
 /** `changes` alone, without whatever else the value carries. */
-const changesOf = ({
-	openRouter,
-	cloudflare,
-	github,
-	vercel,
-	planetScale,
-}: LabSourceChanges): LabSourceChanges => ({
-	openRouter,
-	cloudflare,
+const changesOf = ({ credentials, github, vercel, planetScale }: LabSourceChanges): LabSourceChanges => ({
+	credentials,
 	github,
 	vercel,
 	planetScale,
@@ -605,10 +641,13 @@ const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answere
 			...current,
 			github: { ...current.github, [installationId]: isSource },
 		})
-		const withCredential = (provider: CredentialProvider, isSource: boolean): LabSourceChanges =>
-			provider === "openrouter"
-				? { ...current, openRouter: isSource }
-				: { ...current, cloudflare: isSource }
+		const withCredential = (provider: CredentialProvider, isSource: boolean): LabSourceChanges => ({
+			...current,
+			credentials: {
+				...current.credentials,
+				[provider]: credentialChangeAfter(current.credentials[provider], isSource),
+			},
+		})
 		switch (answer._tag) {
 			case "CompletedSaveCredential":
 				return Result.isSuccess(answer.result) ? withCredential(answer.provider, true) : current
@@ -680,8 +719,7 @@ export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
 	const world: World = {
 		state: flags.state,
-		openRouter: null,
-		cloudflare: null,
+		credentials: {},
 		github: {},
 		vercel: null,
 		planetScale: null,

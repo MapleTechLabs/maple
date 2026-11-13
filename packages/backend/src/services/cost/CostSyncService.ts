@@ -36,8 +36,10 @@ import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { reconcilePlanetScaleCostSources } from "./planetscale-cost-sources"
 import { reconcileVercelCostSources } from "./vercel-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { AnthropicCostProvider } from "./providers/anthropic/AnthropicCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
+import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
@@ -178,6 +180,8 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				vercel: yield* VercelCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
 				planetscale: yield* PlanetScaleCostProvider,
+				anthropic: yield* AnthropicCostProvider,
+				openai: yield* OpenAiCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -737,6 +741,8 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				VercelCostProvider.layer,
 				CloudflareCostProvider.layer,
 				PlanetScaleCostProvider.layer,
+				AnthropicCostProvider.layer,
+				OpenAiCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

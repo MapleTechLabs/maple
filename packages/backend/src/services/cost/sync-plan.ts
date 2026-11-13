@@ -46,6 +46,11 @@ const GITHUB_HISTORY_MONTHS = 3
  * this many months before the current one: a window from there to today is never over a year.
  */
 const VERCEL_HISTORY_MONTHS = 11
+/**
+ * Anthropic's cost report and OpenAI's costs endpoint do not document how far back they serve.
+ * History stops at the first day of the month this many months back, a conservative start.
+ */
+const MODEL_API_HISTORY_MONTHS = 3
 /** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
 const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
@@ -102,6 +107,8 @@ const COST_SYNC_PROFILES = {
 		lagDays: 0,
 		head: "month",
 	},
+	anthropic: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
+	openai: { floor: (today) => monthStart(today, -MODEL_API_HISTORY_MONTHS), lagDays: 0, head: "days" },
 } as const satisfies Record<CostProvider, CostSyncProfile>
 
 /** The oldest day the sync pulls from `provider`. */

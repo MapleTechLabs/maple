@@ -16,7 +16,8 @@ export type CostProviderEntry = Readonly<{
 	sourceNote?: string
 }>
 
-// Not every cost provider is an integration: OpenRouter supplies cost only, so it is named here.
+// Not every cost provider is an integration: OpenRouter, Anthropic and OpenAI supply cost only, so
+// they are named here.
 // Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
 // Vercel's requests are free, like OpenRouter's.
 // PlanetScale's source reads through its integration's connection, and is added and removed here.
@@ -58,13 +59,25 @@ export const COST_PROVIDERS = {
 		sourceNote:
 			"Billed by the month: each day shows an even share of the month's invoice for each branch, and can change until the invoice closes.",
 	},
+	anthropic: {
+		name: "Anthropic",
+		icon: "AnthropicIcon",
+		iconClassName: "text-foreground",
+		requestUsd: null,
+	},
+	openai: {
+		name: "OpenAI",
+		icon: "OpenAiIcon",
+		iconClassName: "text-foreground",
+		requestUsd: null,
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
 /**
  * The providers added by pasting a credential on the Cost page, which can also replace it and
  * remove the source. Each one's form and wording are in `credential-sources.ts`.
  */
-export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare"])
+export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare", "anthropic", "openai"])
 export type CredentialProvider = typeof CredentialProvider.Type
 
 /** Whether a dialog step or a provider is one added by pasting a credential. */

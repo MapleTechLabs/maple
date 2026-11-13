@@ -255,7 +255,9 @@ describe("cost page", () => {
 			expectView(role("link", { name: /^AWS/ })).toHaveAttr("href", "/sources/new?integration=aws"),
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
 			expectView(
-				text(/OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale requests are free/),
+				text(
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+				),
 			).toExist(),
 			expectView(role("button", { name: /^Vercel/ })).toExist(),
 			// An account already connected turns its Cost module on from the AWS integration.
@@ -602,6 +604,59 @@ describe("cost page", () => {
 		)
 	})
 
+	test.each([
+		{
+			provider: "anthropic",
+			name: "Anthropic",
+			meta: "Daily API spend by model and workspace",
+			href: "https://platform.claude.com/settings/admin-keys",
+			key: "sk-ant-admin01-0123456789abcdef",
+			command: "SaveAnthropicCostKey",
+		},
+		{
+			provider: "openai",
+			name: "OpenAI",
+			meta: "Daily API spend by model and project",
+			href: "https://platform.openai.com/settings/organization/admin-keys",
+			key: "sk-admin-0123456789abcdef",
+			command: "SaveOpenAiCostKey",
+		},
+	] as const)(
+		"$name is added by pasting an Admin API key, and the dialog says what that key can do",
+		({ provider, name, meta, href, key, command }) => {
+			const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+			scene(
+				{ update: pageUpdate, view },
+				given(opened),
+				resolveTheme,
+				dialogMounted,
+				expectView(role("button", { name: new RegExp(`^${name}`) })).toExist(),
+				expectView(text(meta)).toExist(),
+			)
+			const form = pageUpdate(opened, Message.PickedProvider({ provider })).model
+			scene(
+				{ update: pageUpdate, view },
+				given(form),
+				resolveTheme,
+				dialogMounted,
+				expectView(text(`Add ${name}`)).toExist(),
+				expectView(text("Admin API key")).toExist(),
+				expectView(role("link", { name: "Admin keys" })).toHaveAttr("href", href),
+				// Neither vendor has a read-only admin key, so the reader is told before pasting one.
+				expectView(text(/this one can also manage your organization/)).toExist(),
+			)
+			const typed = pageUpdate(
+				form,
+				Message.GotCredentialDraftMessage({
+					message: Field.Message.ChangedValue({ value: ` ${key} ` }),
+				}),
+			).model
+			expect(pageUpdate(typed, Message.SubmittedCredential()).commands).toMatchObject([
+				{ name: command, args: { apiKey: key } },
+			])
+		},
+	)
+
 	test("a Cloudflare source has its token replaced or is removed, and the OpenRouter source beside it stays", () => {
 		const openRouter = source({
 			id: "0190f2b3-0000-7000-8000-00000000c060",
@@ -717,7 +772,9 @@ describe("cost page", () => {
 			dialogMounted,
 			expectView(role("button", { name: /^GitHub/ })).toExist(),
 			expectView(
-				text(/OpenRouter, GitHub, Vercel, Cloudflare and PlanetScale requests are free/),
+				text(
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+				),
 			).toExist(),
 		)
 		const reading = pageUpdate(opened, Message.ClickedAddGithub())

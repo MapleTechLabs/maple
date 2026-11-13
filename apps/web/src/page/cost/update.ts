@@ -364,6 +364,8 @@ const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
 	switch (source.provider) {
 		case "openrouter":
 		case "cloudflare":
+		case "anthropic":
+		case "openai":
 			return [CREDENTIAL_SOURCES[source.provider].delete()]
 		case "github":
 			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>

@@ -17,8 +17,16 @@ const source = (
 	provider: CostSourceSummary["provider"],
 	accountId: string,
 	id = "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e1f",
-): CostSourceSummary =>
-	Schema.decodeSync(CostSourceSummary)({
+): CostSourceSummary => named(provider, accountId, id, undefined)
+
+/** A source whose account has the name the save stored for it (none when `accountName` is undefined). */
+const named = (
+	provider: CostSourceSummary["provider"],
+	accountId: string,
+	id: string,
+	accountName: string | undefined,
+): CostSourceSummary => {
+	const wire: typeof CostSourceSummary.Encoded = {
 		id,
 		provider,
 		connectionRef: id,
@@ -31,7 +39,9 @@ const source = (
 		lastError: null,
 		lastErrorReason: null,
 		requestsThisMonth: 0,
-	})
+	}
+	return Schema.decodeSync(CostSourceSummary)(accountName === undefined ? wire : { ...wire, accountName })
+}
 
 const sources = [source("aws", "465760687006"), source("openrouter", "user_2zZ0ZRlIh83bwUonpAHz1xTcuG6")]
 
@@ -45,6 +55,34 @@ describe("cost key marks", () => {
 		expect(keyMark("account", "465760687006", sources)?.icon).toBe(keyMark("provider", "aws", [])?.icon)
 		expect(keyMark("account", "user_2zZ0ZRlIh83bwUonpAHz1xTcuG6", sources)?.icon).toBe(
 			keyMark("provider", "openrouter", [])?.icon,
+		)
+	})
+
+	test("Anthropic and OpenAI spend wears its model's or vendor's mark, never a platform's", () => {
+		// OpenAI's source is named by its id, as the save stores it.
+		const vendors = [
+			named("anthropic", "org-uuid-1", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e31", "Example Labs"),
+			named("openai", "org-AbC123", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e32", "org-AbC123"),
+		]
+		const anthropic = keyMark("provider", "anthropic", [])?.icon
+		const openai = keyMark("provider", "openai", [])?.icon
+		// A Claude model wears its family's mark, as it does when OpenRouter bills it.
+		expect(keyMark("cloud_service", "anthropic/claude-opus-5-5", vendors)?.icon).toBe("ClaudeIcon")
+		expect(keyMark("cloud_service", "Web search", vendors)?.icon).toBe(anthropic)
+		expect(keyMark("cloud_service", "openai/gpt-5", vendors)?.icon).toBe(openai)
+		expect(keyMark("account", "org-AbC123", vendors)?.icon).toBe(openai)
+		expect(keyLabel("account", "org-AbC123", vendors)).toBe("OpenAI")
+		expect(keyLabel("account", "org-uuid-1", vendors)).toBe("Anthropic Example Labs")
+	})
+
+	test("a model vendor beside one platform leaves that platform the owner of a name it does not know", () => {
+		const withVendors = [
+			source("cloudflare", "cf-account"),
+			source("anthropic", "org-uuid-1"),
+			source("openai", "org-AbC123"),
+		]
+		expect(keyMark("cloud_service", "Example Product", withVendors)?.icon).toBe(
+			keyMark("provider", "cloudflare", [])?.icon,
 		)
 	})
 

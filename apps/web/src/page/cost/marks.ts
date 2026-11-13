@@ -29,12 +29,19 @@ const isAwsServiceName = (key: string): boolean => /^(Amazon|AWS|EC2|Elastic|Clo
 /** A Vercel region is an airport code and a digit: `iad1`, `fra1`. */
 const isVercelRegionId = (key: string): boolean => /^[a-z]{3}\d$/u.test(key)
 
-/** The org's providers that bill services and regions of their own. OpenRouter's are model slugs. */
+/** Providers whose services are model slugs, not products and regions of their own. */
+const MODEL_PROVIDERS: ReadonlySet<CostProvider> = new Set<CostProvider>([
+	"openrouter",
+	"anthropic",
+	"openai",
+])
+
+/** The org's providers that bill services and regions of their own. */
 const platformsOf = (sources: ReadonlyArray<CostSourceSummary>): ReadonlyArray<CostProvider> =>
 	Arr.dedupe(
 		Arr.filter(
 			Arr.map(sources, (source) => source.provider),
-			(provider) => provider !== "openrouter",
+			(provider) => !MODEL_PROVIDERS.has(provider),
 		),
 	)
 
@@ -92,6 +99,14 @@ const CLOUDFLARE_SERVICES: ReadonlySet<string> = new Set([
 	"Subscriptions",
 ])
 
+/** What Anthropic files a charge with no model under (its tools, Managed Agents, anything else). */
+const ANTHROPIC_SERVICES: ReadonlySet<string> = new Set([
+	"Web search",
+	"Code execution",
+	"Managed Agents sessions",
+	"Anthropic API",
+])
+
 /** What a PlanetScale charge that names no database and has no description is filed under. */
 const PLANETSCALE_UNNAMED = "PlanetScale"
 
@@ -104,11 +119,13 @@ const namedServiceOwner = (key: string): CostProvider | undefined =>
 		? "github"
 		: CLOUDFLARE_SERVICES.has(key)
 			? "cloudflare"
-			: isAwsServiceName(key)
-				? "aws"
-				: key === PLANETSCALE_UNNAMED
-					? "planetscale"
-					: undefined
+			: ANTHROPIC_SERVICES.has(key)
+				? "anthropic"
+				: isAwsServiceName(key)
+					? "aws"
+					: key === PLANETSCALE_UNNAMED
+						? "planetscale"
+						: undefined
 
 /**
  * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and
@@ -204,7 +221,8 @@ export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSumma
 		Option.flatMapNullishOr((source) => source.accountName),
 		Option.getOrUndefined,
 	)
-	if (accountName !== undefined) return `${name} ${accountName}`
+	// OpenAI names an organization by its id alone, which is no name to add.
+	if (accountName !== undefined && accountName !== key) return `${name} ${accountName}`
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }
 

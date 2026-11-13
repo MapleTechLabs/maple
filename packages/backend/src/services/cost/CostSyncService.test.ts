@@ -28,7 +28,9 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { type CostProviderAdapter, CostProviderError, type CostPullRow } from "./CostProvider"
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
+import { AnthropicCostProvider } from "./providers/anthropic/AnthropicCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
+import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
 import { insertInstallation } from "./providers/github/fake-github"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
@@ -283,6 +285,8 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
 				Layer.succeed(CloudflareCostProvider, adapterOf("cloudflare")),
+				Layer.succeed(AnthropicCostProvider, adapterOf("anthropic")),
+				Layer.succeed(OpenAiCostProvider, adapterOf("openai")),
 				Layer.succeed(GithubCostProvider, adapterOf("github")),
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),
