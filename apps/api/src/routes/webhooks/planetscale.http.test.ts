@@ -153,6 +153,26 @@ describe("PlanetScaleWebhookRouter", () => {
 				)
 				assert.strictEqual(rejected.status, 401)
 
+				// An unsigned delivery is refused whatever it carries, and an oversized one is never parsed.
+				const unsigned = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, { method: "POST", body: BODY }),
+						handlerContext,
+					),
+				)
+				assert.strictEqual(unsigned.status, 401)
+				const oversized = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: { "x-planetscale-signature": "invalid" },
+							body: Str.repeat(1024 * 1024 + 1)("x"),
+						}),
+						handlerContext,
+					),
+				)
+				assert.strictEqual(oversized.status, 413)
+
 				// A database Maple registered no webhook on has no secret a signature could match.
 				const otherDatabase = JSON.stringify({
 					event: "webhook.test",

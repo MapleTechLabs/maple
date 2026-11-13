@@ -33,6 +33,12 @@ describe("apiProxyPath", () => {
 		expect(apiProxyPath("/_apikeys")).toBeUndefined()
 		expect(apiProxyPath("/api/chat")).toBeUndefined()
 	})
+
+	it("leaves the API's reference pages on the API's own origin", () => {
+		expect(apiProxyPath("/_api/docs")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/docs/")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/docs-like")).toBe("/v2/docs-like")
+	})
 })
 
 describe("handleRequest API proxy", () => {

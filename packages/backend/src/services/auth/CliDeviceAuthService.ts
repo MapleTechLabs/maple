@@ -54,10 +54,9 @@ const makeUserCode = () => {
 	return value
 }
 
-const persistenceError = (error: unknown) =>
-	new CliDevicePersistenceError({
-		message: error instanceof Error ? error.message : "CLI device authorization persistence failed",
-	})
+// These errors answer unauthenticated callers; `makeDbExecute` has already logged the driver's message.
+const persistenceError = () =>
+	new CliDevicePersistenceError({ message: "CLI device authorization is temporarily unavailable" })
 
 type ApprovalIdentity = {
 	readonly orgId: OrgId

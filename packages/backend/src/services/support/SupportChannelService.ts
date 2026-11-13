@@ -26,6 +26,10 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportSlackClient } from "./SupportSlackClient"
 
+/** Slack reads `<…>` as a mention or link and `&` as an entity, so a customer's text is escaped. */
+export const escapeSlackText = (text: string): string =>
+	Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(text)))
+
 /**
  * `maple-<org>` in Slack's channel-name alphabet: lowercase letters, digits, `-` and `_`, at most
  * 80 characters. Falls back to the org id when the name has nothing usable in it.
@@ -341,7 +345,7 @@ const make = Effect.gen(function* () {
 			yield* slack
 				.call("chat.postMessage", {
 					channel: channelId,
-					text: `This is ${orgName ?? "your team"}'s shared channel with the Maple team. Ask us anything here: setup, bugs, billing or feature requests.`,
+					text: `This is ${orgName === null ? "your team" : escapeSlackText(orgName)}'s shared channel with the Maple team. Ask us anything here: setup, bugs, billing or feature requests.`,
 				})
 				.pipe(
 					Effect.tapError((error) =>
