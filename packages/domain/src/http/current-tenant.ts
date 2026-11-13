@@ -91,7 +91,7 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
-/** An observer asked to change the organization. 403: the session is fine, the role only reads. */
+/** An analyst asked to change the organization. 403: the session is fine, the role only reads. */
 export class ReadOnlyRoleError extends HttpTaggedError<ReadOnlyRoleError>()(
 	"@maple/http/errors/ReadOnlyRoleError",
 	{ message: Schema.String },
