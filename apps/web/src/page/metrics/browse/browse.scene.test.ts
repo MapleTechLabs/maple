@@ -1,13 +1,26 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr, Record as Rec } from "effect"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	selector,
+	Subscription,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { init, routeChanged, ScrollFocusedRow, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -195,5 +208,74 @@ describe("metrics explorer", () => {
 				"/settings?tab=ingestion",
 			),
 		)
+	})
+})
+
+describe("metrics table keys", () => {
+	const press = (key: string) => Subscription.emit(Message.PressedListKey({ key }))
+	const scrolled = () => Command.resolve(ScrollFocusedRow, Message.CompletedScrollFocusedRow())
+	const focusedRow = selector("[data-focused]")
+	const rows = [row("http.server.duration", "histogram"), row("process.cpu.time", "sum")]
+
+	/** The table view with its rows in. */
+	const tableLoaded = (): Model => {
+		const model = windowed({ view: "table" })
+		return pageUpdate(
+			model,
+			Message.CompletedFetchTable({ key: model.table.key ?? "", result: Result.succeed(rows) }),
+		).model
+	}
+
+	test("J and K move the focus through the table rows, and Escape clears it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(tableLoaded()),
+			themeResolved(),
+			expectView(focusedRow).toBeAbsent(),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("http.server.duration"),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("process.cpu.time"),
+			press("ArrowUp"),
+			scrolled(),
+			expectView(focusedRow).toContainText("http.server.duration"),
+			press("Escape"),
+			expectView(focusedRow).toBeAbsent(),
+		)
+	})
+
+	test("Enter follows the focused row's link", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(tableLoaded()),
+			themeResolved(),
+			press("j"),
+			scrolled(),
+			expectView(role("link", { name: "http.server.duration" })).toHaveAttr(
+				"href",
+				"/metrics/http.server.duration?type=histogram",
+			),
+			press("Enter"),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({
+					url: "/metrics/http.server.duration?type=histogram",
+					isReplace: false,
+				}),
+			),
+		)
+	})
+
+	test("the grid view has no rows to step over", () => {
+		const pressed = pageUpdate(loaded(rows), Message.PressedListKey({ key: "j" }))
+		expect(pressed.model.focusedIndex).toBeNull()
+	})
+
+	test("a new search starts the focus over", () => {
+		const focused = pageUpdate(tableLoaded(), Message.PressedListKey({ key: "j" })).model
+		expect(focused.focusedIndex).toBe(0)
+		const searched = routeChanged(focused, { search: { view: "table", q: "cpu" } }, context).model
+		expect(searched.focusedIndex).toBeNull()
 	})
 })

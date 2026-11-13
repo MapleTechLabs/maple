@@ -1,5 +1,6 @@
 import { cva } from "class-variance-authority"
 import { cn } from "@maple/ui/lib/utils"
+import { ROW_FOCUSED_CLASS } from "./row-focus"
 
 // The 2px left lane a selectable row draws its selection in, reserved on every row and painted
 // only on the selected one so contents never shift as selection moves (the sidebar's idiom).
@@ -12,7 +13,7 @@ export function rowSelectedClass(selected: boolean | undefined): string {
 }
 
 export const listRowVariants = cva(
-	"flex w-full min-w-0 items-center gap-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+	`${ROW_FOCUSED_CLASS} flex w-full min-w-0 items-center gap-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset`,
 	{
 		defaultVariants: { density: "default", divided: false },
 		variants: {

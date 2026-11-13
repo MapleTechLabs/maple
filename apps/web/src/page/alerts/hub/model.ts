@@ -72,6 +72,8 @@ export const Model = Schema.Struct({
 	hasToggleFailed: Schema.Boolean,
 	/** The rules or incidents stream stopped, or stalled, before its first answer. */
 	isLoadFailed: Schema.Boolean,
+	/** Inbox: the keyboard-focused open incident, by id (the live list reorders under it). */
+	focusedIncidentId: Schema.NullOr(Schema.String),
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
 	/** Inbox: incidents with an acknowledge or unacknowledge request in flight. */

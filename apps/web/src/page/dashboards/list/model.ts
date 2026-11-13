@@ -75,5 +75,7 @@ export const Model = Schema.Struct({
 	isCreating: Schema.Boolean,
 	/** The live list never answered within `COLLECTION_LOAD_TIMEOUT_MS`: the HTTP snapshot's state. */
 	fallback: Fallback,
+	/** The keyboard-focused row, by id: the live list reorders under it. None until J or K is pressed. */
+	focusedId: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type

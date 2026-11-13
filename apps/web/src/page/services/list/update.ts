@@ -28,10 +28,19 @@ import {
 	type OverviewInput,
 	ResolveWindow,
 } from "./command"
-import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
+import {
+	commitsKey,
+	displayedServices,
+	healthSummary,
+	isServiceHealth,
+	orderedServices,
+	resolveGroupBy,
+	type Search,
+} from "./derive"
+import { listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import { type Facet, Message } from "./message"
 import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
-import type { Model } from "./model"
+import type { Model, ServiceRow } from "./model"
 import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../../kit/service-health"
 import {
 	clickedCopySha,
@@ -208,6 +217,43 @@ const serviceHref = (model: Model, serviceName: string, environment: string): st
 		}),
 	)
 
+const openedService = (model: Model, serviceName: string, environment: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: serviceHref(model, serviceName, environment),
+		isReplace: false,
+	}),
+})
+
+/** The rows the table draws, in its order: what the list keys step over. */
+export const focusableServices = (model: Model, context: PageContext): ReadonlyArray<ServiceRow> => {
+	const overview = AsyncData.getData(model.overview.data)
+	if (Option.isNone(overview)) return []
+	const services = displayedServices(overview.value, summaryOf(model), model.search)
+	return orderedServices(
+		services,
+		resolveGroupBy(model.search.groupBy, services, context.pinnedNamespace !== null),
+	)
+}
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollServicesFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter opens the focused row exactly as a click on it does. */
+const pressedListKey = (model: Model, key: string, context: PageContext): Return => {
+	const rows = focusableServices(model, context)
+	const action = listKeyAction(key, model.focusedIndex, rows.length)
+	if (action._tag === "Focus")
+		return {
+			model: { ...model, focusedIndex: action.index },
+			commands: action.index === null ? [] : [ScrollFocusedRow()],
+		}
+	const row = action._tag === "Open" ? rows[action.index] : undefined
+	return row === undefined ? { model } : openedService(model, row.serviceName, row.environment)
+}
+
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -240,6 +286,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		nowMs: 0,
 		refreshVersion: 0,
 		isReloading: false,
+		focusedIndex: null,
 		overview: Keyed.idle(),
 		sparklines: Keyed.idle(),
 		rowRevision: 0,
@@ -283,6 +330,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		search: route.search,
 		refreshVersion: 0,
 		isReloading: false,
+		focusedIndex: null,
 		rowRevision: model.rowRevision + 1,
 		overview: Keyed.forgetFailure(model.overview),
 		sparklines: Keyed.forgetFailure(model.sparklines),
@@ -334,7 +382,8 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1 }
+	// A new search is a new row set: the focus starts over.
+	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1, focusedIndex: null }
 	// Re-resolves only on a window change; filters and grouping keep the window.
 	if (!isWindowChange(model.search, route.search) && model.window !== null)
 		return followData(context)(requestAll(next, context, model.window, "Load"))
@@ -445,13 +494,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			navigate(model, { ...windowOnly(model.search), groupBy: model.search.groupBy }),
 		ClickedGroupBy: ({ groupBy }) =>
 			groupBy === model.search.groupBy ? { model } : navigate(model, { ...model.search, groupBy }),
-		ClickedServiceRow: ({ serviceName, environment }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: serviceHref(model, serviceName, environment),
-				isReplace: false,
-			}),
-		}),
+		ClickedServiceRow: ({ serviceName, environment }) => openedService(model, serviceName, environment),
+		PressedListKey: ({ key }) => pressedListKey(model, key, context),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ClickedServiceLink: ({ url }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),

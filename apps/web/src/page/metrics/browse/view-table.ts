@@ -15,6 +15,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { emptyValue, serviceDot } from "@maple/views/ui/values"
 import { metricTypeBadge } from "@maple/views/ui/metric-type"
@@ -64,7 +65,7 @@ export const loadingTable = (h: H): Html =>
 		tableClassName: "table-fixed",
 	})
 
-const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Html =>
+const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string, isFocused: boolean): Html =>
 	tableRow(
 		h,
 		[
@@ -126,6 +127,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 			),
 		],
 		"hover:bg-surface-sunken active:bg-surface-sunken",
+		rowFocusAttributes(h, isFocused),
 	)
 
 /** The loaded table: rows up to `tableLimit`, dimmed while the next page loads. */
@@ -156,7 +158,9 @@ export const metricsTable = (
 						]),
 						tableBody(
 							h,
-							Arr.map(metrics, (metric) => metricRow(h, model, metric, timeZone)),
+							Arr.map(metrics, (metric, index) =>
+								metricRow(h, model, metric, timeZone, model.focusedIndex === index),
+							),
 						),
 					]),
 				],

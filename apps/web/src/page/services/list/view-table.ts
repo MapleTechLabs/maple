@@ -23,6 +23,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import {
@@ -36,6 +37,7 @@ import {
 	type HealthSummary,
 	healthOf,
 	NO_NAMESPACE,
+	orderedServices,
 	resolveGroupBy,
 	type ServiceHealth,
 } from "./derive"
@@ -197,6 +199,7 @@ const serviceRow = (
 	subtitle: string,
 	baselines: ReturnType<typeof baselineMapOf> | undefined,
 	groupPath: string,
+	isFocused: boolean,
 ): Html => {
 	const health = healthOf(ctx.summary, service)
 	const series = FoldkitAsyncData.getData(ctx.model.sparklines.data).pipe(
@@ -345,6 +348,7 @@ const serviceRow = (
 		),
 		[
 			h.Key(rowKey),
+			...rowFocusAttributes(h, isFocused),
 			h.Tabindex(0),
 			h.OnClick(open),
 			h.OnKeyDownPreventDefault((key) =>
@@ -423,6 +427,8 @@ const desktopTable = (
 		Option.map(FoldkitAsyncData.getData(ctx.model.baseline.data), baselineMapOf),
 	)
 	const subtitleFor = (service: ServiceRow) => (mode === "namespace" ? "" : service.serviceNamespace)
+	const focused =
+		ctx.model.focusedIndex === null ? undefined : orderedServices(services, mode)[ctx.model.focusedIndex]
 	const body =
 		services.length === 0
 			? [tableRow(h, [tableCell(h, [emptyState(h, ctx)], "p-0", [h.Attribute("colspan", "7")])])]
@@ -472,6 +478,7 @@ const desktopTable = (
 								subtitleFor(service),
 								baselines,
 								`${namespace}/${environment}`,
+								service === focused,
 							),
 						),
 					]),

@@ -35,6 +35,9 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(ListDashboard), Schema.String),
 	},
 	ClickedRetrySync: {},
+	/** A list key from the page: J / K / arrows, Enter, Escape. */
+	PressedListKey: { key: Schema.String },
+	CompletedScrollFocusedRow: {},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Number },
 	ChangedScope: { scope: Scope },

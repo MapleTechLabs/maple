@@ -57,6 +57,9 @@ export const Message = defineMessageUnion({
 	UpdatedDestinations: rows(AlertDestinationRowSchema),
 	FailedLoadAlerts: { orgId: Schema.String },
 	ClickedRetryLoad: {},
+	/** A list key over the Inbox's open incidents: J / K / arrows, Enter, Escape. */
+	PressedListKey: { key: Schema.String },
+	CompletedScrollFocusedRow: {},
 	CompletedFetchDeliveries: {
 		key: Schema.String,
 		result: LoadOutcome(Schema.Array(AlertDeliveryEventDocument)),

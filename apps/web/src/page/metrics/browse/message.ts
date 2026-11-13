@@ -31,6 +31,9 @@ export const Message = defineMessageUnion({
 	ClickedLoadMorePages: {},
 	ClickedLoadMoreTable: {},
 	ClickedMetricCard: { metricName: Schema.String, metricType: Schema.String },
+	/** A list key over the table: J / K / arrows, Enter, Escape. */
+	PressedListKey: { key: Schema.String },
+	CompletedScrollFocusedRow: {},
 	ClickedClearFilters: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	...ChartEnvMessages,

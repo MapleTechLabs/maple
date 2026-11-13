@@ -6,6 +6,8 @@ import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
 import { collectionLoadFailed } from "../../kit/collection-load"
 import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../kit/alert-collections"
+import { listKeys } from "../../kit/list-keys"
+import { inboxIncidentsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
@@ -19,6 +21,19 @@ const HUB_LOAD_TIMEOUT_MS = 10_000
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
+		/** The Inbox's list keys while it lists open incidents; an open menu keeps its arrows. */
+		listKeys: entry(
+			{ hasRows: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					hasRows: inboxIncidentsOf(model).length > 0 && !model.newRuleMenu.isOpen,
+				}),
+				dependenciesToStream: ({ hasRows }) =>
+					hasRows
+						? listKeys({ toMessage: (key) => Message.PressedListKey({ key }) })
+						: Stream.empty,
+			},
+		),
 		rules: entry(byOrg, {
 			modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 			dependenciesToStream: ({ orgId }) =>

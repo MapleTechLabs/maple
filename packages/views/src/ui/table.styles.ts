@@ -1,3 +1,5 @@
+import { ROW_FOCUSED_CLASS } from "./row-focus"
+
 export const tableContainerStyles = "relative w-full"
 
 export const tableContainerScrollStyles = "overflow-x-auto"
@@ -18,8 +20,7 @@ export const tableBodyStyles =
 
 // Body rows divide on the subtle hairline so the header rule reads as the stronger line. The hover is
 // unprefixed so a row's own `hover:bg-*` merges over it (card rows paint their cells instead).
-export const tableRowStyles =
-	"relative border-b border-border-subtle in-data-[slot=table-header]:border-border in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent in-data-[variant=bare]:active:bg-transparent hover:bg-surface-sunken active:bg-surface-sunken data-[state=selected]:bg-surface-strong in-data-[variant=card]:hover:bg-transparent in-data-[variant=card]:active:bg-transparent in-data-[variant=card]:data-[state=selected]:bg-transparent"
+export const tableRowStyles = `${ROW_FOCUSED_CLASS} relative border-b border-border-subtle in-data-[slot=table-header]:border-border in-data-[variant=bare]:border-0 in-data-[variant=bare]:hover:bg-transparent in-data-[variant=bare]:active:bg-transparent hover:bg-surface-sunken active:bg-surface-sunken data-[state=selected]:bg-surface-strong in-data-[variant=card]:hover:bg-transparent in-data-[variant=card]:active:bg-transparent in-data-[variant=card]:data-[state=selected]:bg-transparent`
 
 // Column labels share the eyebrow overline token (size, case, tracking, colour) with list headers.
 // Div-based tables (infra) use the label type alone.

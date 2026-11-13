@@ -40,6 +40,7 @@ import { Message } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
 import { appendedPage, fetchingNext, freshLaterPages, pagedRows } from "../../kit/infinite-pages"
+import { listStepOf, steppedFocus } from "../../kit/list-keys"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -317,24 +318,14 @@ const openRow = (model: Model, index: number): Return => {
 
 /** List navigation over the rows, and the peek's own keys while it is open. */
 const pressedListKey = (model: Model, key: string, isMobile: boolean, context: PageContext): Return => {
-	const isDown = key === "j" || key === "J" || key === "ArrowDown"
-	const isUp = key === "k" || key === "K" || key === "ArrowUp"
+	const step = listStepOf(key)
 	if (model.search.peek !== undefined && !isMobile) {
-		if (isDown || isUp) return steppedPeek(model, isDown ? 1 : -1)
+		if (step !== null) return steppedPeek(model, step)
 		return key === "Enter" ? openPeekedTrace(model) : { model }
 	}
 	const count = allRows(model).length
-	if ((isDown || isUp) && count > 0) {
-		const current = model.focusedIndex ?? -1
-		const next = isDown
-			? current < 0
-				? 0
-				: Math.min(current + 1, count - 1)
-			: current <= 0
-				? 0
-				: current - 1
-		return { model: { ...model, focusedIndex: next } }
-	}
+	if (step !== null && count > 0)
+		return { model: { ...model, focusedIndex: steppedFocus(model.focusedIndex, step, count) } }
 	if (key === "Enter" && model.focusedIndex !== null)
 		return isMobile ? openRow(model, model.focusedIndex) : peekRow(model, model.focusedIndex)
 	if (key === "Escape") return { model: { ...model, focusedIndex: null } }

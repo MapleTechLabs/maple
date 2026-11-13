@@ -49,5 +49,7 @@ export const Model = Schema.Struct({
 	tabs: Tabs.Model,
 	kindSelect: Select.Model,
 	sortSelect: Select.Model,
+	/** The keyboard-focused row; none until J or K is pressed. */
+	focusedIndex: Schema.NullOr(Schema.Number),
 })
 export type Model = typeof Model.Type

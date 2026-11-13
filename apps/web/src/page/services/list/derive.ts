@@ -141,6 +141,15 @@ export const groupServices = (services: ReadonlyArray<ServiceRow>, mode: GroupBy
 			)
 		: [[NO_NAMESPACE, groupByEnvironment(services)]]
 
+/** The rows in the order the table draws them, group by group: what the list keys step over. */
+export const orderedServices = (
+	services: ReadonlyArray<ServiceRow>,
+	mode: GroupBy,
+): ReadonlyArray<ServiceRow> =>
+	Arr.flatMap(groupServices(services, mode), ([, environments]) =>
+		Arr.flatMap(environments, ([, rows]) => rows),
+	)
+
 const MIN_DEPLOY_COMPARE_SPANS = 50
 const ROLLOUT_MIN_SHARE_PCT = 5
 

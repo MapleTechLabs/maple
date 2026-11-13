@@ -15,6 +15,7 @@ import {
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { ROW_FOCUSED_CLASS, rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { listSectionHeader, toolbarSearch } from "../kit/list-parts"
 import * as Menu from "@maple/views/ui/menu"
 import * as MenuView from "@maple/views/ui/menu-view"
@@ -193,6 +194,7 @@ type RowContext = Readonly<{ model: Model; nowMs: number; timeZone: string }>
 
 /** One link for the whole row, then the star and the kebab above it. */
 const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFavorite: boolean): Html => {
+	const isFocused = context.model.focusedId === dashboard.id
 	const isEmpty = dashboard.widgetCount === 0
 	const widgets = `${dashboard.widgetCount} ${pluralize(dashboard.widgetCount, "widget")}`
 	const name = displayName(dashboard.name)
@@ -200,8 +202,12 @@ const dashboardRow = (h: H, context: RowContext, dashboard: ListDashboard, isFav
 		dashboard.id,
 		[
 			h.Class(
-				"group relative flex items-center border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-within:bg-surface-sunken",
+				cn(
+					ROW_FOCUSED_CLASS,
+					"group relative flex items-center border-b border-border last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-within:bg-surface-sunken",
+				),
 			),
+			...rowFocusAttributes(h, isFocused),
 		],
 		[
 			h.span(
