@@ -69,7 +69,7 @@ const annotateToolFailure = (result: McpToolResult) =>
 		: Effect.void
 
 /**
- * Hides a tool from a read-only credential's or an observer's `tools/list`, and answers a call to it as unknown:
+ * Hides a tool from a read-only credential's or an analyst's `tools/list`, and answers a call to it as unknown:
  * the registry would refuse every such call anyway, and a listed tool invites it.
  */
 const HiddenFromReadOnlyCredentials = EffectMcpServer.visibility(() =>

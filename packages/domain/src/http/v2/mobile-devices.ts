@@ -11,7 +11,7 @@ import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
 import { AlertIncidentPublicId, MobileDevicePublicId } from "./resource-ids"
-import { ObserverAccess } from "../observer-access"
+import { AnalystAccess } from "../analyst-access"
 
 // Code points, not UTF-16 units: identical for these ASCII values, and the only length the
 // JSON Schema `minLength` can state exactly (Effect halves a UTF-16 bound when it exports one).
@@ -196,7 +196,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2MobileDevice,
 			error: [persistence],
 		})
-			.annotate(ObserverAccess, "personal")
+			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerMobileDevice",
@@ -212,7 +212,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2MobileDeviceDeleteResponse,
 			error: [notFound, persistence],
 		})
-			.annotate(ObserverAccess, "personal")
+			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "unregisterMobileDevice",
@@ -229,7 +229,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2LiveActivity,
 			error: [notFound, persistence],
 		})
-			.annotate(ObserverAccess, "personal")
+			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerLiveActivity",
@@ -245,7 +245,7 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 			success: V2LiveActivityDeleteResponse,
 			error: [notFound, persistence],
 		})
-			.annotate(ObserverAccess, "personal")
+			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "endLiveActivity",

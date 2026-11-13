@@ -190,10 +190,10 @@ describe("v2 mobile devices", () => {
 		}
 	})
 
-	it("lets an observer register and remove their own device", async () => {
+	it("lets an analyst register and remove their own device", async () => {
 		const harness = makeHarness()
 		try {
-			const key = await harness.bootstrapKey(undefined, ["org:observer"])
+			const key = await harness.bootstrapKey(undefined, ["org:analyst"])
 			const created = await harness.request("PUT", `/v2/mobile_devices/${TOKEN}`, key.secret, {
 				platform: "ios",
 				environment: "sandbox",

@@ -10,7 +10,7 @@ export const orgRoleKeys: ReadonlyArray<OrgRole> = Arr.map(Policy.assignableRole
 // `root`, which Clerk never assigns, has no entry of its own and shows as a member.
 const memberEntry = Policy.assignableRoles[1]
 
-/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are observers). */
+/** A Clerk role string's entry, read through `Policy.roleOf` (unknown roles are analysts). */
 const entryOf = (role: string): Policy.AssignableRole => {
 	const policyRole = Policy.roleOf(role)
 	return Option.getOrElse(

@@ -23,13 +23,13 @@ export interface TurnProfile {
 	readonly prompt: string
 }
 
-/** The ruleset with every approval-gated tool withheld: an observer could not approve one. */
+/** The ruleset with every approval-gated tool withheld: an analyst could not approve one. */
 const withoutProposals = (ruleset: PermissionRuleset): PermissionRuleset =>
 	Arr.map(ruleset, (rule) =>
 		rule.action === "ask" ? new PermissionRule({ tool: rule.tool, action: "deny" }) : rule,
 	)
 
-/** The profile for whoever the turn's tools run as: an observer is offered nothing that changes data. */
+/** The profile for whoever the turn's tools run as: an analyst is offered nothing that changes data. */
 export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<string>): TurnProfile =>
 	Policy.isReadOnly(roles) ? { ...profile, ruleset: withoutProposals(profile.ruleset) } : profile
 
