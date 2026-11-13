@@ -90,7 +90,7 @@ export const field = <Message>(
 export type FieldIds = Readonly<{ control: string; label: string; error: string; description?: string }>
 
 // The eyebrow look on a field label (a dense editor rail).
-const EYEBROW_LABEL = cn(eyebrowVariants({ variant: "label" }), "sm:leading-normal")
+const EYEBROW_LABEL = cn(eyebrowVariants({ variant: "label" }), "sm:text-xs sm:leading-normal")
 
 /** Base UI `Field.Label`, wired to the control by id. */
 export const fieldLabel = <Message>(

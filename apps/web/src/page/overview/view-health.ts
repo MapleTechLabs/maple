@@ -347,7 +347,7 @@ const serviceRow = <M>(
 					h,
 					{ gap: "5", align: "center", className: "shrink-0 font-mono text-xs tabular-nums" },
 					[
-						metric(h, "err", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
+						metric(h, "Errors", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
 						metric(
 							h,
 							"p95",

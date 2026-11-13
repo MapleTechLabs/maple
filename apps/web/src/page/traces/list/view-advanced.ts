@@ -66,7 +66,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 							},
 							[suggestion.label],
 						),
-						eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
+						eyebrow(h, { variant: "mono", className: "shrink-0" }, [suggestion.kind]),
 					],
 				)
 			}),
@@ -104,7 +104,7 @@ const editor = (h: H, model: Model): Html => {
 								h.AriaHidden(true),
 								h.Class(
 									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-ui",
 										TEXTAREA_CLASS,
 									),
 								),

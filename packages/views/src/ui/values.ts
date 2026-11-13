@@ -56,7 +56,7 @@ export const latencyValue = <M>(
 	return h.span(
 		[
 			h.Title(latencyLevelLabel(level)),
-			h.Class(cn("font-mono tabular-nums", LATENCY_TEXT_TONE[level], options.className)),
+			h.Class(cn("tabular-nums", LATENCY_TEXT_TONE[level], options.className)),
 		],
 		measure(h, formatLatency(options.ms), LATENCY_UNIT[level]),
 	)
@@ -70,7 +70,7 @@ export const errorRateValue = <M>(
 		[
 			h.Class(
 				cn(
-					"font-mono tabular-nums",
+					"tabular-nums",
 					ERROR_RATE_TEXT[errorRateLevel(options.rate)],
 					options.className,
 				),

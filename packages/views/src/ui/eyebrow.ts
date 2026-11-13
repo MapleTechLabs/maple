@@ -16,10 +16,10 @@ export interface EyebrowOptions<Message> {
 	readonly icon?: IconName
 }
 
-// A trailing "(hint)" often holds units or syntax (`5m`, `AND`); uppercasing would change its meaning.
+// A trailing "(hint)" often holds units or syntax (`5m`, `AND`); the mono variant's uppercasing would change its meaning.
 const HINT = /^(.*\S)(\s+\(.*\))$/
 
-/** Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label. */
+/** Keeps a trailing "(hint)" out of an uppercase transform; for any uppercased label. */
 export const withHint = <Message>(
 	h: HtmlBuilder<Message>,
 	child: Html | string,

@@ -270,7 +270,7 @@ const filterLine = (
 	const parsed = parseFunnelStepFilter(filterClause)
 	return vstack(h, { gap: "0.5", className: "pl-6" }, [
 		hstack(h, { gap: "1.5" }, [
-			eyebrow(h, { className: "shrink-0" }, ["where"]),
+			eyebrow(h, { className: "shrink-0" }, ["Where"]),
 			whereEditor(h, {
 				id: `widget-step-${scope}-${index}-filter`,
 				value: filterClause,

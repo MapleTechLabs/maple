@@ -10,10 +10,9 @@ import { infoHint } from "@maple/views/ui/info-hint"
 
 // A sortable data table: its column heads, numeric cells, row links, and empty and skeleton rows.
 
-/** A numeric cell's figure: xs mono tabular, right-aligned; the call site adds width and tone. */
+/** A numeric cell's figure: xs tabular, right-aligned; the call site adds width and tone. */
 export const NUMERIC_CELL = typographyClass({
 	size: "xs",
-	mono: true,
 	numeric: true,
 	className: "text-right",
 })

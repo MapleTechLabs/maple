@@ -433,12 +433,9 @@ const logTable = (
 						[
 							eyebrow(h, { className: hstackClass({ gap: "2" }) }, [
 								group.label,
-								h.span(
-									[
-										h.Class(
-											"tracking-normal normal-case text-foreground-subtle tabular-nums",
-										),
-									],
+								typography(
+									h,
+									{ tone: "subtle", numeric: true },
 									[
 										String(group.events.length),
 										" ",

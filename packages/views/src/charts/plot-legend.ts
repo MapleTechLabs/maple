@@ -28,7 +28,7 @@ export interface PlotLegendState {
 const legendValue = (h: HtmlBuilder<Message>, value: string, secondary: string | undefined): Html =>
 	hstack(
 		h,
-		{ gap: "2", align: "baseline", as: "span", className: "ml-auto shrink-0 font-mono tabular-nums" },
+		{ gap: "2", align: "baseline", as: "span", className: "ml-auto shrink-0 tabular-nums" },
 		[
 			typography(h, { tone: "foreground" }, [value]),
 			...(secondary === undefined

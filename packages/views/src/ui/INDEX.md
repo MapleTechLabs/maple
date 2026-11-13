@@ -59,7 +59,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/error-count-pill.ts` `errorCountPill`: `ErrorCountPill`: a failure count as a toned pill, led by a dot or its kind's glyph.
 - `packages/views/src/ui/error-section.ts` `errorSectionView`: `ErrorSection`: the error banner, its highlighted body that copies itself, the "Copy as prompt" control and the Show more toggle.
 - `packages/views/src/ui/error-state.ts` `failureKind`, `failureSentence`, `autoRetryMessage`, `errorState`: The error state: a failure's glyph, sentence and retry.
-- `packages/views/src/ui/eyebrow.ts` `withHint`, `eyebrow`: Keeps a trailing "(hint)" out of the uppercase transform; for any uppercased label.
+- `packages/views/src/ui/eyebrow.ts` `withHint`, `eyebrow`: Keeps a trailing "(hint)" out of an uppercase transform; for any uppercased label.
 - `packages/views/src/ui/field.ts` `stateOf`, `controlAttributes`, `field`, `fieldLabel`, `fieldGroupLabel`, `input`, `fieldDescription`, `fieldError`, `fieldErrorText` (stateful: Model, init, update): The value and focus handlers a field's control reports through.
 - `packages/views/src/ui/file-input.ts` `fileInput`: `FileInput`: a hidden `<input type="file">` that a visible button opens by id; it reports the picked files.
 - `packages/views/src/ui/filter-chip.ts` `filterChip`, `filterChipItem`: An on/off filter toggle with an optional tone dot and trailing count.

@@ -175,7 +175,7 @@ const statsTable = (
 														? [entryStats === null ? EMPTY_VALUE : "0"]
 														: [],
 													cn(
-														"px-2 py-0 text-right font-mono leading-4 tabular-nums text-foreground-subtle last:pr-0",
+														"px-2 py-0 text-right leading-4 tabular-nums text-foreground-subtle last:pr-0",
 														column.className,
 													),
 												)
@@ -183,7 +183,7 @@ const statsTable = (
 													h,
 													[formatValueByUnit(entryStats[column.field], unit)],
 													cn(
-														"px-2 py-0 text-right font-mono leading-4 tabular-nums last:pr-0",
+														"px-2 py-0 text-right leading-4 tabular-nums last:pr-0",
 														column.className,
 													),
 												),

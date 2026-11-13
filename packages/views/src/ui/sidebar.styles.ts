@@ -10,7 +10,7 @@ export const sidebarMenuButtonVariants = cva(
 		variants: {
 			size: {
 				default: "h-8 text-ui",
-				lg: "h-12 text-xs group-data-[collapsible=icon]:p-0!",
+				lg: "h-12 text-ui group-data-[collapsible=icon]:p-0!",
 				sm: "h-7 text-ui",
 			},
 			variant: {
