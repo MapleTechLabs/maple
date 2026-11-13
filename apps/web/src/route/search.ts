@@ -1085,6 +1085,15 @@ export const SecurityDependenciesSearch = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["repositories", "advisories"])),
 })
 
+/** The Security hub's audit log filters; each absent one shows everything. */
+export const SecurityAuditLogSearch = Schema.Struct({
+	category: StringParam,
+	outcome: StringParam,
+	/** An actor's id or email on the platform the event came from. */
+	actor: StringParam,
+})
+export type SecurityAuditLogSearch = typeof SecurityAuditLogSearch.Type
+
 export type SecurityFindingsSearch = typeof SecurityFindingsSearch.Type
 export type SecurityRunsSearch = typeof SecurityRunsSearch.Type
 export type SecurityDependenciesSearch = typeof SecurityDependenciesSearch.Type

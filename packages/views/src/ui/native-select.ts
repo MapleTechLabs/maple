@@ -44,6 +44,8 @@ export const nativeSelect = <Message>(
 		size?: "sm" | "default"
 		className?: string
 		defaultValue?: string
+		/** Controlled: the select shows this value on every render, whatever was picked last. */
+		value?: string
 		isDisabled?: boolean
 		/** A mark before the value (the picked option's status dot); decorative, the value names it. */
 		leading?: Html
@@ -70,10 +72,11 @@ export const nativeSelect = <Message>(
 					h.DataAttribute("size", size),
 					h.DataAttribute("slot", "native-select"),
 					...(options.isDisabled === true ? [h.Disabled(true)] : []),
+					...(options.value === undefined ? [] : [h.Value(options.value)]),
 				],
 				Arr.map(entries, (entry) =>
 					entry._tag === "Option"
-						? optionView(h, entry.option, options.defaultValue)
+						? optionView(h, entry.option, options.value ?? options.defaultValue)
 						: h.optgroup(
 								[
 									h.Attribute("class", ""),
@@ -81,7 +84,7 @@ export const nativeSelect = <Message>(
 									h.LabelAttr(entry.label),
 								],
 								Arr.map(entry.options, (option) =>
-									optionView(h, option, options.defaultValue),
+									optionView(h, option, options.value ?? options.defaultValue),
 								),
 							),
 				),

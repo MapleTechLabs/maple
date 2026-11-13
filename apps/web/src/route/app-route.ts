@@ -60,6 +60,7 @@ export const AppRoute = defineRouteUnion({
 	SecurityExposure: {},
 	SecurityRuntimes: {},
 	SecurityDependencies: { search: Search.SecurityDependenciesSearch },
+	SecurityAuditLog: { search: Search.SecurityAuditLogSearch },
 	SecurityRun: { runId: SecurityAuditRunId },
 	SecurityFinding: { targetId: SecurityAuditTargetId, fingerprint: Schema.String },
 	Dashboard: { dashboardId: DashboardId, search: Search.DashboardSearch },
