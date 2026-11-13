@@ -818,6 +818,17 @@
 		background-color: var(--color-primary);
 		color: var(--color-primary-foreground);
 	}
+	/* A chip keeps its own look when selected: a band inside a fill or a tint only fights it. The
+	   text is still selected and still copies. */
+	[data-slot="badge"]::selection,
+	[data-slot="badge"] ::selection,
+	.text-on-fill::selection,
+	.text-on-fill ::selection,
+	.text-primary-foreground::selection,
+	.text-primary-foreground ::selection {
+		background-color: transparent;
+		color: currentColor;
+	}
 	body {
 		@apply font-sans bg-background text-foreground;
 	}
