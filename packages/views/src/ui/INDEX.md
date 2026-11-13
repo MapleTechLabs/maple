@@ -286,7 +286,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
 - `apps/web/src/page/kit/sdk-snippets.ts` `sdkSnippets`, `register`, `fillSnippet`: The snippet's text with the endpoint and key filled in.
-- `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the uppercase eyebrow overline.
+- `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the eyebrow label.
 - `apps/web/src/page/kit/sentence-card.ts` `sentenceCardHeadingId`, `sentenceCardSummaryId`, `sentenceCard`, `sentenceChain`, `sentenceRow`, `sentencePhrase`, `sentenceClause`, `sentenceSection`: Sentence cards: a form that reads top to bottom as one sentence ("When ...
 - `apps/web/src/page/kit/series-legend.ts` `seriesLegend`
 - `apps/web/src/page/kit/service-health-rollup.ts` `alertIncidentCauseLabel`, `anomalyDirection`, `deriveServiceHealthFromCauses`, `primaryServiceHealthCause`, `healthRank`, `baselineKey`, `buildBaselineMap`: Health rollup for a single service.

@@ -87,7 +87,6 @@ const bigStat = <M>(h: HtmlBuilder<M>, elapsed: { value: string; unit: string } 
 		: statFigure(h, {
 				value: elapsed.value,
 				unit: elapsed.unit,
-				mono: false,
 				valueClassName: "text-foreground",
 			})
 

@@ -25,11 +25,11 @@ import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 /**
- * Layout-free wrapper: group labels take the sidebar's uppercase tracked style, and a short scroll
+ * Layout-free wrapper: group labels take the sidebar's group label style, and a short scroll
  * fade keeps the last visible row from reading as disabled.
  */
 const PALETTE_LIST_CLASS =
-	"contents [&_[data-slot=command-group-label]]:text-2xs [&_[data-slot=command-group-label]]:font-semibold [&_[data-slot=command-group-label]]:uppercase [&_[data-slot=command-group-label]]:tracking-overline [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
+	"contents [&_[data-slot=command-group-label]]:text-xs [&_[data-slot=command-group-label]]:font-medium [&_[data-slot=scroll-area-viewport]]:[--fade-size:0.5rem]"
 
 // The command palette's popup: the input, the grouped entries (or "No results"), the footer hints.
 

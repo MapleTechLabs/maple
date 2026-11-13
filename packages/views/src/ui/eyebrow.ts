@@ -30,7 +30,7 @@ export const withHint = <Message>(
 		: [match[1] ?? "", h.span([h.Class("normal-case tracking-normal")], [match[2] ?? ""])]
 }
 
-/** `Eyebrow`: the small uppercase overline that titles a group. */
+/** `Eyebrow`: the small muted label that titles a group. */
 export const eyebrow = <Message>(
 	h: HtmlBuilder<Message>,
 	options: EyebrowOptions<Message>,

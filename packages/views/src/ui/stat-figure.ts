@@ -21,7 +21,7 @@ export interface StatFigureOptions {
 	readonly value: Html | string
 	readonly unit?: Html | string
 	readonly size?: StatFigureSize
-	/** Mono figures for readouts; `false` sets the value in the display face. */
+	/** Mono figures for a machine readout; the default is the display face. */
 	readonly mono?: boolean
 	readonly className?: string
 	readonly valueClassName?: string
@@ -54,7 +54,7 @@ const figure = <M>(h: HtmlBuilder<M>, options: StatFigureOptions, className?: st
 					h.Class(
 						cn(
 							statFigureValueStyles,
-							(options.mono ?? true) ? statFigureValueMonoStyles : statFigureValueDisplayStyles,
+							(options.mono ?? false) ? statFigureValueMonoStyles : statFigureValueDisplayStyles,
 							statFigureValueSizeStyles[size],
 							options.valueClassName,
 						),

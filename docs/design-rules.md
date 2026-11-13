@@ -42,8 +42,13 @@ only shrink (`bun run ui:patterns:check` in CI). The workflow is in `apps/web/CL
 ## Type and spacing
 
 - Weights are `font-normal`, `font-medium` and `font-semibold` (`maple/font-weight-scale`).
-- Tracking is a token. An uppercase label is the `eyebrow` kit, or `tracking-caption` (0.08em) /
-  `tracking-overline` (0.12em); display type may take `tracking-tight`; nothing else is spaced.
+- The interface reads in Geist. Chrome (nav rows, buttons, inputs, selects, tabs, breadcrumbs) is
+  13px (`text-ui`). Numbers stay in Geist and line up with `tabular-nums` (`numeric` on
+  `typography`); `font-mono` (`mono`) is for machine text: log lines, ids, code, queries.
+- A group, column or stat label is the `eyebrow` kit: sentence case, no tracking. Uppercase is for a
+  machine tag (a badge `tag`, a log level, the `mono` eyebrow) and takes `tracking-caption` (0.08em)
+  or `tracking-overline` (0.12em).
+- Tracking is a token. Display type may take `tracking-tight`; nothing else is spaced.
   Tailwind's `tracking-wide`, `-wider`, `-widest` are banned (`maple/tracking-tokens`).
 - Spacing moves in half steps (2px). A quarter step (`gap-0.75`, `pl-3.75`) is an odd pixel; when a
   pixel offset is the point (centring a dot on a text line, meeting a rail), write it from a scale

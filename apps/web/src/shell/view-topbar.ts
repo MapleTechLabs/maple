@@ -80,7 +80,7 @@ export const topbar = (
 			gap: "2",
 			align: "center",
 			as: "header",
-			className: "h-16 shrink-0 border-b px-4",
+			className: "h-12 shrink-0 border-b px-4",
 			attributes: [h.DataAttribute("slot", "app-topbar")],
 		},
 		[
