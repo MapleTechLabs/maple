@@ -209,25 +209,25 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 	it("formatBucketLabel names a midnight tick on a multi-day axis by its day alone", () => {
 		const context = { rangeMs: 7 * 86_400_000, bucketSeconds: 3 * 3600, timeZone: "UTC", locale: "en-US" }
 		expect(formatBucketLabel("2026-10-20T00:00:00Z", context, "tick")).toBe("Oct 20")
-		expect(formatBucketLabel("2026-10-20T12:00:00Z", context, "tick")).toBe("Oct 20, 12 PM")
+		expect(formatBucketLabel("2026-10-20T12:00:00Z", context, "tick")).toMatch(/^Oct 20, 12\sPM$/)
 	})
 
 	it("formatBucketLabel drops the minutes of a tick on the hour, on a 12-hour clock only", () => {
 		const day = { rangeMs: 6 * 3600 * 1000, bucketSeconds: 300, timeZone: "UTC" }
 		const us = { ...day, locale: "en-US" }
-		expect(formatBucketLabel("2026-10-20T06:00:00Z", us, "tick")).toBe("6 AM")
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", us, "tick")).toMatch(/^6\sAM$/)
 		expect(formatBucketLabel("2026-10-20T06:30:00Z", us, "tick")).toMatch(/^6:30\sAM$/)
 		expect(formatBucketLabel("2026-10-20T06:00:00Z", { ...day, locale: "en-GB" }, "tick")).toBe("06:00")
 		// A :30 zone's hour is not UTC's.
-		expect(formatBucketLabel("2026-10-20T06:30:00Z", { ...us, timeZone: "Asia/Kolkata" }, "tick")).toBe(
-			"12 PM",
-		)
+		expect(
+			formatBucketLabel("2026-10-20T06:30:00Z", { ...us, timeZone: "Asia/Kolkata" }, "tick"),
+		).toMatch(/^12\sPM$/)
 	})
 
 	it("formatBucketLabel finds a tick on the hour in a locale that prints its own digits", () => {
 		const context = { rangeMs: 6 * 3600 * 1000, bucketSeconds: 300, timeZone: "UTC" }
 		const arabic = { ...context, locale: "en-US-u-nu-arab" }
-		expect(formatBucketLabel("2026-10-20T06:00:00Z", arabic, "tick")).toBe("\u0666 AM")
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", arabic, "tick")).toMatch(/^\u0666\sAM$/)
 		expect(formatBucketLabel("2026-10-20T06:30:00Z", arabic, "tick")).toMatch(/^\u0666:\u0663\u0660\sAM$/)
 	})
 
