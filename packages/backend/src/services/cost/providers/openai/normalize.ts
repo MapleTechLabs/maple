@@ -10,11 +10,15 @@ const CATEGORY = "AI and Machine Learning"
 // A model's line items read "<model>, <part>", as "gpt-4o-2024-08-06, input".
 const PART_SEPARATOR = ", "
 
-/** The service a line item belongs to: the model of "<model>, <part>", else the line item itself. */
+/**
+ * The service a line item belongs to: the model of "<model>[ <modality>], <part>", as
+ * "gpt-realtime-2 audio, input" (seen live), else the line item itself.
+ */
 export const serviceOf = (lineItem: string | null): string => {
 	if (lineItem === null || lineItem === "") return `${SERVICE_PREFIX}${UNATTRIBUTED}`
 	const cut = Option.getOrElse(Str.indexOf(PART_SEPARATOR)(lineItem), () => 0)
-	return `${SERVICE_PREFIX}${cut > 0 ? Str.slice(0, cut)(lineItem) : lineItem}`
+	if (cut <= 0) return `${SERVICE_PREFIX}${lineItem}`
+	return `${SERVICE_PREFIX}${Arr.headNonEmpty(Str.split(Str.slice(0, cut)(lineItem), " "))}`
 }
 
 const dayOf = (unixSeconds: number): string =>

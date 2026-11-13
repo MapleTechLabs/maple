@@ -75,6 +75,8 @@ describe("toCostRows", () => {
 		const mapped = okRows([
 			bucket("2026-10-03", [
 				charge("ft-gpt-4o-2024-08-06, input", 1),
+				// Seen live: a modality between the model and the part.
+				charge("gpt-realtime-2 audio, cached input", 4),
 				charge("assistants api | file search", 2),
 				charge(null, 3, { project_id: null }),
 			]),
@@ -83,6 +85,7 @@ describe("toCostRows", () => {
 			Arr.map(mapped, (row) => [row.cloudService, row.usageType, row.resourceId, row.resourceType]),
 		).toEqual([
 			["openai/ft-gpt-4o-2024-08-06", "ft-gpt-4o-2024-08-06, input", "proj_abc", "project"],
+			["openai/gpt-realtime-2", "gpt-realtime-2 audio, cached input", "proj_abc", "project"],
 			["openai/assistants api | file search", "assistants api | file search", "proj_abc", "project"],
 			["openai/unattributed", "", "", ""],
 		])

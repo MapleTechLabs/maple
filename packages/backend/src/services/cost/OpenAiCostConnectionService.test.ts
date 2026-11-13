@@ -189,17 +189,17 @@ describe("OpenAiCostConnectionService", () => {
 		)
 	})
 
-	it.effect("takes the organization from the openai-organization header first, also with no spend", () => {
+	it.effect("takes the organization from the results, not the openai-organization header", () => {
 		const testDb = createTestDb(trackedDbs)
-		const world = makeFakeOpenAi({ organizationHeader: "org-FromHeader0000" })
+		// Seen live: the header names the key's owner, a user, not the organization.
+		const world = makeFakeOpenAi({ costs: SPEND, organizationHeader: "user-KeyOwner0000" })
 		return run(
 			testDb,
 			world,
 			Effect.gen(function* () {
-				// No spend, but OpenAI names the organization: there is an account to read from.
 				assert.deepStrictEqual(yield* set(KEY), {
-					accountId: "org-FromHeader0000",
-					accountLabel: "org-FromHeader0000",
+					accountId: FAKE_OPENAI_ORG,
+					accountLabel: FAKE_OPENAI_ORG,
 				})
 			}),
 		)

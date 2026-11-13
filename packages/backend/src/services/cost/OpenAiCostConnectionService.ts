@@ -65,8 +65,8 @@ export class OpenAiCostConnectionService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 
 		/**
-		 * The organization the key reads: the documented `openai-organization` header of the costs
-		 * answer, else the one `organization_id` its results carry. No other OpenAI endpoint names it.
+		 * The organization the key reads: the one `organization_id` its cost results carry. No endpoint
+		 * names it otherwise; the `openai-organization` header names the key's owner, a user.
 		 */
 		const validateWithOpenAi = Effect.fn("OpenAiCostConnectionService.validateWithOpenAi")(function* (
 			key: Redacted.Redacted,
@@ -97,14 +97,9 @@ export class OpenAiCostConnectionService extends Context.Service<
 			const charges = Arr.some(listing.buckets, (bucket) => Arr.isReadonlyArrayNonEmpty(bucket.results))
 			yield* Effect.annotateCurrentSpan({
 				"maple.cost.openai.pages": listing.pages,
-				"maple.cost.openai.organization_header": listing.organization !== undefined,
 				"maple.cost.openai.organizations": fromResults.length,
 				"maple.cost.openai.has_results": charges,
 			})
-			// The documented `openai-organization` header first; else the one organization the results name.
-			if (listing.organization !== undefined) {
-				return { accountId: listing.organization, accountLabel: listing.organization }
-			}
 			// Results of two organizations leave no telling which one the key belongs to.
 			if (fromResults.length > 1) {
 				return yield* refused(

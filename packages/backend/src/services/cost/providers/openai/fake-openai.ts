@@ -36,7 +36,7 @@ export interface FakeOpenAi {
 	dropCursor: boolean
 	/** Answers `has_more` with the cursor it was asked with, so reading on repeats the page. */
 	repeatCursor: boolean
-	/** The `openai-organization` header every answer carries; none when undefined. */
+	/** The `openai-organization` header every answer carries, which names the key's owner; none when undefined. */
 	organizationHeader: string | undefined
 	/** Whether the org is in the `cloudCost` rollout. */
 	cloudCost: boolean

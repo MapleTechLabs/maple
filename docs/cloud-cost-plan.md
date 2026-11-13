@@ -503,20 +503,22 @@ The billing API facts, which hold for either credential:
 
 - Read with an Admin API key (`sk-admin-...`), kept in `cost_connections`. `GET
   /v1/organization/costs`, daily buckets grouped by `project_id` and `line_item`, 180 a page.
-- No endpoint answers an admin key with its organization. A save reads the last 180 days of costs
-  and takes the organization from the `openai-organization` response header (documented as the
-  organization of the request), else from the one `organization_id` the results carry (seen on real
-  answers, not in the schema). A key with neither is refused: with no spend in those days as
-  having nothing to read yet, with spend as an organization OpenAI did not name. Results of two
-  organizations are refused too. The label is the id.
-- Rows: a line item `<model>, <part>` is `openai/<model>`, any other `openai/<line item>`. The
-  line item is the usage type, the project the resource, the quantity and its unit kept.
+- No endpoint answers an admin key with its organization. Live: the `openai-organization`
+  response header names the key's owner (`user-...`), and `/v1/me` lists every organization of
+  that user. A save reads the last 180 days of costs and takes the one `organization_id` the results
+  carry (on real answers, not in the schema). No spend in those days is refused as nothing to read
+  yet, spend without an organization or with two is refused too. The label is the id.
+- Rows: a line item `<model>[ <modality>], <part>` is `openai/<model>` (live: `gpt-realtime-2
+  audio, input`), any other `openai/<line item>`. The line item is the usage type, the project the
+  resource, the quantity and its unit kept.
+- Live (2026-11-13, a real organization): grouped by `group_by[]`, the pull matched the raw answer
+  to the cent; the key is sealed in the row and read back by the sync.
 
 Neither vendor offers an admin key that can only read cost: the key can also manage members and
 keys. The dialog says so and suggests a key made for Maple alone; Maple only calls the endpoints
 above. Retention of either report is not documented, so history starts three months back. Open:
-check both against a real account (restated days, how far back each serves, Anthropic answering
-an `ending_at` of tomorrow).
+check Anthropic against a real account (restated days, how far back it serves, an `ending_at` of
+tomorrow), and how far back OpenAI serves.
 
 ### Railway (estimated per service, billed per workspace)
 
