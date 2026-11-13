@@ -13,11 +13,21 @@ import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { Search } from "./model"
+import { accountLabel } from "./marks"
 import { COST_PROVIDERS } from "./providers"
 
 // What the cost page reads off its URL and its answers: the grouping, the filters, money and days.
 
 export type CostGroupBy = (typeof COST_GROUP_BYS)[number]
+
+/** One value per dimension, keyed by it: the facets' reads, filters and answers. */
+export const perDimension = <A>(of: (dimension: CostGroupBy) => A): Readonly<Record<CostGroupBy, A>> => ({
+	cloud_service: of("cloud_service"),
+	provider: of("provider"),
+	service_category: of("service_category"),
+	region: of("region"),
+	account: of("account"),
+})
 
 export const DEFAULT_GROUP_BY: CostGroupBy = "cloud_service"
 
@@ -27,7 +37,6 @@ export const DIMENSIONS = {
 	provider: { label: "Provider", noun: "provider", empty: "No provider" },
 	service_category: { label: "Category", noun: "category", empty: "Uncategorized" },
 	region: { label: "Region", noun: "region", empty: "No region" },
-	usage_type: { label: "Usage type", noun: "usage type", empty: "No usage type" },
 	// The account the connection reads, which for a management account bills its members' cost too.
 	account: { label: "Connected account", noun: "connected account", empty: "No account" },
 } as const satisfies Record<CostGroupBy, Readonly<{ label: string; noun: string; empty: string }>>
@@ -39,11 +48,16 @@ export const sortOf = (search: Search): CostBreakdownSortBy => search.sort ?? "c
 const decodeProvider = Schema.decodeUnknownOption(CostProvider)
 
 /**
- * A key as the page shows it: the provider's own text, the dimension's placeholder for "", and a
- * provider by its name, not by the id rows carry.
+ * A key as the page shows it: the provider's own text, the dimension's placeholder for "", a
+ * provider by its name, not by the id rows carry, and an account by the provider that reads it.
  */
-export const keyLabel = (dimension: CostGroupBy, key: string): string => {
+export const keyLabel = (
+	dimension: CostGroupBy,
+	key: string,
+	sources: ReadonlyArray<CostSourceSummary> = [],
+): string => {
 	if (key === "") return DIMENSIONS[dimension].empty
+	if (dimension === "account") return accountLabel(key, sources)
 	if (dimension !== "provider") return key
 	return Option.match(decodeProvider(key), {
 		onNone: () => key,
@@ -85,6 +99,44 @@ export const withFilter = (search: Search, filter: ActiveFilter): Search => {
 		? search
 		: withValues(search, filter.dimension, Arr.append(values, filter.value))
 }
+
+/**
+ * Where a row's click goes next: the grouping that splits it further, skipping one already
+ * narrowed. Grouped by service it moves to region, by anything else to service.
+ */
+const DRILL_ORDER = {
+	cloud_service: ["region", "account"],
+	provider: ["cloud_service", "account", "region"],
+	service_category: ["cloud_service", "region"],
+	region: ["cloud_service", "account"],
+	account: ["cloud_service", "region"],
+} as const satisfies Record<CostGroupBy, ReadonlyArray<CostGroupBy>>
+
+/** The grouping a row's click switches to, or the current one when every next step is narrowed. */
+export const drillTarget = (search: Search, dimension: CostGroupBy): CostGroupBy =>
+	Arr.findFirst(DRILL_ORDER[dimension], (next) => (search[next] ?? []).length === 0).pipe(
+		Option.getOrElse(() => dimension),
+	)
+
+/** A row's click: the page narrowed to the row's key, then split by the next dimension. */
+export const drilledInto = (search: Search, filter: ActiveFilter): Search => {
+	const narrowed = withFilter(search, filter)
+	return narrowed === search ? search : { ...narrowed, groupBy: drillTarget(narrowed, filter.dimension) }
+}
+
+/** A rail checkbox: the value leaves the dimension's filter when it is in it, else joins it. */
+export const toggledFilter = (search: Search, filter: ActiveFilter): Search =>
+	hasFilter(search, filter) ? withoutFilter(search, filter) : withFilter(search, filter)
+
+/** A rail row's Only: the dimension narrowed to the one value. */
+export const onlyFilter = (search: Search, filter: ActiveFilter): Search =>
+	filter.value.length > COST_FILTER_MAX_VALUE_LENGTH
+		? search
+		: withValues(search, filter.dimension, [filter.value])
+
+/** What a dimension's facet reads under: every filter but its own, so its other values stay on offer. */
+export const facetFilters = (search: Search, dimension: CostGroupBy): CostFilters | undefined =>
+	requestFilters(withValues(search, dimension, []))
 
 export const withoutFilter = (search: Search, filter: ActiveFilter): Search =>
 	withValues(
@@ -211,9 +263,10 @@ const ROW_FIELDS: ReadonlyArray<string> = ["bucket", "partial"]
 export const seriesLabels = (
 	dimension: CostGroupBy,
 	series: ReadonlyArray<SeriesKey>,
+	sources: ReadonlyArray<CostSourceSummary> = [],
 ): ReadonlyArray<string> => {
-	// A provider's series reads by its name, as its table row does.
-	const nameOf = (key: string) => keyLabel(dimension, key)
+	// A series reads by the name its table row shows.
+	const nameOf = (key: string) => keyLabel(dimension, key, sources)
 	const named = Arr.flatMap(series, (entry) => (entry.other || entry.key === "" ? [] : [nameOf(entry.key)]))
 	const taken = [...named, ...ROW_FIELDS]
 	const empty = freeName(DIMENSIONS[dimension].empty, "empty", taken)
@@ -236,8 +289,9 @@ export const seriesLabels = (
 export const chartRows = (
 	response: CostTimeseriesResponse,
 	dimension: CostGroupBy,
+	sources: ReadonlyArray<CostSourceSummary> = [],
 ): ReadonlyArray<ChartRow> => {
-	const labels = seriesLabels(dimension, response.series)
+	const labels = seriesLabels(dimension, response.series, sources)
 	return Arr.map(response.days, (day, index) => ({
 		bucket: `${day}T00:00:00Z`,
 		...Rec.fromEntries(

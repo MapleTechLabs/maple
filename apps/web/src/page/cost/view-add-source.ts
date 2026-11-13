@@ -73,7 +73,7 @@ const providers = (h: H, hasOpenRouter: boolean): Html =>
 				onClick: Message.ClickedAddGithub(),
 				leading: mark(h, COST_PROVIDERS.github),
 				title: COST_PROVIDERS.github.name,
-				meta: "Daily billed usage by product and SKU",
+				meta: "Daily billed usage by product",
 				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
 			}),
 		]),

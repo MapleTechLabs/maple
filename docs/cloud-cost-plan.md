@@ -141,7 +141,7 @@ currency the figures are in and lists the others. Nothing is added across curren
 ### Surfaces
 
 - Web: `/cost` behind the `cloudCost` flag. One page: the window against the period before, a
-  daily chart, a breakdown by service, provider, category, region, usage type or account with
+  daily chart, a breakdown by service, provider, category, region or account with
   filters, and each source's sync state. Sources are added from the page: AWS through its
   connection (which has a Cost switch), OpenRouter by pasting a management key, which the page can
   also replace or remove, and GitHub by picking one of the organizations the GitHub App is

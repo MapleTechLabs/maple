@@ -56,6 +56,8 @@ const DRAG_TOLERANCE = 5
 const AMBIENT_FRAME_MS = 24
 /** How high a held tile floats over the board. */
 const HELD_LIFT = 1.7
+/** How long the camera takes to glide to a new framing. */
+const FIT_GLIDE_MS = 650
 const INRADIUS = NEIGHBOUR_DISTANCE / 2
 
 interface Size {
@@ -264,6 +266,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			readonly lines: THREE.LineSegments
 			readonly glass: THREE.Mesh | null
 			readonly cell: string
+			readonly ring: 1 | 2
 		}
 	>()
 	const wildFeatures = new WeakMap<THREE.Object3D, Feature>()
@@ -298,6 +301,17 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		cameraMoved: false,
 		userMoved: false,
 		fitKey: "",
+		/** A glide to a new framing under way. */
+		flight: null as {
+			readonly fromTarget: THREE.Vector3
+			readonly fromPosition: THREE.Vector3
+			readonly to: {
+				readonly distance: number
+				readonly target: THREE.Vector3
+				readonly position: THREE.Vector3
+			}
+			readonly start: number
+		} | null,
 		lastCommand: initial.command.serial,
 		pressed: { x: 0, y: 0 },
 	}
@@ -318,6 +332,11 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	const gesture = { active: false }
 	orbit.addEventListener("start", () => {
 		gesture.active = true
+		// Taking the view stops a glide where it is.
+		if (state.flight !== null) {
+			reach(state.flight.to.distance)
+			state.flight = null
+		}
 	})
 	orbit.addEventListener("end", () => {
 		gesture.active = false
@@ -464,7 +483,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const { input, nodes, palette } = state.derived
 		const node = nodes.get(id)
 		const level = node === undefined ? "healthy" : health(node.errorRate)
-		const selected = input.selectedId === id
+		// The tile in hand is ringed like a selection, so it never reads as already put down.
+		const selected = input.selectedId === id || input.heldId === id
 		const color = selected ? palette.selected : level === "healthy" ? null : HEALTH_COLOR[level]
 		const key = `${color}:${selected}`
 		if (key === view.ring.key) return
@@ -575,7 +595,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	 * kept by key, so putting a tile down rebuilds only the cells whose country changed. */
 	const syncWilds = () => {
 		const { wilds, palette, cells, nodes, biomes, input } = state.derived
-		const down = Arr.filter([...cells], ([id]) => id !== input.heldId)
+		// A lifted tile still counts as home, so picking it up does not repaint the country.
+		const down = [...cells]
 		const specs = Arr.map(wilds, ({ cell, ring }) => {
 			const nearest = Arr.head(
 				Arr.sort(
@@ -594,18 +615,25 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			)
 			const biome = biomeOf(biomes, namespace)
 			const feature = featureOf(cellKey(cell), ring, biome)
-			return { cell, biome, feature, key: `${cellKey(cell)}:${biome.id}:${feature}:${palette.night}` }
+			return {
+				cell,
+				ring,
+				biome,
+				feature,
+				key: `${cellKey(cell)}:${biome.id}:${feature}:${palette.night}`,
+			}
 		})
 		const key = Arr.join(
 			Arr.map(specs, (spec) => spec.key),
 			"|",
 		)
 		// While a tile is in hand, the country on the cells it may go to steps aside for the
-		// pale plates that mark them.
+		// pale plates that mark them, and the outer ring goes too: it would float as islands.
 		const offered = new Set(Arr.map(state.derived.targets?.free ?? [], cellKey))
+		const holding = input.heldId !== null
 		const showOffers = () =>
 			wildTiles.forEach((view) => {
-				view.mesh.visible = !offered.has(view.cell)
+				view.mesh.visible = !offered.has(view.cell) && !(holding && view.ring === 2)
 				view.lines.visible = view.mesh.visible
 				if (view.glass !== null) view.glass.visible = view.mesh.visible
 			})
@@ -638,7 +666,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			wildFeatures.set(mesh, spec.feature)
 			const glass = tile.glass === null ? null : new THREE.Mesh(tile.glass, materials.glass)
 			glass?.position.copy(mesh.position)
-			wildTiles.set(spec.key, { mesh, lines, glass, cell: cellKey(spec.cell) })
+			wildTiles.set(spec.key, { mesh, lines, glass, cell: cellKey(spec.cell), ring: spec.ring })
 			layers.wilds.add(mesh, lines, ...(glass === null ? [] : [glass]))
 		})
 		showOffers()
@@ -842,7 +870,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		invalidate()
 	}
 
-	const fit = () => {
+	/** Where the camera frames the whole board from, and how far it may zoom from there. */
+	const framing = () => {
 		const { radius, centre } = state.derived
 		const vertical = THREE.MathUtils.degToRad(camera.fov) / 2
 		const horizontal = Math.atan(Math.tan(vertical) * camera.aspect)
@@ -853,18 +882,68 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		)
 		const polar = 0.9
 		const azimuth = 0.55
-		orbit.target.set(centre[0], -0.3, centre[1])
-		camera.position.set(
-			centre[0] + distance * Math.sin(polar) * Math.sin(azimuth),
-			distance * Math.cos(polar) - 0.3,
-			centre[1] + distance * Math.sin(polar) * Math.cos(azimuth),
-		)
+		// The near edge of a tilted board looks bigger than the far one: aiming a little short of
+		// the middle centres it on the screen.
+		const nearer = radius * 0.08
+		return {
+			distance,
+			target: new THREE.Vector3(
+				centre[0] + nearer * Math.sin(azimuth),
+				-0.3,
+				centre[1] + nearer * Math.cos(azimuth),
+			),
+			position: new THREE.Vector3(
+				centre[0] + nearer * Math.sin(azimuth) + distance * Math.sin(polar) * Math.sin(azimuth),
+				distance * Math.cos(polar) - 0.3,
+				centre[1] + nearer * Math.cos(azimuth) + distance * Math.sin(polar) * Math.cos(azimuth),
+			),
+		}
+	}
+	const reach = (distance: number) => {
 		orbit.minDistance = distance * 0.12
 		orbit.maxDistance = distance * 1.8
 		camera.near = distance * 0.02
 		camera.far = distance * 6
 		camera.updateProjectionMatrix()
-		orbit.update()
+	}
+	/** Frames the board: at once on the first frame, else a short glide, so the board never
+	 * jumps under the pointer as it grows. */
+	const fit = (glide: boolean) => {
+		const goal = framing()
+		if (!glide) {
+			state.flight = null
+			orbit.target.copy(goal.target)
+			camera.position.copy(goal.position)
+			reach(goal.distance)
+			orbit.update()
+			return
+		}
+		// The zoom limits take in both ends of the glide until it lands.
+		const from = camera.position.distanceTo(orbit.target)
+		orbit.minDistance = Math.min(orbit.minDistance, goal.distance * 0.12)
+		orbit.maxDistance = Math.max(orbit.maxDistance, from, goal.distance * 1.8)
+		camera.far = Math.max(camera.far, goal.distance * 6)
+		camera.updateProjectionMatrix()
+		state.flight = {
+			fromTarget: orbit.target.clone(),
+			fromPosition: camera.position.clone(),
+			to: goal,
+			start: performance.now(),
+		}
+	}
+	/** One step of a glide; `true` while it is still under way. */
+	const glide = (now: number): boolean => {
+		const flight = state.flight
+		if (flight === null) return false
+		const t = Math.min(1, (now - flight.start) / FIT_GLIDE_MS)
+		// Ease out: it sets off at once and settles gently.
+		const eased = 1 - (1 - t) ** 3
+		orbit.target.lerpVectors(flight.fromTarget, flight.to.target, eased)
+		camera.position.lerpVectors(flight.fromPosition, flight.to.position, eased)
+		if (t < 1) return true
+		state.flight = null
+		reach(flight.to.distance)
+		return false
 	}
 
 	const resize = () => {
@@ -878,22 +957,26 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 	}
 
 	/** Fits on the first frame, on Reset, and on a bigger board or a new canvas size until the user takes the view. */
-	const rig = () => {
+	const rig = (now: number) => {
 		const { input, radius, centre } = state.derived
 		const key = `${centre[0].toFixed(2)}:${centre[1].toFixed(2)}:${radius}:${state.size.width}:${state.size.height}`
 		const command = input.command
 		const fresh = command.serial !== state.lastCommand
 		state.lastCommand = command.serial
 		if (fresh && command.action === "reset") state.userMoved = false
-		if (
-			(state.fitKey !== key && !state.userMoved) ||
-			state.fitKey === "" ||
-			(fresh && command.action === "reset")
-		)
-			fit()
+		if (state.fitKey === "") fit(false)
+		else if ((state.fitKey !== key && !state.userMoved) || (fresh && command.action === "reset"))
+			fit(true)
 		state.fitKey = key
+		if (glide(now)) invalidate()
 		if (fresh && command.action !== "reset") {
 			state.userMoved = true
+			if (state.flight !== null) {
+				orbit.target.copy(state.flight.to.target)
+				camera.position.copy(state.flight.to.position)
+				reach(state.flight.to.distance)
+				state.flight = null
+			}
 			const offset = camera.position.clone().sub(orbit.target)
 			const length = THREE.MathUtils.clamp(
 				offset.length() * (command.action === "in" ? 0.8 : 1.25),
@@ -985,7 +1068,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const delta = Math.min(0.05, (now - state.last) / 1000)
 		state.last = now
 		state.pending = Math.max(0, state.pending - 1)
-		rig()
+		rig(now)
 		if (state.cameraMoved) {
 			state.cameraMoved = false
 			retarget()
@@ -1088,10 +1171,36 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 		const point = raycaster.ray.intersectPlane(ground, new THREE.Vector3())
 		return point === null ? null : [point.x, point.z]
 	}
-	const targetAt = (point: Point | null): Cell | null => {
+	const centreOf = new THREE.Vector3()
+	/** The cell drawn under the pointer: the tile, plate, lake or country it is over (the tile in
+	 * hand is see-through to this), else where the pointer meets the ground. Tall houses on a
+	 * tile in front win over the cell behind them, as they look. */
+	const cellUnder = (event: Aim): Cell | null => {
+		const { input } = state.derived
+		aim(event)
+		const solid = [
+			...Arr.filter(
+				Arr.map(
+					Arr.filter([...tiles], ([id]) => id !== input.heldId),
+					([, view]) => view.mesh,
+				),
+				(mesh) => mesh.visible,
+			),
+			...Arr.filter(layers.slots.children, (child) => child instanceof THREE.Mesh),
+			...Arr.filter(layers.lakes.children, (child) => child instanceof THREE.Mesh),
+			...Arr.filter(layers.wilds.children, (child) => child instanceof THREE.Mesh && child.visible),
+		]
+		const hit = Arr.head(raycaster.intersectObjects(solid, false))
+		if (Option.isSome(hit)) {
+			hit.value.object.getWorldPosition(centreOf)
+			return pointToCell([centreOf.x, centreOf.z])
+		}
+		const point = raycaster.ray.intersectPlane(ground, new THREE.Vector3())
+		return point === null ? null : pointToCell([point.x, point.z])
+	}
+	const targetAt = (cell: Cell | null): Cell | null => {
 		const { targets, cells, input } = state.derived
-		if (point === null || targets === null || input.heldId === null) return null
-		const cell = pointToCell(point)
+		if (cell === null || targets === null || input.heldId === null) return null
 		const home = cells.get(input.heldId)
 		const valid =
 			(home !== undefined && sameCell(home, cell)) ||
@@ -1136,9 +1245,8 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			return
 		}
 		outline.visible = false
-		const point = pickGround(event)
-		state.heldPoint = point
-		setHover(targetAt(point))
+		state.heldPoint = pickGround(event)
+		setHover(targetAt(cellUnder(event)))
 		canvas.style.cursor = state.hoverCell === null ? "grabbing" : "copy"
 		invalidate()
 	}
@@ -1155,7 +1263,7 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 			return
 		const { input } = state.derived
 		if (input.heldId !== null) {
-			const cell = targetAt(pickGround(event))
+			const cell = targetAt(cellUnder(event))
 			if (cell !== null) events.onPlace(input.heldId, cell)
 			return
 		}
@@ -1286,12 +1394,23 @@ export function startScene(canvas: HTMLCanvasElement, initial: SceneInput, event
 				birds.flush([x, 0.5, z])
 			}
 			if (input.heldId !== null) outline.visible = false
-			if (previous.input.heldId !== input.heldId || previous.input.cells !== input.cells) {
+			const handChanged = previous.input.heldId !== input.heldId || previous.input.cells !== input.cells
+			if (handChanged) {
 				state.hoverCell = null
 				state.heldPoint = null
+				state.isKeyed = false
 				hover.visible = false
 			}
 			sync()
+			// A tile coming into hand is over somewhere at once: under the pointer, or (with no
+			// pointer on the map) the place nearest the middle, ready for the arrow keys and Enter.
+			if (handChanged && input.heldId !== null) {
+				if (state.pointerAt !== null) follow(state.pointerAt)
+				else {
+					state.isKeyed = true
+					setHover(keyedTarget(state.derived, null, [0, 0]))
+				}
+			}
 		},
 		stop: () => {
 			cancelAnimationFrame(state.raf)
