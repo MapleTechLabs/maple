@@ -17,7 +17,6 @@ import { WriteSync } from "../kit/store"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { VersionRow } from "./history"
 import { ShareMessage } from "./share"
-import { SessionGrants } from "../../kit/session-grants"
 
 /** A write's outcome: the failure is the message the persistence banner shows. */
 const WriteResult = Schema.Result(WriteSync, Schema.String)
@@ -33,7 +32,6 @@ export const Message = defineMessageUnion({
 	/** "Retry sync" on the snapshot banner, or Try again on the load error: reconnect, read again. */
 	ClickedRetrySync: {},
 	CompletedReadClock: { nowMs: Schema.Number },
-	CompletedFetchSession: SessionGrants,
 	MeasuredGrid: { width: Schema.Number },
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
 	RevealedWidget: { widgetId: Schema.String },

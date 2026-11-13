@@ -21,10 +21,7 @@ import {
 	WaitSearchDebounce,
 	FocusTagSearch,
 	FetchDashboardsFallback,
-	FetchListSession,
 } from "./command"
-import { acceptGrants } from "../../kit/session-grants"
-import { initialGrants, readsSessionGrants } from "../kit/grants"
 import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
 import { displayName, queryOf, tagsOf } from "./derive"
@@ -41,10 +38,9 @@ export const SORT_MENU_ID = "dashboards-sort-menu"
 export const TAG_FILTER_ID = "dashboards-tag-filter"
 export const rowMenuIdOf = (id: string): string => `dashboard-row-menu-${id}`
 
-export const init = (route: Route, context: PageContext): Return => ({
+export const init = (route: Route, _context: PageContext): Return => ({
 	model: {
 		search: route.search,
-		grants: initialGrants,
 		dashboards: null,
 		nowMs: null,
 		locale: INITIAL_LOCALE,
@@ -66,11 +62,7 @@ export const init = (route: Route, context: PageContext): Return => ({
 		isCreating: false,
 		fallback: { _tag: "Idle" },
 	},
-	commands: [
-		ReadClock(),
-		LoadPreferences(),
-		...(readsSessionGrants ? [FetchListSession({ orgId: context.orgId })] : []),
-	],
+	commands: [ReadClock(), LoadPreferences()],
 })
 
 /** An outside change to `q` replaces the search input, its own echo does not. */
@@ -274,7 +266,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),
-		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		// A live update is a healthy sync: writes come back on.
 		UpdatedDashboards: ({ orgId, dashboards }) =>
 			orgId !== context.orgId ? { model } : { model: { ...model, dashboards, persistenceError: null } },

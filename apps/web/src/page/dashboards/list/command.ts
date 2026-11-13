@@ -32,7 +32,6 @@ import type { V2Dashboard } from "@maple/domain/http/v2"
 import { documentOf } from "../view/command-history"
 import { toListDashboard } from "./derive"
 import { Message, type WriteFailure } from "./message"
-import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** The localStorage key of the default sort for a URL without `?sort`. */
 const SORT_KEY = "maple.dashboards.sort"
@@ -53,11 +52,6 @@ export const ReadClock = Command.define("ReadDashboardsListClock", {
 		Message.CompletedReadClock({ nowMs, locale }),
 	),
 })
-
-export const FetchListSession = fetchSessionGrants(
-	"FetchDashboardsListSession",
-	Message.CompletedFetchSession,
-)
 
 /** A picked tag keeps focus in the filter's search, as Base UI's items do. */
 export const FocusTagSearch = Command.define("FocusDashboardsTagSearch", {

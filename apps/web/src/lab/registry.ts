@@ -373,14 +373,6 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
-		path: "/lab/dashboards",
-		title: "Dashboards",
-		description:
-			"The `/dashboards` list and one board as a member or an analyst, who reads dashboards but cannot change or share them (?page=list|detail&role=member|analyst&mode=edit).",
-		kind: "lab",
-		session: "none",
-	},
-	{
 		path: "/lab/agent-tools",
 		title: "Agent tools",
 		description:

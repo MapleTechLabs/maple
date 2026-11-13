@@ -17,7 +17,6 @@ import { isWriteBlocked } from "./mode"
 import { variableSelects } from "./view-variables"
 import type { PageContext } from "../../contract"
 import { hstack } from "@maple/views/ui/stack"
-import { canEditDashboards, canShareDashboards } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -31,7 +30,7 @@ const refreshControls = (h: H, model: Model): Html =>
 		toMenuMessage: (message) => Message.GotRefreshMenuMessage({ message }),
 	})
 
-const moreEntries = (isEdit: boolean, canShare: boolean): ReadonlyArray<MenuView.MenuEntry> => [
+const moreEntries = (isEdit: boolean): ReadonlyArray<MenuView.MenuEntry> => [
 	...(isEdit
 		? ([
 				{
@@ -72,17 +71,7 @@ const moreEntries = (isEdit: boolean, canShare: boolean): ReadonlyArray<MenuView
 		className: "whitespace-nowrap",
 	},
 	{ _tag: "Separator" },
-	...(canShare
-		? ([
-				{
-					_tag: "Item",
-					value: "share",
-					label: "Share…",
-					icon: "LinkIcon",
-					className: "whitespace-nowrap",
-				},
-			] as const)
-		: []),
+	{ _tag: "Item", value: "share", label: "Share…", icon: "LinkIcon", className: "whitespace-nowrap" },
 	{
 		_tag: "Item",
 		value: "export",
@@ -96,32 +85,10 @@ const moreMenu = (h: H, model: Model): Html =>
 	rowActionsMenu(h, {
 		slotId: model.moreMenu.id,
 		model: model.moreMenu,
-		entries: moreEntries(isEditing(model), canShareDashboards(model)),
+		entries: moreEntries(isEditing(model)),
 		label: "More dashboard actions",
 		toParentMessage: (message) => Message.GotMoreMenuMessage({ message }),
 	})
-
-/** Edit, or Done while editing: one element across both, so focus survives the toggle. */
-const editToggle = (h: H, isEdit: boolean, isReadOnly: boolean): Html =>
-	button(
-		h,
-		{
-			variant: isEdit ? "default" : "outline",
-			size: "sm",
-			isDisabled: isReadOnly,
-			attributes: [
-				h.Key("toggle-edit"),
-				h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
-				h.OnClick(Message.ClickedToggleEdit()),
-			],
-		},
-		[
-			icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
-				attributes: [h.DataAttribute("icon", "inline-start")],
-			}),
-			h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
-		],
-	)
 
 /** The trigger's label; a custom window reads like the widget chips ("Last 2 hours", or both ends). */
 const timeLabel = (timeRange: TimeRange | null, timeZone: string, nowMs: number | null): string =>
@@ -182,7 +149,26 @@ export const toolbar = (h: H, model: Model, context: PageContext): Html => {
 							),
 						]
 					: []),
-				...(canEditDashboards(model) ? [editToggle(h, isEdit, isReadOnly)] : []),
+				button(
+					h,
+					{
+						variant: isEdit ? "default" : "outline",
+						size: "sm",
+						isDisabled: isReadOnly,
+						attributes: [
+							// One element across Edit and Done, so focus survives the toggle.
+							h.Key("toggle-edit"),
+							h.AriaLabel(isEdit ? "Done editing" : "Edit dashboard"),
+							h.OnClick(Message.ClickedToggleEdit()),
+						],
+					},
+					[
+						icon(h, isEdit ? "CheckIcon" : "PencilIcon", {
+							attributes: [h.DataAttribute("icon", "inline-start")],
+						}),
+						h.span([h.Class("hidden @min-[560px]/page:inline")], [isEdit ? "Done" : "Edit"]),
+					],
+				),
 				moreMenu(h, model),
 			]),
 		],
