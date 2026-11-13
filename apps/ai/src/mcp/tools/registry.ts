@@ -134,7 +134,7 @@ import {
 	type McpToolPhrases,
 	type McpToolRegistrar,
 	type McpToolResult,
-	isReadOnlyTenant,
+	refusalFor,
 	refusesReadOnlyCredential,
 } from "./types"
 import { unknownToolMessage } from "../lib/tool-suggestions"
@@ -752,11 +752,13 @@ export const executeRegisteredMcpToolUnscoped = Effect.fn("McpToolRegistry.execu
 
 	if (refusesReadOnlyCredential(definition.name, definition.hints.readOnly)) {
 		const tenant = yield* CurrentMcpTenant
-		if (isReadOnlyTenant(tenant)) {
+		const refusal = refusalFor(tenant, definition.name, definition.hints.readOnly)
+		if (refusal !== undefined) {
 			return yield* new McpAuthInvalidError({
-				message: Policy.isReadOnly(tenant.roles)
-					? `\`${definition.name}\` changes data. ${Policy.readOnlyMessage}`
-					: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+				message:
+					refusal === "analyst"
+						? `\`${definition.name}\` changes data. ${Policy.analystMessage}`
+						: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
 				reason: "insufficient_scope",
 			})
 		}

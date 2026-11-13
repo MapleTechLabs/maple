@@ -136,7 +136,7 @@ export type ShellClerk = Readonly<{
 
 /** Who the shell is drawn for; self-hosted has no Clerk role, so it is never an analyst. */
 export const shellAudience = (clerk: ShellClerk | null): NavAudience =>
-	clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.isReadOnly([role]))
+	clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.isAnalyst([role]))
 		? "analyst"
 		: "operator"
 

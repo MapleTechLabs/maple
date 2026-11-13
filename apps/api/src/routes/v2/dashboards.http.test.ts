@@ -171,11 +171,18 @@ const makeHarness = () => {
 	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
 	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	// `roles` makes it a key minted for a person, which acts with that person's org roles.
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "dashboard-test", scopes })
+				return yield* service.create(ORG, USER, {
+					name: "dashboard-test",
+					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+				})
 			}),
 		)
 
@@ -496,6 +503,30 @@ describe("v2 dashboards over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_scope",
 		})
+		await harness.dispose()
+	})
+
+	it("lets an analyst build, publish and delete a dashboard", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(undefined, ["org:analyst"])
+
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "Signup funnel",
+			widgets: [],
+		})
+		expect(created.status).toBe(200)
+		const path = `/v2/dashboards/${created.body.id}`
+
+		const renamed = await harness.request("PATCH", path, key.secret, { name: "Signup funnel, weekly" })
+		expect(renamed.status).toBe(200)
+		expect(renamed.body.name).toBe("Signup funnel, weekly")
+
+		const shared = await harness.request("PUT", `${path}/share`, key.secret, { mode: "public" })
+		expect(shared.status).toBe(200)
+		expect(typeof shared.body.token).toBe("string")
+
+		expect((await harness.request("DELETE", path, key.secret)).status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).status).toBe(404)
 		await harness.dispose()
 	})
 
