@@ -1409,7 +1409,7 @@ describe("VercelIntegrationService", () => {
 			const addCostSource = Effect.promise(() =>
 				testDb.pglite.query(
 					`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
-				 SELECT gen_random_uuid()::text, org_id, 'vercel', id, team_slug, now(), now() FROM vercel_connections`,
+				 SELECT gen_random_uuid()::text, org_id, 'vercel', id, team_id, now(), now() FROM vercel_connections`,
 				),
 			)
 			const held = Effect.promise(() =>
@@ -1453,10 +1453,10 @@ describe("VercelIntegrationService", () => {
 						{ id: "team_1", slug: "acme-labs", name: "Acme" },
 						{ id: "team_2", slug: "beta", name: "Beta" },
 					]
-					// A new token for the same team: the source and its history stay, and its account
-					// follows the slug its rows are stamped with from here on.
+					// A new token for the same team: the source and its history stay, and its account is the
+					// team's id, which the rename leaves alone, so stored rows and new ones stay one account.
 					yield* connect({ token: "vc_token_456" })
-					assert.deepStrictEqual(yield* costSources, ["acme-labs"])
+					assert.deepStrictEqual(yield* costSources, ["team_1"])
 					// It is due at the next tick: no hold, no claim, and no last sync to wait a day from.
 					assert.deepStrictEqual(yield* held, {
 						error: null,
@@ -1471,9 +1471,55 @@ describe("VercelIntegrationService", () => {
 					assert.deepStrictEqual(yield* costSources, [])
 
 					yield* addCostSource
-					assert.deepStrictEqual(yield* costSources, ["beta"])
+					assert.deepStrictEqual(yield* costSources, ["team_2"])
 					yield* disconnect()
 					assert.deepStrictEqual(yield* costSources, [])
+				}),
+			)
+		},
+	)
+
+	it.effect(
+		"a reconnect decides from the team the connection has when it writes, not from an earlier read",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const fake = makeFake()
+			fake.teams = [
+				{ id: "team_1", slug: "acme", name: "Acme" },
+				{ id: "team_2", slug: "beta", name: "Beta" },
+			]
+			const costSources = Effect.promise(() =>
+				testDb.pglite.query<{ account: string }>(
+					"SELECT account_id AS account FROM cost_sources WHERE provider = 'vercel'",
+				),
+			).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.account)))
+			return run(
+				testDb,
+				fake,
+				Effect.gen(function* () {
+					yield* connect()
+					// This reconnect read team_1 as the connection's team. While it removes the old
+					// team's drains, another request commits the move to team_2 and adds its cost source.
+					let moved = false
+					fake.respond = (call) => {
+						if (moved || call.method !== "GET" || call.path !== "/v1/drains") return undefined
+						moved = true
+						return testDb.pglite
+							.query("UPDATE vercel_connections SET team_id = 'team_2', team_slug = 'beta'")
+							.then(() =>
+								testDb.pglite.query(
+									`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+									 SELECT gen_random_uuid()::text, org_id, 'vercel', id, 'team_2', now(), now() FROM vercel_connections`,
+								),
+							)
+							.then(() => json({ drains: [] }))
+					}
+					const reconnected = yield* connect({ token: "vc_token_456", teamId: "team_2" })
+					assert.isTrue(moved)
+					assert.strictEqual(reconnected.team?.id, "team_2")
+					// The connection was on team_2 already when this write ran: its source is that
+					// team's and stays. Decided from the earlier read, it would have been deleted.
+					assert.deepStrictEqual(yield* costSources, ["team_2"])
 				}),
 			)
 		},

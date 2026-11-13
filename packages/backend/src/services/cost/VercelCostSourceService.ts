@@ -192,7 +192,8 @@ export class VercelCostSourceService extends Context.Service<
 									orgId,
 									provider: "vercel",
 									connectionRef: connection.id,
-									accountId: connection.teamSlug,
+									// The team's id, not its slug: a renamed team stays one account.
+									accountId: connection.teamId,
 									createdAt: now,
 									updatedAt: now,
 								})

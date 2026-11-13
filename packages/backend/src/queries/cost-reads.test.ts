@@ -639,6 +639,40 @@ describe("makeCostReads", () => {
 		},
 	)
 
+	it.effect("names a Vercel source by its team's slug, beside the team id its rows carry", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* insertSources(testDb, [{ id: SOURCE_A }])
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`WITH source AS (
+					   INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+					   VALUES (gen_random_uuid(), $1, 'Acme', 'vercel', 'integration', now(), now()) RETURNING id
+					 ), connection AS (
+					   INSERT INTO vercel_connections
+					     (id, org_id, source_id, team_id, team_slug, team_name, token_ciphertext, token_iv, token_tag,
+					      connected_by_user_id, project_scope, created_at, updated_at)
+					   SELECT 'conn_vercel', $1, id, 'team_1', 'acme-labs', 'Acme', 'sealed', 'iv', 'tag', 'user_a', 'all', now(), now()
+					   FROM source RETURNING id
+					 )
+					 INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
+					 SELECT $2, $1, 'vercel', id, 'team_1', now(), now() FROM connection`,
+					[ORG, SOURCE_B],
+				),
+			)
+			const { reads } = yield* makeHarness(testDb)
+			const { sources } = yield* reads.sources(tenant)
+			expect(
+				Arr.map(sources, (source) => [source.provider, source.accountId, source.accountName]),
+			).toEqual([
+				// An AWS account is known by its id: it carries no other name.
+				["aws", "000000000000", undefined],
+				["vercel", "team_1", "acme-labs"],
+			])
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("refuses a window wider than a cost read takes, before asking the warehouse", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

@@ -29,7 +29,11 @@ import { type CostProviderAdapter, CostProviderError, type CostPullRow } from ".
 import { CostSyncService } from "./CostSyncService"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
-import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
+import {
+	VercelCostProvider,
+	type VercelCostProviderApi,
+	VercelCostReadError,
+} from "./providers/vercel/VercelCostProvider"
 import { BACKFILL_REQUEST_BUDGET, daysOfWindow, MONTHLY_REQUEST_BUDGET } from "./sync-plan"
 
 const trackedDbs: TestDb[] = []
@@ -199,6 +203,19 @@ const harness = (options: FakeProviderOptions = {}) => {
 				}
 			}),
 	})
+	// The sync only pulls; `read` is what an add checks with, answered the same way here.
+	const vercelPull = adapterOf("vercel")
+	const vercelAdapter: VercelCostProviderApi = {
+		...vercelPull,
+		read: (source, window) =>
+			vercelPull
+				.pull(source, window)
+				.pipe(
+					Effect.mapError(
+						({ message, reason }) => new VercelCostReadError({ message, reason, kind: "other" }),
+					),
+				),
+	}
 	const writes: Array<ReadonlyArray<typeof WrittenRow.Type>> = []
 	const datasources: string[] = []
 	const tenants: string[] = []
@@ -242,7 +259,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 			Layer.mergeAll(
 				Layer.succeed(AwsCostProvider, adapterOf("aws")),
 				Layer.succeed(OpenRouterCostProvider, adapterOf("openrouter")),
-				Layer.succeed(VercelCostProvider, adapterOf("vercel")),
+				Layer.succeed(VercelCostProvider, vercelAdapter),
 				warehouse,
 				featureFlags,
 			),
@@ -301,7 +318,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 			await executeSql(
 				testDb,
 				`INSERT INTO cost_sources (id, org_id, provider, connection_ref, account_id, created_at, updated_at)
-				 VALUES ('0190f2b3-0000-7000-8000-0000000000f1', 'org_a', 'vercel', $1, 'acme', now(), now())`,
+				 VALUES ('0190f2b3-0000-7000-8000-0000000000f1', 'org_a', 'vercel', $1, 'team_1', now(), now())`,
 				[connection.id],
 			)
 		})
@@ -542,7 +559,7 @@ describe("CostSyncService Vercel sources", () => {
 				yield* poll
 				assert.deepStrictEqual(yield* h.sourceRefs, [
 					["org_a", CONNECTION_A, "123456789012"],
-					["org_a", VERCEL_CONNECTION_A, "acme"],
+					["org_a", VERCEL_CONNECTION_A, "team_1"],
 				])
 
 				yield* h.sql("DELETE FROM vercel_connections")

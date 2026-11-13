@@ -40,6 +40,12 @@ const run = <A, E>(
 const pull = (orgId: OrgId, connectionRef: string, window: CostPullWindow = WINDOW) =>
 	VercelCostProvider.use((provider) => provider.pull({ orgId, connectionRef }, window))
 
+/** A charge line whose numbers are written as given: JSON has no way to encode an overflowing one. */
+const numbersLine = (numbers: Readonly<Record<string, string>>): string => {
+	const fields = { BilledCost: "1", EffectiveCost: "1", ConsumedQuantity: "1", ...numbers }
+	return `{"BilledCost":${fields.BilledCost},"EffectiveCost":${fields.EffectiveCost},"ConsumedQuantity":${fields.ConsumedQuantity},"ChargePeriodStart":"2026-11-02T00:00:00Z","ServiceName":"Function Duration"}\n`
+}
+
 const reasonOf = (error: CostProviderError) => [error.reason, error.requests, error.provider]
 
 const charge = (overrides: Readonly<Record<string, unknown>> = {}) => ({
@@ -83,7 +89,7 @@ describe("VercelCostProvider", () => {
 				assert.deepStrictEqual(world.urls, [CHARGES_URL])
 				assert.deepStrictEqual(world.authorizations, ["Bearer vc_token_abc"])
 				assert.strictEqual(pulled.requests, 0)
-				// Rows carry the team's slug, lines of one key are summed, and today can still change.
+				// Rows carry the team's id, lines of one key are summed, and today can still change.
 				assert.deepStrictEqual(
 					Arr.map(pulled.rows, (row) => [
 						row.day,
@@ -95,8 +101,8 @@ describe("VercelCostProvider", () => {
 						row.estimated,
 					]),
 					[
-						["2026-11-02", "Function Duration", "web", "iad1", 3.5, "acme", false],
-						["2026-11-04", "Function Duration", "web", "global", 4, "acme", true],
+						["2026-11-02", "Function Duration", "web", "iad1", 3.5, "team_1", false],
+						["2026-11-04", "Function Duration", "web", "global", 4, "team_1", true],
 					],
 				)
 			}),
@@ -179,6 +185,10 @@ describe("VercelCostProvider", () => {
 					jsonl([charge({ ChargePeriodStart: "2026-04-31T00:00:00Z" })]),
 					jsonl([charge({ ChargePeriodStart: "2026-02-29T00:00:00Z" })]),
 					jsonl([charge({ ChargePeriodStart: "2100-02-29T00:00:00Z" })]),
+					// Valid JSON that parses to Infinity: no amount to sum or store.
+					numbersLine({ BilledCost: "1e309" }),
+					numbersLine({ EffectiveCost: "-1e309" }),
+					numbersLine({ ConsumedQuantity: "1e999" }),
 					jsonl([{ BilledCost: 1, ChargePeriodStart: "2026-11-02T00:00:00Z" }]),
 				]
 				const reasons = yield* Effect.forEach(unreadable, (body) =>
@@ -187,7 +197,7 @@ describe("VercelCostProvider", () => {
 						return (yield* Effect.flip(pull(ORG, connectionRef))).reason
 					}),
 				)
-				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 10))
+				assert.deepStrictEqual(reasons, Arr.replicate("invalid_response", 13))
 			}),
 		)
 	})
@@ -213,6 +223,27 @@ describe("VercelCostProvider", () => {
 						Order.String,
 					),
 					["2028-01-31", "2028-02-29", "2028-04-30", "2028-12-31"],
+				)
+			}),
+		)
+	})
+
+	it.effect("refuses lines that are each finite and sum past what a number holds", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeVercel({
+			charges: `${numbersLine({ BilledCost: "1e308" })}${numbersLine({ BilledCost: "1e308" })}`,
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const connectionRef = yield* connectFakeVercel({ orgId: ORG })
+				assert.strictEqual((yield* Effect.flip(pull(ORG, connectionRef))).reason, "invalid_response")
+				// One such line alone is an amount like any other.
+				world.charges = numbersLine({ BilledCost: "1e308" })
+				assert.deepStrictEqual(
+					Arr.map((yield* pull(ORG, connectionRef)).rows, (row) => row.billedCost),
+					[1e308],
 				)
 			}),
 		)
@@ -266,7 +297,10 @@ describe("VercelCostProvider", () => {
 				])
 				// A role without billing access is told which roles have it.
 				world.chargesStatus = 403
-				assert.include((yield* Effect.flip(pull(ORG, connectionRef))).message, "Billing role")
+				assert.include(
+					(yield* Effect.flip(pull(ORG, connectionRef))).message,
+					"Security, Billing or Enterprise Viewer role",
+				)
 				// A request Vercel calls invalid is Maple's to fix: its own words are kept.
 				world.chargesStatus = 400
 				const invalid = yield* Effect.flip(pull(ORG, connectionRef))
@@ -321,7 +355,7 @@ describe("VercelCostProvider", () => {
 			const error = yield* Effect.flip(
 				run(testDb, world, pull(ORG, connectionRef), "not-a-32-byte-key"),
 			)
-			assert.deepStrictEqual([error.reason, world.urls], ["auth", []])
+			assert.deepStrictEqual(["reason" in error ? error.reason : error._tag, world.urls], ["auth", []])
 		})
 	})
 

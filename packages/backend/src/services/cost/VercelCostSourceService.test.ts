@@ -103,10 +103,11 @@ describe("VercelCostSourceService", () => {
 				})
 				assert.deepStrictEqual(world.urls, [CHECK_URL])
 				assert.deepStrictEqual(world.authorizations, ["Bearer vc_token_abc"])
-				// The source points at the connection and is named after the team's slug.
+				// The source points at the connection.
 				assert.deepStrictEqual(yield* source(testDb), {
 					connection_ref: connectionRef,
-					account_id: "acme",
+					// The team's id: its slug can be renamed, and rows already stored keep their account.
+					account_id: "team_1",
 					enabled: true,
 					sources: 1,
 				})
@@ -154,7 +155,7 @@ describe("VercelCostSourceService", () => {
 				assert.deepStrictEqual(refusals, [
 					[
 						"@maple/http/errors/IntegrationsValidationError",
-						"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
+						"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
 					],
 					[
 						"@maple/http/errors/IntegrationsValidationError",
@@ -313,7 +314,7 @@ describe("VercelCostSourceService", () => {
 				assert.isUndefined(yield* source(testDb))
 				// Naming the team that is connected adds it.
 				assert.strictEqual((yield* addTeam("team_2")).created, true)
-				assert.strictEqual((yield* source(testDb))?.account_id, "beta")
+				assert.strictEqual((yield* source(testDb))?.account_id, "team_2")
 			}),
 		)
 	})

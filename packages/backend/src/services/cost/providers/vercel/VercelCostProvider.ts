@@ -4,7 +4,7 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VercelConnections } from "@maple/db/tables"
-import { Clock, Context, Duration, Effect, Layer, Schema, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema, Stream, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -16,6 +16,7 @@ import {
 	type CostProviderAdapter,
 	CostProviderError,
 	type CostPull,
+	type CostPullRow,
 	type CostPullSource,
 	type CostPullWindow,
 } from "../../CostProvider"
@@ -28,6 +29,9 @@ const pullTimeout = (days: number) => Duration.millis(45_000 + days * 250)
 const MAX_REQUEST_DAYS = 366
 
 type Reason = CostProviderError["reason"]
+
+const isFiniteRow = (row: CostPullRow): boolean =>
+	Arr.every([row.billedCost, row.effectiveCost, row.listCost, row.consumedQuantity], Number.isFinite)
 
 /**
  * A read of the charges that failed. `reason` is what the sync does next; `kind` keeps apart what
@@ -61,7 +65,7 @@ const toReadError = (error: VercelApiError): VercelCostReadError => {
 		case "forbidden":
 			return failed(
 				"not_ready",
-				"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer or Billing role.",
+				"This Vercel token's role cannot read the team's billing. Use a token from an Owner, Member, Developer, Security, Billing or Enterprise Viewer role.",
 				"not_ready",
 			)
 		case "not_found":
@@ -152,9 +156,9 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Verc
 						// `to` is exclusive.
 						to: `${addDays(window.endDay, 1)}T00:00:00Z`,
 					}).pipe(
-						// The team's slug is the source's account: every write of it rewrites the source too.
+						// The team's id is the account: its slug can be renamed, and stored rows keep theirs.
 						Stream.runFold(emptyChargeTotals, (sums, charge) =>
-							addCharge(sums, charge, row.teamSlug, window, openDay),
+							addCharge(sums, charge, row.teamId, window, openDay),
 						),
 						// The page shows the mapped message; which failure it was stays on the span.
 						Effect.tapError((error) =>
@@ -171,6 +175,13 @@ export class VercelCostProvider extends Context.Service<VercelCostProvider, Verc
 						}),
 					)
 					const rows = rowsOf(totals)
+					// Each line is finite, but a sum of them can still run past what a number holds.
+					if (!Arr.every(rows, isFiniteRow)) {
+						return yield* failed(
+							"invalid_response",
+							"Vercel's billing answer sums to no finite amount.",
+						)
+					}
 					yield* Effect.annotateCurrentSpan({
 						"maple.cost.rows": rows.length,
 						"maple.cost.vercel.charge_groups": totals.size,

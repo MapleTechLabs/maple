@@ -235,10 +235,10 @@ against a fake server that answers what the spec describes.
   both ISO 8601 in UTC, a year apart at most. The answer is streamed, so Maple reads it line by
   line and sums as it goes.
 - It takes the access token of the Vercel connection the org already has. No second credential
-  and no new table: the source points at `vercel_connections.id`, and its account is the team's
-  slug. Rows are stamped with the connection's slug, and every write of that slug (a reconnect
-  after the team renamed itself) rewrites the source's account in the same transaction, so one
-  team is never two accounts.
+  and no new table: the source points at `vercel_connections.id`. Its account, and the account
+  on every row, is the team's id, not its slug: a team can rename its slug, and rows already
+  stored keep the account they were pulled with, so a slug would split one team into two
+  accounts. The slug is read with the sources and is what the page shows ("Vercel <slug>").
 - Adding names the team the dialog showed. A connection that reads another team by then, or
   whose token was replaced while the check read was in flight, is refused as changed.
 - Spec: readable by the team's Owner, Member, Developer, Security, Billing and Enterprise Viewer
@@ -256,7 +256,8 @@ against a fake server that answers what the spec describes.
   when it equals the product name), `ServiceCategory` the category (`Other` when absent),
   `RegionId` the region (`global` when absent), and the project (`Tags.ProjectName`, else
   `Tags.ProjectId`) the resource, which the page groups and filters by. On the page the team
-  reads as "Vercel <slug>", and its services and regions wear the Vercel mark where no other
+  reads as "Vercel <slug>" (the slug comes with the sources read, the key is the team id), and
+  its services and regions wear the Vercel mark where no other
   platform of the org could have billed them. `ChargeCategory` maps
   onto Maple's (`Usage`, `Purchase`, `Credit`, `Tax`, `Adjustment`), so plan fees and credits
   are their own rows. Lines of one day,
@@ -267,7 +268,8 @@ against a fake server that answers what the spec describes.
   the spec is the only source. A line that is not such a charge fails the whole pull as an
   invalid response: storing part of a day would hide the older pull of it. So does a
   `ChargePeriodStart` that is not a UTC date-time on a real calendar day (no February 31st, a
-  February 29th in leap years only), and any answer but a 200 (a 204 or a 206
+  February 29th in leap years only), an amount or quantity that is not finite (`1e309` is valid
+  JSON), lines that sum past what a number holds, and any answer but a 200 (a 204 or a 206
   would store days empty or by halves).
 - Open risk: a 200 with an empty body reads as a team with no charges, and the window's days
   are stored empty. Nothing in the answer tells an empty month from a broken one, so a broken

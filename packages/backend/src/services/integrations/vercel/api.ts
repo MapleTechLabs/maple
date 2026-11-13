@@ -498,7 +498,8 @@ const startsWithRealDay = (value: string): boolean =>
  * recorded answer, so everything Maple can do without is optional and may be null.
  */
 export const VercelCharge = Schema.Struct({
-	BilledCost: Schema.Number,
+	// Finite: `1e309` is valid JSON and parses as Infinity, which no sum or store survives.
+	BilledCost: Schema.Finite,
 	/** Inclusive, ISO 8601 in UTC: its first ten characters are the usage day. */
 	ChargePeriodStart: Schema.String.check(
 		Schema.isPattern(UTC_DATE_TIME),
@@ -510,9 +511,9 @@ export const VercelCharge = Schema.Struct({
 	/** `Usage`, `Purchase`, `Credit`, `Tax` or `Adjustment`. */
 	ChargeCategory: optional(Schema.String),
 	/** Null when the charge is not usage. */
-	ConsumedQuantity: optional(Schema.Number),
+	ConsumedQuantity: optional(Schema.Finite),
 	ConsumedUnit: optional(Schema.String),
-	EffectiveCost: optional(Schema.Number),
+	EffectiveCost: optional(Schema.Finite),
 	RegionId: optional(Schema.String),
 	/** A FOCUS category: `Compute`, `Networking`, `Storage`, ... */
 	ServiceCategory: optional(Schema.String),

@@ -1,7 +1,7 @@
 // Cloud cost reads for the dashboard: the registry queries over `cost_daily`, narrowed to the
 // org's connected sources and shaped for the wire, and the sources' own sync state from Postgres.
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CostSources, type CostSourceRow } from "@maple/db/tables"
+import { CostSources, type CostSourceRow, VercelConnections } from "@maple/db/tables"
 import {
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
@@ -119,13 +119,18 @@ const estimatedFromOf = (rows: ReadonlyArray<TimeseriesRow>) =>
 		),
 	)
 
-const toSourceSummary = (row: CostSourceRow, nowMs: number): CostSourceSummary => {
+const toSourceSummary = (
+	row: CostSourceRow,
+	nowMs: number,
+	accountName: string | undefined,
+): CostSourceSummary => {
 	const historyComplete =
 		row.backfillDate !== null && row.backfillDate <= historyFloor(row.provider, utcToday(nowMs))
 	return {
 		id: row.id,
 		provider: row.provider,
 		accountId: row.accountId,
+		...(accountName === undefined ? undefined : { accountName }),
 		status: !row.enabled
 			? "paused"
 			: row.lastError !== null
@@ -308,7 +313,24 @@ export const makeCostReads = (deps: CostReadsDeps) => {
 	const sources = Effect.fn("CostReads.sources")(function* (tenant: TenantContext) {
 		const rows = yield* sourcesInRollout(tenant.orgId)
 		const nowMs = yield* Clock.currentTimeMillis
-		return { sources: Arr.map(rows, (row) => toSourceSummary(row, nowMs)) }
+		// A Vercel source's account is its team's id, which is stable; the team's slug names it.
+		const teams = Arr.some(rows, (row) => row.provider === "vercel")
+			? yield* dbExecute((db) =>
+					db.run(
+						PG.from(VercelConnections)
+							.select("id", "teamSlug")
+							.where(($) => [$.orgId.eq(tenant.orgId)]),
+					),
+				)
+			: []
+		const nameOf = (row: CostSourceRow) =>
+			row.provider === "vercel"
+				? Arr.findFirst(teams, (team) => team.id === row.connectionRef).pipe(
+						Option.map((team) => team.teamSlug),
+						Option.getOrUndefined,
+					)
+				: undefined
+		return { sources: Arr.map(rows, (row) => toSourceSummary(row, nowMs, nameOf(row))) }
 	})
 
 	return { totals, timeseries, breakdown, sources } as const

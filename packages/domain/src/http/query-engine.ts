@@ -3277,6 +3277,8 @@ export const CostSourceSummary = Schema.Struct({
 	id: CostSourceId,
 	provider: CostProvider,
 	accountId: Schema.String,
+	/** How a reader knows the account, where its id is not it: a Vercel team's slug beside its team id. */
+	accountName: Schema.optionalKey(Schema.String),
 	status: CostSourceStatus,
 	/** The newest and oldest UTC day pulled, `YYYY-MM-DD`; null before the first pull. */
 	watermarkDate: Schema.NullOr(Schema.String),
