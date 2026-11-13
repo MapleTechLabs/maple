@@ -1,18 +1,24 @@
 import {
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
 	PLANETSCALE_COST_RECONNECT_CODE,
 	PlanetScaleCostSourceAdded,
 	PlanetScaleCostSourceRemoved,
 	PlanetScaleCostStatus,
 } from "@maple/domain/http"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
-import { Array as Arr, Effect, Option, Record as Rec, Result, Schema } from "effect"
+import { Array as Arr, Effect, Option, Result, Schema } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString } from "foldkit/url"
 import {
+	AddGithubCostSource,
+	AddPlanetScaleCostSource,
 	BreakdownInput,
 	FacetsInput,
 	FetchCostBreakdown,
@@ -20,12 +26,13 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
-	AddPlanetScaleCostSource,
+	FetchGithubCostInstallations,
 	FetchPlanetScaleCostStatus,
 	ReadCostGrants,
 	RemoveCloudflareCostToken,
-	RemovePlanetScaleCostSource,
+	RemoveGithubCostSource,
 	RemoveOpenRouterCostKey,
+	RemovePlanetScaleCostSource,
 	ResolveWindow,
 	SaveCloudflareCostToken,
 	SaveOpenRouterCostKey,
@@ -47,6 +54,9 @@ import {
 	LAB_TODAY,
 	type LabSourceChanges,
 	labBreakdown,
+	labGithubInstallations,
+	labGithubLogin,
+	labRemovedProviders,
 	labSourcesWith,
 	labTimeseries,
 	labTotals,
@@ -75,8 +85,13 @@ export const LabState = Schema.Literals([
 	"remove-source",
 	"add-cloudflare",
 	"token-refused",
+	"token-too-broad",
 	"replace-token",
 	"remove-cloudflare",
+	"add-github",
+	"github-refused",
+	"github-none",
+	"remove-github",
 	"add-planetscale",
 	"planetscale-reconnect",
 	"planetscale-not-connected",
@@ -99,12 +114,14 @@ export const flags: Effect.Effect<Flags> = Effect.sync(() => ({
 
 export const Model = Schema.Struct({
 	state: LabState,
-	/** Each pasted-credential source added (true) or removed (false) since the state loaded; null before either. */
-	changes: Schema.Struct({
-		openrouter: Schema.NullOr(Schema.Boolean),
-		cloudflare: Schema.NullOr(Schema.Boolean),
-		planetscale: Schema.NullOr(Schema.Boolean),
-	}),
+	/** OpenRouter added (true) or removed (false) since the state loaded; null before either. */
+	openRouter: Schema.NullOr(Schema.Boolean),
+	/** The same for Cloudflare. */
+	cloudflare: Schema.NullOr(Schema.Boolean),
+	/** The same for PlanetScale. */
+	planetScale: Schema.NullOr(Schema.Boolean),
+	/** GitHub installations added (true) or removed (false) since the state loaded, by id. */
+	github: Schema.Record(Schema.String, Schema.Boolean),
 	cost: CostModel,
 })
 export type Model = typeof Model.Type
@@ -113,10 +130,8 @@ export const Message = defineMessageUnion({ GotCostMessage: { message: CostMessa
 export type Message = typeof Message.Type
 
 type Return = Update.Return<Model, Message, Resources>
-/** What the lab answers from: the state it loaded in, and what the reader did to its sources since. */
-type World = Readonly<{ state: LabState; changes: LabSourceChanges }>
-
-const NO_CHANGES: LabSourceChanges = { openrouter: null, cloudflare: null, planetscale: null }
+/** What the lab answers from: the state it loaded in, and what the reader added or removed since. */
+type World = Readonly<{ state: LabState }> & LabSourceChanges
 type CostCommand = Command.Command<CostMessage, never, Resources>
 
 const searchFor = (state: LabState): Search =>
@@ -137,6 +152,8 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
 	state === "token-refused" ||
+	state === "token-too-broad" ||
+	state === "github-none" ||
 	state === "add-planetscale" ||
 	state === "planetscale-reconnect" ||
 	state === "planetscale-not-connected" ||
@@ -150,33 +167,37 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 		case "add-openrouter":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
 		case "key-refused":
-			return [
-				CostMessage.ClickedAddSource(),
-				CostMessage.PickedProvider({ provider: "openrouter" }),
-				CostMessage.GotCredentialDraftMessage({
-					message: Field.Message.ChangedValue({ value: "sk-or-v1-0123456789abcdef0123456789" }),
-				}),
-				CostMessage.SubmittedCredential(),
-			]
+			return submissionOf("openrouter", "sk-or-v1-0123456789abcdef0123456789")
 		case "replace-key":
 			return [CostMessage.ClickedReplaceCredential({ provider: "openrouter" })]
 		case "remove-source":
-			return [CostMessage.ClickedRemoveSource({ provider: "openrouter" })]
+			return removalOf("openrouter")
 		case "add-cloudflare":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "cloudflare" })]
 		case "token-refused":
-			return [
-				CostMessage.ClickedAddSource(),
-				CostMessage.PickedProvider({ provider: "cloudflare" }),
-				CostMessage.GotCredentialDraftMessage({
-					message: Field.Message.ChangedValue({ value: "cfut_0123456789abcdefghij0123456789" }),
-				}),
-				CostMessage.SubmittedCredential(),
-			]
+		case "token-too-broad":
+			return submissionOf("cloudflare", "cfut_0123456789abcdefghij0123456789")
 		case "replace-token":
 			return [CostMessage.ClickedReplaceCredential({ provider: "cloudflare" })]
 		case "remove-cloudflare":
-			return [CostMessage.ClickedRemoveSource({ provider: "cloudflare" })]
+			return removalOf("cloudflare")
+		case "add-github":
+		case "github-none":
+			return [CostMessage.ClickedAddSource(), CostMessage.ClickedAddGithub()]
+		case "github-refused":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ClickedAddGithub(),
+				...Arr.map(
+					Arr.filter(
+						labGithubInstallations(LAB_SOURCES.synced).installations,
+						(installation) => installation.state === "available",
+					),
+					({ installationId }) => CostMessage.ClickedAddGithubInstallation({ installationId }),
+				),
+			]
+		case "remove-github":
+			return removalOf("github")
 		case "add-planetscale":
 		case "planetscale-reconnect":
 		case "planetscale-not-connected":
@@ -188,7 +209,7 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 				CostMessage.ClickedConfirmAddPlanetScale(),
 			]
 		case "remove-planetscale":
-			return [CostMessage.ClickedRemoveSource({ provider: "planetscale" })]
+			return removalOf("planetscale")
 		// Without Clerk the page starts with every permission: the member states take them away.
 		case "member":
 		case "member-onramp":
@@ -197,6 +218,50 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return []
 	}
 }
+
+/** The clicks and typing that submit `secret` in `provider`'s credential form. */
+const submissionOf = (provider: CredentialProvider, secret: string): ReadonlyArray<CostMessage> => [
+	CostMessage.ClickedAddSource(),
+	CostMessage.PickedProvider({ provider }),
+	CostMessage.GotCredentialDraftMessage({ message: Field.Message.ChangedValue({ value: secret }) }),
+	CostMessage.SubmittedCredential(),
+]
+
+/** The click on Remove in the row of the lab's source of `provider`. */
+const removalOf = (provider: CredentialProvider | "github" | "planetscale"): ReadonlyArray<CostMessage> =>
+	Arr.map(
+		Arr.filter(LAB_SOURCES.synced.sources, (source) => source.provider === provider),
+		(source) => CostMessage.ClickedRemoveSource({ sourceId: source.id }),
+	)
+
+const refusedBilling = {
+	...toLoadFailure("refused"),
+	code: Cost.GITHUB_PERMISSION_MISSING_CODE,
+	message:
+		"GitHub has not granted Maple access to billing yet. Accept the new permission in the organization's GitHub App settings.",
+}
+
+/** PlanetScale took the stored grant's word for its scopes, then refused the invoice read. */
+const refusedInvoices = {
+	...toLoadFailure("refused"),
+	code: PLANETSCALE_COST_RECONNECT_CODE,
+	message: "Reconnect PlanetScale to grant Maple access to invoices.",
+}
+
+/** What the org's PlanetScale connection is: by the state the lab loaded in, and what was added since. */
+const planetScaleStatusFor = (world: World) =>
+	new PlanetScaleCostStatus(
+		world.state === "planetscale-not-connected"
+			? { organization: null, invoiceAccess: false, added: false }
+			: {
+					organization: LAB_PLANETSCALE_ORGANIZATION,
+					invoiceAccess: world.state !== "planetscale-reconnect",
+					added: Arr.some(
+						labSourcesWith(sourcesFor(world.state), world).sources,
+						(source) => source.provider === "planetscale",
+					),
+				},
+	)
 
 const refusedKey = {
 	...toLoadFailure("refused"),
@@ -207,6 +272,12 @@ const refusedKey = {
 const refusedToken = {
 	...toLoadFailure("refused"),
 	message: "This token can read 3 accounts. Create one limited to a single account.",
+}
+
+const tooBroadToken = {
+	...toLoadFailure("refused"),
+	message:
+		"This token can do more than read billing: it can also read account members and Workers scripts. Create one with only the Billing: Read permission.",
 }
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -237,29 +308,9 @@ const keyArgs = Schema.decodeUnknownOption(Schema.Struct({ key: Schema.String })
 const windowArgs = argsOf(WindowInput)
 const timeseriesArgs = argsOf(TimeseriesInput)
 const breakdownArgs = argsOf(BreakdownInput)
+const installationArgs = Schema.decodeUnknownOption(Schema.Struct({ installationId: VcsInstallationId }))
+const readArgs = Schema.decodeUnknownOption(Schema.Struct({ request: Schema.Number }))
 const facetsArgs = argsOf(FacetsInput)
-
-/** PlanetScale took the stored grant's word for its scopes, then refused the invoice read. */
-const refusedInvoices = {
-	...toLoadFailure("refused"),
-	code: PLANETSCALE_COST_RECONNECT_CODE,
-	message: "Reconnect PlanetScale to grant Maple access to invoices.",
-}
-
-/** What the org's PlanetScale connection is, by the state the lab loaded in. */
-const planetScaleStatusFor = (state: LabState) =>
-	new PlanetScaleCostStatus(
-		state === "planetscale-not-connected"
-			? { organization: null, invoiceAccess: false, added: false }
-			: {
-					organization: LAB_PLANETSCALE_ORGANIZATION,
-					invoiceAccess: state !== "planetscale-reconnect",
-					added: false,
-				},
-	)
-
-const removedAnswer = (provider: CredentialProvider) =>
-	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
 
 /** A read's answer: the fixture's, or the outage in the `error` state. */
 const settled = <A>(state: LabState, value: () => A): Result.Result<A, typeof failure> =>
@@ -282,15 +333,13 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	const filtersOf = (filters: WindowInput["filters"]) =>
 		state === "empty-window" ? { account: ["000000000000"] } : filters
 	// A removed source's cost is not read any more, under any filter.
-	const removed = Arr.flatMap(Rec.toEntries(world.changes), ([provider, added]) =>
-		added === false ? [provider] : [],
-	)
+	const without = labRemovedProviders(world)
 	switch (command.name) {
 		case FetchCostSources.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
 				CostMessage.CompletedLoadSources({
 					key,
-					result: Result.succeed(labSourcesWith(sourcesFor(state), world.changes)),
+					result: Result.succeed(labSourcesWith(sourcesFor(state), world)),
 				}),
 			)
 		case FetchCostTotals.name:
@@ -298,7 +347,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedLoadTotals({
 					key,
 					result: settled(state, () =>
-						labTotals({ days, filters: filtersOf(input.filters), removed }),
+						labTotals({ days, filters: filtersOf(input.filters), without }),
 					),
 				}),
 			)
@@ -310,7 +359,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labTimeseries({
 							days,
 							filters: filtersOf(input.filters),
-							removed,
+							without,
 							groupBy: input.groupBy,
 							limit: input.limit,
 						}),
@@ -325,7 +374,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 						labBreakdown({
 							days,
 							filters: filtersOf(input.filters),
-							removed,
+							without,
 							groupBy: input.groupBy,
 							sortBy: input.sortBy,
 						}),
@@ -342,7 +391,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 								labBreakdown({
 									days,
 									filters: filtersOf(input.filters[groupBy]),
-									removed,
+									without,
 									groupBy,
 									sortBy: "cost",
 								}).rows,
@@ -367,18 +416,54 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 			return Option.some(
 				CostMessage.CompletedSaveCredential({
 					provider: "cloudflare",
-					result: state === "token-refused" ? Result.fail(refusedToken) : Result.succeed(undefined),
+					result:
+						state === "token-refused"
+							? Result.fail(refusedToken)
+							: state === "token-too-broad"
+								? Result.fail(tooBroadToken)
+								: Result.succeed(undefined),
 				}),
 			)
 		case RemoveOpenRouterCostKey.name:
 			return Option.some(removedAnswer("openrouter"))
 		case RemoveCloudflareCostToken.name:
 			return Option.some(removedAnswer("cloudflare"))
+		case FetchGithubCostInstallations.name:
+			return Option.map(readArgs(command.args), ({ request }) =>
+				CostMessage.CompletedLoadGithubInstallations({
+					request,
+					result: Result.succeed(
+						state === "github-none"
+							? new GithubCostInstallations({ installations: [] })
+							: labGithubInstallations(labSourcesWith(sourcesFor(state), world)),
+					),
+				}),
+			)
+		case AddGithubCostSource.name:
+			return Option.map(installationArgs(command.args), ({ installationId }) =>
+				CostMessage.CompletedAddGithubSource({
+					installationId,
+					result:
+						state === "github-refused"
+							? Result.fail(refusedBilling)
+							: Result.succeed(
+									new GithubCostSourceAdded({
+										accountLogin: labGithubLogin(installationId),
+									}),
+								),
+				}),
+			)
+		case RemoveGithubCostSource.name:
+			return Option.some(
+				CostMessage.CompletedRemoveGithubSource({
+					result: Result.succeed(new GithubCostSourceRemoved({ removed: true })),
+				}),
+			)
 		case FetchPlanetScaleCostStatus.name:
 			return Option.map(keyArgs(command.args), ({ key }) =>
 				CostMessage.CompletedLoadPlanetScaleStatus({
 					key,
-					result: Result.succeed(planetScaleStatusFor(state)),
+					result: Result.succeed(planetScaleStatusFor(world)),
 				}),
 			)
 		case AddPlanetScaleCostSource.name:
@@ -405,39 +490,71 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 	}
 }
 
+const removedAnswer = (provider: CredentialProvider) =>
+	CostMessage.CompletedRemoveCredential({ provider, result: Result.succeed(undefined) })
+
+/** `changes` alone, without whatever else the value carries. */
+const changesOf = ({ openRouter, cloudflare, planetScale, github }: LabSourceChanges): LabSourceChanges => ({
+	openRouter,
+	cloudflare,
+	planetScale,
+	github,
+})
+
 type Step = Readonly<{ model: CostModel; commands: ReadonlyArray<CostCommand> }>
-type Settled = Step & Pick<World, "changes">
+type Settled = Step & LabSourceChanges
 
-/** What a successful answer did to the lab's sources: added a provider's (true), removed it (false). */
-const changeOf = (answer: CostMessage): Partial<LabSourceChanges> => {
-	switch (answer._tag) {
-		case "CompletedSaveCredential":
-			return Result.isSuccess(answer.result) ? { [answer.provider]: true } : {}
-		case "CompletedRemoveCredential":
-			return Result.isSuccess(answer.result) ? { [answer.provider]: false } : {}
-		case "CompletedAddPlanetScale":
-			return Result.isSuccess(answer.result) ? { planetscale: true } : {}
-		case "CompletedRemovePlanetScale":
-			return Result.isSuccess(answer.result) ? { planetscale: false } : {}
-		default:
-			return {}
-	}
-}
+type Answered = Readonly<{ command: CostCommand; answer: CostMessage }>
 
-/** A source added on the page joins the sources the lab answers with next, a removal takes it out. */
-const changesAfter = (changes: LabSourceChanges, answers: ReadonlyArray<CostMessage>): LabSourceChanges =>
-	Arr.reduce(answers, changes, (current, answer) => ({ ...current, ...changeOf(answer) }))
+/** A successful add puts a source in what the lab answers with next, a removal takes it out. */
+const changesAfter = (changes: LabSourceChanges, answered: ReadonlyArray<Answered>): LabSourceChanges =>
+	Arr.reduce(answered, changes, (current, { command, answer }): LabSourceChanges => {
+		const withGithub = (installationId: string, isSource: boolean): LabSourceChanges => ({
+			...current,
+			github: { ...current.github, [installationId]: isSource },
+		})
+		const withCredential = (provider: CredentialProvider, isSource: boolean): LabSourceChanges =>
+			provider === "openrouter"
+				? { ...current, openRouter: isSource }
+				: { ...current, cloudflare: isSource }
+		switch (answer._tag) {
+			case "CompletedSaveCredential":
+				return Result.isSuccess(answer.result) ? withCredential(answer.provider, true) : current
+			case "CompletedRemoveCredential":
+				return Result.isSuccess(answer.result) ? withCredential(answer.provider, false) : current
+			case "CompletedAddPlanetScale":
+				return Result.isSuccess(answer.result) ? { ...current, planetScale: true } : current
+			case "CompletedRemovePlanetScale":
+				return Result.isSuccess(answer.result) ? { ...current, planetScale: false } : current
+			case "CompletedAddGithubSource":
+				return Result.isSuccess(answer.result) ? withGithub(answer.installationId, true) : current
+			// The answer does not name the installation: the removal that was asked for does.
+			case "CompletedRemoveGithubSource":
+				return Option.match(installationArgs(command.args), {
+					onNone: () => current,
+					onSome: ({ installationId }) =>
+						Result.isSuccess(answer.result) ? withGithub(installationId, false) : current,
+				})
+			default:
+				return current
+		}
+	})
 
 /**
  * Runs the page's reads against the fixture until none is left: an answer can ask for more (the
  * sources' answer asks for the window's reads). Kit commands are kept for the runtime.
  */
 const settle = (world: World, step: Step): Settled => {
-	const answers = Arr.flatMap(step.commands, (command) =>
-		Option.toArray(answerOf(world, step.model.search, command)),
+	const answered = Arr.flatMap(step.commands, (command) =>
+		Option.toArray(
+			Option.map(answerOf(world, step.model.search, command), (answer) => ({ command, answer })),
+		),
 	)
+	const answers = Arr.map(answered, ({ answer }) => answer)
 	const kept = keepLocal(step.commands)
-	if (answers.length === 0) return { model: step.model, commands: kept, changes: world.changes }
+	if (answers.length === 0) {
+		return { model: step.model, commands: kept, ...changesOf(world) }
+	}
 	const next = Arr.reduce(
 		answers,
 		{ model: step.model, commands: Arr.empty<CostCommand>() },
@@ -446,7 +563,7 @@ const settle = (world: World, step: Step): Settled => {
 			return { model: result.model, commands: [...acc.commands, ...(result.commands ?? [])] }
 		},
 	)
-	const rest = settle({ ...world, changes: changesAfter(world.changes, answers) }, next)
+	const rest = settle({ ...world, ...changesAfter(world, answered) }, next)
 	return { ...rest, commands: [...kept, ...rest.commands] }
 }
 
@@ -465,18 +582,24 @@ const searchOfUrl = (url: string): Search =>
 
 export const init = (flags: Flags): Return => {
 	const entered = Cost.init({ search: searchFor(flags.state) }, LAB_CONTEXT)
-	const world: World = { state: flags.state, changes: NO_CHANGES }
+	const world: World = {
+		state: flags.state,
+		openRouter: null,
+		cloudflare: null,
+		planetScale: null,
+		github: {},
+	}
 	const loaded = settle(world, { model: entered.model, commands: entered.commands ?? [] })
 	const ready = Arr.reduce(openingOf(flags.state), loaded, (step, message) => {
 		const next = Cost.update(step.model, message, LAB_CONTEXT)
 		const settled = settle(
-			{ ...world, changes: step.changes },
+			{ ...world, ...changesOf(step) },
 			{ model: next.model, commands: next.commands ?? [] },
 		)
 		return { ...settled, commands: [...step.commands, ...settled.commands] }
 	})
 	return {
-		model: { state: flags.state, changes: ready.changes, cost: ready.model },
+		model: { state: flags.state, ...changesOf(ready), cost: ready.model },
 		commands: lift(ready.commands),
 	}
 }
@@ -491,11 +614,11 @@ export const update = (model: Model, message: Message): Return =>
 					? Cost.routeChanged(step.model, { search: searchOfUrl(out.url) }, LAB_CONTEXT)
 					: { model: step.model }
 			const ready = settle(
-				{ state: model.state, changes: model.changes },
+				{ state: model.state, ...changesOf(model) },
 				{ model: moved.model, commands: [...(step.commands ?? []), ...(moved.commands ?? [])] },
 			)
 			return {
-				model: { ...model, changes: ready.changes, cost: ready.model },
+				model: { ...model, ...changesOf(ready), cost: ready.model },
 				commands: lift(ready.commands),
 			}
 		},

@@ -5698,7 +5698,7 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:search-console:searchConsoleLandingPagesQuery:default  [18eba252]
+-- builder:search-console:searchConsoleLandingPagesQuery:default  [421df049]
 SELECT
           latest.page AS page,
           ifNull(sum(latest.positionSum), 0) AS positionSum,
@@ -5735,7 +5735,7 @@ SELECT
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY page
-        ORDER BY clicks DESC, page ASC
+        ORDER BY clicks DESC, impressions DESC, page ASC
         LIMIT 100
         FORMAT JSON
 
@@ -5818,7 +5818,7 @@ SELECT
         ORDER BY date ASC
         FORMAT JSON
 
--- builder:search-console:searchConsoleTopPagesQuery:default  [18eba252]
+-- builder:search-console:searchConsoleTopPagesQuery:default  [421df049]
 SELECT
           latest.page AS page,
           ifNull(sum(latest.positionSum), 0) AS positionSum,
@@ -5855,11 +5855,11 @@ SELECT
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY page
-        ORDER BY clicks DESC, page ASC
+        ORDER BY clicks DESC, impressions DESC, page ASC
         LIMIT 50
         FORMAT JSON
 
--- builder:search-console:searchConsoleTopQueriesQuery:filtered  [45090b5d]
+-- builder:search-console:searchConsoleTopQueriesQuery:filtered  [d31810a4]
 SELECT
           latest.query AS query,
           ifNull(sum(latest.clicks), 0) AS clicks,
@@ -5897,7 +5897,7 @@ SELECT
           AND search_console_daily.Device = 'mobile'
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY query
-        ORDER BY position ASC, query ASC
+        ORDER BY position ASC, impressions DESC, query ASC
         LIMIT 50
         FORMAT JSON
 

@@ -5,11 +5,16 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
+	GithubCostSourceAdded,
+	GithubCostSourceRemoved,
 	PlanetScaleCostSourceAdded,
 	PlanetScaleCostSourceRemoved,
 	PlanetScaleCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import { CostSourceId } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
@@ -23,7 +28,7 @@ import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import { perDimension } from "./derive"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { CredentialProvider, RemovableProvider } from "./providers"
+import { CredentialProvider } from "./providers"
 
 /** A read's answer; `key` is what it was requested under, so a stale one is dropped. */
 const result = <A, AI>(schema: Schema.Codec<A, AI>) => ({
@@ -76,18 +81,30 @@ export const Message = defineMessageUnion({
 		provider: CredentialProvider,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
+	/** Opens the dialog on the org's GitHub installations, and reads them. */
+	ClickedAddGithub: {},
+	CompletedLoadGithubInstallations: {
+		request: Schema.Number,
+		result: Schema.Result(GithubCostInstallations, LoadFailure),
+	},
+	ClickedAddGithubInstallation: { installationId: VcsInstallationId },
+	CompletedAddGithubSource: {
+		installationId: VcsInstallationId,
+		result: Schema.Result(GithubCostSourceAdded, LoadFailure),
+	},
 	/** Turns the dialog to PlanetScale and reads the org's connection; also the step's Try again. */
 	ClickedAddPlanetScale: {},
 	CompletedLoadPlanetScaleStatus: result(PlanetScaleCostStatus),
 	ClickedConfirmAddPlanetScale: {},
 	CompletedAddPlanetScale: { result: Schema.Result(PlanetScaleCostSourceAdded, LoadFailure) },
-	ClickedRemoveSource: { provider: RemovableProvider },
+	ClickedRemoveSource: { sourceId: CostSourceId },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},
 	CompletedRemoveCredential: {
 		provider: CredentialProvider,
 		result: Schema.Result(Schema.Void, LoadFailure),
 	},
+	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	CompletedRemovePlanetScale: { result: Schema.Result(PlanetScaleCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })

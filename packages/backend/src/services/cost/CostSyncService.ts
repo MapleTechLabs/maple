@@ -31,10 +31,12 @@ import { pollFleet } from "../integrations/poll-fleet"
 import type { CostProviderAdapter, CostProviderError } from "./CostProvider"
 import { reconcileAwsCostSources } from "./aws-cost-sources"
 import { COST_CONNECTION_PROVIDERS, reconcileCostConnectionSources } from "./cost-connection-sources"
+import { reconcileGithubCostSources } from "./github-cost-sources"
 import { reconcileOpenRouterCostSources } from "./openrouter-cost-sources"
 import { reconcilePlanetScaleCostSources } from "./planetscale-cost-sources"
 import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
+import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import {
@@ -170,6 +172,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			const adapters = {
 				aws: yield* AwsCostProvider,
 				openrouter: yield* OpenRouterCostProvider,
+				github: yield* GithubCostProvider,
 				cloudflare: yield* CloudflareCostProvider,
 				planetscale: yield* PlanetScaleCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
@@ -211,6 +214,15 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				})
 			})
 
+			/** GitHub sources whose installation can no longer be read (see `reconcileGithubCostSources`). */
+			const reconcileGithub = Effect.fn("CostSyncService.reconcileGithub")(function* () {
+				const reconciled = yield* dbExecute((db) => reconcileGithubCostSources(db))
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.provider": "github",
+					"maple.cost.sources_removed": reconciled.removed,
+				})
+			})
+
 			/** The sources of every provider read with a pasted credential, in step with `cost_connections`. */
 			const reconcileConnections = Effect.fn("CostSyncService.reconcileConnections")(function* (
 				now: number,
@@ -241,6 +253,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 					[
 						reconcileAws(now),
 						reconcileOpenRouter(now),
+						reconcileGithub(),
 						reconcileConnections(now),
 						reconcilePlanetScale(),
 					],
@@ -707,6 +720,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 			Layer.mergeAll(
 				AwsCostProvider.layer,
 				OpenRouterCostProvider.layer,
+				GithubCostProvider.layer,
 				CloudflareCostProvider.layer,
 				PlanetScaleCostProvider.layer,
 				WarehouseQueryService.layer,

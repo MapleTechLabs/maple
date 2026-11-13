@@ -1,12 +1,13 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { CloudflareCostConnectionService } from "./CloudflareCostConnectionService"
 import {
 	FAKE_ACCOUNT,
 	type FakeCloudflare,
+	type FakeReach,
 	fakeCloudflareDeps,
 	makeFakeCloudflare,
 } from "./providers/cloudflare/fake-cloudflare"
@@ -81,12 +82,20 @@ describe("CloudflareCostConnectionService", () => {
 				const saved = yield* set(`  ${TOKEN}  `)
 				assert.deepStrictEqual(saved, { accountId: FAKE_ACCOUNT.id, accountLabel: "Example Account" })
 				// Which account, then whether it has billing data, then proof the token reads it.
-				assert.deepStrictEqual(world.urls, [
+				assert.deepStrictEqual(world.urls.slice(0, 3), [
 					"/client/v4/accounts?per_page=50",
 					`${ACCOUNT_PATH}/billable-usage/info`,
 					`${ACCOUNT_PATH}/billable-usage?from=2026-10-10&to=2026-11-11`,
 				])
-				assert.deepStrictEqual(world.authorizations, Arr.replicate(`Bearer ${TOKEN}`, 3))
+				// Last, side by side: what a billing token must not be able to read.
+				assert.deepStrictEqual(Arr.sort(world.urls.slice(3), Order.String), [
+					`${ACCOUNT_PATH}/audit_logs?per_page=1`,
+					`${ACCOUNT_PATH}/members?per_page=1`,
+					`${ACCOUNT_PATH}/workers/scripts`,
+					`${ACCOUNT_PATH}/workers/subdomain`,
+					"/client/v4/zones?per_page=1",
+				])
+				assert.deepStrictEqual(world.authorizations, Arr.replicate(`Bearer ${TOKEN}`, 8))
 
 				const stored = yield* storedToken(testDb)
 				assert.isFalse(Str.includes(TOKEN)(stored?.secret_ciphertext ?? TOKEN))
@@ -153,6 +162,87 @@ describe("CloudflareCostConnectionService", () => {
 				assert.strictEqual(noBilling._tag, VALIDATION)
 				assert.include(noBilling.message, "Billing: Read permission")
 				assert.isUndefined(yield* storedToken(testDb))
+			}),
+		)
+	})
+
+	it.effect("refuses a token that can read more than billing, naming what each probe found", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeCloudflare()
+		const found = (canRead: ReadonlyArray<FakeReach>) =>
+			Effect.gen(function* () {
+				world.canRead = canRead
+				const error = yield* Effect.flip(set(TOKEN))
+				assert.strictEqual(error._tag, VALIDATION)
+				return error.message
+			})
+		const refusal = (reads: string) =>
+			`This token can do more than read billing: it can also read ${reads}. Create one with only the Billing: Read permission.`
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				assert.strictEqual(yield* found(["members"]), refusal("account members"))
+				assert.strictEqual(yield* found(["audit_logs"]), refusal("audit logs"))
+				assert.strictEqual(yield* found(["zones"]), refusal("zones"))
+				// Either Workers read means the Workers Scripts permission.
+				assert.strictEqual(yield* found(["workers_subdomain"]), refusal("Workers scripts"))
+				assert.strictEqual(yield* found(["workers_scripts"]), refusal("Workers scripts"))
+				// Every hit is named, each once.
+				assert.strictEqual(
+					yield* found(["members", "workers_subdomain", "workers_scripts"]),
+					refusal("account members and Workers scripts"),
+				)
+				assert.strictEqual(
+					yield* found(["members", "workers_scripts", "audit_logs", "zones"]),
+					refusal("account members, audit logs, zones, and Workers scripts"),
+				)
+				assert.isUndefined(yield* storedToken(testDb))
+				assert.isUndefined(yield* source(testDb))
+			}),
+		)
+	})
+
+	it.effect("fails the save, storing nothing, when a probe is neither answered nor refused", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeCloudflare({ brokenProbe: { reach: "members", status: 503 } })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				// Not a refusal of the token: nothing was learned about it.
+				assert.strictEqual((yield* Effect.flip(set(TOKEN)))._tag, PERSISTENCE)
+				world.brokenProbe = { reach: "zones", status: 500 }
+				assert.strictEqual((yield* Effect.flip(set(TOKEN)))._tag, PERSISTENCE)
+				// A 404 is no refusal either: the token is not passed on it.
+				world.brokenProbe = { reach: "workers_subdomain", status: 404 }
+				assert.strictEqual((yield* Effect.flip(set(TOKEN)))._tag, PERSISTENCE)
+				assert.isUndefined(yield* storedToken(testDb))
+				assert.isUndefined(yield* source(testDb))
+
+				world.brokenProbe = null
+				assert.strictEqual((yield* set(TOKEN)).accountId, FAKE_ACCOUNT.id)
+			}),
+		)
+	})
+
+	it.effect("refuses a broader token as a replacement, and keeps the stored one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeCloudflare()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* set(TOKEN)
+				const first = yield* storedToken(testDb)
+				const firstSource = yield* source(testDb)
+
+				world.canRead = ["members", "workers_subdomain", "workers_scripts"]
+				const refused = yield* Effect.flip(set(OTHER_TOKEN))
+				assert.strictEqual(refused._tag, VALIDATION)
+				assert.include(refused.message, "account members and Workers scripts")
+				assert.deepStrictEqual(yield* storedToken(testDb), first)
+				assert.deepStrictEqual(yield* source(testDb), firstSource)
 			}),
 		)
 	})

@@ -90,6 +90,7 @@ describe("CloudflareCostProvider", () => {
 				Effect.gen(function* () {
 					const connectionRef = yield* saveToken(testDb, world)
 					const pulled = yield* pull(ORG, connectionRef)
+					// Billing reads only: the probes for what a token must not see run when it is saved.
 					assert.deepStrictEqual(world.urls, [
 						`${ACCOUNT_PATH}/billable-usage/info`,
 						`${ACCOUNT_PATH}/billable-usage?from=2026-09-19&to=2026-11-11`,

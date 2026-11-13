@@ -10,6 +10,7 @@ import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
+import { GithubCostApiGroup } from "./github-cost"
 import { IntegrationsApiGroup } from "./integrations"
 import { OpenRouterCostApiGroup } from "./openrouter-cost"
 import { OpenRouterKeyApiGroup } from "./openrouter-key"
@@ -64,6 +65,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OpenRouterKeyApiGroup)
 	.add(OpenRouterCostApiGroup)
 	.add(CloudflareCostApiGroup)
+	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)

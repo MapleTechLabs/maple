@@ -36,6 +36,11 @@ const OPENROUTER_HISTORY_DAYS = 28
  * months before the current one, which is always inside that year.
  */
 const CLOUDFLARE_HISTORY_MONTHS = 11
+/**
+ * GitHub's billing report served usage five months back when checked, and its retention is not
+ * documented. History stops at the first day of the month this many months back, well inside that.
+ */
+const GITHUB_HISTORY_MONTHS = 3
 /** PlanetScale invoices are read back to the first day of the month this many months before the current one. */
 const PLANETSCALE_HISTORY_MONTHS = 12
 // Through this day of the month the previous month's bill is still open; the first settle after
@@ -79,6 +84,7 @@ interface CostSyncProfile {
 const COST_SYNC_PROFILES = {
 	aws: { floor: (today) => monthStart(today, -HISTORY_MONTHS), lagDays: 0, head: "days" },
 	openrouter: { floor: (today) => addDays(today, -OPENROUTER_HISTORY_DAYS), lagDays: 1, head: "days" },
+	github: { floor: (today) => monthStart(today, -GITHUB_HISTORY_MONTHS), lagDays: 0, head: "days" },
 	cloudflare: {
 		floor: (today) => monthStart(today, -CLOUDFLARE_HISTORY_MONTHS),
 		lagDays: 1,

@@ -13,6 +13,13 @@ import type { CredentialProvider } from "./providers"
 type Cmd = Command.Command<Message, never, Resources>
 
 /**
+ * Cloudflare's "Create Token" page with the name filled in and one permission ticked, Account >
+ * Billing > Read. It starts on all accounts: the reader still picks the one.
+ */
+const CLOUDFLARE_BILLING_TOKEN_URL =
+	"https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22billing%22%2C%22type%22%3A%22read%22%7D%5D&name=Maple%20cost%20source%20%28billing%20read%29&accountId=*&zoneId=all"
+
+/**
  * A cost source added by pasting a credential: everything its dialog steps, its Sources row and
  * its toasts say, and the commands that save and remove it. The form itself is shared.
  */
@@ -36,7 +43,7 @@ export type CredentialSource = Readonly<{
 		label: string
 		toast: string
 	}>
-	remove: Readonly<{ title: string; description: string; toast: string }>
+	remove: Readonly<{ title: string; description: string }>
 	save: (secret: string) => Cmd
 	delete: () => Cmd
 }>
@@ -74,7 +81,6 @@ export const CREDENTIAL_SOURCES = {
 			title: "Remove the OpenRouter source?",
 			description:
 				"Maple deletes the key and stops reading the account's spend, and its cost leaves this page. Adding OpenRouter again brings back the last four weeks only.",
-			toast: "OpenRouter removed",
 		},
 		save: (apiKey) => SaveOpenRouterCostKey({ apiKey }),
 		delete: () => RemoveOpenRouterCostKey(),
@@ -91,9 +97,9 @@ export const CREDENTIAL_SOURCES = {
 			tooLong: "That is too long to be a Cloudflare API token.",
 			help: {
 				before: "",
-				link: "Create a custom token",
-				href: "https://dash.cloudflare.com/profile/api-tokens",
-				after: " with the Billing: Read permission on one account. Maple checks the token with Cloudflare, then stores it encrypted.",
+				link: "Create a token with only Billing: Read",
+				href: CLOUDFLARE_BILLING_TOKEN_URL,
+				after: " in Cloudflare. Under Account Resources pick the one account, set an expiry if you want one, then create it and paste it here. Maple checks that it reads billing and nothing more, then stores it encrypted.",
 			},
 		},
 		add: {
@@ -112,7 +118,6 @@ export const CREDENTIAL_SOURCES = {
 			title: "Remove the Cloudflare source?",
 			description:
 				"Maple deletes the token and stops reading the account's charges, and its cost leaves this page. Adding Cloudflare again reads the last year again.",
-			toast: "Cloudflare removed",
 		},
 		save: (apiToken) => SaveCloudflareCostToken({ apiToken }),
 		delete: () => RemoveCloudflareCostToken(),

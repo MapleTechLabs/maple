@@ -54,37 +54,47 @@ const connectionLink = (h: H, name: string, href: string): Html =>
 	)
 
 /**
- * What a row offers: an AWS source is its connection's, a pasted credential's is replaced and
- * removed here, and a PlanetScale one is removed here while its connection stays.
+ * What a row offers: a connection's source is managed there, a pasted credential's is replaced or
+ * removed here, a GitHub one only leaves, since it reads through the GitHub connection, and a
+ * PlanetScale one leaves here while its connection, which is managed there, stays.
+ * `isOnlyOfProvider`: false when the org has several sources of the provider, whose actions then
+ * name the account too.
  */
-const actions = (h: H, source: CostSourceSummary, isBusy: boolean): ReadonlyArray<Html> => {
-	const { name } = COST_PROVIDERS[source.provider]
-	if (source.provider === "planetscale") {
+const actions = (
+	h: H,
+	source: CostSourceSummary,
+	isBusy: boolean,
+	isOnlyOfProvider: boolean,
+): ReadonlyArray<Html> => {
+	const providerName = COST_PROVIDERS[source.provider].name
+	const name = isOnlyOfProvider ? providerName : `${providerName} ${source.accountId}`
+	const remove = rowButton(
+		h,
+		"Remove",
+		`Remove ${name} source`,
+		Message.ClickedRemoveSource({ sourceId: source.id }),
+		isBusy,
+	)
+	const provider = credentialProviderOf(source.provider)
+	if (provider !== null) {
+		const { label } = CREDENTIAL_SOURCES[provider].replace
 		return [
-			connectionLink(h, name, PLANETSCALE_INTEGRATION_HREF),
 			rowButton(
 				h,
-				"Remove",
-				`Remove ${name} source`,
-				Message.ClickedRemoveSource({ provider: "planetscale" }),
+				label,
+				// "Replace key" as "Replace OpenRouter key".
+				Str.replace("Replace", `Replace ${name}`)(label),
+				Message.ClickedReplaceCredential({ provider }),
 				isBusy,
 			),
+			remove,
 		]
 	}
-	const provider = credentialProviderOf(source.provider)
-	if (provider === null) return [connectionLink(h, name, AWS_INTEGRATION_HREF)]
-	const { label } = CREDENTIAL_SOURCES[provider].replace
-	return [
-		rowButton(
-			h,
-			label,
-			// "Replace key" as "Replace OpenRouter key".
-			Str.replace("Replace", `Replace ${name}`)(label),
-			Message.ClickedReplaceCredential({ provider }),
-			isBusy,
-		),
-		rowButton(h, "Remove", `Remove ${name} source`, Message.ClickedRemoveSource({ provider }), isBusy),
-	]
+	if (source.provider === "github") return [remove]
+	if (source.provider === "planetscale") {
+		return [connectionLink(h, name, PLANETSCALE_INTEGRATION_HREF), remove]
+	}
+	return [connectionLink(h, name, AWS_INTEGRATION_HREF)]
 }
 
 /** What the provider billed the account for Maple's requests this month; nothing where requests are free. */
@@ -136,20 +146,12 @@ const note = (h: H, source: CostSourceSummary): ReadonlyArray<Html> =>
 				? [typography(h, { size: "xs", tone: "muted", as: "p" }, [source.lastError])]
 				: []
 
-/** What the provider's source says about its own figures, whatever its status. */
-const sourceNote = (h: H, source: CostSourceSummary): ReadonlyArray<Html> => {
-	const entry: CostProviderEntry = COST_PROVIDERS[source.provider]
-	return entry.sourceNote === undefined
-		? []
-		: [typography(h, { size: "xs", tone: "muted", as: "p" }, [entry.sourceNote])]
-}
-
 const sourceRow = (
 	h: H,
 	source: CostSourceSummary,
 	nowMs: number,
 	timeZone: string,
-	options: Readonly<{ isBusy: boolean; canManage: boolean }>,
+	options: Readonly<{ isBusy: boolean; canManage: boolean; isOnlyOfProvider: boolean }>,
 ): Html => {
 	const provider: CostProviderEntry = COST_PROVIDERS[source.provider]
 	const status = STATUS[source.status]
@@ -179,7 +181,7 @@ const sourceRow = (
 								hstack(
 									h,
 									{ gap: "1", className: "-my-1 shrink-0" },
-									actions(h, source, options.isBusy),
+									actions(h, source, options.isBusy, options.isOnlyOfProvider),
 								),
 							]
 						: []),
@@ -191,7 +193,10 @@ const sourceRow = (
 						typography(h, { size: "xs", tone: "muted" }, [fact]),
 					),
 				),
-				...sourceNote(h, source),
+				// What the provider's source says about its own figures, whatever its status.
+				...(provider.sourceNote === undefined
+					? []
+					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [provider.sourceNote])]),
 				...note(h, source),
 			]),
 		],
@@ -232,6 +237,12 @@ export const sourcesSection = (
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
-			Arr.map(sources, (source) => sourceRow(h, source, nowMs, timeZone, options)),
+			Arr.map(sources, (source) =>
+				sourceRow(h, source, nowMs, timeZone, {
+					...options,
+					isOnlyOfProvider:
+						Arr.filter(sources, (other) => other.provider === source.provider).length === 1,
+				}),
+			),
 		),
 	])

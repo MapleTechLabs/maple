@@ -1,6 +1,6 @@
 // The Cloudflare API token an org's Cloudflare charges are read with: checked with Cloudflare, then
-// kept in the shared cost connection store. Saving it makes the org's Cloudflare cost source,
-// replacing it keeps the source and its history, removing it removes the source.
+// kept in the shared cost connection store. A pasted token only until Cloudflare offers OAuth
+// clients a billing scope, when the org's Cloudflare connection takes over (docs/cloud-cost-plan.md).
 import {
 	CLOUDFLARE_COST_TOKEN_MAX_LENGTH,
 	CloudCostDisabledError,
@@ -9,17 +9,22 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Redacted, String as Str } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
 import * as CloudflareBilling from "./providers/cloudflare/cloudflare-billing-api"
+import { readsBeyondBilling } from "./providers/cloudflare/cloudflare-token-probes"
 import { addDays, utcToday } from "./sync-plan"
 
 const VALIDATE_TIMEOUT = Duration.seconds(20)
 
 const NO_BILLING_ACCESS =
 	"This token cannot read the account's billing. Create a custom token with the Billing: Read permission."
+
+const UNCHECKED = "Could not check this token with Cloudflare. Try again."
+
+const listed = new Intl.ListFormat("en", { type: "conjunction" })
 
 const refused = (message: string) => new CostConnectionValidationError({ message })
 
@@ -34,9 +39,7 @@ const toTokenError =
 			return refused("Cloudflare rejected this token.")
 		}
 		if (error.kind === "forbidden") return refused(NO_BILLING_ACCESS)
-		return new CostConnectionPersistenceError({
-			message: "Could not check this token with Cloudflare. Try again.",
-		})
+		return new CostConnectionPersistenceError({ message: UNCHECKED })
 	}
 
 const toPersistenceError = (error: CostConnectionStoreError) =>
@@ -74,8 +77,8 @@ export class CloudflareCostConnectionService extends Context.Service<
 		) => Effect.mapError(call, toTokenError(step))
 
 		/**
-		 * The one account the token reads, once it has proved it can read that account's billing:
-		 * a token that cannot would save and then fail every sync.
+		 * The one account the token reads, once it has proved it can read that account's billing
+		 * (a token that cannot would save and then fail every sync) and nothing the probes ask for.
 		 */
 		const validateWithCloudflare = Effect.fn("CloudflareCostConnectionService.validateWithCloudflare")(
 			function* (token: Redacted.Redacted) {
@@ -107,6 +110,16 @@ export class CloudflareCostConnectionService extends Context.Service<
 						endDay: yesterday,
 					}),
 				)
+				// Least privilege: the stored token should read billing and no more. A probe Cloudflare
+				// does not answer fails the save: passing the token on it would be a guess.
+				const excess = yield* readsBeyondBilling(httpClient, token, account.id).pipe(
+					Effect.mapError(() => new CostConnectionPersistenceError({ message: UNCHECKED })),
+				)
+				if (Arr.isReadonlyArrayNonEmpty(excess)) {
+					return yield* refused(
+						`This token can do more than read billing: it can also read ${listed.format(excess)}. Create one with only the Billing: Read permission.`,
+					)
+				}
 				return { accountId: account.id, accountLabel: account.name }
 			},
 		)

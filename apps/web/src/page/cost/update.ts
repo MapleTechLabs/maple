@@ -1,10 +1,13 @@
 import {
+	type CostSourceSummary,
 	CostSourcesResponse,
 	PLANETSCALE_COST_RECONNECT_CODE,
 	type PlanetScaleCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Option, Result, String as Str } from "effect"
+import { VcsInstallationId } from "@maple/domain/vcs"
+import type { CostSourceId } from "@maple/primitives"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
@@ -25,6 +28,8 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
+	AddGithubCostSource,
+	AddPlanetScaleCostSource,
 	type BreakdownInput,
 	CompleteReloadSpin,
 	FetchCostBreakdown,
@@ -33,9 +38,10 @@ import {
 	FetchCostSources,
 	FetchCostTimeseries,
 	FetchCostTotals,
-	AddPlanetScaleCostSource,
+	FetchGithubCostInstallations,
 	FetchPlanetScaleCostStatus,
 	ReadCostGrants,
+	RemoveGithubCostSource,
 	RemovePlanetScaleCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
@@ -60,7 +66,7 @@ import {
 import { CREDENTIAL_SOURCES } from "./credential-sources"
 import { Message } from "./message"
 import { type AddStep, type Model, planetScaleStepOf, type Search } from "./model"
-import { COST_PROVIDERS, type CredentialProvider, type RemovableProvider } from "./providers"
+import { COST_PROVIDERS, type CredentialProvider } from "./providers"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -181,10 +187,14 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		addStep: "pick",
 		credentialDraft: Field.init(),
 		credentialError: null,
+		githubInstallations: AsyncData.Idle(),
+		githubRead: 0,
+		githubAdding: null,
+		githubRefusal: null,
 		planetscale: Keyed.idle(),
 		planetscaleError: null,
 		removeDialog: Dialog.init("cost-remove-source", "alert-dialog"),
-		removeProvider: null,
+		removeTarget: null,
 		sourceWrite: "Idle",
 	}
 	return chain<Model, Message>(
@@ -221,10 +231,11 @@ const liftRemoveDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 })
 
 /** Nothing typed and no refusal on show: how the dialog opens and what it leaves behind. */
-const clearedCredential = (model: Model): Model => ({
+const clearedDialog = (model: Model): Model => ({
 	...model,
 	credentialDraft: Field.init(),
 	credentialError: null,
+	githubRefusal: null,
 	planetscaleError: null,
 })
 
@@ -254,7 +265,7 @@ const addablePlanetScaleOrganization = (model: Model): Option.Option<string> =>
 const openAdd = (model: Model, addStep: AddStep): Return =>
 	model.sourceWrite !== "Idle"
 		? { model }
-		: liftAddDialog({ ...clearedCredential(model), addStep }, Dialog.open(model.addDialog))
+		: liftAddDialog({ ...clearedDialog(model), addStep }, Dialog.open(model.addDialog))
 
 /**
  * The sources and the window's reads again, after a write's own step: the reads name the org's
@@ -268,10 +279,10 @@ const withReread = (step: Return, context: PageContext): Return =>
 	)
 
 /**
- * The list on show without `provider`'s source, which a removal just deleted: its row is gone
- * at once, so no refresh, late or failed, leaves actions on a source that no longer exists.
+ * The list on show without the source a removal just deleted: its row is gone at once, so no
+ * refresh, late or failed, leaves actions on a source that no longer exists.
  */
-const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
+const withoutSource = (model: Model, sourceId: CostSourceId | undefined): Model => ({
 	...model,
 	sources: {
 		...model.sources,
@@ -279,41 +290,73 @@ const withoutSourceOf = (model: Model, provider: RemovableProvider): Model => ({
 			model.sources.data,
 			(response) =>
 				new CostSourcesResponse({
-					sources: Arr.filter(response.sources, (source) => source.provider !== provider),
+					sources: Arr.filter(response.sources, (source) => source.id !== sourceId),
 				}),
 		),
 	},
 })
 
-/** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
-const hasSource = (model: Model, provider: CredentialProvider): boolean =>
-	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) => hasSourceOf(sources, provider))
+const sourceOf = (model: Model, sourceId: CostSourceId): CostSourceSummary | undefined =>
+	AsyncData.getData(model.sources.data).pipe(
+		Option.flatMap(({ sources }) => Arr.findFirst(sources, (source) => source.id === sourceId)),
+		Option.getOrUndefined,
+	)
 
-/** A removal's answer: the dialog closes either way, and a removed source leaves the page at once. */
-const removed = (
-	model: Model,
-	provider: RemovableProvider,
-	failure: Option.Option<LoadFailure>,
-	context: PageContext,
-): Return => {
+const decodeInstallationId = Schema.decodeUnknownOption(VcsInstallationId)
+
+/** The public code of `GithubCostPermissionMissingError`: the organization lifts it in its GitHub App settings. */
+export const GITHUB_PERMISSION_MISSING_CODE = "github_cost_permission_missing"
+
+/** The call that removes `source`: its pasted credential, the GitHub source of its installation, or PlanetScale's. */
+const removeCommand = (source: CostSourceSummary): ReadonlyArray<Cmd> => {
+	switch (source.provider) {
+		case "openrouter":
+		case "cloudflare":
+			return [CREDENTIAL_SOURCES[source.provider].delete()]
+		case "github":
+			return Arr.map(Option.toArray(decodeInstallationId(source.connectionRef)), (installationId) =>
+				RemoveGithubCostSource({ installationId }),
+			)
+		// The org has one PlanetScale connection, so one source at most: the call names none.
+		case "planetscale":
+			return [RemovePlanetScaleCostSource()]
+		// An AWS source leaves with its connection's Cost module, on the integration's page.
+		case "aws":
+			return []
+	}
+}
+
+/** A removal answered: the confirm closes, and on success the source's row and cost leave the page. */
+const removed = (model: Model, result: Result.Result<unknown, LoadFailure>, context: PageContext): Return => {
+	const target = model.removeTarget
 	const closed = liftRemoveDialog(
-		Option.isNone(failure)
-			? withoutSourceOf({ ...model, sourceWrite: "Settling" }, provider)
+		Result.isSuccess(result)
+			? withoutSource({ ...model, sourceWrite: "Settling" }, target?.id)
 			: { ...model, sourceWrite: "Idle" },
 		Dialog.close(model.removeDialog),
 	)
-	return Option.match(failure, {
-		onSome: (reason): Return => ({
+	return Result.match(result, {
+		onFailure: (failure): Return => ({
 			...closed,
-			outMessage: toast("error", "Couldn't remove the source", failureMessage(reason)),
+			outMessage: toast("error", "Couldn't remove the source", failureMessage(failure)),
 		}),
-		onNone: (): Return =>
+		onSuccess: (): Return =>
 			withReread(
-				{ ...closed, outMessage: toast("success", `${COST_PROVIDERS[provider].name} removed`) },
+				{
+					...closed,
+					outMessage: toast(
+						"success",
+						`${target === null ? "Source" : COST_PROVIDERS[target.provider].name} removed`,
+					),
+				},
 				context,
 			),
 	})
 }
+
+/** Whether the org has `provider`'s source, which a saved credential then replaces the credential of. */
+const hasSource = (model: Model, provider: CredentialProvider): boolean =>
+	Option.exists(AsyncData.getData(model.sources.data), ({ sources }) => hasSourceOf(sources, provider))
 
 export const routeChanged = (
 	model: Model,
@@ -447,10 +490,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedAddSource: () => openAdd(model, "pick"),
-		PickedProvider: ({ provider }) => ({ model: { ...clearedCredential(model), addStep: provider } }),
+		PickedProvider: ({ provider }) => ({ model: { ...clearedDialog(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
 			model.sourceWrite === "Idle"
-				? { model: { ...clearedCredential(model), addStep: "pick" } }
+				? { model: { ...clearedDialog(model), addStep: "pick" } }
 				: { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
@@ -459,7 +502,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"
-				? { ...lifted, model: clearedCredential(lifted.model) }
+				? { ...lifted, model: clearedDialog(lifted.model) }
 				: lifted
 		},
 		GotCredentialDraftMessage: ({ message: inner }) =>
@@ -475,15 +518,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					},
 		SubmittedCredential: () => {
 			const secret = Str.trim(model.credentialDraft.value)
+			const step = model.addStep
 			if (
 				secret === "" ||
 				model.sourceWrite !== "Idle" ||
-				model.addStep === "pick" ||
-				model.addStep === "planetscale"
+				step === "pick" ||
+				step === "github" ||
+				step === "planetscale"
 			) {
 				return { model }
 			}
-			const source = CREDENTIAL_SOURCES[model.addStep]
+			const source = CREDENTIAL_SOURCES[step]
 			// The request refuses a longer one before it is sent, which would leave the save unanswered.
 			if (secret.length > source.field.maxLength) {
 				return { model: { ...model, credentialError: source.field.tooLong } }
@@ -501,7 +546,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 				onSuccess: (): Return => {
 					const closed = liftAddDialog(
-						clearedCredential({ ...model, sourceWrite: "Settling" }),
+						clearedDialog({ ...model, sourceWrite: "Settling" }),
 						Dialog.close(model.addDialog),
 					)
 					const source = CREDENTIAL_SOURCES[provider]
@@ -511,33 +556,94 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					return withReread({ ...closed, outMessage }, context)
 				},
 			}),
-		ClickedRemoveSource: ({ provider }) =>
+		ClickedAddGithub: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: liftRemoveDialog({ ...model, removeProvider: provider }, Dialog.open(model.removeDialog)),
+				: {
+						model: {
+							...clearedDialog(model),
+							addStep: "github",
+							githubInstallations: AsyncData.Loading(),
+							githubRead: model.githubRead + 1,
+						},
+						commands: [FetchGithubCostInstallations({ request: model.githubRead + 1 })],
+					},
+		// An answer to a read the step has since replaced would show a list from before a later add.
+		CompletedLoadGithubInstallations: ({ request, result }) =>
+			request !== model.githubRead
+				? { model }
+				: {
+						model: {
+							...model,
+							githubInstallations: Result.match(result, {
+								onFailure: (failure) => AsyncData.fail(failure),
+								onSuccess: (installations) => AsyncData.succeed(installations),
+							}),
+						},
+					},
+		ClickedAddGithubInstallation: ({ installationId }) =>
+			model.sourceWrite !== "Idle"
+				? { model }
+				: {
+						model: {
+							...model,
+							sourceWrite: "Saving",
+							githubAdding: installationId,
+							githubRefusal: null,
+						},
+						commands: [AddGithubCostSource({ installationId })],
+					},
+		// A refused add keeps the dialog open with GitHub's reason in the installation's row.
+		CompletedAddGithubSource: ({ installationId, result }) =>
+			Result.match(result, {
+				onFailure: (failure): Return => ({
+					model: {
+						...model,
+						sourceWrite: "Idle",
+						githubAdding: null,
+						githubRefusal: {
+							installationId,
+							message: failureMessage(failure),
+							needsPermission: failure.code === GITHUB_PERMISSION_MISSING_CODE,
+						},
+					},
+				}),
+				onSuccess: (added): Return => {
+					const closed = liftAddDialog(
+						clearedDialog({ ...model, sourceWrite: "Settling", githubAdding: null }),
+						Dialog.close(model.addDialog),
+					)
+					const outMessage = toast(
+						"success",
+						"GitHub added",
+						`The first sync of ${added.accountLogin} runs within a few minutes.`,
+					)
+					return withReread({ ...closed, outMessage }, context)
+				},
+			}),
+		ClickedRemoveSource: ({ sourceId }) => {
+			const target = sourceOf(model, sourceId)
+			return model.sourceWrite !== "Idle" || target === undefined
+				? { model }
+				: liftRemoveDialog({ ...model, removeTarget: target }, Dialog.open(model.removeDialog))
+		},
 		GotRemoveDialogMessage: ({ message: inner }) =>
 			model.sourceWrite === "Removing"
 				? { model }
 				: liftRemoveDialog(model, Dialog.update(model.removeDialog, inner)),
-		ClickedConfirmRemove: () =>
-			model.sourceWrite !== "Idle" || model.removeProvider === null
+		ClickedConfirmRemove: () => {
+			const commands = model.removeTarget === null ? [] : removeCommand(model.removeTarget)
+			return model.sourceWrite !== "Idle" || commands.length === 0
 				? { model }
-				: {
-						model: { ...model, sourceWrite: "Removing" },
-						commands: [
-							model.removeProvider === "planetscale"
-								? RemovePlanetScaleCostSource()
-								: CREDENTIAL_SOURCES[model.removeProvider].delete(),
-						],
-					},
-		CompletedRemoveCredential: ({ provider, result }) =>
-			removed(model, provider, Result.getFailure(result), context),
-		CompletedRemovePlanetScale: ({ result }) =>
-			removed(model, "planetscale", Result.getFailure(result), context),
+				: { model: { ...model, sourceWrite: "Removing" }, commands }
+		},
+		CompletedRemoveCredential: ({ result }) => removed(model, result, context),
+		CompletedRemoveGithubSource: ({ result }) => removed(model, result, context),
+		CompletedRemovePlanetScale: ({ result }) => removed(model, result, context),
 		ClickedAddPlanetScale: () =>
 			model.sourceWrite !== "Idle"
 				? { model }
-				: requestPlanetScaleStatus({ ...clearedCredential(model), addStep: "planetscale" }, context),
+				: requestPlanetScaleStatus({ ...clearedDialog(model), addStep: "planetscale" }, context),
 		CompletedLoadPlanetScaleStatus: ({ key, result }) => ({
 			model: { ...model, planetscale: Keyed.accept(model.planetscale, key, result) },
 		}),
@@ -574,7 +680,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					withReread(
 						{
 							...liftAddDialog(
-								clearedCredential({ ...model, sourceWrite: "Settling" }),
+								clearedDialog({ ...model, sourceWrite: "Settling" }),
 								Dialog.close(model.addDialog),
 							),
 							outMessage: toast(

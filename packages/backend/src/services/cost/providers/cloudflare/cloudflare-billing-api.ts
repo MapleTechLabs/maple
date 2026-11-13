@@ -6,7 +6,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { CostPullWindow } from "../../CostProvider"
 import { addDays } from "../../sync-plan"
 
-const BASE_URL = "https://api.cloudflare.com/client/v4"
+export const BASE_URL = "https://api.cloudflare.com/client/v4"
 const REQUEST_TIMEOUT = Duration.seconds(30)
 const PAGE_SIZE = 50
 const MAX_SUBSCRIPTION_PAGES = 10

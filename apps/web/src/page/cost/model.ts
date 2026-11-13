@@ -1,12 +1,14 @@
 import {
 	CostBreakdownResponse,
-	type CostSourceSummary,
+	CostSourceSummary,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GithubCostInstallations,
 	PlanetScaleCostStatus,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { VcsInstallationId } from "@maple/domain/vcs"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -20,12 +22,12 @@ import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import { CostFacets } from "./message"
 import * as TimeRangePicker from "../kit/time-range-picker"
-import { CredentialProvider, RemovableProvider } from "./providers"
+import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form or connection step. */
-export const AddStep = Schema.Union([Schema.Literals(["pick", "planetscale"]), CredentialProvider])
+/** The add-source dialog's faces: the providers, then the chosen one's credential form or list. */
+export const AddStep = Schema.Union([Schema.Literals(["pick", "github", "planetscale"]), CredentialProvider])
 export type AddStep = typeof AddStep.Type
 
 /** Why PlanetScale refused an add, and whether only connecting it again fixes that. */
@@ -74,13 +76,30 @@ export const Model = Schema.Struct({
 	credentialDraft: Field.Model,
 	/** Why the last save was refused, shown under the field until the credential changes. */
 	credentialError: Schema.NullOr(Schema.String),
+	/** The org's GitHub installations, read when the dialog's GitHub step opens. */
+	githubInstallations: AsyncData.Schema(GithubCostInstallations, LoadFailure).schema,
+	/** The number of the installations read on show: an answer to an older read is dropped. */
+	githubRead: Schema.Number,
+	/** The installation an add is in flight for. */
+	githubAdding: Schema.NullOr(VcsInstallationId),
+	/**
+	 * The installation whose add failed, with the reason, shown in its row until the next try.
+	 * `needsPermission`: GitHub refused the billing read, which the organization fixes in GitHub.
+	 */
+	githubRefusal: Schema.NullOr(
+		Schema.Struct({
+			installationId: VcsInstallationId,
+			message: Schema.String,
+			needsPermission: Schema.Boolean,
+		}),
+	),
 	/** The org's PlanetScale connection, read when the dialog turns to PlanetScale. */
 	planetscale: KeyedSchema(PlanetScaleCostStatus, LoadFailure),
 	/** Why the last add of the organization was refused, shown in the step until it is left. */
 	planetscaleError: Schema.NullOr(PlanetScaleAddError),
 	removeDialog: Dialog.Model,
-	/** The provider whose source the remove dialog asks about; null until it first opens. */
-	removeProvider: Schema.NullOr(RemovableProvider),
+	/** The source the remove confirm is about, as it was when Remove was clicked. */
+	removeTarget: Schema.NullOr(CostSourceSummary),
 	/** `Settling`: the write answered and the sources are being read again; the list on show is the old one. */
 	sourceWrite: Schema.Literals(["Idle", "Saving", "Removing", "Settling"]),
 })
