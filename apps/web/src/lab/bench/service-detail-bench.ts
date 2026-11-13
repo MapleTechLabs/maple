@@ -1,13 +1,14 @@
+import { parseBucketMs } from "@maple/ui/lib/format"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { FixedMetricRow } from "@maple/views/charts/chart-spec"
-import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { isReady, Message, type Model } from "./chart-bench"
 import { CHART_TOKENS, metricsGridOf } from "../../page/kit/service-metrics/grid"
 
 // `/lab/bench/service-detail` and
-// `/lab/bench/overview`): the service-detail chart grid over synthetic rows.
+// `/lab/bench/overview`): the service-detail chart grid over synthetic rows. A drag zooms the rows.
 
 const BUCKET_COUNT = 145
 const BUCKET_MS = 5 * 60 * 1000
@@ -31,6 +32,14 @@ export const SERVICE_DETAIL_POINTS: ReadonlyArray<FixedMetricRow> = Arr.makeBy(B
 	}
 })
 
+const rowsIn = (zoom: Model["zoom"]): ReadonlyArray<FixedMetricRow> =>
+	zoom === null
+		? SERVICE_DETAIL_POINTS
+		: Arr.filter(SERVICE_DETAIL_POINTS, (row) => {
+				const at = parseBucketMs(row.bucket)
+				return at !== null && at >= zoom.startMs && at <= zoom.endMs
+			})
+
 /** The bench page: `MetricsGrid` with `yAxisWidth={72}` under a padded full-height frame. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
@@ -44,10 +53,10 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				h,
 				{
 					charts: model.charts,
-					rows: SERVICE_DETAIL_POINTS,
+					rows: rowsIn(model.zoom),
 					markers: [],
 					toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
-					linkedCursorMount: MountLinkedCursor(),
+					linkedCursorMount: MountLinkedZoom({ timeZone: model.timeZone }),
 				},
 				{
 					isLoading: !isReady(model),

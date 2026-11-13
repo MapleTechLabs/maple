@@ -1,3 +1,4 @@
+import { zoomSearchPatch } from "../../../kit/chart-zoom"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { bucketSecondsForRange } from "../../kit/constants"
 import * as Chart from "@maple/views/charts/chart"
@@ -136,6 +137,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }),
 		GotChartMessage: ({ metric, message: inner }) => {
 			const chart = model.charts[metric] ?? Chart.init()
 			return {

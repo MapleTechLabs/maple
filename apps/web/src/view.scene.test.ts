@@ -3,7 +3,7 @@ import { OrgId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
-import { describe, test, vi } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the scene never touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
@@ -21,7 +21,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { MountSuggestions, MountWhereEditor } from "./page/traces/list/command"
 import { Message as TracesMessage } from "./page/traces/list/message"
 import { settle, update } from "./update"
-import { view } from "./view"
+import { titleOf, view } from "./view"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -87,5 +87,15 @@ describe("root view", () => {
 			Mount.resolve(MountWhereEditor, TracesMessage.FocusedAdvanced({ cursor: 0 })),
 			Mount.resolve(MountSuggestions, TracesMessage.CompletedPlaceAdvancedCursor()),
 		)
+	})
+})
+
+describe("tab title", () => {
+	test("an open page names the tab, and a route with no page up yet is just Maple", () => {
+		expect([
+			titleOf(tracesPage()),
+			titleOf(signedIn()),
+			titleOf({ ...signedIn(), route: AppRoute.NotFound({ path: "/nope" }) }),
+		]).toEqual(["Traces · Maple", "Maple", "Page not found · Maple"])
 	})
 })

@@ -12,8 +12,10 @@ import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "@maple/views/charts/fixed-metric-chart"
 import {
 	LINKED_CURSOR_STYLE,
+	LINKED_ZOOM_CLASS,
+	LinkedCursorMessage,
 	linkedCursorOverlay,
-	MountLinkedCursor,
+	MountLinkedZoom,
 } from "@maple/views/charts/linked-cursor"
 import {
 	fixedMetricModel,
@@ -413,9 +415,23 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, context: Grid
 		[
 			h.DataAttribute("metrics-grid", ""),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
-			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(isWaiting), "mt-4")),
+			h.Class(
+				cn(
+					"grid grid-cols-1 md:grid-cols-2 gap-3",
+					refreshingClass(isWaiting),
+					"mt-4",
+					LINKED_ZOOM_CLASS,
+				),
+			),
 			h.Style(LINKED_CURSOR_STYLE),
-			h.OnMount(Mount.mapMessage(MountLinkedCursor(), () => Message.CompletedMountLinkedCursor())),
+			h.OnMount(
+				Mount.mapMessage(MountLinkedZoom({ timeZone: context.timeZone }), (message) =>
+					LinkedCursorMessage.match<Message>(message, {
+						CompletedMountLinkedCursor: () => Message.CompletedMountLinkedCursor(),
+						SelectedChartRange: (range) => Message.SelectedChartRange(range),
+					}),
+				),
+			),
 		],
 		Arr.map(CARD_IDS, (id) =>
 			cardSlot(id, metricCard, [h, id, data, gridContext, model.charts[id] ?? EMPTY_CHART]),

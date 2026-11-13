@@ -7,7 +7,7 @@ import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
-import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "@maple/views/ui/button"
@@ -353,7 +353,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 				rows: Arr.map(seriesPoints(model, derived), (point) => ({ ...point })),
 				markers: markersOf(model, derived),
 				toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
-				linkedCursorMount: MountLinkedCursor(),
+				linkedCursorMount: MountLinkedZoom({ timeZone: clock.timeZone }),
 			},
 			{
 				isLoading: !isChartReady,

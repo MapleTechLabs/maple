@@ -16,7 +16,11 @@ import {
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { widgetShell } from "../widget-shell"
 import { type commitMarkers, markerLayout } from "./markers"
-import { LINKED_CURSOR_STYLE, linkedCursorOverlay } from "@maple/views/charts/linked-cursor"
+import {
+	LINKED_CURSOR_STYLE,
+	LINKED_ZOOM_CLASS,
+	linkedCursorOverlay,
+} from "@maple/views/charts/linked-cursor"
 import { markersOverlay } from "./markers-view"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
@@ -155,7 +159,7 @@ export type GridInput<M> = Readonly<{
 	rows: ReadonlyArray<FixedMetricRow>
 	markers: ReturnType<typeof commitMarkers>
 	toChartMessage: (chartId: string, message: Chart.Message) => M
-	/** `h.OnMount(MountLinkedCursor())`, lifted to the page's Message. */
+	/** `h.OnMount(MountLinkedZoom(...))`, lifted to the page's Message. */
 	linkedCursorMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 }>
 
@@ -205,7 +209,13 @@ export const metricsGridOf = <M>(h: HtmlBuilder<M>, input: GridInput<M>, state: 
 			h.DataAttribute("metrics-grid", ""),
 			h.OnMount(input.linkedCursorMount),
 			...(state.isWaiting ? [h.AriaBusy(true)] : []),
-			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(state.isWaiting))),
+			h.Class(
+				cn(
+					"grid grid-cols-1 md:grid-cols-2 gap-3",
+					refreshingClass(state.isWaiting),
+					LINKED_ZOOM_CLASS,
+				),
+			),
 			h.Style(LINKED_CURSOR_STYLE),
 		],
 		Arr.map(CHARTS, (chart) => {

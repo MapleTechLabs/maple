@@ -61,6 +61,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	CompletedMountLinkedCursor: {},
+	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
 	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },

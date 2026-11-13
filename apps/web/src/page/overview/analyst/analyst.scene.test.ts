@@ -11,7 +11,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { buildErrorsLabFixture } from "../../../lab/errors-fixture"
 import {
@@ -332,7 +332,7 @@ describe("overview, analyst", () => {
 			},
 			given(entered.model),
 			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(role("heading", { level: 1, name: "Overview" })).toExist(),
 			expectView(text("Open incidents")).toBeAbsent(),
 			expectView(text("Top errors")).toBeAbsent(),
