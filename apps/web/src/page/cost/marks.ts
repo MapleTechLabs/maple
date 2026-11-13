@@ -26,6 +26,16 @@ const isModelSlug = (key: string): boolean => Str.includes("/")(key)
 /** An AWS account id is twelve digits; an OpenRouter one is its user or org id. */
 const isAwsAccountId = (key: string): boolean => /^\d{12}$/u.test(key)
 
+/**
+ * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and
+ * underscores. An AWS service name has a capital or a space.
+ */
+const isDatabaseName = (key: string): boolean => /^[a-z0-9][a-z0-9_-]*$/u.test(key)
+
+/** A database's name is anyone's word, so it reads as PlanetScale's only where the org has that source. */
+const isPlanetScaleDatabase = (key: string, sources: ReadonlyArray<CostSourceSummary>): boolean =>
+	isDatabaseName(key) && Arr.some(sources, (source) => source.provider === "planetscale")
+
 /** The provider whose source reads the account, from the org's sources, then by the id's shape. */
 export const accountProvider = (
 	key: string,
@@ -70,6 +80,7 @@ export const keyMark = (
 			return Option.match(decodeProvider(key), { onNone: () => null, onSome: providerMark })
 		case "cloud_service":
 			if (isModelSlug(key)) return { icon: modelSlugIcon(key) }
+			if (isPlanetScaleDatabase(key, sources)) return providerMark("planetscale")
 			return key === "AWS Lambda" ? { icon: "AwsLambdaIcon" } : providerMark("aws")
 		case "service_category":
 			return glyph(isCategory(key) ? CATEGORY_ICONS[key] : "CubeIcon")
@@ -82,15 +93,19 @@ export const keyMark = (
 	}
 }
 
+/** The providers whose account id is a name its reader knows: an AWS account's number, a PlanetScale organization. */
+const NAMED_BY_ID = new Set<CostProvider>(["aws", "planetscale"])
+
 /**
- * An account by what reads it: an AWS one by its id, an OpenRouter one by name alone while it is
- * the org's only one (its id means nothing to a reader). Unknown ids read as they are.
+ * An account by what reads it: an AWS one by its id, a PlanetScale one by its organization, an
+ * OpenRouter one by name alone while it is the org's only one (its id means nothing to a reader).
+ * Unknown ids read as they are.
  */
 export const accountLabel = (key: string, sources: ReadonlyArray<CostSourceSummary>): string => {
 	const provider = accountProvider(key, sources)
 	if (provider === undefined) return key
 	const name = COST_PROVIDERS[provider].name
-	if (provider === "aws") return `${name} ${key}`
+	if (NAMED_BY_ID.has(provider)) return `${name} ${key}`
 	const sameProvider = Arr.filter(sources, (source) => source.provider === provider)
 	return sameProvider.length <= 1 ? name : `${name} ${key}`
 }

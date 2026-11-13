@@ -1,7 +1,7 @@
 import { CostSourceSummary } from "@maple/domain/http"
 import { Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { facetFilters, keyLabel, onlyFilter, toggledFilter } from "./derive"
+import { drilledInto, facetFilters, keyLabel, onlyFilter, toggledFilter } from "./derive"
 import { keyDetail, keyMark } from "./marks"
 
 const source = (
@@ -51,6 +51,28 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "", [])).toBeNull()
 	})
 
+	test("a PlanetScale account reads by its organization, and its databases wear its mark", () => {
+		const withPlanetScale = [
+			...sources,
+			source("planetscale", "acme", "0195f1c2-7a3b-7c4d-8e5f-6a7b8c9d0e21"),
+		]
+		const planetScale = keyMark("provider", "planetscale", [])?.icon
+		// The organization is a name its reader knows: it stays in the label, with nothing aside.
+		expect(keyLabel("account", "acme", withPlanetScale)).toBe("PlanetScale acme")
+		expect(keyDetail("account", "acme", withPlanetScale)).toBeNull()
+		expect(keyMark("account", "acme", withPlanetScale)?.icon).toBe(planetScale)
+		// A database is the service. Its name is lowercase, where an AWS service has a capital or a space.
+		expect(keyMark("cloud_service", "orders-prod", withPlanetScale)?.icon).toBe(planetScale)
+		expect(keyMark("cloud_service", "Amazon Relational Database Service", withPlanetScale)?.icon).toBe(
+			keyMark("provider", "aws", [])?.icon,
+		)
+		expect(keyMark("cloud_service", "openai/gpt-5", withPlanetScale)?.icon).not.toBe(planetScale)
+		// Without a PlanetScale source a lowercase name is no database of its.
+		expect(keyMark("cloud_service", "orders-prod", sources)?.icon).not.toBe(planetScale)
+		// Its charges have no region: the one it carries is the globe every provider's `global` gets.
+		expect(keyMark("region", "global", withPlanetScale)?.icon).toBe(keyMark("region", "global", [])?.icon)
+	})
+
 	test("an AWS region says where it is; an unknown one adds nothing", () => {
 		expect(keyDetail("region", "eu-central-1", [])).toBe("Frankfurt")
 		expect(keyDetail("region", "mars-north-1", [])).toBeNull()
@@ -62,6 +84,28 @@ describe("cost filter rail", () => {
 		const search = { provider: ["aws"], region: ["eu-west-1"] }
 		expect(facetFilters(search, "provider")).toEqual({ region: ["eu-west-1"] })
 		expect(facetFilters(search, "cloud_service")).toEqual({ provider: ["aws"], region: ["eu-west-1"] })
+	})
+
+	test("a PlanetScale row filters and drills like any other: provider to its databases, a database on", () => {
+		expect(drilledInto({ groupBy: "provider" }, { dimension: "provider", value: "planetscale" })).toEqual(
+			{
+				groupBy: "cloud_service",
+				provider: ["planetscale"],
+			},
+		)
+		// Its one region is `global`, so a database's next split is still the region, then the account.
+		expect(
+			drilledInto(
+				{ groupBy: "cloud_service", provider: ["planetscale"] },
+				{ dimension: "cloud_service", value: "orders-prod" },
+			),
+		).toEqual({ groupBy: "region", provider: ["planetscale"], cloud_service: ["orders-prod"] })
+		expect(
+			facetFilters({ provider: ["planetscale"], cloud_service: ["orders-prod"] }, "account"),
+		).toEqual({
+			provider: ["planetscale"],
+			cloud_service: ["orders-prod"],
+		})
 	})
 
 	test("a checkbox adds the value or takes it out; Only leaves it alone in its dimension", () => {
