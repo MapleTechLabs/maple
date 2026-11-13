@@ -25,6 +25,8 @@ type Children = ReadonlyArray<Html | string>
 
 export type PageHeroOptions = Readonly<{
 	title: Html | string
+	/** Before the title, outside its truncation: a resource's icon tile, which may carry a corner dot. */
+	leading?: Html
 	description?: Html | string
 	meta?: Children
 	actions?: Children
@@ -50,6 +52,7 @@ export const pageHeroParts = <M>(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
 			hstack(h, { gap: "3", align: "center", wrap: true, shrink: true }, [
+				...(options.leading === undefined ? [] : [options.leading]),
 				pageTitle(
 					h,
 					{

@@ -38,39 +38,9 @@ const formatCombinedDuration = (isCombined: boolean, single: number, aggregated:
 	}
 }
 
-const REDIS_LAYERS = [
-	[
-		"M22.5 13.7c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 14.9 1.6 14.2 1.5 13.7v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V13.7z",
-		"0.4",
-	],
-	[
-		"M22.5 9.2c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 10.4 1.6 9.7 1.5 9.2v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V9.2z",
-		"0.6",
-	],
-	[
-		"M22.5 4.7c0 .6-1.5 1.3-4.6 2.3C16.2 7.7 14.1 8.3 12 8.7 9.9 8.3 7.8 7.7 6.1 7 3.1 6 1.5 5.3 1.5 4.7S3.1 3.4 6.1 2.4C7.8 1.7 9.9 1.1 12 .7c2.1.4 4.2 1 5.9 1.7 3 1 4.6 1.7 4.6 2.3z",
-		"0.9",
-	],
-] as const
-
 const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size: number): Html =>
 	system !== null && Str.toLowerCase(system) === "redis"
-		? h.svg(
-				[
-					h.Attribute("width", String(size)),
-					h.Attribute("height", String(size)),
-					h.Attribute("viewBox", "0 0 24 24"),
-					h.Attribute("fill", "none"),
-					h.Class("shrink-0"),
-				],
-				Arr.map(REDIS_LAYERS, ([d, opacity]) =>
-					h.path([
-						h.Attribute("d", d),
-						h.Attribute("fill", "currentColor"),
-						h.Attribute("opacity", opacity),
-					]),
-				),
-			)
+		? flowIcon(h, "RedisIcon", { size, className: "shrink-0" })
 		: flowIcon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
 
 const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string => {

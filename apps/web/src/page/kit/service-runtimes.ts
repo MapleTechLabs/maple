@@ -26,6 +26,17 @@ export interface RuntimeLink {
 	readonly href: string
 }
 
+/** A product mark where the kind has one; null shows its provider's. */
+const RUNTIME_ICON = {
+	cloudRun: "CloudRunIcon",
+	cloudFunctions: "CloudFunctionsIcon",
+	ecs: null,
+	lambda: null,
+	railway: null,
+	cloudflareWorker: null,
+	vercelProject: null,
+} satisfies Record<ServiceRuntime["kind"], IconName | null>
+
 const present = (values: ReadonlyArray<string>) => Arr.filter(values, (value) => value !== "")
 
 const runtimeHref = (runtime: ServiceRuntime, time: TimeSearch): string => {
@@ -104,7 +115,7 @@ export const runtimeLink = (runtime: ServiceRuntime, time: TimeSearch): RuntimeL
 			],
 			"|",
 		),
-		icon: SOURCE_ICON[kind.provider],
+		icon: RUNTIME_ICON[runtime.kind] ?? SOURCE_ICON[kind.provider],
 		label: kind.label,
 		name: runtime.serviceName,
 		location: runtimeLocation(runtime),

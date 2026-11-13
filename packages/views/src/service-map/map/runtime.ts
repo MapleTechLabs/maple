@@ -30,7 +30,7 @@ export function resolveRuntimeGlyph(rt: string): RuntimeGlyph | null {
 			return { icon: "RustIcon", short: "rust", full: "Rust" }
 		case "go":
 		case "golang":
-			return { icon: null, short: "go", full: "Go" }
+			return { icon: "FrameworkGoIcon", short: "go", full: "Go" }
 		case "python":
 		case "cpython":
 			return { icon: "PythonIcon", short: "python", full: "Python" }

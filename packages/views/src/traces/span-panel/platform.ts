@@ -1,6 +1,8 @@
 import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
+import { getDbStyle } from "@maple/views/service-map/graph/service-map-db-style"
+import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import type { IconName } from "@maple/views/ui/icon"
 import { toneBoxClass } from "@maple/views/ui/tone-box"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
@@ -124,7 +126,7 @@ const database = (attrs: Attrs): PlatformInfo | null => {
 	]
 	return {
 		label: humanizeDbSystem(system),
-		icon: "DatabaseIcon",
+		icon: DB_ICON[getDbStyle(system).icon],
 		accentClassName: dbSystemAccentClass(system),
 		edge: null,
 		location: null,

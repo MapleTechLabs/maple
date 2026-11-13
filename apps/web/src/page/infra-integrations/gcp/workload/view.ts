@@ -100,24 +100,21 @@ const header = (h: H, model: Model, data: PageData) => {
 				}),
 			]
 	return pageHeroParts(h, {
-		title: hstack(h, { gap: "3", as: "span" }, [
-			h.span(
-				[h.Class("relative")],
-				[
-					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-					...(data.health === null
-						? []
-						: [
-								statusDot(h, {
-									tone: HEALTH_TONE[data.health],
-									className:
-										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
-								}),
-							]),
-				],
-			),
-			h.span([], [gcpWorkloadName(service, keys)]),
-		]),
+		leading: h.span(
+			[h.Class("relative shrink-0")],
+			[
+				gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+				...(data.health === null
+					? []
+					: [
+							statusDot(h, {
+								tone: HEALTH_TONE[data.health],
+								className: "absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+							}),
+						]),
+			],
+		),
+		title: gcpWorkloadName(service, keys),
 		meta,
 	})
 }

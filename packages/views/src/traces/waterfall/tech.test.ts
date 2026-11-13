@@ -17,7 +17,7 @@ describe("spanTech", () => {
 			spanTech({ "gen_ai.provider.name": "anthropic", "http.request.method": "POST" }),
 		).toMatchObject({ icon: "AnthropicIcon" })
 		expect(spanTech({ "gen_ai.system": "gcp.vertex_ai" })).toMatchObject({
-			icon: "GoogleIcon",
+			icon: "GoogleCloudIcon",
 			label: "LLM call · Vertex AI",
 		})
 		expect(spanTech({ "gen_ai.provider.name": "openai" })).toMatchObject({ label: "LLM call · OpenAI" })
@@ -85,8 +85,12 @@ describe("serviceRuntime", () => {
 		).toMatchObject({ icon: "PythonIcon" })
 	})
 
+	test("a Go service carries the Go mark", () => {
+		expect(serviceRuntime({ "telemetry.sdk.language": "go" })).toMatchObject({ icon: "FrameworkGoIcon" })
+	})
+
 	test("a runtime with no glyph, or no runtime at all, gets no mark", () => {
-		expect(serviceRuntime({ "telemetry.sdk.language": "go" })).toBeNull()
+		expect(serviceRuntime({ "telemetry.sdk.language": "php" })).toBeNull()
 		expect(serviceRuntime({ "telemetry.sdk.language": "webjs" })).toBeNull()
 		expect(serviceRuntime({})).toBeNull()
 	})

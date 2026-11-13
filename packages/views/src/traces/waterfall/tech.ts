@@ -36,9 +36,10 @@ const titleCase = (system: string): string =>
 		" ",
 	)
 
-// `gen_ai.provider.name` values (and the older `gen_ai.system`): the `modelVendorIcon` slug and
-// the name a reader knows. Anything else keeps its own value as the slug.
-const GEN_AI_PROVIDERS = new Map<string, Readonly<{ vendor: string; label: string }>>([
+// `gen_ai.provider.name` values (and the older `gen_ai.system`): the `modelVendorIcon` slug, the
+// name a reader knows, and the product's own mark where it has one. Anything else keeps its own
+// value as the slug.
+const GEN_AI_PROVIDERS = new Map<string, Readonly<{ vendor: string; label: string; icon?: IconName }>>([
 	["anthropic", { vendor: "anthropic", label: "Anthropic" }],
 	["openai", { vendor: "openai", label: "OpenAI" }],
 	["openrouter", { vendor: "openrouter", label: "OpenRouter" }],
@@ -49,16 +50,16 @@ const GEN_AI_PROVIDERS = new Map<string, Readonly<{ vendor: string; label: strin
 	["mistral_ai", { vendor: "mistralai", label: "Mistral" }],
 	["x_ai", { vendor: "x-ai", label: "xAI" }],
 	["xai", { vendor: "x-ai", label: "xAI" }],
-	["aws.bedrock", { vendor: "amazon", label: "AWS Bedrock" }],
-	["azure.ai.inference", { vendor: "microsoft", label: "Azure AI" }],
-	["az.ai.inference", { vendor: "microsoft", label: "Azure AI" }],
-	["azure.ai.openai", { vendor: "microsoft", label: "Azure OpenAI" }],
-	["az.ai.openai", { vendor: "microsoft", label: "Azure OpenAI" }],
-	["gcp.gemini", { vendor: "google", label: "Gemini" }],
-	["gemini", { vendor: "google", label: "Gemini" }],
+	["aws.bedrock", { vendor: "amazon", label: "AWS Bedrock", icon: "AwsIcon" }],
+	["azure.ai.inference", { vendor: "microsoft", label: "Azure AI", icon: "AzureIcon" }],
+	["az.ai.inference", { vendor: "microsoft", label: "Azure AI", icon: "AzureIcon" }],
+	["azure.ai.openai", { vendor: "microsoft", label: "Azure OpenAI", icon: "AzureIcon" }],
+	["az.ai.openai", { vendor: "microsoft", label: "Azure OpenAI", icon: "AzureIcon" }],
+	["gcp.gemini", { vendor: "google", label: "Gemini", icon: "GeminiIcon" }],
+	["gemini", { vendor: "google", label: "Gemini", icon: "GeminiIcon" }],
 	["gcp.gen_ai", { vendor: "google", label: "Google Gen AI" }],
-	["gcp.vertex_ai", { vendor: "google", label: "Vertex AI" }],
-	["vertex_ai", { vendor: "google", label: "Vertex AI" }],
+	["gcp.vertex_ai", { vendor: "google", label: "Vertex AI", icon: "GoogleCloudIcon" }],
+	["vertex_ai", { vendor: "google", label: "Vertex AI", icon: "GoogleCloudIcon" }],
 	["ibm.watsonx.ai", { vendor: "ibm-granite", label: "watsonx" }],
 ])
 
@@ -67,7 +68,7 @@ const genAi = (attrs: Record<string, string>): Mark | null => {
 	if (provider === null) return null
 	const known = GEN_AI_PROVIDERS.get(provider)
 	return {
-		icon: modelVendorIcon({ vendorSlug: known?.vendor ?? provider, family: null }),
+		icon: known?.icon ?? modelVendorIcon({ vendorSlug: known?.vendor ?? provider, family: null }),
 		label: `LLM call · ${known?.label ?? titleCase(provider)}`,
 		className: MUTED,
 	}
