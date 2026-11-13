@@ -812,11 +812,11 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
-	/* Selected text takes the primary's strong wash instead of the system blue, and reads in
-	   `foreground`: a muted or toned run would fall under 4.5:1 on the wash. */
+	/* Selected text takes the primary instead of the system blue. Both halves are opaque, so the
+	   pair reads the same over a muted run, a tone, or a filled badge. */
 	::selection {
-		background-color: var(--color-primary-a4);
-		color: var(--color-foreground);
+		background-color: var(--color-primary);
+		color: var(--color-primary-foreground);
 	}
 	body {
 		@apply font-sans bg-background text-foreground;
