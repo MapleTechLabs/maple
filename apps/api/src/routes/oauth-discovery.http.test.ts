@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -181,6 +181,33 @@ describe("MCP OAuth HTTP routes", () => {
 		} finally {
 			await harness.dispose()
 			await harness.runtime.dispose()
+		}
+	})
+
+	it("refuses a registration or token body past the size these requests ever need", async () => {
+		const harness = makeHarness()
+		try {
+			const padding = Str.repeat(70 * 1024)("x")
+			const registered = await harness.handler(
+				postJson("https://api.example.com/register", {
+					client_name: padding,
+					redirect_uris: ["http://127.0.0.1:49876/callback"],
+				}),
+				Context.empty(),
+			)
+			expect(registered.status).toBe(400)
+			expect(await registered.json()).toEqual({
+				error: "invalid_request",
+				error_description: "Request body is too large",
+			})
+			const token = await harness.handler(
+				postForm("https://api.example.com/oauth/token", { grant_type: padding }),
+				Context.empty(),
+			)
+			expect(token.status).toBe(400)
+			expect((await token.json()).error_description).toBe("Request body is too large")
+		} finally {
+			await harness.dispose()
 		}
 	})
 

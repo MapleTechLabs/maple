@@ -32,6 +32,7 @@ interface World {
 	/** Runs while Slack is "creating", to stage a concurrent takeover. */
 	duringCreate: (() => Promise<void>) | null
 	takenNames: Set<string>
+	orgName: string
 	calls: Array<{ method: SupportSlackMethod; body: Record<string, unknown> }>
 }
 
@@ -41,6 +42,7 @@ const freshWorld = (): World => ({
 	duringCreate: null,
 	botChannels: [],
 	takenNames: new Set(),
+	orgName: "Acme Inc.",
 	calls: [],
 })
 
@@ -107,7 +109,7 @@ const stubs = (world: World) =>
 			retrieve: (orgId) =>
 				Effect.succeed({
 					id: orgId,
-					name: "Acme Inc.",
+					name: world.orgName,
 					slug: "acme",
 					imageUrl: null,
 					createdAtMs: 0,
@@ -175,6 +177,23 @@ describe("SupportChannelService", () => {
 
 			const view = yield* service.retrieve(ORG)
 			assert.strictEqual(view.status, "active")
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("posts an org name as text, never as a mention or a link", () => {
+		const world = freshWorld()
+		world.orgName = "<!channel> & <https://example.test|Acme>"
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* invite(tenant)
+			const welcome = Arr.findFirst(world.calls, (call) => call.method === "chat.postMessage")
+			assert.isTrue(Option.isSome(welcome))
+			if (Option.isSome(welcome)) {
+				assert.include(
+					String(welcome.value.body.text),
+					"This is &lt;!channel&gt; &amp; &lt;https://example.test|Acme&gt;'s shared channel",
+				)
+			}
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 

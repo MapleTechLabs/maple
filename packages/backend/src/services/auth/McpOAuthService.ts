@@ -117,10 +117,9 @@ const hashOpaqueToken = (value: string) => createHash("sha256").update(value).di
 const makeOpaqueToken = (prefix: string) => `${prefix}${randomBytes(32).toString("base64url")}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 
-const persistenceError = (error: unknown) =>
-	new McpOAuthPersistenceError({
-		message: error instanceof Error ? error.message : "MCP OAuth persistence failed",
-	})
+// These errors answer unauthenticated callers; `makeDbExecute` has already logged the driver's message.
+const persistenceError = () =>
+	new McpOAuthPersistenceError({ message: "MCP authorization is temporarily unavailable" })
 
 const protocolError = (
 	error: string,
