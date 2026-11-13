@@ -41,6 +41,7 @@ import { vstack } from "@maple/views/ui/stack"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { typography } from "@maple/views/ui/typography"
+import { canRunInvestigations, canTriageIssues } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -128,20 +129,25 @@ const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue
 							],
 							["the issue it was merged into"],
 						),
-						". Unmerge it to track it on its own again.",
+						canTriageIssues(model) ? ". Unmerge it to track it on its own again." : ".",
 					]),
-					alertAction(h, [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								isLoading: model.busy.includes("unmerge"),
-								attributes: [h.OnClick(Message.ClickedUnmerge())],
-							},
-							["Unmerge"],
-						),
-					]),
+					// Unmerging is triage: an observer reads where the occurrences go.
+					...(canTriageIssues(model)
+						? [
+								alertAction(h, [
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading: model.busy.includes("unmerge"),
+											attributes: [h.OnClick(Message.ClickedUnmerge())],
+										},
+										["Unmerge"],
+									),
+								]),
+							]
+						: []),
 				]),
 			]
 
@@ -185,20 +191,25 @@ const overview = (
 		surge: signal?.surge ?? null,
 		...clock,
 	})
-	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
+	// Getting it fixed is a member's job: an observer only reads an investigation that already ran.
+	const investigation = linkedInvestigationOf(model)
+	const fix =
+		canRunInvestigations(model) || investigation !== null
+			? [getItFixedPanel(h, model, issue, investigation)]
+			: []
 	return vstack(h, { gap: "4" }, [
 		...mergedNotice(h, model, issue),
 		...(issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
 					stats,
-					fix,
+					...fix,
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
 				]
 			: [
 					exceptionPanel(h, model, issue),
 					stats,
-					fix,
+					...fix,
 					chartSlot(h, model, detail, inputs.context.timeZone),
 					...latestOccurrences(h, model, detail, clock),
 					incidentsPanel(h, detail, clock),
@@ -210,15 +221,21 @@ const overview = (
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {
 	const verification = latestVerificationOf(model)
 	const pullRequests = pullRequestsOf(model)
+	const canTriage = canTriageIssues(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
 		issueSidebar(h, model, detail.issue, detail.environments),
 		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
 			...(verification !== null
 				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-				: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
+				: canTriage &&
+					  AWAITING_FIX_STATES.has(detail.issue.workflowState) &&
+					  pullRequests.length === 0
 					? [attachNudge(h)]
 					: []),
-			pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
+			pullRequestsPanel(h, pullRequests, {
+				isBusy: model.isAttaching || model.isDetaching,
+				canTriage,
+			}),
 		]),
 	])
 }
@@ -264,7 +281,12 @@ const otherTab = (
 			onData: (value) =>
 				issueTimeline(h, value.events, escalationsOf(model), clock, model.isShowingEarlier),
 		}),
-		commentComposer(h, { draft: model.commentDraft, isPosting: model.isCommenting, participants }),
+		commentComposer(h, {
+			draft: model.commentDraft,
+			isPosting: model.isCommenting,
+			participants,
+			canComment: canTriageIssues(model),
+		}),
 	])
 }
 

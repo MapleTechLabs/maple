@@ -14,8 +14,10 @@ import {
 	type PickerKind,
 	severityItems,
 	severityPickerTrigger,
+	severityReadout,
 	stateItems,
 	statePickerTrigger,
+	stateReadout,
 } from "../kit/pickers"
 import * as QuickPick from "../kit/quick-pick"
 import type * as ContextMenu from "@maple/views/ui/context-menu"
@@ -134,6 +136,8 @@ export type RowState = Readonly<{
 	picker: Readonly<{ kind: PickerKind; quickPick: QuickPick.Model }> | null
 	/** The right-click menu, when this row was the last one pressed. */
 	rowMenu: ContextMenu.Model | null
+	/** `error_issues:triage`: without it the row has no checkbox, pickers or triage menu entries. */
+	canTriage: boolean
 }>
 
 /** The row is the link; the checkbox and pickers sit inside it. */
@@ -167,26 +171,19 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 				h.span(
 					[
 						h.Class(cn(LANE.select, "flex items-center justify-center")),
-						h.DataAttribute("row-select", signal.id),
+						// Selection only feeds the bulk bar: an observer's lane is empty and selects nothing.
+						...(state.canTriage ? [h.DataAttribute("row-select", signal.id)] : []),
 						h.Role("presentation"),
 					],
-					Checkbox.view(h, {
-						model: { isChecked: state.isSelected },
-						toParentMessage: () => Message.ToggledRow({ id: signal.id }),
-						id: `errors-row-${signal.id}`,
-						inputId: `errors-row-${signal.id}-input`,
-						ariaLabel: state.isSelected ? "Deselect this error" : "Select this error",
-						className: cn(
-							"transition-opacity",
-							state.isSelecting || state.isSelected
-								? "opacity-100"
-								: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
-						),
-					}),
+					state.canTriage ? rowCheckbox(h, signal, state) : [],
 				),
 				h.span(
 					[h.Class(cn(LANE.severity, "flex items-center justify-center"))],
-					[severityPicker(h, signal, state)],
+					[
+						state.canTriage
+							? severityPicker(h, signal, state)
+							: severityReadout(h, signal.severity),
+					],
 				),
 				h.span(
 					[h.Class(cn(LANE.identity, hstackClass({ gap: "2", align: "baseline" })))],
@@ -224,6 +221,21 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 	])
 }
 
+const rowCheckbox = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArray<Html> =>
+	Checkbox.view(h, {
+		model: { isChecked: state.isSelected },
+		toParentMessage: () => Message.ToggledRow({ id: signal.id }),
+		id: `errors-row-${signal.id}`,
+		inputId: `errors-row-${signal.id}-input`,
+		ariaLabel: state.isSelected ? "Deselect this error" : "Select this error",
+		className: cn(
+			"transition-opacity",
+			state.isSelecting || state.isSelected
+				? "opacity-100"
+				: "opacity-0 group-hover/row:opacity-100 group-data-focused/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+		),
+	})
+
 /** The context menu's trigger around the row; only the row last pressed carries the menu itself. */
 const rowMenuTrigger = (h: H, signal: ErrorSignal, state: RowState, children: ReadonlyArray<Html>): Html =>
 	state.rowMenu === null
@@ -251,7 +263,7 @@ const rowMenuTrigger = (h: H, signal: ErrorSignal, state: RowState, children: Re
 				view: ContextMenuView.view,
 				toParentMessage: (message) => Message.GotRowMenuMessage({ message }),
 				viewInputs: {
-					entries: rowMenuEntries(h, signal.issue),
+					entries: rowMenuEntries(h, signal.issue, state.canTriage),
 					triggerClassName: "select-none",
 					triggerContent: [],
 					toTriggerContent: () => children,
@@ -308,7 +320,10 @@ const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArra
 			typography(h, { truncate: true }, [signal.serviceName]),
 		],
 	),
-	h.span([h.Class(LANE.state)], [statePicker(h, signal, state)]),
+	h.span(
+		[h.Class(LANE.state)],
+		[state.canTriage ? statePicker(h, signal, state) : stateReadout(h, signal.issue.workflowState)],
+	),
 	h.span([h.Class(LANE.actor)], signal.assignee === null ? [] : [actorAvatar(h, signal.assignee)]),
 	timestamp(h, {
 		value: signal.lastSeenAt,

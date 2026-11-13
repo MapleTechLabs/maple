@@ -1,4 +1,5 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
+import * as Policy from "@maple/domain/policy"
 import {
 	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
@@ -32,6 +33,8 @@ export const DestinationName = Schema.Struct({ id: Schema.String, name: Schema.S
 export const Model = Schema.Struct({
 	issueId: ErrorIssueId,
 	search: ErrorIssueSearch,
+	/** What the viewer may do; an observer reads the issue and gets no triage control. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** The resolved window and the clock it was resolved at; `null` until the first resolve. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,

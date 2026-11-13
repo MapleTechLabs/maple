@@ -15,6 +15,7 @@ import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { canRunInvestigations } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -191,8 +192,9 @@ export const getItFixedPanel = (
 	investigation: V2Investigation | null,
 ): Html => {
 	const maple = investigationLane(h, investigation, model.isStartingInvestigation)
-	// The prompt drives the error tools, so alert issues get Maple's lane alone.
-	if (issue.kind !== "error")
+	// The prompt drives the error tools, so alert issues get Maple's lane alone. So does a viewer
+	// who cannot run one: the prompt tells an agent to claim and fix the issue.
+	if (issue.kind !== "error" || !canRunInvestigations(model))
 		return panel(h, { className: "shrink-0 overflow-hidden" }, [
 			panelHeader(h, { title: "Get it fixed" }),
 			maple,
