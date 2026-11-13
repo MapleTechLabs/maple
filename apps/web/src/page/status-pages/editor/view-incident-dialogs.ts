@@ -25,7 +25,7 @@ import { dividedList } from "@maple/views/ui/rule"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { stepTrail } from "@maple/views/ui/step-trail"
+import { answerTrail } from "@maple/views/ui/answer-trail"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { relativeTime } from "../../kit/relative-time"
@@ -72,8 +72,13 @@ const header = (
 	options: Readonly<{ step: ComposeStep; title: string; description?: ReadonlyArray<Html | string> }>,
 ): Html =>
 	DialogView.dialogHeader(h, "dialog", [
-		stepTrail(h, { steps: ["Write", "Review"], current: options.step === "write" ? 0 : 1 }),
 		DialogView.dialogTitle(h, "dialog", id, options.title),
+		answerTrail(h, {
+			steps: [
+				{ label: "Write", state: options.step === "write" ? "current" : "done" },
+				{ label: "Review", state: options.step === "write" ? "next" : "current" },
+			],
+		}),
 		...(options.description === undefined
 			? []
 			: [

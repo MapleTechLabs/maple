@@ -5,6 +5,7 @@ import { listRow } from "@maple/views/ui/list-row"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { addTrail } from "./view-add-trail"
 import { connectionStep, type ConnectionStepAction } from "../kit/connection-step"
 import { Message } from "./message"
 import { type Model, type PlanetScaleStep, planetScaleStepOf } from "./model"
@@ -132,6 +133,7 @@ export const planetScaleStep = (h: H, model: Model, id: string): ReadonlyArray<H
 	connectionStep(h, {
 		dialogId: id,
 		title: "Add PlanetScale",
+		trail: addTrail(h, "PlanetScale"),
 		description:
 			"PlanetScale bills by the month, so Maple spreads each invoice line evenly over the days its branch ran.",
 		read: model.planetscale.data,

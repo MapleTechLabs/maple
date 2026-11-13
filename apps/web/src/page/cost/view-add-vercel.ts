@@ -8,6 +8,7 @@ import { listRow } from "@maple/views/ui/list-row"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
+import { addTrail } from "./view-add-trail"
 import { connectionStep, type ConnectionStepAction } from "../kit/connection-step"
 import { Message } from "./message"
 import { type Model, type VercelStep, vercelStepOf } from "./model"
@@ -124,6 +125,7 @@ export const vercelStep = (h: H, model: Model, id: string): ReadonlyArray<Html> 
 	connectionStep(h, {
 		dialogId: id,
 		title: "Add Vercel",
+		trail: addTrail(h, "Vercel"),
 		description:
 			"Maple reads what Vercel bills the team each day by product, project and region, plan fees included.",
 		read: model.vercel.data,

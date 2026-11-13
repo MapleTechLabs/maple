@@ -2,11 +2,12 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { icon } from "@maple/views/ui/icon"
+import { answerTrail } from "@maple/views/ui/answer-trail"
 import { STEPS } from "./gcp-configure-copy"
 import { CONFIGURE_DIALOG_ID } from "./gcp-configure"
 import type { Message } from "../../../integrations/message"
 import { GCP_LINK } from "./view-gcp-parts"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
@@ -57,49 +58,15 @@ export const footerNote = (h: H, children: Children): Html =>
 
 export type StepIndex = 0 | 1 | 2 | 3
 
-/** Where the flow is, as a text trail like `/sources/new`: done steps checked, the current one underlined. */
+/** Where the flow is, the same trail as `/sources/new`: done steps checked, the current one underlined. */
 const stepper = (h: H, current: StepIndex): Html =>
-	h.ol(
-		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-prose text-xs")],
-		Arr.flatMap(STEPS, (label, index) => {
-			const done = index < current
-			const active = index === current
-			const step = h.li(
-				[
-					...(active ? [h.AriaCurrent("step")] : []),
-					h.Class(
-						cn(
-							hstackClass({ gap: "1.5", inline: true }),
-							active
-								? "font-medium text-foreground underline decoration-primary underline-offset-4"
-								: "text-muted-foreground",
-						),
-					),
-				],
-				[
-					...(done ? [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" })] : []),
-					label,
-					...(done ? [h.span([h.Class("sr-only")], [" (done)"])] : []),
-				],
-			)
-			return index === 0
-				? [step]
-				: [
-						hstack(
-							h,
-							{
-								align: "stretch",
-								inline: true,
-								as: "li",
-								className: "text-foreground-subtle",
-								attributes: [h.AriaHidden(true)],
-							},
-							[icon(h, "ArrowRightIcon", { size: 12 })],
-						),
-						step,
-					]
-		}),
-	)
+	answerTrail(h, {
+		label: "Setup progress",
+		steps: Arr.map(STEPS, (label, index) => ({
+			label,
+			state: index < current ? "done" : index === current ? "current" : "next",
+		})),
+	})
 
 /** `step` is null once every step is done: the finished flow shows no stepper. */
 export const configureHeader = (h: H, title: Children, step: StepIndex | null): Html =>
