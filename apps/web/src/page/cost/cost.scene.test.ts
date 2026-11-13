@@ -691,7 +691,13 @@ describe("cost page", () => {
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SavePlanetScaleCostToken",
-				args: { organization: "acme", tokenId: "abcdef123456", token: "pscale_tkn_example" },
+				args: {
+					credential: {
+						organization: "acme",
+						tokenIdentifier: "abcdef123456",
+						token: "pscale_tkn_example",
+					},
+				},
 			},
 		])
 		// A field longer than the request carries is refused here, naming which one.
@@ -846,7 +852,13 @@ describe("cost page", () => {
 		expect(saving.commands).toMatchObject([
 			{
 				name: "SavePlanetScaleCostToken",
-				args: { organization: "acme", tokenId: "fedcba654321", token: "pscale_tkn_replacement" },
+				args: {
+					credential: {
+						organization: "acme",
+						tokenIdentifier: "fedcba654321",
+						token: "pscale_tkn_replacement",
+					},
+				},
 			},
 		])
 		const replaced = pageUpdate(
@@ -963,6 +975,7 @@ describe("cost page", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")
 		expect(keyLabel("provider", "cloudflare")).toBe("Cloudflare")
+		expect(keyLabel("provider", "planetscale")).toBe("PlanetScale")
 		// A provider this build does not know still shows, as the rows name it.
 		expect(keyLabel("provider", "somecloud")).toBe("somecloud")
 		expect(requestFilters({ provider: ["openrouter"] })).toEqual({ provider: ["openrouter"] })
@@ -973,6 +986,52 @@ describe("cost page", () => {
 				{ key: "openrouter", other: false },
 			]),
 		).toEqual(["AWS", "OpenRouter"])
+	})
+
+	test("a PlanetScale account's row reads by its organization and breaks down into its databases", () => {
+		const planetScale = source({
+			id: "0190f2b3-0000-7000-8000-00000000c062",
+			provider: "planetscale",
+			accountId: "acme",
+			requestsThisMonth: 0,
+		})
+		const byAccount = entered({ groupBy: "account" }, [source(), planetScale]).model
+		const rows = Schema.decodeSync(CostBreakdownResponse)({
+			currency: "USD",
+			rows: [
+				{ key: "123456789012", cost: 900, previousCost: 600 },
+				{ key: "acme", cost: 310, previousCost: 300 },
+			],
+		})
+		const model = Arr.reduce(
+			[
+				Message.CompletedLoadTotals({
+					key: byAccount.totals.key ?? "",
+					result: Result.succeed(totals()),
+				}),
+				Message.CompletedLoadTimeseries({
+					key: byAccount.timeseries.key ?? "",
+					result: Result.succeed(timeseries),
+				}),
+				Message.CompletedLoadBreakdown({
+					key: byAccount.breakdown.key ?? "",
+					result: Result.succeed(rows),
+				}),
+			],
+			byAccount,
+			(next, message) => pageUpdate(next, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			// The organization is the account, named with what bills it, as the AWS row beside it is.
+			expectView(role("link", { name: "PlanetScale acme" })).toHaveAttr(
+				"href",
+				"/cost?groupBy=cloud_service&account=%5B%22acme%22%5D",
+			),
+			expectView(role("link", { name: "AWS 123456789012" })).toExist(),
+		)
 	})
 
 	test("sources that have not synced yet say when the first sync runs, and list themselves", () => {

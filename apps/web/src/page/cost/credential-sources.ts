@@ -203,8 +203,8 @@ export const CREDENTIAL_SOURCES = {
 		},
 		rowNote:
 			"Billed by the month: each day shows an even share of the month's invoice for each branch, and can change until the invoice closes.",
-		save: (token, [organization = "", tokenId = ""]) =>
-			SavePlanetScaleCostToken({ organization, tokenId, token }),
+		save: (token, [organization = "", tokenIdentifier = ""]) =>
+			SavePlanetScaleCostToken({ credential: { organization, tokenIdentifier, token } }),
 		delete: () => RemovePlanetScaleCostToken(),
 	},
 } satisfies Record<CredentialProvider, CredentialSource>

@@ -178,13 +178,29 @@ export const RemoveCloudflareCostToken = Command.define("RemoveCloudflareCostTok
 	),
 })
 
-/** Saves the org's PlanetScale service token for one organization, which makes (or keeps) its cost source. */
+/**
+ * Saves the org's PlanetScale service token for one organization, which makes (or keeps) its cost
+ * source. The three values travel as one object: the tracer exports any top-level argument whose
+ * name ends in `Id`, and the token's ID is half of the credential. An object is never exported.
+ */
 export const SavePlanetScaleCostToken = Command.define("SavePlanetScaleCostToken", {
-	args: { organization: Schema.String, tokenId: Schema.String, token: Schema.String },
+	args: {
+		credential: Schema.Struct({
+			organization: Schema.String,
+			tokenIdentifier: Schema.String,
+			token: Schema.String,
+		}),
+	},
 	messages: [Message.CompletedSaveCredential],
-	execute: (input) =>
+	execute: ({ credential }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
-			client.planetScaleCost.set({ payload: new PlanetScaleCostTokenRequest(input) }),
+			client.planetScaleCost.set({
+				payload: new PlanetScaleCostTokenRequest({
+					organization: credential.organization,
+					tokenId: credential.tokenIdentifier,
+					token: credential.token,
+				}),
+			}),
 		).pipe(
 			Effect.asVoid,
 			settleTo((result) => Message.CompletedSaveCredential({ provider: "planetscale", result })),
