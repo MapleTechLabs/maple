@@ -5525,24 +5525,48 @@ async fn handle_replay_blob_inner(
     };
     // Inflating is CPU work bounded only by that ceiling, so it runs on the
     // blocking pool: on a one-core host the async workers are a single thread.
+    // It reserves what it inflates from the shared decode memory, like an OTLP
+    // body, so a burst of chunks is shed and not inflated all at once.
     let stored_as_blob = state.replay_blob_store.is_some();
     let compressed = body.clone();
-    let (events_json, byte_size) = tokio::task::spawn_blocking(move || {
+    let mut reservation = state.decode_memory.reservation();
+    let decoded = tokio::task::spawn_blocking(move || {
+        let ceiling = u64::try_from(max_decoded).unwrap_or(u64::MAX);
+        let declared = decode_budget::gzip_declared_len(&compressed)
+            .map_or(0, |declared| declared.min(ceiling));
+        if !reservation.try_add(compressed.len() as u64 + declared) {
+            return Err(None);
+        }
         if stored_as_blob {
-            gunzip_len_bounded(&compressed, max_decoded).map(|byte_size| (None, byte_size))
+            // Nothing of a blob chunk outlives the count.
+            gunzip_len_bounded(&compressed, max_decoded)
+                .map(|byte_size| (None, byte_size, None))
+                .map_err(Some)
         } else {
-            gunzip_replay_text(&compressed, max_decoded).map(|events_json| {
-                let byte_size = events_json.len() as u64;
-                (Some(events_json), byte_size)
-            })
+            gunzip_replay_text(&compressed, max_decoded)
+                .map(|events_json| {
+                    let byte_size = events_json.len() as u64;
+                    reservation.shrink_to(byte_size);
+                    (Some(events_json), byte_size, Some(reservation))
+                })
+                .map_err(Some)
         }
     })
     .await
     .map_err(|join_error| {
         error!(error = %join_error, "Replay chunk decode task failed");
         ApiError::service_unavailable("Ingest gateway failed to decode the request")
-    })?
-    .map_err(gunzip_rejection)?;
+    })?;
+    // An inline chunk's text stays reserved until this handler has stored it.
+    let (events_json, byte_size, _inline_text_reservation) =
+        decoded.map_err(|rejection| match rejection {
+            Some(error) => gunzip_rejection(error),
+            None => ApiError::tagged(
+                StatusCode::SERVICE_UNAVAILABLE,
+                &INGEST_DECODE_BUSY,
+                "Ingest gateway is busy decoding other requests; retry shortly",
+            ),
+        })?;
 
     // Accept the chunk that crosses the ceiling so the recording truncates on a
     // chunk boundary; `is_exhausted` rejects everything after it.
@@ -13876,6 +13900,20 @@ mod tests {
         )
         .await
         .expect("a normal chunk is still accepted");
+
+        // A chunk the shared decode memory cannot hold right now is shed, not inflated.
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(state.decode_memory.total_bytes()));
+        let shed = handle_replay_blob_inner(
+            &state,
+            &replay_blob_headers(raw_key, "sess_bomb", 2),
+            gzip_bytes(r#"[{"type":2,"timestamp":2}]"#),
+        )
+        .await
+        .expect_err("a chunk must be shed while decode memory is full");
+        assert_eq!(shed.status, StatusCode::SERVICE_UNAVAILABLE);
+        drop(others);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
         assert!(rx.recv().await.is_some(), "the normal chunk is stored");
 
         drop(std::fs::remove_dir_all(&queue_dir));
