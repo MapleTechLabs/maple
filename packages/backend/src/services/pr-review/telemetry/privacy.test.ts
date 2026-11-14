@@ -139,6 +139,13 @@ describe("privacyHitAt", () => {
 			"socialSecurityNumber",
 		],
 		["a credit card number", ["logger.info({ creditCardNumber })"], "payment", "creditCardNumber"],
+		[
+			"a street address line",
+			["logger.info({ shipping_address_line1: order.shipping_address_line1 })"],
+			"contact",
+			"shipping_address_line1",
+		],
+		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
 		// A short prefix exempts only its own entry.
 		[
 			"a password beside a short trace id",

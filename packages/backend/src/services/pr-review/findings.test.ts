@@ -100,6 +100,7 @@ describe("settledFindings", () => {
 			"Not sure this is fixed in c88ba3a",
 			"Nothing was fixed in this PR",
 			"I think this is fixed by #12",
+			"It may be fixed in abc1234",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
@@ -138,6 +139,13 @@ describe("settledFindings", () => {
 			comments: [BOT_COMMENT, reply("Done."), reply("Reopening, it still fails on main")],
 		})
 		assert.strictEqual(settle([retracted], new Set(["src/other.ts"])), "open")
+	})
+
+	it("never reads a question as a retraction", () => {
+		assert.strictEqual(
+			settle([withReplies("Fixed in c88ba3a", "Is the cache path still broken?")]),
+			"resolved",
+		)
 	})
 
 	it("reads a completed fix over a dismissal phrase in the same reply", () => {

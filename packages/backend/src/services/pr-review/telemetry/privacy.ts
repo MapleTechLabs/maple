@@ -79,6 +79,14 @@ const VALUE_WORDS = new Set([
 	"number",
 	"body",
 	"data",
+	// The parts of a postal address still locate a person (`shipping_address_line1`).
+	"line1",
+	"line2",
+	"line3",
+	"street",
+	"city",
+	"zip",
+	"postcode",
 ])
 
 /** Single words, matched whole: `token` but not `tokens` (`gen_ai.usage.output_tokens`). */

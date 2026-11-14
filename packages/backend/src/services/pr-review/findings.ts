@@ -98,7 +98,7 @@ const STILL_OPEN =
 /** `open` takes back an earlier verdict in the thread: the finding stays with the reviewer. */
 /** A hedged claim ("I don't think it's fixed", "not sure", "nothing was fixed"): no verdict either way. */
 const HEDGED =
-	/\b(?:don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
+	/\b(?:don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|may|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
 
 type ReplyVerdict = "dismissed" | "resolved" | "open"
 
@@ -108,8 +108,10 @@ type ReplyVerdict = "dismissed" | "resolved" | "open"
  * requested or conditional is left for the reviewer.
  */
 const verdictOf = (body: string): ReplyVerdict | undefined => {
+	// A question carries no verdict, not even a retraction ("Is this still broken?").
+	if (Str.includes("?")(body)) return undefined
 	if (STILL_OPEN.test(body)) return "open"
-	if (Str.includes("?")(body) || NOT_YET.test(body) || HEDGED.test(body)) return undefined
+	if (NOT_YET.test(body) || HEDGED.test(body)) return undefined
 	if (FIXED.test(body)) return "resolved"
 	return DISMISSAL.test(body) ? "dismissed" : undefined
 }
