@@ -101,6 +101,25 @@ describe("Railway API access", () => {
 		}),
 	)
 
+	it.effect("fails discovery when a page says there is more but gives no cursor", () =>
+		Effect.gen(function* () {
+			const fake = railway({
+				TokenWorkspaces: () => VendorFake.json(WORKSPACES),
+				WorkspaceProjects: () =>
+					VendorFake.json({
+						data: {
+							projects: {
+								edges: [project("p1", [{ id: "prod" }])],
+								pageInfo: { hasNextPage: true, endCursor: null },
+							},
+						},
+					}),
+			})
+			yield* Effect.flip(run(fake, (client) => discover(client, "token")))
+			assert.deepStrictEqual(operations(fake), ["TokenWorkspaces", "WorkspaceProjects"])
+		}),
+	)
+
 	it.effect("retries Railway's transient 'Problem processing request' before failing", () =>
 		Effect.gen(function* () {
 			const fake = railway({ TokenWorkspaces: () => VendorFake.json(PROBLEM) })

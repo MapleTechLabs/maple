@@ -273,9 +273,18 @@ const workspaceProjects = (
 					Effect.flatMap(({ projects }) => {
 						const all = [...collected, ...Arr.map(projects.edges, (edge) => edge.node)]
 						const cursor = projects.pageInfo.endCursor ?? null
-						return projects.pageInfo.hasNextPage && cursor !== null
-							? page(cursor, all, pages + 1)
-							: Effect.succeed(all)
+						if (!projects.pageInfo.hasNextPage) return Effect.succeed(all)
+						// A partial listing must fail: reconciling it would disable the unseen projects.
+						return cursor === null || cursor === after
+							? Effect.fail(
+									new VendorHttp.VendorHttpError({
+										message: "railway paged projects without an advancing cursor",
+										kind: "invalid_response",
+										peerService: "railway",
+										operation: "listing projects",
+									}),
+								)
+							: page(cursor, all, pages + 1)
 					}),
 				)
 	return page(null, [], 0)

@@ -94,6 +94,56 @@ describe("Cloudflare API access", () => {
 		}),
 	)
 
+	it.effect("retries an auth blip in a 200 envelope with no result, then succeeds", () =>
+		Effect.gen(function* () {
+			let attempts = 0
+			const fake = VendorFake.make({
+				routes: [
+					{
+						path: "/client/v4/accounts/acc_1/workers/scripts",
+						respond: () => {
+							attempts += 1
+							return attempts === 1
+								? VendorFake.json({
+										success: false,
+										errors: [{ code: 10000, message: "Authentication error" }],
+										messages: [],
+									})
+								: envelope([{ id: "api" }])
+						},
+					},
+				],
+			})
+			const scripts = yield* VendorFake.elapsing(
+				listWorkerScripts("token", "acc_1", BASE).pipe(Effect.provide(fake.layer)),
+			)
+			assert.deepStrictEqual(scripts.items, ["api"])
+			assert.lengthOf(fake.calls, 2)
+		}),
+	)
+
+	it.effect("reads an auth code in a 200 envelope with no result as a revoked token", () =>
+		Effect.gen(function* () {
+			const fake = VendorFake.make({
+				routes: [
+					{
+						respond: () =>
+							VendorFake.json({
+								success: false,
+								errors: [{ code: 9109, message: "Invalid access token" }],
+								messages: [],
+							}),
+					},
+				],
+			})
+			const error = yield* Effect.flip(
+				listZones("token", "acc_1", BASE).pipe(Effect.provide(fake.layer)),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsRevokedError")
+			assert.lengthOf(fake.calls, 1)
+		}),
+	)
+
 	it.effect("reads an auth code in a 400 envelope as a revoked token, without retrying", () =>
 		Effect.gen(function* () {
 			const fake = VendorFake.make({

@@ -124,7 +124,8 @@ const Envelope = <S extends Schema.Top>(result: S) =>
 	Schema.Struct({
 		success: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		errors: Schema.optionalKey(Schema.NullOr(Schema.Array(EnvelopeError))),
-		result: Schema.NullOr(result),
+		// A failure envelope may carry no `result`; its errors still classify it.
+		result: Schema.optionalKey(Schema.NullOr(result)),
 		result_info: Schema.optionalKey(
 			Schema.NullOr(
 				Schema.Struct({
@@ -137,9 +138,13 @@ const Envelope = <S extends Schema.Top>(result: S) =>
 		),
 	})
 
+const encodeEnvelopeErrors = Schema.encodeSync(Schema.fromJsonString(EnvelopeErrors))
+
 const refusedEnvelope = (request: VendorHttp.VendorRequest, errors: ReadonlyArray<EnvelopeError>) => {
 	const detail = envelopeDetail(errors)
 	return new VendorHttp.VendorHttpError({
+		// Kept as the body so `isAuthBlip` reads a 200 envelope's codes like a 400's.
+		body: encodeEnvelopeErrors({ errors }),
 		message: `cloudflare answered success: false${request.operation === undefined ? "" : ` while ${request.operation}`}`,
 		kind: envelopeKind(errors) ?? "upstream",
 		peerService: "cloudflare",
@@ -162,11 +167,13 @@ const restResult = <S extends Schema.Top>(
 	result: S,
 	request: VendorHttp.VendorRequest,
 ) =>
-	read(cloudflare, Envelope(result), request).pipe(
+	cloudflare.json(Envelope(result), request).pipe(
 		Effect.filterOrFail(
 			(envelope) => envelope.success !== false,
 			(envelope) => refusedEnvelope(request, envelope.errors ?? []),
 		),
+		// Inside the retry, so a 200 auth blip is retried like a 400 one.
+		Effect.retry({ schedule: AUTH_BLIP_RETRY, while: isAuthBlip }),
 	)
 
 /** Runs a call over the fetch client; tests replace `FetchHttpClient.Fetch`. */
