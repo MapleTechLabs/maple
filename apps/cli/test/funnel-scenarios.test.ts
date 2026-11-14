@@ -93,6 +93,15 @@ const CASES = {
 			[0, "start"],
 			[HOUR_MS + 1, "finish"],
 		]),
+		// The same two, with `seq` pulling the other way: the window measures time, not `seq`.
+		...user("on_edge_later_seq", [
+			[0, "start", 0],
+			[HOUR_MS, "finish", 900],
+		]),
+		...user("past_edge_earlier_seq", [
+			[0, "start", 900],
+			[HOUR_MS + 1, "finish", 0],
+		]),
 	],
 	// Gave up, came back three hours later and went all the way: only the second run fits an hour.
 	restart: user("returner", [
@@ -336,7 +345,7 @@ describeWithChdb("product event funnels over example products", () => {
 	})
 
 	test("the window includes its last millisecond and nothing after", () => {
-		expect(counts(caseDataset("windowEdge"), byUser([ev("start"), ev("finish")]))).toEqual([2, 1])
+		expect(counts(caseDataset("windowEdge"), byUser([ev("start"), ev("finish")]))).toEqual([4, 2])
 	})
 
 	test("a later attempt converts when the first one ran out of time", () => {

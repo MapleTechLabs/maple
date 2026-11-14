@@ -505,13 +505,14 @@ converted in either order.
   comes first.
 - **An attempt** starts at a step-1 row and takes, for each later step, the first later row that
   matches and is no more than the window after the start. One row serves one step.
-- **The window** is at most 366 days, the year `product_events` keeps plus a day.
-- **The level** is the person's deepest attempt. That is `windowFunnel` whenever no row can match
-  two steps. Two steps can share a row when the funnel repeats a step (`product_viewed`,
-  `product_viewed`, `add_to_cart`), or when an event step on a reserved name sits beside a page
-  step (a page view is stored as a `$pageview` event). Those funnels are read from `walkQuery`
-  instead: plain `windowFunnel` lets one row satisfy both steps, and its `strict_once` mode, which
-  forbids that, took 31 s on 72,000 rows where the walk takes 26 ms.
+- **The window** is at most 366 days, the year `product_events` keeps plus a day. It compares
+  milliseconds, so `Seq` orders rows without stretching or shrinking it.
+- **The level** is the person's deepest attempt, read from `walkQuery` for every funnel: an array
+  walk per person, one pass per step. `windowFunnel` is not used. It takes one number for both
+  order and elapsed time, so it cannot keep `Seq` order and an exact window at once, and it lets a
+  row that matches two steps count for both: a repeated step (`product_viewed`, `product_viewed`,
+  `add_to_cart`), or a `$pageview` event step beside a page step. Its `strict_once` mode forbids
+  that but took 31 s on 72,000 rows where the walk takes 26 ms.
 - **The chain** is the earliest attempt that gets that deep. A first try that ran out of time gives
   way to the later one that converted. Time between steps and "where the leavers went" are both
   read from the chain, by position in the person's rows as the walk counts them, so a funnel
@@ -529,5 +530,6 @@ server-side steps, a shop checkout with restarts, a mobile onboarding, a two-hos
 hand-built edge cases and random histories with tied rows. It needs no Docker; run it with
 `bun test test/funnel-scenarios.test.ts` in `apps/cli`.
 
-On 2.9M rows and 200,000 people (chDB, five steps): counts 30 ms, time between steps 100 ms (118 ms
-before), leavers 155 ms (133 ms before), a funnel with a repeated step 41 ms.
+On 2.9M rows and 200,000 people (chDB, five steps): counts 55 ms (35 ms with `windowFunnel`), time
+between steps 106 ms (118 ms before), leavers 172 ms (133 ms before), a funnel with a repeated step
+45 ms. Counts pay for one implementation that the times and the leavers cannot disagree with.
