@@ -94,11 +94,9 @@ org billed through another org (`billing-orgs.md`) has its plan events under tha
 
 ## Not covered
 
-- **The Clerk webhook is not delivering in production** (no `ClerkWebhook.receive` span from
-  2026-11-03 to 2026-11-10, and no `signup_completed` row ever). Until `POST /webhooks/clerk` is
-  registered in Clerk for `user.created` and `organizationMembership.created/updated/deleted`,
-  `signup_completed`, `member_joined` and `member_removed` stay empty (and the membership revocation
-  sweep does not run).
+- **Clerk events before 2026-11-14.** `POST /webhooks/clerk` was registered in Clerk on that day,
+  so `signup_completed`, `member_joined` and `member_removed` have no rows before it, and a member
+  removed earlier was never swept by the membership revocation.
 - **Daily ingest volume per org.** Not a product event: it lives in billing usage
   (`DailySpendService`), and there is no per-org daily hook to emit it from without a new job.
 - **iOS identity**, see above.
