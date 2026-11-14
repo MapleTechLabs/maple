@@ -362,7 +362,36 @@ describe("dashboard widget undo", () => {
 
 describe("navigation hold", () => {
 	test("navigating to a loading page keeps the page left on screen until its timer, then shows it", () => {
-		const onServices = settle(base(AppRoute.Services({ search: {} }))).model
+		const toServices = (model: Model, message: ServicesMessage): Model => {
+			const slot = model.page
+			return slot === null
+				? model
+				: update(
+						model,
+						Message.GotPageMessage({
+							message: {
+								_tag: "ServicesList",
+								key: slot.key,
+								orgId: slot.orgId,
+								instance: slot.instance,
+								message,
+							},
+						}),
+					).model
+		}
+		const entered = settle(base(AppRoute.Services({ search: {} }))).model
+		const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
+		const windowed = toServices(
+			entered,
+			ServicesMessage.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		const overviewKey =
+			windowed.page?._tag === "ServicesList" ? (windowed.page.model.overview.key ?? "") : ""
+		// The services list with rows on screen: the page a navigation leaves.
+		const onServices = toServices(
+			windowed,
+			ServicesMessage.CompletedFetchOverview({ key: overviewKey, result: Result.succeed([]) }),
+		)
 		expect(onServices.pageHold).toEqual(PageHold.Model.None())
 		const toLogs = update(onServices, Message.ChangedUrl({ url: urlOf("/logs") }))
 		const instance = toLogs.model.page?.instance ?? -1

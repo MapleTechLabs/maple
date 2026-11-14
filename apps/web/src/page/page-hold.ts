@@ -4,7 +4,7 @@
 
 import { Schema } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import { isBareSlot, isFirstLoading, PageSlot } from "./registry"
+import { isBareSlot, isFirstLoading, isLoading, PageSlot } from "./registry"
 
 export const PAGE_HOLD_MS = 300
 
@@ -18,9 +18,10 @@ export type Model = typeof Model.Type
 
 const NONE = Model.None()
 
-/** The page left can stand in for the entered one: same org, both drawn in the shell. */
+/** The page left can stand in for the entered one: same org, both drawn in the shell, and it has
+ * something to show (holding one skeleton page over another only delays the next). */
 const canStandIn = (left: PageSlot, entered: PageSlot) =>
-	left.orgId === entered.orgId && !isBareSlot(left) && !isBareSlot(entered)
+	left.orgId === entered.orgId && !isBareSlot(left) && !isBareSlot(entered) && !isFirstLoading(left)
 
 /** The hold after a page write from `previous` to `next`. */
 export const written = (hold: Model, previous: PageSlot | null, next: PageSlot | null): Model => {
@@ -33,7 +34,9 @@ export const written = (hold: Model, previous: PageSlot | null, next: PageSlot |
 			? { _tag: "Holding", leaving, instance: next.instance }
 			: NONE
 	}
-	return hold._tag !== "None" && hold.instance === next.instance && isFirstLoading(next) ? hold : NONE
+	if (hold._tag === "None" || hold.instance !== next.instance) return NONE
+	// `Waited` lasts while any read loads: dropping the 0ms delay would hide the skeletons still up.
+	return (hold._tag === "Holding" ? isFirstLoading(next) : isLoading(next)) ? hold : NONE
 }
 
 /** `PAGE_HOLD_MS` ran out for `instance`: its page shows, with skeletons at once while it loads. */

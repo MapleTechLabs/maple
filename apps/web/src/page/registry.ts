@@ -292,9 +292,13 @@ const someAsyncData =
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
 const hasLoadInFlight = someAsyncData(AsyncData.isPending)
 
+/** Some read of the page is `Loading`. Any `{ _tag: "Loading" }` counts, so a chart runtime still
+ * importing or an Electric sync still connecting holds a navigation too: its page is not drawable yet. */
+export const isLoading = (slot: PageSlot): boolean => someAsyncData(AsyncData.isLoading)(slot.model)
+
 /** The page has nothing to show yet: a read is `Loading` and none has data (a revived page has its last). */
 export const isFirstLoading = (slot: PageSlot): boolean =>
-	someAsyncData(AsyncData.isLoading)(slot.model) && !someAsyncData(AsyncData.hasData)(slot.model)
+	isLoading(slot) && !someAsyncData(AsyncData.hasData)(slot.model)
 
 /** How many left pages are kept to revive; each holds its last data. */
 const PARKED_PAGES_MAX = 4
