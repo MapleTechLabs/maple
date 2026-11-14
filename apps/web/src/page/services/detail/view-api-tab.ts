@@ -298,19 +298,25 @@ const responsesChart = (
 			[
 				context === null
 					? skeleton(h, "h-[200px] w-full")
-					: statusChart(h, {
-							chartId: "api-responses",
-							chart: chartModel,
-							buckets: overview.buckets,
-							bucketSeconds: inputs.bucketSeconds,
-							window: inputs.window,
-							context,
-							className: "h-[200px] w-full",
-							marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
-							overlay,
-							reportPlot: markers.length > 0,
-							toMessage: toChart("api-responses"),
-						}),
+					: // The markers sit beside the chart (their card's handlers bind to this page).
+						h.div(
+							[h.Class("relative h-[200px] w-full")],
+							[
+								statusChart(h, {
+									chartId: "api-responses",
+									chart: chartModel,
+									buckets: overview.buckets,
+									bucketSeconds: inputs.bucketSeconds,
+									window: inputs.window,
+									context,
+									className: "h-full w-full",
+									marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
+									reportPlot: markers.length > 0,
+									toMessage: toChart("api-responses"),
+								}),
+								overlay ?? null,
+							],
+						),
 			],
 			"px-4 pb-4 pt-2",
 		),

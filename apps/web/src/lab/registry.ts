@@ -634,6 +634,13 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/bench/service-detail-markers",
+		title: "Service detail markers",
+		description: "The service-detail MetricsGrid with deploy markers; hover a label for its commit card.",
+		kind: "bench",
+		session: "none",
+	},
+	{
 		path: "/lab/bench/infra",
 		title: "Infra charts",
 		description: "Host and k8s detail ChartViews on one page with synthetic rows.",

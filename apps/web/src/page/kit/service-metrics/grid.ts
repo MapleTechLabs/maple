@@ -203,11 +203,13 @@ const chartBody = <M>(
 					ariaLabel: chart.ariaLabel,
 					spec: specOf(chart, rows, context),
 					className: chartFrameClass("fill"),
-					overlay,
 					reportPlot: true,
 				},
 				toParentMessage: (message: Chart.Message) => input.toChartMessage(chart.id, message),
 			}),
+			// Beside the chart, not its `overlay` input: the marker card's handlers must bind to this
+			// page, and the plot box fills this wrapper, so the plot geometry lines up as is.
+			overlay ?? null,
 			linkedCursorOverlay(h, chart.id),
 		],
 	)
