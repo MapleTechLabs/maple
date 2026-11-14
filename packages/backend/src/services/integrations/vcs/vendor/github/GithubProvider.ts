@@ -1450,6 +1450,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 													? null
 													: String(comment.databaseId),
 											author: comment.author?.login ?? "(deleted user)",
+											isBot: comment.author?.__typename === "Bot",
 											body: comment.body,
 											thumbsUp: count("THUMBS_UP"),
 											thumbsDown: count("THUMBS_DOWN"),

@@ -1,6 +1,7 @@
 /** `submit_reply` and `propose_edit`: how a pull request reply's turn answers, and stages a fix. */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import {
+	handlesOf,
 	PrReviewEditSubmission,
 	type PrReviewPersistenceError,
 	type PrReviewReplyNotFoundError,
@@ -18,6 +19,7 @@ export const PROPOSE_EDIT = "propose_edit"
 export interface ReplyWrites {
 	readonly submit: (
 		body: string,
+		settle: { readonly dismissed: ReadonlyArray<string>; readonly resolved: ReadonlyArray<string> },
 	) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
 	readonly stageEdit: (
 		edit: PrReviewEditSubmission,
@@ -29,7 +31,8 @@ export const replyTool = Tool.make(SUBMIT_REPLY, {
 		"Post your answer on the pull request, in GitHub markdown, where the person asked. Call it " +
 		"exactly once, after you have read what the answer depends on. For a fix, call it after " +
 		"propose_edit: the staged edits are committed first and the result is added to your answer. " +
-		"After calling it, stop.",
+		"`dismissed` and `resolved` take handles (F3) of your open findings that the code shows do " +
+		"not hold, or that the head already fixes; they stop being raised. After calling it, stop.",
 	parameters: PrReviewReplySubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
@@ -67,10 +70,15 @@ export const replyCompletion = (origin: ChatTurnOrigin, writes: ReplyWrites) => 
 				toolkit,
 				{
 					[SUBMIT_REPLY]: (submission: PrReviewReplySubmission) =>
-						writes.submit(submission.body ?? "").pipe(
-							Effect.tap(() => Effect.sync(() => (submitted = true))),
-							Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
-						),
+						writes
+							.submit(submission.body ?? "", {
+								dismissed: handlesOf(submission.dismissed),
+								resolved: handlesOf(submission.resolved),
+							})
+							.pipe(
+								Effect.tap(() => Effect.sync(() => (submitted = true))),
+								Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
+							),
 					[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
 						writes.stageEdit(edit).pipe(Effect.catchCause(asToolFailure(PROPOSE_EDIT))),
 				},

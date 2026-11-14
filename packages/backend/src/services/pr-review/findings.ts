@@ -68,39 +68,130 @@ const SAME_ISSUE_LINES = 3
 const SAME_TITLE_OVERLAP = 0.6
 
 /**
- * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
- * negation ("this is not by design") asks for an answer, so it never dismisses.
+ * A negation just before a verdict phrase, past up to two articles or adverbs: "not", "never",
+ * or a contraction ("isn't", "wasn’t a", "not just a").
  */
-const DISMISSAL =
-	/(?<!\bnot\s)\b(won'?t fix|wontfix|not an issue|false positive|by design|as intended|intended behaviou?r|ignore this)\b/i
-const dismisses = (body: string) => !Str.includes("?")(body) && DISMISSAL.test(body)
+const NEGATED = String.raw`(?<!\b(?:not|never|no)\s(?:(?:a|an|the|really|actually|just|merely|simply|only)\s){0,2})(?<!n['’]t\s(?:(?:a|an|the|really|actually|just|merely|simply|only)\s){0,2})`
 
 /**
- * Open findings a person has dismissed since the last review: someone replied with a dismissal, or
- * resolved the thread while its file stayed unchanged since then. Authors resolve a thread once
- * they push the fix, so a resolved thread on a changed file (or unknown changes) is left open for
- * the reviewer to judge. Replies from the bot that posted the finding do not count.
+ * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
+ * negation ("this isn't by design") asks for an answer, so it never dismisses.
  */
-export const dismissedFindings = (
+const DISMISSAL = new RegExp(
+	String.raw`${NEGATED}\b(won['’]?t fix|wontfix|not an issue|not a (?:credential|secret|bug|problem|real issue)|false positive|by design|as intended|intended behaviou?r|intentional(?:ly)?|ignore this|no change needed|(?:keeping|leaving) (?:it |this )?as is)\b`,
+	"i",
+)
+
+/** A reply saying the finding was dealt with: "Fixed in c88ba3a", "Done.", "Addressed by #12". */
+const FIXED = new RegExp(
+	// A leading verb must end its clause ("Done.", "Fixed, thanks") or go on to say how, so
+	// "Fixed-size buffers still overflow" is not read as a fix.
+	String.raw`(?:^\s*(?:done|fixed|addressed|resolved)(?:\s*(?:[.!,:;]|$)|\s+(?:in|by|with|via|now|it|this|that|here)\b)|${NEGATED}\b(?:fixed|addressed|resolved)\s+(?:in|by|with|via)\b)`,
+	"i",
+)
+
+/** A promise, request or condition: "will be fixed", "please fix", "fixed in a follow-up". */
+const NOT_YET =
+	/\b(?:will|would|should|could|shall|going to|gonna|plan(?:ning)? to|need(?:s|ed)? to|has to|have to|later|follow[- ]?up|next (?:pr|pull request|push|commit)|todo|please|let['’]?s|if|once|when|until)\b/i
+
+/** A reply saying the finding still stands: it takes back an earlier "fixed" or "won't fix". */
+const STILL_OPEN =
+	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|happening|reproduces|an issue|a problem|there|open|see|seeing|logged|logs|leaks|missing|present|reaches)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|es))\b/i
+
+/** `open` takes back an earlier verdict in the thread: the finding stays with the reviewer. */
+/**
+ * A hedged or reported claim ("I don't think it's fixed", "not sure", "you said it was fixed"): no
+ * verdict either way.
+ */
+const HEDGED =
+	/\b(?:said|says|claimed|claims|marked|supposedly|apparently|reportedly|don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|may|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
+
+/** A conditional before a dismissal phrase: "this would be a false positive if we redacted it". */
+const CONDITIONAL = /\b(?:would|could|might|if|unless)\b/i
+/**
+ * A condition attached right after it ("a false positive if the token is redacted"). A reason set
+ * off by a comma or dash ("Won't fix, it only runs if the flag is set") is not one.
+ */
+const CONDITION_AFTER = /^\s+(?:only\s+)?(?:if|unless|when|provided|as long as)\b/i
+
+const affirmsDismissal = (clause: string): boolean => {
+	if (HEDGED.test(clause)) return false
+	const match = DISMISSAL.exec(clause)
+	return (
+		match !== null &&
+		!CONDITIONAL.test(Str.slice(0, match.index)(clause)) &&
+		!CONDITION_AFTER.test(Str.slice(match.index + match[0].length)(clause))
+	)
+}
+
+type ReplyVerdict = "dismissed" | "resolved" | "open"
+
+/** A reply's sentences and clauses, so a request in one ("Please re-review.") never voids another. */
+const clausesOf = (body: string): ReadonlyArray<string> =>
+	Arr.filter(Arr.map(Str.split(/(?<=[.!?;])\s+|\n+/)(body), Str.trim), (clause) => clause !== "")
+
+/**
+ * A reply's verdict, only from a clause that states it plainly. A question carries none, not even a
+ * retraction ("Is this still broken?"); a retraction in any other clause wins; then a completed fix
+ * outranks a dismissal ("Fixed in c88ba3a, the call was intentional before"). A fix in a clause
+ * that is future, requested, conditional or hedged says nothing; a dismissal only needs no hedge.
+ */
+const verdictOf = (body: string): ReplyVerdict | undefined => {
+	const statements = Arr.filter(clausesOf(body), (clause) => !Str.includes("?")(clause))
+	if (Arr.some(statements, (clause) => STILL_OPEN.test(clause))) return "open"
+	const plain = Arr.filter(statements, (clause) => !NOT_YET.test(clause) && !HEDGED.test(clause))
+	if (Arr.some(plain, (clause) => FIXED.test(clause))) return "resolved"
+	// A dismissal promises no later work, so a reason after it stands ("Won't fix, it only runs
+	// when the flag is set."); a hedge, or a condition before it ("would be a false positive if"), voids it.
+	return Arr.some(statements, affirmsDismissal) ? "dismissed" : undefined
+}
+
+/**
+ * What people did with open findings since the last review. A person's latest reply with a verdict
+ * decides: a dismissal ("won't fix") dismisses, a fix ("Fixed in c88ba3a") resolves, a retraction
+ * ("still broken") leaves it open whatever came before. With no verdict, a thread a
+ * person resolved without a word, on a file this push left alone, is resolved too: most such
+ * threads were fixed elsewhere or in a push whose review missed it (prod sample 2026-11-14: 19 of 28).
+ * A resolved thread on a changed file (or unknown changes) stays open for the reviewer to judge.
+ * Replies from the bot that posted the finding, or from any other automation, do not count. Resolved here carries no head: no
+ * review confirmed it.
+ */
+export const settledFindings = (
 	open: ReadonlyArray<TrackedFinding>,
 	threads: ReadonlyArray<PullRequestReviewThread>,
 	changedPaths: ReadonlySet<string> | undefined,
-): ReadonlyArray<TrackedFinding> => {
+): {
+	readonly dismissed: ReadonlyArray<TrackedFinding>
+	readonly resolved: ReadonlyArray<TrackedFinding>
+} => {
 	const byComment = new Map<string, PullRequestReviewThread>()
 	for (const thread of threads) {
 		const first = thread.comments[0]?.commentId
 		if (first !== null && first !== undefined) byComment.set(first, thread)
 	}
-	return Arr.filter(open, (finding) => {
-		if (finding.commentId === null) return false
+	const dismissed: Array<TrackedFinding> = []
+	const resolved: Array<TrackedFinding> = []
+	for (const finding of open) {
+		if (finding.commentId === null) continue
 		const thread = byComment.get(finding.commentId)
-		if (thread === undefined) return false
+		if (thread === undefined) continue
 		const poster = thread.comments[0]?.author
-		return (
-			(thread.isResolved && changedPaths !== undefined && !changedPaths.has(finding.path)) ||
-			Arr.some(thread.comments.slice(1), (reply) => reply.author !== poster && dismisses(reply.body))
-		)
-	})
+		const verdicts = Arr.flatMap(thread.comments.slice(1), (reply) => {
+			const verdict =
+				reply.author === poster || reply.isBot === true ? undefined : verdictOf(reply.body)
+			return verdict === undefined ? [] : [verdict]
+		})
+		const latest = verdicts.at(-1)
+		if (latest === "open") continue
+		const verdict =
+			latest ??
+			(thread.isResolved && changedPaths !== undefined && !changedPaths.has(finding.path)
+				? "resolved"
+				: undefined)
+		if (verdict === "dismissed") dismissed.push(finding)
+		else if (verdict === "resolved") resolved.push(finding)
+	}
+	return { dismissed, resolved }
 }
 
 /** The thread a finding's inline comment opened, to resolve once a head fixes it. */
@@ -113,6 +204,11 @@ export const threadForFinding = (
 		: Option.getOrUndefined(
 				Arr.findFirst(threads, (thread) => thread.comments[0]?.commentId === finding.commentId),
 			)
+
+/** A finding the deterministic telemetry or privacy scans filed, not the model. */
+const isScanFinding = (finding: Pick<PrReviewFinding, "checkId" | "title">) =>
+	(finding.checkId !== undefined && Str.startsWith("TEL-")(finding.checkId)) ||
+	isPrivacyScanFinding(finding)
 
 const titleWords = (title: string): ReadonlySet<string> =>
 	new Set(Arr.filter(Str.split(/[^a-z0-9_]+/)(Str.toLowerCase(title)), (word) => word.length > 2))
@@ -140,22 +236,26 @@ const restates = (
 ) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	((((finding.checkId !== undefined && Str.startsWith("TEL-")(finding.checkId)) ||
-		isPrivacyScanFinding(finding)) &&
-		finding.title === tracked.title) ||
+	((isScanFinding(finding) && finding.title === tracked.title) ||
 		(Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
 			similarTitles(finding.title, tracked.title)))
 
 /**
- * New findings minus near-exact restatements of a finding still open or already dismissed, a
- * backstop so a push never posts the same comment twice and a dismissed finding stays quiet.
+ * New findings minus near-exact restatements of a finding still open, dismissed or closed by a
+ * person, a backstop so a push never posts the same comment twice and a settled finding stays quiet.
  */
 export const withoutRepeats = (
 	findings: ReadonlyArray<PrReviewFinding>,
 	tracked: ReadonlyArray<TrackedFinding>,
 ): { readonly fresh: ReadonlyArray<PrReviewFinding>; readonly repeated: number } => {
-	const blocking = Arr.filter(tracked, (finding) => finding.status !== "resolved")
-	const fresh = Arr.filter(findings, (finding) => !Arr.some(blocking, (known) => restates(finding, known)))
+	// A fix a review confirmed may regress, so its restatement is posted; one a person closed, or a
+	// deterministic scan's (which re-reads its own lines every push), stays quiet.
+	const blocks = (finding: PrReviewFinding, known: TrackedFinding) =>
+		known.status !== "resolved" || known.resolvedSha == null || isScanFinding(finding)
+	const fresh = Arr.filter(
+		findings,
+		(finding) => !Arr.some(tracked, (known) => blocks(finding, known) && restates(finding, known)),
+	)
 	return { fresh, repeated: findings.length - fresh.length }
 }
 
@@ -182,10 +282,10 @@ export const nextHandles = (used: ReadonlyArray<string>, count: number): Readonl
 }
 
 /** The handles a submission marked fixed, limited to findings that are actually open. */
-export const resolvedByHandle = (
+export const resolvedByHandle = <F extends Pick<TrackedFinding, "handle">>(
 	handles: ReadonlyArray<string>,
-	open: ReadonlyArray<TrackedFinding>,
-): ReadonlyArray<TrackedFinding> => {
+	open: ReadonlyArray<F>,
+): ReadonlyArray<F> => {
 	const wanted = new Set<string>(Arr.map(handles, (handle) => Str.toUpperCase(Str.trim(handle))))
 	return Arr.filter(open, (finding) => wanted.has(finding.handle))
 }

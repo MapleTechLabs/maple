@@ -32,7 +32,14 @@ const MORE_LOGS =
 const TRANSFORMED_LINE =
 	/\b(?:redact\w*|mask\w*|hash\w*|sha(?:1|256|512)\w*|digest|anonymi[sz]e\w*|obfuscat\w*|scrub\w*|truncate\w*|Redacted\.make)\s*\(/i
 
-/** Words that make a name about the value, not the value: `hashedPassword`, `hasToken`, `maxTokens`. */
+/**
+ * A value cut to a short prefix (`token.slice(0, 12)`), too short to use. Judged per entry like any
+ * derived value: its comma is blanked first so the entry is not split, and its neighbours are still read.
+ */
+const SHORT_PREFIX = /(\.(?:slice|substring|substr)\(\s*0\s*),(\s*(?:[1-9]|1[0-6])\s*\))/g
+const blankPrefixCommas = Str.replace(SHORT_PREFIX, "$1 $2")
+
+/** Words before the match that make a name about the value, not the value: `hashedPassword`, `hasToken`. */
 const NOT_THE_VALUE = new Set([
 	"hash",
 	"hashed",
@@ -53,101 +60,40 @@ const NOT_THE_VALUE = new Set([
 	"total",
 ])
 
-/** Words after the match that name metadata about it: `tokenCount`, `emailVerified`, `cookieName`. */
-const META_WORDS = new Set([
-	"scope",
-	"scopes",
-	"subject",
-	"prompt",
-	"completion",
-	"limit",
-	"usage",
-	"introspection",
-	"verdict",
-	"result",
-	"outcome",
-	"state",
-	"validation",
-	"reason",
-	"age",
-	"issuer",
-	"audience",
-	"algorithm",
-	"lifetime",
-	"details",
-	"destination",
-	"destinations",
-	"updated",
-	"changed",
-	"delivered",
-	"failed",
-	"attempts",
-	"retries",
-	"cache",
-	"hit",
-	"miss",
-	"rejected",
-	"accepted",
-	"looks",
-	"used",
-	"last",
-	"created",
-	"revoked",
-	"rotated",
-	"count",
-	"length",
-	"len",
-	"size",
-	"id",
-	"ids",
-	"type",
-	"kind",
-	"name",
-	"names",
-	"verified",
-	"enabled",
-	"required",
-	"present",
-	"exists",
-	"valid",
-	"configured",
-	"set",
-	"status",
-	"domain",
-	"provider",
-	"expires",
-	"expiry",
-	"ttl",
-	"prefix",
-	"suffix",
-	"last4",
-	"source",
-	"mode",
-	"policy",
-	"format",
-	"version",
-	"field",
-	"fields",
-	"service",
-	"client",
-	"template",
-	"queue",
-	"job",
-	"config",
-	"url",
-	"path",
-	"error",
-	"errors",
-	"schema",
-	"sent",
-	"ref",
-	"refs",
-	"arn",
-	"store",
-	"vault",
-	"manager",
-	"rotation",
+/**
+ * Words that may follow the match and still name the value itself: `token.value`, `email_address`.
+ * Any other word after it names something about the value (`tokenCount`, `auth.token.iss`,
+ * `api_key_network.asn`, `widgetCredentialAction`), so the name is only flagged when the sensitive
+ * word ends it or only these follow.
+ */
+const VALUE_WORDS = new Set([
+	"value",
+	"raw",
+	"plain",
+	"plaintext",
+	"str",
+	"string",
+	"text",
+	"header",
+	"address",
+	"number",
+	"body",
+	"data",
+	// The parts of a postal address still locate a person (`shipping_address_line1`).
+	"line1",
+	"line2",
+	"line3",
+	"street",
+	"city",
+	"zip",
+	"postcode",
 ])
+
+/** A value word, or its plural (`phone_numbers`, `email_addresses`). */
+const isValueWord = (word: string): boolean =>
+	VALUE_WORDS.has(word) ||
+	VALUE_WORDS.has(Str.slice(0, -1)(word)) ||
+	VALUE_WORDS.has(Str.slice(0, -2)(word))
 
 /** Single words, matched whole: `token` but not `tokens` (`gen_ai.usage.output_tokens`). */
 const WORDS = new Map<string, PrivacyKind>([
@@ -270,26 +216,33 @@ const wordsOf = (name: string): ReadonlyArray<string> =>
 		(word) => word.length > 0,
 	)
 
-/** The first sensitive word or compound in a name, and the words it spans. */
-const firstMatch = (words: ReadonlyArray<string>) => {
-	for (let start = 0; start < words.length; start++) {
-		for (const span of [3, 2]) {
-			const kind =
-				start + span <= words.length
-					? COMPOUNDS.get(Arr.join(words.slice(start, start + span), ""))
-					: undefined
-			if (kind !== undefined) return { kind, start, end: start + span }
-		}
-		const kind = WORDS.get(words[start] ?? "")
-		if (kind !== undefined) return { kind, start, end: start + 1 }
+/**
+ * The sensitive word or compound that ends furthest right in a name, the longest on a tie, and the
+ * words it spans. The rightmost is the one the name is about: `tokenResponse.access_token` is an
+ * access token, `auth.token.iss` is not a token.
+ */
+const lastMatch = (words: ReadonlyArray<string>) => {
+	let best: { readonly kind: PrivacyKind; readonly start: number; readonly end: number } | undefined
+	const consider = (kind: PrivacyKind | undefined, start: number, end: number) => {
+		if (
+			kind !== undefined &&
+			(best === undefined || end > best.end || (end === best.end && start < best.start))
+		)
+			best = { kind, start, end }
 	}
-	return undefined
+	for (let start = 0; start < words.length; start++) {
+		for (const span of [3, 2])
+			if (start + span <= words.length)
+				consider(COMPOUNDS.get(Arr.join(words.slice(start, start + span), "")), start, start + span)
+		consider(WORDS.get(words[start] ?? ""), start, start + 1)
+	}
+	return best
 }
 
 /**
  * What a key or an expression (`{ chain: true }`, which alone can be a whole payload) names. A
- * metadata word after the match (`token.count`) or a non-person owner before contact data
- * (`repo.fullName`) makes it not sensitive.
+ * word after the match that is not part of the value (`token.count`) or a non-person owner before
+ * contact data (`repo.fullName`) makes it not sensitive.
  */
 export const classifyName = (
 	name: string,
@@ -298,10 +251,10 @@ export const classifyName = (
 	const words = wordsOf(name)
 	const last = words.at(-1)
 	if (last === undefined || Arr.some(words, (word) => NOT_THE_VALUE.has(word))) return undefined
-	const match = firstMatch(words)
+	const match = lastMatch(words)
 	if (match === undefined)
 		return options.chain === true && words.length > 1 && PAYLOAD_WORDS.has(last) ? "payload" : undefined
-	if (Arr.some(words.slice(match.end), (word) => META_WORDS.has(word))) return undefined
+	if (!Arr.every(words.slice(match.end), isValueWord)) return undefined
 	if (match.kind === "contact" && Arr.some(words.slice(0, match.start), (word) => NOT_A_PERSON.has(word)))
 		return undefined
 	return match.kind
@@ -418,6 +371,18 @@ const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
  * An entry whose recorded value is derived, not the data: a comparison, a negation, a presence
  * check, a length, or a constant (`hasToken: token !== undefined`, `"cache": "hit"`).
  */
+/**
+ * A short prefix that is the entry's whole value (no operator before it, so `password + id.slice(0, 8)`
+ * is not one). Only safe for a long secret: a prefix of a short value can be all of it.
+ */
+const SHORT_PREFIX_VALUE =
+	/(?<!(?:[+*/%|&^~-]|\?(?!\.)).*)(?:^|(?<=[\w$])\(|:)\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$/
+
+/** Secrets far longer than any exempt prefix: a key, token or secret, not a password or a PIN. */
+const prefixSafe = (kind: PrivacyKind, name: string) =>
+	kind === "secret" &&
+	!Arr.some(wordsOf(name), (word) => /^(?:pass(?:word|wd|phrase|code)|pin)$/.test(word))
+
 const DERIVED_VALUE =
 	/(?:[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
 
@@ -474,6 +439,8 @@ export interface PrivacyHit {
 	readonly kind: PrivacyKind
 	readonly subject: string
 	readonly sink: Sink
+	/** The value itself was recognized (a JWT, a card number), not only a name that suggests it. */
+	readonly byValue: boolean
 }
 
 const KIND_RANK = {
@@ -490,15 +457,17 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	const line = lines[index]
 	if (line === undefined || line.kind !== "add" || line.text.length > MAX_LINE_CHARS) return undefined
 	if (isCommentLine(line.text) || TRANSFORMED_LINE.test(line.text)) return undefined
-	const { literals, code, interpolations } = blankLiterals(line.text)
+	// Same length as the line, so every offset below reads either.
+	const text = blankPrefixCommas(line.text)
+	const { literals, code, interpolations } = blankLiterals(text)
 	const sink = sinkOf(lines, index)
 	if (sink === undefined) return undefined
 	for (const { kind, label, pattern } of VALUE_PATTERNS) {
 		if (Arr.some(literals, (literal) => pattern.test(literal.value)))
-			return { kind, subject: label, sink }
+			return { kind, subject: label, sink, byValue: true }
 	}
 	if (Arr.some(literals, (literal) => hasCardNumber(literal.value)))
-		return { kind: "payment", subject: "a card number", sink }
+		return { kind: "payment", subject: "a card number", sink, byValue: true }
 
 	// Each comma-separated entry is judged on its own value: `{ email: user.email, ok: true }`.
 	const segments = segmentsOf(code)
@@ -513,41 +482,49 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	]
 	const values = Arr.reduce(
 		blanked,
-		line.text,
-		(text, [start, end]) =>
-			Str.slice(0, start)(text) + Str.repeat(end - start)(" ") + Str.slice(end)(text),
+		text,
+		(acc, [start, end]) => Str.slice(0, start)(acc) + Str.repeat(end - start)(" ") + Str.slice(end)(acc),
 	)
-	const derived = Arr.map(segments, ([start, end]) =>
-		DERIVED_VALUE.test(Str.trim(Str.slice(start, end)(values))),
-	)
+	const segmentText = (start: number, end: number) => Str.trim(Str.slice(start, end)(values))
+	const derived = Arr.map(segments, ([start, end]) => DERIVED_VALUE.test(segmentText(start, end)))
+	const shortPrefix = Arr.map(segments, ([start, end]) => SHORT_PREFIX_VALUE.test(segmentText(start, end)))
 	const segmentAt = (offset: number) =>
 		Option.getOrElse(
 			Arr.findFirstIndex(segments, ([start, end]) => offset >= start && offset <= end),
 			() => -1,
 		)
-	const isDerived = (offset: number, valueFollows = false) => {
+	/** Whether the value at `offset` is derived; `prefixOk` also accepts a short prefix of it. */
+	const isDerived = (offset: number, prefixOk: boolean, valueFollows = false) => {
 		const within = Arr.findFirst(interpolations, ([start, end]) => offset >= start && offset < end)
-		if (Option.isSome(within))
-			return DERIVED_VALUE.test(Str.trim(Str.slice(within.value[0], within.value[1])(line.text)))
+		if (Option.isSome(within)) {
+			const inner = Str.trim(Str.slice(within.value[0], within.value[1])(text))
+			return DERIVED_VALUE.test(inner) || (prefixOk && SHORT_PREFIX_VALUE.test(inner))
+		}
 		const at = segmentAt(offset)
-		return derived[at] === true || (valueFollows && derived[at + 1] === true)
+		const derivedAt = (i: number) => derived[i] === true || (prefixOk && shortPrefix[i] === true)
+		return derivedAt(at) || (valueFollows && derivedAt(at + 1))
 	}
 
 	const named: Array<{ readonly kind: PrivacyKind; readonly subject: string; readonly offset: number }> = []
 	for (const literal of literals) {
 		if (literal.key === undefined || !KEY_LITERAL.test(literal.value)) continue
 		const kind = classifyName(literal.value)
-		if (kind !== undefined && !isDerived(literal.offset, literal.key === "argument"))
+		if (
+			kind !== undefined &&
+			!isDerived(literal.offset, prefixSafe(kind, literal.value), literal.key === "argument")
+		)
 			named.push({ kind, subject: `\`${literal.value}\``, offset: literal.offset })
 	}
-	for (const match of Str.matchAll(BRACKET_ACCESS)(line.text)) {
-		const kind = classifyName(`${match[1]}.${match[2]}`, { chain: true })
-		if (kind !== undefined && !isDerived(match.index ?? 0))
+	for (const match of Str.matchAll(BRACKET_ACCESS)(text)) {
+		const name = `${match[1]}.${match[2]}`
+		const kind = classifyName(name, { chain: true })
+		if (kind !== undefined && !isDerived(match.index ?? 0, prefixSafe(kind, name)))
 			named.push({ kind, subject: `\`${match[0]}\``, offset: match.index ?? 0 })
 	}
 	for (const { chain, offset } of chainsOf(code)) {
 		const kind = classifyName(chain, { chain: true })
-		if (kind !== undefined && !isDerived(offset)) named.push({ kind, subject: `\`${chain}\``, offset })
+		if (kind !== undefined && !isDerived(offset, prefixSafe(kind, chain)))
+			named.push({ kind, subject: `\`${chain}\``, offset })
 	}
 	// A key naming a non-person owner (`vcs.repository.full_name`) speaks for its own entry, and for
 	// the value entry after it in `set("k", v)`; never for other entries on the line.
@@ -566,7 +543,9 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 		named,
 		(hit) => hit.kind !== "contact" || !ownerSegments.has(segmentAt(hit.offset)),
 	).sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
-	return worst === undefined ? undefined : { ...worst, sink }
+	return worst === undefined
+		? undefined
+		: { kind: worst.kind, subject: worst.subject, sink, byValue: false }
 }
 
 const SEVERITY = {
@@ -577,6 +556,14 @@ const SEVERITY = {
 	payload: "warn",
 	network: "info",
 } as const satisfies Record<PrivacyKind, PrReviewSeverity>
+
+/**
+ * A name alone is a guess (`auth.token.iss` reads like a token), so it is at most a warning; only a
+ * recognized value is critical. Prod, 2026-11: most name-only critical findings were dismissed or
+ * renamed around.
+ */
+const severityOf = (hit: PrivacyHit): PrReviewSeverity =>
+	hit.byValue || SEVERITY_RANK[SEVERITY[hit.kind]] <= SEVERITY_RANK.warn ? SEVERITY[hit.kind] : "warn"
 
 const TITLE = {
 	secret: "Credential",
@@ -636,23 +623,32 @@ export const privacyFindings = (files: ReadonlyArray<PullRequestFile>): Readonly
 		),
 		(file: PullRequestFile) => {
 			const lines = parsePatch(file.patch)
-			const byKind = new Map<PrivacyKind, { readonly hit: PrivacyHit; readonly lines: Array<number> }>()
+			const byKind = new Map<
+				PrivacyKind,
+				{ readonly hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity }
+			>()
 			Arr.forEach(lines, (line, index) => {
 				const hit = privacyHitAt(lines, index)
 				if (hit === undefined) return
 				const seen = byKind.get(hit.kind)
-				if (seen === undefined) byKind.set(hit.kind, { hit, lines: [line.newLine] })
-				else seen.lines.push(line.newLine)
+				if (seen === undefined)
+					byKind.set(hit.kind, { hit, lines: [line.newLine], severity: severityOf(hit) })
+				else {
+					seen.lines.push(line.newLine)
+					// A recognized value on any line of the kind makes the one finding as severe as it.
+					if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity])
+						seen.severity = severityOf(hit)
+				}
 			})
 			return Arr.map(
 				[...byKind.values()],
-				({ hit, lines: [first = 1, ...others] }) =>
+				({ hit, severity, lines: [first = 1, ...others] }) =>
 					new PrReviewFinding({
 						path: file.path,
 						line: first,
 						category: "security",
 						checkId: "PII-01",
-						severity: SEVERITY[hit.kind],
+						severity,
 						title: `${TITLE[hit.kind]} ${hit.subject} written to ${SINK_LABEL[hit.sink]}`,
 						body: `${WHY[hit.kind]}${otherLines(others)}`,
 					}),

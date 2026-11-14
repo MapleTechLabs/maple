@@ -250,6 +250,8 @@ export const PullRequestReviewThread = Schema.Struct({
 		Schema.Struct({
 			commentId: Schema.NullOr(Schema.String),
 			author: Schema.String,
+			/** Posted by an App or other automation, never a person's verdict; absent reads as a person. */
+			isBot: Schema.optionalKey(Schema.Boolean),
 			body: Schema.String,
 			/** 👍 and 👎 on the comment: the author's verdict on a finding, read as precision. */
 			thumbsUp: Schema.Number,

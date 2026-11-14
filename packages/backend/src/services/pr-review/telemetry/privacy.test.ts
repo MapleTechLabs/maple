@@ -111,6 +111,93 @@ describe("privacyHitAt", () => {
 			"user.email",
 		],
 		["worst kind wins", ["logger.info({ email: user.email, token: session.token })"], "secret", "token"],
+		["a token's value", ['span.setAttribute("auth.token.value", token)'], "secret", "auth.token.value"],
+		[
+			"an email address",
+			["logger.info({ email_address: input.email_address })"],
+			"contact",
+			"email_address",
+		],
+		// The rightmost sensitive word names the value, whatever comes before it.
+		[
+			"a token inside a response",
+			["logger.info(tokenResponse.access_token)"],
+			"secret",
+			"tokenResponse.access_token",
+		],
+		[
+			"a password among credentials",
+			["logger.info(credentials.password)"],
+			"secret",
+			"credentials.password",
+		],
+		["a token under a secret", ["logger.info(secret.token)"], "secret", "secret.token"],
+		[
+			"a social security number",
+			["logger.info({ socialSecurityNumber })"],
+			"government_id",
+			"socialSecurityNumber",
+		],
+		["a credit card number", ["logger.info({ creditCardNumber })"], "payment", "creditCardNumber"],
+		[
+			"plural phone numbers",
+			["logger.info({ customer_phone_numbers })"],
+			"contact",
+			"customer_phone_numbers",
+		],
+		["plural email addresses", ["logger.info({ email_addresses })"], "contact", "email_addresses"],
+		[
+			"plural bank account numbers",
+			["logger.info({ bank_account_numbers })"],
+			"payment",
+			"bank_account_numbers",
+		],
+		[
+			"a street address line",
+			["logger.info({ shipping_address_line1: order.shipping_address_line1 })"],
+			"contact",
+			"shipping_address_line1",
+		],
+		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
+		// A prefix of a short value can be all of it, so only a long secret's prefix is exempt.
+		["a short prefix of an ssn", ["logger.info({ ssn: ssn.slice(0, 12) })"], "government_id", "ssn"],
+		[
+			"a short prefix of a password",
+			['span.setAttribute("user.password", password.slice(0, 12))'],
+			"secret",
+			"user.password",
+		],
+		// A short prefix exempts only its own entry, and only when it is the whole value.
+		[
+			"a password joined to a converted short id",
+			["logger.info({ password: password + String(requestId.slice(0, 8)) })"],
+			"secret",
+			"password",
+		],
+		[
+			"a password joined to a bracketed short id",
+			["logger.info({ password: password + (requestId.slice(0, 8)) })"],
+			"secret",
+			"password",
+		],
+		[
+			"a password joined to a short id",
+			["logger.info({ password: password + requestId.slice(0, 8) })"],
+			"secret",
+			"password",
+		],
+		[
+			"a password beside a short trace id",
+			["logger.info({ password, traceId: traceId.slice(0, 8) })"],
+			"secret",
+			"password",
+		],
+		[
+			"an email beside a short request id",
+			['Effect.annotateCurrentSpan({ "user.email": user.email, "request.id": requestId.slice(0, 8) })'],
+			"contact",
+			"user.email",
+		],
 	]
 	for (const [name, snippet, kind, subject] of exposes) {
 		it(`flags ${name}`, () => {
@@ -159,6 +246,17 @@ describe("privacyHitAt", () => {
 		],
 		["a repository's full name", ['span.setAttribute("vcs.repository.full_name", checkout.fullName)']],
 		["a span name", ['Effect.withSpan("AuthService.withAccessToken", { attributes: { orgId } })']],
+		// Prod false positives, 2026-11: a word after the sensitive one names something about it.
+		["a token's network metadata", ['span.setAttribute("auth.api_key_network.asn", asn)']],
+		["a token's issuer claim", ['span.setAttribute("auth.token.iss", claims.iss)']],
+		["a token's purpose", ['Effect.annotateCurrentSpan({ "sealed_token.purpose": purpose })']],
+		["a token's issue time", ['logger.info({ "agentToken.issued_at": issuedAt })']],
+		["a token's revision", ["Effect.annotateCurrentSpan({ refreshTokenRevision })"]],
+		["an enum named after credentials", ["logger.info({ action: widgetCredentialAction })"]],
+		["a class named after secrets", ["Effect.logInfo(SecretResealSweep.name)"]],
+		["a short token prefix", ['span.setAttribute("auth.token", token.slice(0, 12))']],
+		["a short prefix as a call's argument", ["logger.info(token.slice(0, 12))"]],
+		["a short prefix in a template", ["logger.info(`using ${apiKey.slice(0, 6)}`)"]],
 	]
 	for (const [name, snippet] of quiet) {
 		it(`stays quiet on ${name}`, () => {
@@ -214,11 +312,25 @@ describe("privacyFindings", () => {
 				finding.title,
 			]),
 			[
-				[12, "critical", "PII-01", "security", "Credential `password` written to a log"],
 				[10, "warn", "PII-01", "security", "Personal data `user.email` written to a span attribute"],
+				[12, "warn", "PII-01", "security", "Credential `password` written to a log"],
 			],
 		)
-		assert.match(findings[1]?.body ?? "", /Also on line 11\./)
+		assert.match(findings[0]?.body ?? "", /Also on line 11\./)
+	})
+
+	// A name is a guess; a value recognized by its shape is not.
+	it("files a name-only hit as a warning and a recognized value as critical", () => {
+		const severities = (added: ReadonlyArray<string>) =>
+			Arr.map(privacyFindings([file("src/a.ts", added)]), (finding) => finding.severity)
+		assert.deepStrictEqual(severities(['logger.info("x", { password })']), ["warn"])
+		assert.deepStrictEqual(
+			severities([
+				'logger.info("x", { password })',
+				'logger.debug("using eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")',
+			]),
+			["critical"],
+		)
 	})
 
 	it("skips tests, fixtures and docs", () => {
@@ -242,7 +354,6 @@ describe("privacyFindings", () => {
 			),
 		])
 		assert.strictEqual(finding?.line, 12)
-		assert.strictEqual(finding?.severity, "critical")
 	})
 })
 

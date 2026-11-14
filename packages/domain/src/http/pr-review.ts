@@ -198,9 +198,10 @@ export class PrReviewCoverageUnit extends Schema.Class<PrReviewCoverageUnit>("Pr
 }) {}
 
 /**
- * A finding's life across pushes. `resolved` is a later head that fixed it, confirmed by a review;
- * `dismissed` is a person resolving its thread or answering it "won't fix", which the reviewer
- * must respect rather than raise again.
+ * A finding's life across pushes. `resolved` is a later head that fixed it, confirmed by a review
+ * (with `resolvedSha`), or a person saying it is fixed or closing its thread (without one);
+ * `dismissed` is a person answering it "won't fix" or the reviewer agreeing it does not hold,
+ * which the reviewer must respect rather than raise again.
  */
 export const PrReviewFindingStatus = Schema.Literals(["open", "resolved", "dismissed"]).annotate({
 	identifier: "@maple/PrReviewFindingStatus",
@@ -491,9 +492,16 @@ export type PrReviewReplyCommand = Schema.Schema.Type<typeof PrReviewReplyComman
 export const PrReviewReplyStatus = Schema.Literals(["queued", "running", "completed", "failed", "skipped"])
 export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
 
-/** What `submit_reply` accepts: the answer, in GitHub markdown. Lenient like `submit_review`. */
+/**
+ * What `submit_reply` accepts: the answer, in GitHub markdown, and the handles of open findings the
+ * answer settles. Lenient like `submit_review`.
+ */
 export const PrReviewReplySubmission = Schema.Struct({
 	body: Schema.optionalKey(Schema.String),
+	/** Open findings the person showed do not hold, and the reviewer agrees after reading the code. */
+	dismissed: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	/** Open findings the head already fixes, read at the head. */
+	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 })
 export type PrReviewReplySubmission = Schema.Schema.Type<typeof PrReviewReplySubmission>
 
