@@ -13,7 +13,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const ORG = Schema.decodeSync(OrgId)("org_cost")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 const USER = Schema.decodeSync(UserId)("user_cost")
-const KEY = "sk-admin-0123456789abcdefghijABCDEFGHIJ0123456789"
+const KEY = "sk-admin-FAKE-TEST-KEY-not-a-real-secret"
 const WINDOW = { startDay: "2026-10-20", endDay: "2026-11-10" }
 /** The pull runs the morning after the window's last day. */
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-11T06:00:00Z"))
