@@ -100,16 +100,17 @@ masked in the public run logs. The trust's ID is the `PLANETSCALE_OIDC_TRUST_ID`
 ```bash
 pscale oidc-trust create --org <org> --name "github: backup restore drill" \
   --provider github_actions --max-ttl 2700 \
-  --condition repository_id=<repo id> --condition environment=maintenance \
+  --condition repository_id=1158615018 --condition repository_owner_id=282671153 \
+  --condition environment=maintenance \
   --database-access maple:read_branch --database-access maple:create_branch \
   --database-access maple:delete_branch --database-access maple:connect_branch \
   --database-access maple:delete_branch_password --database-access maple:read_backups \
   --database-access maple:restore_production_branch_backup
 ```
 
-`gh api repos/MapleTechLabs/maple --jq .id` prints the repository id. Check the claim names with
-`pscale oidc-trust providers show github_actions --org <org>`; the provider may require more
-conditions (such as `repository_owner_id`).
+The provider requires `repository_id` and `repository_owner_id`
+(`gh api repos/MapleTechLabs/maple --jq '.id, .owner.id'`); `environment` is what keeps other
+jobs in the repository out.
 
 Point-in-time recovery is the other restore path PlanetScale offers: any timestamp inside the
 retention window, from the dashboard or `pscale branch create --from main --restore-point <iso>`

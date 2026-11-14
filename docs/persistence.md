@@ -127,14 +127,16 @@ timeout, since alchemy resolves it once and migrations run late in the deploy.
 `PLANETSCALE_ORGANIZATION` still comes from the instance's Infisical environment, masked in the
 public run logs. Each instance has its own trust, conditioned on its GitHub environment
 (`production`, `production-eu`), whose ID is that environment's `PLANETSCALE_OIDC_TRUST_ID`
-variable. Give a trust the accesses the stored token had, which `pscale service-token show-access
-<id> --org <org>` lists:
+variable. A trust reaches only its instance's database, with the four accesses alchemy needs:
 
 ```bash
-pscale oidc-trust create --org <org> --name "github: prd deploy" \
+pscale oidc-trust create --org <org> --name "github: prd deploy us" \
   --provider github_actions --max-ttl 2700 \
-  --condition repository_id=<repo id> --condition environment=production \
-  --database-access <database>:<access> ...
+  --condition repository_id=1158615018 --condition repository_owner_id=282671153 \
+  --condition environment=production \
+  --database-access maple:read_database --database-access maple:read_branch \
+  --database-access maple:connect_production_branch \
+  --database-access maple:delete_production_branch_password
 ```
 
 `bun dev` leaves the PlanetScale provider out.
