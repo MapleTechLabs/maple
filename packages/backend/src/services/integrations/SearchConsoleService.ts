@@ -15,6 +15,7 @@ import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as 
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { SearchConsoleClientSecret } from "@maple/infra/secrets"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import {
 	GOOGLE_PROVIDER,
@@ -68,6 +69,7 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
+			const clientSecret = yield* SearchConsoleClientSecret
 			const google = yield* GoogleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
 			const dbExecute = makeDbExecute(
@@ -108,7 +110,7 @@ export class SearchConsoleService extends Context.Service<SearchConsoleService, 
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const connection = yield* google.getConnection(orgId)
 				return {
-					configured: isGoogleOAuthConfigured(env),
+					configured: isGoogleOAuthConfigured(env, clientSecret),
 					connection,
 					sites: connection === null ? [] : yield* loadSites(orgId),
 				} satisfies SearchConsoleStatus

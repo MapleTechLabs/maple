@@ -9,13 +9,13 @@ import {
 	configKeysEnv,
 	derived,
 	optionalPlain,
-	optionalSecret,
 	plainWithDefault,
 	PRD_LOCKSTEP_REVISION_SERVICES,
 	requiredPlain,
 	selfObservabilityEnv,
 } from "./env.ts"
 import { resolveMapleProfile } from "./profile.ts"
+import { ClerkJwtKey } from "./secrets.ts"
 
 /**
  * These groups replaced per-worker copies of the same expressions. The parity
@@ -64,13 +64,13 @@ describe("primitives", () => {
 
 	it("omits an unset optional key entirely rather than binding an empty string", () => {
 		expect(run(optionalPlain("MAPLE_ENDPOINT"), {})).toEqual({})
-		expect(run(optionalSecret("CLERK_JWT_KEY"), {})).toEqual({})
+		expect(run(ClerkJwtKey.optional, {})).toEqual({})
 		expect("MAPLE_ENDPOINT" in run(optionalPlain("MAPLE_ENDPOINT"), {})).toBe(false)
 	})
 
 	it("treats a whitespace-only optional value as absent", () => {
 		expect(run(optionalPlain("MAPLE_ENDPOINT"), { MAPLE_ENDPOINT: "   " })).toEqual({})
-		expect(run(optionalSecret("CLERK_JWT_KEY"), { CLERK_JWT_KEY: "  " })).toEqual({})
+		expect(run(ClerkJwtKey.optional, { CLERK_JWT_KEY: "  " })).toEqual({})
 	})
 
 	it("trims optional values", () => {
@@ -80,7 +80,7 @@ describe("primitives", () => {
 	})
 
 	it("redacts optional secrets", () => {
-		const record = run(optionalSecret("CLERK_JWT_KEY"), { CLERK_JWT_KEY: "jwt-secret" })
+		const record = run(ClerkJwtKey.optional, { CLERK_JWT_KEY: "jwt-secret" })
 		// oxlint-disable-next-line typescript/no-base-to-string -- asserts Redacted's runtime toString hides the value.
 		expect(String(record.CLERK_JWT_KEY)).not.toContain("jwt-secret")
 		const secret = record.CLERK_JWT_KEY

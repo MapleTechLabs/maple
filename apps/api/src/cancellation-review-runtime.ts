@@ -3,6 +3,7 @@ import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+import { ProductEventsIngestKey, StripeSecretKey, SupportSlackBotToken } from "@maple/infra/secrets"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import { CancellationReviewJob } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
@@ -15,7 +16,15 @@ export const cancellationReviewTelemetry = eventTelemetry({ serviceName: "maple-
  * The ports (`AI_WORKER`, `MAPLE_DB`, config) come from the Worker.
  */
 export const CancellationReviewLive = CancellationReviewService.layer.pipe(
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+	Layer.provide(
+		Layer.mergeAll(
+			EventBaseLive,
+			StripeSecretKey.layer,
+			ProductEventsIngestKey.layer,
+			SupportSlackBotToken.layer,
+			EdgeCacheServiceLive,
+		),
+	),
 )
 
 /**

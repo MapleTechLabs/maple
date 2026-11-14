@@ -4,7 +4,7 @@ import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, String a
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { CreateScrapeTargetRequest, OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
@@ -58,7 +58,7 @@ const makeLayer = (testDb: TestDb, fetchStub?: typeof globalThis.fetch) => {
 			Layer.provide(Layer.mergeAll(discoveryLive, oauthLive, SupabaseOAuthService.layer)),
 		),
 		oauthLive,
-	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
+	).pipe(Layer.provide(testDb.layer), Layer.provide(EnvTestLive), Layer.provide(makeConfig()))
 	return fetchStub ? Layer.mergeAll(composed, Layer.succeed(FetchHttpClient.Fetch, fetchStub)) : composed
 }
 

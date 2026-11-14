@@ -30,6 +30,8 @@ import {
 	planetscaleStatusOf,
 } from "./flow-planetscale"
 import { Message } from "../../../integrations/message"
+import { PlanetscaleMessage } from "./planetscale"
+import { toHub } from "./view-planetscale-parts"
 import type { Model } from "../../../integrations/model"
 import type { PlanetscaleMetricsMethod } from "./planetscale"
 import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-picker"
@@ -146,7 +148,7 @@ const tokenField = (
 				h.Autocomplete("off"),
 				h.Placeholder(options.placeholder),
 				...Field.controlAttributes(h, fieldModel, (message) =>
-					Message.GotPlanetscaleTokenField({ field, message }),
+					toHub(PlanetscaleMessage.GotTokenField({ field, message })),
 				),
 				h.AriaLabelledBy(ids.label),
 			],
@@ -162,7 +164,7 @@ const tokenForm = (h: H, model: Model, status: V2PlanetScaleIntegration, isAttac
 			? "https://app.planetscale.com"
 			: `https://app.planetscale.com/${encodeURIComponent(status.organization)}/settings/service-tokens`
 	return h.form(
-		[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(Message.SubmittedPlanetscaleToken())],
+		[h.Class(vstackClass({ gap: "4" })), h.OnSubmit(toHub(PlanetscaleMessage.SubmittedToken()))],
 		[
 			hstack(
 				h,
@@ -206,7 +208,7 @@ const tokenForm = (h: H, model: Model, status: V2PlanetScaleIntegration, isAttac
 								{
 									variant: "outline",
 									isDisabled: card.isSavingToken,
-									attributes: [h.OnClick(Message.ClickedPlanetscaleReplaceToken())],
+									attributes: [h.OnClick(toHub(PlanetscaleMessage.ClickedReplaceToken()))],
 								},
 								["Cancel"],
 							),
@@ -221,7 +223,7 @@ const metricsPart = (h: H, model: Model, status: V2PlanetScaleIntegration): Html
 	const isAttached = metricsAuthOf(status) === "service_token"
 	const method = metricsMethodOf(model, status)
 	const select = (next: PlanetscaleMetricsMethod) =>
-		isAttached ? undefined : Message.SelectedPlanetscaleMetricsMethod({ method: next })
+		isAttached ? undefined : toHub(PlanetscaleMessage.SelectedMetricsMethod({ method: next }))
 	return vstack(h, { gap: "3", className: "border-t border-border pt-5" }, [
 		heading(h, { level: 3, variant: "subsection" }, ["Branch metrics"]),
 		choiceTiles(h, [
@@ -252,7 +254,7 @@ const metricsPart = (h: H, model: Model, status: V2PlanetScaleIntegration): Html
 								{
 									variant: "outline",
 									size: "sm",
-									attributes: [h.OnClick(Message.ClickedPlanetscaleReplaceToken())],
+									attributes: [h.OnClick(toHub(PlanetscaleMessage.ClickedReplaceToken()))],
 								},
 								["Use a different token"],
 							),
@@ -417,7 +419,7 @@ const chooseStep = (h: H, model: Model): Html => {
 						className: "w-fit",
 						isDisabled: !canSave,
 						isLoading: card.isSelecting,
-						attributes: [h.OnClick(Message.SubmittedOrganization())],
+						attributes: [h.OnClick(toHub(PlanetscaleMessage.SubmittedOrganization()))],
 					},
 					[isBound ? "Save" : "Start collecting"],
 				),

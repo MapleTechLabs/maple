@@ -10,9 +10,10 @@ import {
 	resolveWorkerName,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
-import { requireSecretEntry } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
+import { sandboxSecrets } from "./alchemy/secrets.ts"
 import type { Executor, Sandbox } from "./src/worker.ts"
 
 /**
@@ -81,9 +82,7 @@ const props = Effect.gen(function* () {
 				maxInstances: executorMaxInstances,
 				observability: { logs: { enabled: true } },
 			}),
-			// Never the shared `INTERNAL_SERVICE_TOKEN` (acts as any org; this runs model-chosen
-			// commands). Required so a missing token fails the deploy, not every call.
-			...(yield* requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")),
+			...(yield* resolveWorkerEnv("sandbox", sandboxSecrets)),
 			...(yield* mirrorBackups),
 		},
 	}

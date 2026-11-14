@@ -8,6 +8,7 @@ import {
 } from "@maple/domain/http"
 import { Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { PreviewSigninKey } from "@maple/infra/secrets"
 import { clerkRequest, type ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
 import { secretsEqual } from "./secret-equal"
 
@@ -47,10 +48,9 @@ export interface PreviewSignInServiceApi {
 	>
 }
 
-type PreviewEnv = Pick<
-	EnvConfig,
-	"MAPLE_AUTH_MODE" | "MAPLE_ENVIRONMENT" | "CLERK_SECRET_KEY" | "PREVIEW_SIGNIN_KEY"
->
+type PreviewEnv = Pick<EnvConfig, "MAPLE_AUTH_MODE" | "MAPLE_ENVIRONMENT" | "CLERK_SECRET_KEY"> & {
+	readonly PREVIEW_SIGNIN_KEY: Option.Option<Redacted.Redacted>
+}
 
 /**
  * The key only means anything on a PR stage running a Clerk development instance: tickets
@@ -143,8 +143,10 @@ export class PreviewSignInService extends Context.Service<PreviewSignInService, 
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
+			const signinKey = yield* PreviewSigninKey
+			const key = previewKey({ ...env, PREVIEW_SIGNIN_KEY: signinKey })
 			const clerk = Option.map(env.CLERK_SECRET_KEY, (secret) => clerkPort(Redacted.value(secret)))
-			return makePreviewSignIn(Option.zipWith(previewKey(env), clerk, (key, clerk) => ({ key, clerk })))
+			return makePreviewSignIn(Option.zipWith(key, clerk, (key, clerk) => ({ key, clerk })))
 		}),
 	},
 ) {

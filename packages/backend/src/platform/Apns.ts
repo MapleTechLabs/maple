@@ -12,6 +12,7 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { MobilePushEnvironment } from "@maple/domain/http"
+import { ApnsPrivateKey } from "@maple/infra/secrets"
 import { Env, type EnvConfig } from "./Env"
 import { ES256, ES256_SIGN, pemToPkcs8, signJwt } from "./jwt"
 
@@ -188,10 +189,10 @@ interface ApnsConfig {
 	readonly privateKeyPem: string
 }
 
-const resolveConfig = (env: EnvConfig): ApnsConfig | null => {
+const resolveConfig = (env: EnvConfig, privateKey: Option.Option<Redacted.Redacted>): ApnsConfig | null => {
 	const teamId = Option.getOrUndefined(env.APNS_TEAM_ID)
 	const keyId = Option.getOrUndefined(env.APNS_KEY_ID)
-	const key = Option.getOrUndefined(env.APNS_PRIVATE_KEY)
+	const key = Option.getOrUndefined(privateKey)
 	if (!teamId || !keyId || !key) return null
 	return { teamId, keyId, privateKeyPem: Redacted.value(key) }
 }
@@ -248,7 +249,8 @@ export class ApnsClient extends Context.Service<ApnsClient, ApnsClientApi>()(
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const http = yield* HttpClient.HttpClient
-			const config = resolveConfig(env)
+			const privateKey = yield* ApnsPrivateKey
+			const config = resolveConfig(env, privateKey)
 
 			if (config === null) {
 				const unconfigured = () =>

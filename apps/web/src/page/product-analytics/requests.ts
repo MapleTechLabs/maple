@@ -1,0 +1,156 @@
+import { Array as Arr, Option } from "effect"
+import { Command } from "foldkit"
+import * as Keyed from "@maple/views/data/keyed"
+import { requestKey } from "@maple/views/data/request-key"
+import { previousWindow } from "../analytics/previous-window"
+import type { TimeWindow } from "../../data/time-range"
+import type { Resources } from "../../platform/resources"
+import type { PageContext } from "../contract"
+import {
+	FetchAttributeKeys,
+	FetchBreakdowns,
+	FetchEventNames,
+	FetchFunnel,
+	FetchPages,
+	FetchPaths,
+} from "./command"
+import {
+	funnelBreakdownParamsOf,
+	funnelCountsParamsOf,
+	funnelParamsOf,
+	pathsParamsOf,
+	populationOf,
+	tabOf,
+} from "./definition"
+import type { Message, SlotName } from "./message"
+import type { Model } from "./model"
+
+// The reads the page makes, each keyed by its input: the rail's options always, then the tab's own.
+
+type Cmd = Command.Command<Message, never, Resources>
+
+const BREAKDOWN_LIMIT = 50
+export const EVENTS_LIMIT = 200
+/** Pages a page step's input offers. */
+const PAGES_LIMIT = 100
+/** Property keys the breakdown picker offers. */
+const ATTRIBUTE_KEYS_LIMIT = 30
+
+type Request = Readonly<{ slot: SlotName; fn: string; input: object; command: (key: string) => Cmd }>
+
+const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
+	const population = populationOf(model.search)
+	const { startTime, endTime } = window
+	const breakdownsInput = { startTime, endTime, limitPerDimension: BREAKDOWN_LIMIT, ...population }
+	const events = (slot: SlotName, range: TimeWindow): Request => {
+		// One past the limit, so a full answer can tell "exactly 200" from "more than 200".
+		const input = { ...range, limit: EVENTS_LIMIT + 1, ...population }
+		return {
+			slot,
+			fn: "getProductEventNames",
+			input,
+			command: (key) => FetchEventNames({ slot, key, input }),
+		}
+	}
+	const rail: Request = {
+		slot: "breakdowns",
+		fn: "getWebAnalyticsBreakdowns",
+		input: breakdownsInput,
+		command: (key) => FetchBreakdowns({ slot: "breakdowns", key, input: breakdownsInput }),
+	}
+	const pagesInput = { startTime, endTime, limit: PAGES_LIMIT }
+	const pages: Request = {
+		slot: "pages",
+		fn: "getWebAnalyticsPages",
+		input: pagesInput,
+		command: (key) => FetchPages({ slot: "pages", key, input: pagesInput }),
+	}
+	switch (tabOf(model.search)) {
+		case "events":
+			return [
+				rail,
+				events("events", window),
+				events("previousEvents", previousWindow(startTime, endTime)),
+			]
+		case "funnels": {
+			const funnel = (
+				slot: "funnel" | "previousFunnel" | "funnelBreakdown",
+				range: TimeWindow,
+				params: ReturnType<typeof funnelParamsOf>,
+			): ReadonlyArray<Request> => {
+				if (params === null) return []
+				const input = { ...range, ...params }
+				return [
+					{
+						slot,
+						fn: "getProductEventsFunnelWidget",
+						input,
+						command: (key) => FetchFunnel({ slot, key, input }),
+					},
+				]
+			}
+			const keysInput = { startTime, endTime, limit: ATTRIBUTE_KEYS_LIMIT }
+			return [
+				rail,
+				events("events", window),
+				pages,
+				{
+					slot: "attributeKeys",
+					fn: "getProductEventAttributeKeys",
+					input: keysInput,
+					command: (key) => FetchAttributeKeys({ slot: "attributeKeys", key, input: keysInput }),
+				},
+				...funnel("funnel", window, funnelParamsOf(model.search)),
+				...funnel(
+					"previousFunnel",
+					previousWindow(startTime, endTime),
+					funnelCountsParamsOf(model.search),
+				),
+				...funnel("funnelBreakdown", window, funnelBreakdownParamsOf(model.search)),
+			]
+		}
+		case "paths": {
+			const params = pathsParamsOf(model.search)
+			const input = params === null ? null : { startTime, endTime, ...params }
+			return [
+				rail,
+				events("events", window),
+				pages,
+				...(input === null
+					? []
+					: [
+							{
+								slot: "paths" as const,
+								fn: "getProductEventsPathsWidget",
+								input,
+								command: (key: string) => FetchPaths({ slot: "paths", key, input }),
+							},
+						]),
+			]
+		}
+	}
+}
+
+/** Requests every slot the tab reads; a slot whose key held (and that answered) stays put. */
+export const requestSlots = (
+	model: Model,
+	context: PageContext,
+	window: TimeWindow,
+	mode: Keyed.RequestMode,
+	only?: ReadonlyArray<SlotName>,
+): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } =>
+	Arr.reduce<Request, { model: Model; commands: ReadonlyArray<Cmd> }>(
+		Arr.filter(plan(model, window), (request) => only === undefined || only.includes(request.slot)),
+		{ model, commands: [] },
+		(state, request) => {
+			const key = requestKey(context.orgId, request.fn, { data: request.input })
+			const current: Keyed.Keyed<unknown, unknown> = state.model[request.slot]
+			return Option.match(Keyed.request(current, key, mode), {
+				onNone: () => state,
+				onSome: (slot) => ({
+					model: { ...state.model, [request.slot]: slot },
+					commands: [...state.commands, request.command(key)],
+				}),
+			})
+		},
+	)

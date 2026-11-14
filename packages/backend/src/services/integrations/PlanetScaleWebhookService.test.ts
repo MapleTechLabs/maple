@@ -3,7 +3,7 @@ import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuth
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
@@ -69,7 +69,7 @@ const makeLayer = (testDb: TestDb) => {
 		),
 		webhooksLive,
 		oauthLive,
-	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
+	).pipe(Layer.provide(testDb.layer), Layer.provide(EnvTestLive), Layer.provide(makeConfig()))
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

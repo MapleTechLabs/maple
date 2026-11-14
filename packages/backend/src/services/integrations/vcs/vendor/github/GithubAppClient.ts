@@ -17,6 +17,7 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { GithubAppClientSecret, GithubAppPrivateKey } from "@maple/infra/secrets"
 import { githubWebBaseUrl } from "./github-hosts"
 import { timestampMs } from "@maple/backend/platform/time"
 import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
@@ -719,6 +720,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
+			const appPrivateKey = yield* GithubAppPrivateKey
+			const appClientSecret = yield* GithubAppClientSecret
 			const httpClient = yield* HttpClient.HttpClient
 
 			// Reuse one token per installation instead of minting a fresh one per repo. Tokens last
@@ -849,7 +852,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			const resolveConfig: Effect.Effect<ResolvedAppConfig, GithubAppError> = Effect.gen(function* () {
 				const appId = Option.getOrUndefined(env.GITHUB_APP_ID)
-				const privateKey = Option.getOrUndefined(env.GITHUB_APP_PRIVATE_KEY)
+				const privateKey = Option.getOrUndefined(appPrivateKey)
 				if (!appId || !privateKey) {
 					return yield* new GithubAppError({
 						message:
@@ -2598,7 +2601,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				code: string,
 			) {
 				const clientId = Option.getOrUndefined(env.GITHUB_APP_CLIENT_ID)
-				const clientSecret = Option.getOrUndefined(env.GITHUB_APP_CLIENT_SECRET)
+				const clientSecret = Option.getOrUndefined(appClientSecret)
 				if (!clientId || !clientSecret) {
 					return yield* new GithubAppError({
 						message:

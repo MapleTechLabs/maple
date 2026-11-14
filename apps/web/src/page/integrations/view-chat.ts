@@ -6,6 +6,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { item, itemActions, itemContent, itemDescription, itemTitle } from "@maple/views/ui/item"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
+import { ChatMessage } from "./chat"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
@@ -45,7 +46,9 @@ export const identityRow = (
 					size: "sm",
 					variant: "outline",
 					isLoading: model.chatCard.identityBusy,
-					attributes: [h.OnClick(Message.ClickedChatIdentity())],
+					attributes: [
+						h.OnClick(Message.GotChatMessage({ message: ChatMessage.ClickedIdentity() })),
+					],
 				},
 				[identity === undefined ? "Link your account" : "Unlink"],
 			),

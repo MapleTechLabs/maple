@@ -15,7 +15,7 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId, WarehouseUpstreamError } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/primitives"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -251,7 +251,7 @@ const harness = (options: FakeGoogleOptions = {}) => {
 		Layer.provideMerge(GoogleOAuthService.layer),
 		Layer.provide(Layer.mergeAll(warehouse, FetchHttpClient.layer)),
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 		Layer.provideMerge(google.fake.layer),
 	)

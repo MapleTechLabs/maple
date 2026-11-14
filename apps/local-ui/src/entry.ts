@@ -2,7 +2,10 @@ import "./styles.css"
 
 import { ResourcesLive } from "./platform/resources"
 import { Runtime } from "foldkit"
+import { syncSkeletonSweeps } from "@maple/views/ui/skeleton-clock"
 import { Flags, flags, init, Message, Model, subscriptions, update, view } from "./main"
+
+syncSkeletonSweeps()
 
 const container = document.getElementById("app") ?? document.body
 

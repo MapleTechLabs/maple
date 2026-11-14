@@ -5,7 +5,7 @@ import { FetchHttpClient } from "effect/http"
 import { AlertDestinationId, OrgId } from "@maple/domain/http"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { NotificationDispatcher, type NotificationRequest } from "./NotificationDispatcher"
@@ -73,7 +73,7 @@ describe("NotificationDispatcher.dispatch", () => {
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(failingDb),
-			Layer.provideMerge(Env.layer),
+			Layer.provideMerge(EnvTestLive),
 			Layer.provide(testConfig()),
 		)
 		return Effect.gen(function* () {
@@ -95,7 +95,7 @@ describe("NotificationDispatcher.dispatch", () => {
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provide(FetchHttpClient.layer),
 			Layer.provideMerge(testDb.layer),
-			Layer.provideMerge(Env.layer),
+			Layer.provideMerge(EnvTestLive),
 			Layer.provide(testConfig()),
 		)
 		return Effect.gen(function* () {

@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { LinearOAuthService } from "./LinearOAuthService"
@@ -126,7 +126,7 @@ const withOAuthApp = {
 const makeLayer = (testDb: TestDb, linear: MockLinear, extra: Record<string, string> = withOAuthApp) =>
 	LinearOAuthService.layer.pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...extra }))),
 		Layer.provideMerge(linear.fake.layer),
 	)

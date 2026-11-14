@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { CloudflareOAuthService, type CloudflareOAuthServiceApi } from "./CloudflareOAuthService"
 import {
 	cleanupTestDbs,
@@ -89,7 +89,7 @@ const makeConfig = (extra: Record<string, string> = {}) =>
 const makeLayer = (testDb: TestDb, extra: Record<string, string> = {}) =>
 	CloudflareOAuthService.layer.pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(makeConfig(extra)),
 	)
 

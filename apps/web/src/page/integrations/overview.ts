@@ -1,3 +1,4 @@
+import { DateTime, Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Keyed } from "@maple/views/data/keyed"
 
@@ -62,3 +63,15 @@ export const attentionOr = (issue: string | null) =>
 		health: issue !== null ? "attention" : "healthy",
 		stateLabel: issue !== null ? "Needs attention" : "Healthy",
 	}) as const
+
+/** `Date.parse` of an ISO timestamp (lint-banned), `null` when absent or unparseable. */
+export const isoMs = (iso: string | null | undefined): number | null =>
+	iso === null || iso === undefined
+		? null
+		: Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
+
+/** The latest of some epoch-ms values, `null` when none is set. */
+export const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
+	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
+		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
+	)

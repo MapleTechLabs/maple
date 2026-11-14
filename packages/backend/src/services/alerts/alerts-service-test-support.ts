@@ -45,6 +45,7 @@ import { EdgeCacheService } from "@maple/cache"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -278,7 +279,7 @@ export const makeLayer = (
 					refreshWidgets: () => Effect.succeed(noPushes),
 				})
 	const configLive = makeConfig()
-	const envLive = Env.layer.pipe(Layer.provide(configLive))
+	const envLive = EnvTestLive.pipe(Layer.provide(configLive))
 	const databaseLive = testDb.layer
 	// Held only so the service can hand an autonomous investigation turn its `submit_diagnosis`
 	// tool; no test here starts one. The real layer is cheap — it depends on nothing beyond Env

@@ -6,11 +6,15 @@ import { button } from "@maple/views/ui/button"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { relativeTime } from "../../../kit/relative-time"
 import { Message } from "../../../integrations/message"
+import { PlanetscaleMessage } from "./planetscale"
 import type { Model } from "../../../integrations/model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
+
+/** A PlanetScale message, as the hub carries it. */
+export const toHub = (message: PlanetscaleMessage): Message => Message.GotPlanetscaleMessage({ message })
 
 type H = HtmlBuilder<Message>
 
@@ -84,7 +88,9 @@ export const metricsHealth = (
 									variant: "link",
 									size: "xs",
 									className: `h-auto p-0 font-normal ${QUIET_LINK}`,
-									attributes: [h.OnClick(Message.ClickedMetricsDetails())],
+									attributes: [
+										h.OnClick(toHub(PlanetscaleMessage.ClickedMetricsDetails())),
+									],
 								},
 								[isOpen ? "Hide details" : "Show details"],
 							),

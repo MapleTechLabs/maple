@@ -15,7 +15,7 @@ import {
 	Schema,
 } from "effect"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { FetchHttpClient, type HttpClient } from "effect/http"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
@@ -78,7 +78,7 @@ const baseConfigValues = {
 const testConfig = (extra?: Record<string, unknown>) =>
 	ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfigValues, ...extra }))
 
-export const testEnv = (extra?: Record<string, unknown>) => Env.layer.pipe(Layer.provide(testConfig(extra)))
+export const testEnv = (extra?: Record<string, unknown>) => EnvTestLive.pipe(Layer.provide(testConfig(extra)))
 
 export const testRepoLayer = (testDb: TestDb, extra?: Record<string, unknown>) =>
 	VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(testEnv(extra)))

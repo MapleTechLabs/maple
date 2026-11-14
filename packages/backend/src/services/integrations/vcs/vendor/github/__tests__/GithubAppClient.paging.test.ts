@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	COMMIT_PAGES_PER_INVOCATION,
 	GithubAppClient,
@@ -16,7 +16,7 @@ const privateKey = generateKeyPairSync("rsa", {
 	privateKeyEncoding: { type: "pkcs8", format: "pem" },
 }).privateKey
 
-const env = Env.layer.pipe(
+const env = EnvTestLive.pipe(
 	Layer.provide(
 		ConfigProvider.layer(
 			ConfigProvider.fromUnknown({

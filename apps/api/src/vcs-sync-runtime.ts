@@ -1,6 +1,7 @@
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+import { GithubAppClientSecret, GithubAppPrivateKey, GithubAppWebhookSecret } from "@maple/infra/secrets"
 
 import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
@@ -70,7 +71,16 @@ export const VcsSyncLive = VcsSyncService.layer.pipe(
 	// Lockfile scans for known vulnerable dependencies, on pushes and installation syncs.
 	Layer.provide(DependencyScanSinkLive),
 	// No embedder here: the review's feedback filter runs where the review agent does.
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive, FindingEmbedder.none)),
+	Layer.provide(
+		Layer.mergeAll(
+			EventBaseLive,
+			GithubAppPrivateKey.layer,
+			GithubAppClientSecret.layer,
+			GithubAppWebhookSecret.layer,
+			EdgeCacheServiceLive,
+			FindingEmbedder.none,
+		),
+	),
 )
 
 export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide(EventBaseLive))

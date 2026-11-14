@@ -35,6 +35,10 @@ export type WhereEditorOptions<M> = Readonly<
 		/** The wrapper's, after `relative`. */
 		className?: string
 		textareaClassName: string
+		/** The textarea's own, where `textareaClassName` styles its frame: its minimum height, `resize-none`. */
+		controlClassName?: string
+		/** The clause does not parse: the textarea reads `aria-invalid` and takes the error border. */
+		isInvalid?: boolean
 		onInput: (value: string) => M
 	} & (
 		| { /** Enter is swallowed and reported. */ onEnter: M; autocomplete?: undefined }
@@ -105,9 +109,11 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 					options.textareaClassName,
 					isHighlighting && "text-transparent caret-foreground",
 				),
+				controlClassName: options.controlClassName,
 				defaultValue: options.value,
 				attributes: [
 					h.AriaLabel(options.ariaLabel),
+					...(options.isInvalid === true ? [h.AriaInvalid(true)] : []),
 					h.AriaExpanded(suggestions.isOpen),
 					h.Placeholder(options.placeholder),
 					h.Rows(options.rows ?? 2),

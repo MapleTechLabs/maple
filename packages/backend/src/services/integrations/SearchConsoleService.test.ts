@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/primitives"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
@@ -55,7 +55,7 @@ const config = {
 const makeLayer = (testDb: TestDb, routes: ReadonlyArray<VendorFake.VendorFakeRoute> = googleRoutes) =>
 	Layer.mergeAll(SearchConsoleService.layer, GoogleOAuthService.layer).pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 		Layer.provideMerge(VendorFake.make({ routes }).layer),
 	)

@@ -55,6 +55,29 @@ with `packageManager`.
 - Each service owns `static readonly layer = Layer.effect(this, this.make)` with internal deps via
   `Layer.provide`. `Env`, `Database`, caches, and bindings come from the app root.
 
+## Deployment secrets
+
+Maple's own deployment secrets are classes in `packages/infra/src/secrets.ts`, each listing the
+deployables allowed to bind it (`consumers`, a `SecretConsumer` from `secret.ts`). A deploy reads one
+only through `resolveWorkerEnv(consumer, config)` (a Worker's env) or `resolveAs(consumer, config)`
+(anything else) from `@maple/infra/secret-guard`. The stack's config is default-deny over those keys:
+read by a deployable outside `consumers`, or outside any scope (a Worker's init included), the
+deploy fails.
+
+- A new secret is a class there, bound with `Secrets.X.required` / `.optional` in the deployable's
+  `src/resources/env.ts` (`alchemy/secrets.ts` for a stack file). Widening access is an edit to
+  `consumers`.
+- `environments` lists the Infisical environments (`dev`, `preview`, `prod`, `prod-eu`) that may
+  hold a secret; a deploy loading one elsewhere fails. dev and preview must hold their own value
+  unless `sharesProdValueWith` names it. `bun run secrets:drift` checks Infisical against all of this (names
+  and value hashes only); run it after changing either.
+- The chat connectors declare their own secret keys (`requiredConfig`), bound by `configKeysEnv`.
+  Those are not in the catalog and not scoped by deployable.
+- `test/alchemy/secret-grants.test.ts` holds every deployable's grants exact and needs a row per
+  `SecretConsumer`. Run it with `bunx vitest run --config test/alchemy/vitest.config.mts secret-grants`.
+- At runtime a secret can be its own service (`yield* Secrets.X`, its layer at the app root beside
+  `Env.layer`); most are still fields on `Env`.
+
 ## Warehouse queries
 
 No Tinybird pipes/endpoints. All queries use the ClickHouse DSL in `@maple/query-engine` and run

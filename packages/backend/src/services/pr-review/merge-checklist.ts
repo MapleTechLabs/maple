@@ -48,8 +48,11 @@ const ENV_READS = [
 	new RegExp(`ENV\\.fetch\\(\\s*["']${NAME}["']|ENV\\[["']${NAME}["']\\]`, "g"),
 ]
 
-/** A config helper given the name as a literal: `Config.redacted("X")`, `requiredSecret("X")`. */
-const CONFIG_CALL = new RegExp(`([A-Za-z_$][\\w$.]*)\\s*\\(\\s*["'\`]${NAME}["'\`]`, "g")
+/**
+ * A config helper given the name as a literal: `Config.redacted("X")`, `requiredSecret("X")`, or a
+ * declaration through a generic factory, `Secret<Self>()("X", ...)`.
+ */
+const CONFIG_CALL = new RegExp(`([A-Za-z_$][\\w$.]*)(?:<[^<>()]*>\\(\\))?\\s*\\(\\s*["'\`]${NAME}["'\`]`, "g")
 const CONFIG_CALLEE = /config|env|secret|redacted|plain|setting/i
 const SECRET_CALLEE = /secret|redacted/i
 
@@ -237,7 +240,7 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			if (!candidate.ci && testOnlyName(candidate.name)) return
 			names.set(candidate.name, candidate)
 		}
-		for (const { text, line } of added) {
+		for (const [index, { text, line }] of added.entries()) {
 			if (DOTENV_TEMPLATE.test(path)) {
 				const name = DOTENV_LINE.exec(text)?.[1]
 				if (name !== undefined)
@@ -251,13 +254,17 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 				}
 				continue
 			}
-			for (const { name, secret } of namesRead(text)) {
+			// A formatter wraps a long first argument onto the next line; read the call as one,
+			// and report the name on the line it is written on.
+			const next = added[index + 1]
+			const wrapped = next !== undefined && next.line === line + 1 && /\(\s*$/.test(text)
+			for (const { name, secret } of namesRead(wrapped ? `${text}${Str.trim(next.text)}` : text)) {
 				remember({
 					name,
 					kind: secret || looksSecret(name) ? "secret" : "env",
 					ci: false,
 					path,
-					line,
+					line: Str.includes(name)(text) ? line : line + 1,
 				})
 			}
 		}

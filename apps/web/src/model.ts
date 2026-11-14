@@ -4,6 +4,7 @@ import { defineTaggedUnion } from "foldkit/schema"
 import * as Onboarding from "./page/onboarding"
 import { CustomerSlot } from "./page/onboarding/plan-gate"
 import { ClerkSnapshot } from "./platform/clerk"
+import * as PageHold from "./page/page-hold"
 import * as Preload from "./page/preload"
 import { RootToastAction } from "./page/contract"
 import { PageMessage, PageSlot } from "./page/registry"
@@ -52,6 +53,8 @@ export const Model = Schema.Struct({
 	pageInstances: Schema.Number,
 	/** Pages left recently, newest first: going back revives one with its last data (`parkPages`). */
 	parkedPages: Schema.Array(PageSlot),
+	/** The page left, still drawn while the entered page's first reads run (`page/page-hold.ts`). */
+	pageHold: PageHold.Model,
 	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
 	onboarding: Schema.NullOr(Onboarding.Model),
 	/** The last Clerk emit, Clerk mode only. */

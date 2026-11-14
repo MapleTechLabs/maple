@@ -114,19 +114,30 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 		h.div(
 			[h.Class("flex items-baseline justify-between gap-3")],
 			[
+				// The hint stays beside its label when a delta takes the corner.
 				h.span(
+					[h.Class("flex min-w-0 items-center gap-1.5")],
 					[
-						h.Class(
-							cn(
-								"truncate text-2xs font-medium",
-								isSelected ? "text-primary" : "text-muted-foreground",
-							),
+						h.span(
+							[
+								h.Class(
+									cn(
+										"truncate text-2xs font-medium",
+										isSelected ? "text-primary" : "text-muted-foreground",
+									),
+								),
+							],
+							[options.eyebrow],
 						),
+						...(options.eyebrowTooltip === undefined
+							? []
+							: [infoHint(h, options.eyebrowTooltip)]),
 					],
-					[options.eyebrow],
 				),
-				...(options.eyebrowTooltip === undefined ? [] : [infoHint(h, options.eyebrowTooltip)]),
-				...(corner === undefined ? [] : [h.span([h.Class("shrink-0 whitespace-nowrap")], [corner])]),
+				// Centred, not on the baseline: a delta's arrow would otherwise make its tile's header taller.
+				...(corner === undefined
+					? []
+					: [h.span([h.Class("shrink-0 self-center leading-none whitespace-nowrap")], [corner])]),
 			],
 		),
 		h.div(

@@ -1,24 +1,19 @@
-import { ChartRuntimeMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
 import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
-	CloudflareUsageResponse,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
-	SearchConsoleAvailableSitesResponse,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
-	VercelDiscoverResponse,
 	VercelIntegrationStatus,
-	VercelProjectScope,
 } from "@maple/domain/http"
 import {
 	V2AwsConnection,
@@ -32,7 +27,6 @@ import {
 	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
-	V2PlanetScaleOrganizationList,
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
@@ -40,7 +34,6 @@ import {
 	AwsConnectionId,
 	AwsMetricNamespace,
 	AwsModule,
-	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
 } from "@maple/primitives"
@@ -50,25 +43,27 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
-import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import * as Chart from "@maple/views/charts/chart"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
 import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
+import { SearchConsoleMessage } from "./search-console"
+import { ChatMessage } from "./chat"
 import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
 import {
 	ConfigureTarget,
 	LogVolume,
 	RemovedConnector,
 } from "../infra-integrations/gcp/integration/gcp-schema"
-import { VercelConfigureTarget, VercelSignal } from "../infra-integrations/vercel/integration/vercel-schema"
+import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
+import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
+import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
 	AwsRemovedStack,
 	AwsSetupMethod,
@@ -111,13 +106,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
-	CompletedLoadSearchConsoleSites: result(SearchConsoleAvailableSitesResponse),
-	/** A property's checkbox in the Search Console picker. */
-	ToggledSearchConsoleSite: { siteUrl: Schema.String },
-	ClickedSaveSearchConsoleSites: {},
-	ClickedRetrySearchConsoleSites: {},
-	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
-	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
@@ -167,12 +155,6 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedChatInstall: {},
-	CompletedChatInstall: { failure: Schema.NullOr(LoadFailure) },
-	ClickedChatIdentity: {},
-	CompletedChatIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
-	ClickedChatDisconnect: { workspaceId: ChatWorkspaceId },
-	CompletedChatDisconnect: { failure: Schema.NullOr(LoadFailure) },
 	ClickedGithubRefresh: {},
 	CompletedGithubRefreshSpin: { version: Schema.Number },
 	ToggledCiTraces: {},
@@ -195,25 +177,6 @@ export const Message = defineMessageUnion({
 		backfillQueued: Schema.Boolean,
 		failure: Schema.NullOr(LoadFailure),
 	},
-	CompletedLoadCloudflareUsage: result(CloudflareUsageResponse),
-	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
-	/** Every 30 s while a fresh Cloudflare connection settles. */
-	TickedCloudflareIngest: {},
-	GotZoneFilterMessage: { message: ToggleGroup.Message },
-	ChangedZoneSearch: { value: Schema.String },
-	ClickedZoneSort: { key: Schema.Literals(["name", "status", "requests"]) },
-	ClickedWorkersExpand: {},
-	ClickedManageZones: {},
-	GotZoneDialogMessage: { message: Dialog.Message },
-	ToggledManagedZone: { accountId: Schema.String, zoneId: Schema.String },
-	ToggledWatchNewZones: { accountId: Schema.String },
-	/** "Select all" / "Select none" over the account's zones the name filter shows. */
-	ClickedSetAccountZones: { accountId: Schema.String, watched: Schema.Boolean },
-	ChangedManagedZoneSearch: { value: Schema.String },
-	SubmittedZoneSettings: {},
-	CompletedCloudflareZones: { failure: Schema.NullOr(LoadFailure) },
-	...ChartRuntimeMessages,
-	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
 	CompletedFetchChecks: {
 		key: Schema.String,
@@ -250,41 +213,11 @@ export const Message = defineMessageUnion({
 	GotRailwayMessage: { message: RailwayMessage },
 	/** A message for the Supabase module. */
 	GotSupabaseMessage: { message: SupabaseMessage },
-	/** Every 15 s while a fresh connection waits for its first sync. */
-	TickedVercelSettle: {},
-	ClickedVercelSync: {},
-	CompletedVercelSync: { failure: Schema.NullOr(LoadFailure) },
-	/** An issue alert's "Re-apply drains": an empty settings save. */
-	ClickedVercelReapply: {},
-	ClickedVercelConfigure: { target: VercelConfigureTarget },
-	GotVercelConfigureDialogMessage: { message: Dialog.Message },
-	GotVercelTokenMessage: { message: Field.Message },
-	/** The token step's form submit: look the token up, or save it as the new token. */
-	SubmittedVercelToken: {},
-	CompletedVercelDiscover: {
-		forTeam: Schema.NullOr(Schema.String),
-		response: Schema.NullOr(VercelDiscoverResponse),
-		error: Schema.NullOr(Schema.String),
-	},
-	GotVercelTeamMessage: { message: RadioGroup.Message },
-	SubmittedVercelTeam: {},
-	ClickedVercelConfigureBack: {},
-	ToggledVercelSignal: { signal: VercelSignal },
-	ChangedVercelScope: { scope: VercelProjectScope },
-	ToggledVercelProject: { id: Schema.String },
-	ChangedVercelProjectQuery: { value: Schema.String },
-	ChangedVercelSampling: { value: Schema.String },
-	SubmittedVercelConnect: {},
-	CompletedVercelConnect: {
-		mode: Schema.Literals(["connect", "token"]),
-		teamName: Schema.NullOr(Schema.String),
-		error: Schema.NullOr(Schema.String),
-	},
-	/** The settings step's "Save and apply": straight to Vercel, or through the confirmation. */
-	ClickedVercelSave: {},
-	GotVercelConfirmDialogMessage: { message: Dialog.Message },
-	ConfirmedVercelSave: {},
-	CompletedVercelSave: { isReapply: Schema.Boolean, error: Schema.NullOr(Schema.String) },
+	GotSearchConsoleMessage: { message: SearchConsoleMessage },
+	GotChatMessage: { message: ChatMessage },
+	GotVercelMessage: { message: VercelMessage },
+	GotPlanetscaleMessage: { message: PlanetscaleMessage },
+	GotCloudflareMessage: { message: CloudflareMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },
@@ -338,24 +271,6 @@ export const Message = defineMessageUnion({
 	},
 	/** The connect flow's opt-in for a module on the account about to be connected. */
 	ToggledAwsNewModule: { module: AwsModule },
-	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
-	ClickedChangeOrganization: {},
-	GotPickerDialogMessage: { message: Dialog.Message },
-	SelectedOrganization: { name: Schema.String },
-	GotBranchFieldMessage: { field: Schema.Literals(["include", "exclude"]), message: Field.Message },
-	ClickedPickerCancel: {},
-	SubmittedOrganization: {},
-	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedMetricsDetails: {},
-	SelectedPlanetscaleMetricsMethod: { method: Schema.Literals(["api", "service_token"]) },
-	GotPlanetscaleTokenField: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
-	SubmittedPlanetscaleToken: {},
-	CompletedPlanetscaleToken: { failure: Schema.NullOr(LoadFailure) },
-	ClickedPlanetscaleReplaceToken: {},
-	/** While the first metrics are awaited: every 5 s, then every minute, for 30 minutes. */
-	TickedPlanetscaleWatch: {},
-	/** Restarts the watch once it ran out. */
-	ClickedPlanetscaleCheckAgain: {},
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),

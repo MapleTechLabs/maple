@@ -142,8 +142,10 @@ instead. Only a reveal (`opacity-0` → `opacity-100`) sets opacity (`maple/no-d
 
 ## Waiting
 
-A skeleton stays blank for its first 300ms (`loading-delay`, on the kit `Skeleton`), so a fast
-load never flashes one. Every tooltip waits the one open delay, `Tooltip.OPEN_DELAY`
+A skeleton, bar or chart ghost, stays blank for `--loading-delay` (300ms), then fades in over 150ms,
+so a fast load never flashes one; every sweep runs on one clock (`syncSkeletonSweeps`). A navigation
+keeps the page left on screen while the next has nothing to show, for up to 300ms; the next page
+then skips the delay (`page/page-hold.ts`). Every tooltip waits the one open delay, `Tooltip.OPEN_DELAY`
 (`maple/single-tooltip-delay`).
 
 ## Copy

@@ -8,9 +8,6 @@ import type { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
-import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
-import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
-import * as SearchConsole from "./update-search-console"
 import { providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -46,7 +43,7 @@ export const refreshProvider = (
 	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
-export const clickedConnect = (model: Model, githubMode?: "install"): Return => {
+export const clickedConnect = (model: Model, context: PageContext, githubMode?: "install"): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (
 		!Schema.is(ConnectProvider)(integration) ||
@@ -57,7 +54,7 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
 		return { model }
 	const attempt = model.connect.attempts + 1
-	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
+	const base = providerModuleOf(integration)?.onConnectStart(model, context).model ?? model
 	const active = { provider: integration, attempt }
 	return {
 		model: withConnect(base, {
@@ -120,9 +117,8 @@ export const closedPopup = (model: Model, context: PageContext, attempt: number)
 	if (active === null || active.attempt !== attempt) return { model }
 	const hasGrace = PROVIDERS[active.provider].closeGraceMs > 0
 	const next = hasGrace ? withConnect(model, { isClosed: true }) : withConnect(model, { active: null })
-	return active.provider === "cloudflare"
-		? chain(next, [(after) => Cloudflare.refreshCloudflare(after, context), Cloudflare.prime])
-		: refreshProvider(next, context, active.provider)
+	const onClosed = providerModuleOf(active.provider)?.onPopupClosed ?? null
+	return onClosed !== null ? onClosed(next, context) : refreshProvider(next, context, active.provider)
 }
 
 export const endedGrace = (model: Model, attempt: number): Return =>
@@ -136,10 +132,6 @@ const CONNECTED_TITLE = {
 	supabase: "Supabase connected",
 	"google-search-console": "Google Search Console connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
-
-/** A reconnect as the same account keeps the grant key, so its property list is re-read outright. */
-const refreshedSites = (model: Model, context: PageContext, provider: ConnectProvider): Return =>
-	provider === "google-search-console" ? SearchConsole.requestSites(model, context, "Supersede") : { model }
 
 /** The callback page's verdict; a success is `integration_connected`. */
 export const receivedCallback = (
@@ -160,13 +152,14 @@ export const receivedCallback = (
 		}
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(provider === "planetscale" ? Planetscale.restartWatch(model) : model, [
+		return chain(model, [
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+				providerModuleOf(provider)?.replacesConnectedRead === true
+					? { model: next }
+					: refreshProvider(next, context, provider),
 			(next) => providerModuleOf(provider)?.onConnected(next, context) ?? { model: next },
-			(next) => refreshedSites(next, context, provider),
 		])
 	}
 	if (status !== "error") return { model }
@@ -203,11 +196,13 @@ export const receivedRelay = (
 			: model
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(provider === "planetscale" ? Planetscale.restartWatch(ended) : ended, [
+		return chain(ended, [
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
-			(next) => refreshedSites(next, context, provider),
+				providerModuleOf(provider)?.replacesConnectedRead === true
+					? { model: next }
+					: refreshProvider(next, context, provider),
+			(next) => providerModuleOf(provider)?.onRelayedConnect(next, context) ?? { model: next },
 		])
 	}
 	if (status !== "error") return { model: ended }

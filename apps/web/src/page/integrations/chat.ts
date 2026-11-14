@@ -1,9 +1,40 @@
+import type { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { ChatConnectorId, ChatWorkspaceId } from "@maple/primitives"
-import { Effect, Schema } from "effect"
-import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { Effect, Option, Schema, Array as Arr } from "effect"
+import { AsyncData, Command } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import type * as Keyed from "@maple/views/data/keyed"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
-import { Message } from "./message"
+
+/** The chat module's own messages; the hub carries them in `GotChatMessage`. */
+export const ChatMessage = defineMessageUnion({
+	ClickedInstall: {},
+	CompletedInstall: { failure: Schema.NullOr(LoadFailure) },
+	ClickedIdentity: {},
+	CompletedIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
+	ClickedDisconnect: { workspaceId: ChatWorkspaceId },
+	CompletedDisconnect: { failure: Schema.NullOr(LoadFailure) },
+})
+export type ChatMessage = typeof ChatMessage.Type
+
+/** The hub's status read for every chat connector at once. */
+export const CHAT_STATUS_READ = {
+	name: "LoadIntegrationsChatConnectors",
+	read: (_refresh: boolean) =>
+		Effect.flatMap(MapleApiV2Client, (client) => client.chatIntegration.connectors()),
+}
+
+/** The connector's entry in the list, if it answered. */
+export const connectorStatusOf = (
+	status: Keyed.Keyed<V2ChatConnectorList, LoadFailure>,
+	connector: ChatConnectorId | null,
+) =>
+	Option.getOrNull(
+		Option.map(AsyncData.getData(status.data), (response) =>
+			Option.getOrNull(Arr.findFirst(response.data, (entry) => entry.id === connector)),
+		),
+	)
 
 /** Full-page redirect to the platform's consent screen, as the install and the account link do. */
 const redirect = (url: string) => Effect.sync(() => window.location.assign(url))
@@ -22,7 +53,7 @@ const settled = <A, E, R, M>(
 /** `chatIntegration.install`; on success the browser leaves for the platform. */
 export const InstallChat = Command.define("InstallChatConnector", {
 	args: { connector: ChatConnectorId },
-	messages: [Message.CompletedChatInstall],
+	messages: [ChatMessage.CompletedInstall],
 	execute: ({ connector }) =>
 		settled(
 			Effect.gen(function* () {
@@ -30,13 +61,13 @@ export const InstallChat = Command.define("InstallChatConnector", {
 				const response = yield* client.chatIntegration.install({ params: { connector } })
 				yield* redirect(response.url)
 			}),
-			(failure) => Message.CompletedChatInstall({ failure }),
+			(failure) => ChatMessage.CompletedInstall({ failure }),
 		),
 })
 
 export const LinkChatIdentity = Command.define("LinkChatIdentity", {
 	args: { connector: ChatConnectorId },
-	messages: [Message.CompletedChatIdentity],
+	messages: [ChatMessage.CompletedIdentity],
 	execute: ({ connector }) =>
 		settled(
 			Effect.gen(function* () {
@@ -46,33 +77,33 @@ export const LinkChatIdentity = Command.define("LinkChatIdentity", {
 				})
 				yield* redirect(response.url)
 			}),
-			(failure) => Message.CompletedChatIdentity({ kind: "link", failure }),
+			(failure) => ChatMessage.CompletedIdentity({ kind: "link", failure }),
 		),
 })
 
 export const UnlinkChatIdentity = Command.define("UnlinkChatIdentity", {
 	args: { connector: ChatConnectorId },
-	messages: [Message.CompletedChatIdentity],
+	messages: [ChatMessage.CompletedIdentity],
 	execute: ({ connector }) =>
 		settled(
 			Effect.gen(function* () {
 				const client = yield* MapleApiV2Client
 				yield* client.chatIntegration.deleteChatIdentity({ params: { connector } })
 			}),
-			(failure) => Message.CompletedChatIdentity({ kind: "unlink", failure }),
+			(failure) => ChatMessage.CompletedIdentity({ kind: "unlink", failure }),
 		),
 })
 
 export const DisconnectChatWorkspace = Command.define("DisconnectChatWorkspace", {
 	args: { id: ChatWorkspaceId },
-	messages: [Message.CompletedChatDisconnect],
+	messages: [ChatMessage.CompletedDisconnect],
 	execute: ({ id }) =>
 		settled(
 			Effect.gen(function* () {
 				const client = yield* MapleApiV2Client
 				yield* client.chatIntegration.deleteWorkspace({ params: { id } })
 			}),
-			(failure) => Message.CompletedChatDisconnect({ failure }),
+			(failure) => ChatMessage.CompletedDisconnect({ failure }),
 		),
 })
 
@@ -84,3 +115,5 @@ export const ChatCardModel = Schema.Struct({
 	identityBusy: Schema.Boolean,
 })
 export type ChatCardModel = typeof ChatCardModel.Type
+
+export const initChatCard = (): ChatCardModel => ({ busy: null, confirmId: null, identityBusy: false })
