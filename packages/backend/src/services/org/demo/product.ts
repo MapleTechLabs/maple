@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { fmtMetricTs } from "@maple/backend/services/warehouse/metric-rows"
-import { Array as Arr, Random } from "effect"
+import { Array as Arr } from "effect"
 
 // Demo browser sessions and product events: `session_replays` rows (what web analytics and the
 // funnel population filters read) and the `product_events` page views and track() calls inside
@@ -90,11 +90,10 @@ export const generateDemoProductRows = (input: {
 	readonly hours: number
 	readonly visitorsPerHour: number
 	readonly nowMs?: number
-	/** Draws from the caller's Effect `Random`. Omitted, it is that service's default generator. */
-	readonly random?: Rand
+	/** Draws from the caller's Effect `Random`. */
+	readonly random: Rand
 }): DemoProductRows => {
-	const fallback = Random.Random.defaultValue()
-	const rand: Rand = input.random ?? (() => fallback.nextDoubleUnsafe())
+	const rand = input.random
 	const nowMs = input.nowMs ?? Date.now()
 	const windowMs = input.hours * 3600_000
 	const visitors = Math.max(1, Math.round(input.hours * input.visitorsPerHour))
