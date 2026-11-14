@@ -24,17 +24,19 @@ interface Props {
     editHref?: string;
     /** Widen the column and drop the table-of-contents rail (index pages). */
     wide?: boolean;
+    /** Index pages only: no column width, padding or outline, so the page draws full-width bands (the docs home). */
+    bleed?: boolean;
     /** Keep the page out of search indexes (the docs 404). */
     noindex?: boolean;
 }
 
-const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false, noindex = false } = Astro.props;
+const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false, bleed = false, noindex = false } = Astro.props;
 const stars = await getGitHubStars();
 
 const pageTitle = currentSlug || noindex ? `${title} · Maple Docs` : "Maple Docs";
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
 const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.site).toString();
-const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
+const hasToc = !wide && !bleed && headings.some((h) => h.depth >= 2 && h.depth <= 3);
 // A reference page with dozens of subsections (the CLI) outlines its H2s only.
 const tocDepth = headings.filter((h) => h.depth >= 2 && h.depth <= 3).length > 28 ? 2 : 3;
 // Backticks are markup in the lede; meta tags get the plain text.
@@ -114,8 +116,14 @@ const metaDescription = description.replaceAll("`", "");
             </aside>
 
             <main id="docs-main" class:list={["min-w-0 flex-1 lg:ml-64", hasToc && "xl:mr-60"]} tabindex="-1">
-                <div class:list={["mx-auto px-5 py-10 sm:px-8 md:py-12", wide ? "max-w-5xl" : "max-w-3xl"]}>
-                    <DocsMobileNav currentSlug={currentSlug} headings={headings} hasToc={hasToc} tocDepth={tocDepth} />
+                <div class:list={[!bleed && "mx-auto px-5 py-10 sm:px-8 md:py-12", !bleed && (wide ? "max-w-5xl" : "max-w-3xl")]}>
+                    {bleed ? (
+                        <div class="px-6 pt-6 md:px-[52px] lg:hidden">
+                            <DocsMobileNav currentSlug={currentSlug} headings={headings} hasToc={hasToc} tocDepth={tocDepth} />
+                        </div>
+                    ) : (
+                        <DocsMobileNav currentSlug={currentSlug} headings={headings} hasToc={hasToc} tocDepth={tocDepth} />
+                    )}
                     <slot />
                     {currentSlug && (
                         <footer class="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-5 text-[12.5px] text-fg-muted">
