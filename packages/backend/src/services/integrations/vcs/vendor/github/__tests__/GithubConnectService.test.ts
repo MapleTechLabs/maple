@@ -34,6 +34,7 @@ import {
 	upsertReposFor,
 } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { decodeGitCommitSha } from "@maple/backend/services/integrations/vcs/__tests__/fixtures"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -254,7 +255,10 @@ describe("connecting an existing GitHub installation", () => {
 		return Effect.gen(function* () {
 			const service = yield* GithubConnectService
 			const started = yield* startAuthorize(service)
-			const selection = yield* service.discoverInstallations(TEST_CODE, started.state, INITIATOR)
+			// The 500 is retried with a back-off before the installation is skipped.
+			const selection = yield* VendorFake.elapsing(
+				service.discoverInstallations(TEST_CODE, started.state, INITIATOR),
+			)
 			assert.deepStrictEqual(
 				Arr.map(selection.installations, (installation) => installation.id),
 				["43"],

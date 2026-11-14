@@ -1,7 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
-import { Array as Arr, Effect, Layer, Order, Record as Rec } from "effect"
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
+import { Array as Arr, Effect, Layer, Order, Record as Rec, Schema, String as Str } from "effect"
+import { FetchHttpClient } from "effect/http"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { RuntimeAdvisoryCatalog } from "./RuntimeAdvisoryCatalog"
 
@@ -119,37 +120,45 @@ const BUN_BODY = [
  * Answers OSV for Node.js and GitHub for Bun, fails everything else with a 503, and records each
  * OSV package and version and each GitHub repository asked for.
  */
-const osv = (requests: Array<string>) =>
-	HttpClient.make((request: HttpClientRequest.HttpClientRequest) =>
-		Effect.sync(() => {
-			const github = /api\.github\.com\/repos\/([^/]+\/[^/]+)\/security-advisories/.exec(request.url)
-			if (github !== null) {
-				requests.push(`github:${github[1]}`)
-				return HttpClientResponse.fromWeb(
-					request,
-					github[1] === "oven-sh/bun"
-						? new Response(JSON.stringify(BUN_BODY), { status: 200 })
-						: new Response("rate limited", { status: 403 }),
-				)
-			}
-			const body =
-				request.body._tag === "Uint8Array"
-					? JSON.parse(new TextDecoder().decode(request.body.body))
-					: {}
-			requests.push(`${body.package?.name}@${body.version}`)
-			const response =
-				body.package?.name === "node"
-					? new Response(JSON.stringify(NODE_BODY), { status: 200 })
-					: new Response("unavailable", { status: 503 })
-			return HttpClientResponse.fromWeb(request, response)
+const decodeOsvQuery = Schema.decodeUnknownSync(
+	Schema.fromJsonString(
+		Schema.Struct({
+			package: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
+			version: Schema.optionalKey(Schema.String),
 		}),
-	)
+	),
+)
+
+const osv = (requests: Array<string>) =>
+	VendorFake.make({
+		routes: [
+			{
+				path: /^\/repos\/[^/]+\/[^/]+\/security-advisories$/,
+				respond: (request) => {
+					const repo = Arr.join(Str.split(request.path, "/").slice(2, 4), "/")
+					requests.push(`github:${repo}`)
+					return repo === "oven-sh/bun"
+						? VendorFake.json(BUN_BODY)
+						: VendorFake.text("rate limited", 403)
+				},
+			},
+			{
+				respond: (request) => {
+					const body = decodeOsvQuery(request.body)
+					requests.push(`${body.package?.name}@${body.version}`)
+					return body.package?.name === "node"
+						? VendorFake.json(NODE_BODY)
+						: VendorFake.text("unavailable", 503)
+				},
+			},
+		],
+	})
 
 const catalogWith = (requests: Array<string>) =>
 	Layer.effect(RuntimeAdvisoryCatalog, RuntimeAdvisoryCatalog.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
-				Layer.succeed(HttpClient.HttpClient, osv(requests)),
+				FetchHttpClient.layer.pipe(Layer.provide(osv(requests).layer)),
 				EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive)),
 			),
 		),

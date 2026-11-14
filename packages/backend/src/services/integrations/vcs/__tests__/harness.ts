@@ -11,11 +11,13 @@ import {
 	Exit,
 	Layer,
 	Option,
+	Record as Rec,
 	Schema,
 } from "effect"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
-import { HttpClient, HttpClientResponse } from "effect/http"
+import { FetchHttpClient, type HttpClient } from "effect/http"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import {
@@ -95,23 +97,24 @@ export interface FakeGithubRequest {
 	readonly body: string | undefined
 }
 
-// An HttpClient seam for the GitHub App client: `respond` answers each request
-// with a web `Response`, so rate-limit and pagination handling run unchanged.
+// An HttpClient seam for the GitHub App client over a VendorFake: `respond` answers each request
+// with a web `Response`, so rate-limit, redirect and pagination handling run unchanged.
 export const fakeGithubHttp = (respond: (request: FakeGithubRequest) => Response | Promise<Response>) =>
-	Layer.succeed(
-		HttpClient.HttpClient,
-		HttpClient.make((request, url) =>
-			Effect.promise(async () =>
-				respond({
-					url: url.toString(),
-					method: request.method,
-					headers: request.headers,
-					body:
-						request.body._tag === "Raw" && typeof request.body.body === "string"
-							? request.body.body
-							: undefined,
-				}),
-			).pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response))),
+	FetchHttpClient.layer.pipe(
+		Layer.provide(
+			VendorFake.make({
+				routes: [
+					{
+						respond: (request) =>
+							respond({
+								url: request.url.href,
+								method: request.method,
+								headers: Rec.fromEntries(Arr.fromIterable(request.headers.entries())),
+								body: request.body === "" ? undefined : request.body,
+							}),
+					},
+				],
+			}).layer,
 		),
 	)
 

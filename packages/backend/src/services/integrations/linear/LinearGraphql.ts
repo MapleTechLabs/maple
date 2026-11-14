@@ -1,9 +1,10 @@
 /** One Linear GraphQL call. Linear reports most failures in an `errors` array, so the codes decide, not the status. */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
 import { Effect, Option, Schema, Array as Arr } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClient } from "effect/http"
+import * as VendorHttp from "../vendor-http"
 
-export const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
+const LINEAR_API_BASE_URL = "https://api.linear.app"
 
 const REQUEST_TIMEOUT = "8 seconds"
 
@@ -52,71 +53,119 @@ const errorSummary = (errors: ReadonlyArray<LinearGraphqlError>) =>
 		"; ",
 	)
 
+const envelopeErrors = (body: typeof GraphqlEnvelopeSchema.Type): ReadonlyArray<LinearGraphqlError> =>
+	Arr.map(body.errors ?? [], (error) => ({
+		message: error.extensions?.userPresentableMessage ?? error.message,
+		code: error.extensions?.code ?? null,
+	}))
+
+const errorsOf = (text: string) =>
+	Option.match(decodeEnvelope(text), { onNone: () => [], onSome: envelopeErrors })
+
+const isRateLimited = (error: LinearGraphqlError) => error.code === "RATELIMITED"
+
+/** Linear sends auth and rate-limit failures as GraphQL errors, often on a 400, so the codes decide. */
+const classifyLinear = (refusal: VendorHttp.VendorRefusal): VendorHttp.VendorFailureKind | undefined => {
+	const errors = errorsOf(refusal.body)
+	if (Arr.some(errors, isAuthError)) return "unauthorized"
+	if (Arr.some(errors, isRateLimited)) return "rate_limited"
+	return undefined
+}
+
+const linearDetail = (body: string) => {
+	const errors = errorsOf(body)
+	return errors.length === 0 ? undefined : errorSummary(errors)
+}
+
+const revoked = () =>
+	new IntegrationsRevokedError({ message: "Linear rejected the access token. Reconnect Linear." })
+const rateLimited = () => new IntegrationsUpstreamError({ message: "Linear rate limit reached", status: 429 })
+
+/** A query reads only, so a passing 5xx may send it again; a mutation is sent once. */
+const isQueryDocument = (query: string) => /^\s*(query\b|\{)/.test(query)
+
 /**
- * A rejected token fails `IntegrationsRevokedError`, which the caller's refresh-and-retry keys on.
- * Other GraphQL errors are returned, so a caller can treat "not found" as an answer.
+ * A refusal as the caller sees it: a rejected token fails `IntegrationsRevokedError`, and GraphQL
+ * errors on a 4xx come back as a result, so a caller can treat "not found" as an answer.
  */
-export const linearGraphql = Effect.fn("Linear.graphql", { kind: "client" })(function* (
+const fromRefusal = (
+	error: VendorHttp.VendorHttpError,
+): Effect.Effect<LinearGraphqlResult, IntegrationsRevokedError | IntegrationsUpstreamError> => {
+	switch (error.kind) {
+		case "unauthorized":
+			return Effect.fail(revoked())
+		case "rate_limited":
+			return Effect.fail(rateLimited())
+		case "timeout":
+			return Effect.fail(new IntegrationsUpstreamError({ message: "Linear API request timed out" }))
+		case "forbidden":
+		case "not_found":
+		case "upstream":
+		case "invalid_response": {
+			if (error.status === undefined)
+				return Effect.fail(
+					new IntegrationsUpstreamError({ message: `Linear API request failed: ${error.message}` }),
+				)
+			const envelope = decodeEnvelope(error.body ?? "")
+			if (Option.isSome(envelope) && (envelope.value.errors ?? []).length > 0)
+				return Effect.succeed({
+					data: envelope.value.data ?? null,
+					errors: envelopeErrors(envelope.value),
+				})
+			return Effect.fail(
+				new IntegrationsUpstreamError({
+					message: `Linear API returned ${error.status}${error.detail === undefined ? "" : `: ${error.detail}`}`,
+					status: error.status,
+				}),
+			)
+		}
+	}
+}
+
+export const linearGraphql = Effect.fn("Linear.graphql")(function* (
 	httpClient: HttpClient.HttpClient,
 	accessToken: string,
 	operationName: string,
 	query: string,
 	variables: Record<string, unknown> = {},
-) {
-	yield* Effect.annotateCurrentSpan({
-		"peer.service": "linear",
-		"server.address": "api.linear.app",
-		"maple.linear.operation": operationName,
+): Effect.fn.Return<LinearGraphqlResult, IntegrationsRevokedError | IntegrationsUpstreamError> {
+	yield* Effect.annotateCurrentSpan("maple.linear.operation", operationName)
+	const client = VendorHttp.make({
+		httpClient,
+		peerService: "linear",
+		baseUrl: LINEAR_API_BASE_URL,
+		auth: VendorHttp.bearer(accessToken),
+		headers: { accept: "application/json" },
+		classify: classifyLinear,
+		detail: linearDetail,
+		toError: (error: VendorHttp.VendorHttpError) => error,
+		timeout: REQUEST_TIMEOUT,
 	})
-	const request = HttpClientRequest.post(LINEAR_GRAPHQL_URL, {
-		headers: {
-			authorization: `Bearer ${accessToken}`,
-			"content-type": "application/json",
-			accept: "application/json",
-		},
-	}).pipe(HttpClientRequest.bodyJsonUnsafe({ operationName, query, variables }))
-
-	const { status, text } = yield* Effect.gen(function* () {
-		const response = yield* httpClient.execute(request)
-		return { status: response.status, text: yield* response.text }
-	}).pipe(
-		Effect.timeoutOrElse({
-			duration: REQUEST_TIMEOUT,
-			orElse: () =>
-				Effect.fail(new IntegrationsUpstreamError({ message: "Linear API request timed out" })),
-		}),
-		Effect.catchTag("HttpClientError", (error) =>
-			Effect.fail(
-				new IntegrationsUpstreamError({
-					message: `Linear API request failed: ${error.message}`,
-				}),
-			),
-		),
-	)
-	yield* Effect.annotateCurrentSpan("http.response.status_code", status)
-
-	const envelope = decodeEnvelope(text)
-	const errors: ReadonlyArray<LinearGraphqlError> = Option.match(envelope, {
-		onNone: () => [],
-		onSome: (body) =>
-			Arr.map(body.errors ?? [], (error) => ({
-				message: error.extensions?.userPresentableMessage ?? error.message,
-				code: error.extensions?.code ?? null,
-			})),
+	const sent = client.text({
+		method: "POST",
+		path: "/graphql",
+		body: { operationName, query, variables },
+		operation: operationName,
+		retry: isQueryDocument(query),
 	})
-
-	if (status === 401 || Arr.some(errors, isAuthError)) {
-		return yield* new IntegrationsRevokedError({
-			message: "Linear rejected the access token. Reconnect Linear.",
-		})
-	}
-	if (status === 429 || Arr.some(errors, (error) => error.code === "RATELIMITED")) {
-		return yield* new IntegrationsUpstreamError({ message: "Linear rate limit reached", status: 429 })
-	}
-	if (Option.isNone(envelope) || (status >= 300 && errors.length === 0)) {
-		return yield* new IntegrationsUpstreamError({ message: `Linear API returned ${status}`, status })
-	}
-	return { data: envelope.value.data ?? null, errors } satisfies LinearGraphqlResult
+	return yield* Effect.matchEffect(sent, {
+		onFailure: fromRefusal,
+		onSuccess: (
+			text,
+		): Effect.Effect<LinearGraphqlResult, IntegrationsRevokedError | IntegrationsUpstreamError> =>
+			Option.match(decodeEnvelope(text), {
+				onNone: () =>
+					Effect.fail(
+						new IntegrationsUpstreamError({ message: "Linear API returned an unreadable body" }),
+					),
+				onSome: (body) => {
+					const errors = envelopeErrors(body)
+					if (Arr.some(errors, isAuthError)) return Effect.fail(revoked())
+					if (Arr.some(errors, isRateLimited)) return Effect.fail(rateLimited())
+					return Effect.succeed({ data: body.data ?? null, errors })
+				},
+			}),
+	})
 })
 
 /** Decode `data` with `schema`, failing on any GraphQL error. */

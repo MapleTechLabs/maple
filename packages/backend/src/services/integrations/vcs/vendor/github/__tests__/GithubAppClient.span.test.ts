@@ -36,7 +36,7 @@ const env = Env.layer.pipe(
 	),
 )
 
-const requestSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) => spansNamed(spans, "GithubAppClient.request")
+const requestSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) => spansNamed(spans, "VendorHttp.request")
 
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })

@@ -1,10 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SearchConsoleSiteUrl } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { SearchConsoleService } from "./SearchConsoleService"
@@ -12,9 +12,6 @@ import { SearchConsoleService } from "./SearchConsoleService"
 const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
-
-const jsonResponse = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 const SCOPE = "openid email https://www.googleapis.com/auth/webmasters.readonly"
 const ID_TOKEN = `h.${Buffer.from(JSON.stringify({ sub: "g-1", email: "owner@acme.dev" })).toString("base64url")}.s`
@@ -25,21 +22,21 @@ const SITES = [
 	{ siteUrl: "https://unverified.acme.dev/", permissionLevel: "siteUnverifiedUser" },
 ]
 
-const googleFetch: typeof globalThis.fetch = async (input) => {
-	const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-	if (url === "https://oauth2.googleapis.com/token") {
-		return jsonResponse({
-			access_token: "g-access",
-			refresh_token: "g-refresh",
-			expires_in: 3599,
-			scope: SCOPE,
-			id_token: ID_TOKEN,
-		})
-	}
-	if (url === "https://oauth2.googleapis.com/revoke") return new Response(null, { status: 200 })
-	if (url === "https://www.googleapis.com/webmasters/v3/sites") return jsonResponse({ siteEntry: SITES })
-	return jsonResponse({}, 404)
-}
+const googleRoutes: ReadonlyArray<VendorFake.VendorFakeRoute> = [
+	{
+		path: "/token",
+		respond: () =>
+			VendorFake.json({
+				access_token: "g-access",
+				refresh_token: "g-refresh",
+				expires_in: 3599,
+				scope: SCOPE,
+				id_token: ID_TOKEN,
+			}),
+	},
+	{ path: "/revoke", respond: () => VendorFake.empty(200) },
+	{ path: "/webmasters/v3/sites", respond: () => VendorFake.json({ siteEntry: SITES }) },
+]
 
 const config = {
 	PORT: "3472",
@@ -55,12 +52,12 @@ const config = {
 	GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET: "g-client-secret",
 }
 
-const makeLayer = (testDb: TestDb, fetch: typeof globalThis.fetch = googleFetch) =>
+const makeLayer = (testDb: TestDb, routes: ReadonlyArray<VendorFake.VendorFakeRoute> = googleRoutes) =>
 	Layer.mergeAll(SearchConsoleService.layer, GoogleOAuthService.layer).pipe(
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+		Layer.provideMerge(VendorFake.make({ routes }).layer),
 	)
 
 const orgA = Schema.decodeSync(OrgId)("org_a")
@@ -188,14 +185,15 @@ describe("SearchConsoleService", () => {
 	it.effect("refuses a save whose Google account changed after the property list was read", () => {
 		const testDb = createTestDb(trackedDbs)
 		// Another tab reconnects as a different Google account while this save is validating.
-		const reconnectingFetch: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url === "https://www.googleapis.com/webmasters/v3/sites")
+		const reconnecting: VendorFake.VendorFakeRoute = {
+			path: "/webmasters/v3/sites",
+			respond: async () => {
 				await testDb.pglite.query(
 					"UPDATE oauth_connections SET external_user_id = $1 WHERE org_id = $2 AND provider = 'google'",
 					["g-2", "org_a"],
 				)
-			return googleFetch(input, init)
+				return undefined
+			},
 		}
 		return Effect.gen(function* () {
 			yield* connect
@@ -210,7 +208,7 @@ describe("SearchConsoleService", () => {
 				),
 			)
 			assert.strictEqual(saved?.count, "0")
-		}).pipe(Effect.provide(makeLayer(testDb, reconnectingFetch)))
+		}).pipe(Effect.provide(makeLayer(testDb, [reconnecting, ...googleRoutes])))
 	})
 
 	it.effect("keeps saving after a reconnect as the same Google account", () => {

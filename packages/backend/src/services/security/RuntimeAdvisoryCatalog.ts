@@ -28,6 +28,7 @@ import {
 	Record as Rec,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import * as VendorHttp from "@maple/backend/services/integrations/vendor-http"
 
 // Known vulnerabilities per runtime version for the Security Center's Runtimes tab. OSV.dev is read
 // once per runtime version a day; a GitHub repository's advisory list once per repository a day,
@@ -225,39 +226,54 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 		const edgeCache = yield* EdgeCacheService
 		const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
 
+		// Public advisories need no token; the kit gives the read its span, timeout and retries.
+		const github = VendorHttp.make({
+			httpClient: yield* HttpClient.HttpClient,
+			peerService: "github",
+			baseUrl: "https://api.github.com",
+			auth: VendorHttp.noAuth,
+			headers: {
+				accept: "application/vnd.github+json",
+				"user-agent": "maple-security-center",
+				"x-github-api-version": "2022-11-28",
+			},
+			toError: (error: VendorHttp.VendorHttpError) => error,
+			timeout: REQUEST_TIMEOUT,
+			// One attempt, as before: the page waits on this read, and a failure is cached briefly.
+			retry: false,
+			rateLimitResetHeader: "x-ratelimit-reset",
+			rateLimitResetFormat: "epoch-seconds",
+		})
+
 		const fetchGithubAdvisories = (product: AdvisoryTarget["product"], repo: string) =>
-			HttpClientRequest.get(`https://api.github.com/repos/${repo}/security-advisories`).pipe(
-				HttpClientRequest.setUrlParams({ per_page: String(GITHUB_PAGE_SIZE), state: "published" }),
-				HttpClientRequest.setHeaders({
-					accept: "application/vnd.github+json",
-					"user-agent": "maple-security-center",
-					"x-github-api-version": "2022-11-28",
-				}),
-				httpClient.execute,
-				Effect.flatMap(HttpClientResponse.schemaBodyJson(GithubAdvisoriesResponse)),
-				Effect.timeout(REQUEST_TIMEOUT),
-				Effect.mapBoth({
-					onSuccess: (advisories) =>
-						Arr.map(
-							Arr.filter(advisories, (advisory) => advisory.withdrawn_at === null),
-							(advisory) => toGithubAdvisory(advisory, product, repo),
-						),
-					onFailure: (cause) =>
-						new RuntimeAdvisoryCatalogError({
-							message: `GitHub advisory read failed for ${repo}`,
-							key: repo,
-							cause,
-						}),
-				}),
-				Effect.withSpan("github.security_advisories", {
-					kind: "client",
-					attributes: {
-						"peer.service": "api.github.com",
-						"maple.runtime.product": product,
-						"maple.advisory.repo": repo,
-					},
-				}),
-			)
+			github
+				.json(GithubAdvisoriesResponse, {
+					// The repository is `owner/name`; each segment is encoded on its own.
+					path: `/repos/${Arr.join(Arr.map(Str.split(repo, "/"), encodeURIComponent), "/")}/security-advisories`,
+					query: { per_page: String(GITHUB_PAGE_SIZE), state: "published" },
+					operation: "reading security advisories",
+				})
+				.pipe(
+					Effect.mapBoth({
+						onSuccess: (advisories) =>
+							Arr.map(
+								Arr.filter(advisories, (advisory) => advisory.withdrawn_at === null),
+								(advisory) => toGithubAdvisory(advisory, product, repo),
+							),
+						onFailure: (cause) =>
+							new RuntimeAdvisoryCatalogError({
+								message: `GitHub advisory read failed for ${repo}`,
+								key: repo,
+								cause,
+							}),
+					}),
+					Effect.withSpan("github.security_advisories", {
+						attributes: {
+							"maple.runtime.product": product,
+							"maple.advisory.repo": repo,
+						},
+					}),
+				)
 
 		/** A repository's advisory list, null when the read failed. Shared by every version of the runtime. */
 		const githubListFor = (product: AdvisoryTarget["product"], repo: string) =>
