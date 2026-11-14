@@ -23,6 +23,9 @@ export type SecretConsumer =
 	| "workers-observability"
 	| "managed-db"
 
+/** The Infisical environments deploys load config from: local dev, PR previews, each prd instance. */
+export type SecretEnvironment = "dev" | "preview" | "prod" | "prod-eu"
+
 interface SecretMeta {
 	/** Who mints the value. `maple` means we generate it, so we can roll it without a third party. */
 	readonly issuer: string
@@ -30,6 +33,10 @@ interface SecretMeta {
 	readonly consumers: ReadonlyArray<SecretConsumer>
 	/** The env name the Worker reads it under, when that differs from the source key. */
 	readonly boundAs?: string
+	/** The environments that may hold it; absent, all of them. A deploy loading it elsewhere fails. */
+	readonly environments?: ReadonlyArray<SecretEnvironment>
+	/** Where dev or preview may hold a prd instance's own value; elsewhere they need their own. */
+	readonly sharesProdValueWith?: ReadonlyArray<"dev" | "preview">
 }
 
 export type SecretBinding = Record<string, Redacted.Redacted>

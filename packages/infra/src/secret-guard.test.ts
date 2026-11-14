@@ -139,6 +139,33 @@ describe("the catalog as a default-deny guard", () => {
 	})
 })
 
+describe("where a secret may be held", () => {
+	const WEBHOOK_SECRET = { CLERK_WEBHOOK_SECRET: "whsec_1" }
+	const deploy = (env: Env) => run(withSecretGuard(Effect.void), env)
+
+	it("fails a deploy whose loaded environment holds a secret the catalog keeps out of it", () => {
+		const refused = failure(withSecretGuard(Effect.void), {
+			...WEBHOOK_SECRET,
+			INFISICAL_ENV_SLUG: "preview",
+		})
+		expect(refused.cause).toBe("SourceError")
+		expect(refused.message).toContain("The preview environment holds CLERK_WEBHOOK_SECRET")
+	})
+
+	it("deploys where the catalog allows it, a blank value anywhere, and with no environment named", () => {
+		expect(Exit.isSuccess(deploy({ ...WEBHOOK_SECRET, INFISICAL_ENV_SLUG: "dev" }))).toBe(true)
+		expect(Exit.isSuccess(deploy({ CLERK_WEBHOOK_SECRET: " ", INFISICAL_ENV_SLUG: "preview" }))).toBe(
+			true,
+		)
+		// A local `bun dev`, on `.env.local`.
+		expect(Exit.isSuccess(deploy(WEBHOOK_SECRET))).toBe(true)
+	})
+
+	it("refuses an environment the catalog does not know", () => {
+		expect(Exit.isFailure(deploy({ INFISICAL_ENV_SLUG: "staging" }))).toBe(true)
+	})
+})
+
 describe("a Worker's resolved env", () => {
 	const env = { OPENROUTER_API_KEY: "sk-or-1" }
 
