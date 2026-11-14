@@ -69,7 +69,7 @@ deploy fails.
   `consumers`.
 - `environments` lists the Infisical environments (`dev`, `preview`, `prod`, `prod-eu`) that may
   hold a secret; a deploy loading one elsewhere fails. dev and preview must hold their own value
-  unless `sharedOutsideProd`. `bun run secrets:drift` checks Infisical against all of this (names
+  unless `sharesProdValueWith` names it. `bun run secrets:drift` checks Infisical against all of this (names
   and value hashes only); run it after changing either.
 - The chat connectors declare their own secret keys (`requiredConfig`), bound by `configKeysEnv`.
   Those are not in the catalog and not scoped by deployable.
