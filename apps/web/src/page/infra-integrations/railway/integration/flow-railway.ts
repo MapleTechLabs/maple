@@ -1,6 +1,6 @@
 import type { RailwayIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { fold } from "../../../integrations/derive"
+import { fold } from "../../../integrations/overview"
 import type { FlowSpec } from "../../../integrations/flow"
 import type { Model } from "../../../integrations/model"
 import { unsyncedEnvironments } from "./railway"

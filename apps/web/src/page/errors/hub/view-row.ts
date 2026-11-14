@@ -7,7 +7,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { AppRoute, hrefOf } from "../../../route"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { actorAvatar } from "../../kit/issue-actor"
 import {
 	PICKER_HOTKEY,
@@ -310,16 +310,13 @@ const volumeLane = (
 	)
 
 const trailingLanes = (h: H, signal: ErrorSignal, state: RowState): ReadonlyArray<Html> => [
-	h.span(
-		[
-			h.Class(cn(LANE.service, "items-center gap-1.5 text-xs text-muted-foreground @xl/page:flex")),
-			h.Title(signal.serviceName),
-		],
-		[
-			serviceDot(h, { serviceName: signal.serviceName, size: "sm" }),
-			typography(h, { truncate: true }, [signal.serviceName]),
-		],
-	),
+	serviceLabel(h, {
+		serviceName: signal.serviceName,
+		dot: "sm",
+		size: "xs",
+		tone: "muted",
+		className: cn(LANE.service, "@xl/page:flex"),
+	}),
 	h.span(
 		[h.Class(LANE.state)],
 		[state.canTriage ? statePicker(h, signal, state) : stateReadout(h, signal.issue.workflowState)],

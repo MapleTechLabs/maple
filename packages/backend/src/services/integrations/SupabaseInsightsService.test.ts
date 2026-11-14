@@ -1,7 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -99,7 +98,7 @@ const makeLayer = (testDb: TestDb, world: World) =>
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.merge(Layer.succeed(FetchHttpClient.Fetch, world.fetch)),
+		Layer.merge(world.layer),
 	)
 
 const connect = (world: World) =>

@@ -414,6 +414,163 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 	})
 })
 
+describe("WarehouseQueryService org-scoped reads", () => {
+	const GATEWAY = {
+		CLICKHOUSE_URL: "https://gateway.tinybird.example",
+		CLICKHOUSE_PASSWORD: "gateway-admin-token",
+	}
+	const SCOPED = { ...GATEWAY, MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1" }
+
+	/** The credential each statement or insert went out with, in call order. */
+	const recordCredentials = () => {
+		const used: Array<{ readonly op: "sql" | "insert"; readonly kind: string; readonly secret: string }> =
+			[]
+		setClientFactory((config) => {
+			const secret = config.kind === "tinybird" ? config.token : config.password
+			return Effect.succeed({
+				sql: () =>
+					Effect.sync(() => {
+						used.push({ op: "sql", kind: config.kind, secret })
+						return { data: [] }
+					}),
+				insert: () => Effect.sync(() => void used.push({ op: "insert", kind: config.kind, secret })),
+			})
+		})
+		return used
+	}
+
+	const decodeScopes = Schema.decodeUnknownSync(
+		Schema.Struct({ scopes: Schema.Array(Schema.Struct({ filter: Schema.String })) }),
+	)
+	/** The distinct row filters a token carries; a credential that is no JWT fails the decode. */
+	const orgFilters = (jwt: string) =>
+		Arr.dedupe(Arr.map(decodeScopes(decodeJwtPayload(jwt)).scopes, (scope) => scope.filter))
+
+	it.effect("keeps a compiled read on the shared token while the flag is off", () => {
+		const used = recordCredentials()
+		return Effect.gen(function* () {
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(
+					makeTenant(),
+					scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+				),
+			)
+			assert.deepStrictEqual(used, [
+				{ op: "sql", kind: "tinybird-gateway", secret: "gateway-admin-token" },
+			])
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), GATEWAY)))
+	})
+
+	it.effect("runs a tenant's compiled read on a token filtered to that tenant", () => {
+		const used = recordCredentials()
+		return Effect.gen(function* () {
+			// Compiled for another org than the tenant: the mistake the token is there to contain.
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(
+					makeTenant(),
+					scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_victim'"),
+				),
+			)
+			const [read] = used
+			assert.strictEqual(read?.kind, "tinybird-gateway")
+			assert.notStrictEqual(read?.secret, "gateway-admin-token")
+			assert.deepStrictEqual(orgFilters(read?.secret ?? ""), ["OrgId = 'org_test'"])
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+	})
+
+	it.effect("scopes a tenant's read of an ingest-routed datasource the same way", () => {
+		const used = recordCredentials()
+		return Effect.gen(function* () {
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(
+					makeTenant(),
+					rawCompiledQuery<Record<string, unknown>>({
+						sql: "SELECT 1 FROM alert_checks WHERE OrgId = 'org_test'",
+						tenantScope: "single-tenant",
+						route: "ingest",
+						reason: "test-fixture",
+						justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+					}),
+				),
+			)
+			const [read] = used
+			assert.strictEqual(read?.kind, "tinybird")
+			assert.notStrictEqual(read?.secret, "managed-token")
+			assert.deepStrictEqual(orgFilters(read?.secret ?? ""), ["OrgId = 'org_test'"])
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+	})
+
+	// Both need to see past one org: a write lands rows, a cross-org read enumerates tenants.
+	it.effect("keeps writes and cross-org reads on the shared token", () => {
+		const used = recordCredentials()
+		const crossOrg = (route?: "ingest") =>
+			rawCompiledQuery<Record<string, unknown>>({
+				sql: "SELECT OrgId FROM traces GROUP BY OrgId",
+				tenantScope: "cross-tenant",
+				...(route === undefined ? undefined : { route }),
+				reason: "test-fixture",
+				justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+			})
+		return Effect.gen(function* () {
+			const tenant = makeTenant()
+			yield* WarehouseQueryService.use((service) =>
+				service.ingest(tenant, "traces", [{ OrgId: "org_test", trace_id: "a" }]),
+			)
+			yield* WarehouseQueryService.use((service) =>
+				service.crossOrgQuery(tenant, crossOrg("ingest"), { justification: "test" }),
+			)
+			yield* WarehouseQueryService.use((service) =>
+				service.crossOrgQuery(tenant, crossOrg(), { justification: "test" }),
+			)
+			assert.deepStrictEqual(used, [
+				{ op: "insert", kind: "tinybird", secret: "managed-token" },
+				{ op: "sql", kind: "tinybird", secret: "managed-token" },
+				{ op: "sql", kind: "tinybird-gateway", secret: "gateway-admin-token" },
+			])
+		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
+	})
+
+	// No signing key here, as such a deployment may run: neither route may ask for a token.
+	it.effect("changes nothing where managed reads are vanilla ClickHouse, on either route", () => {
+		const used = recordCredentials()
+		return Effect.gen(function* () {
+			const tenant = makeTenant()
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
+			)
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(
+					tenant,
+					rawCompiledQuery<Record<string, unknown>>({
+						sql: "SELECT 1 FROM alert_checks WHERE OrgId = 'org_test'",
+						tenantScope: "single-tenant",
+						route: "ingest",
+						reason: "test-fixture",
+						justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+					}),
+				),
+			)
+			assert.deepStrictEqual(used, [
+				{ op: "sql", kind: "clickhouse", secret: "vanilla-password" },
+				{ op: "sql", kind: "tinybird", secret: "managed-token" },
+			])
+		}).pipe(
+			Effect.provide(
+				buildLayer(
+					createTestDb(trackedDbs),
+					{
+						CLICKHOUSE_URL: "https://clickhouse.example",
+						CLICKHOUSE_PROVIDER: "clickhouse",
+						CLICKHOUSE_PASSWORD: "vanilla-password",
+						MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1",
+					},
+					false,
+				),
+			),
+		)
+	})
+})
+
 describe("ClickHouse-protocol session settings", () => {
 	it("pins UTC on BYO ClickHouse and chDB, never on the Tinybird gateway", () => {
 		assert.deepStrictEqual(__testables.clickHouseSessionSettings("clickhouse"), {

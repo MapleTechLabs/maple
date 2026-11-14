@@ -34,6 +34,8 @@ export const PlanetscalePollState = PG.table("planetscale_poll_state", {
 		// Overlap guard: a tick claims an org by bumping this past now; a competing
 		// tick that fails to claim skips the org.
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		/** A failed tick's back-off (ingest refusal): no tick claims the row before it. */
+		holdUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "hold_until" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

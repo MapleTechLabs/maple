@@ -104,16 +104,7 @@ describe("integrationHealthOf", () => {
 				}),
 				// Reported by the inventory already.
 				source({ platform: "cloudflare", lastPollError: "boom" }),
-				source({ platform: "gcp", lastUsedAt: AT - 10 * MINUTE }),
-			],
-			[
-				{
-					lastReceivedAt: AT - 3 * DAY_MS,
-					lastMetricsReceivedAt: null,
-					lastError: null,
-					lastMetricsError: "PERMISSION_DENIED: monitoring.timeSeries.list",
-					lastResourcesError: null,
-				},
+				source({ platform: "gcp", lastPollError: "PERMISSION_DENIED" }),
 			],
 			AT,
 			AT,
@@ -143,21 +134,34 @@ describe("integrationHealthOf", () => {
 				errorClass: null,
 				resources: [{ kind: "repository", count: 1 }],
 			},
-			{
-				kind: "gcp",
-				status: "healthy",
-				lastSuccessDaysBeforeCancel: 0,
-				lastErrorDaysBeforeCancel: null,
-				errorClass: "auth",
-				resources: [],
-			},
 		])
 	})
 
 	it("shows at most 15", () => {
-		const platforms = ["opentelemetry", "nodejs", "python", "go", "java", "dotnet", "ruby", "php", "rust"]
+		const platforms = [
+			"opentelemetry",
+			"nodejs",
+			"python",
+			"go",
+			"java",
+			"dotnet",
+			"ruby",
+			"php",
+			"rust",
+		] as const
+		// Every pull platform is an inventory provider: one integration plus the 15 push platforms.
 		const health = integrationHealthOf(
-			inventory([]),
+			inventory([
+				{
+					provider: "aws",
+					status: "failing",
+					account: "123456789012",
+					connectedAt: AT - 40 * DAY_MS,
+					problem: "1 of 1 failing, e.g. metric stream 123456789012: refused",
+					feeds: [],
+					resources: [],
+				},
+			]),
 			Arr.map(
 				[
 					...platforms,
@@ -167,11 +171,9 @@ describe("integrationHealthOf", () => {
 					"host",
 					"claude_code",
 					"cloudflare_ai_gateway",
-					"gcp",
-				],
+				] as const,
 				(name) => source({ platform: name, lastRejectedAt: AT - DAY_MS }),
 			),
-			[],
 			AT,
 			AT,
 		)
@@ -182,7 +184,6 @@ describe("integrationHealthOf", () => {
 		const health = integrationHealthOf(
 			inventory([]),
 			[source({ platform: "opentelemetry" }), source({ platform: "claude_code" })],
-			[],
 			AT,
 			AT,
 		)
@@ -196,7 +197,6 @@ describe("integrationHealthOf", () => {
 				source({ platform: "nodejs", lastUsedAt: AT - DAY_MS, lastRejectedAt: AT + DAY_MS }),
 				source({ platform: "claude_code", lastUsedAt: AT - DAY_MS, lastRejectedAt: AT + DAY_MS }),
 			],
-			[],
 			AT,
 			AT + 2 * DAY_MS,
 		)
@@ -237,7 +237,6 @@ describe("integrationHealthOf", () => {
 					],
 				},
 			]),
-			[],
 			[],
 			AT,
 			AT,

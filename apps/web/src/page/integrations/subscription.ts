@@ -1,4 +1,4 @@
-import { Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Duration, Effect, Option, Queue, Record as Rec, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../infra-integrations/gcp/connector-state"
 import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
@@ -9,7 +9,7 @@ import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startCon
 import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
-import { unsyncedEnvironments } from "../infra-integrations/railway/integration/railway"
+import { PROVIDER_MODULES } from "./provider-modules"
 import { githubStatusOf } from "./update-github"
 import {
 	isAwaitingFirstMetrics,
@@ -28,6 +28,9 @@ export class PopupDocumentError extends Schema.TaggedError<PopupDocumentError>()
 	"@maple/web/integrations/PopupDocumentError",
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
+
+/** A Record entry with its key typed as a string. */
+const keyed = <A>(key: string, value: A): readonly [string, A] => [key, value]
 
 const one = (message: Message): Stream.Stream<Message> => Stream.make(message)
 
@@ -163,22 +166,8 @@ const after = (millis: number, message: () => Message) =>
 
 const CLOUDFLARE_INGEST_MS = 30_000
 
-const SUPABASE_CLOCK_MS = 60_000
 /** A metric stream delivers about every minute. */
 const AWS_WATCH_MS = 60_000
-
-const isSupabaseShown = (model: Model): boolean =>
-	integrationOfSearch(model.search.integration) === "supabase" &&
-	Option.match(AsyncData.getData(model.statuses.supabase.data), {
-		onNone: () => false,
-		onSome: (status) => status.connected,
-	})
-
-const isRailwaySettling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "railway") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.railway.data))
-	return status !== null && status.connected && !status.authFailed && unsyncedEnvironments(status) > 0
-}
 
 const isVercelPolling = (model: Model): boolean => {
 	if (integrationOfSearch(model.search.integration) !== "vercel") return false
@@ -381,14 +370,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
 			},
 		),
-		railwaySettle: entry(
-			{ isSettling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isSettling: isRailwaySettling(model) }),
-				dependenciesToStream: ({ isSettling }) =>
-					isSettling ? every(15_000, () => Message.TickedRailwaySettle()) : Stream.empty,
-			},
-		),
 		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: settling })`, the usage too. */
 		vercelSettle: entry(
 			{ isSettling: Schema.Boolean },
@@ -414,15 +395,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isStreaming: isAwsStreaming(model) }),
 				dependenciesToStream: ({ isStreaming }) =>
 					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
-			},
-		),
-		/** The connected Supabase card's clock, so its metrics window and "Last data" ages advance. */
-		supabaseClock: entry(
-			{ isShown: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isShown: isSupabaseShown(model) }),
-				dependenciesToStream: ({ isShown }) =>
-					isShown ? every(SUPABASE_CLOCK_MS, () => Message.TickedSupabaseClock()) : Stream.empty,
 			},
 		),
 		/** Watches for the first metrics; the card offers "Check again" once the watch runs out. */
@@ -467,6 +439,31 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ isWaiting }) =>
 					isWaiting ? every(10_000, () => Message.TickedGcpRefresh()) : Stream.empty,
 			},
+		),
+		/** Each provider module's tick (Railway's first-sync poll, Supabase's card clock). */
+		...Rec.fromEntries(
+			Arr.flatMap(PROVIDER_MODULES, (provider) => {
+				const ticker = provider.ticker
+				return ticker === null
+					? []
+					: [
+							keyed(
+								`${provider.id}Tick`,
+								entry(
+									{ isActive: Schema.Boolean },
+									{
+										modelToDependencies: ({ model }) => ({
+											isActive: ticker.isActive(model),
+										}),
+										dependenciesToStream: ({ isActive }) =>
+											isActive
+												? every(ticker.everyMs, () => ticker.tick)
+												: Stream.empty,
+									},
+								),
+							),
+						]
+			}),
 		),
 		connectCallback: entry(
 			{ provider: Schema.NullOr(ConnectProvider) },

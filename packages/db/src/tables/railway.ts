@@ -22,6 +22,8 @@ export const RailwayConnections = PG.table("railway_connections", {
 		authFailedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "auth_failed_at" }),
 		discoveredAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "discovered_at" }),
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		/** A failed tick's back-off (rate limit, ingest refusal): no tick claims the row before it. */
+		holdUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "hold_until" }),
 		lastSuccessAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_success_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		lastErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_error_at" }),

@@ -3,7 +3,7 @@ import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import {
 	errorTone,
 	shareCell,
@@ -49,14 +49,12 @@ const serverRow = <M>(
 ): Html => {
 	const rate = errorRate(row)
 	return toolTableRow(h, { onClick: options.onOpenServer(row.service) }, [
-		hstack(h, { gap: "2", shrink: true, grow: true, as: "span", className: "w-0" }, [
-			serviceDot(h, { serviceName: row.service }),
-			typography(
-				h,
-				{ size: "xs", tone: "foreground", mono: true, truncate: true, className: "block min-w-0" },
-				[row.service],
-			),
-		]),
+		serviceLabel(h, {
+			serviceName: row.service,
+			size: "xs",
+			tone: "foreground",
+			className: "w-0 flex-1",
+		}),
 		h.span(
 			[
 				h.Class(

@@ -19,6 +19,7 @@ import { RailwayMetricsService } from "./RailwayMetricsService"
 import { ScrapeTargetsService } from "./ScrapeTargetsService"
 import { SourceRemovalService } from "./SourceRemovalService"
 import { SupabaseConnectionService } from "./SupabaseConnectionService"
+import { VercelIntegrationService } from "./VercelIntegrationService"
 import { VcsRepository } from "./vcs/VcsRepository"
 
 const trackedDbs: TestDb[] = []
@@ -160,6 +161,17 @@ const makeLayer = (testDb: TestDb, calls: string[]) => {
 			discoverOrg: die,
 			discoverAllOrgs: die(),
 		}),
+		Layer.succeed(VercelIntegrationService, {
+			getStatus: die,
+			discover: die,
+			connect: die,
+			updateSettings: die,
+			sync: die,
+			disconnect: () => Effect.as(record("vercel"), { disconnected: true, drainsRemoved: true }),
+			deployments: die,
+			pollOrg: die,
+			pollAllOrgs: die(),
+		}),
 	)
 	const sources = SourcesService.layer.pipe(Layer.provide(Env.layer), Layer.provide(config))
 	return Layer.effect(SourceRemovalService, SourceRemovalService.make).pipe(
@@ -286,6 +298,28 @@ describe("SourceRemovalService", () => {
 			assert.deepStrictEqual(calls, ["railway"])
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_A), 0)
 			assert.strictEqual(yield* sourceCount(testDb, SOURCE_B), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, calls)))
+	})
+
+	it.effect("deletes a Vercel source by disconnecting Vercel, which removes its drains there", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: string[] = []
+		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await insertSource(testDb, SOURCE_A, "vercel")
+				await executeSql(
+					testDb,
+					`INSERT INTO vercel_connections (id, org_id, source_id, team_id, team_slug, team_name,
+						token_ciphertext, token_iv, token_tag, connected_by_user_id, project_scope, created_at, updated_at)
+					 VALUES ('vc_1', $1, $2, 'team_1', 'acme', 'Acme', 'c', 'i', 't', 'user_a', 'all', now(), now())`,
+					[org, SOURCE_A],
+				)
+			})
+			const removal = yield* SourceRemovalService
+			yield* removal.remove(org, decodeSourceId(SOURCE_A))
+
+			assert.deepStrictEqual(calls, ["vercel"])
+			assert.strictEqual(yield* sourceCount(testDb, SOURCE_A), 0)
 		}).pipe(Effect.provide(makeLayer(testDb, calls)))
 	})
 

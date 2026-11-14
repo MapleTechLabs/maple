@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { kbd } from "@maple/views/ui/display"
 import { textLink } from "@maple/views/ui/text-link"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
@@ -58,10 +58,12 @@ export const footer = (h: H, model: Model): Html =>
 				],
 				[
 					...Arr.map(model.services, (service) =>
-						hstack(h, { gap: "1", className: "shrink-0" }, [
-							serviceDot(h, { serviceName: service }),
-							typography(h, { weight: "medium", className: "whitespace-nowrap" }, [service]),
-						]),
+						serviceLabel(h, {
+							serviceName: service,
+							weight: "medium",
+							truncate: "none",
+							className: "shrink-0",
+						}),
 					),
 					hstack(h, { gap: "1", className: "shrink-0" }, [
 						h.span(

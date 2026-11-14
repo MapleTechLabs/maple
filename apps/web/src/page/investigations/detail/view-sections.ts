@@ -23,7 +23,7 @@ import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { sectionHeading } from "../../kit/section-heading"
 import { ORIGIN } from "../kit"
 import {
@@ -37,7 +37,7 @@ import {
 import { Message } from "./message"
 import type { Escalation, LogBucket, Model, OverviewRow, TracesRow } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 
@@ -113,14 +113,13 @@ export const impactStrip = (h: H, investigation: V2Investigation, timeZone: stri
 							h,
 							{ align: "center", wrap: true, as: "span", className: "gap-x-3 gap-y-1.5" },
 							Arr.map(services, (service) =>
-								h.keyed("span")(
-									service,
-									[h.Class(hstackClass({ gap: "1.5" }))],
-									[
-										serviceDot(h, { serviceName: service, size: "sm" }),
-										typography(h, { tone: "foreground" }, [service]),
-									],
-								),
+								serviceLabel(h, {
+									serviceName: service,
+									dot: "sm",
+									tone: "foreground",
+									truncate: "none",
+									attributes: [h.Key(service)],
+								}),
 							),
 						),
 			]),
@@ -280,19 +279,7 @@ export const signalsCard = (h: H, model: Model, investigation: V2Investigation):
 	})
 	return panel(h, { className: "shrink-0 gap-4 px-5 py-4" }, [
 		hstack(h, { gap: "2", as: "header" }, [
-			serviceDot(h, { serviceName: service }),
-			typography(
-				h,
-				{
-					size: "sm",
-					tone: "foreground",
-					mono: true,
-					truncate: true,
-					className: "min-w-0",
-					attributes: [h.Title(service)],
-				},
-				[service],
-			),
+			serviceLabel(h, { serviceName: service, size: "sm", tone: "foreground" }),
 			window.label
 				? typography(h, { size: "xs", tone: "muted", truncate: true, className: "min-w-0 flex-1" }, [
 						"· ",

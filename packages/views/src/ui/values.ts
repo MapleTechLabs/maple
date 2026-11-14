@@ -67,22 +67,23 @@ export const errorRateValue = <M>(
 	options: Readonly<{ rate: number; className?: string }>,
 ): Html =>
 	h.span(
-		[
-			h.Class(
-				cn(
-					"tabular-nums",
-					ERROR_RATE_TEXT[errorRateLevel(options.rate)],
-					options.className,
-				),
-			),
-		],
+		[h.Class(cn("tabular-nums", ERROR_RATE_TEXT[errorRateLevel(options.rate)], options.className))],
 		[formatErrorRate(options.rate)],
 	)
 
-/** The service's deterministic colour blob. */
+export type ServiceDotSize = "sm" | "default" | "md" | "lg"
+
+const DOT_SIZE = {
+	sm: "size-1.5",
+	default: "size-2",
+	md: "size-2.5",
+	lg: "size-3",
+} as const satisfies Record<ServiceDotSize, string>
+
+/** The service's deterministic colour blob; `serviceLabel` pairs it with the name. */
 export const serviceDot = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ serviceName: string; size?: "sm" | "default"; className?: string }>,
+	options: Readonly<{ serviceName: string; size?: ServiceDotSize; className?: string }>,
 ): Html =>
 	h.span(
 		[
@@ -90,7 +91,7 @@ export const serviceDot = <M>(
 			h.Class(
 				cn(
 					"shrink-0 rounded-dot [corner-shape:squircle]",
-					options.size === "sm" ? "size-1.5" : "size-2",
+					DOT_SIZE[options.size ?? "default"],
 					options.className,
 				),
 			),

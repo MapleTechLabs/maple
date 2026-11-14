@@ -240,6 +240,21 @@ describe("ChatSession cursor and replay", () => {
 })
 
 describe("ChatSession turn mutex", () => {
+	it("refuses a turn whose tenant is not the session's org, and leaves no trace of it", () => {
+		const { session } = makeSession()
+		const refused = session.beginTurn({
+			sessionId: "org_other:tab",
+			messageId: "m1",
+			text: "what failed in checkout?",
+			tenant: TENANT,
+			origin: APP,
+		})
+
+		assert.isUndefined(refused)
+		assert.isFalse(session.running())
+		assert.lengthOf(session.history(), 0)
+	})
+
 	it("admits one turn and refuses a second", () => {
 		const { session } = makeSession()
 		const first = session.beginTurn({

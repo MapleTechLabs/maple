@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "./display"
 import { icon } from "./icon"
 import { tooltipTrigger } from "./tooltip-host"
-import { serviceDot } from "./values"
+import { serviceLabel } from "./service-label"
 import { Array as Arr } from "effect"
 
 // A trace's id badge, status badge and service pills.
@@ -54,9 +54,8 @@ export const servicePills = <M>(
 				],
 				[
 					...Arr.map(services.slice(0, VISIBLE_SERVICES), (service) =>
-						badge(h, { variant: "outline", className: "max-w-full font-mono text-3xs" }, [
-							serviceDot(h, { serviceName: service, size: "sm" }),
-							h.span([h.Class("truncate")], [service]),
+						badge(h, { variant: "outline", className: "max-w-full text-3xs" }, [
+							serviceLabel(h, { serviceName: service, dot: "sm" }),
 						]),
 					),
 					...(services.length > VISIBLE_SERVICES

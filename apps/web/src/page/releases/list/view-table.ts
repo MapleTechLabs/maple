@@ -25,6 +25,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
@@ -112,11 +113,14 @@ const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html 
 
 const NAMED_SERVICES = 3
 
-const serviceChip = (h: H, serviceName: string, className: string): Html =>
-	h.span(
-		[h.Key(serviceName), h.Class(className), h.Title(serviceName)],
-		[serviceDot(h, { serviceName }), typography(h, { truncate: true }, [serviceName])],
-	)
+const serviceChip = (h: H, serviceName: string): Html =>
+	serviceLabel(h, {
+		serviceName,
+		size: "xs",
+		tone: "muted",
+		className: "max-w-56",
+		attributes: [h.Key(serviceName)],
+	})
 
 const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html => {
 	const names = [...new Set(Arr.map(services, (service) => service.serviceName))]
@@ -139,9 +143,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 			},
 			[
 				typography(h, { numeric: true }, [String(names.length), " services"]),
-				...Arr.map(flagged.slice(0, 2), (name) =>
-					serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1"),
-				),
+				...Arr.map(flagged.slice(0, 2), (name) => serviceChip(h, name)),
 				...(flagged.length > 2
 					? [typography(h, { size: "2xs", tone: "subtle" }, [`+${flagged.length - 2}`])]
 					: []),
@@ -151,13 +153,7 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 	return hstack(
 		h,
 		{ align: "center", wrap: true, as: "span", className: "gap-x-2 gap-y-0.5" },
-		Arr.map(names, (name) =>
-			serviceChip(
-				h,
-				name,
-				"inline-flex min-w-0 max-w-56 items-center gap-1 text-xs text-muted-foreground",
-			),
-		),
+		Arr.map(names, (name) => serviceChip(h, name)),
 	)
 }
 
@@ -404,16 +400,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 												className: "max-w-full gap-2 text-xs",
 											},
 											[
-												serviceDot(h, { serviceName: service.serviceName }),
-												typography(
-													h,
-													{
-														truncate: true,
-														className: "min-w-0",
-														attributes: [h.Title(service.serviceName)],
-													},
-													[service.serviceName],
-												),
+												serviceLabel(h, { serviceName: service.serviceName }),
 												...(service.environment &&
 												(input.environments === undefined ||
 													input.environments.length === 0)

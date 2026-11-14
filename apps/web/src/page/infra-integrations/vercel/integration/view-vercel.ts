@@ -1,6 +1,5 @@
 import type { VercelIntegrationStatus, VercelProjectStatus } from "@maple/domain/http"
 import { Array as Arr, Order, String as Str } from "effect"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
 	drainState,
@@ -17,12 +16,12 @@ import { choiceCheckClass } from "@maple/views/ui/choice-card"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { badge } from "@maple/views/ui/display"
 import { emptyMessage } from "@maple/views/ui/empty"
-import { errorState } from "@maple/views/ui/error-state"
 import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { dividedList } from "@maple/views/ui/rule"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { integrationStatusCard } from "../../../integrations/view-integration-card"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
@@ -607,18 +606,11 @@ const byStatus = (h: H, model: Model, status: VercelIntegrationStatus, timeZone:
 
 /** The card, and the configuration dialog it opens (connect, Configure, a new token). */
 export const vercelCard = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => [
-	AsyncData.match(model.statuses.vercel.data, {
-		onIdle: () => skeleton(h, "h-40 w-full rounded-md"),
-		onLoading: () => skeleton(h, "h-40 w-full rounded-md"),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load the Vercel integration",
-				onRetry: Message.ClickedRetryStatus({ name: "vercel" }),
-			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone),
-		onSuccess: (data) => byStatus(h, model, data, timeZone),
+	integrationStatusCard(h, model.statuses.vercel, {
+		name: "vercel",
+		failureTitle: "Couldn't load the Vercel integration",
+		render: (data) => byStatus(h, model, data, timeZone),
+		loading: () => skeleton(h, "h-40 w-full rounded-md"),
 	}),
 	...vercelConfigure(h, model),
 ]

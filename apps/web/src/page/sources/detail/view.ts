@@ -143,7 +143,7 @@ const found = (h: H, model: Model, source: V2Source, inputs: PageViewInputs, now
 							: "Integration",
 				],
 				title: [source.name],
-				adornment: platformTile(h, source.platform, "sm"),
+				adornment: platformTile(h, platformMeta(source.platform), "sm"),
 				meta: [
 					sourceStatusBadge(h, source, { nowMs, timeZone }),
 					...(source.key_prefix === null

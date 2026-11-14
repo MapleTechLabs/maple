@@ -87,7 +87,8 @@ const serverTitle = (h: H, name: string, description: ReadonlyArray<Html | strin
 			pageTitle(h, { title: name, className: "leading-8" }, [
 				serviceDot(h, {
 					serviceName: name,
-					className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+					size: "lg",
+					className: "relative -top-px mr-2.5 inline-block align-middle",
 				}),
 				name,
 			]),
@@ -369,7 +370,8 @@ const pageView = (model: Model, h: H): Html => {
 					titleContent: pageTitle(h, { title: MCP_OVERVIEW.service }, [
 						serviceDot(h, {
 							serviceName: MCP_OVERVIEW.service,
-							className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+							size: "lg",
+							className: "relative -top-px mr-2.5 inline-block align-middle",
 						}),
 						MCP_OVERVIEW.service,
 					]),

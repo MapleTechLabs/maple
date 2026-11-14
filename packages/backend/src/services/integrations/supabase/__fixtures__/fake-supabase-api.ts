@@ -1,11 +1,12 @@
 /**
  * An in-memory Supabase Management API for tests: OAuth token/revoke, `/v1/organizations`,
  * `/v1/projects`, the logs endpoint, the advisors, the read-only query endpoint and the v2 log drain
- * CRUD, with bodies shaped like live responses (2026-10-21). Provided per test through
- * `FetchHttpClient.Fetch`; tests steer it by mutating `state` between steps.
+ * CRUD, with bodies shaped like live responses (2026-10-21). Provided per test through `layer`
+ * (or `routes`, to serve more hosts); tests steer it by mutating `state` between steps.
  */
 import { createHash, randomUUID } from "node:crypto"
 import { Order, Schema, Array as Arr, String as Str } from "effect"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 
 export const FAKE_CLIENT_ID = "6f1c1d1e-0b7a-4d8e-9a51-3c2b1a0f9e88"
 export const FAKE_CLIENT_SECRET = "sba_fake_client_secret"
@@ -137,7 +138,6 @@ export interface FakeSupabaseState {
 	readonly calls: Array<FakeCall>
 }
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const decodeDrainCreate = Schema.decodeUnknownSync(
 	Schema.fromJsonString(
 		Schema.Struct({
@@ -153,11 +153,7 @@ const decodeDrainCreate = Schema.decodeUnknownSync(
 	),
 )
 
-const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
-	new Response(encodeJson(body), {
-		status,
-		headers: { "content-type": "application/json", ...headers },
-	})
+const { json } = VendorFake
 
 const expectedBasic = `Basic ${Buffer.from(`${FAKE_CLIENT_ID}:${FAKE_CLIENT_SECRET}`).toString("base64")}`
 
@@ -198,11 +194,11 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		return json(state.omitRefreshToken ? tokens : { ...tokens, refresh_token: `refresh_${state.issued}` })
 	}
 
-	const tokenEndpoint = (request: Request, body: string) => {
-		if (request.headers.get("authorization") !== expectedBasic) {
+	const tokenEndpoint = (request: VendorFake.VendorFakeRequest) => {
+		if (request.authorization !== expectedBasic) {
 			return json({ error: "invalid_client" }, 401)
 		}
-		const params = new URLSearchParams(body)
+		const params = new URLSearchParams(request.body)
 		if (params.get("grant_type") === "refresh_token") {
 			// Live-verified: Supabase answers 404 for a revoked or rotated-away refresh token.
 			return state.refreshRevoked
@@ -217,61 +213,8 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 		return issueTokens()
 	}
 
-	const authorized = (request: Request) =>
-		state.validAccessTokens.has(Str.replace(/^Bearer /, "")(request.headers.get("authorization") ?? ""))
-
-	const handle = (request: Request, body: string): Response => {
-		const url = new URL(request.url)
-		const path = url.pathname
-		state.calls.push({
-			method: request.method,
-			path,
-			authorization: request.headers.get("authorization"),
-			body,
-			search: url.searchParams,
-		})
-		if (path === "/v1/oauth/token" && request.method === "POST") return tokenEndpoint(request, body)
-		if (path === "/v1/oauth/revoke" && request.method === "POST") {
-			state.validAccessTokens.clear()
-			return new Response(null, { status: 204 })
-		}
-		if (!authorized(request)) return json({ message: "Unauthorized" }, 401)
-		if (path === "/v1/organizations") return json(state.organizations)
-		if (path === "/v1/projects") {
-			return state.projectsStatus === null
-				? json(state.projects)
-				: json({ message: "Too many requests" }, state.projectsStatus, { "x-ratelimit-reset": "42" })
-		}
-		if (/^\/v1\/projects\/[a-z]{20}\/analytics\/endpoints\/logs$/.test(path)) {
-			if (state.logsStatus !== null) {
-				return json({ message: "ThrottlerException: Too Many Requests" }, state.logsStatus, {
-					"x-ratelimit-reset": "60",
-				})
-			}
-			if (state.logsQueryError !== null) return json({ error: state.logsQueryError })
-			return json({ result: runLogsQuery(state.logs, url.searchParams.get("sql") ?? "") })
-		}
-		const advisor = /^\/v1\/projects\/[a-z]{20}\/advisors\/(performance|security)$/.exec(path)?.[1]
-		if (advisor === "performance" || advisor === "security") {
-			if (state.advisorsStatus !== null) {
-				return json({ message: "Too many requests" }, state.advisorsStatus, {
-					"x-ratelimit-reset": "60",
-				})
-			}
-			return json({ lints: state.advisors[advisor] })
-		}
-		if (
-			/^\/v1\/projects\/[a-z]{20}\/database\/query\/read-only$/.test(path) &&
-			request.method === "POST"
-		) {
-			// Live-verified: a refused statement answers 400 with the Postgres message.
-			if (state.readOnlyError !== null) return json({ message: state.readOnlyError }, 400)
-			return json(state.readOnlyRows, 201)
-		}
-		const drainPath = /^\/v2\/projects\/([a-z]{20})\/analytics\/log-drains(?:\/([^/]+))?$/.exec(path)
-		if (drainPath !== null) return logDrains(request.method, drainPath[1] ?? "", drainPath[2], body)
-		return json({ message: "Not found" }, 404)
-	}
+	const authorized = (request: VendorFake.VendorFakeRequest) =>
+		state.validAccessTokens.has(Str.replace(/^Bearer /, "")(request.authorization ?? ""))
 
 	const logDrains = (method: string, ref: string, id: string | undefined, body: string): Response => {
 		const drains = state.drains.get(ref) ?? []
@@ -295,21 +238,94 @@ export const makeFakeSupabase = (initial: Partial<FakeSupabaseState> = {}) => {
 				ref,
 				Arr.filter(drains, (drain) => drain.id !== id),
 			)
-			return new Response(null, { status: 204 })
+			return VendorFake.empty(204)
 		}
 		return json({ message: "Not found" }, 404)
 	}
 
-	const fetch: typeof globalThis.fetch = async (input, init) => {
-		const requestInit: RequestInit & { readonly duplex: "half" } = { ...init, duplex: "half" }
-		const request = new Request(input, requestInit)
-		const body = await request.text()
-		const response = handle(request, body)
-		const created =
-			request.method === "POST" && Str.endsWith("/analytics/log-drains")(new URL(request.url).pathname)
-		if (created && state.afterDrainCreate !== null) await state.afterDrainCreate()
-		return response
-	}
+	const PROJECT = "\\/v1\\/projects\\/[a-z]{20}"
+	const routes: ReadonlyArray<VendorFake.VendorFakeRoute> = [
+		{
+			respond: (request) => {
+				state.calls.push({
+					method: request.method,
+					path: request.path,
+					authorization: request.authorization,
+					body: request.body,
+					search: request.search,
+				})
+				return undefined
+			},
+		},
+		{ method: "POST", path: "/v1/oauth/token", respond: tokenEndpoint },
+		{
+			method: "POST",
+			path: "/v1/oauth/revoke",
+			respond: () => {
+				state.validAccessTokens.clear()
+				return VendorFake.empty(204)
+			},
+		},
+		{ respond: (request) => (authorized(request) ? undefined : json({ message: "Unauthorized" }, 401)) },
+		{ path: "/v1/organizations", respond: () => json(state.organizations) },
+		{
+			path: "/v1/projects",
+			respond: () =>
+				state.projectsStatus === null
+					? json(state.projects)
+					: json({ message: "Too many requests" }, state.projectsStatus, {
+							"x-ratelimit-reset": "42",
+						}),
+		},
+		{
+			path: new RegExp(`^${PROJECT}\\/analytics\\/endpoints\\/logs$`),
+			respond: (request) => {
+				if (state.logsStatus !== null) {
+					return json({ message: "ThrottlerException: Too Many Requests" }, state.logsStatus, {
+						"x-ratelimit-reset": "60",
+					})
+				}
+				if (state.logsQueryError !== null) return json({ error: state.logsQueryError })
+				return json({ result: runLogsQuery(state.logs, request.search.get("sql") ?? "") })
+			},
+		},
+		{
+			path: new RegExp(`^${PROJECT}\\/advisors\\/(performance|security)$`),
+			respond: (request) => {
+				if (state.advisorsStatus !== null) {
+					return json({ message: "Too many requests" }, state.advisorsStatus, {
+						"x-ratelimit-reset": "60",
+					})
+				}
+				return json({
+					lints: Str.endsWith("/security")(request.path)
+						? state.advisors.security
+						: state.advisors.performance,
+				})
+			},
+		},
+		{
+			method: "POST",
+			path: new RegExp(`^${PROJECT}\\/database\\/query\\/read-only$`),
+			// Live-verified: a refused statement answers 400 with the Postgres message.
+			respond: () =>
+				state.readOnlyError !== null
+					? json({ message: state.readOnlyError }, 400)
+					: json(state.readOnlyRows, 201),
+		},
+		{
+			path: /^\/v2\/projects\/[a-z]{20}\/analytics\/log-drains(?:\/[^/]+)?$/,
+			respond: async (request) => {
+				const [, , , ref = "", , , id] = Str.split("/")(request.path)
+				const response = logDrains(request.method, ref, id, request.body)
+				if (request.method === "POST" && id === undefined && state.afterDrainCreate !== null) {
+					await state.afterDrainCreate()
+				}
+				return response
+			},
+		},
+	]
+	const fake = VendorFake.make({ routes })
 
-	return { state, fetch }
+	return { state, routes, layer: fake.layer }
 }

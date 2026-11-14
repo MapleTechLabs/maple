@@ -16,7 +16,7 @@ import { pressable } from "@maple/views/ui/pressable"
 import { traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { SpanNodeData } from "@maple/views/traces/trace-data"
 import { Message } from "./model"
 import { rowPlatform } from "./platform"
@@ -250,7 +250,7 @@ const serviceMark = (span: SpanNodeData): Mark | null => {
 }
 
 /** The service where the call path enters it, with what runs it; a child in its parent's service shows none. */
-const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
+const serviceEntry = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html> => {
 	const span = row.node
 	if (row.parent !== null && row.parent.serviceName === span.serviceName) return []
 	const mark = serviceMark(span)
@@ -262,27 +262,24 @@ const serviceLabel = (h: HtmlBuilder<Message>, row: TreeRow): ReadonlyArray<Html
 				align: "center",
 				shrink: true,
 				as: "span",
-				className: "max-w-[30%] shrink font-mono text-3xs",
+				className: "max-w-[30%] shrink text-3xs",
 			},
 			[
 				...(mark === null ? [] : [markIcon(h, mark)]),
-				serviceDot(h, { serviceName: span.serviceName, className: "size-1.5" }),
-				typography(
+				serviceLabel(
 					h,
 					{
-						truncate: true,
-						className: "min-w-0",
-						attributes: [
-							h.Style({ color: getServiceColor(span.serviceName) }),
-							h.Title(span.serviceName),
-						],
+						serviceName: span.serviceName,
+						dot: "sm",
+						attributes: [h.Style({ color: getServiceColor(span.serviceName) })],
 					},
-					[span.serviceName],
-				),
-				// The kind yields first on narrow rows so the service name stays readable.
-				h.span(
-					[h.Class("hidden shrink-0 text-foreground-subtle @min-[720px]/row:inline")],
-					[getSpanKindLabel(span.spanKind)],
+					[
+						// The kind yields first on narrow rows so the service name stays readable.
+						h.span(
+							[h.Class("hidden shrink-0 text-foreground-subtle @min-[720px]/row:inline")],
+							[getSpanKindLabel(span.spanKind)],
+						),
+					],
 				),
 			],
 		),
@@ -522,7 +519,7 @@ export const spanRow = (h: HtmlBuilder<Message>, row: TreeRow, ctx: RowContext):
 					toggle(h, span, ctx.isExpanded),
 					...techIcon(h, span),
 					nameLabel(h, span, httpInfo),
-					...serviceLabel(h, row),
+					...serviceEntry(h, row),
 					...edgeLabel(h, span),
 					...(hasChildren && !ctx.isExpanded
 						? [

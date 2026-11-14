@@ -240,7 +240,8 @@ const serverTitle = (h: H, name: string, description: Description): Html =>
 		pageTitle(h, { title: name, className: "leading-8" }, [
 			serviceDot(h, {
 				serviceName: name,
-				className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+				size: "lg",
+				className: "relative -top-px mr-2.5 inline-block align-middle",
 			}),
 			name,
 		]),

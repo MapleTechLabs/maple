@@ -2,13 +2,12 @@ import { Schema } from "effect"
 import type { DataIntegration } from "../../route/data-integrations"
 import { overviewOf } from "./derive"
 import type { Model } from "./model"
-import { railwayFlow } from "../infra-integrations/railway/integration/flow-railway"
+import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
 import { planetscaleFlow } from "../infra-integrations/planetscale/integration/flow-planetscale"
 import { prometheusFlow } from "./flow-prometheus"
 import { cloudflareFlow } from "../infra-integrations/cloudflare/integration/flow-cloudflare"
 import { githubFlow } from "./flow-github"
-import { supabaseFlow } from "../infra-integrations/supabase/integration/flow-supabase"
 import { awsFlow } from "../infra-integrations/aws/integration/flow-aws"
 
 // Where a source stands in `/sources/new`'s flow: Connect, Choose data, Go live.
@@ -58,12 +57,12 @@ const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
 }
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
+	const provider = providerModuleOf(integration)
+	if (provider !== undefined) return provider.flow(model)
 	switch (integration) {
 		case "prometheus":
 		case "warpstream":
 			return prometheusFlow(model, integration, context)
-		case "railway":
-			return railwayFlow(model)
 		case "aws":
 			return awsFlow(model)
 		case "gcp":
@@ -74,8 +73,6 @@ export const flowOf = (model: Model, integration: DataIntegration, context: Flow
 			return cloudflareFlow(model)
 		case "github":
 			return githubFlow(model)
-		case "supabase":
-			return supabaseFlow(model)
 		default:
 			return genericFlow(model, integration)
 	}

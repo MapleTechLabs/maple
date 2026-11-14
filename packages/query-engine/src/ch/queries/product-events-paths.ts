@@ -29,6 +29,7 @@ import {
 	LINK_ALIAS,
 	ProductEventsFunnelError,
 	eventDisplayName,
+	PAGE_VIEW_KINDS,
 	eventStepCondition,
 	epochMs,
 	flag,
@@ -109,15 +110,15 @@ function validate(opts: ProductEventsPathsOpts): ProductEventsFunnelError | unde
 	return undefined
 }
 
-/** The include filter over a projected `kind` column; `undefined` for "all". */
+/** The include filter over a projected `kind` column; `undefined` for "all". Pages cover mobile screens. */
 function includeCondition(kind: CH.Expr<string>, include: PathsInclude): CH.Condition | undefined {
 	switch (include) {
 		case "all":
 			return undefined
 		case "events":
-			return kind.neq("navigation")
+			return CH.notInList(kind, PAGE_VIEW_KINDS)
 		case "pages":
-			return kind.eq("navigation")
+			return CH.inList(kind, PAGE_VIEW_KINDS)
 	}
 }
 

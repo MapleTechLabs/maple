@@ -245,8 +245,11 @@ const make: Effect.Effect<
 				const context = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ErrorIssues)
-							.innerJoin(ErrorIssuePullRequests, "pr", (_issue, pr) =>
-								pr.id.eq(row.pullRequestId),
+							.innerJoin(ErrorIssuePullRequests, "pr", (issue, pr) =>
+								pr.id
+									.eq(row.pullRequestId)
+									.and(pr.orgId.eq(issue.orgId))
+									.and(pr.issueId.eq(issue.id)),
 							)
 							.select(($) => ({
 								fingerprintHash: $.fingerprintHash,

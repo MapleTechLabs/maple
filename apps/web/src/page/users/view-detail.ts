@@ -8,6 +8,7 @@ import {
 	formatPercent,
 	formatPercentColumn,
 } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
@@ -31,7 +32,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Array as Arr, Order } from "effect"
 import {
 	th,
@@ -93,11 +94,14 @@ export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clo
 			pageDescription(
 				h,
 				[
-					hstack(h, { gap: "3", wrap: true, as: "span" }, [
+					hstack(h, { gap: "3", wrap: true, as: "span", className: "gap-y-0.5" }, [
 						...(profile.email === null || profile.email === userLabel(profile)
 							? []
 							: [typography(h, { as: "span" }, [profile.email])]),
-						typography(h, { mono: true, as: "span" }, [`user.id ${profile.userId}`]),
+						typography(h, { as: "span" }, [
+							"user.id ",
+							typography(h, { mono: true, tone: "soft", as: "span" }, [profile.userId]),
+						]),
 						...(profile.groupId === null
 							? []
 							: [
@@ -190,6 +194,7 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 				isRouteActive: tab === options.tab,
 			}
 		}),
+		{ isDense: true },
 	)
 
 // --- stats --------------------------------------------------------------------------------------
@@ -268,6 +273,10 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 const railValue = <M>(h: HtmlBuilder<M>, value: string, mono = true): Html =>
 	typography(h, { size: "xs", mono, tone: "soft", truncate: true, as: "span" }, [value])
 
+/** A count or share in the rail: the UI face with tabular figures. */
+const railNumber = <M>(h: HtmlBuilder<M>, value: string): Html =>
+	typography(h, { size: "xs", numeric: true, tone: "soft", as: "span" }, [value])
+
 /** The group as a link to its users, then its id when the name stands in for it. */
 const groupRows = <M>(
 	h: HtmlBuilder<M>,
@@ -331,20 +340,20 @@ const groupStatsSection = <M>(
 		]
 	return [
 		detailRailGroup(h, title, [
-			detailRailRow(h, { label: "Users" }, [railValue(h, formatNumber(stats.users))]),
+			detailRailRow(h, { label: "Users" }, [railNumber(h, formatNumber(stats.users))]),
 			detailRailRow(h, { label: "Active 24h" }, [
-				railValue(h, shareText(stats.activeToday, stats.users)),
+				railNumber(h, shareText(stats.activeToday, stats.users)),
 			]),
 			detailRailRow(h, { label: "Hit an error" }, [
-				railValue(h, shareText(stats.withErrors, stats.users)),
+				railNumber(h, shareText(stats.withErrors, stats.users)),
 			]),
 			detailRailRow(h, { label: "Sessions" }, [
-				railValue(
+				railNumber(
 					h,
 					`${formatNumber(stats.sessions)} · ${perUserText(stats.sessions / Math.max(1, stats.users))} per user`,
 				),
 			]),
-			detailRailRow(h, { label: "Requests" }, [railValue(h, formatNumber(stats.requests))]),
+			detailRailRow(h, { label: "Requests" }, [railNumber(h, formatNumber(stats.requests))]),
 			...(groupHref === null
 				? []
 				: [
@@ -382,12 +391,11 @@ export const userRail = <M>(
 						value: profile.firstSeenMs,
 						nowMs: clock.nowMs,
 						timeZone: clock.timeZone,
-						mono: true,
 						className: "text-xs text-foreground-soft",
 					}),
 				]),
 				detailRailRow(h, { label: "Visitor ids", hint: "linked before sign-in" }, [
-					railValue(h, `${profile.visitorIds.length}`),
+					railNumber(h, `${profile.visitorIds.length}`),
 				]),
 				...(profile.location === null
 					? []
@@ -410,12 +418,11 @@ export const userRail = <M>(
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in this window"])]
 					: Arr.map(profile.services, (service) =>
 							hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
-								serviceDot(h, { serviceName: service.service }),
-								typography(
-									h,
-									{ size: "xs", mono: true, truncate: true, className: "min-w-0 flex-1" },
-									[service.service],
-								),
+								serviceLabel(h, {
+									serviceName: service.service,
+									size: "xs",
+									className: "flex-1",
+								}),
 								typography(
 									h,
 									{
@@ -472,26 +479,27 @@ const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: User
 		Arr.map(namespaces, (namespace) => {
 			const isActive = namespace.name === scope.active
 			const share = total === 0 ? 0 : namespace.signals / total
-			const row = [
-				icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
-				typography(h, { size: "xs", mono: true, truncate: true, className: "flex-1 text-left" }, [
-					namespace.name,
-				]),
-				typography(h, { size: "2xs", mono: true, tone: "muted", numeric: true, as: "span" }, [
-					formatPercent(share),
-				]),
-			]
+			const row = (className?: string): Html =>
+				hstack(h, { gap: "2", as: "span", className: cn("min-h-7 px-1.5", className) }, [
+					icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
+					typography(h, { size: "xs", mono: true, truncate: true, className: "flex-1 text-left" }, [
+						namespace.name,
+					]),
+					typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [
+						formatPercent(share),
+					]),
+				])
 			return scope.isPinned
-				? hstack(h, { gap: "2", className: "min-h-7 px-1.5" }, row)
+				? row("-mx-1.5")
 				: pressable(
 						h,
 						{
 							onClick: scope.onSelect(isActive ? null : namespace.name),
 							isSelected: isActive,
 							selectedLane: isActive,
-							className: "flex min-h-7 w-full items-center gap-2 rounded-sm px-1.5",
+							className: "-mx-1.5 block rounded-sm",
 						},
-						row,
+						[row()],
 					)
 		}),
 	)
@@ -694,11 +702,13 @@ const cellText = <M>(
 			tone: options.tone ?? "foreground",
 			as: "span",
 			className: `${className}${options.right === true ? " text-right" : ""}`,
+			// A text cell that truncates keeps its whole value on hover; figures never need it.
+			...(options.right !== true && { attributes: [h.Title(value)] }),
 		},
 		[value],
 	)
 
-const timeCell = <M>(h: HtmlBuilder<M>, atMs: number, clock: Clock, className = "w-28 shrink-0"): Html =>
+const timeCell = <M>(h: HtmlBuilder<M>, atMs: number, clock: Clock, className = "w-20 shrink-0"): Html =>
 	h.span(
 		[h.Class(className)],
 		[
@@ -706,7 +716,6 @@ const timeCell = <M>(h: HtmlBuilder<M>, atMs: number, clock: Clock, className = 
 				value: atMs,
 				nowMs: clock.nowMs,
 				timeZone: clock.timeZone,
-				mono: true,
 				className: typographyClass({ size: "xs", tone: "muted" }),
 			}),
 		],
@@ -741,13 +750,13 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 		? noRows(h, "No recorded sessions from this user in this window")
 		: toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Started", width: "w-28 shrink-0" }),
-					th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
-					th(h, { label: "Pages", width: "w-14 shrink-0", align: "right" }),
-					th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
+					th(h, { label: "Started", width: "w-20 shrink-0" }),
+					th(h, { label: "Duration", width: "w-16 shrink-0", align: "right" }),
+					th(h, { label: "Pages", width: "w-12 shrink-0", align: "right" }),
+					th(h, { label: "Errors", width: "w-12 shrink-0", align: "right" }),
 					th(h, { label: "Entry → exit", width: `${columnClass({ min: "0" })} pl-4` }),
-					th(h, { label: "Device", width: "w-36 shrink-0" }),
-					h.span([h.AriaHidden(true), h.Class("w-24 shrink-0")], []),
+					th(h, { label: "Device", width: "w-32 shrink-0" }),
+					h.span([h.AriaHidden(true), h.Class("w-16 shrink-0")], []),
 				]),
 				toolTableBody(
 					h,
@@ -757,12 +766,17 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 							{ href: hrefOf(AppRoute.Replay({ sessionId: session.sessionId, search: {} })) },
 							[
 								timeCell(h, session.startedMs, clock),
-								cellText(h, formatDuration(session.durationMs), "w-20 shrink-0", {
+								cellText(h, formatDuration(session.durationMs), "w-16 shrink-0", {
 									right: true,
+									mono: false,
 								}),
-								cellText(h, String(session.pages), "w-14 shrink-0", { right: true }),
-								cellText(h, String(session.errors), "w-14 shrink-0", {
+								cellText(h, String(session.pages), "w-12 shrink-0", {
 									right: true,
+									mono: false,
+								}),
+								cellText(h, String(session.errors), "w-12 shrink-0", {
+									right: true,
+									mono: false,
 									tone: session.errors > 0 ? "error" : "muted",
 								}),
 								cellText(
@@ -773,10 +787,10 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 									"w-0 flex-1 pl-4",
 									{ tone: "soft" },
 								),
-								cellText(h, session.device, "w-36 shrink-0", { tone: "muted", mono: false }),
+								cellText(h, session.device, "w-32 shrink-0", { tone: "muted", mono: false }),
 								hstack(
 									h,
-									{ gap: "1.5", justify: "end", as: "span", className: "w-24 shrink-0" },
+									{ gap: "1.5", justify: "end", as: "span", className: "w-16 shrink-0" },
 									[
 										icon(h, "MediaPlayIcon", { size: 12, className: "text-primary" }),
 										typography(h, { size: "xs", tone: "primary", as: "span" }, ["Watch"]),
@@ -787,6 +801,12 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 					),
 				),
 			])
+
+/** The Service lane: wide enough for most names, and the full name on hover for longer ones. */
+const SERVICE_LANE = columnClass({ width: "44", shrink: false })
+
+const serviceCell = <M>(h: HtmlBuilder<M>, service: string): Html =>
+	serviceLabel(h, { serviceName: service, size: "xs", className: SERVICE_LANE })
 
 /** The issue's workflow state as the errors hub draws it; a fingerprint not yet an issue says so. */
 const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number]["status"]): Html =>
@@ -818,10 +838,10 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 		toolTable(h, [
 			toolTableHead(h, [
 				th(h, { label: "Issue", width: columnClass({ min: "0" }) }),
-				th(h, { label: "Service", width: "w-28 shrink-0" }),
-				th(h, { label: "This user", width: "w-20 shrink-0", align: "right" }),
-				th(h, { label: "Last seen", width: columnClass({ width: "28", shrink: false, inset: "4" }) }),
-				th(h, { label: "Status", width: "w-32 shrink-0" }),
+				th(h, { label: "Service", width: SERVICE_LANE }),
+				th(h, { label: "Hits", width: "w-16 shrink-0", align: "right" }),
+				th(h, { label: "Last seen", width: "w-20 shrink-0 pl-2" }),
+				th(h, { label: "Status", width: "w-28 shrink-0" }),
 			]),
 			toolTableBody(
 				h,
@@ -838,20 +858,13 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 									issue.message,
 								]),
 							]),
-							hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-								serviceDot(h, { serviceName: issue.service }),
-								typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-									issue.service,
-								]),
-							]),
-							cellText(h, formatNumber(issue.hits), "w-20 shrink-0", { right: true }),
-							timeCell(
-								h,
-								issue.lastSeenMs,
-								clock,
-								columnClass({ width: "28", shrink: false, inset: "4" }),
-							),
-							h.span([h.Class("w-32 shrink-0")], [issueStatus(h, issue.status)]),
+							serviceCell(h, issue.service),
+							cellText(h, formatNumber(issue.hits), "w-16 shrink-0", {
+								right: true,
+								mono: false,
+							}),
+							timeCell(h, issue.lastSeenMs, clock, "w-20 shrink-0 pl-2"),
+							h.span([h.Class("w-28 shrink-0")], [issueStatus(h, issue.status)]),
 						],
 					),
 				),
@@ -871,9 +884,9 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 			? noRows(h, "No requests from this user in this window")
 			: toolTable(h, [
 					toolTableHead(h, [
-						th(h, { label: "Time", width: "w-28 shrink-0" }),
+						th(h, { label: "Time", width: "w-20 shrink-0" }),
 						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
-						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Service", width: SERVICE_LANE }),
 						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
 						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
 					]),
@@ -883,18 +896,15 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 							toolTableRow(h, { href: trace.href }, [
 								timeCell(h, trace.atMs, clock),
 								cellText(h, trace.rootSpan, "w-0 flex-1"),
-								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-									serviceDot(h, { serviceName: trace.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										trace.service,
-									]),
-								]),
+								serviceCell(h, trace.service),
 								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
 									right: true,
+									mono: false,
 									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
 								}),
 								cellText(h, trace.status, "w-16 shrink-0", {
 									right: true,
+									mono: false,
 									tone: trace.isError ? "error" : "muted",
 								}),
 							]),
@@ -910,9 +920,9 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 			? noRows(h, "No logs from this user in this window")
 			: toolTable(h, [
 					toolTableHead(h, [
-						th(h, { label: "Time", width: "w-28 shrink-0" }),
+						th(h, { label: "Time", width: "w-20 shrink-0" }),
 						th(h, { label: "Level", width: "w-16 shrink-0" }),
-						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Service", width: SERVICE_LANE }),
 						th(h, { label: "Message", width: columnClass({ min: "0" }) }),
 					]),
 					toolTableBody(
@@ -924,12 +934,7 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 									[h.Class("w-16 shrink-0")],
 									[severityBadge(h, { severity: log.severity })],
 								),
-								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-									serviceDot(h, { serviceName: log.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										log.service,
-									]),
-								]),
+								serviceCell(h, log.service),
 								cellText(h, log.body, "w-0 flex-1"),
 							]),
 						),
@@ -941,7 +946,7 @@ const eventsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Ht
 		? noRows(h, "No product events from this user in this window")
 		: toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Time", width: "w-28 shrink-0" }),
+					th(h, { label: "Time", width: "w-20 shrink-0" }),
 					th(h, { label: "Event", width: "w-44 shrink-0" }),
 					th(h, { label: "Source", width: "w-20 shrink-0" }),
 					th(h, { label: "Page / properties", width: columnClass({ min: "0" }) }),
@@ -968,13 +973,13 @@ const mcpBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =
 		? noRows(h, "No MCP sessions from this user in this window")
 		: toolTable(h, [
 				toolTableHead(h, [
-					th(h, { label: "Started", width: "w-28 shrink-0" }),
+					th(h, { label: "Started", width: "w-20 shrink-0" }),
 					th(h, { label: "Server", width: columnClass({ min: "0" }) }),
-					th(h, { label: "Client", width: "w-44 shrink-0" }),
-					th(h, { label: "Calls", width: "w-14 shrink-0", align: "right" }),
-					th(h, { label: "Failed", width: "w-14 shrink-0", align: "right" }),
-					th(h, { label: "Tools", width: "w-14 shrink-0", align: "right" }),
-					th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
+					th(h, { label: "Client", width: "w-36 shrink-0" }),
+					th(h, { label: "Calls", width: "w-12 shrink-0", align: "right" }),
+					th(h, { label: "Failed", width: "w-12 shrink-0", align: "right" }),
+					th(h, { label: "Tools", width: "w-12 shrink-0", align: "right" }),
+					th(h, { label: "Duration", width: "w-16 shrink-0", align: "right" }),
 				]),
 				toolTableBody(
 					h,
@@ -987,34 +992,39 @@ const mcpBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =
 							},
 							[
 								timeCell(h, session.firstSeenMs, clock),
-								hstack(h, { gap: "1.5", as: "span", className: "w-0 min-w-0 flex-1" }, [
-									serviceDot(h, { serviceName: session.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										session.service,
-									]),
-								]),
-								hstack(h, { gap: "2", as: "span", className: "w-44 shrink-0" }, [
+								serviceLabel(h, {
+									serviceName: session.service,
+									size: "xs",
+									className: "w-0 flex-1",
+								}),
+								hstack(h, { gap: "2", as: "span", className: "w-36 shrink-0" }, [
 									clientIcon(h, session.client, 12),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+									typography(h, { size: "xs", truncate: true, as: "span" }, [
 										session.client,
 									]),
 									...kindTag(h, session.kind),
 								]),
-								cellText(h, formatNumber(session.calls), "w-14 shrink-0", { right: true }),
-								cellText(h, formatNumber(session.errors), "w-14 shrink-0", {
+								cellText(h, formatNumber(session.calls), "w-12 shrink-0", {
 									right: true,
+									mono: false,
+								}),
+								cellText(h, formatNumber(session.errors), "w-12 shrink-0", {
+									right: true,
+									mono: false,
 									tone: session.errors > 0 ? "error" : "muted",
 								}),
-								cellText(h, formatNumber(session.tools), "w-14 shrink-0", {
+								cellText(h, formatNumber(session.tools), "w-12 shrink-0", {
 									right: true,
+									mono: false,
 									tone: "muted",
 								}),
 								cellText(
 									h,
 									formatLatency(session.lastSeenMs - session.firstSeenMs),
-									"w-20 shrink-0",
+									"w-16 shrink-0",
 									{
 										right: true,
+										mono: false,
 										tone: "muted",
 									},
 								),

@@ -10,7 +10,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { toSpanNode } from "../trace-data"
 import { copyableValue, selectableValue } from "./copy"
 import { Message } from "./message"
@@ -62,7 +62,6 @@ export const panelHeader = (h: H, model: Model): Html => {
 						],
 					),
 					hstack(h, { gap: "1.5", align: "center", shrink: true, className: "mt-0.5" }, [
-						serviceDot(h, { serviceName: span.serviceName, size: "sm" }),
 						copyableValue(
 							h,
 							model,
@@ -72,15 +71,12 @@ export const panelHeader = (h: H, model: Model): Html => {
 								className: "min-w-0 truncate",
 							},
 							[
-								typography(
-									h,
-									{
-										size: "3xs",
-										mono: true,
-										attributes: [h.Style({ color: serviceColor })],
-									},
-									[span.serviceName],
-								),
+								serviceLabel(h, {
+									serviceName: span.serviceName,
+									dot: "sm",
+									size: "3xs",
+									attributes: [h.Style({ color: serviceColor })],
+								}),
 							],
 						),
 						typography(h, { size: "3xs", tone: "muted", className: "shrink-0" }, [

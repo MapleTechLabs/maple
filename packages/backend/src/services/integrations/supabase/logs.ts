@@ -11,10 +11,11 @@ import {
 	SUPABASE_SERVICE_NAME,
 } from "@maple/query-engine-integrations"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClient } from "effect/http"
 import type { SupabaseProjectRef } from "@maple/primitives"
 import { timestampMs } from "@maple/backend/platform/time"
-import { send, SupabaseApiError } from "./api"
+import * as VendorHttp from "../vendor-http"
+import { SupabaseApiError, supabaseClient } from "./api"
 
 /** Rows asked for per query; a full page means the window has more. */
 export const LOGS_PAGE_SIZE = 1000
@@ -52,18 +53,17 @@ export const logsQuerySql = (window: { readonly startMs: number; readonly endMs:
 const MINUTE_MS = 60_000
 
 /** The endpoint rounds its range to the minute, so widen it outward; the SQL bounds are exact. */
-export const logsQueryUrl = (
-	apiBaseUrl: string,
+export const logsQueryRequest = (
 	projectRef: SupabaseProjectRef,
 	window: { readonly startMs: number; readonly endMs: number },
-) => {
-	const params = new URLSearchParams({
+) => ({
+	path: `/v1/projects/${projectRef}/analytics/endpoints/logs`,
+	query: {
 		sql: logsQuerySql(window),
 		iso_timestamp_start: new Date(Math.floor(window.startMs / MINUTE_MS) * MINUTE_MS).toISOString(),
 		iso_timestamp_end: new Date(Math.ceil(window.endMs / MINUTE_MS) * MINUTE_MS).toISOString(),
-	})
-	return `${apiBaseUrl}/v1/projects/${projectRef}/analytics/endpoints/logs?${params.toString()}`
-}
+	},
+})
 
 const LogsResponse = Schema.Union([
 	Schema.Struct({ result: Schema.Array(Schema.Unknown) }),
@@ -86,14 +86,10 @@ export const queryLogs = Effect.fn("SupabaseApi.queryLogs")(function* (
 	projectRef: SupabaseProjectRef,
 	window: { readonly startMs: number; readonly endMs: number },
 ) {
-	const text = yield* send(
-		httpClient,
-		HttpClientRequest.get(logsQueryUrl(apiBaseUrl, projectRef, window)).pipe(
-			HttpClientRequest.bearerToken(accessToken),
-			HttpClientRequest.acceptJson,
-		),
-		"reading project logs",
-	)
+	const text = yield* supabaseClient(httpClient, apiBaseUrl, VendorHttp.bearer(accessToken)).text({
+		...logsQueryRequest(projectRef, window),
+		operation: "reading project logs",
+	})
 	const body = decodeLogsResponse(text)
 	if (Option.isNone(body)) {
 		return yield* new SupabaseApiError({
