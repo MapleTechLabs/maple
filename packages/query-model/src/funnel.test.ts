@@ -4,6 +4,7 @@ import { Schema, Array as Arr } from "effect"
 import {
 	FUNNEL_EMPTY_GROUP_LABEL,
 	ProductEventsPathsWidgetParams,
+	funnelBreakdownLimit,
 	funnelStepDetails,
 	funnelStepLabel,
 	funnelWidgetBreakdownRows,
@@ -62,6 +63,14 @@ describe("funnelWidgetBreakdownRows", () => {
 			),
 		).toEqual([80, 10, 0])
 		expect(rows[0]).toEqual({ name: "/pricing", value: 80, group: "news.ycombinator.com" })
+	})
+})
+
+describe("funnelBreakdownLimit", () => {
+	it("answers the widget's six unless asked, and keeps a request between one and twenty groups", () => {
+		expect(Arr.map([undefined, Number.NaN, 12, 7.6, 0, 500], funnelBreakdownLimit)).toEqual([
+			6, 6, 12, 8, 1, 20,
+		])
 	})
 })
 
