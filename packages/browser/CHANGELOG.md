@@ -1,5 +1,11 @@
 # @maple-dev/browser
 
+## 0.14.3
+
+### Patch Changes
+
+- cad8a08: The OpenTelemetry browser packages now require 3.1.1 / 0.301.2, and `rrweb` requires 2.2.2. These are patch releases, and the SDK's behavior does not change.
+
 ## 0.14.2
 
 ### Patch Changes
