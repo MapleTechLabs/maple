@@ -11,7 +11,7 @@ import * as Select from "../../ui/select"
 import * as SelectView from "../../ui/select-view"
 import { toggle } from "../../ui/toggle"
 import * as Tooltip from "../../ui/tooltip"
-import { serviceDot } from "../../ui/values"
+import { serviceLabel } from "../../ui/service-label"
 import type { ColorMode, Focus } from "./state"
 import { hstack } from "../../ui/stack"
 
@@ -90,10 +90,7 @@ const focusCombobox = <M>(h: HtmlBuilder<M>, inputs: ToolbarInputs<M>): Html =>
 				size: 14,
 				attributes: [h.Attribute("stroke-width", "2")],
 			}),
-			renderItem: (service) => [
-				serviceDot(h, { serviceName: service, className: "size-1.5" }),
-				service,
-			],
+			renderItem: (service) => [serviceLabel(h, { serviceName: service, dot: "sm" })],
 			// The wrapper carries the responsive width, not the input.
 			toView: ({ field, rest }) => h.div([h.Class("w-full sm:w-52")], [field, ...rest]),
 		},
@@ -119,8 +116,12 @@ const focusControls = <M>(
 			className: "h-7 rounded-lg border border-input bg-background pr-1 pl-2 text-sm dark:bg-input/32",
 		},
 		[
-			serviceDot(h, { serviceName: focus.serviceId, className: "size-1.5 shrink-0" }),
-			h.span([h.Class("max-w-40 truncate font-medium")], [focus.serviceId]),
+			serviceLabel(h, {
+				serviceName: focus.serviceId,
+				dot: "sm",
+				weight: "medium",
+				className: "max-w-40",
+			}),
 			iconButton(
 				h,
 				{

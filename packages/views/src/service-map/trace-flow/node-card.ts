@@ -1,5 +1,4 @@
 import { type CacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
-import { getServiceColor } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { httpStatusTone } from "@maple/ui/lib/http"
 import { shortId } from "@maple/ui/lib/ids"
@@ -12,19 +11,13 @@ import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
 import type { SpanDescription } from "./span-category"
 import { describeSpan } from "./span-category"
+import { serviceLabel } from "../../ui/service-label"
 import { typography, typographyClass } from "../../ui/typography"
 import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
-
-export const serviceDot = <M>(h: HtmlBuilder<M>, serviceName: string, className: string): Html =>
-	h.span([
-		h.AriaHidden(true),
-		h.Class(cn("shrink-0 rounded-dot [corner-shape:squircle]", "size-2", className)),
-		h.Style({ "background-color": getServiceColor(serviceName) }),
-	])
 
 const formatCombinedDuration = (isCombined: boolean, single: number, aggregated: AggregatedDuration) => {
 	if (!isCombined) {
@@ -245,8 +238,7 @@ export const flowSpanNode = <M>(
 								className: typographyClass({ size: "3xs", tone: "muted" }),
 							},
 							[
-								serviceDot(h, span.serviceName, "size-1.5"),
-								typography(h, { truncate: true }, [span.serviceName]),
+								serviceLabel(h, { serviceName: span.serviceName, dot: "sm" }),
 								typography(h, { tone: "faint", className: "shrink-0" }, ["·"]),
 								h.span([h.Class("shrink-0")], [category.label]),
 								h.span([h.Class("flex-1")]),

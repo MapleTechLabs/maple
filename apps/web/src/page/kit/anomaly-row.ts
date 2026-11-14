@@ -19,7 +19,7 @@ import { AppRoute, hrefOf } from "../../route/index"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "./relative-time"
 import { Array as Arr } from "effect"
 import { hstack } from "@maple/views/ui/stack"
@@ -149,8 +149,11 @@ export const anomalyRow = <M>(h: HtmlBuilder<M>, options: AnomalyRowOptions<M>):
 				? []
 				: [
 						meta("z-10 hidden min-w-0 shrink md:inline-flex", incident.serviceName, [
-							serviceDot(h, { serviceName: incident.serviceName, size: "sm" }),
-							h.span([h.Class("max-w-[140px] truncate")], [incident.serviceName]),
+							serviceLabel(h, {
+								serviceName: incident.serviceName,
+								dot: "sm",
+								className: "max-w-[140px]",
+							}),
 						]),
 					]),
 			h.span(

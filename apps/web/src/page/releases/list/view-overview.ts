@@ -15,8 +15,7 @@ import { linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { RELEASE_HEALTH_DOT_CLASS, RELEASE_HEALTH_LABEL, releaseHealthFigure, releaseHref } from "../kit"
 import { MeasureReleasesTrack } from "./command"
 import type { Message } from "./message"
@@ -76,8 +75,7 @@ export const liveNow = (
 						],
 					},
 					[
-						serviceDot(h, { serviceName: version.serviceName }),
-						h.span([], [version.serviceName]),
+						serviceLabel(h, { serviceName: version.serviceName, truncate: "none" }),
 						typography(h, { size: "2xs", tone: "muted", mono: true }, [
 							shortReleaseLabel(version.commitSha),
 						]),
@@ -268,20 +266,7 @@ export const releasesTimeline = (h: H, input: TimelineInput): Html => {
 					h.div(
 						[h.Key(lane.serviceName), h.Class(`grid h-8 ${twoColumns} items-center gap-3`)],
 						[
-							hstack(
-								h,
-								{
-									gap: "1.5",
-									align: "center",
-									shrink: true,
-									as: "span",
-									className: typographyClass({ size: "2xs", tone: "muted" }),
-								},
-								[
-									serviceDot(h, { serviceName: lane.serviceName }),
-									truncatedText(h, { text: lane.serviceName }),
-								],
-							),
+							serviceLabel(h, { serviceName: lane.serviceName, size: "2xs", tone: "muted" }),
 							h.div(
 								[
 									h.Class("relative h-full border-b border-dashed border-border-subtle"),

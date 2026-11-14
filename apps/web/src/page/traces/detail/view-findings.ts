@@ -8,7 +8,7 @@ import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Message } from "./message"
 import type { ProductEvent } from "./model"
 import { type SpanNodeData, toSpanNode } from "@maple/views/traces/trace-data"
@@ -41,20 +41,17 @@ export const errorCallout = (
 				errors.spans.length > 1
 					? typography(h, { tone: "muted", weight: "normal" }, ["likely origin"])
 					: null,
-				hstack(
+				serviceLabel(
 					h,
 					{
-						gap: "1.5",
-						align: "center",
-						shrink: true,
-						as: "span",
-						className: "font-mono font-normal",
+						serviceName: origin.serviceName,
+						dot: "sm",
+						tone: "muted",
+						weight: "normal",
+						truncate: "none",
+						className: "min-w-0",
 					},
-					[
-						serviceDot(h, { serviceName: origin.serviceName, size: "sm" }),
-						typography(h, { tone: "muted" }, [origin.serviceName]),
-						typography(h, { truncate: true }, [origin.spanName]),
-					],
+					[typography(h, { mono: true, weight: "normal", truncate: true }, [origin.spanName])],
 				),
 			],
 			"flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5",
@@ -93,7 +90,9 @@ const productEventRow = (h: HtmlBuilder<Message>, event: ProductEvent): Html => 
 	const person = event.userId || event.groupId || event.visitorId
 	const content = [
 		typography(h, { weight: "medium" }, [event.eventName]),
-		event.serviceName === "" ? null : typography(h, { tone: "muted" }, [event.serviceName]),
+		event.serviceName === ""
+			? null
+			: serviceLabel(h, { serviceName: event.serviceName, tone: "muted", truncate: "none" }),
 		person === "" ? null : typography(h, { tone: "muted" }, ["· ", person]),
 		...Arr.map(Rec.toEntries(event.attributes), ([key, value]) =>
 			badge(h, { variant: "secondary", className: "font-normal" }, [key, ": ", value]),

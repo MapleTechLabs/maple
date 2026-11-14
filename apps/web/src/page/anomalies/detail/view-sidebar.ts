@@ -14,13 +14,13 @@ import { button } from "@maple/views/ui/button"
 import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { anomalyFingerprintRow } from "../../kit/anomaly-evidence"
 import { shortIssueId } from "@maple/ui/lib/ids"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, vstack } from "@maple/views/ui/stack"
+import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -135,12 +135,12 @@ export const anomalySidebar = (h: H, input: SidebarInput): Html => {
 				h,
 				"Service",
 				[
-					hstack(h, { gap: "2", shrink: true, as: "span" }, [
-						serviceDot(h, { serviceName: incident.serviceName, size: "sm" }),
-						typography(h, { size: "sm", tone: "foreground", truncate: true }, [
-							incident.serviceName,
-						]),
-					]),
+					serviceLabel(h, {
+						serviceName: incident.serviceName,
+						dot: "sm",
+						size: "sm",
+						tone: "foreground",
+					}),
 				],
 				incident.serviceName,
 			),

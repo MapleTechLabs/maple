@@ -10,7 +10,7 @@ import { logMessageOf, logMessageView } from "@maple/views/ui/logs/log-message"
 import { type LogRecord, severityLabel } from "@maple/views/ui/logs/log-row-view"
 import { pressable } from "@maple/views/ui/pressable"
 import { textLink } from "@maple/views/ui/text-link"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Message, type Model } from "./model"
 import { copyStatusOf } from "./update"
 import { hstack } from "@maple/views/ui/stack"
@@ -95,9 +95,10 @@ export const heroHeader = (
 		[
 			hstack(h, { gap: "2" }, [
 				severityTrigger(h, log),
-				badge(h, { variant: "outline", size: "xs", mono: true }, [
-					serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-					copyable(h, model, "hero-service", log.serviceName, [log.serviceName]),
+				badge(h, { variant: "outline", size: "xs" }, [
+					copyable(h, model, "hero-service", log.serviceName, [
+						serviceLabel(h, { serviceName: log.serviceName, dot: "sm", truncate: "none" }),
+					]),
 				]),
 				...(close === null
 					? []

@@ -31,7 +31,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Array as Arr, Order } from "effect"
 import {
 	th,
@@ -410,12 +410,11 @@ export const userRail = <M>(
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in this window"])]
 					: Arr.map(profile.services, (service) =>
 							hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
-								serviceDot(h, { serviceName: service.service }),
-								typography(
-									h,
-									{ size: "xs", mono: true, truncate: true, className: "min-w-0 flex-1" },
-									[service.service],
-								),
+								serviceLabel(h, {
+									serviceName: service.service,
+									size: "xs",
+									className: "flex-1",
+								}),
 								typography(
 									h,
 									{
@@ -792,10 +791,7 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 const SERVICE_LANE = columnClass({ width: "44", shrink: false })
 
 const serviceCell = <M>(h: HtmlBuilder<M>, service: string): Html =>
-	hstack(h, { gap: "1.5", as: "span", className: SERVICE_LANE, attributes: [h.Title(service)] }, [
-		serviceDot(h, { serviceName: service }),
-		typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [service]),
-	])
+	serviceLabel(h, { serviceName: service, size: "xs", className: SERVICE_LANE })
 
 /** The issue's workflow state as the errors hub draws it; a fingerprint not yet an issue says so. */
 const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number]["status"]): Html =>
@@ -981,12 +977,11 @@ const mcpBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =
 							},
 							[
 								timeCell(h, session.firstSeenMs, clock),
-								hstack(h, { gap: "1.5", as: "span", className: "w-0 min-w-0 flex-1" }, [
-									serviceDot(h, { serviceName: session.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										session.service,
-									]),
-								]),
+								serviceLabel(h, {
+									serviceName: session.service,
+									size: "xs",
+									className: "w-0 flex-1",
+								}),
 								hstack(h, { gap: "2", as: "span", className: "w-44 shrink-0" }, [
 									clientIcon(h, session.client, 12),
 									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
