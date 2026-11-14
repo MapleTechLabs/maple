@@ -26,9 +26,10 @@ rather than by a separate `drop_web_events` migration.
    Register `POST /webhooks/autumn` (`billing.updated`) in Autumn. Clerk is one instance for
    every region, so register `POST /webhooks/clerk` once per regional API, each with its own
    signing secret in that region's environment: `organizationMembership.created/updated/deleted`
-   and `user.deleted` everywhere, `user.created` on the default region only. A membership event
-   is acted on by the organization's home region; without these endpoints a removed member keeps
-   every credential they made.
+   and `user.deleted` everywhere, `user.created` on the default region only. Every region
+   revokes a removed member's credentials (a key is honoured by the instance that minted it); the
+   organization's home region writes the audit entry and the product event. Without these
+   endpoints a removed member keeps every credential they made.
 4. **Ingest**: `INGEST_TINYBIRD_DATASOURCE_PRODUCT_EVENTS` defaults to `product_events`; nothing
    to set unless the datasource name differs.
 5. Publish `@maple-dev/effect-sdk` / `@maple-dev/browser` so customers' events start carrying

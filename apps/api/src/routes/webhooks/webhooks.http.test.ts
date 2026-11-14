@@ -333,7 +333,7 @@ describe("ClerkWebhookRouter", () => {
 	)
 
 	// One Clerk instance delivers every event to every region's API.
-	it.live("leaves a membership event to the organization's home region", () =>
+	it.live("sweeps a membership change in every region and records it in the home region", () =>
 		Effect.gen(function* () {
 			const deliver = (home: HomeAnswer, type: string) =>
 				Effect.gen(function* () {
@@ -375,38 +375,53 @@ describe("ClerkWebhookRouter", () => {
 					}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
 				})
 
-			// Another region's organization: acknowledged, and nothing recorded or swept here.
-			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.deleted"), {
-				status: 200,
-				audited: 0,
-				tracked: 0,
-				calls: [],
-			})
-			// Clerk could not say where it lives: Svix redelivers rather than this region guessing.
-			assert.deepStrictEqual(yield* deliver("unknown", "organizationMembership.deleted"), {
-				status: 503,
-				audited: 0,
-				tracked: 0,
-				calls: [],
-			})
-			// A deleted organization's credentials may be in any region, so each one sweeps.
-			assert.deepStrictEqual(yield* deliver("deleted", "organizationMembership.deleted"), {
+			const removal = "organizationMembership.deleted"
+			// Another region's organization: nothing is recorded here, but a key this instance
+			// minted before the organization chose its region still has to go.
+			assert.deepStrictEqual(yield* deliver("elsewhere", removal), {
 				status: 200,
 				audited: 0,
 				tracked: 0,
 				calls: ["revoke:org_9:user_9"],
 			})
-			assert.deepStrictEqual(yield* deliver("deleted", "organizationMembership.updated"), {
+			assert.deepStrictEqual(yield* deliver("deleted", removal), {
 				status: 200,
 				audited: 0,
 				tracked: 0,
-				calls: [],
+				calls: ["revoke:org_9:user_9"],
 			})
-			assert.deepStrictEqual(yield* deliver("here", "organizationMembership.deleted"), {
+			// Clerk could not say where it lives: swept at once, and redelivered for the record.
+			assert.deepStrictEqual(yield* deliver("unknown", removal), {
+				status: 503,
+				audited: 0,
+				tracked: 0,
+				calls: ["revoke:org_9:user_9"],
+			})
+			assert.deepStrictEqual(yield* deliver("here", removal), {
 				status: 200,
 				audited: 1,
 				tracked: 1,
 				calls: ["revoke:org_9:user_9"],
+			})
+			// A demotion takes keys away in every region too.
+			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.updated"), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: ["demote:org_9:user_9:org:member"],
+			})
+			// A join has nothing to sweep: the other region only acknowledges it.
+			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.created"), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: [],
+			})
+			assert.deepStrictEqual(yield* deliver("unknown", "organizationMembership.created"), {
+				status: 503,
+				audited: 0,
+				tracked: 0,
+				calls: [],
 			})
 		}),
 	)
