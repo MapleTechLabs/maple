@@ -96,8 +96,16 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 	onClock?: ProviderHook<S, M, Msg>
 	/** The status read answered (`env.status` already holds the answer). */
 	onStatus?: (model: M, env: ProviderEnv<S>, answer: StatusAnswer<S>) => ProviderReturn<M, Msg>
+	/** A new OAuth connect attempt starts. */
+	onConnectStart?: ProviderHook<S, M, Msg>
 	/** An OAuth connect came back successful. */
 	onConnected?: ProviderHook<S, M, Msg>
+	/** `onConnected` and `onRelayedConnect` re-read the status themselves, in place of the hub. */
+	replacesConnectedRead?: boolean
+	/** The connect popup closed; replaces the hub's status re-read. */
+	onPopupClosed?: ProviderHook<S, M, Msg>
+	/** The hub's disconnect of this provider succeeded. */
+	onDisconnected?: ProviderHook<S, M, Msg>
 	/** Another tab finished a successful connect (`RELAY_CHANNEL`); its side effects already ran there. */
 	onRelayedConnect?: ProviderHook<S, M, Msg>
 	/** The shared disconnect dialog's confirm, when the module runs its own removal. */

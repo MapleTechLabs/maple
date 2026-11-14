@@ -6,6 +6,7 @@ import {
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VercelIntegrationStatus,
+	CloudflareUsageResponse,
 } from "@maple/domain/http"
 import { V2ChatConnectorList, V2PlanetScaleIntegration, V2ScrapeTarget } from "@maple/domain/http/v2"
 import { SupabaseProjectRef } from "@maple/primitives"
@@ -31,9 +32,10 @@ import {
 import { SearchConsoleMessage } from "./search-console"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
+import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
-import { receivedCallback, receivedRelay } from "./update-connect"
+import { closedPopup, receivedCallback, receivedRelay } from "./update-connect"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -454,6 +456,59 @@ describe("provider modules", () => {
 			label: "1 org · 1 enabled",
 			variant: "ok",
 		})
+	})
+
+	test("a connect runs the module's start, connected and popup hooks in place of the hub's re-read", () => {
+		const model = init({ search: { integration: "cloudflare" } }, context).model
+		const primed = { ...model, cloudflareCard: { ...model.cloudflareCard, isPrimed: true } }
+		const started = pageUpdate(primed, Message.ClickedConnect())
+		expect(started.model.cloudflareCard.isPrimed).toBe(false)
+		const connected = names(
+			receivedCallback(started.model, context, "cloudflare", "success", null).commands,
+		)
+		expect(connected).toContain("PrimeCloudflare")
+		expect(connected).not.toContain("LoadIntegrationsCloudflareStatus")
+		const active = {
+			...started.model,
+			connect: { ...started.model.connect, active: { provider: "cloudflare" as const, attempt: 1 } },
+		}
+		const closed = names(closedPopup(active, context, 1).commands)
+		expect(closed).toContain("LoadIntegrationsCloudflareStatus")
+		expect(closed).toContain("PrimeCloudflare")
+	})
+
+	test("a successful disconnect runs the module's hook, a failed one does not", () => {
+		const entered = init({ search: { integration: "cloudflare" } }, context).model
+		const model = pageUpdate(
+			entered,
+			Message.GotCloudflareMessage({
+				message: CloudflareMessage.CompletedLoadUsage({
+					key: entered.cloudflareCard.usage.key ?? "",
+					result: Result.succeed(
+						new CloudflareUsageResponse({
+							windowStart: NOW - 3_600_000,
+							windowEnd: NOW,
+							bucketSeconds: 3600,
+							totalRequests: 0,
+							services: [],
+						}),
+					),
+				}),
+			}),
+		).model
+		const done = pageUpdate(
+			model,
+			Message.CompletedDisconnect({ integration: "cloudflare-multi", failure: null }),
+		)
+		expect(names(done.commands)).toContain("LoadIntegrationsCloudflareUsage")
+		const failed = pageUpdate(
+			model,
+			Message.CompletedDisconnect({
+				integration: "cloudflare",
+				failure: toLoadFailure(new Error("no")),
+			}),
+		)
+		expect(names(failed.commands)).not.toContain("LoadIntegrationsCloudflareUsage")
 	})
 
 	test("the header badge and catalog row of a module come from the module", () => {

@@ -20,6 +20,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../../contract"
 import { SaveCloudflareZones } from "./cloudflare"
 import { Message } from "../../../integrations/message"
+import { CloudflareMessage } from "./cloudflare"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
 import { view as pageView } from "../../../integrations/view"
@@ -128,7 +129,7 @@ describe("cloudflare zone selection", () => {
 			// A refused save keeps the draft open and says why.
 			Command.resolve(
 				SaveCloudflareZones,
-				Message.CompletedCloudflareZones({
+				CloudflareMessage.CompletedZones({
 					failure: toLoadFailure(
 						new IntegrationsForbiddenError({
 							message: "Only org admins can manage integrations",
@@ -151,13 +152,27 @@ describe("cloudflare zone selection", () => {
 
 	test("a saved choice closes the dialog and re-reads the status", () => {
 		const step = (model: Model, message: Message) => pageUpdate(model, message).model
-		const opened = step(connected(), Message.ClickedManageZones())
-		const edited = step(opened, Message.ToggledManagedZone({ accountId: "acc_1", zoneId: "z1" }))
-		const saving = step(edited, Message.SubmittedZoneSettings())
+		const opened = step(
+			connected(),
+			Message.GotCloudflareMessage({ message: CloudflareMessage.ClickedManageZones() }),
+		)
+		const edited = step(
+			opened,
+			Message.GotCloudflareMessage({
+				message: CloudflareMessage.ToggledManagedZone({ accountId: "acc_1", zoneId: "z1" }),
+			}),
+		)
+		const saving = step(
+			edited,
+			Message.GotCloudflareMessage({ message: CloudflareMessage.SubmittedZoneSettings() }),
+		)
 		expect(saving.cloudflareCard.isSavingZones).toBe(true)
 		expect(saving.cloudflareCard.zoneDialog.isOpen).toBe(true)
 
-		const saved = pageUpdate(saving, Message.CompletedCloudflareZones({ failure: null }))
+		const saved = pageUpdate(
+			saving,
+			Message.GotCloudflareMessage({ message: CloudflareMessage.CompletedZones({ failure: null }) }),
+		)
 		expect(saved.model.cloudflareCard.isSavingZones).toBe(false)
 		expect(saved.model.cloudflareCard.zoneDialog.isOpen).toBe(false)
 		expect(Arr.map(saved.commands ?? [], ({ name }) => name)).toContain(

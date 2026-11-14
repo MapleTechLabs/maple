@@ -12,6 +12,7 @@ import { SEARCH_CONSOLE } from "./search-console-provider"
 import { LINEAR } from "./linear-provider"
 import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider"
 import { PLANETSCALE } from "../infra-integrations/planetscale/integration/planetscale-provider"
+import { CLOUDFLARE } from "../infra-integrations/cloudflare/integration/cloudflare-provider"
 import { CHAT } from "./chat-provider"
 import { ReadClock, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
@@ -49,8 +50,13 @@ export type MountedProvider = Readonly<{
 	owns: (id: IntegrationId) => boolean
 	onEnter: (model: Model, context: PageContext) => Return
 	onClock: (model: Model, context: PageContext) => Return
+	onConnectStart: (model: Model, context: PageContext) => Return
 	onConnected: (model: Model, context: PageContext) => Return
 	onRelayedConnect: (model: Model, context: PageContext) => Return
+	replacesConnectedRead: boolean
+	/** `null`: the hub re-reads the status. */
+	onPopupClosed: ((model: Model, context: PageContext) => Return) | null
+	onDisconnected: (model: Model, context: PageContext) => Return
 	/** `null`: the hub's own disconnect runs. */
 	onConfirmDisconnect: ((model: Model, context: PageContext) => Return) | null
 	isDisconnecting: (model: Model) => boolean
@@ -172,8 +178,12 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 			run(spec, model, context, (sub, env) => module.update(sub, message, env)),
 		onEnter: hook(module.onEnter),
 		onClock: hook(module.onClock),
+		onConnectStart: hook(module.onConnectStart),
 		onConnected: hook(module.onConnected),
 		onRelayedConnect: hook(module.onRelayedConnect),
+		replacesConnectedRead: module.replacesConnectedRead === true,
+		onPopupClosed: module.onPopupClosed === undefined ? null : hook(module.onPopupClosed),
+		onDisconnected: hook(module.onDisconnected),
 		onConfirmDisconnect:
 			module.onConfirmDisconnect === undefined ? null : hook(module.onConfirmDisconnect),
 		isDisconnecting: (model) => isDisconnecting !== undefined && isDisconnecting(spec.get(model)),
@@ -271,6 +281,15 @@ export const PLANETSCALE_PROVIDER = mount({
 	toHub: (message) => Message.GotPlanetscaleMessage({ message }),
 })
 
+export const CLOUDFLARE_PROVIDER = mount({
+	module: CLOUDFLARE,
+	statusName: "cloudflare",
+	slot: (statuses) => statuses.cloudflare,
+	get: (model) => model.cloudflareCard,
+	set: (model, cloudflareCard) => ({ ...model, cloudflareCard }),
+	toHub: (message) => Message.GotCloudflareMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -280,6 +299,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	CHAT_PROVIDER,
 	VERCEL_PROVIDER,
 	PLANETSCALE_PROVIDER,
+	CLOUDFLARE_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

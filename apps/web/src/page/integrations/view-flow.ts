@@ -10,7 +10,6 @@ import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
 import { prometheusFlowView } from "./view-flow-prometheus"
-import { cloudflareFlowView } from "../infra-integrations/cloudflare/integration/view-flow-cloudflare"
 import { githubFlowView } from "./view-flow-github"
 import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
@@ -83,8 +82,6 @@ export const flowView = (
 			return awsFlowView(h, model, stage, timeZone)
 		case "gcp":
 			return gcpFlowView(h, model, stage, timeZone)
-		case "cloudflare":
-			return cloudflareFlowView(h, model, stage)
 		case "github":
 			return githubFlowView(h, model, stage)
 		default:
