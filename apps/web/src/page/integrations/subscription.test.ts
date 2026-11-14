@@ -9,8 +9,10 @@ import { ResourcesLive } from "../../platform/resources"
 import type { PageContext } from "../contract"
 import { ReadClock } from "./command"
 import { Message } from "./message"
+import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import type { Model } from "./model"
-import { subscriptions } from "./subscription"
+import { PLANETSCALE_PROVIDER } from "./provider-modules"
+import { subscriptions, tickerStream } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -54,8 +56,9 @@ const cardOn = (integration: V2PlanetScaleIntegration): Model => {
 const view = withViewInputs(pageView, { context })()
 const THIRTY_MINUTES_MS = 30 * 60 * 1000
 
-const { planetscaleWatch } = subscriptions
-const isWatching = (model: Model) => planetscaleWatch.modelToDependencies({ model, context }).isWatching
+// The PlanetScale module's ticker, streamed as the page's subscriptions stream it.
+const planetscaleWatch = PLANETSCALE_PROVIDER.ticker
+const isWatching = (model: Model) => planetscaleWatch?.isActive(model) === true
 
 /**
  * A tab left open on the card for `hours`: each tick runs `update` and the clock read it asks
@@ -64,7 +67,9 @@ const isWatching = (model: Model) => planetscaleWatch.modelToDependencies({ mode
 const leftOpen = (model: Model, hours: number) =>
 	Effect.gen(function* () {
 		const state = yield* Ref.make({ model, reads: 0 })
-		const ticks = planetscaleWatch.dependenciesToStream({ isWatching: isWatching(model) }).pipe(
+		const ticks = (
+			planetscaleWatch !== null && isWatching(model) ? tickerStream(planetscaleWatch) : Stream.empty
+		).pipe(
 			Stream.mapEffect((message) =>
 				Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
 					Ref.updateAndGet(state, (current) => ({
@@ -137,7 +142,10 @@ describe("planetscale first-metrics watch", () => {
 			Command.resolve(ReadClock, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 })),
 			expectView(stalled).not.toExist(),
 		)
-		const again = step(stuck.model, Message.ClickedPlanetscaleCheckAgain())
+		const again = step(
+			stuck.model,
+			Message.GotPlanetscaleMessage({ message: PlanetscaleMessage.ClickedCheckAgain() }),
+		)
 		expect(isWatching(again)).toBe(true)
 		const read = step(again, Message.CompletedReadClock({ nowMs: stuck.model.nowMs + 1_000 }))
 		expect(isWatching(read)).toBe(true)
@@ -181,7 +189,12 @@ describe("planetscale first-metrics watch", () => {
 		const stuck = await leftOpen(cardOn(status({})), 1)
 		const selected = step(
 			stuck.model,
-			Message.CompletedSelectOrganization({ organization: "acme", failure: null }),
+			Message.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.CompletedSelectOrganization({
+					organization: "acme",
+					failure: null,
+				}),
+			}),
 		)
 		const loaded = step(
 			selected,

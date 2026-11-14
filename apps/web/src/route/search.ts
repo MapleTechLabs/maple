@@ -18,7 +18,16 @@ import {
 	VcsRepositoryId,
 } from "@maple/domain/http"
 import { PushSourcePlatform } from "@maple/primitives"
-import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
+import {
+	FunnelBreakdownBy,
+	FunnelKeyBy,
+	FunnelPopulationFilters,
+	FunnelStep,
+	FunnelVariant,
+	PathsAnchor,
+	PathsDirection,
+	QUERY_BUILDER_METRIC_TYPES,
+} from "@maple/query-model"
 import { TOOL_METRICS, TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 import { VARIABLE_PARAM_PREFIX } from "./dashboard-controls"
 import { HUB_SORTS, HUB_VIEWS, LEGACY_HUB_VIEWS, SEVERITY_FILTERS } from "../page/errors/hub/hub-params"
@@ -550,6 +559,22 @@ export const AnalyticsSearch = Schema.Struct({
 	tab: StringParam,
 	/** The Search tab's Search Console property, when more than one is enabled. */
 	site: StringParam,
+})
+
+/** `/product-analytics`: the population filters, the tab, and the funnel and paths definitions. */
+export const ProductAnalyticsSearch = Schema.Struct({
+	...FunnelPopulationFilters.fields,
+	...TimeRangeSearchFields,
+	tab: Schema.optional(Schema.String),
+	steps: Schema.optional(Schema.Array(FunnelStep)),
+	keyBy: Schema.optional(FunnelKeyBy),
+	within: NumberParam,
+	view: Schema.optional(FunnelVariant),
+	breakdown: Schema.optional(FunnelBreakdownBy),
+	anchor: Schema.optional(PathsAnchor),
+	direction: Schema.optional(PathsDirection),
+	depth: NumberParam,
+	branches: NumberParam,
 })
 
 /**

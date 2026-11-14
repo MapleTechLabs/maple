@@ -12,6 +12,7 @@ import {
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
 import { selfObservabilityEnv } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
@@ -25,7 +26,7 @@ import { nativeStorage } from "./storage"
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
-	const env = yield* selfObservabilityEnv(stack.stage, stack.region)
+	const env = yield* resolveWorkerEnv("status", selfObservabilityEnv(stack.stage, stack.region))
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("status", stack),

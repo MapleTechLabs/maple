@@ -2,12 +2,17 @@ import { describe, expect, test } from "vitest"
 import { isNavItemActive, type NavFlags, navGroups, navPreview, partitionSubItems } from "./nav"
 import { Array as Arr, Option } from "effect"
 
+const OFF: NavFlags = {
+	cloudCost: false,
+	productAnalytics: false,
+	releases: false,
+	securityAudit: false,
+	statusPages: false,
+}
+
 const infrastructure = Option.getOrUndefined(
 	Arr.findFirst(
-		Arr.flatMap(
-			navGroups({ cloudCost: false, releases: false, securityAudit: false, statusPages: false }),
-			(group) => group.items,
-		),
+		Arr.flatMap(navGroups(OFF), (group) => group.items),
 		(item) => item.title === "Infrastructure",
 	),
 )
@@ -45,15 +50,20 @@ describe("isNavItemActive", () => {
 		)
 
 	test("pages without a row of their own highlight their parent row", () => {
-		const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
-		expect(activeTitles("/anomalies", off)).toEqual(["Alerts"])
-		expect(activeTitles("/security/code/findings", off)).toEqual(["Review & CI"])
-		expect(activeTitles("/releases", off)).toEqual(["Services"])
-		expect(activeTitles("/status-pages/stp_abc", off)).toEqual(["Services"])
+		expect(activeTitles("/anomalies", OFF)).toEqual(["Alerts"])
+		expect(activeTitles("/security/code/findings", OFF)).toEqual(["Review & CI"])
+		expect(activeTitles("/releases", OFF)).toEqual(["Services"])
+		expect(activeTitles("/status-pages/stp_abc", OFF)).toEqual(["Services"])
 	})
 
 	test("a flagged page with its own row highlights only that row", () => {
-		const on = { cloudCost: true, releases: true, securityAudit: true, statusPages: true }
+		const on = {
+			cloudCost: true,
+			productAnalytics: true,
+			releases: true,
+			securityAudit: true,
+			statusPages: true,
+		}
 		expect(activeTitles("/security", on)).toEqual(["Security"])
 		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
 		expect(activeTitles("/releases", on)).toEqual(["Releases"])
@@ -63,7 +73,6 @@ describe("isNavItemActive", () => {
 })
 
 describe("navGroups for an analyst", () => {
-	const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
 	/** Every page the analyst's sidebar links to: rows, then their sub-rows. */
 	const hrefs = (flags: NavFlags) =>
 		Arr.dedupe(
@@ -76,7 +85,7 @@ describe("navGroups for an analyst", () => {
 		)
 
 	test("links to what is wrong and how the product is doing, and to no setup or explorer page", () => {
-		expect(hrefs(off)).toEqual([
+		expect(hrefs(OFF)).toEqual([
 			"/",
 			"/alerts",
 			"/alerts/uptime",
@@ -90,15 +99,15 @@ describe("navGroups for an analyst", () => {
 	})
 
 	test("adds Status pages, Releases and Cost only for an org in each rollout", () => {
-		expect(hrefs({ ...off, statusPages: true })).toContain("/status-pages")
-		expect(hrefs({ ...off, releases: true })).toContain("/releases")
-		expect(hrefs({ ...off, cloudCost: true })).toContain("/cost")
+		expect(hrefs({ ...OFF, statusPages: true })).toContain("/status-pages")
+		expect(hrefs({ ...OFF, releases: true })).toContain("/releases")
+		expect(hrefs({ ...OFF, cloudCost: true })).toContain("/cost")
 		// Security is an engineer's page, whatever the flag says.
-		expect(hrefs({ ...off, securityAudit: true })).not.toContain("/security")
+		expect(hrefs({ ...OFF, securityAudit: true })).not.toContain("/security")
 	})
 
 	test("marks only Incidents on an uptime page, with its Uptime row", () => {
-		const items = Arr.flatMap(navGroups(off, "analyst"), (group) => group.items)
+		const items = Arr.flatMap(navGroups(OFF, "analyst"), (group) => group.items)
 		const active = Arr.filter(items, (item) => isNavItemActive("/alerts/uptime", item))
 		expect(Arr.map(active, (item) => item.title)).toEqual(["Incidents"])
 	})
@@ -109,19 +118,19 @@ describe("navGroups", () => {
 		Arr.flatMap(navGroups(flags), (group) => Arr.map(group.items, (item) => item.title))
 
 	test("the Status pages row shows only for an org in the statusPages rollout", () => {
-		expect(
-			titles({ cloudCost: false, releases: false, securityAudit: false, statusPages: false }),
-		).not.toContain("Status pages")
-		expect(
-			titles({ cloudCost: false, releases: false, securityAudit: false, statusPages: true }),
-		).toContain("Status pages")
+		expect(titles(OFF)).not.toContain("Status pages")
+		expect(titles({ ...OFF, statusPages: true })).toContain("Status pages")
+	})
+
+	test("the Product analytics row shows only for an org in the productAnalytics rollout", () => {
+		expect(titles(OFF)).not.toContain("Product analytics")
+		expect(titles({ ...OFF, productAnalytics: true })).toContain("Product analytics")
 	})
 
 	test("the Cost row shows only for an org in the cloudCost rollout, marked Beta under Monitor", () => {
-		const off = { cloudCost: false, releases: false, securityAudit: false, statusPages: false }
-		expect(titles(off)).not.toContain("Cost")
+		expect(titles(OFF)).not.toContain("Cost")
 		const monitor = Arr.findFirst(
-			navGroups({ ...off, cloudCost: true }),
+			navGroups({ ...OFF, cloudCost: true }),
 			(group) => group.id === "monitor",
 		)
 		const cost = Option.flatMap(monitor, (group) =>

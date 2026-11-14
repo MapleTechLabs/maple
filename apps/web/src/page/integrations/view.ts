@@ -4,13 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { button } from "@maple/views/ui/button"
-import {
-	type CatalogEntry,
-	catalogEntry,
-	chatConnectorOf,
-	entryOfSearch,
-	type IntegrationId,
-} from "./catalog"
+import { type CatalogEntry, catalogEntry, entryOfSearch, type IntegrationId } from "./catalog"
 import { ConnectProvider } from "./connect"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -19,21 +13,8 @@ import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
-import { chatCard } from "./view-chat-card"
-import {
-	cloudflareCard,
-	cloudflareHeaderActions,
-} from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { githubCard } from "./view-github"
-import { linearCard } from "./view-linear"
-import { searchConsoleCard } from "./view-search-console"
-import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
-import {
-	vercelCard,
-	vercelHeaderActions,
-	vercelHeaderStatus,
-} from "../infra-integrations/vercel/integration/view-vercel"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -70,23 +51,11 @@ export const cardView = (
 	timeZone: string,
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
-	const connector = chatConnectorOf(integration)
-	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
 	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return [provider.card(h, model, timeZone)]
+	if (provider !== undefined) return provider.card(h, model, timeZone, focusId)
 	switch (integration) {
-		case "linear":
-			return [linearCard(h, model)]
 		case "github":
 			return githubCard(h, model, timeZone)
-		case "google-search-console":
-			return [searchConsoleCard(h, model)]
-		case "cloudflare":
-			return [cloudflareCard(h, model, timeZone)]
-		case "vercel":
-			return vercelCard(h, model, timeZone)
-		case "planetscale":
-			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
 		case "aws":
@@ -106,6 +75,7 @@ export const cardView = (
 
 const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
 	const integration = entry.id
+	const provider = providerModuleOf(integration)
 	return dashboardPage(
 		h,
 		{
@@ -117,18 +87,11 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				entry,
 				{
 					connect: connectButton(h, model, integration),
-					actions:
-						integration === "cloudflare"
-							? cloudflareHeaderActions(h, model)
-							: integration === "vercel"
-								? vercelHeaderActions(h, model)
-								: undefined,
+					actions: provider?.headerActions?.(h, model) ?? undefined,
 					statusLine:
 						integration === "gcp"
 							? gcpHeaderStatus(h, model)
-							: integration === "vercel"
-								? vercelHeaderStatus(h, model, timeZone)
-								: undefined,
+							: (provider?.headerStatus?.(h, model, timeZone) ?? undefined),
 				},
 				timeZone,
 			),

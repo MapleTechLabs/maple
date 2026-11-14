@@ -3,6 +3,7 @@ import { ConfigProvider, Effect, Fiber, Layer, Record as Rec } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { StripeSecretKey } from "@maple/infra/secrets"
 import { classifyAutumn, ensureOk } from "@maple/backend/services/billing/autumn-client"
 import { type AutumnResult, BILLING_REQUEST_TIMEOUT } from "@maple/backend/services/billing/autumn-http"
 import { STRIPE_API_VERSION } from "@maple/backend/services/billing/stripe-api"
@@ -21,7 +22,7 @@ interface Captured {
 
 /** Everything `Env` needs to build, plus the Stripe keys under test. */
 const testEnv = (stripe: Record<string, string>) =>
-	Env.layer.pipe(
+	Layer.mergeAll(Env.layer, StripeSecretKey.layer).pipe(
 		Layer.provide(
 			ConfigProvider.layer(
 				ConfigProvider.fromUnknown({

@@ -5,6 +5,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import type { PageContext } from "../../../contract"
 import { describeCloudflareError, zoneStatus } from "./cloudflare-derive"
 import { Message } from "../../../integrations/message"
+import { CloudflareMessage } from "./cloudflare"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
 
@@ -23,16 +24,25 @@ describe("cloudflare card", () => {
 
 	test("the ingest poll re-reads the clock, so a discovering connection can turn stalled", () => {
 		const model = init({ search: { integration: "cloudflare" } }, context).model
-		expect(names(pageUpdate(model, Message.TickedCloudflareIngest()).commands)).toContain(
-			"ReadIntegrationsClock",
-		)
+		expect(
+			names(
+				pageUpdate(model, Message.GotCloudflareMessage({ message: CloudflareMessage.TickedIngest() }))
+					.commands,
+			),
+		).toContain("ReadIntegrationsClock")
 	})
 
 	test("zone sort flips the active column; a new column starts by its natural order", () => {
 		const model = init({ search: { integration: "cloudflare" } }, context).model
-		const byName = pageUpdate(model, Message.ClickedZoneSort({ key: "name" })).model
+		const byName = pageUpdate(
+			model,
+			Message.GotCloudflareMessage({ message: CloudflareMessage.ClickedZoneSort({ key: "name" }) }),
+		).model
 		expect(byName.cloudflareCard.zoneSort).toEqual({ key: "name", dir: "asc" })
-		const flipped = pageUpdate(byName, Message.ClickedZoneSort({ key: "name" })).model
+		const flipped = pageUpdate(
+			byName,
+			Message.GotCloudflareMessage({ message: CloudflareMessage.ClickedZoneSort({ key: "name" }) }),
+		).model
 		expect(flipped.cloudflareCard.zoneSort.dir).toBe("desc")
 	})
 
@@ -40,15 +50,19 @@ describe("cloudflare card", () => {
 		const model = init({ search: { integration: "cloudflare" } }, context).model
 		const live = pageUpdate(
 			model,
-			Message.GotZoneFilterMessage({
-				message: ToggleGroup.Message.ClickedItem({ value: "live", index: 1 }),
+			Message.GotCloudflareMessage({
+				message: CloudflareMessage.GotZoneFilterMessage({
+					message: ToggleGroup.Message.ClickedItem({ value: "live", index: 1 }),
+				}),
 			}),
 		).model
 		expect(live.cloudflareCard.zoneFilter.values).toEqual(["live"])
 		const again = pageUpdate(
 			live,
-			Message.GotZoneFilterMessage({
-				message: ToggleGroup.Message.ClickedItem({ value: "live", index: 1 }),
+			Message.GotCloudflareMessage({
+				message: CloudflareMessage.GotZoneFilterMessage({
+					message: ToggleGroup.Message.ClickedItem({ value: "live", index: 1 }),
+				}),
 			}),
 		).model
 		expect(again.cloudflareCard.zoneFilter.values).toEqual(["all"])

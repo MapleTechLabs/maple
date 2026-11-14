@@ -28,6 +28,11 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 */
 	dataSources: DisabledByDefaultFeatureFlag,
 	/**
+	 * Gates the Product analytics page: the nav row, the `/product-analytics` route and the link to
+	 * it from Web analytics. Dashboard funnel and paths widgets are not gated.
+	 */
+	productAnalytics: DisabledByDefaultFeatureFlag,
+	/**
 	 * Gates the Releases row under Monitor. The `/releases` routes stay
 	 * reachable by URL for anyone; the flag only decides who is shown the door.
 	 */
@@ -41,6 +46,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 		aiAutoTriage: "aiautotriage",
 		cloudCost: "cloudcost",
 		dataSources: "datasources",
+		productAnalytics: "productanalytics",
 		releases: "releases",
 		securityAudit: "securityaudit",
 		statusPages: "statuspages",
@@ -56,6 +62,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	cloudCost: false,
 	dataSources: false,
+	productAnalytics: false,
 	releases: false,
 	securityAudit: false,
 	statusPages: false,
@@ -70,6 +77,7 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	cloudCost: true,
 	dataSources: true,
+	productAnalytics: true,
 	releases: true,
 	securityAudit: true,
 	statusPages: true,

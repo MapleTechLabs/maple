@@ -5,6 +5,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { Message } from "../../../integrations/message"
+import { PlanetscaleMessage } from "./planetscale"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
 import { view as pageView } from "../../../integrations/view"
@@ -58,13 +59,33 @@ describe("planetscale card", () => {
 	})
 
 	test("connecting an organization sends it once and toasts its name", () => {
-		const picked = pageUpdate(withPending().model, Message.SelectedOrganization({ name: "labs" })).model
-		const sent = pageUpdate(picked, Message.SubmittedOrganization())
+		const picked = pageUpdate(
+			withPending().model,
+			Message.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.SelectedOrganization({ name: "labs" }),
+			}),
+		).model
+		const sent = pageUpdate(
+			picked,
+			Message.GotPlanetscaleMessage({ message: PlanetscaleMessage.SubmittedOrganization() }),
+		)
 		expect(names(sent.commands)).toEqual(["SelectPlanetscaleOrganization"])
-		expect(names(pageUpdate(sent.model, Message.SubmittedOrganization()).commands)).toEqual([])
+		expect(
+			names(
+				pageUpdate(
+					sent.model,
+					Message.GotPlanetscaleMessage({ message: PlanetscaleMessage.SubmittedOrganization() }),
+				).commands,
+			),
+		).toEqual([])
 		const done = pageUpdate(
 			sent.model,
-			Message.CompletedSelectOrganization({ organization: "labs", failure: null }),
+			Message.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.CompletedSelectOrganization({
+					organization: "labs",
+					failure: null,
+				}),
+			}),
 		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({

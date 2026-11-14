@@ -20,7 +20,8 @@ import { whereEditor } from "../../kit/query-builder/where-editor"
 import { autocompleteFor, populationField } from "./where-fields"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { ProductEdit, type StepScope } from "./product-edit"
+import type { StepScope } from "../../kit/funnel-steps"
+import { ProductEdit } from "./product-edit"
 import {
 	BREAKDOWN_ATTRIBUTE,
 	BREAKDOWN_NONE,

@@ -24,6 +24,8 @@ export interface PageContext {
 	readonly infra?: ShellInfraSurfaces
 	/** Who the shell is drawn for, from the same Clerk role; absent means an operator. */
 	readonly audience?: NavAudience
+	/** The org is in the `productAnalytics` rollout, so pages may link to it; absent means it is not. */
+	readonly hasProductAnalytics?: boolean
 }
 
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */

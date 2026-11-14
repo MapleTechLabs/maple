@@ -1,7 +1,6 @@
 import { Duration, Effect, Option, Queue, Record as Rec, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../infra-integrations/gcp/connector-state"
-import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -9,18 +8,11 @@ import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startCon
 import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
-import { PROVIDER_MODULES } from "./provider-modules"
+import { type MountedProvider, PROVIDER_MODULES } from "./provider-modules"
 import { githubStatusOf } from "./update-github"
-import {
-	isAwaitingFirstMetrics,
-	isWatchExpired,
-} from "../infra-integrations/planetscale/integration/planetscale"
-import { planetscaleStatusOf } from "../infra-integrations/planetscale/integration/update-planetscale"
 import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
 import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
 import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
-import { vercelStatusOf } from "../infra-integrations/vercel/integration/update-vercel"
-import { isVercelSettling, VERCEL_SETTLING_REFRESH_MS } from "../infra-integrations/vercel/integration/vercel"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 /** The popup's document could not be written: it is already on the provider's cross-origin page. */
@@ -159,21 +151,23 @@ const FORCE_POLL_WINDOW_MS = 10_000
 const every = (millis: number, message: () => Message) =>
 	Stream.map(pollTicks(Duration.millis(millis)), message)
 
+/** A provider module's ticks while it is active: steady, or fast first then steady. */
+export const tickerStream = (ticker: NonNullable<MountedProvider["ticker"]>): Stream.Stream<Message> =>
+	ticker.fast === null
+		? every(ticker.everyMs, () => ticker.tick)
+		: backoffPollTicks(
+				Duration.millis(ticker.fast.everyMs),
+				ticker.fast.ticks,
+				Duration.millis(ticker.everyMs),
+			).pipe(Stream.map(() => ticker.tick))
+
 const after = (millis: number, message: () => Message) =>
 	Stream.fromEffect(Effect.delay(Effect.sync(message), Duration.millis(millis))).pipe(
 		Stream.concat(Stream.never),
 	)
 
-const CLOUDFLARE_INGEST_MS = 30_000
-
 /** A metric stream delivers about every minute. */
 const AWS_WATCH_MS = 60_000
-
-const isVercelPolling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "vercel") return false
-	const status = vercelStatusOf(model)
-	return status !== null && isVercelSettling(status, model.nowMs)
-}
 
 /** A setup is open for a connection whose stack Maple has not assumed yet. */
 const isAwsPending = (model: Model): boolean => {
@@ -200,17 +194,6 @@ const isAwsStreaming = (model: Model): boolean => {
 			status.connections,
 			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
 		)
-	)
-}
-
-/** Polls at 5 s for the first 2 minutes, then every minute, until the watch runs out. */
-const PLANETSCALE_FAST_POLLS = 24
-
-const isWatchingPlanetscale = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
-	return (
-		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs) &&
-		!isWatchExpired(model.planetscaleCard, model.nowMs)
 	)
 }
 
@@ -247,15 +230,6 @@ const isAwaitingRun = (model: Model): boolean => {
 const isScrapePage = (model: Model): boolean => {
 	const integration = integrationOfSearch(model.search.integration)
 	return integration === "prometheus" || integration === "warpstream"
-}
-
-const isCloudflareSettling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "cloudflare") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.cloudflare.data))
-	const usageData = model.cloudflareCard.usage.data
-	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
-	const phase = ingestPhaseOf(status, usage, model.nowMs)
-	return phase !== null && phase.kind !== "live"
 }
 
 /** The popup is out, repository discovery is pending, or a repository is still syncing. */
@@ -340,17 +314,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 							),
 			},
 		),
-		/** Status and usage every 30 s while a fresh Cloudflare connection settles. */
-		cloudflareIngest: entry(
-			{ isSettling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isSettling: isCloudflareSettling(model) }),
-				dependenciesToStream: ({ isSettling }) =>
-					isSettling
-						? every(CLOUDFLARE_INGEST_MS, () => Message.TickedCloudflareIngest())
-						: Stream.empty,
-			},
-		),
 		/** The scrape target list every 30 s; the selected target's checks every 10 s. */
 		scrapeTargetsRefresh: entry(
 			{ isShown: Schema.Boolean },
@@ -370,17 +333,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
 			},
 		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: settling })`, the usage too. */
-		vercelSettle: entry(
-			{ isSettling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isSettling: isVercelPolling(model) }),
-				dependenciesToStream: ({ isSettling }) =>
-					isSettling
-						? every(VERCEL_SETTLING_REFRESH_MS, () => Message.TickedVercelSettle())
-						: Stream.empty,
-			},
-		),
 		awsPending: entry(
 			{ isPending: Schema.Boolean },
 			{
@@ -395,19 +347,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				modelToDependencies: ({ model }) => ({ isStreaming: isAwsStreaming(model) }),
 				dependenciesToStream: ({ isStreaming }) =>
 					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
-			},
-		),
-		/** Watches for the first metrics; the card offers "Check again" once the watch runs out. */
-		planetscaleWatch: entry(
-			{ isWatching: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isWatching: isWatchingPlanetscale(model) }),
-				dependenciesToStream: ({ isWatching }) =>
-					isWatching
-						? backoffPollTicks("5 seconds", PLANETSCALE_FAST_POLLS, "1 minute").pipe(
-								Stream.map(() => Message.TickedPlanetscaleWatch()),
-							)
-						: Stream.empty,
 			},
 		),
 		gcpRefresh: entry(
@@ -456,9 +395,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 											isActive: ticker.isActive(model),
 										}),
 										dependenciesToStream: ({ isActive }) =>
-											isActive
-												? every(ticker.everyMs, () => ticker.tick)
-												: Stream.empty,
+											isActive ? tickerStream(ticker) : Stream.empty,
 									},
 								),
 							),

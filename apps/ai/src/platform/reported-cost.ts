@@ -3,7 +3,8 @@ import { Effect } from "effect"
 import { reportedCostOf } from "./genai-spans"
 
 /**
- * OpenRouter's own price for each call; Maple never prices tokens itself. A call without one
+ * OpenRouter's own price for each call, the provider's upstream price included on a BYOK key;
+ * Maple never prices tokens itself. A call without one
  * (Workers AI, or a response that carried no cost) is `unknown`, never free.
  */
 export const reportedCost: RunCostEstimator = (request) => {

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
 import { ConfigProvider, Effect, Layer, Tracer, Array as Arr, String as Str, Option } from "effect"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
@@ -17,7 +17,7 @@ const privateKey = generateKeyPairSync("rsa", {
 	privateKeyEncoding: { type: "pkcs8", format: "pem" },
 }).privateKey
 
-const env = Env.layer.pipe(
+const env = EnvTestLive.pipe(
 	Layer.provide(
 		ConfigProvider.layer(
 			ConfigProvider.fromUnknown({

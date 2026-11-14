@@ -7,12 +7,16 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
-import { requiredPlain } from "../env.ts"
 import { resolveMapleProfile } from "../profile.ts"
+import { resolveAs } from "../secret-guard.ts"
+import * as Secrets from "../secrets.ts"
 import { type MapleDbResources, stageDeployment } from "./stack.ts"
 import { type MapleDbConsumer, resolveHyperdriveRefId, resolveWorkerName } from "./stage.ts"
 import { MAPLE_DB_BINDING } from "./worker-runtime.ts"
 import { String as Str } from "effect"
+
+/** What the dev stages' managed Hyperdrive config reads from the deploy's environment. */
+export const managedDbSecrets = Secrets.MaplePgUrl.requiredValue
 
 /** `MAPLE_PG_URL` is not a URL. Carries no raw value: the URL holds the password. */
 export class MaplePgUrlError extends Schema.TaggedError<MaplePgUrlError>()("@maple/infra/MaplePgUrlError", {
@@ -29,9 +33,9 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 	Effect.gen(function* () {
 		const { stage, region } = yield* stageDeployment
 		// A dev stage without its database URL cannot be planned: a defect, not a branch.
-		const rawPgUrl = yield* Effect.orDie(requiredPlain("MAPLE_PG_URL"))
+		const rawPgUrl = yield* Effect.orDie(resolveAs("managed-db", managedDbSecrets))
 		const pgUrl = yield* Effect.try({
-			try: () => new URL(rawPgUrl),
+			try: () => new URL(Redacted.value(rawPgUrl)),
 			catch: (cause) => new MaplePgUrlError({ message: "MAPLE_PG_URL is not a valid URL", cause }),
 		}).pipe(Effect.orDie)
 		const props: Cloudflare.Hyperdrive.Props = {

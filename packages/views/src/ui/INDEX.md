@@ -195,6 +195,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
 - `apps/web/src/page/kit/alert-test-rows.ts` `hubAt`, `ruleId`, `ruleRow`, `stateRow`, `incidentRow`, `destinationRow`: Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
 - `apps/web/src/page/kit/alert-time.ts` `msIso`, `formatSpan`, `everyMinutes`: How alert pages write times: ISO stamps, spans in their two largest units, check cadences.
+- `apps/web/src/page/kit/analytics-filter-rail.ts` `isHostLike`, `favicon`, `analyticsFilterRail`: The session-dimension filter rail of /analytics and /product-analytics, its options from `getWebAnalyticsBreakdowns`.
 - `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/audit-entry-link.ts` `auditEntryHref`: The Settings audit log ending at one entry, with that entry open.
@@ -230,6 +231,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/expand-table-footer.ts` `expandTableFooter`: The foot of a capped table card: "Expand table" on the left and the row count on the right, one click target that opens the whole table in a dialog.
 - `apps/web/src/page/kit/facets.ts` `toggledValue`, `onlyValue`, `excludedValue`, `editFacet`, `facetChipsOf`, `facetChips`: The include/exclude arithmetic of a tri-state facet filter, as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and excluded.
 - `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: One row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form besid...
+- `apps/web/src/page/kit/funnel-steps.ts` `applyStepEdit`, `applyAnchorEdit`, `stepControlId`, `stepEditOf`, `stepComboUpdate`, `stepFilterLine`, `stepBuilder`: The funnel step builder: an ordered list of steps, each an event name, a page path or (first step only) a session dimension.
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
 - `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
 - `apps/web/src/page/kit/health-gap-notice.ts` `healthGapOf`, `healthGapText`, `healthGapNotice`: Service health is the overview joined with firing alerts and baseline anomalies.

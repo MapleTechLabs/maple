@@ -254,6 +254,12 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 								remembered: model.shell.rememberedSurfaces[orgId],
 							},
 							audience: Shell.shellAudience(shellClerkOf(model)),
+							hasProductAnalytics:
+								!isClerkAuthEnabled ||
+								Option.exists(
+									clerkOrganizationOf(model),
+									(organization) => organization.flags.productAnalytics,
+								),
 						})),
 					),
 	}),

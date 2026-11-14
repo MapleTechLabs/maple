@@ -10,7 +10,7 @@ import {
 	ScrapeTargetId,
 	UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { runScrapeCheckRetention } from "@maple/backend/services/integrations/scrape-check-retention"
 import {
 	cleanupTestDbs,
@@ -73,7 +73,7 @@ const makeLayer = (testDb: TestDb) => {
 			),
 		),
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(makeConfig()),
 	)
 }
