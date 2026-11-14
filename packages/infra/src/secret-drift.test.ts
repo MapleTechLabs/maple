@@ -14,10 +14,10 @@ describe("secret drift", () => {
 	it("is empty when each environment holds its own values where the catalog allows them", () => {
 		const drift = secretDrift(
 			[
-				snapshot("dev", { STRIPE_SECRET_KEY: "a", PREVIEW_SIGNIN_KEY: "p" }),
-				snapshot("preview", { STRIPE_SECRET_KEY: "b", PREVIEW_SIGNIN_KEY: "p" }),
-				snapshot("prod", { STRIPE_SECRET_KEY: "c" }),
-				snapshot("prod-eu", { STRIPE_SECRET_KEY: "d" }),
+				snapshot("dev", { LINEAR_OAUTH_CLIENT_SECRET: "a", PREVIEW_SIGNIN_KEY: "p" }),
+				snapshot("preview", { LINEAR_OAUTH_CLIENT_SECRET: "b", PREVIEW_SIGNIN_KEY: "p" }),
+				snapshot("prod", { LINEAR_OAUTH_CLIENT_SECRET: "c" }),
+				snapshot("prod-eu", { LINEAR_OAUTH_CLIENT_SECRET: "d" }),
 			],
 			nothingElseRead,
 		)
@@ -32,14 +32,19 @@ describe("secret drift", () => {
 	it("flags dev or preview holding a prd instance's own value, unless the catalog shares it", () => {
 		const drift = secretDrift(
 			[
-				snapshot("preview", { STRIPE_SECRET_KEY: "live", MAPLE_OTEL_INGEST_KEY: "k" }),
-				snapshot("prod", { STRIPE_SECRET_KEY: "live", MAPLE_OTEL_INGEST_KEY: "k" }),
-				snapshot("prod-eu", { STRIPE_SECRET_KEY: "eu", MAPLE_OTEL_INGEST_KEY: "k" }),
+				snapshot("preview", { LINEAR_OAUTH_CLIENT_SECRET: "live", MAPLE_OTEL_INGEST_KEY: "k" }),
+				snapshot("prod", { LINEAR_OAUTH_CLIENT_SECRET: "live", MAPLE_OTEL_INGEST_KEY: "k" }),
+				snapshot("prod-eu", { LINEAR_OAUTH_CLIENT_SECRET: "eu", MAPLE_OTEL_INGEST_KEY: "k" }),
 			],
 			nothingElseRead,
 		)
 		expect(drift).toEqual([
-			{ kind: "shared", key: "STRIPE_SECRET_KEY", environment: "preview", prdEnvironments: ["prod"] },
+			{
+				kind: "shared",
+				key: "LINEAR_OAUTH_CLIENT_SECRET",
+				environment: "preview",
+				prdEnvironments: ["prod"],
+			},
 		])
 	})
 

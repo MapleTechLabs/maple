@@ -1,7 +1,10 @@
 // The catalog of Maple's own deployment secrets. Export only secret classes: `secret-guard.ts`
 // reads the module's exports as the list. Not here: credentials a deploy mints itself, the chat
 // connectors' config keys (`@maple/chat-platform`) and the deploy tooling's own credentials.
-import { Secret } from "./secret.ts"
+import { Secret, type SecretEnvironment } from "./secret.ts"
+
+// Prod-issued credentials with no preview copy: a preview runs the PR's own code.
+const PRD_AND_DEV = ["dev", "prod", "prod-eu"] satisfies ReadonlyArray<SecretEnvironment>
 
 // Database URLs (each carries its role's password)
 
@@ -152,6 +155,7 @@ export class AutumnWebhookSecret extends Secret<AutumnWebhookSecret>()("AUTUMN_W
 export class StripeSecretKey extends Secret<StripeSecretKey>()("STRIPE_SECRET_KEY", {
 	issuer: "stripe",
 	consumers: ["api"],
+	environments: PRD_AND_DEV,
 }) {}
 
 // GitHub
@@ -159,16 +163,19 @@ export class StripeSecretKey extends Secret<StripeSecretKey>()("STRIPE_SECRET_KE
 export class GithubAppPrivateKey extends Secret<GithubAppPrivateKey>()("GITHUB_APP_PRIVATE_KEY", {
 	issuer: "github",
 	consumers: ["api", "ai", "alerting"],
+	environments: PRD_AND_DEV,
 }) {}
 
 export class GithubAppClientSecret extends Secret<GithubAppClientSecret>()("GITHUB_APP_CLIENT_SECRET", {
 	issuer: "github",
 	consumers: ["api"],
+	environments: PRD_AND_DEV,
 }) {}
 
 export class GithubAppWebhookSecret extends Secret<GithubAppWebhookSecret>()("GITHUB_APP_WEBHOOK_SECRET", {
 	issuer: "github",
 	consumers: ["api"],
+	environments: PRD_AND_DEV,
 }) {}
 
 export class GithubToken extends Secret<GithubToken>()("GITHUB_TOKEN", {
@@ -190,12 +197,12 @@ export class SearchConsoleClientSecret extends Secret<SearchConsoleClientSecret>
 
 export class CloudflareOAuthClientSecret extends Secret<CloudflareOAuthClientSecret>()(
 	"CLOUDFLARE_OAUTH_CLIENT_SECRET",
-	{ issuer: "cloudflare", consumers: ["api", "alerting"] },
+	{ issuer: "cloudflare", consumers: ["api", "alerting"], environments: PRD_AND_DEV },
 ) {}
 
 export class PlanetScaleOAuthClientSecret extends Secret<PlanetScaleOAuthClientSecret>()(
 	"PLANETSCALE_OAUTH_CLIENT_SECRET",
-	{ issuer: "planetscale", consumers: ["api", "alerting"] },
+	{ issuer: "planetscale", consumers: ["api", "alerting"], environments: PRD_AND_DEV },
 ) {}
 
 export class SupabaseOAuthClientSecret extends Secret<SupabaseOAuthClientSecret>()(
@@ -208,11 +215,13 @@ export class SupabaseOAuthClientSecret extends Secret<SupabaseOAuthClientSecret>
 export class StatusDomainsApiToken extends Secret<StatusDomainsApiToken>()("MAPLE_STATUS_DOMAINS_API_TOKEN", {
 	issuer: "cloudflare",
 	consumers: ["api", "ai", "alerting"],
+	environments: PRD_AND_DEV,
 }) {}
 
 export class ApnsPrivateKey extends Secret<ApnsPrivateKey>()("APNS_PRIVATE_KEY", {
 	issuer: "apple",
 	consumers: ["api", "alerting"],
+	environments: PRD_AND_DEV,
 }) {}
 
 export class GcpServiceAccountKey extends Secret<GcpServiceAccountKey>()("MAPLE_GCP_SERVICE_ACCOUNT_KEY", {
