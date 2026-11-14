@@ -125,8 +125,13 @@ describe("navigation hold", () => {
 		expect(step(waited, partly, settledServices(partly))).toEqual(NONE)
 	})
 
-	test("a page that is itself still a skeleton is not held over the next", () => {
+	test("a page that is itself still a skeleton is not held over the next, even once a side read answered", () => {
 		expect(step(NONE, loadingServices(1), loadingServices(2))).toEqual(NONE)
+		const presence = sendServices(
+			loadingServices(1),
+			Message.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+		)
+		expect(step(NONE, presence, loadingServices(2))).toEqual(NONE)
 	})
 
 	test("a second navigation during a hold keeps the page on screen, under the new page's timer", () => {

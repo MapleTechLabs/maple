@@ -297,25 +297,33 @@ const hasLoadInFlight = someAsyncData(AsyncData.isPending)
 export const isLoading = (slot: PageSlot): boolean => someAsyncData(AsyncData.isLoading)(slot.model)
 
 /** A request-keyed read (`Keyed`): `key` is null until it is first requested. */
-const isKeyed = (value: unknown): value is { readonly key: unknown; readonly data: unknown } =>
+const isKeyed = (
+	value: unknown,
+): value is { readonly key: unknown; readonly data: AsyncData.AsyncData<unknown, unknown> } =>
 	Predicate.isReadonlyObject(value) &&
 	"key" in value &&
 	"data" in value &&
 	AsyncData.isAsyncData(value.data)
+
+/** The page's top-level request-keyed reads: what it opens with, not a nested panel's. */
+const topLevelReads = (slot: PageSlot) => {
+	const model: unknown = slot.model
+	return Predicate.isReadonlyObject(model) ? Array.filter(Rec.values(model), isKeyed) : []
+}
 
 /** The page is still reading what it opens with: a read is `Loading`, or none of its top-level reads
  * is requested yet (they wait on its window). Some stay unrequested on purpose (a lazy column), so
  * one requested read is enough to stop counting them. */
 export const isAwaitingReads = (slot: PageSlot): boolean => {
 	if (isLoading(slot)) return true
-	const model: unknown = slot.model
-	const keyed = Predicate.isReadonlyObject(model) ? Array.filter(Rec.values(model), isKeyed) : []
-	return keyed.length > 0 && Array.every(keyed, (read) => read.key === null)
+	const reads = topLevelReads(slot)
+	return reads.length > 0 && Array.every(reads, (read) => read.key === null)
 }
 
-/** The page has nothing to show yet: a read is `Loading` and none has data (a revived page has its last). */
-export const isFirstLoading = (slot: PageSlot): boolean =>
-	isLoading(slot) && !someAsyncData(AsyncData.hasData)(slot.model)
+/** The page shows its own content: done reading, or one of its top-level reads has data. A side read
+ * (presence, incidents) answering first does not count. */
+export const showsContent = (slot: PageSlot): boolean =>
+	!isAwaitingReads(slot) || Array.some(topLevelReads(slot), (read) => AsyncData.hasData(read.data))
 
 /** How many left pages are kept to revive; each holds its last data. */
 const PARKED_PAGES_MAX = 4

@@ -4,7 +4,7 @@
 
 import { Schema, Array as Arr } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import { isAwaitingReads, isBareSlot, isFirstLoading, isLoading, PageSlot } from "./registry"
+import { isAwaitingReads, isBareSlot, isLoading, PageSlot, showsContent } from "./registry"
 
 export const PAGE_HOLD_MS = 300
 
@@ -18,10 +18,10 @@ export type Model = typeof Model.Type
 
 const NONE = Model.None()
 
-/** The page left can stand in for the entered one: same org, both drawn in the shell, and it has
- * something to show (holding one skeleton page over another only delays the next). */
+/** The page left can stand in for the entered one: same org, both drawn in the shell, and it shows
+ * its own content (holding one skeleton page over another only delays the next). */
 const canStandIn = (left: PageSlot, entered: PageSlot) =>
-	left.orgId === entered.orgId && !isBareSlot(left) && !isBareSlot(entered) && !isFirstLoading(left)
+	left.orgId === entered.orgId && !isBareSlot(left) && !isBareSlot(entered) && showsContent(left)
 
 /** `next` is a parked page coming back (`parkPages`): it shows its last data, so it never waits. */
 export const isRevived = (parked: ReadonlyArray<PageSlot>, next: PageSlot | null): boolean =>
