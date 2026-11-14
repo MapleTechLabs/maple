@@ -115,6 +115,8 @@ describe("settledFindings", () => {
 			"Not a credential: asn and country are network metadata.",
 			"Intentional, the gate reads receipt time.",
 			"Leaving it as is.",
+			"Won't fix, it only runs when the flag is set.",
+			"Not an issue - the token is redacted when logged.",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "dismissed", body)
 		}

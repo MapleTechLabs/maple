@@ -148,6 +148,12 @@ describe("privacyHitAt", () => {
 		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
 		// A short prefix exempts only its own entry, and only when it is the whole value.
 		[
+			"a password joined to a converted short id",
+			["logger.info({ password: password + String(requestId.slice(0, 8)) })"],
+			"secret",
+			"password",
+		],
+		[
 			"a password joined to a bracketed short id",
 			["logger.info({ password: password + (requestId.slice(0, 8)) })"],
 			"secret",

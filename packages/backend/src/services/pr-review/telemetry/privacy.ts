@@ -363,10 +363,12 @@ const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
 
 /**
  * An entry whose recorded value is derived, not the data: a comparison, a negation, a presence
- * check, a length, or a constant (`hasToken: token !== undefined`, `"cache": "hit"`).
+ * check, a length, a constant (`hasToken: token !== undefined`, `"cache": "hit"`), or a short
+ * prefix that is the entry's whole value (no operator before it, so `password + id.slice(0, 8)`
+ * is not one).
  */
 const DERIVED_VALUE =
-	/(?:(?:^|(?<=[\w$])\(|:)\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
+	/(?:(?<!(?:[+*/%|&^~-]|\?(?!\.)).*)(?:^|(?<=[\w$])\(|:)\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
 
 /** Calls that hand their argument on unchanged, so what goes in still reaches the sink. */
 const PASS_THROUGH =

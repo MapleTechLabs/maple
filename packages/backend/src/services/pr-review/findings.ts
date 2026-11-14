@@ -112,15 +112,19 @@ const clausesOf = (body: string): ReadonlyArray<string> =>
 /**
  * A reply's verdict, only from a clause that states it plainly. A question carries none, not even a
  * retraction ("Is this still broken?"); a retraction in any other clause wins; then a completed fix
- * outranks a dismissal ("Fixed in c88ba3a, the call was intentional before"). A clause that is
- * future, requested, conditional or hedged says nothing.
+ * outranks a dismissal ("Fixed in c88ba3a, the call was intentional before"). A fix in a clause
+ * that is future, requested, conditional or hedged says nothing; a dismissal only needs no hedge.
  */
 const verdictOf = (body: string): ReplyVerdict | undefined => {
 	const statements = Arr.filter(clausesOf(body), (clause) => !Str.includes("?")(clause))
 	if (Arr.some(statements, (clause) => STILL_OPEN.test(clause))) return "open"
 	const plain = Arr.filter(statements, (clause) => !NOT_YET.test(clause) && !HEDGED.test(clause))
 	if (Arr.some(plain, (clause) => FIXED.test(clause))) return "resolved"
-	return Arr.some(plain, (clause) => DISMISSAL.test(clause)) ? "dismissed" : undefined
+	// A dismissal promises no later work, so only a hedge voids it: "Won't fix, it only runs when
+	// the flag is set." still dismisses.
+	return Arr.some(statements, (clause) => !HEDGED.test(clause) && DISMISSAL.test(clause))
+		? "dismissed"
+		: undefined
 }
 
 /**
