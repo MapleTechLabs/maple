@@ -404,4 +404,52 @@ describe("PlanetScaleMetricsService", () => {
 			])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
+	it.effect("reads nothing while the source is paused, and resumes at now instead of backfilling", () => {
+		const testDb = createTestDb(trackedDbs)
+		const api = fakePlanetScale()
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory(["pr-*"])
+			const metrics = yield* PlanetScaleMetricsService
+			yield* metrics.pollAll
+			const pause = (pausedAt: string | null) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE sources SET paused_at = ${pausedAt === null ? "NULL" : `'${pausedAt}'`}
+						 WHERE id = (SELECT source_id FROM planetscale_connections WHERE org_id = 'org_1')`,
+					),
+				)
+			yield* pause("2026-10-24T00:01:00.000Z")
+			yield* TestClock.adjust("20 minutes")
+			yield* metrics.pollAll
+			assert.lengthOf(api.metricRequests, 1)
+
+			yield* pause(null)
+			yield* TestClock.adjust("5 minutes")
+			yield* metrics.pollAll
+			// The paused twenty minutes are not read: the window starts where the pause left off.
+			assert.deepStrictEqual(
+				Arr.map(api.metricRequests.slice(1), (request) => [request.branch, request.from]),
+				[["main", "2026-10-24T00:19:00.000Z"]],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("holds an org the gateway refused instead of reading PlanetScale every tick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const api = fakePlanetScale({ ingestStatus: 402 })
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory(["pr-*"])
+			const metrics = yield* PlanetScaleMetricsService
+			yield* metrics.pollAll
+			yield* TestClock.adjust("5 minutes")
+			yield* metrics.pollAll
+			assert.lengthOf(api.metricRequests, 1)
+
+			// The hold ends after an hour; the window the refusal kept is read again.
+			yield* TestClock.adjust("1 hour")
+			yield* metrics.pollAll
+			assert.lengthOf(api.metricRequests, 2)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
 })

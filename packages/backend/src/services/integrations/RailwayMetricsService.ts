@@ -19,7 +19,18 @@ import {
 } from "@maple/domain/http"
 import { pollStatus } from "./integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { leaseClaimable, leaseStillOurs } from "./lease"
+import { leaseStillOurs } from "./lease"
+import {
+	type Lease,
+	type LeaseSpec,
+	leaseFree,
+	makeSourceReporter,
+	type PollFailure,
+	pollFailureMessage,
+	pollFailureOutcome,
+	skipIfPaused,
+	withLease,
+} from "./poller"
 import {
 	RailwayConnections,
 	RailwayEnvironments,
@@ -33,7 +44,7 @@ import {
 	Duration,
 	Effect,
 	Layer,
-	Ref,
+	Option,
 	Schema,
 	String as Str,
 	Array as Arr,
@@ -51,15 +62,17 @@ import {
 	deleteSourcesOf,
 	upsertWithSource,
 	integrationSourceName,
-	isSourcePaused,
-	type PollOutcome,
-	reportPoll,
 	stampedSourceId,
 } from "@maple/backend/services/integrations/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
-import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
+import {
+	IngestRefused,
+	type IngestSendError,
+	keepRefusal,
+	makeIngestSender,
+} from "@maple/backend/services/ingest/ingest-sender"
 
 const SAMPLE_RATE_SECONDS = 60
 const SAMPLE_MS = SAMPLE_RATE_SECONDS * 1000
@@ -78,8 +91,6 @@ const LEASE_MS = 4 * 60_000
 const TICK_BUDGET_MS = 2.5 * 60_000
 const DISCOVERY_TIMEOUT = Duration.seconds(60)
 const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
-const RATE_LIMIT_HOLD_MS = 15 * 60_000
-const BILLING_HOLD_MS = 60 * 60_000
 /**
  * Connect runs the first poll inline so the page has an hour of data when it loads, instead of
  * every environment sitting at "pending" until the next cron tick. What doesn't finish in time is
@@ -107,6 +118,28 @@ const floorToSample = (ms: number) => ms - (ms % SAMPLE_MS)
 const parseServices = (json: string): Readonly<Record<string, string>> =>
 	decodeServices(json).pipe((option) => (option._tag === "Some" ? option.value : {}))
 
+/** What a Railway failure means for the tick, through the shared {@link PollFailure} table. */
+const railwayFailure = (
+	error: RailwayApiError | IntegrationsPersistenceError | IngestSendError,
+): PollFailure => {
+	if (error._tag !== "@maple/backend/integrations/RailwayApiError") {
+		return { _tag: "Upstream", message: error.message }
+	}
+	switch (error.kind) {
+		case "unauthorized":
+			return { _tag: "Rejected", reason: error.message }
+		case "rate_limited":
+			return {
+				_tag: "RateLimited",
+				message: error.message,
+				retryAfterMs:
+					error.retryAfterSeconds === undefined ? undefined : error.retryAfterSeconds * 1000,
+			}
+		case "upstream":
+			return { _tag: "Upstream", message: error.message }
+	}
+}
+
 /** Next window for an environment, or null when it is caught up. */
 export const nextWindow = (watermarkAt: number | null, now: number) => {
 	const horizonMs = floorToSample(now - SAFETY_LAG_MS)
@@ -122,9 +155,10 @@ interface RailwayPollTally {
 	readonly failures: number
 	readonly rowsIngested: number
 	readonly lastError: string | null
-	readonly stopped: boolean
-	/** Railway rejected the token mid-pass; the source already reads disconnected. */
-	readonly rejected: boolean
+	/** The failure that ended the pass: the rest of the org's environments wait for the next tick. */
+	readonly stopped: PollFailure | null
+	/** The tick ran out of time; the rest catch up next tick. */
+	readonly budgetSpent: boolean
 }
 
 export interface RailwayPollOrgSummary {
@@ -215,19 +249,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					),
 				)
 
-			/** Best effort: a failed health report must not fail the tick it describes. */
-			const reportTick = (
-				sourceId: RailwayConnectionRow["sourceId"],
-				outcome: PollOutcome,
-				now: number,
-			) =>
-				dbExecute((db) => reportPoll(db, sourceId, outcome, now)).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-						Effect.logWarning("railway source health report failed").pipe(
-							Effect.annotateLogs({ sourceId, error: error.message }),
-						),
-					),
-				)
+			const reportTick = makeSourceReporter(dbExecute, "railway")
 
 			/** Enabled environments, and how many failed or fell behind, as the inventory counts them. */
 			const environmentHealth = (orgId: OrgId, now: number) =>
@@ -487,37 +509,56 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				return { disconnected: deleted.length > 0 }
 			})
 
-			const claimLease = (connectionId: string, now: number) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(RailwayConnections)
-							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
-							.where(($) => [
-								$.id.eq(connectionId),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-								leaseClaimable($.leaseUntil, now, 2 * BILLING_HOLD_MS),
-							])
-							.returning(),
-					),
-				).pipe(Effect.map((rows) => rows[0] ?? null))
-
-			/** Compare-and-set on our own claim so a late tick never clears a successor's lease. */
-			const releaseLease = (
+			/** The connection row is the tick's lease; a failed tick's back-off is its hold. */
+			const railwayLease = (
 				connectionId: string,
-				claimedUntil: number | null,
-				holdUntilMs: number | null,
-				now: number,
-			) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(RailwayConnections)
-							.set({ leaseUntil: holdUntilMs, updatedAt: now })
-							.where(($) => [
-								$.id.eq(connectionId),
-								leaseStillOurs($.leaseUntil, claimedUntil),
-							]),
-					),
-				)
+			): LeaseSpec<
+				RailwayConnectionRow,
+				PG.UpdateSetOf<typeof RailwayConnections>,
+				IntegrationsPersistenceError
+			> => ({
+				leaseMs: LEASE_MS,
+				claim: (leaseUntil, now) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(RailwayConnections)
+								.set({ leaseUntil, updatedAt: now })
+								.where(($) => [
+									$.id.eq(connectionId),
+									leaseFree($.leaseUntil, $.holdUntil, now, LEASE_MS),
+								])
+								.returning(),
+						),
+					).pipe(Effect.map((rows) => rows[0] ?? null)),
+				// Only against the token this pass ran with: a token saved meanwhile keeps its own state.
+				write: (claimed, set) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(RailwayConnections)
+								.set(set)
+								.where(($) => [
+									$.id.eq(claimed.id),
+									leaseStillOurs($.leaseUntil, claimed.leaseUntil),
+									$.tokenCiphertext.eq(claimed.tokenCiphertext),
+								])
+								.returning("id"),
+						),
+					).pipe(Effect.map((rows) => rows.length > 0)),
+				release: (holdUntil, now) => ({ leaseUntil: null, holdUntil, updatedAt: now }),
+				// A token saved mid-tick still gets the row back, and the hold with it.
+				releaseWrite: (claimed, set) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(RailwayConnections)
+								.set(set)
+								.where(($) => [
+									$.id.eq(claimed.id),
+									leaseStillOurs($.leaseUntil, claimed.leaseUntil),
+								])
+								.returning("id"),
+						),
+					).pipe(Effect.map((rows) => rows.length > 0)),
+			})
 
 			const emitMetrics = Effect.fnUntraced(function* (
 				ingestKey: string,
@@ -582,7 +623,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 
 				const now = yield* Clock.currentTimeMillis
 				// A paused source reads nothing; its watermarks follow the clock so a resume starts at now.
-				if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
+				const followClock = Effect.gen(function* () {
 					const horizonMs = floorToSample(now - SAFETY_LAG_MS)
 					yield* dbExecute((db) =>
 						db.run(
@@ -595,232 +636,199 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						),
 					)
 					return skip("source paused")
-				}
-				const claimed = yield* claimLease(connection.id, now)
-				if (claimed === null) return skip("lease held")
+				})
+				const leased = withLease(railwayLease(connection.id), now, (lease) =>
+					pollClaimed(orgId, lease, skip),
+				).pipe(Effect.map(Option.getOrElse(() => skip("lease held"))))
+				return yield* leased.pipe(skipIfPaused(dbExecute, connection.sourceId, now, followClock))
+			})
 
-				const holdUntilRef = yield* Ref.make<number | null>(null)
-				const summary = yield* Effect.gen(function* () {
-					const token = yield* decryptToken(claimed)
+			const pollClaimed = Effect.fnUntraced(function* (
+				orgId: OrgId,
+				lease: Lease<
+					RailwayConnectionRow,
+					PG.UpdateSetOf<typeof RailwayConnections>,
+					IntegrationsPersistenceError
+				>,
+				skip: (reason: string) => RailwayPollOrgSummary,
+			) {
+				const { row: claimed, now } = lease
+				const token = yield* decryptToken(claimed)
 
-					// Only against the token this pass ran with: a token saved meanwhile keeps its own state.
-					const updateClaimed = (set: PG.UpdateSetOf<typeof RailwayConnections>) =>
-						dbExecute((db) =>
-							db.run(
-								PG.update(RailwayConnections)
-									.set(set)
-									.where(($) => [
-										$.id.eq(claimed.id),
-										$.tokenCiphertext.eq(claimed.tokenCiphertext),
-									])
-									.returning("id"),
-							),
-						).pipe(Effect.map((rows) => rows.length > 0))
-
-					const markAuthFailed = (message: string) =>
-						updateClaimed({
-							authFailedAt: now,
-							lastError: message,
-							lastErrorAt: now,
-							updatedAt: now,
-						}).pipe(
+				/** Railway refused the token: the row stops polling and its source reads disconnected. */
+				const markAuthFailed = (message: string) =>
+					lease
+						.write({ authFailedAt: now, lastError: message, lastErrorAt: now, updatedAt: now })
+						.pipe(
 							Effect.flatMap((paused) =>
 								paused
 									? reportTick(
 											claimed.sourceId,
-											{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
+											pollFailureOutcome({
+												_tag: "Rejected",
+												reason: TOKEN_REJECTED_REASON,
+											}),
 											now,
 										)
 									: Effect.void,
 							),
 						)
 
-					const needsDiscovery =
-						claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS
-					const discoveryCalls = needsDiscovery ? 2 : 0
-					const discovery = needsDiscovery
-						? yield* Effect.result(
-								discover(httpClient, token).pipe(
-									Effect.timeoutOrElse({
-										duration: DISCOVERY_TIMEOUT,
-										orElse: () =>
-											Effect.fail(
-												new RailwayApiError({
-													message: "Railway discovery timed out",
-													kind: "upstream",
-												}),
-											),
-									}),
-								),
-							)
-						: undefined
-					if (discovery?._tag === "Success") {
-						yield* reconcileEnvironments(claimed, discovery.success, now)
-					} else if (discovery?.failure.kind === "unauthorized") {
-						yield* markAuthFailed(discovery.failure.message)
-						return { ...skip("token rejected"), callsMade: discoveryCalls }
-					} else if (discovery?.failure.kind === "rate_limited") {
-						yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
-						return { ...skip("rate limited"), callsMade: discoveryCalls }
-					}
-					const discoveryError = discovery?._tag === "Failure" ? discovery.failure.message : null
+				const needsDiscovery =
+					claimed.discoveredAt === null || now - claimed.discoveredAt >= DISCOVERY_TTL_MS
+				const discoveryCalls = needsDiscovery ? 2 : 0
+				const discovery = needsDiscovery
+					? yield* Effect.result(
+							discover(httpClient, token).pipe(
+								Effect.timeoutOrElse({
+									duration: DISCOVERY_TIMEOUT,
+									orElse: () =>
+										Effect.fail(
+											new RailwayApiError({
+												message: "Railway discovery timed out",
+												kind: "upstream",
+											}),
+										),
+								}),
+							),
+						)
+					: undefined
+				if (discovery?._tag === "Success") {
+					yield* reconcileEnvironments(claimed, discovery.success, now)
+				} else if (discovery?.failure.kind === "unauthorized") {
+					yield* markAuthFailed(discovery.failure.message)
+					return { ...skip("token rejected"), callsMade: discoveryCalls }
+				} else if (discovery?.failure.kind === "rate_limited") {
+					yield* lease.holdFor(railwayFailure(discovery.failure))
+					return { ...skip("rate limited"), callsMade: discoveryCalls }
+				}
+				const discoveryError = discovery?._tag === "Failure" ? discovery.failure.message : null
 
-					const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
-						Effect.map((keys) => keys.publicKey),
-						Effect.option,
-					)
-					if (ingestKey._tag === "None")
-						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
-					const sourceId = stampedSourceId(claimed.sourceId)
+				const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
+					Effect.map((keys) => keys.publicKey),
+					Effect.option,
+				)
+				if (ingestKey._tag === "None")
+					return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
+				const sourceId = stampedSourceId(claimed.sourceId)
 
-					const loaded = yield* loadEnvironments(orgId)
-					const enabled = Arr.filter(loaded, (row) => row.enabled)
-					const environments = Arr.filter(
-						Arr.map(enabled, (row) => ({ row, window: nextWindow(row.watermarkAt, now) })),
-						(item) => item.window !== null,
-					)
-						// Most-behind first, so a tight call budget still spreads across environments.
-						.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
-						.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
+				const loaded = yield* loadEnvironments(orgId)
+				const enabled = Arr.filter(loaded, (row) => row.enabled)
+				const environments = Arr.filter(
+					Arr.map(enabled, (row) => ({ row, window: nextWindow(row.watermarkAt, now) })),
+					(item) => item.window !== null,
+				)
+					// Most-behind first, so a tight call budget still spreads across environments.
+					.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
+					.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
 
-					// `stopped` ends the pass: later environments are not polled this tick.
-					const initial: RailwayPollTally = {
-						callsMade: discoveryCalls,
-						failures: discoveryError === null ? 0 : 1,
-						rowsIngested: 0,
-						lastError: discoveryError,
-						stopped: false,
-						rejected: false,
-					}
-					const { callsMade, failures, rowsIngested, lastError, rejected } = yield* Effect.reduce(
-						environments,
-						() => initial,
-						(tally, { row, window }) =>
-							tally.stopped || window === null
-								? Effect.succeed(tally)
-								: Effect.gen(function* () {
-										// The rest catch up next tick; their watermarks are untouched.
-										if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) {
-											return { ...tally, stopped: true }
-										}
-										const called = { ...tally, callsMade: tally.callsMade + 1 }
-										const result = yield* Effect.result(
-											pollEnvironment(row, token, ingestKey.value, window, sourceId),
-										)
-										if (result._tag === "Success") {
-											const ingested = result.success
-											if (ingested instanceof IngestRefused) {
-												// Billing limit or a refused key: back off instead of retrying every tick.
-												const message = ingested.error.message
-												yield* Effect.logInfo(
-													"railway metrics ingest refused the org",
-													{
-														orgId,
-														environmentId: row.environmentId,
-														error: message,
-													},
-												)
-												yield* Ref.set(holdUntilRef, now + BILLING_HOLD_MS)
-												return {
-													...called,
-													failures: called.failures + 1,
-													lastError: message,
-													stopped: true,
-												}
-											}
-											yield* updateEnvironment(row.id, {
-												watermarkAt: window.endMs,
-												lastSuccessAt: now,
-												lastError: null,
-												lastErrorAt: null,
-												updatedAt: now,
-											})
-											return {
-												...called,
-												rowsIngested: called.rowsIngested + ingested,
-											}
-										}
-										const error = result.failure
-										const failed = {
-											...called,
-											failures: called.failures + 1,
-											lastError: error.message,
-										}
-										yield* Effect.logWarning("railway environment poll failed", {
-											orgId,
-											environmentId: row.environmentId,
-											error: error.message,
-										})
-										if (error._tag === "@maple/backend/integrations/RailwayApiError") {
-											if (error.kind === "unauthorized") {
-												yield* markAuthFailed(error.message)
-												return { ...failed, stopped: true, rejected: true }
-											}
-											if (error.kind === "rate_limited") {
-												const retryMs = (error.retryAfterSeconds ?? 0) * 1000
-												yield* Ref.set(
-													holdUntilRef,
-													now + Math.max(retryMs, RATE_LIMIT_HOLD_MS),
-												)
-												return { ...failed, stopped: true }
-											}
-										}
+				// `stopped` ends the pass: later environments are not polled this tick.
+				const initial: RailwayPollTally = {
+					callsMade: discoveryCalls,
+					failures: discoveryError === null ? 0 : 1,
+					rowsIngested: 0,
+					lastError: discoveryError,
+					stopped: null,
+					budgetSpent: false,
+				}
+				const { callsMade, failures, rowsIngested, lastError, stopped } = yield* Effect.reduce(
+					environments,
+					() => initial,
+					(tally, { row, window }) =>
+						tally.stopped !== null || tally.budgetSpent || window === null
+							? Effect.succeed(tally)
+							: Effect.gen(function* () {
+									// The rest catch up next tick; their watermarks are untouched.
+									if ((yield* Clock.currentTimeMillis) - now >= TICK_BUDGET_MS) {
+										return { ...tally, budgetSpent: true }
+									}
+									const called = { ...tally, callsMade: tally.callsMade + 1 }
+									const result = yield* Effect.result(
+										pollEnvironment(row, token, ingestKey.value, window, sourceId),
+									)
+									// The rows ingested, or why the environment failed.
+									const outcome: number | PollFailure =
+										result._tag === "Failure"
+											? railwayFailure(result.failure)
+											: result.success instanceof IngestRefused
+												? {
+														_tag: "IngestRefused",
+														message: result.success.error.message,
+													}
+												: result.success
+									if (typeof outcome === "number") {
 										yield* updateEnvironment(row.id, {
-											lastError: Str.slice(0, 500)(error.message),
-											lastErrorAt: now,
+											watermarkAt: window.endMs,
+											lastSuccessAt: now,
+											lastError: null,
+											lastErrorAt: null,
 											updatedAt: now,
 										})
-										return failed
-									}),
-					)
+										return { ...called, rowsIngested: called.rowsIngested + outcome }
+									}
+									const failure = outcome
+									const message = pollFailureMessage(failure)
+									const failed = {
+										...called,
+										failures: called.failures + 1,
+										lastError: message,
+									}
+									yield* Effect.logWarning("railway environment poll failed", {
+										orgId,
+										environmentId: row.environmentId,
+										error: message,
+										failure: failure._tag,
+									})
+									switch (failure._tag) {
+										case "Rejected":
+											yield* markAuthFailed(message)
+											return { ...failed, stopped: failure }
+										// The org's state, not this environment's: hold the row and stop.
+										case "RateLimited":
+										case "IngestRefused":
+											yield* lease.holdFor(failure)
+											return { ...failed, stopped: failure }
+										case "Upstream":
+											yield* updateEnvironment(row.id, {
+												lastError: Str.slice(0, 500)(message),
+												lastErrorAt: now,
+												updatedAt: now,
+											})
+											return failed
+									}
+								}),
+				)
 
-					const stillOurs = yield* updateClaimed(
-						lastError === null
-							? {
-									lastSuccessAt: now,
-									lastError: null,
-									lastErrorAt: null,
-									updatedAt: now,
-								}
-							: {
-									lastError: Str.slice(0, 500)(lastError),
-									lastErrorAt: now,
-									updatedAt: now,
-								},
-					)
-					const resources = enabled.length >= 2 ? yield* environmentHealth(orgId, now) : undefined
-					if (stillOurs && !rejected) {
-						yield* reportTick(
-							claimed.sourceId,
-							lastError === null
+				const stillOurs = yield* lease.write(
+					lastError === null
+						? { lastSuccessAt: now, lastError: null, lastErrorAt: null, updatedAt: now }
+						: { lastError: Str.slice(0, 500)(lastError), lastErrorAt: now, updatedAt: now },
+				)
+				const resources = enabled.length >= 2 ? yield* environmentHealth(orgId, now) : undefined
+				// A rejected token already reported itself disconnected.
+				if (stillOurs && stopped?._tag !== "Rejected") {
+					yield* reportTick(
+						claimed.sourceId,
+						stopped !== null
+							? pollFailureOutcome(stopped, resources)
+							: lastError === null
 								? { _tag: "Ok", resources }
 								: { _tag: "Failed", error: Str.slice(0, 500)(lastError), resources },
-							now,
-						)
-					}
-					yield* Effect.annotateCurrentSpan({
-						"maple.railway.calls_made": callsMade,
-						"maple.railway.rows_ingested": rowsIngested,
-						"maple.railway.failures": failures,
-					})
-					return {
-						orgId,
-						skipped: null,
-						callsMade,
-						rowsIngested,
-						failures,
-					} satisfies RailwayPollOrgSummary
-				}).pipe(
-					Effect.ensuring(
-						Ref.get(holdUntilRef).pipe(
-							Effect.flatMap((holdUntil) =>
-								releaseLease(claimed.id, claimed.leaseUntil, holdUntil, now),
-							),
-							Effect.ignore,
-						),
-					),
-				)
-				return summary
+						now,
+					)
+				}
+				yield* Effect.annotateCurrentSpan({
+					"maple.railway.calls_made": callsMade,
+					"maple.railway.rows_ingested": rowsIngested,
+					"maple.railway.failures": failures,
+				})
+				return {
+					orgId,
+					skipped: null,
+					callsMade,
+					rowsIngested,
+					failures,
+				} satisfies RailwayPollOrgSummary
 			})
 
 			const pollAllOrgs = Effect.gen(function* () {
