@@ -603,19 +603,35 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const summary = yield* Effect.gen(function* () {
 					const token = yield* decryptToken(claimed)
 
+					// Only against the token this pass ran with: a token saved meanwhile keeps its own state.
+					const updateClaimed = (set: PG.UpdateSetOf<typeof RailwayConnections>) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(RailwayConnections)
+									.set(set)
+									.where(($) => [
+										$.id.eq(claimed.id),
+										$.tokenCiphertext.eq(claimed.tokenCiphertext),
+									])
+									.returning("id"),
+							),
+						).pipe(Effect.map((rows) => rows.length > 0))
+
 					const markAuthFailed = (message: string) =>
-						updateConnection(claimed.id, {
+						updateClaimed({
 							authFailedAt: now,
 							lastError: message,
 							lastErrorAt: now,
 							updatedAt: now,
 						}).pipe(
-							Effect.andThen(
-								reportTick(
-									claimed.sourceId,
-									{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
-									now,
-								),
+							Effect.flatMap((paused) =>
+								paused
+									? reportTick(
+											claimed.sourceId,
+											{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
+											now,
+										)
+									: Effect.void,
 							),
 						)
 
@@ -758,8 +774,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									}),
 					)
 
-					yield* updateConnection(
-						claimed.id,
+					const stillOurs = yield* updateClaimed(
 						lastError === null
 							? {
 									lastSuccessAt: now,
@@ -774,7 +789,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 								},
 					)
 					const resources = enabled.length >= 2 ? yield* environmentHealth(orgId, now) : undefined
-					if (!rejected) {
+					if (stillOurs && !rejected) {
 						yield* reportTick(
 							claimed.sourceId,
 							lastError === null
