@@ -223,7 +223,10 @@ export const rowLink = <M>(
 		children,
 	)
 
-/** A row's name as its `rowLink`: one truncating medium line, muted for a row that is switched off. */
+/**
+ * A row's name as its `rowLink`: one truncating medium line, muted for a row that is switched off.
+ * The full name is its tooltip, so a cut-off name can still be told from its neighbours.
+ */
 export const rowNameLink = <M>(
 	h: HtmlBuilder<M>,
 	options: {
@@ -238,7 +241,7 @@ export const rowNameLink = <M>(
 		{
 			href: options.href,
 			className: cn(tableRowNameLinkStyles, options.isMuted === true && "text-muted-foreground"),
-			attributes: options.attributes ?? [],
+			attributes: [h.Title(options.name), ...(options.attributes ?? [])],
 		},
 		[options.name],
 	)

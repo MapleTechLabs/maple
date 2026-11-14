@@ -337,7 +337,6 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 						href: ruleHref(rule.id),
 						name: rule.name,
 						isMuted: !rule.enabled,
-						attributes: [h.Title(rule.name)],
 					}),
 					...(isDefault
 						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Default"])]
