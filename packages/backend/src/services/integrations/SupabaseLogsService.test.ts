@@ -484,12 +484,16 @@ describe("SupabaseLogsService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* connectWithLogs(world)
-				// A tick is still in flight when the user turns logs off and on again.
+				// A refusal hold is set and a tick is still in flight when the user turns logs off and on.
 				yield* Effect.promise(() =>
 					executeSql(
 						testDb,
-						"UPDATE supabase_projects SET logs_lease_until = $1 WHERE project_ref = $2",
-						[DateTime.formatIso(DateTime.makeUnsafe(NOW + 2 * minute)), REF_A],
+						"UPDATE supabase_projects SET logs_lease_until = $1, logs_hold_until = $2 WHERE project_ref = $3",
+						[
+							DateTime.formatIso(DateTime.makeUnsafe(NOW + 2 * minute)),
+							DateTime.formatIso(DateTime.makeUnsafe(NOW + 60 * minute)),
+							REF_A,
+						],
 					),
 				)
 				const logs = yield* SupabaseLogsService
