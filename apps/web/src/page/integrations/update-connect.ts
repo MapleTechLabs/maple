@@ -11,7 +11,7 @@ import { TrackConnected } from "./command"
 import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
 import * as SearchConsole from "./update-search-console"
-import * as Supabase from "../infra-integrations/supabase/integration/update-supabase"
+import { providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -165,8 +165,7 @@ export const receivedCallback = (
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
-			// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
-			(next) => (provider === "supabase" ? Supabase.clickedSync(next) : { model: next }),
+			(next) => providerModuleOf(provider)?.onConnected(next, context) ?? { model: next },
 			(next) => refreshedSites(next, context, provider),
 		])
 	}

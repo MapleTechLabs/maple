@@ -1,12 +1,10 @@
 import type { V2GcpConnector, V2GcpIntegration } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import { GCP_CONNECTION_LABEL, GCP_STATE_ORDER, gcpConnectionState, gcpWorstState } from "../connector-state"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { AppRoute, hrefOf } from "../../../../route/index"
 import { button, linkButton } from "@maple/views/ui/button"
-import { errorState } from "@maple/views/ui/error-state"
 import { panel } from "@maple/views/ui/panel"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -15,6 +13,7 @@ import { HEALTH_TONE } from "../../../integrations/derive"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
+import { integrationStatusCard } from "../../../integrations/view-integration-card"
 import { gcpConnectors } from "./update-gcp"
 import { gcpConnection } from "./view-gcp-connection"
 import { gcpConfigure } from "./view-gcp-configure"
@@ -129,18 +128,11 @@ const byStatus = (
 }
 
 export const gcpCard = (h: H, model: Model, timeZone: string, focusId: string | null = null): Html =>
-	AsyncData.match(model.statuses.gcp.data, {
-		onIdle: () => skeletonBlock(h, { height: "40" }),
-		onLoading: () => skeletonBlock(h, { height: "40" }),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load the Google Cloud integration",
-				onRetry: Message.ClickedRetryStatus({ name: "gcp" }),
-			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone, focusId),
-		onSuccess: (data) => byStatus(h, model, data, timeZone, focusId),
+	integrationStatusCard(h, model.statuses.gcp, {
+		name: "gcp",
+		failureTitle: "Couldn't load the Google Cloud integration",
+		render: (data) => byStatus(h, model, data, timeZone, focusId),
+		loading: () => skeletonBlock(h, { height: "40" }),
 	})
 
 /** The worst connection's state, how many share it, how many projects send data. */

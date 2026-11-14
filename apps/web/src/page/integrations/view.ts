@@ -29,17 +29,16 @@ import { githubCard } from "./view-github"
 import { linearCard } from "./view-linear"
 import { searchConsoleCard } from "./view-search-console"
 import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
-import { railwayCard } from "../infra-integrations/railway/integration/view-railway"
 import {
 	vercelCard,
 	vercelHeaderActions,
 	vercelHeaderStatus,
 } from "../infra-integrations/vercel/integration/view-vercel"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
-import { supabaseCard } from "../infra-integrations/supabase/integration/view-supabase"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
 import { hubTitle, integrationCatalog, integrationsSummary } from "./view-hub"
+import { providerModuleOf } from "./provider-modules"
 
 type H = HtmlBuilder<Message>
 
@@ -73,6 +72,8 @@ export const cardView = (
 ): ReadonlyArray<Html> => {
 	const connector = chatConnectorOf(integration)
 	if (connector !== null) return [chatCard(h, model, connector, timeZone)]
+	const provider = providerModuleOf(integration)
+	if (provider !== undefined) return [provider.card(h, model, timeZone)]
 	switch (integration) {
 		case "linear":
 			return [linearCard(h, model)]
@@ -82,12 +83,8 @@ export const cardView = (
 			return [searchConsoleCard(h, model)]
 		case "cloudflare":
 			return [cloudflareCard(h, model, timeZone)]
-		case "railway":
-			return [railwayCard(h, model, timeZone)]
 		case "vercel":
 			return vercelCard(h, model, timeZone)
-		case "supabase":
-			return [supabaseCard(h, model, timeZone)]
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":

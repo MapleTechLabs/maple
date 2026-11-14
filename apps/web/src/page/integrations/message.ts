@@ -43,7 +43,6 @@ import {
 	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
-	SupabaseProjectRef,
 } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -61,7 +60,8 @@ import * as Chart from "@maple/views/charts/chart"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
-import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
+import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
+import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
 import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
 import {
 	ConfigureTarget,
@@ -246,16 +246,10 @@ export const Message = defineMessageUnion({
 	GotTargetDeleteDialogMessage: { message: Dialog.Message },
 	ConfirmedTargetDelete: {},
 	CompletedTargetDelete: { id: ScrapeTargetId, failure: Schema.NullOr(LoadFailure) },
-	GotRailwayTokenMessage: { message: Field.Message },
-	SubmittedRailwayToken: {},
-	SucceededRailwayConnect: { title: Schema.String, description: Schema.String },
-	FailedRailwayConnect: { error: Schema.String },
-	ClickedRailwaySync: {},
-	CompletedRailwaySync: { failure: Schema.NullOr(LoadFailure) },
-	ClickedRailwayRotate: {},
-	ClickedRailwayRotateCancel: {},
-	/** Every 15 s while environments wait for their first sync. */
-	TickedRailwaySettle: {},
+	/** A message for the Railway module (`provider-modules.ts`). */
+	GotRailwayMessage: { message: RailwayMessage },
+	/** A message for the Supabase module. */
+	GotSupabaseMessage: { message: SupabaseMessage },
 	/** Every 15 s while a fresh connection waits for its first sync. */
 	TickedVercelSettle: {},
 	ClickedVercelSync: {},
@@ -344,34 +338,6 @@ export const Message = defineMessageUnion({
 	},
 	/** The connect flow's opt-in for a module on the account about to be connected. */
 	ToggledAwsNewModule: { module: AwsModule },
-	ClickedSupabaseSync: {},
-	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
-	TickedSupabaseClock: {},
-	/** The clock read after a settled switch; its rows re-read supersedes on the fresh window. */
-	CompletedReadSupabaseClock: { nowMs: Schema.Number },
-	CompletedLoadSupabaseMetrics: result(Schema.Array(SupabaseProjectRow)),
-	CompletedSupabaseSync: { failure: Schema.NullOr(LoadFailure) },
-	/** A project row's "Collect metrics" switch. */
-	ToggledSupabaseMetrics: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	CompletedSupabaseMetrics: {
-		ref: SupabaseProjectRef,
-		enabled: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** A project row's "Collect logs" switch. */
-	ToggledSupabaseLogs: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	CompletedSupabaseLogs: {
-		ref: SupabaseProjectRef,
-		enabled: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
-	/** A project row's "Log drain" switch: creates or deletes the drain at Supabase. */
-	ToggledSupabaseLogDrain: { ref: SupabaseProjectRef, enabled: Schema.Boolean },
-	CompletedSupabaseLogDrain: {
-		ref: SupabaseProjectRef,
-		enabled: Schema.Boolean,
-		failure: Schema.NullOr(LoadFailure),
-	},
 	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
 	ClickedChangeOrganization: {},
 	GotPickerDialogMessage: { message: Dialog.Message },

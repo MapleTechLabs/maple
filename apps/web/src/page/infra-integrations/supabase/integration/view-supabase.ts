@@ -17,6 +17,7 @@ import { SUPABASE_BRAND, SUPABASE_NOT_CONFIGURED } from "../connect"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
+import { SupabaseMessage } from "./supabase"
 import {
 	connectedIntegrationCard,
 	disconnectButton,
@@ -37,6 +38,9 @@ type Project = SupabaseIntegrationStatus["projects"][number]
 type Drain = Project["logDrains"][number]
 
 type Metrics = Model["supabaseCard"]["metrics"]
+
+/** A Supabase message, as the hub carries it. */
+export const toHub = (message: SupabaseMessage): Message => Message.GotSupabaseMessage({ message })
 
 /** The project's metrics row, or `null` while the rows load, failed, or hold none for it. */
 export const metricsRowOf = (metrics: Metrics, ref: string): SupabaseProjectRow | null =>
@@ -165,7 +169,13 @@ export const supabaseProjectSwitches = (h: H, model: Model, project: Project): R
 			isChecked: metricsEnabled,
 			isDisabled: isLocked,
 			label: `Collect metrics for ${project.name}`,
-			onToggle: Message.ToggledSupabaseMetrics({ ref: project.ref, enabled: !metricsEnabled }),
+			onToggle: toHub(
+				SupabaseMessage.ToggledSwitch({
+					ref: project.ref,
+					kind: "metrics",
+					enabled: !metricsEnabled,
+				}),
+			),
 		}),
 		projectSwitch(h, {
 			id: `supabase-logs-${project.ref}`,
@@ -174,7 +184,9 @@ export const supabaseProjectSwitches = (h: H, model: Model, project: Project): R
 			// Polling already on can always be turned off.
 			isDisabled: isLocked || (!logsEnabled && (drainEnabled || manual !== undefined)),
 			label: `Collect logs for ${project.name}`,
-			onToggle: Message.ToggledSupabaseLogs({ ref: project.ref, enabled: !logsEnabled }),
+			onToggle: toHub(
+				SupabaseMessage.ToggledSwitch({ ref: project.ref, kind: "logs", enabled: !logsEnabled }),
+			),
 		}),
 		projectSwitch(h, {
 			id: `supabase-drain-${project.ref}`,
@@ -184,7 +196,9 @@ export const supabaseProjectSwitches = (h: H, model: Model, project: Project): R
 				manual === undefined
 					? `Send ${project.name}'s logs through a Supabase log drain`
 					: `${project.name} already sends logs to Maple through the drain ${manual.name}`,
-			onToggle: Message.ToggledSupabaseLogDrain({ ref: project.ref, enabled: !drainEnabled }),
+			onToggle: toHub(
+				SupabaseMessage.ToggledSwitch({ ref: project.ref, kind: "drain", enabled: !drainEnabled }),
+			),
 		}),
 	]
 }
@@ -352,7 +366,7 @@ const actions = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
 						size: "sm",
 						variant: "outline",
 						isLoading: model.supabaseCard.isSyncing,
-						attributes: [h.OnClick(Message.ClickedSupabaseSync())],
+						attributes: [h.OnClick(toHub(SupabaseMessage.ClickedSync()))],
 					},
 					[icon(h, "ArrowRotateAnticlockwiseIcon"), "Sync now"],
 				),

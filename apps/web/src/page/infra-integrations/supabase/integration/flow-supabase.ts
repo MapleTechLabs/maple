@@ -1,7 +1,7 @@
 import type { SupabaseIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
-import { fold } from "../../../integrations/derive"
+import { fold } from "../../../integrations/overview"
 import type { SupabaseProjectRow } from "../model"
 import type { FlowSpec, LiveHealth } from "../../../integrations/flow"
 import type { Model } from "../../../integrations/model"

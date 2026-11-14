@@ -12,11 +12,9 @@ import { badge } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import type { IconName } from "@maple/views/ui/icons.generated"
-import { itemContent, mediaCard } from "@maple/views/ui/item"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../../../kit/relative-time"
-import { integrationIconPlate } from "../../../kit/integration-empty"
 import { switchRow } from "../../../kit/switch-row"
 import {
 	type AwsModuleInfo,
@@ -41,6 +39,7 @@ import { canManage, type Model } from "../../../integrations/model"
 import { dataPicker } from "./view-aws-choose"
 import { CLOUDSHELL_URL, fileBlock, methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { disconnectConfirm } from "../../../integrations/view-disconnect"
+import { connectedIntegrationCard, integrationStatusCard } from "../../../integrations/view-integration-card"
 import { externalLink } from "../../gcp/integration/view-gcp-configure-parts"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -612,68 +611,61 @@ const connectionRow = (
 		message: Message,
 		extra: Readonly<{ isLoading?: boolean; isExpanded?: boolean; variant?: ActionVariant }> = {},
 	) => actionButton(h, label, message, extra)
-	return mediaCard(h, integrationIconPlate(h, BRAND), [
-		itemContent(
-			h,
-			[
-				hstack(h, { gap: "2", wrap: true }, [
-					heading(
-						h,
-						{
-							level: 3,
-							variant: "section",
-							className: typographyClass({ mono: true, numeric: true }),
-						},
-						[connection.account_id],
-					),
-					badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
-				]),
-				stepList(h, [
-					roleStep(h, model, connection, timeZone),
-					streamStep(connection),
-					deliveryStep(h, model, connection, timeZone),
-				]),
-				...ingestPanel(h, model, connection, timeZone),
-				...Option.match(offeredModule(status, "cost"), {
-					onNone: () => [],
-					onSome: (info) => [costRow(h, model, connection, info)],
-				}),
-				hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
-					// The stack's script: it finishes a setup, which is the one thing to do then, and
-					// updates an old one.
-					connection.verified_at === null
-						? setupToggle(h, model, connection, "Finish setup", "default")
-						: setupToggle(h, model, connection, "Reconnect"),
-					...(connection.verified_at === null
-						? []
-						: [
-								action(
-									"Edit data",
-									isEditing
-										? Message.ClickedAwsMetricsCancel()
-										: Message.ClickedAwsMetrics({ id: connection.id }),
-									{ isExpanded: isEditing },
-								),
-							]),
-					action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
-						isLoading: isChecking,
+	return connectedIntegrationCard(h, model, {
+		integration: null,
+		brand: BRAND,
+		title: connection.account_id,
+		titleClassName: typographyClass({ mono: true, numeric: true }),
+		badge: badge(h, { variant: CONDITION_VARIANT[condition] }, [AWS_CONDITION_LABEL[condition]]),
+		summary: null,
+		body: [
+			stepList(h, [
+				roleStep(h, model, connection, timeZone),
+				streamStep(connection),
+				deliveryStep(h, model, connection, timeZone),
+			]),
+			...ingestPanel(h, model, connection, timeZone),
+			...Option.match(offeredModule(status, "cost"), {
+				onNone: () => [],
+				onSome: (info) => [costRow(h, model, connection, info)],
+			}),
+		],
+		actions: hstack(h, { gap: "2", align: "stretch", wrap: true, className: "pt-1" }, [
+			// The stack's script: it finishes a setup, which is the one thing to do then, and
+			// updates an old one.
+			connection.verified_at === null
+				? setupToggle(h, model, connection, "Finish setup", "default")
+				: setupToggle(h, model, connection, "Reconnect"),
+			...(connection.verified_at === null
+				? []
+				: [
+						action(
+							"Edit data",
+							isEditing
+								? Message.ClickedAwsMetricsCancel()
+								: Message.ClickedAwsMetrics({ id: connection.id }),
+							{ isExpanded: isEditing },
+						),
+					]),
+			action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
+				isLoading: isChecking,
+			}),
+			// Apart from the routine actions: it ends the connection.
+			h.span(
+				[h.Class("ml-auto")],
+				[
+					action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id }), {
+						variant: "destructive-outline",
 					}),
-					// Apart from the routine actions: it ends the connection.
-					h.span(
-						[h.Class("ml-auto")],
-						[
-							action("Disconnect", Message.ClickedAwsDisconnect({ id: connection.id }), {
-								variant: "destructive-outline",
-							}),
-						],
-					),
-				]),
-				...(isEditing ? [editDataPanel(h, model, connection)] : []),
-				...(isOpen ? [setupPanel(h, model, connection)] : []),
-			],
-			"gap-3",
-		),
-	])
+				],
+			),
+		]),
+		afterActions: [
+			...(isEditing ? [editDataPanel(h, model, connection)] : []),
+			...(isOpen ? [setupPanel(h, model, connection)] : []),
+		],
+		contentGap: "gap-3",
+	})
 }
 
 const setupPanel = (h: H, model: Model, connection: V2AwsConnection): Html => {
@@ -821,16 +813,8 @@ const byStatus = (
 		: vstack(h, { gap: "3" }, [...removedPanel(h, model, focusId), reconnectLink(h)])
 
 export const awsCard = (h: H, model: Model, timeZone: string, focusId: string | null): Html =>
-	AsyncData.match(model.statuses.aws.data, {
-		onIdle: () => skeletonBlock(h, { height: "32" }),
-		onLoading: () => skeletonBlock(h, { height: "32" }),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load the AWS integration",
-				onRetry: Message.ClickedRetryStatus({ name: "aws" }),
-			}),
-		onStale: ({ data }) => byStatus(h, model, data, timeZone, focusId),
-		onRefreshing: (data) => byStatus(h, model, data, timeZone, focusId),
-		onSuccess: (data) => byStatus(h, model, data, timeZone, focusId),
+	integrationStatusCard(h, model.statuses.aws, {
+		name: "aws",
+		failureTitle: "Couldn't load the AWS integration",
+		render: (data) => byStatus(h, model, data, timeZone, focusId),
 	})

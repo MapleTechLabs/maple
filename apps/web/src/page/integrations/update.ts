@@ -16,19 +16,15 @@ import * as Github from "./update-github"
 import * as CloudflareCard from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import { initCloudflareCard } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { initPrometheusCard } from "./prometheus"
-import { initRailwayCard } from "../infra-integrations/railway/integration/railway"
 import { initPlanetscaleCard } from "../infra-integrations/planetscale/integration/planetscale"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
 import * as Aws from "../infra-integrations/aws/integration/update-aws"
-import { initSupabaseCard } from "../infra-integrations/supabase/integration/supabase"
-import * as Supabase from "../infra-integrations/supabase/integration/update-supabase"
 import * as SearchConsole from "./update-search-console"
 import { initSearchConsoleCard } from "./search-console"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
-import * as Railway from "../infra-integrations/railway/integration/update-railway"
 import * as Vercel from "../infra-integrations/vercel/integration/update-vercel"
 import { initVercelCard } from "../infra-integrations/vercel/integration/vercel"
 import * as Prometheus from "./update-prometheus"
@@ -46,6 +42,7 @@ import {
 } from "./command"
 import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
+import { everyProvider, providerModuleOf, RAILWAY_PROVIDER, SUPABASE_PROVIDER } from "./provider-modules"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
 
@@ -167,9 +164,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		planetscaleCard: initPlanetscaleCard(),
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
-		railwayCard: initRailwayCard(),
+		railwayCard: RAILWAY_PROVIDER.initial(),
 		vercelCard: initVercelCard(),
-		supabaseCard: initSupabaseCard(),
+		supabaseCard: SUPABASE_PROVIDER.initial(),
 		searchConsoleCard: initSearchConsoleCard(),
 	}
 	const loaded = chain(model, [
@@ -207,10 +204,9 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
-	if (integration === "supabase") return Supabase.requestMetricsRows(model, context, "Load")
 	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
 	if (integration === "google-search-console") return SearchConsole.requestSites(model, context, "Load")
-	return { model }
+	return providerModuleOf(integration)?.onEnter(model, context) ?? { model }
 }
 
 /** The GCP band's reads wait on the status and the clock. */
@@ -227,12 +223,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedReadClock: ({ nowMs }) =>
 			chain(Planetscale.withWatchStart({ ...model, nowMs }, nowMs), [
 				(next) => gcpBand(next, context),
-				(next) => Supabase.requestMetricsRows(next, context, "Load"),
+				(next) => everyProvider(next, (provider) => (each) => provider.onClock(each, context)),
 			]),
 		CompletedLoadCloudflare: ({ key, result }) =>
 			accepted(model, { ...s, cloudflare: Keyed.accept(s.cloudflare, key, result) }),
 		CompletedLoadRailway: ({ key, result }) =>
-			accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }),
+			RAILWAY_PROVIDER.onStatus(
+				accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }).model,
+				context,
+				s.railway.key === key,
+			),
 		CompletedLoadVercel: ({ key, result }) =>
 			accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }),
 		CompletedLoadPlanetscale: ({ key, result }) => {
@@ -265,16 +265,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				context,
 				Aws.connectionsOf(model),
 			),
-		CompletedLoadSupabase: ({ key, result }) => {
-			const read = accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model
-			// Any answer to the current read retires saved flips; a failed one shows the last known value.
-			return Supabase.requestMetricsRows(
-				s.supabase.key === key ? Supabase.settledStatus(read) : read,
+		CompletedLoadSupabase: ({ key, result }) =>
+			SUPABASE_PROVIDER.onStatus(
+				accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model,
 				context,
-				"Load",
-			)
-		},
-		CompletedLoadSupabaseMetrics: ({ key, result }) => Supabase.completedMetricsRows(model, key, result),
+				s.supabase.key === key,
+			),
+		GotRailwayMessage: ({ message: child }) => RAILWAY_PROVIDER.update(model, child, context),
+		GotSupabaseMessage: ({ message: child }) => SUPABASE_PROVIDER.update(model, child, context),
 		CompletedLoadLinear: ({ key, result }) =>
 			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
@@ -412,16 +410,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
 		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
 		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
-		GotRailwayTokenMessage: ({ message: child }) => Railway.gotToken(model, child),
-		SubmittedRailwayToken: () => Railway.submittedToken(model),
-		SucceededRailwayConnect: ({ title, description }) =>
-			Railway.succeededConnect(model, context, title, description),
-		FailedRailwayConnect: ({ error }) => Railway.failedConnect(model, error),
-		ClickedRailwaySync: () => Railway.clickedSync(model),
-		CompletedRailwaySync: ({ failure }) => Railway.completedSync(model, context, failure),
-		ClickedRailwayRotate: () => Railway.setRotating(model, true),
-		ClickedRailwayRotateCancel: () => Railway.setRotating(model, false),
-		TickedRailwaySettle: () => requestStatus(model, context, "railway", "Refresh"),
 		TickedVercelSettle: () => Vercel.tickedSettle(model, context),
 		ClickedVercelSync: () => Vercel.clickedSync(model),
 		CompletedVercelSync: ({ failure }) => Vercel.completedSync(model, context, failure),
@@ -483,20 +471,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedAwsModules: ({ id, connection, error }) =>
 			Aws.completedModules(model, context, id, connection, error),
 		ToggledAwsNewModule: ({ module }) => Aws.toggledNewModule(model, module),
-		// Advances the card's window and "Last data" ages; the fresh clock re-reads rows on a new key.
-		TickedSupabaseClock: () => ({ model, commands: [ReadClock()] }),
-		CompletedReadSupabaseClock: ({ nowMs }) => Supabase.completedReadClock(model, context, nowMs),
-		ClickedSupabaseSync: () => Supabase.clickedSync(model),
-		CompletedSupabaseSync: ({ failure }) => Supabase.completedSync(model, context, failure),
-		ToggledSupabaseMetrics: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "metrics", enabled),
-		CompletedSupabaseMetrics: ({ ref, enabled, failure }) =>
-			Supabase.completedSwitch(model, context, ref, "metrics", enabled, failure),
-		ToggledSupabaseLogs: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "logs", enabled),
-		CompletedSupabaseLogs: ({ ref, enabled, failure }) =>
-			Supabase.completedSwitch(model, context, ref, "logs", enabled, failure),
-		ToggledSupabaseLogDrain: ({ ref, enabled }) => Supabase.toggledSwitch(model, ref, "drain", enabled),
-		CompletedSupabaseLogDrain: ({ ref, enabled, failure }) =>
-			Supabase.completedSwitch(model, context, ref, "drain", enabled, failure),
 		CompletedFetchOrganizations: ({ key, result }) =>
 			Planetscale.updateCard(model, {
 				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
