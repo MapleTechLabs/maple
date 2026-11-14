@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest"
 // The shell's favorites listener targets `window` at import; the root update never touches it here.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageHold, Session } from "./model"
 import { CustomerData, initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import { enterRoute, pageIdentity } from "./page/registry"
@@ -41,6 +41,7 @@ const base = (route: AppRoute): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
+	pageHold: PageHold.None(),
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),
@@ -355,5 +356,21 @@ describe("dashboard widget undo", () => {
 		).toEqual([{ type: "error", title: "Couldn't restore the widget", description: "Network down" }])
 		const restored = update(model, Message.CompletedRestoreDashboardWidgets({ error: null })).model
 		expect(restored.toasts.toasts).toEqual([])
+	})
+})
+
+describe("navigation hold", () => {
+	test("navigating to a loading page keeps the page left on screen until its timer, then shows it", () => {
+		const onServices = settle(base(AppRoute.Services({ search: {} }))).model
+		expect(onServices.pageHold).toEqual(PageHold.None())
+		const toLogs = update(onServices, Message.ChangedUrl({ url: urlOf("/logs") }))
+		const instance = toLogs.model.page?.instance ?? -1
+		expect(toLogs.model.page?._tag).toBe("LogsList")
+		expect(toLogs.model.pageHold).toEqual({ _tag: "Holding", leaving: onServices.page, instance })
+		expect(Arr.filter(commandsOf(toLogs), ({ name }) => name === "WaitPageHold")).toEqual([
+			{ name: "WaitPageHold", args: { instance } },
+		])
+		const shown = update(toLogs.model, Message.ElapsedPageHold({ instance }))
+		expect(shown.model.pageHold).toEqual(PageHold.Waited({ instance }))
 	})
 })

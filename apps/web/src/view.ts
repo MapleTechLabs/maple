@@ -5,6 +5,7 @@ import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "fol
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
+import * as PageHold from "./page/page-hold"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
 import {
@@ -102,13 +103,16 @@ const renderPage = (
 		toPageMessage,
 	)
 
+/** The page on screen: the one a navigation left while the entered one loads, else the open page. */
+const shownPage = (model: Model) => PageHold.shownSlot(model.pageHold, model.page)
+
 /**
  * The routed page, rebuilt only when its slot or an input it reads changes: a hovered link, a
  * toast or a shell menu re-renders the root, not the page. The context is rebuilt on every call,
  * so it is passed by field.
  */
 const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Option.Option<Html> =>
-	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
+	Option.flatMap(Option.fromNullishOr(shownPage(model)), (page) =>
 		Option.map(pageContextOf(model), ({ orgId, pinnedNamespace, timeZone, infra, audience }) =>
 			lazyPage(position, renderPage, [
 				h,
@@ -137,10 +141,11 @@ const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition)
 /** The routed page's own top-bar actions, if it has any. */
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
-	return model.page !== null && Option.isSome(maybeContext)
+	const page = shownPage(model)
+	return page !== null && Option.isSome(maybeContext)
 		? viewPageTopbarActions(
 				h,
-				model.page,
+				page,
 				{
 					context: maybeContext.value,
 					isMobile: model.shell.isMobile,
@@ -154,7 +159,8 @@ const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 
 /** The open page's source, once it names one. */
 const sourceLinkOf = (model: Model): SourceLink | null => {
-	const ref = model.page === null ? null : pageSource(model.page)
+	const page = shownPage(model)
+	const ref = page === null ? null : pageSource(page)
 	return ref === null
 		? null
 		: resolveSourceLink(ref, Option.getOrNull(AsyncData.getData(model.shell.sources)))
@@ -173,7 +179,11 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			viewInputs: {
 				currentPath,
 				clerk,
-				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
+				breadcrumbs: Option.match(Option.fromNullishOr(shownPage(model)), {
+					onNone: () => breadcrumbsOf(model.route),
+					onSome: pageBreadcrumbs,
+				}),
+				pageHold: PageHold.holdAttribute(model.pageHold),
 				page: () => pageView(model, h, "shell"),
 				topbarActions: () => topbarActionsView(model, h),
 				sourceLink: sourceLinkOf(model),
@@ -291,13 +301,15 @@ const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 /** The tab names the open page; a route with no page up yet (or none at all) is just "Maple". */
 export const titleOf = (model: Model): string =>
 	documentTitleOf(
-		model.page !== null
-			? pageBreadcrumbs(model.page)
-			: AppRoute.matchOrElse<ReadonlyArray<Shell.BreadcrumbEntry>>(
+		Option.match(Option.fromNullishOr(shownPage(model)), {
+			onSome: pageBreadcrumbs,
+			onNone: () =>
+				AppRoute.matchOrElse<ReadonlyArray<Shell.BreadcrumbEntry>>(
 					model.route,
 					{ NotFound: () => breadcrumbsOf(model.route) },
 					() => [],
 				),
+		}),
 	)
 
 // NOTE: Foldkit's first render replaces the container, so the view root is `div#app` itself.

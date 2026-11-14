@@ -8,7 +8,7 @@ import { describe, expect, test, vi } from "vitest"
 // The shell's favorites listener targets `window` at import; nothing here touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import type { Message } from "./message"
-import { ClerkPhase, type Model, Session } from "./model"
+import { ClerkPhase, type Model, PageHold, Session } from "./model"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import { pages } from "./page/registry"
@@ -141,6 +141,7 @@ const entered = (path: string): Model =>
 		page: null,
 		pageInstances: 0,
 		parkedPages: [],
+		pageHold: PageHold.None(),
 		onboarding: null,
 		clerkSnapshot: null,
 		customer: initCustomer(),

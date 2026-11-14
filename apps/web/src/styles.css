@@ -16,3 +16,13 @@
 [data-slot="avatar"]:has(> img[data-slot="avatar-image"][data-loaded]) > [data-slot="avatar-fallback"] {
 	visibility: hidden;
 }
+
+/* Navigation's pending state (`page/page-hold.ts`): the page left stays drawn but takes no clicks
+   while the next one loads; once the hold runs out, that page already waited the skeleton delay. */
+[data-page-hold="held"] > :not(header) {
+	pointer-events: none;
+}
+
+[data-page-hold="waited"] {
+	--loading-delay: 0ms;
+}

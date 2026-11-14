@@ -275,14 +275,23 @@ export const enterRoute = (
 		},
 	)
 
+/** Some `AsyncData` in the Model passes `test`. */
+const someAsyncData =
+	(test: (data: AsyncData.AsyncData<unknown, unknown>) => boolean) =>
+	(value: unknown): boolean => {
+		if (Array.isArray(value)) return Array.some(value, someAsyncData(test))
+		if (!Predicate.isReadonlyObject(value)) return false
+		// An `AsyncData`'s own data holds no requests: rows are not walked.
+		if (AsyncData.isAsyncData(value)) return test(value)
+		return Array.some(Rec.values(value), someAsyncData(test))
+	}
+
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
-const hasLoadInFlight = (value: unknown): boolean => {
-	if (Array.isArray(value)) return Array.some(value, hasLoadInFlight)
-	if (!Predicate.isReadonlyObject(value)) return false
-	// An `AsyncData`'s own data holds no requests: rows are not walked.
-	if (AsyncData.isAsyncData(value)) return AsyncData.isPending(value)
-	return Array.some(Rec.values(value), hasLoadInFlight)
-}
+const hasLoadInFlight = someAsyncData(AsyncData.isPending)
+
+/** The page still waits on a first read: some `AsyncData` is `Loading`, with no data to show. */
+export const isFirstLoading = (slot: PageSlot | null): boolean =>
+	slot !== null && someAsyncData(AsyncData.isLoading)(slot.model)
 
 /** How many left pages are kept to revive; each holds its last data. */
 const PARKED_PAGES_MAX = 4
