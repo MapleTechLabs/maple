@@ -12,8 +12,9 @@ import {
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
-import { send, SupabaseApiError } from "./api"
+import type { HttpClient } from "effect/http"
+import * as VendorHttp from "../vendor-http"
+import { SupabaseApiError, supabaseClient } from "./api"
 
 export const TOP_QUERIES_LIMIT = 10
 const QUERY_TEXT_CHARS = 2000
@@ -136,14 +137,10 @@ export const getAdvisors = Effect.fn("SupabaseApi.getAdvisors")(function* (
 		"maple.supabase.advisor": kind,
 	})
 	const what = `reading the ${kind} advisors`
-	const text = yield* send(
-		httpClient,
-		HttpClientRequest.get(`${apiBaseUrl}/v1/projects/${projectRef}/advisors/${kind}`).pipe(
-			HttpClientRequest.bearerToken(accessToken),
-			HttpClientRequest.acceptJson,
-		),
-		what,
-	)
+	const text = yield* supabaseClient(httpClient, apiBaseUrl, VendorHttp.bearer(accessToken)).text({
+		path: `/v1/projects/${projectRef}/advisors/${kind}`,
+		operation: what,
+	})
 	const body = decodeAdvisorsBody(text)
 	if (Option.isNone(body)) return yield* unexpectedBody(what)
 	const lints = decodeLints(kind, body.value.lints)
@@ -163,15 +160,14 @@ export const getTopQueries = Effect.fn("SupabaseApi.getTopQueries")(function* (
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.supabase.project_ref": projectRef })
 	const what = "reading pg_stat_statements"
-	const text = yield* send(
-		httpClient,
-		HttpClientRequest.post(`${apiBaseUrl}/v1/projects/${projectRef}/database/query/read-only`).pipe(
-			HttpClientRequest.bearerToken(accessToken),
-			HttpClientRequest.acceptJson,
-			HttpClientRequest.bodyJsonUnsafe({ query: TOP_QUERIES_SQL }),
-		),
-		what,
-	)
+	// A read-only query, so a passing failure is retried like a GET.
+	const text = yield* supabaseClient(httpClient, apiBaseUrl, VendorHttp.bearer(accessToken)).text({
+		method: "POST",
+		path: `/v1/projects/${projectRef}/database/query/read-only`,
+		body: { query: TOP_QUERIES_SQL },
+		operation: what,
+		retry: true,
+	})
 	const rows = decodeRowsBody(text)
 	if (Option.isNone(rows)) return yield* unexpectedBody(what)
 	return decodeStatements(rows.value)

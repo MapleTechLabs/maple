@@ -8,6 +8,7 @@ import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { SourceId } from "@maple/primitives"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { VercelIntegrationService } from "./VercelIntegrationService"
 
 const now = Date.UTC(2026, 9, 19, 12, 0, 0)
@@ -167,95 +168,129 @@ const listed = (drain: FakeDrain) => {
 	}
 }
 
-const json = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+const { json } = VendorFake
 
-const fakeFetch = (fake: Fake): typeof fetch =>
-	(async (input: string | URL | Request, init?: RequestInit) => {
-		const url = new URL(
-			typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
-		)
-		const method = init?.method ?? "GET"
-		const text = await new Response(init?.body ?? null).text()
-		const call: VercelCall = {
-			method,
-			path: url.pathname,
-			teamId: url.searchParams.get("teamId"),
-			body: text === "" ? null : decodeJson(text),
-			authorization: new Headers(init?.headers).get("authorization"),
-		}
-		fake.calls.push(call)
-		const response = await fake.respond(call, init?.signal)
-		if (response !== undefined) return response
-		if (fake.mode === "token_rejected") {
-			return json({ error: { code: "forbidden", message: "Not authorized" } }, 403)
-		}
-		if (url.pathname === "/v2/teams") return json({ teams: fake.teams, pagination: { next: null } })
-		if (url.pathname === "/v10/projects") {
-			return json({
-				projects: [
-					{
-						id: "prj_web",
-						name: "web",
-						framework: "nextjs",
-						targets: { production: { id: "dpl_1" } },
-					},
-					...Arr.map(
-						Arr.filter(
-							[...new Set(Arr.map(fake.deployments, (d) => d.projectId))],
-							(id) => id !== "prj_web",
+const toCall = (request: VendorFake.VendorFakeRequest): VercelCall => ({
+	method: request.method,
+	path: request.path,
+	teamId: request.search.get("teamId"),
+	body: request.body === "" ? null : decodeJson(request.body),
+	authorization: request.authorization,
+})
+
+/** The drain a request names, on the team it names; a 404 answer when there is none. */
+const drainOf = (fake: Fake, call: VercelCall) => {
+	const drain = fake.drains.get(Str.split("/")(call.path)[3] ?? "")
+	return drain === undefined || drain.teamId !== (call.teamId ?? "")
+		? json({ error: { code: "not_found", message: "Drain not found" } }, 404)
+		: drain
+}
+
+const fakeVercel = (fake: Fake) =>
+	VendorFake.make({
+		routes: [
+			{
+				respond: (request) => {
+					const call = toCall(request)
+					fake.calls.push(call)
+					return fake.respond(call, request.signal)
+				},
+			},
+			{
+				respond: () =>
+					fake.mode === "token_rejected"
+						? json({ error: { code: "forbidden", message: "Not authorized" } }, 403)
+						: undefined,
+			},
+			{ path: "/v2/teams", respond: () => json({ teams: fake.teams, pagination: { next: null } }) },
+			{
+				path: "/v10/projects",
+				respond: () =>
+					json({
+						projects: [
+							{
+								id: "prj_web",
+								name: "web",
+								framework: "nextjs",
+								targets: { production: { id: "dpl_1" } },
+							},
+							...Arr.map(
+								Arr.filter(
+									[...new Set(Arr.map(fake.deployments, (d) => d.projectId))],
+									(id) => id !== "prj_web",
+								),
+								(id) => ({ id, name: id, framework: null }),
+							),
+						],
+						pagination: { next: null },
+					}),
+			},
+			{
+				path: "/v7/deployments",
+				respond: () =>
+					json({
+						deployments: Arr.map(fake.deployments, (d) => ({
+							...d,
+							url: `${d.uid}.vercel.app`,
+							meta: { githubCommitSha: `sha_${d.uid}`, githubCommitRef: "main" },
+							creator: { username: "dev" },
+						})),
+						pagination: { next: null },
+					}),
+			},
+			{
+				method: "POST",
+				path: "/v1/drains",
+				respond: (request) => {
+					const drain = addDrain(fake, request.search.get("teamId") ?? "", toCall(request).body)
+					return json({ id: drain.id, status: drain.status })
+				},
+			},
+			{
+				method: "GET",
+				path: "/v1/drains",
+				respond: (request) =>
+					json({
+						drains: Arr.map(
+							Arr.filter(
+								[...fake.drains.values()],
+								(d) => d.teamId === (request.search.get("teamId") ?? ""),
+							),
+							listed,
 						),
-						(id) => ({ id, name: id, framework: null }),
-					),
-				],
-				pagination: { next: null },
-			})
-		}
-		if (url.pathname === "/v7/deployments") {
-			return json({
-				deployments: Arr.map(fake.deployments, (d) => ({
-					...d,
-					url: `${d.uid}.vercel.app`,
-					meta: { githubCommitSha: `sha_${d.uid}`, githubCommitRef: "main" },
-					creator: { username: "dev" },
-				})),
-				pagination: { next: null },
-			})
-		}
-		const teamId = call.teamId ?? ""
-		const drainId = Str.split("/")(url.pathname)[3]
-		if (drainId === undefined) {
-			if (method === "POST") {
-				const drain = addDrain(fake, teamId, call.body)
-				return json({ id: drain.id, status: drain.status })
-			}
-			return json({
-				drains: Arr.map(
-					Arr.filter([...fake.drains.values()], (d) => d.teamId === teamId),
-					listed,
-				),
-			})
-		}
-		const drain = fake.drains.get(drainId)
-		if (drain === undefined || drain.teamId !== teamId) {
-			return json({ error: { code: "not_found", message: "Drain not found" } }, 404)
-		}
-		if (method === "DELETE") {
-			fake.drains.delete(drainId)
-			return new Response(null, { status: 204 })
-		}
-		if (method === "PATCH") {
-			const patch = asObject(call.body)
-			drain.body = { ...drain.body, ...patch }
-			if (typeof patch.status === "string") drain.status = patch.status
-		}
-		return json({ id: drain.id, status: drain.status })
-	}) as typeof fetch
+					}),
+			},
+			{
+				method: "DELETE",
+				path: /^\/v1\/drains\/[^/]+$/,
+				respond: (request) => {
+					const drain = drainOf(fake, toCall(request))
+					if (drain instanceof Response) return drain
+					fake.drains.delete(drain.id)
+					return VendorFake.empty(204)
+				},
+			},
+			{
+				path: /^\/v1\/drains\/[^/]+$/,
+				respond: (request) => {
+					const call = toCall(request)
+					const drain = drainOf(fake, call)
+					if (drain instanceof Response) return drain
+					if (call.method === "PATCH") {
+						const patch = asObject(call.body)
+						drain.body = { ...drain.body, ...patch }
+						if (typeof patch.status === "string") drain.status = patch.status
+					}
+					return json({ id: drain.id, status: drain.status })
+				},
+			},
+		],
+	})
 
-const makeLayer = (testDb: TestDb, stub: typeof fetch) =>
+const makeLayer = (testDb: TestDb, fake: VendorFake.VendorFake) =>
 	Layer.effect(VercelIntegrationService, VercelIntegrationService.make).pipe(
 		Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, OrgIngestKeysService.layer)),
-		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, stub)),
+		Layer.provide(fake.layer),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig()),
@@ -269,7 +304,7 @@ const run = <A, E>(
 	Effect.gen(function* () {
 		yield* TestClock.setTime(now)
 		return yield* effect
-	}).pipe(Effect.provide(makeLayer(testDb, fakeFetch(fake))))
+	}).pipe(Effect.provide(makeLayer(testDb, fakeVercel(fake))))
 
 const connectRequest = (overrides: Partial<VercelConnectRequest> = {}) =>
 	new VercelConnectRequest({
@@ -955,11 +990,19 @@ describe("VercelIntegrationService", () => {
 						call.method === "DELETE" && call.path === "/v1/drains/drn_1"
 							? vercelError(502, "bad gateway")
 							: undefined
-					const result = yield* disconnect()
+					// A 5xx on a delete is retried; the clock moves the back-off along.
+					const result = yield* VendorFake.elapsing(disconnect())
 					assert.deepStrictEqual(result, { disconnected: true, drainsRemoved: false })
 					assert.deepStrictEqual(
 						Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => call.path),
-						["/v1/drains/drn_1", "/v1/drains/drn_2", "/v1/drains/drn_3"],
+						// The failing delete is sent three times before the disconnect moves on.
+						[
+							"/v1/drains/drn_1",
+							"/v1/drains/drn_1",
+							"/v1/drains/drn_1",
+							"/v1/drains/drn_2",
+							"/v1/drains/drn_3",
+						],
 					)
 					assert.isFalse((yield* status()).connected)
 				}),
@@ -1368,7 +1411,9 @@ describe("VercelIntegrationService", () => {
 					call.method === "DELETE" && call.path === "/v1/drains/drn_2"
 						? vercelError(500, "internal")
 						: undefined
-				const reconnected = yield* connect({ token: "vc_token_456", teamId: "team_2" })
+				const reconnected = yield* VendorFake.elapsing(
+					connect({ token: "vc_token_456", teamId: "team_2" }),
+				)
 				assert.deepStrictEqual(
 					Arr.map(callsTo(fake, "DELETE", "/v1/drains"), (call) => [
 						call.path,
@@ -1377,6 +1422,9 @@ describe("VercelIntegrationService", () => {
 					]),
 					[
 						["/v1/drains/drn_1", "team_1", "Bearer vc_token_123"],
+						// The failing delete is retried twice, with the same old token.
+						["/v1/drains/drn_2", "team_1", "Bearer vc_token_123"],
+						["/v1/drains/drn_2", "team_1", "Bearer vc_token_123"],
 						["/v1/drains/drn_2", "team_1", "Bearer vc_token_123"],
 						["/v1/drains/drn_3", "team_1", "Bearer vc_token_123"],
 					],
