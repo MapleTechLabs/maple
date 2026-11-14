@@ -20,6 +20,11 @@ import {
 	MembershipRevocationError,
 	type MembershipRevocationSummary,
 } from "@maple/backend/services/auth/MembershipRevocationService"
+import {
+	OrganizationRegionService,
+	type HomeAnswer,
+} from "@maple/backend/services/org/OrganizationRegionService"
+import type { MapleRegion } from "@maple/domain/organization-regions"
 import { AutumnWebhookRouter } from "./autumn.http"
 import { ClerkWebhookRoute } from "./clerk.http"
 import { SVIX_WEBHOOK_MAX_BYTES } from "./svix-receiver"
@@ -99,6 +104,15 @@ const recordingRevocation = (fail = false) => {
 	return { calls, layer }
 }
 
+/** An instance in `region` that gives one answer about every organization's home. */
+const regionsAnswering = (home: HomeAnswer, region: MapleRegion = "us") =>
+	Layer.succeed(OrganizationRegionService, {
+		region,
+		ensureServedHere: () => Effect.void,
+		servedHere: () => Effect.succeed(home),
+		forget: () => Effect.void,
+	})
+
 const decodeQueuedJob = Schema.decodeUnknownSync(CancellationReviewJob)
 
 /** Records the bodies the Autumn route queues for review; the queue can be made to refuse them. */
@@ -127,9 +141,11 @@ const makeRouterLayer = (
 	audit: Layer.Layer<AuditLogService> = recordingAudit().layer,
 	cancellationQueue: Layer.Layer<CancellationReviewQueue> = recordingCancellationQueue().layer,
 	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
+	regions: Layer.Layer<OrganizationRegionService> = OrganizationRegionService.servesAll,
 ) =>
 	router.pipe(
 		Layer.provide(productEvents),
+		Layer.provide(regions),
 		Layer.provide(billingCustomers),
 		Layer.provide(cancellationQueue),
 		Layer.provide(revocation),
@@ -312,6 +328,143 @@ describe("ClerkWebhookRouter", () => {
 						attributes: { role: "org:admin" },
 					},
 				])
+			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
+		}),
+	)
+
+	// One Clerk instance delivers every event to every region's API.
+	it.live("sweeps a membership change in every region and records it in the home region", () =>
+		Effect.gen(function* () {
+			const deliver = (home: HomeAnswer, type: string) =>
+				Effect.gen(function* () {
+					const events = recordingProductEvents()
+					const audit = recordingAudit()
+					const revocation = recordingRevocation()
+					const configured = HttpRouter.toWebHandler(
+						makeRouterLayer(
+							ClerkWebhookRoute,
+							{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+							events.layer,
+							revocation.layer,
+							audit.layer,
+							recordingCancellationQueue().layer,
+							BillingCustomerResolver.standalone,
+							regionsAnswering(home),
+						),
+						{ disableLogger: true },
+					)
+					return yield* Effect.gen(function* () {
+						const now = yield* Clock.currentTimeMillis
+						const body = JSON.stringify({
+							type,
+							timestamp: 1_700_000_000_000,
+							data: {
+								organization: { id: "org_9" },
+								public_user_data: { user_id: "user_9" },
+								role: "org:member",
+							},
+						})
+						const headers = yield* signedHeaders(CLERK_SECRET, body, now)
+						const response = yield* post(configured.handler, "/webhooks/clerk", body, headers)
+						return {
+							status: response.status,
+							audited: audit.recorded.length,
+							tracked: events.tracked.length,
+							calls: revocation.calls,
+						}
+					}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
+				})
+
+			const removal = "organizationMembership.deleted"
+			// Another region's organization: nothing is recorded here, but a key this instance
+			// minted before the organization chose its region still has to go.
+			assert.deepStrictEqual(yield* deliver("elsewhere", removal), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: ["revoke:org_9:user_9"],
+			})
+			assert.deepStrictEqual(yield* deliver("deleted", removal), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: ["revoke:org_9:user_9"],
+			})
+			// Clerk could not say where it lives: swept at once, and redelivered for the record.
+			assert.deepStrictEqual(yield* deliver("unknown", removal), {
+				status: 503,
+				audited: 0,
+				tracked: 0,
+				calls: ["revoke:org_9:user_9"],
+			})
+			assert.deepStrictEqual(yield* deliver("here", removal), {
+				status: 200,
+				audited: 1,
+				tracked: 1,
+				calls: ["revoke:org_9:user_9"],
+			})
+			// A demotion takes keys away in every region too.
+			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.updated"), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: ["demote:org_9:user_9:org:member"],
+			})
+			// A join has nothing to sweep: the other region only acknowledges it.
+			assert.deepStrictEqual(yield* deliver("elsewhere", "organizationMembership.created"), {
+				status: 200,
+				audited: 0,
+				tracked: 0,
+				calls: [],
+			})
+			assert.deepStrictEqual(yield* deliver("unknown", "organizationMembership.created"), {
+				status: 503,
+				audited: 0,
+				tracked: 0,
+				calls: [],
+			})
+		}),
+	)
+
+	it.live("counts a signup in the default region only, and sweeps a deleted user in every region", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const revocation = recordingRevocation()
+			const configured = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					events.layer,
+					revocation.layer,
+					recordingAudit().layer,
+					recordingCancellationQueue().layer,
+					BillingCustomerResolver.standalone,
+					regionsAnswering("elsewhere", "eu"),
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const createdHeaders = yield* signedHeaders(CLERK_SECRET, CLERK_USER_CREATED, now, "msg_new")
+				const created = yield* post(
+					configured.handler,
+					"/webhooks/clerk",
+					CLERK_USER_CREATED,
+					createdHeaders,
+				)
+				assert.strictEqual(created.status, 200)
+				assert.deepStrictEqual(events.tracked, [])
+
+				const userDeleted = JSON.stringify({ type: "user.deleted", data: { id: "user_9" } })
+				const deletedHeaders = yield* signedHeaders(CLERK_SECRET, userDeleted, now, "msg_gone")
+				const deleted = yield* post(
+					configured.handler,
+					"/webhooks/clerk",
+					userDeleted,
+					deletedHeaders,
+				)
+				assert.strictEqual(deleted.status, 200)
+				assert.deepStrictEqual(revocation.calls, ["revokeUser:user_9"])
 			}).pipe(Effect.ensuring(Effect.promise(() => configured.dispose())))
 		}),
 	)
