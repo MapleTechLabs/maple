@@ -140,6 +140,19 @@ describe("privacyHitAt", () => {
 		],
 		["a credit card number", ["logger.info({ creditCardNumber })"], "payment", "creditCardNumber"],
 		[
+			"plural phone numbers",
+			["logger.info({ customer_phone_numbers })"],
+			"contact",
+			"customer_phone_numbers",
+		],
+		["plural email addresses", ["logger.info({ email_addresses })"], "contact", "email_addresses"],
+		[
+			"plural bank account numbers",
+			["logger.info({ bank_account_numbers })"],
+			"payment",
+			"bank_account_numbers",
+		],
+		[
 			"a street address line",
 			["logger.info({ shipping_address_line1: order.shipping_address_line1 })"],
 			"contact",

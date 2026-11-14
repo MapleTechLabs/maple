@@ -89,6 +89,12 @@ const VALUE_WORDS = new Set([
 	"postcode",
 ])
 
+/** A value word, or its plural (`phone_numbers`, `email_addresses`). */
+const isValueWord = (word: string): boolean =>
+	VALUE_WORDS.has(word) ||
+	VALUE_WORDS.has(Str.slice(0, -1)(word)) ||
+	VALUE_WORDS.has(Str.slice(0, -2)(word))
+
 /** Single words, matched whole: `token` but not `tokens` (`gen_ai.usage.output_tokens`). */
 const WORDS = new Map<string, PrivacyKind>([
 	["password", "secret"],
@@ -248,7 +254,7 @@ export const classifyName = (
 	const match = lastMatch(words)
 	if (match === undefined)
 		return options.chain === true && words.length > 1 && PAYLOAD_WORDS.has(last) ? "payload" : undefined
-	if (!Arr.every(words.slice(match.end), (word) => VALUE_WORDS.has(word))) return undefined
+	if (!Arr.every(words.slice(match.end), isValueWord)) return undefined
 	if (match.kind === "contact" && Arr.some(words.slice(0, match.start), (word) => NOT_A_PERSON.has(word)))
 		return undefined
 	return match.kind
