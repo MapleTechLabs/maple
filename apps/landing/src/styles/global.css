@@ -68,6 +68,12 @@
 		linear-gradient(to right, black 80%, transparent), linear-gradient(to bottom, black 76%, transparent);
 	mask-composite: intersect;
 }
+/* The image is larger than the window, so its own focus ring is clipped, and the
+   window's mask would fade one drawn there. The frame carries it, inset. */
+.live-frame:has(> .media-crop > img:focus-visible) {
+	outline: 2px solid var(--ring);
+	outline-offset: -2px;
+}
 .media-crop > img {
 	display: block;
 	width: calc(var(--crop-zoom) * 100%);
