@@ -41,15 +41,15 @@ export const userAvatar = <M>(
  */
 export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 	const label = userLabel(user)
-	const detail = Arr.filter(
-		[label === user.email ? user.userId : (user.email ?? user.userId)],
-		(part): part is string => part !== null && part !== label,
-	)
+	const shown = label === user.email ? user.userId : (user.email ?? user.userId)
+	const detail = Arr.filter([shown], (part): part is string => part !== null && part !== label)
+	// Ids read in mono; an email or a group name reads in the UI face, as in the rail.
+	const isIdDetail = shown === user.userId
 	const group = groupLabel(user)
 	return vstack(h, { gap: "0", shrink: true, className: "min-w-0" }, [
 		typography(h, { size: "xs", tone: "foreground", truncate: true }, [label]),
 		hstack(h, { gap: "1", as: "span", className: "min-w-0" }, [
-			typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true, as: "span" }, [
+			typography(h, { size: "2xs", tone: "muted", mono: isIdDetail, truncate: true, as: "span" }, [
 				Arr.join(detail, " · "),
 			]),
 			// Its own slot, so a long email cannot truncate the group away.
@@ -61,7 +61,7 @@ export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 							{
 								size: "2xs",
 								tone: "muted",
-								mono: true,
+								mono: user.groupName === null,
 								truncate: true,
 								as: "span",
 								className: cn(

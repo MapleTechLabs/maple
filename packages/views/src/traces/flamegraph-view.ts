@@ -1,4 +1,4 @@
-import { getServiceColor, getSpanColorStyle } from "@maple/ui/lib/colors"
+import { getSpanColorStyle } from "@maple/ui/lib/colors"
 import { formatDuration } from "@maple/ui/lib/format"
 import { spanStartMs } from "@maple/ui/lib/span-tree"
 import type { SpanNode } from "@maple/ui/lib/types"
@@ -21,6 +21,7 @@ import {
 	minimapBars,
 } from "./flamegraph-layout"
 import { spanTooltipContent } from "./span-tooltip"
+import { serviceLabel } from "../ui/service-label"
 import { hstack } from "../ui/stack"
 import { typography } from "../ui/typography"
 import { stripClass } from "../ui/rule"
@@ -39,13 +40,6 @@ const errorDot = <M>(h: HtmlBuilder<M>): Html =>
 	h.span([
 		h.AriaHidden(true),
 		h.Class("size-2.5 shrink-0 rounded-dot bg-severity-error [corner-shape:squircle]"),
-	])
-
-const serviceDot = <M>(h: HtmlBuilder<M>, service: string): Html =>
-	h.span([
-		h.AriaHidden(true),
-		h.Class("size-2.5 shrink-0 rounded-dot [corner-shape:squircle]"),
-		h.Style({ "background-color": getServiceColor(service) }),
 	])
 
 const header = <M>(h: HtmlBuilder<M>, focused: Option.Option<SpanNode>, onReset: M): Html =>
@@ -206,10 +200,7 @@ const footer = <M>(h: HtmlBuilder<M>, services: ReadonlyArray<string>): Html =>
 			]),
 			hstack(h, { gap: "3", align: "center" }, [
 				...Arr.map(services, (service) =>
-					hstack(h, { gap: "1.5", align: "center" }, [
-						serviceDot(h, service),
-						typography(h, { weight: "medium" }, [service]),
-					]),
+					serviceLabel(h, { serviceName: service, dot: "md", weight: "medium", truncate: "none" }),
 				),
 				hstack(h, { gap: "1.5", align: "center" }, [
 					errorDot(h),

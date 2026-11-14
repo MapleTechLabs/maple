@@ -5,7 +5,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { button, linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { hstack } from "@maple/views/ui/stack"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { typography } from "@maple/views/ui/typography"
@@ -47,10 +47,7 @@ export const detailHeader = (
 			},
 			[icon(h, "ArrowLeftIcon"), options.backLabel],
 		),
-		hstack(h, { as: "span", gap: "2", shrink: true }, [
-			serviceDot(h, { serviceName: options.serviceName }),
-			typography(h, { size: "sm", weight: "medium", truncate: true }, [options.serviceName]),
-		]),
+		serviceLabel(h, { serviceName: options.serviceName, size: "sm", weight: "medium" }),
 		...Arr.map(options.environments, (environment) =>
 			badge(
 				h,

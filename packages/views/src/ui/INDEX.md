@@ -148,6 +148,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/select-view.ts` `optionsOf`, `selectLabelId`, `selectedIndexOf`, `view`: The Select's trigger and its popup list of options, groups and labels.
 - `packages/views/src/ui/select.ts` `listId`, `itemId` (stateful: Model, init, update): Base UI `Select` (`@maple/ui/select`): the popup opens over the trigger with the selected item on the trigger's value (`alignItemWithTrigger`), or below it when that does not fit.
 - `packages/views/src/ui/selectable-row.ts` `selectableRow`: `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection lane and tint; a clickable one is a `pressable` with `selectedLane`.
+- `packages/views/src/ui/service-label.ts` `serviceLabel`: Every page names a service the same way: its colour dot, then its name in the surrounding face.
 - `packages/views/src/ui/setting-row.ts` `settingRow`: A settings row: label, description and a control.
 - `packages/views/src/ui/sheet.ts` `leftSheet`, `sidePanelSheet`, `followUrl`, `isDismissed`, `mapSheetCommands`: A left-side sheet over Base UI Dialog.
 - `packages/views/src/ui/shift-timeline.ts` `zonedDayStart`, `placeBar`, `timelineDays`, `barRoomPct`, `shiftTimeline`: `ShiftTimeline`: rows of time bars over a day-ruled axis in one time zone, with a now line (an on-call schedule's layers and its final row).

@@ -7,7 +7,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { isAwaitingFirstData } from "@maple/views/data/keyed"
@@ -45,10 +45,7 @@ export const clientCard = <M>(h: HtmlBuilder<M>, session: SessionDetail, label: 
 										}),
 									),
 								],
-								[
-									serviceDot(h, { serviceName: session.serviceName, size: "sm" }),
-									text(h, session.serviceName, session.serviceName),
-								],
+								[serviceLabel(h, { serviceName: session.serviceName, dot: "sm" })],
 							)
 						: EMPTY_VALUE,
 				]),
@@ -94,15 +91,17 @@ const traceItem = <M>(h: HtmlBuilder<M>, trace: SessionTrace): Html =>
 									className: typographyClass({ size: "xs", tone: "muted" }),
 								},
 								[
-									...(trace.rootServiceName
-										? [serviceDot(h, { serviceName: trace.rootServiceName, size: "sm" })]
-										: []),
-									typography(h, { truncate: true }, [
-										trace.rootServiceName || "unknown",
-										" ·",
-										" ",
-										countLabel(trace.spanCount, "span"),
-									]),
+									trace.rootServiceName
+										? serviceLabel(h, { serviceName: trace.rootServiceName, dot: "sm" }, [
+												typography(h, { className: "shrink-0 whitespace-nowrap" }, [
+													"· ",
+													countLabel(trace.spanCount, "span"),
+												]),
+											])
+										: typography(h, { truncate: true }, [
+												"unknown · ",
+												countLabel(trace.spanCount, "span"),
+											]),
 								],
 							),
 						],

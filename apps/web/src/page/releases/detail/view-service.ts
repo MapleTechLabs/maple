@@ -17,7 +17,7 @@ import { panel } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLinkClass } from "@maple/views/ui/text-link"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { commitRangesKey, releaseHealthFigure, withQueryOrder } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
@@ -88,7 +88,7 @@ export const serviceButton = (h: H, model: Model, serviceName: string): Html =>
 				["startTime", "endTime", "timePreset", "environments"],
 			),
 		},
-		[serviceDot(h, { serviceName }), serviceName],
+		[serviceLabel(h, { serviceName, truncate: "none" })],
 	)
 
 const bodySkeleton = (h: H): Html =>
